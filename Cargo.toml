@@ -6,5 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix = "0.13.1"
+actix-web = "4.3.1"
+actix-rt = "2.8.0"
 postgres = "0.19.7"
+
+[[bin]]
+name = "doc_gpt"
