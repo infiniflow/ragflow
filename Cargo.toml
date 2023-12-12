@@ -1,0 +1,10 @@
+[package]
+name = "doc_gpt"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix = "0.13.1"
+postgres = "0.19.7"
