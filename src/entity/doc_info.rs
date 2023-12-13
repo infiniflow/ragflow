@@ -14,10 +14,10 @@ pub struct Model {
     pub r#type: String,
     pub kb_progress: f64,
 
+    #[serde(skip_deserializing)]
     pub created_at: Date,
+    #[serde(skip_deserializing)]
     pub updated_at: Date,
-    #[sea_orm(soft_delete_column)]
-    pub is_deleted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -14,7 +14,9 @@ pub struct Model {
     pub icon: i64,
     pub dir: String,
 
+    #[serde(skip_deserializing)]
     pub created_at: Date,
+    #[serde(skip_deserializing)]
     pub updated_at: Date,
 }
 

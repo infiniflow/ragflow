@@ -11,7 +11,9 @@ pub struct Model {
     pub kn_name: String,
     pub icon: i64,
 
+    #[serde(skip_deserializing)]
     pub created_at: Date,
+    #[serde(skip_deserializing)]
     pub updated_at: Date,
 }
 

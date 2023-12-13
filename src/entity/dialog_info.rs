@@ -11,7 +11,9 @@ pub struct Model {
     pub dialog_name: String,
     pub history: String,
 
+    #[serde(skip_deserializing)]
     pub created_at: Date,
+    #[serde(skip_deserializing)]
     pub updated_at: Date,
 }
 
