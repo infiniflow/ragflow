@@ -37,12 +37,13 @@ impl MigrationTrait for Migration {
                     .table(TagInfo::Table)
                     .if_not_exists()
                     .col(
-                        ColumnDef::new(TagInfo::Uid)
+                        ColumnDef::new(TagInfo::Tid)
                             .big_integer()
                             .not_null()
                             .auto_increment()
                             .primary_key(),
                     )
+                    .col(ColumnDef::new(TagInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(TagInfo::TagName).string().not_null())
                     .col(ColumnDef::new(TagInfo::Regx).string())
                     .col(ColumnDef::new(TagInfo::Color).big_integer().default(1))
@@ -61,8 +62,7 @@ impl MigrationTrait for Migration {
                     .table(Tag2Doc::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(Tag2Doc::TagId).big_integer())
-                    .col(ColumnDef::new(Tag2Doc::Did).big_integer().comment("doc id, did in docinfo"))
-                    .index(Index::create().col(Tag2Doc::TagId))
+                    .col(ColumnDef::new(Tag2Doc::Did).big_integer())
                     .to_owned(),
             )
             .await?;
@@ -73,8 +73,7 @@ impl MigrationTrait for Migration {
                     .table(Kb2Doc::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(Kb2Doc::KbId).big_integer())
-                    .col(ColumnDef::new(Kb2Doc::Did).big_integer().comment("doc id, did in docinfo"))
-                    .index(Index::create().col(Kb2Doc::KbId))
+                    .col(ColumnDef::new(Kb2Doc::Did).big_integer())
                     .to_owned(),
             )
             .await?;
@@ -86,7 +85,6 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(ColumnDef::new(Dialog2Kb::DialogId).big_integer())
                     .col(ColumnDef::new(Dialog2Kb::KbId).big_integer())
-                    .index(Index::create().col(Dialog2Kb::DialogId))
                     .to_owned(),
             )
             .await?;
@@ -96,9 +94,8 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Doc2Doc::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(Doc2Doc::ParentId).big_integer().comment("doc id, did in docinfo"))
-                    .col(ColumnDef::new(Doc2Doc::Did).big_integer().comment("doc id, did in docinfo"))
-                    .index(Index::create().col(Doc2Doc::ParentId))
+                    .col(ColumnDef::new(Doc2Doc::ParentId).big_integer())
+                    .col(ColumnDef::new(Doc2Doc::Did).big_integer())
                     .to_owned(),
             )
             .await?;
@@ -108,15 +105,16 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(KbInfo::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(KbInfo::KbId).big_integer().auto_increment().not_null())
+                    .col(ColumnDef::new(KbInfo::KbId).big_integer()
+                        .auto_increment()
+                        .not_null()
+                        .primary_key())
                     .col(ColumnDef::new(KbInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(KbInfo::KbName).string().not_null())
                     .col(ColumnDef::new(KbInfo::Icon).big_integer().default(1))
                     .col(ColumnDef::new(KbInfo::CreatedAt).date().not_null())
                     .col(ColumnDef::new(KbInfo::UpdatedAt).date().not_null())
                     .col(ColumnDef::new(KbInfo::IsDeleted).boolean().default(false))
-                    .index(Index::create().col(KbInfo::KbId))
-                    .index(Index::create().col(KbInfo::Uid))
                     .to_owned(),
             )
             .await?;
@@ -126,7 +124,10 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(DocInfo::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(DocInfo::Did).big_integer().auto_increment().not_null())
+                    .col(ColumnDef::new(DocInfo::Did).big_integer()
+                        .not_null()
+                        .auto_increment()
+                        .primary_key())
                     .col(ColumnDef::new(DocInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(DocInfo::DocName).string().not_null())
                     .col(ColumnDef::new(DocInfo::Size).big_integer().not_null())
@@ -135,8 +136,6 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(DocInfo::CreatedAt).date().not_null())
                     .col(ColumnDef::new(DocInfo::UpdatedAt).date().not_null())
                     .col(ColumnDef::new(DocInfo::IsDeleted).boolean().default(false))
-                    .index(Index::create().col(DocInfo::Did))
-                    .index(Index::create().col(DocInfo::Uid))
                     .to_owned(),
             )
             .await?;
@@ -146,15 +145,17 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(DialogInfo::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(DialogInfo::DialogId).big_integer().auto_increment().not_null())
+                    .col(ColumnDef::new(DialogInfo::DialogId)
+                        .big_integer()
+                        .not_null()
+                        .auto_increment()
+                        .primary_key())
                     .col(ColumnDef::new(DialogInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(DialogInfo::DialogName).string().not_null())
                     .col(ColumnDef::new(DialogInfo::History).string().comment("json"))
                     .col(ColumnDef::new(DialogInfo::CreatedAt).date().not_null())
                     .col(ColumnDef::new(DialogInfo::UpdatedAt).date().not_null())
                     .col(ColumnDef::new(DialogInfo::IsDeleted).boolean().default(false))
-                    .index(Index::create().col(DialogInfo::DialogId))
-                    .index(Index::create().col(DialogInfo::Uid))
                     .to_owned(),
             )
             .await?;
@@ -221,6 +222,7 @@ enum UserInfo {
 #[derive(DeriveIden)]
 enum TagInfo {
     Table,
+    Tid,
     Uid,
     TagName,
     Regx,

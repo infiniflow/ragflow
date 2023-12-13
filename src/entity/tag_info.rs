@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     #[serde(skip_deserializing)]
+    pub tid: i64,
     pub uid: i64,
     pub tag_name: String,
     pub regx: String,
@@ -13,10 +14,8 @@ pub struct Model {
     pub icon: i64,
     pub dir: String,
 
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(soft_delete_column)]
-    pub is_deleted: bool,
+    pub created_at: Date,
+    pub updated_at: Date,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -24,11 +23,11 @@ pub enum Relation {}
 
 impl Related<super::doc_info::Entity> for Entity {
     fn to() -> RelationDef {
-        super::tag_2_doc::Relation::DocInfo.def()
+        super::tag2_doc::Relation::DocInfo.def()
     }
 
     fn via() -> Option<RelationDef> {
-        Some(super::tag_2_doc::Relation::Tag.def().rev())
+        Some(super::tag2_doc::Relation::Tag.def().rev())
     }
 }
 
