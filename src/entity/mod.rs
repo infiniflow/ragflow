@@ -1,9 +1,9 @@
-mod user_info;
-mod tag_info;
-mod tag_2_doc;
-mod kb_2_doc;
-mod dialog_2_kb;
-mod doc_2_doc;
-mod kb_info;
-mod doc_info;
-mod dialog_info;
+pub(crate) mod user_info;
+pub(crate) mod tag_info;
+mod tag2_doc;
+mod kb2_doc;
+mod dialog2_kb;
+mod doc2_doc;
+pub(crate) mod kb_info;
+pub(crate) mod doc_info;
+pub(crate) mod dialog_info;

@@ -1,4 +1,4 @@
-# Running Migrator CLI
+          # Running Migrator CLI
 
 - Generate a new migration file
     ```sh
