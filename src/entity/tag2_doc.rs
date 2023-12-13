@@ -2,30 +2,31 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Deserialize, Serialize)]
-#[sea_orm(table_name = "doc_2_doc")]
+#[sea_orm(table_name = "tag2_doc")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub parent_id: i64,
+    #[sea_orm(index)]
+    pub tag_id: i64,
     #[sea_orm(primary_key, auto_increment = false)]
-    pub did: i64,
+    pub uid: i64,
 }
 
 #[derive(Debug, Clone, Copy, EnumIter)]
 pub enum Relation {
-    Parent,
-    Child
+    DocInfo,
+    Tag,
 }
 
 impl RelationTrait for Relation {
-    fn def(&self) -> RelationDef {
+    fn def(&self) -> sea_orm::RelationDef {
         match self {
-            Self::Parent => Entity::belongs_to(super::doc_info::Entity)
-                .from(Column::ParentId)
-                .to(super::doc_info::Column::Did)
+            Self::DocInfo => Entity::belongs_to(super::doc_info::Entity)
+                .from(Column::Uid)
+                .to(super::doc_info::Column::Uid)
                 .into(),
-            Self::Child => Entity::belongs_to(super::doc_info::Entity)
-                .from(Column::Did)
-                .to(super::doc_info::Column::Did)
+            Self::Tag => Entity::belongs_to(super::tag_info::Entity)
+                .from(Column::TagId)
+                .to(super::tag_info::Column::Tid)
                 .into(),
         }
     }

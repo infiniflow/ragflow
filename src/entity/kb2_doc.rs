@@ -2,26 +2,27 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Deserialize, Serialize)]
-#[sea_orm(table_name = "dialog_2_kb")]
+#[sea_orm(table_name = "kb2_doc")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub dialog_id: i64,
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(index)]
     pub kb_id: i64,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub uid: i64,
 }
 
 #[derive(Debug, Clone, Copy, EnumIter)]
 pub enum Relation {
-    DialogInfo,
+    DocInfo,
     KbInfo,
 }
 
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::DialogInfo => Entity::belongs_to(super::dialog_info::Entity)
-                .from(Column::DialogId)
-                .to(super::dialog_info::Column::DialogId)
+            Self::DocInfo => Entity::belongs_to(super::doc_info::Entity)
+                .from(Column::Uid)
+                .to(super::doc_info::Column::Uid)
                 .into(),
             Self::KbInfo => Entity::belongs_to(super::kb_info::Entity)
                 .from(Column::KbId)
