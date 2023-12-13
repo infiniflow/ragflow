@@ -16,6 +16,7 @@ serde_json = "1.0"
 tracing-subscriber = "0.3.18"
 dotenvy = "0.15.7"
 listenfd = "1.0.1"
+chrono = "0.4.31"
 migration = { path = "./migration" }
 
 [[bin]]

@@ -11,7 +11,7 @@ async fn create(model: web::Json<tag_info::Model>, data: web::Data<AppState>) ->
     let model = Mutation::create_tag(&data.conn, model.into_inner()).await.unwrap();
 
     let mut result = HashMap::new();
-    result.insert("tid", model.uid.unwrap());
+    result.insert("tid", model.tid.unwrap());
 
     let json_response = JsonResponse {
         code: 200,
