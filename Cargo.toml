@@ -9,6 +9,11 @@ edition = "2021"
 actix-web = "4.3.1"
 actix-rt = "2.8.0"
 postgres = "0.19.7"
+sea-orm = {version = "0.12.9", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros"]}
+serde = { version = "1", features = ["derive"] }
 
 [[bin]]
 name = "doc_gpt"
+
+[workspace]
+members = [".", "migration"]
