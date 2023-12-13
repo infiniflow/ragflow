@@ -1,3 +1,7 @@
+mod api;
+mod entity;
+mod service;
+
 use actix_web::{get, web, App, HttpServer, Responder};
 
 #[get("/")]
