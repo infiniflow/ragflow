@@ -4,7 +4,7 @@ mod service;
 
 use std::env;
 use actix_files::Files;
-use actix_web::{web, App, HttpServer, Responder, middleware};
+use actix_web::{web, App, HttpServer, middleware};
 use listenfd::ListenFd;
 use sea_orm::{Database, DatabaseConnection};
 use migration::{Migrator, MigratorTrait};
@@ -55,6 +55,7 @@ async fn main() -> std::io::Result<()> {
 }
 
 fn init(cfg: &mut web::ServiceConfig) {
-    // cfg.service(index);
-    // cfg.service(hello);
+    cfg.service(api::tag::create);
+    cfg.service(api::tag::delete);
+    cfg.service(api::tag::list);
 }

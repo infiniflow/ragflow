@@ -26,7 +26,7 @@ impl RelationTrait for Relation {
                 .into(),
             Self::Tag => Entity::belongs_to(super::tag_info::Entity)
                 .from(Column::TagId)
-                .to(super::tag_info::Column::Uid)
+                .to(super::tag_info::Column::Tid)
                 .into(),
         }
     }

@@ -37,12 +37,13 @@ impl MigrationTrait for Migration {
                     .table(TagInfo::Table)
                     .if_not_exists()
                     .col(
-                        ColumnDef::new(TagInfo::Uid)
+                        ColumnDef::new(TagInfo::Tid)
                             .big_integer()
                             .not_null()
                             .auto_increment()
                             .primary_key(),
                     )
+                    .col(ColumnDef::new(TagInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(TagInfo::TagName).string().not_null())
                     .col(ColumnDef::new(TagInfo::Regx).string())
                     .col(ColumnDef::new(TagInfo::Color).big_integer().default(1))
@@ -221,6 +222,7 @@ enum UserInfo {
 #[derive(DeriveIden)]
 enum TagInfo {
     Table,
+    Tid,
     Uid,
     TagName,
     Regx,
