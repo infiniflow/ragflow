@@ -14,8 +14,10 @@ pub struct Model {
     pub list_style: String,
     pub language: String,
 
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    #[serde(skip_deserializing)]
+    pub created_at: Date,
+    #[serde(skip_deserializing)]
+    pub updated_at: Date,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

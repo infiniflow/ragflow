@@ -1,3 +1,4 @@
+use chrono::{Local, NaiveDate};
 use sea_orm::{ActiveModelTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder};
 use sea_orm::ActiveValue::Set;
 use crate::entity::tag_info;
@@ -38,15 +39,15 @@ impl Mutation {
         form_data: tag_info::Model,
     ) -> Result<tag_info::ActiveModel, DbErr> {
         tag_info::ActiveModel {
-            tid: Set(form_data.tid.to_owned()),
+            tid: Default::default(),
             uid: Set(form_data.uid.to_owned()),
             tag_name: Set(form_data.tag_name.to_owned()),
             regx: Set(form_data.regx.to_owned()),
             color: Set(form_data.color.to_owned()),
             icon: Set(form_data.icon.to_owned()),
             dir: Set(form_data.dir.to_owned()),
-            created_at: Default::default(),
-            updated_at: Default::default(),
+            created_at: Set(Local::now().date_naive()),
+            updated_at: Set(Local::now().date_naive()),
         }
             .save(db)
             .await
@@ -60,7 +61,7 @@ impl Mutation {
         let tag: tag_info::ActiveModel = Entity::find_by_id(id)
             .one(db)
             .await?
-            .ok_or(DbErr::Custom("Cannot find post.".to_owned()))
+            .ok_or(DbErr::Custom("Cannot find tag.".to_owned()))
             .map(Into::into)?;
 
         tag_info::ActiveModel {
@@ -72,7 +73,7 @@ impl Mutation {
             icon: Set(form_data.icon.to_owned()),
             dir: Set(form_data.dir.to_owned()),
             created_at: Default::default(),
-            updated_at: Default::default(),
+            updated_at: Set(Local::now().date_naive()),
         }
             .update(db)
             .await
