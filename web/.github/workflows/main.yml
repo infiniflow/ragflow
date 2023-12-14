@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        node-version: [18]
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 7.18.2
+          run_install: true
+
+      - name: Install Dependencies
+        run: pnpm i
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@releases/v4
+        with:
+          token: ${{ secrets.ACCESS_TOKEN }}
+          folder: dist

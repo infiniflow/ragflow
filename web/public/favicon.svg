@@ -1,0 +1,34 @@
+<svg width="128" height="128" xmlns="http://www.w3.org/2000/svg">
+ <!-- Generator: Sketch 52.6 (67491) - http://www.bohemiancoding.com/sketch -->
+ <title>Vue Pro Components</title>
+ <desc>Created with Sketch.</desc>
+ <defs>
+  <linearGradient id="linearGradient-2" y2="157.637507%" x2="138.57919%" y1="-36.7931464%" x1="-19.8191553%">
+   <stop offset="0%" stop-color="#008CFF"/>
+   <stop offset="100%" stop-color="#0063FF"/>
+  </linearGradient>
+  <linearGradient id="linearGradient-3" y2="114.942679%" x2="30.4400914%" y1="-35.6905737%" x1="68.1279872%">
+   <stop offset="0%" stop-color="#FF8384"/>
+   <stop offset="100%" stop-color="#FF4553"/>
+  </linearGradient>
+  <linearGradient id="svg_1" y2="100%" x2="NaN" y1="0%" x1="NaN">
+   <stop offset="0%" stop-color="#0E89FF"/>
+   <stop offset="58.999999%" stop-color="#04b4ff"/>
+   <stop offset="100%" stop-color="#046fd6"/>
+  </linearGradient>
+ </defs>
+ <g>
+  <title>background</title>
+  <rect fill="none" id="canvas_background" height="402" width="582" y="-1" x="-1"/>
+ </g>
+ <g>
+  <title>Layer 1</title>
+  <g fill-rule="evenodd" fill="none" id="Vue">
+   <g id="Group">
+    <path fill-rule="nonzero" fill="url(#svg_1)" id="Path-Copy" d="m41.870002,99.48c11.38,3 21.63,-7.12 22.34,-8l20.95955,-20.25077c1.15807,-1.11891 1.81777,-2.65635 1.83075,-4.26659l0.32614,-40.44165c0.00867,-1.07512 0.44979,-2.10148 1.22387,-2.84764l13.63369,-13.14181c1.59052,-1.53315 4.12276,-1.48663 5.6559,0.1039c0.71859,0.74548 1.1201,1.74057 1.1201,2.776l0,59.97504c0,2.69431 -1.08722,5.27463 -3.01541,7.15649l-37.71505,36.80909c-2.34617,2.28981 -6.0959,2.27255 -8.42088,-0.03878"/>
+    <path fill-rule="nonzero" fill="url(#linearGradient-2)" id="Path" d="m87,99.11631c-11.38,3 -22.54,-6.75631 -23.25,-7.63631l-20.95955,-20.25077c-1.15807,-1.11891 -1.81777,-2.65635 -1.83075,-4.26659l-0.32614,-40.44165c-0.00867,-1.07512 -0.44979,-2.10148 -1.22387,-2.84764l-13.63369,-13.14181c-1.59052,-1.53315 -4.12276,-1.48663 -5.6559,0.1039c-0.71859,0.74548 -1.1201,1.74057 -1.1201,2.776l0,59.97504c0,2.69431 1.08722,5.27463 3.01541,7.15649l37.7653,36.85813c2.32622,2.27034 6.03731,2.27542 8.36973,0.01146"/>
+    <path fill="url(#linearGradient-3)" id="Path" d="m62.29835,43.587129l-15.74174,-15.21673c-0.79418,-0.76769 -0.81565,-2.03384 -0.04796,-2.82802c0.37683,-0.38983 0.89579,-0.60997 1.43799,-0.60997l31.44586,0c1.10457,0 2,0.89543 2,2c0,0.54137 -0.21946,1.05961 -0.60825,1.43633l-15.70412,15.21673c-0.77497,0.75092 -2.00591,0.75165 -2.78178,0.00166z"/>
+   </g>
+  </g>
+ </g>
+</svg>
