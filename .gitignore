@@ -2,6 +2,7 @@
 # will have compiled files and executables
 debug/
 target/
+__pycache__/
 
 # Remove Cargo.lock from gitignore if creating an executable, leave it for libraries
 # More information here https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
@@ -12,6 +13,7 @@ Cargo.lock
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+*.trie
 
 .idea/
 .env
