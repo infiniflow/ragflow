@@ -9,6 +9,7 @@ edition = "2021"
 actix-web = "4.3.1"
 actix-rt = "2.8.0"
 actix-files = "0.6.2"
+actix-multipart = "0.4"
 postgres = "0.19.7"
 sea-orm = {version = "0.12.9", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros"]}
 serde = { version = "1", features = ["derive"] }
@@ -18,6 +19,7 @@ dotenvy = "0.15.7"
 listenfd = "1.0.1"
 chrono = "0.4.31"
 migration = { path = "./migration" }
+futures-util = "0.3.29"
 
 [[bin]]
 name = "doc_gpt"

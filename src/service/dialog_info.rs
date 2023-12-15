@@ -1,6 +1,8 @@
 use chrono::Local;
 use sea_orm::{ActiveModelTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder};
 use sea_orm::ActiveValue::Set;
+use sea_orm::QueryFilter;
+use sea_orm::ColumnTrait;
 use crate::entity::{dialog_info, kb_info};
 use crate::entity::dialog_info::Entity;
 
@@ -8,7 +10,7 @@ pub struct Query;
 
 impl Query {
     pub async fn find_dialog_info_by_id(db: &DbConn, id: i64) -> Result<Option<dialog_info::Model>, DbErr> {
-        Entity::find_by_id(id).find_with_related(kb_info::Entity).one(db).await
+        Entity::find_by_id(id).one(db).await
     }
 
     pub async fn find_dialog_infos(db: &DbConn) -> Result<Vec<dialog_info::Model>, DbErr> {

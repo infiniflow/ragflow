@@ -3,7 +3,7 @@ use actix_web::{get, HttpResponse, post, web};
 use actix_web::http::Error;
 use crate::api::JsonResponse;
 use crate::AppState;
-use crate::entity::{dialog_info, dialog_info};
+use crate::entity::dialog_info;
 use crate::service::dialog_info::Query;
 use crate::service::dialog_info::Mutation;
 

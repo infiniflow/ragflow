@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod tag;
-mod kb_info;
-mod dialog_info;
+pub(crate) mod kb_info;
+pub(crate) mod dialog_info;
+pub(crate) mod doc_info;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct JsonResponse<T> {
