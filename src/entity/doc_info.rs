@@ -1,5 +1,6 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use crate::entity::kb_info;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "doc_info")]
@@ -9,10 +10,13 @@ pub struct Model {
     #[sea_orm(index)]
     pub uid: i64,
     pub doc_name: String,
-    pub size: i64,
+    pub size: u64,
     #[sea_orm(column_name = "type")]
     pub r#type: String,
     pub kb_progress: f64,
+    pub location: String,
+    #[sea_orm(ignore)]
+    pub kb_infos: Vec<kb_info::Model>,
 
     #[serde(skip_deserializing)]
     pub created_at: Date,

@@ -130,6 +130,7 @@ impl MigrationTrait for Migration {
                         .primary_key())
                     .col(ColumnDef::new(DocInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(DocInfo::DocName).string().not_null())
+                    .col(ColumnDef::new(DocInfo::Location).string().not_null())
                     .col(ColumnDef::new(DocInfo::Size).big_integer().not_null())
                     .col(ColumnDef::new(DocInfo::Type).string().not_null()).comment("doc|folder")
                     .col(ColumnDef::new(DocInfo::KbProgress).float().default(0))
@@ -280,6 +281,7 @@ enum DocInfo {
     Did,
     Uid,
     DocName,
+    Location,
     Size,
     Type,
     KbProgress,
