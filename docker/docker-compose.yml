@@ -1,0 +1,68 @@
+version: '2.2'
+services:
+  es01:
+    container_name: docass-es-01
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - esdata01:/usr/share/elasticsearch/data
+    ports:
+      - ${ES_PORT}:9200
+    environment:
+      - node.name=es01
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=es01
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=false
+      - xpack.security.enabled=false
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - docass
+    restart: always
+
+  kibana:
+    depends_on: 
+      - es01
+    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+    container_name: docass-kibana
+    volumes:
+      - kibanadata:/usr/share/kibana/data
+    ports:
+      - ${KIBANA_PORT}:5601
+    environment:
+      - SERVERNAME=kibana
+      - ELASTICSEARCH_HOSTS=http://es01:9200
+    mem_limit: ${MEM_LIMIT}
+    networks:
+      - docass
+
+  postgres:
+    image: postgres
+    container_name: docass-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - 5455:5455
+    volumes:
+      - pg_data:/usr/share/elasticsearch/data
+    networks:
+      - docass
+    restart: always
+
+
+volumes:
+  esdata01:
+    driver: local
+  kibanadata:
+    driver: local
+  pg_data:
+    driver: local
+
+networks:
+  docass:
+    driver: bridge

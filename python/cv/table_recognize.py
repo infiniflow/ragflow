@@ -37,19 +37,10 @@ class TableTransformer:
                     continue
                 box = [round(x, 2) for x in box.tolist()]
                 feas.append({
-                    "top": box[1], "bottom": box[-1],
-                    "x0": box[0], "x1": box[2],
+                    "type": id2label[label.item()],
                     "score": score.item(),
-                    "label": id2label[label.item()]
+                    "bbox": box
                 })
-            wids = [f["x1"] - f["x0"]
-                    for f in feas if f["label"].find("row") > 0]
-            if wids:
-                mw = max(wids) / 2
-                for f in feas:
-                    if f["label"].find("row") > 0 and f["x1"] - f["x0"] < mw:
-                        f["x1"] += mw
-
             res.append(feas)
         return res
 
@@ -68,7 +59,7 @@ class TableTransformer:
                 )] + ":{:.2f}".format(score), fill=(r, g, b))
             img.save(f"./t{i}.%d.jpg" % randint(0, 1000))
 
-    def __call__(self, images):
+    def __call__(self, images, threshold=0.8):
         res = []
         for i in range(0, len(images), self.batch_size):
             imgs = images[i: i + self.batch_size]
@@ -81,9 +72,9 @@ class TableTransformer:
             # [scores, labels, boxes}]
             with torch.no_grad():
                 bres = self.rec_img_pro.post_process_object_detection(outputs,
-                                                                      threshold=0.80,
+                                                                      threshold=threshold,
                                                                       target_sizes=target_sizes)
-                self.__draw(bres, imgs, self.rec_mdl.config.id2label)
+                #self.__draw(bres, imgs, self.rec_mdl.config.id2label)
                 res.extend(self.__friendly(bres, self.rec_mdl.config.id2label))
         return res
 

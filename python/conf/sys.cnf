@@ -1,4 +1,8 @@
 [online]
 es=127.0.0.1:9200
 idx_nm=toxic
+pgdb_usr=root
+pgdb_pwd=infiniflow_docass
+pgdb_host=127.0.0.1
+pgdb_port=5432
 

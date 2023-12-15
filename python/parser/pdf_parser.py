@@ -323,7 +323,7 @@ class HuParser:
         return layouts
 
     def __table_paddle(self, images):
-        tbls = self.tbl_det([np.array(img) for img in images], thr=0.5)
+        tbls = self.tbl_det([img for img in images], threshold=0.5)
         res = []
         # align left&right for rows, align top&bottom for columns
         for tbl in tbls:
