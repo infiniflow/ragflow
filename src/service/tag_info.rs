@@ -22,7 +22,7 @@ impl Query {
     ) -> Result<(Vec<tag_info::Model>, u64), DbErr> {
         // Setup paginator
         let paginator = Entity::find()
-            .order_by_asc(tag_info::Column::Uid)
+            .order_by_asc(tag_info::Column::Tid)
             .paginate(db, posts_per_page);
         let num_pages = paginator.num_pages().await?;
 
