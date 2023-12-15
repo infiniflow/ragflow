@@ -291,6 +291,12 @@ class PdfChunker(HuChunker):
 
 
 class DocxChunker(HuChunker):
+
+    @dataclass
+    class Fields:
+        text_chunks: List = None
+        table_chunks: List = None
+
     def __init__(self, doc_parser):
         self.doc = doc_parser
         super().__init__()
@@ -336,6 +342,12 @@ class DocxChunker(HuChunker):
 
 
 class ExcelChunker(HuChunker):
+
+    @dataclass
+    class Fields:
+        text_chunks: List = None
+        table_chunks: List = None
+
     def __init__(self, excel_parser):
         self.excel = excel_parser
         super().__init__()
@@ -354,10 +366,10 @@ if __name__ == "__main__":
         from parser import PdfParser
         ckr = PdfChunker(PdfParser())
     if sys.argv[1].split(".")[-1].lower().find("doc") >= 0:
-        from .parser import DocxParser
+        from parser import DocxParser
         ckr = DocxChunker(DocxParser())
     if sys.argv[1].split(".")[-1].lower().find("xlsx") >= 0:
-        from .parser import ExcelParser
+        from parser import ExcelParser
         ckr = ExcelChunker(ExcelParser())
 
     # ckr.html(sys.argv[1])
