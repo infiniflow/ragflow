@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use actix_multipart::Multipart;
 use actix_web::{get, HttpResponse, post, web};
-use actix_web::http::Error;
 use chrono::Local;
-use futures_util::{AsyncWriteExt, StreamExt};
+use futures_util::StreamExt;
 use serde::Deserialize;
 use std::io::Write;
 use crate::api::JsonResponse;
 use crate::AppState;
 use crate::entity::doc_info::Model;
+use crate::errors::AppError;
 use crate::service::doc_info::{Mutation, Query};
 
 #[derive(Debug, Deserialize)]
@@ -35,10 +35,9 @@ pub struct MvParams {
 }
 
 #[get("/v1.0/docs")]
-async fn list(params: web::Json<Params>, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
+async fn list(params: web::Json<Params>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
     let docs = Query::find_doc_infos_by_params(&data.conn, params.into_inner())
-        .await
-        .unwrap();
+        .await?;
 
     let mut result = HashMap::new();
     result.insert("docs", docs);
@@ -51,11 +50,11 @@ async fn list(params: web::Json<Params>, data: web::Data<AppState>) -> Result<Ht
 
     Ok(HttpResponse::Ok()
         .content_type("application/json")
-        .body(serde_json::to_string(&json_response).unwrap()))
+        .body(serde_json::to_string(&json_response)?))
 }
 
 #[post("/v1.0/upload")]
-async fn upload(mut payload: Multipart, filename: web::Data<String>, did: web::Data<i64>, uid: web::Data<i64>, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
+async fn upload(mut payload: Multipart, filename: web::Data<String>, did: web::Data<i64>, uid: web::Data<i64>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
     let mut size = 0;
 
     while let Some(item) = payload.next().await {
@@ -65,16 +64,14 @@ async fn upload(mut payload: Multipart, filename: web::Data<String>, did: web::D
 
         let mut file = web::block(|| std::fs::File::create(filepath))
             .await
-            .unwrap()
-            .unwrap();
+            .unwrap()?;
 
         while let Some(chunk) = field.next().await {
             let data = chunk.unwrap();
             size += data.len() as u64;
             file = web::block(move || file.write_all(&data).map(|_| file))
                 .await
-                .unwrap()
-                .unwrap();
+                .unwrap()?;
         }
     }
 
@@ -89,15 +86,15 @@ async fn upload(mut payload: Multipart, filename: web::Data<String>, did: web::D
         r#type: "".to_string(),
         created_at: Local::now().date_naive(),
         updated_at: Local::now().date_naive(),
-    }).await.unwrap();
+    }).await?;
 
     Ok(HttpResponse::Ok().body("File uploaded successfully"))
 }
 
 #[post("/v1.0/delete_docs")]
-async fn delete(doc_ids: web::Json<Vec<i64>>, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
+async fn delete(doc_ids: web::Json<Vec<i64>>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
     for doc_id in doc_ids.iter() {
-        let _ = Mutation::delete_doc_info(&data.conn, *doc_id).await.unwrap();
+        let _ = Mutation::delete_doc_info(&data.conn, *doc_id).await?;
     }
 
     let json_response = JsonResponse {
@@ -108,12 +105,12 @@ async fn delete(doc_ids: web::Json<Vec<i64>>, data: web::Data<AppState>) -> Resu
 
     Ok(HttpResponse::Ok()
         .content_type("application/json")
-        .body(serde_json::to_string(&json_response).unwrap()))
+        .body(serde_json::to_string(&json_response)?))
 }
 
 #[post("/v1.0/mv_docs")]
-async fn mv(params: web::Json<MvParams>, data: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    Mutation::mv_doc_info(&data.conn, params.dest_did, &params.dids).await.unwrap();
+async fn mv(params: web::Json<MvParams>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
+    Mutation::mv_doc_info(&data.conn, params.dest_did, &params.dids).await?;
 
     let json_response = JsonResponse {
         code: 200,
@@ -123,5 +120,5 @@ async fn mv(params: web::Json<MvParams>, data: web::Data<AppState>) -> Result<Ht
 
     Ok(HttpResponse::Ok()
         .content_type("application/json")
-        .body(serde_json::to_string(&json_response).unwrap()))
+        .body(serde_json::to_string(&json_response)?))
 }
