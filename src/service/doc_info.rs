@@ -1,9 +1,8 @@
 use chrono::Local;
-use postgres::fallible_iterator::FallibleIterator;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder};
 use sea_orm::ActiveValue::Set;
 use sea_orm::QueryFilter;
-use crate::api::doc_info::{FilterParams, Params};
+use crate::api::doc_info::Params;
 use crate::entity::{doc2_doc, doc_info, kb_info, tag_info};
 use crate::entity::doc_info::Entity;
 

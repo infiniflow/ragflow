@@ -1,17 +1,39 @@
 mod api;
 mod entity;
 mod service;
+mod errors;
 
 use std::env;
 use actix_files::Files;
-use actix_web::{web, App, HttpServer, middleware};
+use actix_identity::{CookieIdentityPolicy, IdentityService, RequestIdentity};
+use actix_session::CookieSession;
+use actix_web::{web, App, HttpServer, middleware, Error};
+use actix_web::cookie::time::Duration;
+use actix_web::dev::ServiceRequest;
+use actix_web::error::ErrorUnauthorized;
+use actix_web_httpauth::extractors::bearer::BearerAuth;
 use listenfd::ListenFd;
 use sea_orm::{Database, DatabaseConnection};
 use migration::{Migrator, MigratorTrait};
+use crate::errors::UserError;
 
 #[derive(Debug, Clone)]
 struct AppState {
     conn: DatabaseConnection,
+}
+
+pub(crate) async fn validator(
+    req: ServiceRequest,
+    credentials: BearerAuth,
+) -> Result<ServiceRequest, Error> {
+    if let Some(token) = req.get_identity() {
+        println!("{}, {}",credentials.token(), token);
+        (credentials.token() == token)
+            .then(|| req)
+            .ok_or(ErrorUnauthorized(UserError::InvalidToken))
+    } else {
+        Err(ErrorUnauthorized(UserError::NotLoggedIn))
+    }
 }
 
 #[actix_web::main]
@@ -39,6 +61,19 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .service(Files::new("/static", "./static"))
             .app_data(web::Data::new(state.clone()))
+            .wrap(IdentityService::new(
+                CookieIdentityPolicy::new(&[0; 32])
+                    .name("auth-cookie")
+                    .login_deadline(Duration::seconds(120))
+                    .secure(false),
+            ))
+            .wrap(
+                CookieSession::signed(&[0; 32])
+                    .name("session-cookie")
+                    .secure(false)
+                    // WARNING(alex): This uses the `time` crate, not `std::time`!
+                    .expires_in_time(Duration::seconds(60)),
+            )
             .wrap(middleware::Logger::default())
             .configure(init)
     });
@@ -55,7 +90,23 @@ async fn main() -> std::io::Result<()> {
 }
 
 fn init(cfg: &mut web::ServiceConfig) {
-    cfg.service(api::tag::create);
-    cfg.service(api::tag::delete);
-    cfg.service(api::tag::list);
+    cfg.service(api::tag_info::create);
+    cfg.service(api::tag_info::delete);
+    cfg.service(api::tag_info::list);
+
+    cfg.service(api::kb_info::create);
+    cfg.service(api::kb_info::delete);
+    cfg.service(api::kb_info::list);
+
+    cfg.service(api::doc_info::list);
+    cfg.service(api::doc_info::delete);
+    cfg.service(api::doc_info::mv);
+    cfg.service(api::doc_info::upload);
+
+    cfg.service(api::dialog_info::list);
+    cfg.service(api::dialog_info::delete);
+    cfg.service(api::dialog_info::detail);
+    cfg.service(api::dialog_info::create);
+
+    cfg.service(api::user_info::login);
 }
