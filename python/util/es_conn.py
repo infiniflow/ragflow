@@ -31,7 +31,7 @@ class HuEs:
         self.info = {}
         self.config = config.init(env)
         self.conn()
-        self.idxnm = self.config.get("idx_nm")
+        self.idxnm = self.config.get("idx_nm","")
         if not self.es.ping():
             raise Exception("Can't connect to ES cluster")
 

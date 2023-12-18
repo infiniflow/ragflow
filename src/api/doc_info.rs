@@ -85,6 +85,7 @@ async fn upload(mut payload: Multipart, filename: web::Data<String>, did: web::D
         size,
         kb_infos: Vec::new(),
         kb_progress: 0.0,
+        kb_progress_msg: "".to_string(),
         location: "".to_string(),
         r#type: "".to_string(),
         created_at: Local::now().date_naive(),

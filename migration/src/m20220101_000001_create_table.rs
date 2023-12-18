@@ -134,6 +134,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(DocInfo::Size).big_integer().not_null())
                     .col(ColumnDef::new(DocInfo::Type).string().not_null()).comment("doc|folder")
                     .col(ColumnDef::new(DocInfo::KbProgress).float().default(0))
+                    .col(ColumnDef::new(DocInfo::KbProgressMsg).string().default(""))
                     .col(ColumnDef::new(DocInfo::CreatedAt).date().not_null())
                     .col(ColumnDef::new(DocInfo::UpdatedAt).date().not_null())
                     .col(ColumnDef::new(DocInfo::IsDeleted).boolean().default(false))
@@ -285,6 +286,7 @@ enum DocInfo {
     Size,
     Type,
     KbProgress,
+    KbProgressMsg,
     CreatedAt,
     UpdatedAt,
     IsDeleted,

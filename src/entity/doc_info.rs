@@ -14,6 +14,7 @@ pub struct Model {
     #[sea_orm(column_name = "type")]
     pub r#type: String,
     pub kb_progress: f64,
+    pub kb_progress_msg: String,
     pub location: String,
     #[sea_orm(ignore)]
     pub kb_infos: Vec<kb_info::Model>,
