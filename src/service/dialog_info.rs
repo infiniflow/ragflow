@@ -3,7 +3,7 @@ use sea_orm::{ActiveModelTrait, DbConn, DbErr, DeleteResult, EntityTrait, Pagina
 use sea_orm::ActiveValue::Set;
 use sea_orm::QueryFilter;
 use sea_orm::ColumnTrait;
-use crate::entity::{dialog_info, kb_info};
+use crate::entity::dialog_info;
 use crate::entity::dialog_info::Entity;
 
 pub struct Query;

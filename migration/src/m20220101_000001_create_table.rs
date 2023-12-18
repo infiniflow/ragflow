@@ -24,6 +24,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(UserInfo::ColorSchema).string().default("dark"))
                     .col(ColumnDef::new(UserInfo::ListStyle).string().default("list"))
                     .col(ColumnDef::new(UserInfo::Language).string().default("chinese"))
+                    .col(ColumnDef::new(UserInfo::Password).string().not_null())
                     .col(ColumnDef::new(UserInfo::CreatedAt).date().not_null())
                     .col(ColumnDef::new(UserInfo::UpdatedAt).date().not_null())
                     .col(ColumnDef::new(UserInfo::IsDeleted).boolean().default(false))
@@ -215,6 +216,7 @@ enum UserInfo {
     ColorSchema,
     ListStyle,
     Language,
+    Password,
     CreatedAt,
     UpdatedAt,
     IsDeleted,
