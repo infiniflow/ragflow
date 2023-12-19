@@ -24,6 +24,7 @@ listenfd = "1.0.1"
 chrono = "0.4.31"
 migration = { path = "./migration" }
 futures-util = "0.3.29"
+actix-multipart-extract = "0.1.5"
 
 [[bin]]
 name = "doc_gpt"

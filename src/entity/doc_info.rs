@@ -10,10 +10,11 @@ pub struct Model {
     #[sea_orm(index)]
     pub uid: i64,
     pub doc_name: String,
-    pub size: u64,
+    pub size: i64,
     #[sea_orm(column_name = "type")]
     pub r#type: String,
-    pub kb_progress: f64,
+    pub kb_progress: f32,
+    pub kb_progress_msg: String,
     pub location: String,
     #[sea_orm(ignore)]
     pub kb_infos: Vec<kb_info::Model>,

@@ -97,6 +97,7 @@ fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(api::kb_info::create);
     cfg.service(api::kb_info::delete);
     cfg.service(api::kb_info::list);
+    cfg.service(api::kb_info::add_docs_to_kb);
 
     cfg.service(api::doc_info::list);
     cfg.service(api::doc_info::delete);

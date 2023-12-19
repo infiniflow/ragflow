@@ -359,6 +359,47 @@ class ExcelChunker(HuChunker):
         return flds
 
 
+class PptChunker(HuChunker):
+
+    @dataclass
+    class Fields:
+        text_chunks: List = None
+        table_chunks: List = None
+
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, fnm):
+        from pptx import Presentation
+        ppt = Presentation(fnm)
+        flds = self.Fields()
+        for slide in ppt.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    flds.text_chunks.append((shape.text, None))
+        flds.table_chunks = []
+        return flds
+
+
+class TextChunker(HuChunker):
+
+    @dataclass
+    class Fields:
+        text_chunks: List = None
+        table_chunks: List = None
+
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, fnm):
+        flds = self.Fields()
+        with open(fnm, "r") as f:
+            txt = f.read()
+            flds.text_chunks = self.naive_text_chunk(txt)
+        flds.table_chunks = []
+        return flds
+
+
 if __name__ == "__main__":
     import sys
     sys.path.append(os.path.dirname(__file__) + "/../")

@@ -8,8 +8,8 @@ pub struct Model {
     pub kb_id: i64,
     #[sea_orm(index)]
     pub uid: i64,
-    pub kn_name: String,
-    pub icon: i64,
+    pub kb_name: String,
+    pub icon: i16,
 
     #[serde(skip_deserializing)]
     pub created_at: Date,

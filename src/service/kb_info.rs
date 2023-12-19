@@ -2,6 +2,7 @@ use chrono::Local;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 use sea_orm::ActiveValue::Set;
 use crate::entity::kb_info;
+use crate::entity::kb2_doc;
 use crate::entity::kb_info::Entity;
 
 pub struct Query;
@@ -18,6 +19,13 @@ impl Query {
     pub async fn find_kb_infos_by_uid(db: &DbConn, uid: i64) -> Result<Vec<kb_info::Model>, DbErr> {
         Entity::find()
             .filter(kb_info::Column::Uid.eq(uid))
+            .all(db)
+            .await
+    }
+    
+    pub async fn find_kb_infos_by_name(db: &DbConn, name: String) -> Result<Vec<kb_info::Model>, DbErr> {
+        Entity::find()
+            .filter(kb_info::Column::KbName.eq(name))
             .all(db)
             .await
     }
@@ -48,13 +56,31 @@ impl Mutation {
         kb_info::ActiveModel {
             kb_id: Default::default(),
             uid: Set(form_data.uid.to_owned()),
-            kn_name: Set(form_data.kn_name.to_owned()),
+            kb_name: Set(form_data.kb_name.to_owned()),
             icon: Set(form_data.icon.to_owned()),
             created_at: Set(Local::now().date_naive()),
             updated_at: Set(Local::now().date_naive()),
         }
             .save(db)
             .await
+    }
+
+    pub async fn add_docs(
+        db: &DbConn,
+        kb_id: i64,
+        doc_ids: Vec<i64>
+    )-> Result<(), DbErr>  {
+        for did in doc_ids{
+            let _ = kb2_doc::ActiveModel {
+                id: Default::default(),
+                kb_id: Set(kb_id),
+                did: Set(did),
+            }
+                .save(db)
+                .await?;
+        }
+
+        Ok(())
     }
 
     pub async fn update_kb_info_by_id(
@@ -71,7 +97,7 @@ impl Mutation {
         kb_info::ActiveModel {
             kb_id: kb_info.kb_id,
             uid: kb_info.uid,
-            kn_name: Set(form_data.kn_name.to_owned()),
+            kb_name: Set(form_data.kb_name.to_owned()),
             icon: Set(form_data.icon.to_owned()),
             created_at: Default::default(),
             updated_at: Set(Local::now().date_naive()),

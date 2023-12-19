@@ -47,8 +47,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(TagInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(TagInfo::TagName).string().not_null())
                     .col(ColumnDef::new(TagInfo::Regx).string())
-                    .col(ColumnDef::new(TagInfo::Color).big_integer().default(1))
-                    .col(ColumnDef::new(TagInfo::Icon).big_integer().default(1))
+                    .col(ColumnDef::new(TagInfo::Color).tiny_unsigned().default(1))
+                    .col(ColumnDef::new(TagInfo::Icon).tiny_unsigned().default(1))
                     .col(ColumnDef::new(TagInfo::Dir).string())
                     .col(ColumnDef::new(TagInfo::CreatedAt).date().not_null())
                     .col(ColumnDef::new(TagInfo::UpdatedAt).date().not_null())
@@ -62,6 +62,13 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Tag2Doc::Table)
                     .if_not_exists()
+                    .col(
+                        ColumnDef::new(Tag2Doc::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(Tag2Doc::TagId).big_integer())
                     .col(ColumnDef::new(Tag2Doc::Did).big_integer())
                     .to_owned(),
@@ -73,6 +80,13 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Kb2Doc::Table)
                     .if_not_exists()
+                    .col(
+                        ColumnDef::new(Kb2Doc::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(Kb2Doc::KbId).big_integer())
                     .col(ColumnDef::new(Kb2Doc::Did).big_integer())
                     .to_owned(),
@@ -84,6 +98,13 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Dialog2Kb::Table)
                     .if_not_exists()
+                    .col(
+                        ColumnDef::new(Dialog2Kb::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(Dialog2Kb::DialogId).big_integer())
                     .col(ColumnDef::new(Dialog2Kb::KbId).big_integer())
                     .to_owned(),
@@ -95,6 +116,13 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Doc2Doc::Table)
                     .if_not_exists()
+                    .col(
+                        ColumnDef::new(Doc2Doc::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(Doc2Doc::ParentId).big_integer())
                     .col(ColumnDef::new(Doc2Doc::Did).big_integer())
                     .to_owned(),
@@ -112,7 +140,7 @@ impl MigrationTrait for Migration {
                         .primary_key())
                     .col(ColumnDef::new(KbInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(KbInfo::KbName).string().not_null())
-                    .col(ColumnDef::new(KbInfo::Icon).big_integer().default(1))
+                    .col(ColumnDef::new(KbInfo::Icon).tiny_unsigned().default(1))
                     .col(ColumnDef::new(KbInfo::CreatedAt).date().not_null())
                     .col(ColumnDef::new(KbInfo::UpdatedAt).date().not_null())
                     .col(ColumnDef::new(KbInfo::IsDeleted).boolean().default(false))
@@ -135,6 +163,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(DocInfo::Size).big_integer().not_null())
                     .col(ColumnDef::new(DocInfo::Type).string().not_null()).comment("doc|folder")
                     .col(ColumnDef::new(DocInfo::KbProgress).float().default(0))
+                    .col(ColumnDef::new(DocInfo::KbProgressMsg).string().default(""))
                     .col(ColumnDef::new(DocInfo::CreatedAt).date().not_null())
                     .col(ColumnDef::new(DocInfo::UpdatedAt).date().not_null())
                     .col(ColumnDef::new(DocInfo::IsDeleted).boolean().default(false))
@@ -148,7 +177,7 @@ impl MigrationTrait for Migration {
                     .table(DialogInfo::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(DialogInfo::DialogId)
-                        .big_integer()
+                    .big_integer()
                         .not_null()
                         .auto_increment()
                         .primary_key())
@@ -240,6 +269,7 @@ enum TagInfo {
 #[derive(DeriveIden)]
 enum Tag2Doc {
     Table,
+    Id,
     TagId,
     Did,
 }
@@ -247,6 +277,7 @@ enum Tag2Doc {
 #[derive(DeriveIden)]
 enum Kb2Doc {
     Table,
+    Id,
     KbId,
     Did,
 }
@@ -254,6 +285,7 @@ enum Kb2Doc {
 #[derive(DeriveIden)]
 enum Dialog2Kb {
     Table,
+    Id,
     DialogId,
     KbId,
 }
@@ -261,6 +293,7 @@ enum Dialog2Kb {
 #[derive(DeriveIden)]
 enum Doc2Doc {
     Table,
+    Id,
     ParentId,
     Did,
 }
@@ -287,6 +320,7 @@ enum DocInfo {
     Size,
     Type,
     KbProgress,
+    KbProgressMsg,
     CreatedAt,
     UpdatedAt,
     IsDeleted,

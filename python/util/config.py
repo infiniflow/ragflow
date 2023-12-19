@@ -9,7 +9,6 @@ if not os.path.exists(__fnm): __fnm = "./sys.cnf"
 
 CF.read(__fnm)
 
-
 class Config:
     def __init__(self, env):
         self.env = env

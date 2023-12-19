@@ -10,8 +10,8 @@ pub struct Model {
     pub uid: i64,
     pub tag_name: String,
     pub regx: Option<String>,
-    pub color: i64,
-    pub icon: i64,
+    pub color: u16,
+    pub icon: u16,
     pub dir: Option<String>,
 
     #[serde(skip_deserializing)]
