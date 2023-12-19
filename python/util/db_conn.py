@@ -3,7 +3,7 @@ import time
 from util import config
 import pandas as pd
 
-class Postgre(object):
+class Postgres(object):
     def __init__(self, env, dbnm):
         self.config = config.init(env)
         self.conn = None
@@ -36,9 +36,28 @@ class Postgre(object):
             try:
                 return pd.read_sql(sql, self.conn)
             except Exception as e:
-                logging.error(f"Fail to exec {sql}l  "+str(e))
+                logging.error(f"Fail to exec {sql}  "+str(e))
                 self.__open__()
                 time.sleep(1)
 
         return pd.DataFrame()
+
+
+    def update(self, sql):
+        for _ in range(10):
+            try:
+                cur = self.conn.cursor()
+                cur.execute(sql)
+                updated_rows = cur.rowcount
+                conn.commit()
+                cur.close()
+                return updated_rows
+            except Exception as e:
+                logging.error(f"Fail to exec {sql}  "+str(e))
+                self.__open__()
+                time.sleep(1)
+        return 0
+
+if __name__ == "__main__":
+    Postgres("infiniflow", "docgpt")
 
