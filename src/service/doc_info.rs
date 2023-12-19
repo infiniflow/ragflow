@@ -1,5 +1,5 @@
 use chrono::Local;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder, Unset, Unchanged, ConditionalStatement};
 use sea_orm::ActiveValue::Set;
 use sea_orm::QueryFilter;
 use crate::api::doc_info::Params;
@@ -19,6 +19,14 @@ impl Query {
 
     pub async fn find_doc_infos_by_uid(db: &DbConn, uid: i64) -> Result<Vec<doc_info::Model>, DbErr> {
         Entity::find()
+            .filter(doc_info::Column::Uid.eq(uid))
+            .all(db)
+            .await
+    }
+
+    pub async fn find_doc_infos_by_name(db: &DbConn, uid: i64, name: String) -> Result<Vec<doc_info::Model>, DbErr> {
+        Entity::find()
+            .filter(doc_info::Column::DocName.eq(name))
             .filter(doc_info::Column::Uid.eq(uid))
             .all(db)
             .await
@@ -80,16 +88,32 @@ impl Mutation {
         dids: &[i64]
     ) -> Result<(), DbErr> {
         for did in dids {
+            let d = doc2_doc::Entity::find().filter(doc2_doc::Column::Did.eq(did.to_owned())).all(db).await?;
+            
             let _ = doc2_doc::ActiveModel {
-                parent_id: Set(dest_did),
-                did: Set(*did),
+                id: Set(d[0].id),
+                did: Set(did.to_owned()),
+                parent_id: Set(dest_did)
             }
-                .save(db)
-                .await
-                .unwrap();
+                .update(db)
+                .await?;
         }
 
         Ok(())
+    }
+
+    pub async fn place_doc(
+        db: &DbConn,
+        dest_did: i64,
+        did: i64
+    ) -> Result<doc2_doc::ActiveModel, DbErr>  {
+        doc2_doc::ActiveModel {
+            id: Default::default(),
+            parent_id: Set(dest_did),
+            did: Set(did),
+        }
+            .save(db)
+            .await
     }
 
     pub async fn create_doc_info(
