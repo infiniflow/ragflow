@@ -60,6 +60,20 @@ async fn add_docs_to_kb(param: web::Json<AddDocs2KbParams>, data: web::Data<AppS
         .body(serde_json::to_string(&json_response)?))
 }
 
+#[post("/v1.0/anti_kb_docs")]
+async fn anti_kb_docs(param: web::Json<AddDocs2KbParams>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
+    let _ = Mutation::remove_docs(&data.conn, param.dids.to_owned(), Some(param.kb_id)).await?;
+
+    let json_response = JsonResponse {
+        code: 200,
+        err: "".to_owned(),
+        data: (),
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::to_string(&json_response)?))
+}
 #[get("/v1.0/kbs")]
 async fn list(model: web::Json<kb_info::Model>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
     let kbs = Query::find_kb_infos_by_uid(&data.conn, model.uid).await?;
@@ -91,4 +105,28 @@ async fn delete(model: web::Json<kb_info::Model>, data: web::Data<AppState>) -> 
     Ok(HttpResponse::Ok()
         .content_type("application/json")
         .body(serde_json::to_string(&json_response)?))
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DocIdsParams {
+    pub uid: i64,
+    pub dids: Vec<i64>
+}
+
+#[post("/v1.0/all_relevents")]
+async fn all_relevents(params: web::Json<DocIdsParams>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
+    let dids = crate::service::doc_info::Query::all_descendent_ids(&data.conn, &params.dids).await?;
+    let mut result = HashMap::new();
+    let kbs = Query::find_kb_by_docs(&data.conn, dids).await?;
+    result.insert("kbs", kbs);
+    let json_response = JsonResponse {
+        code: 200,
+        err: "".to_owned(),
+        data: result,
+    };
+
+    Ok(HttpResponse::Ok()
+      .content_type("application/json")
+      .body(serde_json::to_string(&json_response)?))
+
 }

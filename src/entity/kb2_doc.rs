@@ -1,7 +1,8 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use chrono::{DateTime, FixedOffset};
 
-#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "kb2_doc")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = true)]
@@ -10,6 +11,14 @@ pub struct Model {
     pub kb_id: i64,
     #[sea_orm(index)]
     pub did: i64,
+    #[serde(skip_deserializing)]
+    pub kb_progress: f32,
+    #[serde(skip_deserializing)]
+    pub kb_progress_msg: String,
+    #[serde(skip_deserializing)]
+    pub updated_at: DateTime<FixedOffset>,
+    #[serde(skip_deserializing)]
+    pub is_deleted: bool,
 }
 
 #[derive(Debug, Clone, Copy, EnumIter)]

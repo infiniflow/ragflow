@@ -1,3 +1,4 @@
+use chrono::{DateTime, FixedOffset};
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -8,13 +9,17 @@ pub struct Model {
     pub dialog_id: i64,
     #[sea_orm(index)]
     pub uid: i64,
+    #[serde(skip_deserializing)]
+    pub kb_id: i64,
     pub dialog_name: String,
     pub history: String,
 
     #[serde(skip_deserializing)]
-    pub created_at: Date,
+    pub created_at: DateTime<FixedOffset>,
     #[serde(skip_deserializing)]
-    pub updated_at: Date,
+    pub updated_at: DateTime<FixedOffset>,
+    #[serde(skip_deserializing)]
+    pub is_deleted: bool
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

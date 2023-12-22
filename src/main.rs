@@ -98,16 +98,22 @@ fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(api::kb_info::delete);
     cfg.service(api::kb_info::list);
     cfg.service(api::kb_info::add_docs_to_kb);
+    cfg.service(api::kb_info::anti_kb_docs);
+    cfg.service(api::kb_info::all_relevents);
 
     cfg.service(api::doc_info::list);
     cfg.service(api::doc_info::delete);
     cfg.service(api::doc_info::mv);
     cfg.service(api::doc_info::upload);
+    cfg.service(api::doc_info::new_folder);
+    cfg.service(api::doc_info::rename);
 
     cfg.service(api::dialog_info::list);
     cfg.service(api::dialog_info::delete);
-    cfg.service(api::dialog_info::detail);
     cfg.service(api::dialog_info::create);
+    cfg.service(api::dialog_info::update_history);
 
     cfg.service(api::user_info::login);
+    cfg.service(api::user_info::register);
+    cfg.service(api::user_info::setting);
 }

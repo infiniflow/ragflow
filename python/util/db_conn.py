@@ -49,7 +49,7 @@ class Postgres(object):
                 cur = self.conn.cursor()
                 cur.execute(sql)
                 updated_rows = cur.rowcount
-                conn.commit()
+                self.conn.commit()
                 cur.close()
                 return updated_rows
             except Exception as e:
