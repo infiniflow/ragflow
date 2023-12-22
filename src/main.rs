@@ -98,11 +98,8 @@ fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(api::kb_info::delete);
     cfg.service(api::kb_info::list);
     cfg.service(api::kb_info::add_docs_to_kb);
-<<<<<<< HEAD
     cfg.service(api::kb_info::anti_kb_docs);
     cfg.service(api::kb_info::all_relevents);
-=======
->>>>>>> upstream/main
 
     cfg.service(api::doc_info::list);
     cfg.service(api::doc_info::delete);
