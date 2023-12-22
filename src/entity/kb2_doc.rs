@@ -11,7 +11,6 @@ pub struct Model {
     pub kb_id: i64,
     #[sea_orm(index)]
     pub did: i64,
-<<<<<<< HEAD
     #[serde(skip_deserializing)]
     pub kb_progress: f32,
     #[serde(skip_deserializing)]
@@ -20,8 +19,6 @@ pub struct Model {
     pub updated_at: DateTime<FixedOffset>,
     #[serde(skip_deserializing)]
     pub is_deleted: bool,
-=======
->>>>>>> upstream/main
 }
 
 #[derive(Debug, Clone, Copy, EnumIter)]

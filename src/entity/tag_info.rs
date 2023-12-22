@@ -11,19 +11,12 @@ pub struct Model {
     #[sea_orm(index)]
     pub uid: i64,
     pub tag_name: String,
-<<<<<<< HEAD
     #[serde(skip_deserializing)]
     pub regx: String,
     pub color: i16,
     pub icon: i16,
     #[serde(skip_deserializing)]
     pub folder_id: i64,
-=======
-    pub regx: Option<String>,
-    pub color: u16,
-    pub icon: u16,
-    pub dir: Option<String>,
->>>>>>> upstream/main
 
     #[serde(skip_deserializing)]
     pub created_at: DateTime<FixedOffset>,
