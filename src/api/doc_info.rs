@@ -142,7 +142,6 @@ async fn mv(params: web::Json<MvParams>, data: web::Data<AppState>) -> Result<Ht
         .body(serde_json::to_string(&json_response)?))
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct NewFoldParams {
     pub uid: i64,
