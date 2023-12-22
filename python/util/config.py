@@ -14,9 +14,9 @@ class Config:
         self.env = env
         if env == "spark":CF.read("./cv.cnf")
 
-    def get(self, key):
+    def get(self, key, default=None):
         global CF
-        return CF.get(self.env, key)
+        return CF[self.env].get(key, default)
 
 def init(env):
     return Config(env)

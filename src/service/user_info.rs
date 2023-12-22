@@ -1,9 +1,13 @@
-use chrono::Local;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
+use chrono::{FixedOffset, Utc};
+use migration::Expr;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, UpdateResult};
 use sea_orm::ActiveValue::Set;
 use crate::entity::user_info;
 use crate::entity::user_info::Entity;
 
+fn now()->chrono::DateTime<FixedOffset>{
+    Utc::now().with_timezone(&FixedOffset::east_opt(3600*8).unwrap())
+}
 pub struct Query;
 
 impl Query {
@@ -44,52 +48,64 @@ pub struct Mutation;
 impl Mutation {
     pub async fn create_user(
         db: &DbConn,
-        form_data: user_info::Model,
+        form_data: &user_info::Model,
     ) -> Result<user_info::ActiveModel, DbErr> {
         user_info::ActiveModel {
             uid: Default::default(),
             email: Set(form_data.email.to_owned()),
             nickname: Set(form_data.nickname.to_owned()),
-            avatar_url: Set(form_data.avatar_url.to_owned()),
-            color_schema: Set(form_data.color_schema.to_owned()),
+            avatar_base64: Set(form_data.avatar_base64.to_owned()),
+            color_scheme: Set(form_data.color_scheme.to_owned()),
             list_style: Set(form_data.list_style.to_owned()),
             language: Set(form_data.language.to_owned()),
             password: Set(form_data.password.to_owned()),
-            created_at: Set(Local::now().date_naive()),
-            updated_at: Set(Local::now().date_naive()),
+            last_login_at: Set(now()),
+            created_at: Set(now()),
+            updated_at: Set(now()),
         }
             .save(db)
             .await
     }
 
-    pub async fn update_tag_by_id(
+    pub async fn update_user_by_id(
         db: &DbConn,
-        id: i64,
-        form_data: user_info::Model,
+        form_data: &user_info::Model,
     ) -> Result<user_info::Model, DbErr> {
-        let user: user_info::ActiveModel = Entity::find_by_id(id)
+        let usr: user_info::ActiveModel = Entity::find_by_id(form_data.uid)
             .one(db)
             .await?
-            .ok_or(DbErr::Custom("Cannot find tag.".to_owned()))
+            .ok_or(DbErr::Custom("Cannot find user.".to_owned()))
             .map(Into::into)?;
 
         user_info::ActiveModel {
-            uid: user.uid,
+            uid: Set(form_data.uid),
             email: Set(form_data.email.to_owned()),
             nickname: Set(form_data.nickname.to_owned()),
-            avatar_url: Set(form_data.avatar_url.to_owned()),
-            color_schema: Set(form_data.color_schema.to_owned()),
+            avatar_base64: Set(form_data.avatar_base64.to_owned()),
+            color_scheme: Set(form_data.color_scheme.to_owned()),
             list_style: Set(form_data.list_style.to_owned()),
             language: Set(form_data.language.to_owned()),
             password: Set(form_data.password.to_owned()),
-            created_at: Default::default(),
-            updated_at: Set(Local::now().date_naive()),
+            updated_at: Set(now()),
+            last_login_at: usr.last_login_at,
+            created_at:usr.created_at,
         }
             .update(db)
             .await
     }
 
-    pub async fn delete_tag(db: &DbConn, tid: i64) -> Result<DeleteResult, DbErr> {
+    pub async fn update_login_status(
+        uid: i64,
+        db: &DbConn
+    ) -> Result<UpdateResult, DbErr> {
+        Entity::update_many()
+            .col_expr(user_info::Column::LastLoginAt,  Expr::value(now()))
+            .filter(user_info::Column::Uid.eq(uid))
+            .exec(db)
+            .await
+    }
+
+    pub async fn delete_user(db: &DbConn, tid: i64) -> Result<DeleteResult, DbErr> {
         let tag: user_info::ActiveModel = Entity::find_by_id(tid)
             .one(db)
             .await?
@@ -99,7 +115,7 @@ impl Mutation {
         tag.delete(db).await
     }
 
-    pub async fn delete_all_tags(db: &DbConn) -> Result<DeleteResult, DbErr> {
+    pub async fn delete_all(db: &DbConn) -> Result<DeleteResult, DbErr> {
         Entity::delete_many().exec(db).await
     }
 }

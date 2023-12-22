@@ -1,10 +1,15 @@
-import json, re, sys, os, hashlib, copy, glob, util, time, random
-from util.es_conn import HuEs, Postgres
+import json, os, sys, hashlib, copy, time, random, re, logging, torch
+from os.path import dirname, realpath
+sys.path.append(dirname(realpath(__file__)) + "/../")
+from util.es_conn import HuEs
+from util.db_conn import Postgres
+from util.minio_conn import HuMinio
 from util import rmSpace, findMaxDt
 from FlagEmbedding import FlagModel
 from nlp import huchunk, huqie
 import base64, hashlib
 from io import BytesIO
+import pandas as pd
 from elasticsearch_dsl import Q
 from parser import (
     PdfParser,
@@ -22,73 +27,115 @@ from nlp.huchunk import (
 ES = HuEs("infiniflow")
 BATCH_SIZE = 64
 PG = Postgres("infiniflow", "docgpt")
+MINIO = HuMinio("infiniflow")
 
 PDF = PdfChunker(PdfParser())
 DOC = DocxChunker(DocxParser())
 EXC = ExcelChunker(ExcelParser())
 PPT = PptChunker()
 
+UPLOAD_LOCATION = os.environ.get("UPLOAD_LOCATION", "./")
+logging.warning(f"The files are stored in {UPLOAD_LOCATION}, please check it!")
+
 
 def chuck_doc(name):
-    name = os.path.split(name)[-1].lower().split(".")[-1]
-    if name.find("pdf") >= 0: return PDF(name)
-    if name.find("doc") >= 0: return DOC(name)
-    if name.find("xlsx") >= 0: return EXC(name)
-    if name.find("ppt") >= 0: return PDF(name)
-    if name.find("pdf") >= 0: return PPT(name)
+    suff = os.path.split(name)[-1].lower().split(".")[-1]
+    if suff.find("pdf") >= 0: return PDF(name)
+    if suff.find("doc") >= 0: return DOC(name)
+    if re.match(r"(xlsx|xlsm|xltx|xltm)", suff): return EXC(name)
+    if suff.find("ppt") >= 0: return PPT(name)
     
-    if re.match(r"(txt|csv)", name): return TextChunker(name)
+    return TextChunker()(name)
 
 
 def collect(comm, mod, tm):
     sql = f"""
     select 
+    id as kb2doc_id,
+    kb_id,
+    did,
+    updated_at,
+    is_deleted
+    from kb2_doc
+    where
+    updated_at >= '{tm}'
+    and kb_progress = 0
+    and MOD(did, {comm}) = {mod}
+    order by updated_at asc
+    limit 1000
+    """
+    kb2doc = PG.select(sql)
+    if len(kb2doc) == 0:return pd.DataFrame()
+
+    sql = """
+    select 
     did,
     uid,
     doc_name,
     location,
-    updated_at
-    from docinfo
+    size
+    from doc_info
     where 
-    updated_at >= '{tm}' 
-    and kb_progress = 0
-    and type = 'doc'
-    and MOD(uid, {comm}) = {mod}
-    order by updated_at asc
-    limit 1000
-    """
-    df = PG.select(sql)
-    df = df.fillna("")
-    mtm = str(df["updated_at"].max())[:19]
-    print("TOTAL:", len(df), "To: ", mtm)
-    return df, mtm
+    did in (%s)
+    """%",".join([str(i) for i in kb2doc["did"].unique()])
+    docs = PG.select(sql)
+    docs = docs.fillna("")
+    docs = docs.join(kb2doc.set_index("did"), on="did", how="left")
+
+    mtm = str(docs["updated_at"].max())[:19]
+    print("TOTAL:", len(docs), "To: ", mtm)
+    return docs
 
 
-def set_progress(did, prog, msg):
+def set_progress(kb2doc_id, prog, msg="Processing..."):
     sql = f"""
-    update docinfo set kb_progress={prog}, kb_progress_msg='{msg}' where did={did}
+    update kb2_doc set kb_progress={prog}, kb_progress_msg='{msg}' 
+    where
+    id={kb2doc_id}
     """
     PG.update(sql)
 
 
 def build(row):
     if row["size"] > 256000000:
-        set_progress(row["did"], -1, "File size exceeds( <= 256Mb )")
+        set_progress(row["kb2doc_id"], -1, "File size exceeds( <= 256Mb )")
         return  []
+    res = ES.search(Q("term", doc_id=row["did"]))
+    if ES.getTotal(res) > 0:
+        ES.updateScriptByQuery(Q("term", doc_id=row["did"]), 
+                               scripts="""
+                               if(!ctx._source.kb_id.contains('%s'))
+                                 ctx._source.kb_id.add('%s');
+                               """%(str(row["kb_id"]), str(row["kb_id"])),
+                               idxnm = index_name(row["uid"])
+                              )
+        set_progress(row["kb2doc_id"], 1, "Done")
+        return []
+
+    random.seed(time.time())
+    set_progress(row["kb2doc_id"], random.randint(0, 20)/100., "Finished preparing! Start to slice file!")
+    try:
+        obj = chuck_doc(os.path.join(UPLOAD_LOCATION, row["location"]))
+    except Exception as e:
+        if re.search("(No such file|not found)", str(e)):
+            set_progress(row["kb2doc_id"], -1, "Can not find file <%s>"%row["doc_name"])
+        else:
+            set_progress(row["kb2doc_id"], -1, f"Internal system error: %s"%str(e).replace("'", ""))
+        return []
+
+    print(row["doc_name"], obj)
+    if not obj.text_chunks and not obj.table_chunks: 
+        set_progress(row["kb2doc_id"], 1, "Nothing added! Mostly, file type unsupported yet.")
+        return  []
+
+    set_progress(row["kb2doc_id"], random.randint(20, 60)/100., "Finished slicing files. Start to embedding the content.")
+
     doc = {
         "doc_id": row["did"],
+        "kb_id": [str(row["kb_id"])],
         "title_tks": huqie.qie(os.path.split(row["location"])[-1]),
-        "updated_at": row["updated_at"]
+        "updated_at": str(row["updated_at"]).replace("T", " ")[:19]
     }
-    random.seed(time.time())
-    set_progress(row["did"], random.randint(0, 20)/100., "Finished preparing! Start to slice file!")
-    obj = chuck_doc(row["location"])
-    if not obj: 
-        set_progress(row["did"], -1, "Unsuported file type.")
-        return  []
-
-    set_progress(row["did"], random.randint(20, 60)/100.)
-
     output_buffer = BytesIO()
     docs = []
     md5 = hashlib.md5()
@@ -97,12 +144,11 @@ def build(row):
         md5.update((txt + str(d["doc_id"])).encode("utf-8"))
         d["_id"] = md5.hexdigest()
         d["content_ltks"] = huqie.qie(txt)
-        d["docnm_kwd"] = rmSpace(d["docnm_tks"])
         if not img:
             docs.append(d)
             continue
         img.save(output_buffer, format='JPEG')
-        d["img_bin"] = base64.b64encode(output_buffer.getvalue())
+        d["img_bin"] = str(output_buffer.getvalue())
         docs.append(d)
 
     for arr, img in obj.table_chunks:
@@ -115,9 +161,11 @@ def build(row):
                 docs.append(d)
                 continue
             img.save(output_buffer, format='JPEG')
-            d["img_bin"] = base64.b64encode(output_buffer.getvalue())
+            MINIO.put("{}-{}".format(row["uid"], row["kb_id"]), d["_id"],
+                      output_buffer.getvalue())
+            d["img_id"] = "{}-{}".format(row["uid"], row["kb_id"])
             docs.append(d)
-    set_progress(row["did"], random.randint(60, 70)/100., "Finished slicing. Start to embedding the content.")
+    set_progress(row["kb2doc_id"], random.randint(60, 70)/100., "Continue embedding the content.")
 
     return docs
 
@@ -127,7 +175,7 @@ def index_name(uid):return f"docgpt_{uid}"
 def init_kb(row):
     idxnm = index_name(row["uid"])
     if ES.indexExist(idxnm): return
-    return ES.createIdx(idxnm, json.load(open("res/mapping.json", "r")))
+    return ES.createIdx(idxnm, json.load(open("conf/mapping.json", "r")))
 
 
 model = None
@@ -138,27 +186,59 @@ def embedding(docs):
     vects = 0.1 * tts + 0.9 * cnts
     assert len(vects) == len(docs)
     for i,d in enumerate(docs):d["q_vec"] = vects[i].tolist()
-    for d in docs:
-        set_progress(d["doc_id"], random.randint(70, 95)/100., 
-                     "Finished embedding! Start to build index!")
+
+
+def rm_doc_from_kb(df):
+    if len(df) == 0:return
+    for _,r in df.iterrows():
+        ES.updateScriptByQuery(Q("term", doc_id=r["did"]), 
+                               scripts="""
+                               if(ctx._source.kb_id.contains('%s'))
+                                 ctx._source.kb_id.remove(
+                                     ctx._source.kb_id.indexOf('%s')
+                               );
+                                """%(str(r["kb_id"]),str(r["kb_id"])),
+                               idxnm = index_name(r["uid"])
+                              )
+    if len(df) == 0:return
+    sql = """
+    delete from kb2_doc where id in (%s)
+    """%",".join([str(i) for i in df["kb2doc_id"]])
+    PG.update(sql)
 
 
 def main(comm, mod):
+    global model
+    from FlagEmbedding import FlagModel
+    model = FlagModel('/opt/home/kevinhu/data/bge-large-zh-v1.5/',
+                      query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
+                      use_fp16=torch.cuda.is_available())
     tm_fnm = f"res/{comm}-{mod}.tm"
-    tmf = open(tm_fnm, "a+")
     tm = findMaxDt(tm_fnm)
-    rows, tm = collect(comm, mod, tm)
-    for r in rows:
-        if r["is_deleted"]: 
-            ES.deleteByQuery(Q("term", dock_id=r["did"]), index_name(r["uid"]))
-            continue
+    rows = collect(comm, mod, tm)
+    if len(rows) == 0:return
 
+    rm_doc_from_kb(rows.loc[rows.is_deleted == True])
+    rows = rows.loc[rows.is_deleted == False].reset_index(drop=True)
+    if len(rows) == 0:return
+    tmf = open(tm_fnm, "a+")
+    for _, r in rows.iterrows():
         cks = build(r)
+        if not cks:
+            tmf.write(str(r["updated_at"]) + "\n")
+            continue
         ## TODO: exception handler
         ## set_progress(r["did"], -1, "ERROR: ")
         embedding(cks)
-        if cks: init_kb(r)
-        ES.bulk(cks, index_name(r["uid"]))
+
+        set_progress(r["kb2doc_id"], random.randint(70, 95)/100., 
+                     "Finished embedding! Start to build index!")
+        init_kb(r)
+        es_r = ES.bulk(cks, index_name(r["uid"]))
+        if es_r:
+            set_progress(r["kb2doc_id"], -1, "Index failure!")
+            print(es_r)
+        else: set_progress(r["kb2doc_id"], 1., "Done!")
         tmf.write(str(r["updated_at"]) + "\n")
     tmf.close()
 
@@ -166,6 +246,5 @@ def main(comm, mod):
 if __name__ == "__main__":
     from mpi4py import MPI
     comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    main(comm, rank)
+    main(comm.Get_size(), comm.Get_rank())
 

@@ -5,10 +5,10 @@ import time
 import copy
 import elasticsearch
 from elasticsearch import Elasticsearch
-from elasticsearch_dsl import UpdateByQuery, Search, Index
+from elasticsearch_dsl import UpdateByQuery, Search, Index, Q
 from util import config
 
-print("Elasticsearch version: ", elasticsearch.__version__)
+logging.info("Elasticsearch version: ", elasticsearch.__version__)
 
 
 def instance(env):
@@ -20,7 +20,7 @@ def instance(env):
         timeout=600
     )
 
-    print("ES: ", ES_DRESS, ES.info())
+    logging.info("ES: ", ES_DRESS, ES.info())
 
     return ES
 
@@ -31,7 +31,7 @@ class HuEs:
         self.info = {}
         self.config = config.init(env)
         self.conn()
-        self.idxnm = self.config.get("idx_nm","")
+        self.idxnm = self.config.get("idx_nm", "")
         if not self.es.ping():
             raise Exception("Can't connect to ES cluster")
 
@@ -46,6 +46,7 @@ class HuEs:
                     break
             except Exception as e:
                 logging.error("Fail to connect to es: " + str(e))
+                time.sleep(1)
 
     def version(self):
         v = self.info.get("version", {"number": "5.6"})
@@ -121,7 +122,6 @@ class HuEs:
             acts.append(
                 {"update": {"_id": id, "_index": ids[id]["_index"]}, "retry_on_conflict": 100})
             acts.append({"doc": d, "doc_as_upsert": "true"})
-            logging.info("bulk upsert: %s" % id)
 
         res = []
         for _ in range(100):
@@ -148,7 +148,6 @@ class HuEs:
                 return res
             except Exception as e:
                 logging.warn("Fail to bulk: " + str(e))
-                print(e)
                 if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
                     time.sleep(3)
                     continue
@@ -229,7 +228,7 @@ class HuEs:
         return False
 
     def search(self, q, idxnm=None, src=False, timeout="2s"):
-        print(json.dumps(q, ensure_ascii=False))
+        if not isinstance(q, dict): q = Search().query(q).to_dict()
         for i in range(3):
             try:
                 res = self.es.search(index=(self.idxnm if not idxnm else idxnm),
@@ -271,8 +270,30 @@ class HuEs:
                               str(e) + "【Q】：" + str(q.to_dict()))
                 if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
                     continue
+                self.conn()
 
         return False
+
+
+    def updateScriptByQuery(self, q, scripts, idxnm=None):
+        ubq = UpdateByQuery(index=self.idxnm if not idxnm else idxnm).using(self.es).query(q)
+        ubq = ubq.script(source=scripts)
+        ubq = ubq.params(refresh=True)
+        ubq = ubq.params(slices=5)
+        ubq = ubq.params(conflicts="proceed")
+        for i in range(3):
+            try:
+                r = ubq.execute()
+                return True
+            except Exception as e:
+                logging.error("ES updateByQuery exception: " +
+                              str(e) + "【Q】：" + str(q.to_dict()))
+                if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
+                    continue
+                self.conn()
+
+        return False
+
 
     def deleteByQuery(self, query, idxnm=""):
         for i in range(3):
@@ -307,7 +328,6 @@ class HuEs:
                                        routing=routing, refresh=False)  # , doc_type="_doc")
                 return True
             except Exception as e:
-                print(e)
                 logging.error("ES update exception: " + str(e) + " id：" + str(id) + ", version:" + str(self.version()) +
                               json.dumps(script, ensure_ascii=False))
                 if str(e).find("Timeout") > 0:

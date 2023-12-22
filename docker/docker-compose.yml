@@ -54,6 +54,22 @@ services:
       - docgpt
     restart: always
 
+  minio:
+    image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
+    container_name: docgpt-minio
+    command: server --console-address ":9001" /data
+    ports:
+      - 9000:9000
+      - 9001:9001
+    environment:
+      - MINIO_ROOT_USER=${MINIO_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - docgpt
+    restart: always
+
 
 volumes:
   esdata01:
@@ -61,6 +77,8 @@ volumes:
   kibanadata:
     driver: local
   pg_data:
+    driver: local
+  minio_data:
     driver: local
 
 networks:

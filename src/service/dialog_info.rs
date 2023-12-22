@@ -1,11 +1,15 @@
-use chrono::Local;
-use sea_orm::{ActiveModelTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder};
+use chrono::{Local, FixedOffset, Utc};
+use migration::Expr;
+use sea_orm::{ActiveModelTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder, UpdateResult};
 use sea_orm::ActiveValue::Set;
 use sea_orm::QueryFilter;
 use sea_orm::ColumnTrait;
 use crate::entity::dialog_info;
 use crate::entity::dialog_info::Entity;
 
+fn now()->chrono::DateTime<FixedOffset>{
+    Utc::now().with_timezone(&FixedOffset::east_opt(3600*8).unwrap())
+}
 pub struct Query;
 
 impl Query {
@@ -20,6 +24,7 @@ impl Query {
     pub async fn find_dialog_infos_by_uid(db: &DbConn, uid: i64) -> Result<Vec<dialog_info::Model>, DbErr> {
         Entity::find()
             .filter(dialog_info::Column::Uid.eq(uid))
+            .filter(dialog_info::Column::IsDeleted.eq(false))
             .all(db)
             .await
     }
@@ -45,15 +50,19 @@ pub struct Mutation;
 impl Mutation {
     pub async fn create_dialog_info(
         db: &DbConn,
-        form_data: dialog_info::Model,
+        uid: i64,
+        kb_id: i64,
+        name: &String
     ) -> Result<dialog_info::ActiveModel, DbErr> {
         dialog_info::ActiveModel {
             dialog_id: Default::default(),
-            uid: Set(form_data.uid.to_owned()),
-            dialog_name: Set(form_data.dialog_name.to_owned()),
-            history: Set(form_data.history.to_owned()),
-            created_at: Set(Local::now().date_naive()),
-            updated_at: Set(Local::now().date_naive()),
+            uid: Set(uid),
+            kb_id: Set(kb_id),
+            dialog_name: Set(name.to_owned()),
+            history: Set("".to_owned()),
+            created_at: Set(now()),
+            updated_at: Set(now()),
+            is_deleted: Default::default()
         }
             .save(db)
             .await
@@ -61,35 +70,25 @@ impl Mutation {
 
     pub async fn update_dialog_info_by_id(
         db: &DbConn,
-        id: i64,
-        form_data: dialog_info::Model,
-    ) -> Result<dialog_info::Model, DbErr> {
-        let dialog_info: dialog_info::ActiveModel = Entity::find_by_id(id)
-            .one(db)
-            .await?
-            .ok_or(DbErr::Custom("Cannot find.".to_owned()))
-            .map(Into::into)?;
-
-        dialog_info::ActiveModel {
-            dialog_id: dialog_info.dialog_id,
-            uid: dialog_info.uid,
-            dialog_name: Set(form_data.dialog_name.to_owned()),
-            history: Set(form_data.history.to_owned()),
-            created_at: Default::default(),
-            updated_at: Set(Local::now().date_naive()),
-        }
-            .update(db)
+        dialog_id: i64,
+        dialog_name:&String,
+        history: &String
+    ) -> Result<UpdateResult, DbErr> {
+        Entity::update_many()
+            .col_expr(dialog_info::Column::DialogName, Expr::value(dialog_name))
+            .col_expr(dialog_info::Column::History, Expr::value(history))
+            .col_expr(dialog_info::Column::UpdatedAt, Expr::value(now()))
+            .filter(dialog_info::Column::DialogId.eq(dialog_id))
+            .exec(db)
             .await
     }
 
-    pub async fn delete_dialog_info(db: &DbConn, kb_id: i64) -> Result<DeleteResult, DbErr> {
-        let tag: dialog_info::ActiveModel = Entity::find_by_id(kb_id)
-            .one(db)
-            .await?
-            .ok_or(DbErr::Custom("Cannot find.".to_owned()))
-            .map(Into::into)?;
-
-        tag.delete(db).await
+    pub async fn delete_dialog_info(db: &DbConn, dialog_id: i64) -> Result<UpdateResult, DbErr> {
+        Entity::update_many()
+            .col_expr(dialog_info::Column::IsDeleted, Expr::value(true))
+            .filter(dialog_info::Column::DialogId.eq(dialog_id))
+            .exec(db)
+            .await
     }
 
     pub async fn delete_all_dialog_infos(db: &DbConn) -> Result<DeleteResult, DbErr> {

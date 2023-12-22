@@ -1,12 +1,18 @@
 use std::collections::HashMap;
 use actix_web::{get, HttpResponse, post, web};
 use actix_web_httpauth::middleware::HttpAuthentication;
+use serde::Deserialize;
 use crate::validator;
 use crate::api::JsonResponse;
 use crate::AppState;
 use crate::entity::tag_info;
 use crate::errors::AppError;
 use crate::service::tag_info::{Mutation, Query};
+
+#[derive(Debug, Deserialize)]
+pub struct TagListParams {
+    pub uid: i64
+}
 
 #[post("/v1.0/create_tag")]
 async fn create(model: web::Json<tag_info::Model>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
@@ -41,9 +47,12 @@ async fn delete(model: web::Json<tag_info::Model>, data: web::Data<AppState>) ->
         .body(serde_json::to_string(&json_response)?))
 }
 
-#[get("/v1.0/tags", wrap = "HttpAuthentication::bearer(validator)")]
-async fn list(data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
-    let tags = Query::find_tag_infos(&data.conn).await?;
+
+//#[get("/v1.0/tags", wrap = "HttpAuthentication::bearer(validator)")]
+
+#[post("/v1.0/tags")]
+async fn list(param: web::Json<TagListParams>, data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
+    let tags = Query::find_tags_by_uid(param.uid, &data.conn).await?;
 
     let mut result = HashMap::new();
     result.insert("tags", tags);
