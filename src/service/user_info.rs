@@ -23,8 +23,11 @@ impl Query {
             .await
     }
 
-    pub async fn find_user_infos(db: &DbConn) -> Result<Vec<user_info::Model>, DbErr> {
-        Entity::find().all(db).await
+    pub async fn find_user_infos(db: &DbConn, email:&String) -> Result<Option<user_info::Model>, DbErr> {
+        Entity::find()
+            .filter(user_info::Column::Email.eq(email))
+            .one(db)
+            .await
     }
 
     pub async fn find_user_infos_in_page(

@@ -1,5 +1,9 @@
-use sea_orm_migration::prelude::*;
+use sea_orm_migration::{prelude::*, sea_orm::Statement};
+use chrono::{FixedOffset, Utc};
 
+fn now()->chrono::DateTime<FixedOffset>{
+    Utc::now().with_timezone(&FixedOffset::east_opt(3600*8).unwrap())
+}
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -25,9 +29,9 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(UserInfo::ListStyle).string().default("list"))
                     .col(ColumnDef::new(UserInfo::Language).string().default("chinese"))
                     .col(ColumnDef::new(UserInfo::Password).string().not_null())
-                    .col(ColumnDef::new(UserInfo::LastLoginAt).timestamp_with_time_zone())
-                    .col(ColumnDef::new(UserInfo::CreatedAt).timestamp_with_time_zone().not_null())
-                    .col(ColumnDef::new(UserInfo::UpdatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(UserInfo::LastLoginAt).timestamp_with_time_zone().default(Expr::current_timestamp()))
+                    .col(ColumnDef::new(UserInfo::CreatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
+                    .col(ColumnDef::new(UserInfo::UpdatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
                     .col(ColumnDef::new(UserInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -51,8 +55,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(TagInfo::Color).tiny_unsigned().default(1))
                     .col(ColumnDef::new(TagInfo::Icon).tiny_unsigned().default(1))
                     .col(ColumnDef::new(TagInfo::FolderId).big_integer())
-                    .col(ColumnDef::new(TagInfo::CreatedAt).timestamp_with_time_zone().not_null())
-                    .col(ColumnDef::new(TagInfo::UpdatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(TagInfo::CreatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
+                    .col(ColumnDef::new(TagInfo::UpdatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
                     .col(ColumnDef::new(TagInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -92,7 +96,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Kb2Doc::Did).big_integer())
                     .col(ColumnDef::new(Kb2Doc::KbProgress).float().default(0))
                     .col(ColumnDef::new(Kb2Doc::KbProgressMsg).string().default(""))
-                    .col(ColumnDef::new(Kb2Doc::UpdatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(Kb2Doc::UpdatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
                     .col(ColumnDef::new(Kb2Doc::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -146,8 +150,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(KbInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(KbInfo::KbName).string().not_null())
                     .col(ColumnDef::new(KbInfo::Icon).tiny_unsigned().default(1))
-                    .col(ColumnDef::new(KbInfo::CreatedAt).timestamp_with_time_zone().not_null())
-                    .col(ColumnDef::new(KbInfo::UpdatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(KbInfo::CreatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
+                    .col(ColumnDef::new(KbInfo::UpdatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
                     .col(ColumnDef::new(KbInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -167,8 +171,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(DocInfo::Location).string().not_null())
                     .col(ColumnDef::new(DocInfo::Size).big_integer().not_null())
                     .col(ColumnDef::new(DocInfo::Type).string().not_null()).comment("doc|folder")
-                    .col(ColumnDef::new(DocInfo::CreatedAt).timestamp_with_time_zone().not_null())
-                    .col(ColumnDef::new(DocInfo::UpdatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(DocInfo::CreatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
+                    .col(ColumnDef::new(DocInfo::UpdatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
                     .col(ColumnDef::new(DocInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -188,13 +192,49 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(DialogInfo::KbId).big_integer().not_null())
                     .col(ColumnDef::new(DialogInfo::DialogName).string().not_null())
                     .col(ColumnDef::new(DialogInfo::History).string().comment("json"))
-                    .col(ColumnDef::new(DialogInfo::CreatedAt).timestamp_with_time_zone().not_null())
-                    .col(ColumnDef::new(DialogInfo::UpdatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(DialogInfo::CreatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
+                    .col(ColumnDef::new(DialogInfo::UpdatedAt).timestamp_with_time_zone().default(Expr::current_timestamp()).not_null())
                     .col(ColumnDef::new(DialogInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
             .await?;
 
+        let tm = now();
+        let root_insert = Query::insert()
+            .into_table(UserInfo::Table)
+            .columns([UserInfo::Email, UserInfo::Nickname, UserInfo::Password])
+            .values_panic([
+                "kai.hu@infiniflow.org".into(),
+                "root".into(),
+                "123456".into()
+                ])
+            .to_owned();
+
+        let doc_insert = Query::insert()
+            .into_table(DocInfo::Table)
+            .columns([DocInfo::Uid, DocInfo::DocName, DocInfo::Size, DocInfo::Type, 
+                DocInfo::Location])
+            .values_panic([
+                1.into(),
+                "/".into(),
+                0.into(),
+                "folder".into(),
+                "".into()
+                ])
+            .to_owned();
+
+        let tag_insert = Query::insert()
+            .into_table(TagInfo::Table)
+            .columns([TagInfo::Uid, TagInfo::TagName, TagInfo::Regx, TagInfo::Color, TagInfo::Icon])
+            .values_panic([1.into(), "视频".into(),".*\\.(mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa)".into(),1.into(),1.into()])
+            .values_panic([1.into(), "图片".into(),".*\\.(png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng)".into(),2.into(),2.into()])
+            .values_panic([1.into(), "音乐".into(),".*\\.(WAV|FLAC|APE|ALAC|WavPack|WV|MP3|AAC|Ogg|Vorbis|Opus)".into(),3.into(),3.into()])
+            .values_panic([1.into(), "文档".into(),".*\\.(pdf|doc|ppt|yml|xml|htm|json|csv|txt|ini|xsl|wps|rtf|hlp)".into(),3.into(),3.into()])
+            .to_owned();
+
+        manager.exec_stmt(root_insert).await?;
+        manager.exec_stmt(doc_insert).await?;
+        manager.exec_stmt(tag_insert).await?;
         Ok(())
     }
 
