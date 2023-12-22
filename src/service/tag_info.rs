@@ -1,6 +1,6 @@
 use chrono::{FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder, ColumnTrait, QueryFilter};
-use sea_orm::ActiveValue::Set;
+use sea_orm::ActiveValue::{Set, NotSet};
 use crate::entity::tag_info;
 use crate::entity::tag_info::Entity;
 
@@ -51,7 +51,10 @@ impl Mutation {
             regx: Set(form_data.regx.to_owned()),
             color: Set(form_data.color.to_owned()),
             icon: Set(form_data.icon.to_owned()),
-            folder_id: Set(form_data.folder_id.to_owned()),
+            folder_id: match form_data.folder_id {
+                0 => NotSet,
+                _ => Set(form_data.folder_id.to_owned())
+            },
             created_at: Set(now()),
             updated_at: Set(now()),
         }
