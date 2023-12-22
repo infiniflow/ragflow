@@ -20,13 +20,14 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(UserInfo::Email).string().not_null())
                     .col(ColumnDef::new(UserInfo::Nickname).string().not_null())
-                    .col(ColumnDef::new(UserInfo::AvatarUrl).string())
-                    .col(ColumnDef::new(UserInfo::ColorSchema).string().default("dark"))
+                    .col(ColumnDef::new(UserInfo::AvatarBase64).string())
+                    .col(ColumnDef::new(UserInfo::ColorScheme).string().default("dark"))
                     .col(ColumnDef::new(UserInfo::ListStyle).string().default("list"))
                     .col(ColumnDef::new(UserInfo::Language).string().default("chinese"))
                     .col(ColumnDef::new(UserInfo::Password).string().not_null())
-                    .col(ColumnDef::new(UserInfo::CreatedAt).date().not_null())
-                    .col(ColumnDef::new(UserInfo::UpdatedAt).date().not_null())
+                    .col(ColumnDef::new(UserInfo::LastLoginAt).timestamp_with_time_zone())
+                    .col(ColumnDef::new(UserInfo::CreatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(UserInfo::UpdatedAt).timestamp_with_time_zone().not_null())
                     .col(ColumnDef::new(UserInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -49,9 +50,9 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(TagInfo::Regx).string())
                     .col(ColumnDef::new(TagInfo::Color).tiny_unsigned().default(1))
                     .col(ColumnDef::new(TagInfo::Icon).tiny_unsigned().default(1))
-                    .col(ColumnDef::new(TagInfo::Dir).string())
-                    .col(ColumnDef::new(TagInfo::CreatedAt).date().not_null())
-                    .col(ColumnDef::new(TagInfo::UpdatedAt).date().not_null())
+                    .col(ColumnDef::new(TagInfo::FolderId).big_integer())
+                    .col(ColumnDef::new(TagInfo::CreatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(TagInfo::UpdatedAt).timestamp_with_time_zone().not_null())
                     .col(ColumnDef::new(TagInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -89,6 +90,10 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(Kb2Doc::KbId).big_integer())
                     .col(ColumnDef::new(Kb2Doc::Did).big_integer())
+                    .col(ColumnDef::new(Kb2Doc::KbProgress).float().default(0))
+                    .col(ColumnDef::new(Kb2Doc::KbProgressMsg).string().default(""))
+                    .col(ColumnDef::new(Kb2Doc::UpdatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(Kb2Doc::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
             .await?;
@@ -141,8 +146,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(KbInfo::Uid).big_integer().not_null())
                     .col(ColumnDef::new(KbInfo::KbName).string().not_null())
                     .col(ColumnDef::new(KbInfo::Icon).tiny_unsigned().default(1))
-                    .col(ColumnDef::new(KbInfo::CreatedAt).date().not_null())
-                    .col(ColumnDef::new(KbInfo::UpdatedAt).date().not_null())
+                    .col(ColumnDef::new(KbInfo::CreatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(KbInfo::UpdatedAt).timestamp_with_time_zone().not_null())
                     .col(ColumnDef::new(KbInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -162,10 +167,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(DocInfo::Location).string().not_null())
                     .col(ColumnDef::new(DocInfo::Size).big_integer().not_null())
                     .col(ColumnDef::new(DocInfo::Type).string().not_null()).comment("doc|folder")
-                    .col(ColumnDef::new(DocInfo::KbProgress).float().default(0))
-                    .col(ColumnDef::new(DocInfo::KbProgressMsg).string().default(""))
-                    .col(ColumnDef::new(DocInfo::CreatedAt).date().not_null())
-                    .col(ColumnDef::new(DocInfo::UpdatedAt).date().not_null())
+                    .col(ColumnDef::new(DocInfo::CreatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(DocInfo::UpdatedAt).timestamp_with_time_zone().not_null())
                     .col(ColumnDef::new(DocInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -182,10 +185,11 @@ impl MigrationTrait for Migration {
                         .auto_increment()
                         .primary_key())
                     .col(ColumnDef::new(DialogInfo::Uid).big_integer().not_null())
+                    .col(ColumnDef::new(DialogInfo::KbId).big_integer().not_null())
                     .col(ColumnDef::new(DialogInfo::DialogName).string().not_null())
                     .col(ColumnDef::new(DialogInfo::History).string().comment("json"))
-                    .col(ColumnDef::new(DialogInfo::CreatedAt).date().not_null())
-                    .col(ColumnDef::new(DialogInfo::UpdatedAt).date().not_null())
+                    .col(ColumnDef::new(DialogInfo::CreatedAt).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(DialogInfo::UpdatedAt).timestamp_with_time_zone().not_null())
                     .col(ColumnDef::new(DialogInfo::IsDeleted).boolean().default(false))
                     .to_owned(),
             )
@@ -241,11 +245,12 @@ enum UserInfo {
     Uid,
     Email,
     Nickname,
-    AvatarUrl,
-    ColorSchema,
+    AvatarBase64,
+    ColorScheme,
     ListStyle,
     Language,
     Password,
+    LastLoginAt,
     CreatedAt,
     UpdatedAt,
     IsDeleted,
@@ -260,7 +265,7 @@ enum TagInfo {
     Regx,
     Color,
     Icon,
-    Dir,
+    FolderId,
     CreatedAt,
     UpdatedAt,
     IsDeleted,
@@ -280,6 +285,10 @@ enum Kb2Doc {
     Id,
     KbId,
     Did,
+    KbProgress,
+    KbProgressMsg,
+    UpdatedAt,
+    IsDeleted,
 }
 
 #[derive(DeriveIden)]
@@ -319,8 +328,6 @@ enum DocInfo {
     Location,
     Size,
     Type,
-    KbProgress,
-    KbProgressMsg,
     CreatedAt,
     UpdatedAt,
     IsDeleted,
@@ -329,8 +336,9 @@ enum DocInfo {
 #[derive(DeriveIden)]
 enum DialogInfo {
     Table,
-    DialogId,
     Uid,
+    KbId,
+    DialogId,
     DialogName,
     History,
     CreatedAt,

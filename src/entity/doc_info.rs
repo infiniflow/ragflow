@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::entity::kb_info;
+use chrono::{DateTime, FixedOffset};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "doc_info")]
@@ -13,16 +14,14 @@ pub struct Model {
     pub size: i64,
     #[sea_orm(column_name = "type")]
     pub r#type: String,
-    pub kb_progress: f32,
-    pub kb_progress_msg: String,
+    #[serde(skip_deserializing)]
     pub location: String,
-    #[sea_orm(ignore)]
-    pub kb_infos: Vec<kb_info::Model>,
-
     #[serde(skip_deserializing)]
-    pub created_at: Date,
+    pub created_at: DateTime<FixedOffset>,
     #[serde(skip_deserializing)]
-    pub updated_at: Date,
+    pub updated_at: DateTime<FixedOffset>,
+    #[serde(skip_deserializing)]
+    pub is_deleted: bool
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -48,7 +47,7 @@ impl Related<super::kb_info::Entity> for Entity {
     }
 }
 
-impl Related<Entity> for Entity {
+impl Related<super::doc2_doc::Entity> for Entity {
     fn to() -> RelationDef {
         super::doc2_doc::Relation::Parent.def()
     }

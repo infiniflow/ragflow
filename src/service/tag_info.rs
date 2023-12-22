@@ -1,18 +1,24 @@
-use chrono::Local;
-use sea_orm::{ActiveModelTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder};
+use chrono::{FixedOffset, Utc};
+use sea_orm::{ActiveModelTrait, DbConn, DbErr, DeleteResult, EntityTrait, PaginatorTrait, QueryOrder, ColumnTrait, QueryFilter};
 use sea_orm::ActiveValue::Set;
 use crate::entity::tag_info;
 use crate::entity::tag_info::Entity;
 
+fn now()->chrono::DateTime<FixedOffset>{
+    Utc::now().with_timezone(&FixedOffset::east_opt(3600*8).unwrap())
+}
 pub struct Query;
 
 impl Query {
-    pub async fn find_tag_info_by_id(db: &DbConn, id: i64) -> Result<Option<tag_info::Model>, DbErr> {
+    pub async fn find_tag_info_by_id(id: i64, db: &DbConn) -> Result<Option<tag_info::Model>, DbErr> {
         Entity::find_by_id(id).one(db).await
     }
 
-    pub async fn find_tag_infos(db: &DbConn) -> Result<Vec<tag_info::Model>, DbErr> {
-        Entity::find().all(db).await
+    pub async fn find_tags_by_uid(uid:i64, db: &DbConn) -> Result<Vec<tag_info::Model>, DbErr> {
+        Entity::find()
+            .filter(tag_info::Column::Uid.eq(uid))
+            .all(db)
+            .await
     }
 
     pub async fn find_tag_infos_in_page(
@@ -45,9 +51,9 @@ impl Mutation {
             regx: Set(form_data.regx.to_owned()),
             color: Set(form_data.color.to_owned()),
             icon: Set(form_data.icon.to_owned()),
-            dir: Set(form_data.dir.to_owned()),
-            created_at: Set(Local::now().date_naive()),
-            updated_at: Set(Local::now().date_naive()),
+            folder_id: Set(form_data.folder_id.to_owned()),
+            created_at: Set(now()),
+            updated_at: Set(now()),
         }
             .save(db)
             .await
@@ -71,9 +77,9 @@ impl Mutation {
             regx: Set(form_data.regx.to_owned()),
             color: Set(form_data.color.to_owned()),
             icon: Set(form_data.icon.to_owned()),
-            dir: Set(form_data.dir.to_owned()),
+            folder_id: Set(form_data.folder_id.to_owned()),
             created_at: Default::default(),
-            updated_at: Set(Local::now().date_naive()),
+            updated_at: Set(now()),
         }
             .update(db)
             .await

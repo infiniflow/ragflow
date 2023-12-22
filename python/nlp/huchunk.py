@@ -2,6 +2,7 @@ import re
 import os
 import copy
 import base64
+import magic
 from dataclasses import dataclass
 from typing import List
 import numpy as np
@@ -373,6 +374,7 @@ class PptChunker(HuChunker):
         from pptx import Presentation
         ppt = Presentation(fnm)
         flds = self.Fields()
+        flds.text_chunks = []
         for slide in ppt.slides:
             for shape in slide.shapes:
                 if hasattr(shape, "text"):
@@ -391,11 +393,21 @@ class TextChunker(HuChunker):
     def __init__(self):
         super().__init__()
 
+    @staticmethod
+    def is_binary_file(file_path):
+        mime = magic.Magic(mime=True)
+        file_type = mime.from_file(file_path)
+        if 'text' in file_type:
+            return False
+        else:
+            return True
+
     def __call__(self, fnm):
         flds = self.Fields()
+        if self.is_binary_file(fnm):return flds
         with open(fnm, "r") as f:
             txt = f.read()
-            flds.text_chunks = self.naive_text_chunk(txt)
+            flds.text_chunks = [(c, None) for c in self.naive_text_chunk(txt)]
         flds.table_chunks = []
         return flds
 
