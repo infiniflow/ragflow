@@ -1,6 +1,6 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{ DateTime, FixedOffset };
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "dialog_info")]
@@ -19,7 +19,7 @@ pub struct Model {
     #[serde(skip_deserializing)]
     pub updated_at: DateTime<FixedOffset>,
     #[serde(skip_deserializing)]
-    pub is_deleted: bool
+    pub is_deleted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

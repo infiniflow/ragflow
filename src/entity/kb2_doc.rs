@@ -1,6 +1,6 @@
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, FixedOffset};
+use serde::{ Deserialize, Serialize };
+use chrono::{ DateTime, FixedOffset };
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "kb2_doc")]
@@ -30,14 +30,16 @@ pub enum Relation {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::DocInfo => Entity::belongs_to(super::doc_info::Entity)
-                .from(Column::Did)
-                .to(super::doc_info::Column::Did)
-                .into(),
-            Self::KbInfo => Entity::belongs_to(super::kb_info::Entity)
-                .from(Column::KbId)
-                .to(super::kb_info::Column::KbId)
-                .into(),
+            Self::DocInfo =>
+                Entity::belongs_to(super::doc_info::Entity)
+                    .from(Column::Did)
+                    .to(super::doc_info::Column::Did)
+                    .into(),
+            Self::KbInfo =>
+                Entity::belongs_to(super::kb_info::Entity)
+                    .from(Column::KbId)
+                    .to(super::kb_info::Column::KbId)
+                    .into(),
         }
     }
 }
