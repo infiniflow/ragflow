@@ -1,4 +1,5 @@
 import xgboost as xgb
+from io import BytesIO
 import torch
 import re
 import pdfplumber
@@ -1525,7 +1526,7 @@ class HuParser:
         return "\n\n".join(res)
 
     def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
-        self.pdf = pdfplumber.open(fnm)
+        self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
         self.lefted_chars = []
         self.mean_height = []
         self.mean_width = []

@@ -1,6 +1,7 @@
 from abc import ABC
 from FlagEmbedding import FlagModel
 import torch
+import numpy as np
 
 class Base(ABC):
     def encode(self, texts: list, batch_size=32):
@@ -27,5 +28,5 @@ class HuEmbedding(Base):
     def encode(self, texts: list, batch_size=32):
         res = []
         for i in range(0, len(texts), batch_size):
-            res.extend(self.encode(texts[i:i+batch_size]))
-        return res
+            res.extend(self.model.encode(texts[i:i+batch_size]).tolist())
+        return np.array(res)
