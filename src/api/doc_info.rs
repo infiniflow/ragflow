@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::io::BufReader;
-use actix_multipart_extract::{File, Multipart, MultipartForm};
-use actix_web::{HttpResponse, post, web};
-use chrono::{Utc, FixedOffset};
-use minio::s3::args::{BucketExistsArgs, MakeBucketArgs, PutObjectArgs};
+use actix_multipart_extract::{ File, Multipart, MultipartForm };
+use actix_web::{ HttpResponse, post, web };
+use chrono::{ Utc, FixedOffset };
+use minio::s3::args::{ BucketExistsArgs, MakeBucketArgs, PutObjectArgs };
 use sea_orm::DbConn;
 use crate::api::JsonResponse;
 use crate::AppState;
@@ -11,7 +11,6 @@ use crate::entity::doc_info::Model;
 use crate::errors::AppError;
 use crate::service::doc_info::{ Mutation, Query };
 use serde::Deserialize;
-
 
 fn now() -> chrono::DateTime<FixedOffset> {
     Utc::now().with_timezone(&FixedOffset::east_opt(3600 * 8).unwrap())
@@ -72,63 +71,71 @@ async fn upload(
 ) -> Result<HttpResponse, AppError> {
     let uid = payload.uid;
     let file_name = payload.file_field.name.as_str();
-    async fn add_number_to_filename(file_name: &str, conn:&DbConn, uid:i64, parent_id:i64) -> String {
+    async fn add_number_to_filename(
+        file_name: &str,
+        conn: &DbConn,
+        uid: i64,
+        parent_id: i64
+    ) -> String {
         let mut i = 0;
         let mut new_file_name = file_name.to_string();
         let arr: Vec<&str> = file_name.split(".").collect();
-        let suffix = String::from(arr[arr.len()-1]);
-        let preffix = arr[..arr.len()-1].join(".");
-        let mut docs = Query::find_doc_infos_by_name(conn, uid, &new_file_name, Some(parent_id)).await.unwrap();
-        while docs.len()>0 {
+        let suffix = String::from(arr[arr.len() - 1]);
+        let preffix = arr[..arr.len() - 1].join(".");
+        let mut docs = Query::find_doc_infos_by_name(
+            conn,
+            uid,
+            &new_file_name,
+            Some(parent_id)
+        ).await.unwrap();
+        while docs.len() > 0 {
             i += 1;
             new_file_name = format!("{}_{}.{}", preffix, i, suffix);
-            docs = Query::find_doc_infos_by_name(conn, uid, &new_file_name, Some(parent_id)).await.unwrap();
+            docs = Query::find_doc_infos_by_name(
+                conn,
+                uid,
+                &new_file_name,
+                Some(parent_id)
+            ).await.unwrap();
         }
         new_file_name
     }
     let fnm = add_number_to_filename(file_name, &data.conn, uid, payload.did).await;
 
     let bucket_name = format!("{}-upload", payload.uid);
-    let s3_client:&minio::s3::client::Client = &data.s3_client;
+    let s3_client: &minio::s3::client::Client = &data.s3_client;
     let buckets_exists = s3_client
-        .bucket_exists(&BucketExistsArgs::new(&bucket_name).unwrap())
-        .await
+        .bucket_exists(&BucketExistsArgs::new(&bucket_name).unwrap()).await
         .unwrap();
     if !buckets_exists {
         print!("Create bucket: {}", bucket_name.clone());
-        s3_client
-            .make_bucket(&MakeBucketArgs::new(&bucket_name).unwrap())
-            .await
-            .unwrap();
-    }
-    else{
+        s3_client.make_bucket(&MakeBucketArgs::new(&bucket_name).unwrap()).await.unwrap();
+    } else {
         print!("Existing bucket: {}", bucket_name.clone());
     }
 
     let location = format!("/{}/{}", payload.did, fnm);
     print!("===>{}", location.clone());
-    s3_client
-        .put_object(
-            &mut PutObjectArgs::new(
-                &bucket_name,
-                &location,
-                &mut BufReader::new(payload.file_field.bytes.as_slice()),
-                Some(payload.file_field.bytes.len()),
-                None,
-            )?
-        )
-        .await?;
+    s3_client.put_object(
+        &mut PutObjectArgs::new(
+            &bucket_name,
+            &location,
+            &mut BufReader::new(payload.file_field.bytes.as_slice()),
+            Some(payload.file_field.bytes.len()),
+            None
+        )?
+    ).await?;
 
     let doc = Mutation::create_doc_info(&data.conn, Model {
-        did:Default::default(),
-        uid:  uid,
+        did: Default::default(),
+        uid: uid,
         doc_name: fnm,
         size: payload.file_field.bytes.len() as i64,
         location,
         r#type: "doc".to_string(),
         created_at: now(),
         updated_at: now(),
-        is_deleted:Default::default(),
+        is_deleted: Default::default(),
     }).await?;
 
     let _ = Mutation::place_doc(&data.conn, payload.did, doc.did.unwrap()).await?;
