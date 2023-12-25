@@ -1,5 +1,5 @@
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "tag2_doc")]
@@ -21,14 +21,16 @@ pub enum Relation {
 impl RelationTrait for Relation {
     fn def(&self) -> sea_orm::RelationDef {
         match self {
-            Self::DocInfo => Entity::belongs_to(super::doc_info::Entity)
-                .from(Column::Uid)
-                .to(super::doc_info::Column::Uid)
-                .into(),
-            Self::Tag => Entity::belongs_to(super::tag_info::Entity)
-                .from(Column::TagId)
-                .to(super::tag_info::Column::Tid)
-                .into(),
+            Self::DocInfo =>
+                Entity::belongs_to(super::doc_info::Entity)
+                    .from(Column::Uid)
+                    .to(super::doc_info::Column::Uid)
+                    .into(),
+            Self::Tag =>
+                Entity::belongs_to(super::tag_info::Entity)
+                    .from(Column::TagId)
+                    .to(super::tag_info::Column::Tid)
+                    .into(),
         }
     }
 }

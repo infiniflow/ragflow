@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 
 pub(crate) mod tag_info;
 pub(crate) mod kb_info;

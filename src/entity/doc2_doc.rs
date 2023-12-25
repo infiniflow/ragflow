@@ -1,5 +1,5 @@
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "doc2_doc")]
@@ -15,20 +15,22 @@ pub struct Model {
 #[derive(Debug, Clone, Copy, EnumIter)]
 pub enum Relation {
     Parent,
-    Child
+    Child,
 }
 
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::Parent => Entity::belongs_to(super::doc_info::Entity)
-                .from(Column::ParentId)
-                .to(super::doc_info::Column::Did)
-                .into(),
-            Self::Child => Entity::belongs_to(super::doc_info::Entity)
-                .from(Column::Did)
-                .to(super::doc_info::Column::Did)
-                .into(),
+            Self::Parent =>
+                Entity::belongs_to(super::doc_info::Entity)
+                    .from(Column::ParentId)
+                    .to(super::doc_info::Column::Did)
+                    .into(),
+            Self::Child =>
+                Entity::belongs_to(super::doc_info::Entity)
+                    .from(Column::Did)
+                    .to(super::doc_info::Column::Did)
+                    .into(),
         }
     }
 }

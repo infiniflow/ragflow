@@ -1,7 +1,7 @@
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 use crate::entity::kb_info;
-use chrono::{DateTime, FixedOffset};
+use chrono::{ DateTime, FixedOffset };
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "doc_info")]
@@ -21,7 +21,7 @@ pub struct Model {
     #[serde(skip_deserializing)]
     pub updated_at: DateTime<FixedOffset>,
     #[serde(skip_deserializing)]
-    pub is_deleted: bool
+    pub is_deleted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

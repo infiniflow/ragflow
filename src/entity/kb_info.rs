@@ -1,6 +1,6 @@
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, FixedOffset};
+use serde::{ Deserialize, Serialize };
+use chrono::{ DateTime, FixedOffset };
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "kb_info")]

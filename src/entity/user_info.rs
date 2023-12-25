@@ -1,6 +1,6 @@
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, FixedOffset};
+use serde::{ Deserialize, Serialize };
+use chrono::{ DateTime, FixedOffset };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "user_info")]
@@ -26,6 +26,5 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
-
 
 impl ActiveModelBehavior for ActiveModel {}

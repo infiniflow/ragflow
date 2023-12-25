@@ -5,16 +5,16 @@ mod errors;
 
 use std::env;
 use actix_files::Files;
-use actix_identity::{CookieIdentityPolicy, IdentityService, RequestIdentity};
+use actix_identity::{ CookieIdentityPolicy, IdentityService, RequestIdentity };
 use actix_session::CookieSession;
-use actix_web::{web, App, HttpServer, middleware, Error};
+use actix_web::{ web, App, HttpServer, middleware, Error };
 use actix_web::cookie::time::Duration;
 use actix_web::dev::ServiceRequest;
 use actix_web::error::ErrorUnauthorized;
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use listenfd::ListenFd;
-use sea_orm::{Database, DatabaseConnection};
-use migration::{Migrator, MigratorTrait};
+use sea_orm::{ Database, DatabaseConnection };
+use migration::{ Migrator, MigratorTrait };
 use crate::errors::UserError;
 
 #[derive(Debug, Clone)]
@@ -24,10 +24,10 @@ struct AppState {
 
 pub(crate) async fn validator(
     req: ServiceRequest,
-    credentials: BearerAuth,
+    credentials: BearerAuth
 ) -> Result<ServiceRequest, Error> {
     if let Some(token) = req.get_identity() {
-        println!("{}, {}",credentials.token(), token);
+        println!("{}, {}", credentials.token(), token);
         (credentials.token() == token)
             .then(|| req)
             .ok_or(ErrorUnauthorized(UserError::InvalidToken))
@@ -61,18 +61,20 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .service(Files::new("/static", "./static"))
             .app_data(web::Data::new(state.clone()))
-            .wrap(IdentityService::new(
-                CookieIdentityPolicy::new(&[0; 32])
-                    .name("auth-cookie")
-                    .login_deadline(Duration::seconds(120))
-                    .secure(false),
-            ))
+            .wrap(
+                IdentityService::new(
+                    CookieIdentityPolicy::new(&[0; 32])
+                        .name("auth-cookie")
+                        .login_deadline(Duration::seconds(120))
+                        .secure(false)
+                )
+            )
             .wrap(
                 CookieSession::signed(&[0; 32])
                     .name("session-cookie")
                     .secure(false)
                     // WARNING(alex): This uses the `time` crate, not `std::time`!
-                    .expires_in_time(Duration::seconds(60)),
+                    .expires_in_time(Duration::seconds(60))
             )
             .wrap(middleware::Logger::default())
             .configure(init)
