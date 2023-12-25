@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::io::Write;
-use actix_multipart_extract::{ File, Multipart, MultipartForm };
-use actix_web::{ HttpResponse, post, web };
-use chrono::{ Utc, FixedOffset };
+use actix_multipart_extract::{File, Multipart, MultipartForm};
+use actix_web::{get, HttpResponse, post, web};
+use chrono::{Utc, FixedOffset};
+use minio::s3::args::{BucketExistsArgs, MakeBucketArgs, UploadObjectArgs};
 use sea_orm::DbConn;
 use crate::api::JsonResponse;
 use crate::AppState;
@@ -10,6 +11,9 @@ use crate::entity::doc_info::Model;
 use crate::errors::AppError;
 use crate::service::doc_info::{ Mutation, Query };
 use serde::Deserialize;
+
+const BUCKET_NAME: &'static str = "docgpt-upload";
+
 
 fn now() -> chrono::DateTime<FixedOffset> {
     Utc::now().with_timezone(&FixedOffset::east_opt(3600 * 8).unwrap())
@@ -69,57 +73,54 @@ async fn upload(
     data: web::Data<AppState>
 ) -> Result<HttpResponse, AppError> {
     let uid = payload.uid;
-    async fn add_number_to_filename(
-        file_name: String,
-        conn: &DbConn,
-        uid: i64,
-        parent_id: i64
-    ) -> String {
+    let file_name = payload.file_field.name.as_str();
+    async fn add_number_to_filename(file_name: &str, conn:&DbConn, uid:i64, parent_id:i64) -> String {
         let mut i = 0;
         let mut new_file_name = file_name.to_string();
         let arr: Vec<&str> = file_name.split(".").collect();
-        let suffix = String::from(arr[arr.len() - 1]);
-        let preffix = arr[..arr.len() - 1].join(".");
-        let mut docs = Query::find_doc_infos_by_name(
-            conn,
-            uid,
-            &new_file_name,
-            Some(parent_id)
-        ).await.unwrap();
-        while docs.len() > 0 {
+        let suffix = String::from(arr[arr.len()-1]);
+        let preffix = arr[..arr.len()-1].join(".");
+        let mut docs = Query::find_doc_infos_by_name(conn, uid, &new_file_name, Some(parent_id)).await.unwrap();
+        while docs.len()>0 {
             i += 1;
             new_file_name = format!("{}_{}.{}", preffix, i, suffix);
-            docs = Query::find_doc_infos_by_name(
-                conn,
-                uid,
-                &new_file_name,
-                Some(parent_id)
-            ).await.unwrap();
+            docs = Query::find_doc_infos_by_name(conn, uid, &new_file_name, Some(parent_id)).await.unwrap();
         }
         new_file_name
     }
-    let fnm = add_number_to_filename(
-        payload.file_field.name.clone(),
-        &data.conn,
-        uid,
-        payload.did
-    ).await;
+    let fnm = add_number_to_filename(file_name, &data.conn, uid, payload.did).await;
 
-    std::fs::create_dir_all(format!("./upload/{}/", uid));
-    let filepath = format!("./upload/{}/{}-{}", payload.uid, payload.did, fnm.clone());
-    let mut f = std::fs::File::create(&filepath)?;
-    f.write(&payload.file_field.bytes)?;
+    let s3_client = &data.s3_client;
+    let buckets_exists = s3_client
+        .bucket_exists(&BucketExistsArgs::new(BUCKET_NAME)?)
+        .await?;
+    if !buckets_exists {
+        s3_client
+            .make_bucket(&MakeBucketArgs::new(BUCKET_NAME)?)
+            .await?;
+    }
 
+    s3_client
+        .upload_object(
+            &mut UploadObjectArgs::new(
+                BUCKET_NAME,
+                fnm.as_str(),
+                format!("/{}/{}-{}", payload.uid, payload.did, fnm).as_str()
+            )?
+        )
+        .await?;
+
+    let location = format!("/{}/{}", BUCKET_NAME, fnm);
     let doc = Mutation::create_doc_info(&data.conn, Model {
-        did: Default::default(),
-        uid: uid,
+        did:Default::default(),
+        uid:  uid,
         doc_name: fnm,
         size: payload.file_field.bytes.len() as i64,
-        location: filepath,
+        location,
         r#type: "doc".to_string(),
         created_at: now(),
         updated_at: now(),
-        is_deleted: Default::default(),
+        is_deleted:Default::default(),
     }).await?;
 
     let _ = Mutation::place_doc(&data.conn, payload.did, doc.did.unwrap()).await?;

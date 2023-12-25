@@ -5,29 +5,33 @@ mod errors;
 
 use std::env;
 use actix_files::Files;
-use actix_identity::{ CookieIdentityPolicy, IdentityService, RequestIdentity };
+use actix_identity::{CookieIdentityPolicy, IdentityService, RequestIdentity};
 use actix_session::CookieSession;
-use actix_web::{ web, App, HttpServer, middleware, Error };
+use actix_web::{web, App, HttpServer, middleware, Error};
 use actix_web::cookie::time::Duration;
 use actix_web::dev::ServiceRequest;
 use actix_web::error::ErrorUnauthorized;
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use listenfd::ListenFd;
-use sea_orm::{ Database, DatabaseConnection };
-use migration::{ Migrator, MigratorTrait };
-use crate::errors::UserError;
+use minio::s3::client::Client;
+use minio::s3::creds::StaticProvider;
+use minio::s3::http::BaseUrl;
+use sea_orm::{Database, DatabaseConnection};
+use migration::{Migrator, MigratorTrait};
+use crate::errors::{AppError, UserError};
 
 #[derive(Debug, Clone)]
 struct AppState {
     conn: DatabaseConnection,
+    s3_client: Client,
 }
 
 pub(crate) async fn validator(
     req: ServiceRequest,
-    credentials: BearerAuth
+    credentials: BearerAuth,
 ) -> Result<ServiceRequest, Error> {
     if let Some(token) = req.get_identity() {
-        println!("{}, {}", credentials.token(), token);
+        println!("{}, {}",credentials.token(), token);
         (credentials.token() == token)
             .then(|| req)
             .ok_or(ErrorUnauthorized(UserError::InvalidToken))
@@ -37,7 +41,7 @@ pub(crate) async fn validator(
 }
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<(), AppError> {
     std::env::set_var("RUST_LOG", "debug");
     tracing_subscriber::fmt::init();
 
@@ -48,12 +52,29 @@ async fn main() -> std::io::Result<()> {
     let port = env::var("PORT").expect("PORT is not set in .env file");
     let server_url = format!("{host}:{port}");
 
+    let s3_base_url = env::var("S3_BASE_URL").expect("S3_BASE_URL is not set in .env file");
+    let s3_access_key = env::var("S3_ACCESS_KEY").expect("S3_ACCESS_KEY is not set in .env file");;
+    let s3_secret_key = env::var("S3_SECRET_KEY").expect("S3_SECRET_KEY is not set in .env file");;
+
     // establish connection to database and apply migrations
     // -> create post table if not exists
     let conn = Database::connect(&db_url).await.unwrap();
     Migrator::up(&conn, None).await.unwrap();
 
-    let state = AppState { conn };
+    let static_provider = StaticProvider::new(
+        s3_access_key.as_str(),
+        s3_secret_key.as_str(),
+        None,
+    );
+
+    let s3_client = Client::new(
+        s3_base_url.parse::<BaseUrl>()?,
+        Some(Box::new(static_provider)),
+        None,
+        None,
+    )?;
+
+    let state = AppState { conn, s3_client };
 
     // create server and try to serve over socket if possible
     let mut listenfd = ListenFd::from_env();
@@ -61,20 +82,18 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .service(Files::new("/static", "./static"))
             .app_data(web::Data::new(state.clone()))
-            .wrap(
-                IdentityService::new(
-                    CookieIdentityPolicy::new(&[0; 32])
-                        .name("auth-cookie")
-                        .login_deadline(Duration::seconds(120))
-                        .secure(false)
-                )
-            )
+            .wrap(IdentityService::new(
+                CookieIdentityPolicy::new(&[0; 32])
+                    .name("auth-cookie")
+                    .login_deadline(Duration::seconds(120))
+                    .secure(false),
+            ))
             .wrap(
                 CookieSession::signed(&[0; 32])
                     .name("session-cookie")
                     .secure(false)
                     // WARNING(alex): This uses the `time` crate, not `std::time`!
-                    .expires_in_time(Duration::seconds(60))
+                    .expires_in_time(Duration::seconds(60)),
             )
             .wrap(middleware::Logger::default())
             .configure(init)

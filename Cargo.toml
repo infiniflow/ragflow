@@ -23,6 +23,7 @@ dotenvy = "0.15.7"
 listenfd = "1.0.1"
 chrono = "0.4.31"
 migration = { path = "./migration" }
+minio = "0.1.0"
 futures-util = "0.3.29"
 actix-multipart-extract = "0.1.5"
 
