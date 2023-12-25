@@ -1,17 +1,25 @@
-use actix_web::{ HttpResponse, ResponseError };
+use actix_web::{HttpResponse, ResponseError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(crate) enum AppError {
-    #[error("`{0}`")] User(#[from] UserError),
+    #[error("`{0}`")]
+    User(#[from] UserError),
 
-    #[error("`{0}`")] Json(#[from] serde_json::Error),
+    #[error("`{0}`")]
+    Json(#[from] serde_json::Error),
 
-    #[error("`{0}`")] Actix(#[from] actix_web::Error),
+    #[error("`{0}`")]
+    Actix(#[from] actix_web::Error),
 
-    #[error("`{0}`")] Db(#[from] sea_orm::DbErr),
+    #[error("`{0}`")]
+    Db(#[from] sea_orm::DbErr),
 
-    #[error("`{0}`")] Std(#[from] std::io::Error),
+    #[error("`{0}`")]
+    MinioS3(#[from] minio::s3::error::Error),
+
+    #[error("`{0}`")]
+    Std(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error)]
@@ -28,7 +36,8 @@ pub(crate) enum UserError {
     #[error("`password` field of `User` cannot contain whitespaces!")]
     PasswordInvalidCharacter,
 
-    #[error("Could not find any `User` for id: `{0}`!")] NotFound(i64),
+    #[error("Could not find any `User` for id: `{0}`!")]
+    NotFound(i64),
 
     #[error("Failed to login user!")]
     LoginFailed,
@@ -46,26 +55,23 @@ pub(crate) enum UserError {
 impl ResponseError for AppError {
     fn status_code(&self) -> actix_web::http::StatusCode {
         match self {
-            AppError::User(user_error) =>
-                match user_error {
-                    UserError::EmptyUsername => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
-                    UserError::UsernameInvalidCharacter => {
-                        actix_web::http::StatusCode::UNPROCESSABLE_ENTITY
-                    }
-                    UserError::EmptyPassword => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
-                    UserError::PasswordInvalidCharacter => {
-                        actix_web::http::StatusCode::UNPROCESSABLE_ENTITY
-                    }
-                    UserError::NotFound(_) => actix_web::http::StatusCode::NOT_FOUND,
-                    UserError::NotLoggedIn => actix_web::http::StatusCode::UNAUTHORIZED,
-                    UserError::Empty => actix_web::http::StatusCode::NOT_FOUND,
-                    UserError::LoginFailed => actix_web::http::StatusCode::NOT_FOUND,
-                    UserError::InvalidToken => actix_web::http::StatusCode::UNAUTHORIZED,
+            AppError::User(user_error) => match user_error {
+                UserError::EmptyUsername => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+                UserError::UsernameInvalidCharacter => {
+                    actix_web::http::StatusCode::UNPROCESSABLE_ENTITY
                 }
-            AppError::Json(_) => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                UserError::EmptyPassword => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+                UserError::PasswordInvalidCharacter => {
+                    actix_web::http::StatusCode::UNPROCESSABLE_ENTITY
+                }
+                UserError::NotFound(_) => actix_web::http::StatusCode::NOT_FOUND,
+                UserError::NotLoggedIn => actix_web::http::StatusCode::UNAUTHORIZED,
+                UserError::Empty => actix_web::http::StatusCode::NOT_FOUND,
+                UserError::LoginFailed => actix_web::http::StatusCode::NOT_FOUND,
+                UserError::InvalidToken => actix_web::http::StatusCode::UNAUTHORIZED,
+            },
             AppError::Actix(fail) => fail.as_response_error().status_code(),
-            AppError::Db(_) => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::Std(_) => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
