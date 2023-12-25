@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::BufReader;
 use actix_multipart_extract::{File, Multipart, MultipartForm};
-use actix_web::{get, HttpResponse, post, web};
+use actix_web::{HttpResponse, post, web};
 use chrono::{Utc, FixedOffset};
-use minio::s3::args::{BucketExistsArgs, MakeBucketArgs, UploadObjectArgs};
+use minio::s3::args::{BucketExistsArgs, MakeBucketArgs, PutObjectArgs};
 use sea_orm::DbConn;
 use crate::api::JsonResponse;
 use crate::AppState;
@@ -11,8 +11,6 @@ use crate::entity::doc_info::Model;
 use crate::errors::AppError;
 use crate::service::doc_info::{ Mutation, Query };
 use serde::Deserialize;
-
-const BUCKET_NAME: &'static str = "docgpt-upload";
 
 
 fn now() -> chrono::DateTime<FixedOffset> {
@@ -90,27 +88,37 @@ async fn upload(
     }
     let fnm = add_number_to_filename(file_name, &data.conn, uid, payload.did).await;
 
-    let s3_client = &data.s3_client;
+    let bucket_name = format!("{}-upload", payload.uid);
+    let s3_client:&minio::s3::client::Client = &data.s3_client;
     let buckets_exists = s3_client
-        .bucket_exists(&BucketExistsArgs::new(BUCKET_NAME)?)
-        .await?;
+        .bucket_exists(&BucketExistsArgs::new(&bucket_name).unwrap())
+        .await
+        .unwrap();
     if !buckets_exists {
+        print!("Create bucket: {}", bucket_name.clone());
         s3_client
-            .make_bucket(&MakeBucketArgs::new(BUCKET_NAME)?)
-            .await?;
+            .make_bucket(&MakeBucketArgs::new(&bucket_name).unwrap())
+            .await
+            .unwrap();
+    }
+    else{
+        print!("Existing bucket: {}", bucket_name.clone());
     }
 
+    let location = format!("/{}/{}", payload.did, fnm);
+    print!("===>{}", location.clone());
     s3_client
-        .upload_object(
-            &mut UploadObjectArgs::new(
-                BUCKET_NAME,
-                fnm.as_str(),
-                format!("/{}/{}-{}", payload.uid, payload.did, fnm).as_str()
+        .put_object(
+            &mut PutObjectArgs::new(
+                &bucket_name,
+                &location,
+                &mut BufReader::new(payload.file_field.bytes.as_slice()),
+                Some(payload.file_field.bytes.len()),
+                None,
             )?
         )
         .await?;
 
-    let location = format!("/{}/{}", BUCKET_NAME, fnm);
     let doc = Mutation::create_doc_info(&data.conn, Model {
         did:Default::default(),
         uid:  uid,
