@@ -16,7 +16,9 @@ class Config:
 
     def get(self, key, default=None):
         global CF
-        return CF[self.env].get(key, default)
+        return os.environ.get(key.upper(), \
+                       CF[self.env].get(key, default)
+                      )
 
 def init(env):
     return Config(env)

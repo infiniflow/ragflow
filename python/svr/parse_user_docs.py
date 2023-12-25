@@ -209,10 +209,8 @@ def rm_doc_from_kb(df):
 
 def main(comm, mod):
     global model
-    from FlagEmbedding import FlagModel
-    model = FlagModel('/opt/home/kevinhu/data/bge-large-zh-v1.5/',
-                      query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
-                      use_fp16=torch.cuda.is_available())
+    from llm import HuEmbedding
+    model = HuEmbedding()
     tm_fnm = f"res/{comm}-{mod}.tm"
     tm = findMaxDt(tm_fnm)
     rows = collect(comm, mod, tm)
