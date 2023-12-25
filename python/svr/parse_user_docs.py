@@ -34,18 +34,14 @@ DOC = DocxChunker(DocxParser())
 EXC = ExcelChunker(ExcelParser())
 PPT = PptChunker()
 
-UPLOAD_LOCATION = os.environ.get("UPLOAD_LOCATION", "./")
-logging.warning(f"The files are stored in {UPLOAD_LOCATION}, please check it!")
-
-
-def chuck_doc(name):
+def chuck_doc(name, binary):
     suff = os.path.split(name)[-1].lower().split(".")[-1]
-    if suff.find("pdf") >= 0: return PDF(name)
-    if suff.find("doc") >= 0: return DOC(name)
-    if re.match(r"(xlsx|xlsm|xltx|xltm)", suff): return EXC(name)
-    if suff.find("ppt") >= 0: return PPT(name)
+    if suff.find("pdf") >= 0: return PDF(binary)
+    if suff.find("doc") >= 0: return DOC(binary)
+    if re.match(r"(xlsx|xlsm|xltx|xltm)", suff): return EXC(binary)
+    if suff.find("ppt") >= 0: return PPT(binary)
     
-    return TextChunker()(name)
+    return TextChunker()(binary)
 
 
 def collect(comm, mod, tm):
@@ -115,7 +111,7 @@ def build(row):
     random.seed(time.time())
     set_progress(row["kb2doc_id"], random.randint(0, 20)/100., "Finished preparing! Start to slice file!")
     try:
-        obj = chuck_doc(os.path.join(UPLOAD_LOCATION, row["location"]))
+        obj = chuck_doc(row["doc_name"], MINIO.get("%s-upload"%str(row["uid"]), row["location"]))
     except Exception as e:
         if re.search("(No such file|not found)", str(e)):
             set_progress(row["kb2doc_id"], -1, "Can not find file <%s>"%row["doc_name"])
@@ -133,9 +129,11 @@ def build(row):
     doc = {
         "doc_id": row["did"],
         "kb_id": [str(row["kb_id"])],
+        "docnm_kwd": os.path.split(row["location"])[-1],
         "title_tks": huqie.qie(os.path.split(row["location"])[-1]),
         "updated_at": str(row["updated_at"]).replace("T", " ")[:19]
     }
+    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     output_buffer = BytesIO()
     docs = []
     md5 = hashlib.md5()
@@ -144,11 +142,14 @@ def build(row):
         md5.update((txt + str(d["doc_id"])).encode("utf-8"))
         d["_id"] = md5.hexdigest()
         d["content_ltks"] = huqie.qie(txt)
+        d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
         if not img:
             docs.append(d)
             continue
         img.save(output_buffer, format='JPEG')
-        d["img_bin"] = str(output_buffer.getvalue())
+        MINIO.put("{}-{}".format(row["uid"], row["kb_id"]), d["_id"],
+                      output_buffer.getvalue())
+        d["img_id"] = "{}-{}".format(row["uid"], row["kb_id"])
         docs.append(d)
 
     for arr, img in obj.table_chunks:

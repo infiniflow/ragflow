@@ -3,6 +3,7 @@ import re
 import pandas as pd
 from collections import Counter
 from nlp import huqie
+from io import BytesIO
 
 
 class HuDocxParser:
@@ -97,7 +98,7 @@ class HuDocxParser:
         return ["\n".join(lines)]
 
     def __call__(self, fnm):
-        self.doc = Document(fnm)
+        self.doc = Document(fnm) if isinstance(fnm, str) else Document(BytesIO(fnm))
         secs = [(p.text, p.style.name) for p in self.doc.paragraphs]
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls
