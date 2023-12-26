@@ -26,6 +26,7 @@ migration = { path = "./migration" }
 minio = "0.1.0"
 futures-util = "0.3.29"
 actix-multipart-extract = "0.1.5"
+regex = "1.10.2"
 
 [[bin]]
 name = "doc_gpt"

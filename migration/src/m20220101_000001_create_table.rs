@@ -201,7 +201,8 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(DocInfo::Location).string().not_null())
                 .col(ColumnDef::new(DocInfo::Size).big_integer().not_null())
                 .col(ColumnDef::new(DocInfo::Type).string().not_null())
-                .comment("doc|folder")
+                .col(ColumnDef::new(DocInfo::ThumbnailBase64).string().not_null())
+                .comment("doc type|folder")
                 .col(
                     ColumnDef::new(DocInfo::CreatedAt)
                         .timestamp_with_time_zone()
@@ -249,7 +250,6 @@ impl MigrationTrait for Migration {
                 .to_owned()
         ).await?;
 
-        let tm = now();
         let root_insert = Query::insert()
             .into_table(UserInfo::Table)
             .columns([UserInfo::Email, UserInfo::Nickname, UserInfo::Password])
@@ -273,28 +273,28 @@ impl MigrationTrait for Migration {
             .columns([TagInfo::Uid, TagInfo::TagName, TagInfo::Regx, TagInfo::Color, TagInfo::Icon])
             .values_panic([
                 (1).into(),
-                "视频".into(),
+                "Video".into(),
                 ".*\\.(mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa)".into(),
                 (1).into(),
                 (1).into(),
             ])
             .values_panic([
                 (1).into(),
-                "图片".into(),
-                ".*\\.(png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng)".into(),
+                "Picture".into(),
+                ".*\\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng)".into(),
                 (2).into(),
                 (2).into(),
             ])
             .values_panic([
                 (1).into(),
-                "音乐".into(),
+                "Music".into(),
                 ".*\\.(WAV|FLAC|APE|ALAC|WavPack|WV|MP3|AAC|Ogg|Vorbis|Opus)".into(),
                 (3).into(),
                 (3).into(),
             ])
             .values_panic([
                 (1).into(),
-                "文档".into(),
+                "Document".into(),
                 ".*\\.(pdf|doc|ppt|yml|xml|htm|json|csv|txt|ini|xsl|wps|rtf|hlp)".into(),
                 (3).into(),
                 (3).into(),
@@ -419,6 +419,7 @@ enum DocInfo {
     Location,
     Size,
     Type,
+    ThumbnailBase64,
     CreatedAt,
     UpdatedAt,
     IsDeleted,

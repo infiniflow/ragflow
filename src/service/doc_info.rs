@@ -163,7 +163,7 @@ impl Query {
                 );
             }
             if tag.regx.len() > 0 {
-                cond.push_str(&format!(" and doc_name ~ '{}'", tag.regx));
+                cond.push_str(&format!(" and (type='{}' or doc_name ~ '{}') ", tag.tag_name, tag.regx));
             }
         }
 
@@ -254,6 +254,7 @@ impl Mutation {
             size: Set(form_data.size.to_owned()),
             r#type: Set(form_data.r#type.to_owned()),
             location: Set(form_data.location.to_owned()),
+            thumbnail_base64: Default::default(),
             created_at: Set(form_data.created_at.to_owned()),
             updated_at: Set(form_data.updated_at.to_owned()),
             is_deleted: Default::default(),
@@ -277,6 +278,7 @@ impl Mutation {
             size: Set(form_data.size.to_owned()),
             r#type: Set(form_data.r#type.to_owned()),
             location: Set(form_data.location.to_owned()),
+            thumbnail_base64: doc_info.thumbnail_base64,
             created_at: doc_info.created_at,
             updated_at: Set(now()),
             is_deleted: Default::default(),

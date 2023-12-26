@@ -9,6 +9,8 @@ from sklearn.metrics.pairwise import cosine_similarity as CosineSimilarity
 import numpy as np
 from copy import deepcopy
 
+def index_name(uid):return f"docgpt_{uid}"
+
 class Dealer:
     def __init__(self, es, emb_mdl):
         self.qryr = query.EsQueryer(es)

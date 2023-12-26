@@ -11,6 +11,7 @@ use crate::entity::doc_info::Model;
 use crate::errors::AppError;
 use crate::service::doc_info::{ Mutation, Query };
 use serde::Deserialize;
+use regex::Regex;
 
 fn now() -> chrono::DateTime<FixedOffset> {
     Utc::now().with_timezone(&FixedOffset::east_opt(3600 * 8).unwrap())
@@ -64,6 +65,41 @@ pub struct UploadForm {
     did: i64,
 }
 
+fn file_type(filename: &String) -> String {
+    let fnm = filename.to_lowercase();
+    if
+        let Some(_) = Regex::new(r"\.(mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa)$")
+            .unwrap()
+            .captures(&fnm)
+    {
+        return "Video".to_owned();
+    }
+    if
+        let Some(_) = Regex::new(
+            r"\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng)$"
+        )
+            .unwrap()
+            .captures(&fnm)
+    {
+        return "Picture".to_owned();
+    }
+    if
+        let Some(_) = Regex::new(r"\.(WAV|FLAC|APE|ALAC|WavPack|WV|MP3|AAC|Ogg|Vorbis|Opus)$")
+            .unwrap()
+            .captures(&fnm)
+    {
+        return "Music".to_owned();
+    }
+    if
+        let Some(_) = Regex::new(r"\.(pdf|doc|ppt|yml|xml|htm|json|csv|txt|ini|xsl|wps|rtf|hlp)$")
+            .unwrap()
+            .captures(&fnm)
+    {
+        return "Document".to_owned();
+    }
+    "Other".to_owned()
+}
+
 #[post("/v1.0/upload")]
 async fn upload(
     payload: Multipart<UploadForm>,
@@ -114,7 +150,13 @@ async fn upload(
         print!("Existing bucket: {}", bucket_name.clone());
     }
 
-    let location = format!("/{}/{}", payload.did, fnm);
+    let location = format!("/{}/{}", payload.did, fnm)
+        .as_bytes()
+        .to_vec()
+        .iter()
+        .map(|b| format!("{:02x}", b).to_string())
+        .collect::<Vec<String>>()
+        .join("");
     print!("===>{}", location.clone());
     s3_client.put_object(
         &mut PutObjectArgs::new(
@@ -129,10 +171,11 @@ async fn upload(
     let doc = Mutation::create_doc_info(&data.conn, Model {
         did: Default::default(),
         uid: uid,
-        doc_name: fnm,
+        doc_name: fnm.clone(),
         size: payload.file_field.bytes.len() as i64,
         location,
-        r#type: "doc".to_string(),
+        r#type: file_type(&fnm),
+        thumbnail_base64: Default::default(),
         created_at: now(),
         updated_at: now(),
         is_deleted: Default::default(),
@@ -214,6 +257,7 @@ async fn new_folder(
         size: 0,
         r#type: "folder".to_string(),
         location: "".to_owned(),
+        thumbnail_base64: Default::default(),
         created_at: now(),
         updated_at: now(),
         is_deleted: Default::default(),
