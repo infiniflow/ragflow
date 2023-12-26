@@ -6,7 +6,7 @@ from util.db_conn import Postgres
 from util.minio_conn import HuMinio
 from util import rmSpace, findMaxDt
 from FlagEmbedding import FlagModel
-from nlp import huchunk, huqie
+from nlp import huchunk, huqie, search
 import base64, hashlib
 from io import BytesIO
 import pandas as pd
@@ -103,7 +103,7 @@ def build(row):
                                if(!ctx._source.kb_id.contains('%s'))
                                  ctx._source.kb_id.add('%s');
                                """%(str(row["kb_id"]), str(row["kb_id"])),
-                               idxnm = index_name(row["uid"])
+                               idxnm = search.index_name(row["uid"])
                               )
         set_progress(row["kb2doc_id"], 1, "Done")
         return []
@@ -171,10 +171,8 @@ def build(row):
     return docs
 
 
-def index_name(uid):return f"docgpt_{uid}"
-
 def init_kb(row):
-    idxnm = index_name(row["uid"])
+    idxnm = search.index_name(row["uid"])
     if ES.indexExist(idxnm): return
     return ES.createIdx(idxnm, json.load(open("conf/mapping.json", "r")))
 
@@ -199,7 +197,7 @@ def rm_doc_from_kb(df):
                                      ctx._source.kb_id.indexOf('%s')
                                );
                                 """%(str(r["kb_id"]),str(r["kb_id"])),
-                               idxnm = index_name(r["uid"])
+                               idxnm = search.index_name(r["uid"])
                               )
     if len(df) == 0:return
     sql = """
@@ -233,7 +231,7 @@ def main(comm, mod):
         set_progress(r["kb2doc_id"], random.randint(70, 95)/100., 
                      "Finished embedding! Start to build index!")
         init_kb(r)
-        es_r = ES.bulk(cks, index_name(r["uid"]))
+        es_r = ES.bulk(cks, search.index_name(r["uid"]))
         if es_r:
             set_progress(r["kb2doc_id"], -1, "Index failure!")
             print(es_r)

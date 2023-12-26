@@ -90,12 +90,13 @@ async fn register(
         doc_name: "/".into(),
         size: 0,
         location: "".into(),
+        thumbnail_base64: "".into(),
         r#type: "folder".to_string(),
         created_at: now(),
         updated_at: now(),
         is_deleted: Default::default(),
     }).await?;
-    let tnm = vec!["视频", "图片", "音乐", "文档"];
+    let tnm = vec!["Video", "Picture", "Music", "Document"];
     let tregx = vec![
         ".*\\.(mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa)",
         ".*\\.(png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng)",
