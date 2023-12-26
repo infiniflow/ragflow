@@ -24,6 +24,7 @@ class QWen(Base):
         from http import HTTPStatus
         from dashscope import Generation
         from dashscope.api_entities.dashscope_response import Role
+        # export DASHSCOPE_API_KEY=YOUR_DASHSCOPE_API_KEY
         response = Generation.call(
                     Generation.Models.qwen_turbo,
                     messages=messages,

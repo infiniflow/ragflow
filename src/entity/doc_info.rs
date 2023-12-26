@@ -17,6 +17,8 @@ pub struct Model {
     #[serde(skip_deserializing)]
     pub location: String,
     #[serde(skip_deserializing)]
+    pub thumbnail_base64: String,
+    #[serde(skip_deserializing)]
     pub created_at: DateTime<FixedOffset>,
     #[serde(skip_deserializing)]
     pub updated_at: DateTime<FixedOffset>,

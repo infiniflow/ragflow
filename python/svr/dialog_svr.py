@@ -6,11 +6,10 @@ from tornado.ioloop import IOLoop
 from tornado.httpserver import HTTPServer
 from tornado.options import define,options
 from util import es_conn, setup_logging
-from svr import sec_search as search
-from svr.rpc_proxy import RPCProxy
 from sklearn.metrics.pairwise import cosine_similarity as CosineSimilarity
 from nlp import huqie
 from nlp import query as Query
+from nlp import search
 from llm import HuEmbedding, GptTurbo
 import numpy as np
 from io import BytesIO
@@ -38,7 +37,7 @@ def get_QA_pairs(hists):
 
 
 
-def get_instruction(sres, top_i, max_len=8096 fld="content_ltks"):
+def get_instruction(sres, top_i, max_len=8096, fld="content_ltks"):
     max_len //= len(top_i)
     # add instruction to prompt
     instructions = [re.sub(r"[\r\n]+", " ", sres.field[sres.ids[i]][fld]) for i in top_i]
@@ -96,10 +95,11 @@ class Handler(RequestHandler):
         try:
             question = param.get("history",[{"user": "Hi!"}])[-1]["user"]
             res = SE.search({
-                "question": question,
-                "kb_ids": param.get("kb_ids", []),
-                "size": param.get("topn", 15)
-            })
+                    "question": question,
+                    "kb_ids": param.get("kb_ids", []),
+                    "size": param.get("topn", 15)},
+               search.index_name(param["uid"]) 
+            )
 
             sim = SE.rerank(res, question)  
             rk_idx = np.argsort(sim*-1)
@@ -112,12 +112,12 @@ class Handler(RequestHandler):
             refer = OrderedDict()
             docnms = {}
             for i in rk_idx:
-                 did = res.field[res.ids[i]]["doc_id"])
-                 if did not in docnms: docnms[did] = res.field[res.ids[i]]["docnm_kwd"])
+                 did = res.field[res.ids[i]]["doc_id"]
+                 if did not in docnms: docnms[did] = res.field[res.ids[i]]["docnm_kwd"]
                  if did not in refer: refer[did] = []
                  refer[did].append({
                      "chunk_id": res.ids[i],
-                     "content": res.field[res.ids[i]]["content_ltks"]),
+                     "content": res.field[res.ids[i]]["content_ltks"],
                      "image": ""
                  })
 
@@ -128,7 +128,7 @@ class Handler(RequestHandler):
                 "data":{
                     "uid": param["uid"],
                     "dialog_id": param["dialog_id"],
-                    "assistant": ans
+                    "assistant": ans,
                     "refer": [{
                         "did": did,
                         "doc_name": docnms[did],
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     parser.add_argument("--port", default=4455, type=int, help="Port used for service")
     ARGS = parser.parse_args()
     
-    SE = search.ResearchReportSearch(es_conn.HuEs("infiniflow"), EMBEDDING)
+    SE = search.Dealer(es_conn.HuEs("infiniflow"), EMBEDDING)
 
     app = Application([(r'/v1/chat/completions', Handler)],debug=False)
     http_server = HTTPServer(app)
