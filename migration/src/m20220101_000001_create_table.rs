@@ -201,7 +201,7 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(DocInfo::Location).string().not_null())
                 .col(ColumnDef::new(DocInfo::Size).big_integer().not_null())
                 .col(ColumnDef::new(DocInfo::Type).string().not_null())
-                .col(ColumnDef::new(DocInfo::ThumbnailBase64).string().not_null())
+                .col(ColumnDef::new(DocInfo::ThumbnailBase64).string().default(""))
                 .comment("doc type|folder")
                 .col(
                     ColumnDef::new(DocInfo::CreatedAt)
@@ -274,28 +274,28 @@ impl MigrationTrait for Migration {
             .values_panic([
                 (1).into(),
                 "Video".into(),
-                ".*\\.(mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa)".into(),
+                ".*\\.(mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4)".into(),
                 (1).into(),
                 (1).into(),
             ])
             .values_panic([
                 (1).into(),
                 "Picture".into(),
-                ".*\\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng)".into(),
+                ".*\\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico)".into(),
                 (2).into(),
                 (2).into(),
             ])
             .values_panic([
                 (1).into(),
                 "Music".into(),
-                ".*\\.(WAV|FLAC|APE|ALAC|WavPack|WV|MP3|AAC|Ogg|Vorbis|Opus)".into(),
+                ".*\\.(wav|flac|ape|alac|wavpack|wv|mp3|aac|ogg|vorbis|opus|mp3)".into(),
                 (3).into(),
                 (3).into(),
             ])
             .values_panic([
                 (1).into(),
                 "Document".into(),
-                ".*\\.(pdf|doc|ppt|yml|xml|htm|json|csv|txt|ini|xsl|wps|rtf|hlp)".into(),
+                ".*\\.(pdf|doc|ppt|yml|xml|htm|json|csv|txt|ini|xsl|wps|rtf|hlp|pages|numbers|key)".into(),
                 (3).into(),
                 (3).into(),
             ])
