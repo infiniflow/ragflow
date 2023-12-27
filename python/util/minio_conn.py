@@ -54,10 +54,23 @@ class HuMinio(object):
                 r = self.conn.get_object(bucket, fnm)
                 return r.read()
             except Exception as e:
-                logging.error(f"Fail get {bucket}/{fnm}: "+str(e))
+                logging.error(f"fail get {bucket}/{fnm}: "+str(e))
                 self.__open__()
                 time.sleep(1)
         return 
+
+
+    def get_presigned_url(self, bucket, fnm, expires):
+        for _ in range(10):
+            try:
+                return self.conn.get_presigned_url("GET", bucket, fnm, expires)
+            except Exception as e:
+                logging.error(f"fail get {bucket}/{fnm}: "+str(e))
+                self.__open__()
+                time.sleep(1)
+        return 
+
+
 
 if __name__ == "__main__":
     conn = HuMinio("infiniflow")

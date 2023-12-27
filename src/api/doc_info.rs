@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap};
 use std::io::BufReader;
 use actix_multipart_extract::{ File, Multipart, MultipartForm };
+use actix_web::web::Bytes;
 use actix_web::{ HttpResponse, post, web };
 use chrono::{ Utc, FixedOffset };
 use minio::s3::args::{ BucketExistsArgs, MakeBucketArgs, PutObjectArgs };
@@ -68,7 +69,7 @@ pub struct UploadForm {
 fn file_type(filename: &String) -> String {
     let fnm = filename.to_lowercase();
     if
-        let Some(_) = Regex::new(r"\.(mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa)$")
+        let Some(_) = Regex::new(r"\.(mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4)$")
             .unwrap()
             .captures(&fnm)
     {
@@ -76,7 +77,7 @@ fn file_type(filename: &String) -> String {
     }
     if
         let Some(_) = Regex::new(
-            r"\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng)$"
+            r"\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico)$"
         )
             .unwrap()
             .captures(&fnm)
@@ -84,14 +85,14 @@ fn file_type(filename: &String) -> String {
         return "Picture".to_owned();
     }
     if
-        let Some(_) = Regex::new(r"\.(WAV|FLAC|APE|ALAC|WavPack|WV|MP3|AAC|Ogg|Vorbis|Opus)$")
+        let Some(_) = Regex::new(r"\.(wav|flac|ape|alac|wavpack|wv|mp3|aac|ogg|vorbis|opus|mp3)$")
             .unwrap()
             .captures(&fnm)
     {
         return "Music".to_owned();
     }
     if
-        let Some(_) = Regex::new(r"\.(pdf|doc|ppt|yml|xml|htm|json|csv|txt|ini|xsl|wps|rtf|hlp)$")
+        let Some(_) = Regex::new(r"\.(pdf|doc|ppt|yml|xml|htm|json|csv|txt|ini|xsl|wps|rtf|hlp|pages|numbers|key)$")
             .unwrap()
             .captures(&fnm)
     {
@@ -99,6 +100,7 @@ fn file_type(filename: &String) -> String {
     }
     "Other".to_owned()
 }
+
 
 #[post("/v1.0/upload")]
 async fn upload(
