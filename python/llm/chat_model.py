@@ -25,9 +25,10 @@ class QWen(Base):
         from dashscope import Generation
         from dashscope.api_entities.dashscope_response import Role
         # export DASHSCOPE_API_KEY=YOUR_DASHSCOPE_API_KEY
+        history.insert(0, {"role": "system", "content": system})
         response = Generation.call(
                     Generation.Models.qwen_turbo,
-                    messages=messages,
+                    messages=history,
                     result_format='message'
         )
         if response.status_code == HTTPStatus.OK:

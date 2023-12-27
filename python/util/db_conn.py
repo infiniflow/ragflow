@@ -19,7 +19,11 @@ class Postgres(object):
             pass
 
         try:
-            self.conn = psycopg2.connect(f"dbname={self.dbnm} user={self.config.get('pgdb_usr')} password={self.config.get('pgdb_pwd')} host={self.config.get('pgdb_host')} port={self.config.get('pgdb_port')}")
+            self.conn = psycopg2.connect(f"""dbname={self.dbnm}
+                                         user={self.config.get('postgres_user')}
+                                         password={self.config.get('postgres_password')}
+                                         host={self.config.get('postgres_host')}
+                                         port={self.config.get('postgres_port')}""")
         except Exception as e:
             logging.error("Fail to connect %s "%self.config.get("pgdb_host") + str(e))
 

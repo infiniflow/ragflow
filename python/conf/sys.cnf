@@ -1,10 +1,9 @@
 [infiniflow]
 es=http://es01:9200
-pgdb_usr=root
-pgdb_pwd=infiniflow_docgpt
-pgdb_host=postgres
-pgdb_port=5432
+postgres_user=root
+postgres_password=infiniflow_docgpt
+postgres_host=postgres
+postgres_port=5432
 minio_host=minio:9000
-minio_usr=infiniflow
-minio_pwd=infiniflow_docgpt
-
+minio_user=infiniflow
+minio_password=infiniflow_docgpt

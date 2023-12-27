@@ -18,8 +18,8 @@ class HuMinio(object):
 
         try:
             self.conn = Minio(self.config.get("minio_host"),
-                              access_key=self.config.get("minio_usr"),
-                              secret_key=self.config.get("minio_pwd"),
+                              access_key=self.config.get("minio_user"),
+                              secret_key=self.config.get("minio_password"),
                               secure=False
                              )
         except Exception as e:
