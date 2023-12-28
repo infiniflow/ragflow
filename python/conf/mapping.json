@@ -121,7 +121,6 @@
               "match": "*_vec",
               "mapping": {
                 "type": "dense_vector",
-                "dims": 1024,
                 "index": true,
                 "similarity": "cosine"
               }

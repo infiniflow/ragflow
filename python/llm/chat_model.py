@@ -1,6 +1,7 @@
 from abc import ABC
-import openapi
+from openai import OpenAI
 import os
+
 
 class Base(ABC):
     def chat(self, system, history, gen_conf):
@@ -9,27 +10,27 @@ class Base(ABC):
 
 class GptTurbo(Base):
     def __init__(self):
-        openapi.api_key = os.environ["OPENAPI_KEY"]
+        self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
     def chat(self, system, history, gen_conf):
         history.insert(0, {"role": "system", "content": system})
-        res = openapi.ChatCompletion.create(model="gpt-3.5-turbo",
-                                           messages=history,
-                                          **gen_conf)
+        res = self.client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=history,
+            **gen_conf)
         return res.choices[0].message.content.strip()
 
 
-class QWen(Base):
+class QWenChat(Base):
     def chat(self, system, history, gen_conf):
         from http import HTTPStatus
         from dashscope import Generation
-        from dashscope.api_entities.dashscope_response import Role
         # export DASHSCOPE_API_KEY=YOUR_DASHSCOPE_API_KEY
         history.insert(0, {"role": "system", "content": system})
         response = Generation.call(
-                    Generation.Models.qwen_turbo,
-                    messages=history,
-                    result_format='message'
+            Generation.Models.qwen_turbo,
+            messages=history,
+            result_format='message'
         )
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content']

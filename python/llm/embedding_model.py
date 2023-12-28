@@ -1,7 +1,10 @@
 from abc import ABC
+from openai import OpenAI
 from FlagEmbedding import FlagModel
 import torch
+import os
 import numpy as np
+
 
 class Base(ABC):
     def encode(self, texts: list, batch_size=32):
@@ -22,32 +25,29 @@ class HuEmbedding(Base):
 
         """
         self.model = FlagModel("BAAI/bge-large-zh-v1.5",
-                              query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
-                              use_fp16=torch.cuda.is_available())
+                               query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
+                               use_fp16=torch.cuda.is_available())
 
     def encode(self, texts: list, batch_size=32):
         res = []
         for i in range(0, len(texts), batch_size):
-            res.extend(self.model.encode(texts[i:i+batch_size]).tolist())
+            res.extend(self.model.encode(texts[i:i + batch_size]).tolist())
         return np.array(res)
-
 
 
 class GptEmbed(Base):
     def __init__(self):
-        import openapi,os
-        from openai import OpenAI
-        openapi.api_key = os.environ["OPENAPI_KEY"]
-        self.client = OpenAI()
+        self.client = OpenAI(api_key=os.envirement["OPENAI_API_KEY"])
 
     def encode(self, texts: list, batch_size=32):
-        res = self.client.embeddings.create(input = texts,
+        res = self.client.embeddings.create(input=texts,
                                             model="text-embedding-ada-002")
         return [d["embedding"] for d in res["data"]]
 
 
-class QWen(base):
+class QWenEmbd(Base):
     def encode(self, texts: list, batch_size=32, text_type="document"):
+        # export DASHSCOPE_API_KEY=YOUR_DASHSCOPE_API_KEY
         import dashscope
         from http import HTTPStatus
         res = []

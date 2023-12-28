@@ -372,7 +372,9 @@ class PptChunker(HuChunker):
 
     def __call__(self, fnm):
         from pptx import Presentation
-        ppt = Presentation(fnm) if isinstance(fnm, str) else Presentation(BytesIO(fnm))
+        ppt = Presentation(fnm) if isinstance(
+            fnm, str) else Presentation(
+            BytesIO(fnm))
         flds = self.Fields()
         flds.text_chunks = []
         for slide in ppt.slides:
@@ -398,7 +400,8 @@ class TextChunker(HuChunker):
         mime = magic.Magic(mime=True)
         if isinstance(file_path, str):
             file_type = mime.from_file(file_path)
-        else:file_type = mime.from_buffer(file_path) 
+        else:
+            file_type = mime.from_buffer(file_path)
         if 'text' in file_type:
             return False
         else:
@@ -406,7 +409,8 @@ class TextChunker(HuChunker):
 
     def __call__(self, fnm):
         flds = self.Fields()
-        if self.is_binary_file(fnm):return flds
+        if self.is_binary_file(fnm):
+            return flds
         with open(fnm, "r") as f:
             txt = f.read()
             flds.text_chunks = [(c, None) for c in self.naive_text_chunk(txt)]
