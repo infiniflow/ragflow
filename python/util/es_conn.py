@@ -228,7 +228,8 @@ class HuEs:
         return False
 
     def search(self, q, idxnm=None, src=False, timeout="2s"):
-        if not isinstance(q, dict): q = Search().query(q).to_dict()
+        if not isinstance(q, dict):
+            q = Search().query(q).to_dict()
         for i in range(3):
             try:
                 res = self.es.search(index=(self.idxnm if not idxnm else idxnm),
@@ -274,9 +275,10 @@ class HuEs:
 
         return False
 
-
     def updateScriptByQuery(self, q, scripts, idxnm=None):
-        ubq = UpdateByQuery(index=self.idxnm if not idxnm else idxnm).using(self.es).query(q)
+        ubq = UpdateByQuery(
+            index=self.idxnm if not idxnm else idxnm).using(
+            self.es).query(q)
         ubq = ubq.script(source=scripts)
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
@@ -293,7 +295,6 @@ class HuEs:
                 self.conn()
 
         return False
-
 
     def deleteByQuery(self, query, idxnm=""):
         for i in range(3):
@@ -392,7 +393,7 @@ class HuEs:
         return rr
 
     def scrollIter(self, pagesize=100, scroll_time='2m', q={
-        "query": {"match_all": {}}, "sort": [{"updated_at": {"order": "desc"}}]}):
+            "query": {"match_all": {}}, "sort": [{"updated_at": {"order": "desc"}}]}):
         for _ in range(100):
             try:
                 page = self.es.search(

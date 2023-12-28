@@ -16,11 +16,12 @@ from io import BytesIO
 from util import config
 from timeit import default_timer as timer
 from collections import OrderedDict
+from llm import ChatModel, EmbeddingModel
 
 SE = None
 CFIELD="content_ltks"
-EMBEDDING = HuEmbedding()
-LLM = GptTurbo()
+EMBEDDING = EmbeddingModel
+LLM = ChatModel
 
 def get_QA_pairs(hists):
     pa = []

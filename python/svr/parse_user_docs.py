@@ -1,4 +1,4 @@
-import json, os, sys, hashlib, copy, time, random, re, logging, torch
+import json, os, sys, hashlib, copy, time, random, re
 from os.path import dirname, realpath
 sys.path.append(dirname(realpath(__file__)) + "/../")
 from util.es_conn import HuEs
@@ -7,10 +7,10 @@ from util.minio_conn import HuMinio
 from util import rmSpace, findMaxDt
 from FlagEmbedding import FlagModel
 from nlp import huchunk, huqie, search
-import base64, hashlib
 from io import BytesIO
 import pandas as pd
 from elasticsearch_dsl import Q
+from PIL import Image
 from parser import (
     PdfParser,
     DocxParser,
@@ -40,6 +40,15 @@ def chuck_doc(name, binary):
     if suff.find("doc") >= 0: return DOC(binary)
     if re.match(r"(xlsx|xlsm|xltx|xltm)", suff): return EXC(binary)
     if suff.find("ppt") >= 0: return PPT(binary)
+    if os.envirement.get("PARSE_IMAGE") \
+       and re.search(r"\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico)$",
+              name.lower()):
+        from llm import CvModel
+        txt = CvModel.describe(binary)
+        field = TextChunker.Fields()
+        field.text_chunks = [(txt, binary)]
+        field.table_chunks = []
+
     
     return TextChunker()(binary)
 
@@ -119,7 +128,6 @@ def build(row):
             set_progress(row["kb2doc_id"], -1, f"Internal system error: %s"%str(e).replace("'", ""))
         return []
 
-    print(row["doc_name"], obj)
     if not obj.text_chunks and not obj.table_chunks: 
         set_progress(row["kb2doc_id"], 1, "Nothing added! Mostly, file type unsupported yet.")
         return  []
@@ -146,7 +154,10 @@ def build(row):
         if not img:
             docs.append(d)
             continue
-        img.save(output_buffer, format='JPEG')
+
+        if isinstance(img, Image): img.save(output_buffer, format='JPEG')
+        else: output_buffer = BytesIO(img)
+
         MINIO.put("{}-{}".format(row["uid"], row["kb_id"]), d["_id"],
                       output_buffer.getvalue())
         d["img_id"] = "{}-{}".format(row["uid"], row["kb_id"])
