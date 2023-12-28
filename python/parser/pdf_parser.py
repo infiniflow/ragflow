@@ -53,7 +53,7 @@ class HuParser:
     def _y_dis(
             self, a, b):
         return (
-                       b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
+            b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
 
     def _match_proj(self, b):
         proj_patt = [
@@ -76,9 +76,9 @@ class HuParser:
         tks_down = huqie.qie(down["text"][:LEN]).split(" ")
         tks_up = huqie.qie(up["text"][-LEN:]).split(" ")
         tks_all = up["text"][-LEN:].strip() \
-                  + (" " if re.match(r"[a-zA-Z0-9]+",
-                                     up["text"][-1] + down["text"][0]) else "") \
-                  + down["text"][:LEN].strip()
+            + (" " if re.match(r"[a-zA-Z0-9]+",
+                               up["text"][-1] + down["text"][0]) else "") \
+            + down["text"][:LEN].strip()
         tks_all = huqie.qie(tks_all).split(" ")
         fea = [
             up.get("R", -1) == down.get("R", -1),
@@ -100,7 +100,7 @@ class HuParser:
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[\(（][^\)）]+$", up["text"])
-                    and re.search(r"[\)）]", down["text"]) else False,
+            and re.search(r"[\)）]", down["text"]) else False,
             self._match_proj(down),
             True if re.match(r"[A-Z]", down["text"]) else False,
             True if re.match(r"[A-Z]", up["text"][-1]) else False,
@@ -217,7 +217,7 @@ class HuParser:
         assert tp_ <= btm_, "Fuckedup! T:{},B:{},X0:{},X1:{} => {}".format(
             tp, btm, x0, x1, b)
         ov = (btm_ - tp_) * (x1_ - x0_) if x1 - \
-                                           x0 != 0 and btm - tp != 0 else 0
+            x0 != 0 and btm - tp != 0 else 0
         if ov > 0 and ratio:
             ov /= (x1 - x0) * (btm - tp)
         return ov
@@ -382,7 +382,7 @@ class HuParser:
                 continue
             for tb in tbls:  # for table
                 left, top, right, bott = tb["x0"] - MARGIN, tb["top"] - MARGIN, \
-                                         tb["x1"] + MARGIN, tb["bottom"] + MARGIN
+                    tb["x1"] + MARGIN, tb["bottom"] + MARGIN
                 left *= ZM
                 top *= ZM
                 right *= ZM
@@ -899,7 +899,7 @@ class HuParser:
             lst_r = rows[-1]
             if lst_r[-1].get("R", "") != b.get("R", "") \
                     or (b["top"] >= btm - 3 and lst_r[-1].get("R", "-1") != b.get("R", "-2")
-            ):  # new row
+                        ):  # new row
                 btm = b["bottom"]
                 b["rn"] += 1
                 rows.append([b])
@@ -949,9 +949,9 @@ class HuParser:
                     j += 1
                     continue
                 f = (j > 0 and tbl[ii][j - 1] and tbl[ii]
-                [j - 1][0].get("text")) or j == 0
+                     [j - 1][0].get("text")) or j == 0
                 ff = (j + 1 < len(tbl[ii]) and tbl[ii][j + 1] and tbl[ii]
-                [j + 1][0].get("text")) or j + 1 >= len(tbl[ii])
+                      [j + 1][0].get("text")) or j + 1 >= len(tbl[ii])
                 if f and ff:
                     j += 1
                     continue
@@ -1012,9 +1012,9 @@ class HuParser:
                     i += 1
                     continue
                 f = (i > 0 and tbl[i - 1][jj] and tbl[i - 1]
-                [jj][0].get("text")) or i == 0
+                     [jj][0].get("text")) or i == 0
                 ff = (i + 1 < len(tbl) and tbl[i + 1][jj] and tbl[i + 1]
-                [jj][0].get("text")) or i + 1 >= len(tbl)
+                      [jj][0].get("text")) or i + 1 >= len(tbl)
                 if f and ff:
                     i += 1
                     continue
@@ -1169,8 +1169,8 @@ class HuParser:
                                           else "") + headers[j - 1][k]
                     else:
                         headers[j][k] = headers[j - 1][k] \
-                                        + ("的" if headers[j - 1][k] else "") \
-                                        + headers[j][k]
+                            + ("的" if headers[j - 1][k] else "") \
+                            + headers[j][k]
 
         logging.debug(
             f">>>>>>>>>>>>>>>>>{cap}：SIZE:{rowno}X{clmno} Header: {hdr_rowno}")
@@ -1247,7 +1247,7 @@ class HuParser:
                 i += 1
                 continue
             lout_no = str(self.boxes[i]["page_number"]) + \
-                      "-" + str(self.boxes[i]["layoutno"])
+                "-" + str(self.boxes[i]["layoutno"])
             if self.is_caption(self.boxes[i]) or self.boxes[i]["layout_type"] in ["table caption", "title",
                                                                                   "figure caption", "reference"]:
                 nomerge_lout_no.append(lst_lout_no)
@@ -1526,7 +1526,8 @@ class HuParser:
         return "\n\n".join(res)
 
     def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
-        self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
+        self.pdf = pdfplumber.open(fnm) if isinstance(
+            fnm, str) else pdfplumber.open(BytesIO(fnm))
         self.lefted_chars = []
         self.mean_height = []
         self.mean_width = []
@@ -1601,7 +1602,7 @@ class HuParser:
                 self.page_images[pns[0]].crop((left * ZM, top * ZM,
                                                right *
                                                ZM, min(
-                    bottom, self.page_images[pns[0]].size[1])
+                                                   bottom, self.page_images[pns[0]].size[1])
                                                ))
             )
             bottom -= self.page_images[pns[0]].size[1]
