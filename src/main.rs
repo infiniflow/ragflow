@@ -2,6 +2,7 @@ mod api;
 mod entity;
 mod service;
 mod errors;
+mod web_socket;
 
 use std::env;
 use actix_files::Files;
@@ -19,6 +20,7 @@ use minio::s3::http::BaseUrl;
 use sea_orm::{ Database, DatabaseConnection };
 use migration::{ Migrator, MigratorTrait };
 use crate::errors::{ AppError, UserError };
+use crate::web_socket::doc_info::upload_file_ws;
 
 #[derive(Debug, Clone)]
 struct AppState {
@@ -138,4 +140,6 @@ fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(api::user_info::login);
     cfg.service(api::user_info::register);
     cfg.service(api::user_info::setting);
+
+    cfg.service(web::resource("/ws-upload-doc").route(web::get().to(upload_file_ws)));
 }

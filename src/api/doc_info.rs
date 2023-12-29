@@ -107,8 +107,12 @@ async fn upload(
     payload: Multipart<UploadForm>,
     data: web::Data<AppState>
 ) -> Result<HttpResponse, AppError> {
-    let uid = payload.uid;
-    let file_name = payload.file_field.name.as_str();
+
+
+    Ok(HttpResponse::Ok().body("File uploaded successfully"))
+}
+
+pub(crate) async fn _upload_file(uid: i64, did: i64, file_name: &str, bytes: &[u8], data: &web::Data<AppState>) -> Result<(), AppError> {
     async fn add_number_to_filename(
         file_name: &str,
         conn: &DbConn,
@@ -138,9 +142,9 @@ async fn upload(
         }
         new_file_name
     }
-    let fnm = add_number_to_filename(file_name, &data.conn, uid, payload.did).await;
+    let fnm = add_number_to_filename(file_name, &data.conn, uid, did).await;
 
-    let bucket_name = format!("{}-upload", payload.uid);
+    let bucket_name = format!("{}-upload", uid);
     let s3_client: &minio::s3::client::Client = &data.s3_client;
     let buckets_exists = s3_client
         .bucket_exists(&BucketExistsArgs::new(&bucket_name).unwrap()).await
@@ -152,7 +156,7 @@ async fn upload(
         print!("Existing bucket: {}", bucket_name.clone());
     }
 
-    let location = format!("/{}/{}", payload.did, fnm)
+    let location = format!("/{}/{}", did, fnm)
         .as_bytes()
         .to_vec()
         .iter()
@@ -164,8 +168,8 @@ async fn upload(
         &mut PutObjectArgs::new(
             &bucket_name,
             &location,
-            &mut BufReader::new(payload.file_field.bytes.as_slice()),
-            Some(payload.file_field.bytes.len()),
+            &mut BufReader::new(bytes),
+            Some(bytes.len()),
             None
         )?
     ).await?;
@@ -174,7 +178,7 @@ async fn upload(
         did: Default::default(),
         uid: uid,
         doc_name: fnm.clone(),
-        size: payload.file_field.bytes.len() as i64,
+        size: bytes.len() as i64,
         location,
         r#type: file_type(&fnm),
         thumbnail_base64: Default::default(),
@@ -183,9 +187,9 @@ async fn upload(
         is_deleted: Default::default(),
     }).await?;
 
-    let _ = Mutation::place_doc(&data.conn, payload.did, doc.did.unwrap()).await?;
+    let _ = Mutation::place_doc(&data.conn, did, doc.did.unwrap()).await?;
 
-    Ok(HttpResponse::Ok().body("File uploaded successfully"))
+    Ok(())
 }
 
 #[derive(Deserialize, Debug)]
