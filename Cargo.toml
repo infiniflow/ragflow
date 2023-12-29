@@ -13,9 +13,15 @@ actix-multipart = "0.4"
 actix-session = { version = "0.5" }
 actix-identity = { version = "0.4" }
 actix-web-httpauth = { version = "0.6" }
+actix-ws = "0.2.5"
+uuid = { version = "1.6.1", features = [
+    "v4",
+    "fast-rng",
+    "macro-diagnostics",
+] }
 thiserror = "1.0"
 postgres = "0.19.7"
-sea-orm = {version = "0.12.9", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros"]}
+sea-orm = { version = "0.12.9", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 tracing-subscriber = "0.3.18"
@@ -27,6 +33,7 @@ minio = "0.1.0"
 futures-util = "0.3.29"
 actix-multipart-extract = "0.1.5"
 regex = "1.10.2"
+tokio = { version = "1.35.1", features = ["rt", "time", "macros"] }
 
 [[bin]]
 name = "doc_gpt"
