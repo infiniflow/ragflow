@@ -1,6 +1,7 @@
-use sea_orm_migration::{ prelude::*, sea_orm::Statement };
+use sea_orm_migration::prelude::*;
 use chrono::{ FixedOffset, Utc };
 
+#[allow(dead_code)]
 fn now() -> chrono::DateTime<FixedOffset> {
     Utc::now().with_timezone(&FixedOffset::east_opt(3600 * 8).unwrap())
 }
