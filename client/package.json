@@ -1,0 +1,30 @@
+{
+  "private": true,
+  "author": "zhaofengchao <13723060510@163.com>",
+  "scripts": {
+    "dev": "umi dev",
+    "build": "umi build",
+    "postinstall": "umi setup",
+    "setup": "umi setup",
+    "start": "npm run dev"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.2.6",
+    "@ant-design/pro-layout": "^7.17.16",
+    "antd": "^5.12.7",
+    "axios": "^1.6.3",
+    "classnames": "^2.5.1",
+    "i18next": "^23.7.16",
+    "lodash": "^4.17.21",
+    "react-i18next": "^14.0.0",
+    "react-infinite-scroll-component": "^6.1.0",
+    "umi": "^4.0.90",
+    "umi-request": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.33",
+    "@types/react-dom": "^18.0.11",
+    "@umijs/plugins": "^4.1.0",
+    "typescript": "^5.0.3"
+  }
+}
