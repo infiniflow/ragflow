@@ -2,32 +2,7 @@ import { debounce } from 'lodash';
 import semver from 'semver';
 import merge from 'lodash/merge';
 import isPlainObject from 'lodash/isPlainObject';
-/**
- * 统一localStorage存储管理器
- *
- * 参数说明:
- * lazy: boolean 是否懒加载，未开启懒加载在初始化时就读取localstorage，开启懒加载将在第一次获取或设置值时读取localstorage
- * namespace: string localstorage的key，定义多个manager时区分
- * version: string 'x.x.x'格式，采用语义化版本控制，用于重置用户设备中的localstorage
- *
- * 使用说明:
- * 创建一个初始结构，可用来初始化用户存储，或者重置用户存储, 格式类似于redux里的state
- * const store = {
- *  token: '',
- * };
- *
- * 创建manager对象, 此处传入version便于标明版本号，方便后续升级重置用户数据
- * const manager = new StorageManager(store, { version: '0.0.0' });
- *
- * 直接设置属性，将存入localstorage, 多次设置只会存入最后的值，此处使用debounce减少io操作
- * manager.token = '123456'
- * manager.token = '123'
- * manager.token = '456'
- *
- * 直接读取值，获取到的的localstorage中的值
- * console.log(manager.token)
- *
- */
+
 class StorageManager {
   constructor(store, options) {
     options = Object.assign(

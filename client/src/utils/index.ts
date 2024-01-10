@@ -147,9 +147,13 @@ export const formatRequestUrlByDomainPrefix = url => {
   }
   return `${prefix}${url}`;
 };
+export const getWidth = () => {
+  return { width: window.innerWidth };
+};
 
 export default {
   parseQuery,
   downloadWithIframe,
-  formatRequestUrlByDomainPrefix
+  formatRequestUrlByDomainPrefix,
+  getWidth
 };

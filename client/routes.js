@@ -29,7 +29,7 @@ const routes = [
     name: '知识库',
     icon: 'home',
     auth: [3, 4, 100],
-    path: '/knowledge/add',
+    path: '/knowledge/add/*',
     component: '@/pages/add-knowledge',
     pathname: 'knowledge',
     // routes: [{

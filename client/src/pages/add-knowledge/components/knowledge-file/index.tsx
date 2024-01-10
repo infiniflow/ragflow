@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
-import { Space, Table, Tag, Input, Button } from 'antd';
-import { PlusOutlined } from '@ant-design/icons'
+import { Space, Table, Tag, Input, Button, Switch, Popover, Dropdown, } from 'antd';
+import type { MenuProps } from 'antd';
+import { PlusOutlined, DownOutlined } from '@ant-design/icons'
 import { debounce } from 'lodash';
 import type { ColumnsType } from 'antd/es/table';
 import styles from './idnex.less'
@@ -10,57 +11,10 @@ interface DataType {
     name: string;
     age: number;
     address: string;
-    tags: string[];
+    status: boolean;
 }
+const onChangeStatus = () => { }
 
-const columns: ColumnsType<DataType> = [
-    {
-        title: 'Name',
-        dataIndex: 'name',
-        key: 'name',
-        render: (text) => <a>{text}</a>,
-    },
-    {
-        title: 'Age',
-        dataIndex: 'age',
-        key: 'age',
-    },
-    {
-        title: 'Address',
-        dataIndex: 'address',
-        key: 'address',
-    },
-    {
-        title: 'Tags',
-        key: 'tags',
-        dataIndex: 'tags',
-        render: (_, { tags }) => (
-            <>
-                {tags.map((tag) => {
-                    let color = tag.length > 5 ? 'geekblue' : 'green';
-                    if (tag === 'loser') {
-                        color = 'volcano';
-                    }
-                    return (
-                        <Tag color={color} key={tag}>
-                            {tag.toUpperCase()}
-                        </Tag>
-                    );
-                })}
-            </>
-        ),
-    },
-    {
-        title: 'Action',
-        key: 'action',
-        render: (_, record) => (
-            <Space size="middle">
-                <a>Invite {record.name}</a>
-                <a>Delete</a>
-            </Space>
-        ),
-    },
-];
 
 const data: DataType[] = [
     {
@@ -68,21 +22,62 @@ const data: DataType[] = [
         name: 'John Brown',
         age: 32,
         address: 'New York No. 1 Lake Park',
-        tags: ['nice', 'developer'],
+        status: true,
     },
     {
         key: '2',
         name: 'Jim Green',
         age: 42,
         address: 'London No. 1 Lake Park',
-        tags: ['loser'],
+        status: true,
     },
     {
         key: '3',
         name: 'Joe Black',
         age: 32,
         address: 'Sydney No. 1 Lake Park',
-        tags: ['cool', 'teacher'],
+        status: true,
+    },
+    {
+        key: '4',
+        name: 'John Brown',
+        age: 32,
+        address: 'New York No. 1 Lake Park',
+        status: true,
+    },
+    {
+        key: '5',
+        name: 'Jim Green',
+        age: 42,
+        address: 'London No. 1 Lake Park',
+        status: true,
+    },
+    {
+        key: '6',
+        name: 'Joe Black',
+        age: 32,
+        address: 'Sydney No. 1 Lake Park',
+        status: true,
+    }, {
+        key: '7',
+        name: 'John Brown',
+        age: 32,
+        address: 'New York No. 1 Lake Park',
+        status: true,
+    },
+    {
+        key: '8',
+        name: 'Jim Green',
+        age: 42,
+        address: 'London No. 1 Lake Park',
+        status: true,
+    },
+    {
+        key: '9',
+        name: 'Joe Black',
+        age: 32,
+        address: 'Sydney No. 1 Lake Park',
+        status: true,
     },
 ];
 
@@ -92,7 +87,6 @@ const App: React.FC = () => {
     const changeValue = (value: string) => {
         {
             console.log(value)
-
             setLoading(false)
         }
     }
@@ -105,22 +99,88 @@ const App: React.FC = () => {
         debounceCallback(e.target.value)
 
     }
+    const actionItems: MenuProps['items'] = [
+        {
+            key: '1',
+            label: (
+                <div>
+                    <Button type="link">导入文件</Button>
+                </div>
+
+            ),
+        },
+        {
+            key: '2',
+            label: (
+                <div>
+                    <Button type="link"> 导入虚拟文件</Button>
+                </div>
+            ),
+            // disabled: true,
+        },
+    ];
+
+    const columns: ColumnsType<DataType> = [
+        {
+            title: '名称',
+            dataIndex: 'name',
+            key: 'name',
+            render: (text) => <a><img className={styles.img} src='https://gw.alipayobjects.com/zos/antfincdn/efFD%24IOql2/weixintupian_20170331104822.jpg' alt="" />{text}</a>,
+            className: `${styles.column}`
+        },
+        {
+            title: '数据总量',
+            dataIndex: 'total',
+            key: 'total',
+            className: `${styles.column}`
+        },
+        {
+            title: 'Tokens',
+            dataIndex: 'tokens',
+            key: 'tokens',
+            className: `${styles.column}`
+        },
+        {
+            title: '状态',
+            key: 'status',
+            dataIndex: 'status',
+            className: `${styles.column}`,
+            render: (_, { status }) => (
+                <>
+                    <Switch defaultChecked onChange={onChangeStatus} />
+                </>
+            ),
+        },
+        {
+            title: 'Action',
+            key: 'action',
+            className: `${styles.column}`,
+            render: (_, record) => (
+                <Space size="middle">
+                    <Dropdown menu={{ items: actionItems }}>
+                        <a>
+                            分段设置 <DownOutlined />
+                        </a>
+                    </Dropdown>
+                </Space>
+            ),
+        },
+    ];
     return <>
         <div className={styles.filter}>
             <div className="search">
                 <Input placeholder="搜索" value={inputValue} allowClear onChange={handleInputChange} />
             </div>
             <div className="operate">
-                <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => { }}
-                >
-                    添加
-                </Button>
+                <Dropdown menu={{ items: actionItems }}>
+                    <a>
+                        导入文件 <DownOutlined />
+                    </a>
+                </Dropdown>
+
             </div>
         </div>
-        <Table columns={columns} dataSource={data} loading={loading} />
+        <Table columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ scrollToFirstRowOnChange: true, x: true }} />
     </>
 };
 

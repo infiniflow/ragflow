@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import type { RadioChangeEvent } from 'antd';
-import { Radio, Space, Tabs } from 'antd';
+import React, { useMemo, useState, useEffect } from 'react';
+import type { MenuProps } from 'antd';
+import { Radio, Space, Tabs, Menu } from 'antd';
 import {
     ToolOutlined,
     BarsOutlined,
@@ -10,40 +10,78 @@ import File from './components/knowledge-file'
 import Setting from './components/knowledge-setting'
 import Search from './components/knowledge-search'
 import styles from './index.less'
+import { getWidth } from '@/utils'
 
 
 const App: React.FC = () => {
-    type keyType = 'setting' | 'file' | 'search'
-    const [activeKey, setActiveKey] = useState<keyType>('file')
-    // type tab = { label: string, icon: Element, tag: string }
-    const tabs = [{ label: '配置', icon: <ToolOutlined />, tag: 'setting' }, { label: '知识库', icon: <BarsOutlined />, tag: 'file' }, { label: '搜索测试', icon: <SearchOutlined />, tag: 'search' }]
+    const [activeKey, setActiveKey] = useState<string>('file')
+    const [collapsed, setCollapsed] = useState(false);
+    const [windowWidth, setWindowWidth] = useState(getWidth());
 
-    const onTabClick = (activeKey: keyType) => {
-        setActiveKey(activeKey)
+    // 标记一下
+    useEffect(() => {
+        const widthSize = () => {
+            const width = getWidth()
+            console.log(width)
+
+            setWindowWidth(width);
+        };
+        window.addEventListener("resize", widthSize);
+        return () => {
+            window.removeEventListener("resize", widthSize);
+        };
+    }, []);
+    useEffect(() => {
+        if (windowWidth.width > 957) {
+            setCollapsed(false)
+        } else {
+            setCollapsed(true)
+        }
+    }, [windowWidth.width])
+    type MenuItem = Required<MenuProps>['items'][number];
+
+    function getItem(
+        label: React.ReactNode,
+        key: React.Key,
+        icon?: React.ReactNode,
+        children?: MenuItem[],
+        type?: 'group',
+    ): MenuItem {
+        return {
+            key,
+            icon,
+            children,
+            label,
+            type,
+        } as MenuItem;
     }
-    // type stringKey = Record<string, Element>
-
-    const mapComponent = {
-        file: <File />,
-        setting: <Setting />,
-        search: <Search />
+    const items: MenuItem[] = [
+        getItem('配置', 'setting', <ToolOutlined />),
+        getItem('知识库', 'file', <BarsOutlined />),
+        getItem('搜索测试', 'search', <SearchOutlined />),
+    ];
+    const handleSelect: MenuProps['onSelect'] = (e) => {
+        setActiveKey(e.key)
     }
     return (
         <>
-            <Tabs
-                tabPosition='left'
-                activeKey={activeKey}
-                onTabClick={(activeKey: keyType, e: KeyboardEvent<Element> | MouseEvent<Element, MouseEvent>) => { onTabClick(activeKey) }}
-                className={styles.tab}
-                items={tabs.map((item) => {
-                    return {
-                        label: item.label,
-                        icon: item.icon,
-                        key: item.tag,
-                        children: mapComponent[activeKey] as Element,
-                    };
-                })}
-            />
+            <div className={styles.container}>
+                <div className={styles.menu}>
+                    <Menu
+                        selectedKeys={[activeKey]}
+                        mode="inline"
+                        className={windowWidth.width > 957 ? styles.defaultWidth : styles.minWidth}
+                        inlineCollapsed={collapsed}
+                        items={items}
+                        onSelect={handleSelect}
+                    />
+                </div>
+                <div className={styles.content}>
+                    {activeKey === 'file' && <File />}
+                    {activeKey === 'setting' && <Setting />}
+                    {activeKey === 'search' && <Search />}
+                </div>
+            </div>
         </>
     );
 };

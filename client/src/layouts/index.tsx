@@ -3,19 +3,19 @@ import { history, Outlet, useLocation, useNavigate } from 'umi';
 import { useTranslation, Trans } from 'react-i18next'
 import classnames from 'classnames'
 import '../locales/config';
+import logo from '@/assets/logo.png'
 import {
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
+  RedditOutlined
 } from '@ant-design/icons';
 import { Layout, Button, theme, Space, } from 'antd';
 import styles from './index.less'
 import User from './components/user'
+import { head } from 'lodash';
 
 const { Header, Content } = Layout;
 
 const App: React.FC = (props) => {
   const { t } = useTranslation()
-  const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate()
   const {
     token: { colorBgContainer, borderRadiusLG },
@@ -40,17 +40,9 @@ const App: React.FC = (props) => {
   return (
     <Layout className={styles.layout} >
       <Layout>
-        <Header style={{ padding: 0, background: colorBgContainer, display: 'flex', justifyContent: 'space-between' }}>
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            style={{
-              fontSize: '16px',
-              width: 64,
-              height: 64,
-            }}
-          />
+        <Header style={{ padding: '0 8px', background: colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
+          <img src={logo} alt="" style={{ height: 30, width: 30 }} />
           <Space size={[0, 8]} wrap>
             {tagsData.map((item) =>
             (<span key={item.name} className={classnames(styles['tag'], {
@@ -65,7 +57,7 @@ const App: React.FC = (props) => {
         <Content
           style={{
             margin: '24px 16px',
-            padding: 24,
+
             minHeight: 280,
             background: colorBgContainer,
             borderRadius: borderRadiusLG,

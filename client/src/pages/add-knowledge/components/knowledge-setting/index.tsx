@@ -48,7 +48,7 @@ const App: React.FC = () => {
         {...layout}
         name="nest-messages"
         onFinish={onFinish}
-        style={{ maxWidth: 600 }}
+        style={{ maxWidth: 1000, padding: 14 }}
         validateMessages={validateMessages}
     >
         <Form.Item name={['user', 'name']} label="知识库名称" rules={[{ required: true }]}>
