@@ -35,7 +35,7 @@ const App: React.FC = (props) => {
     setCurrent(path)
     navigate(path);
   };
-  const tagsData = [{ path: '/knowledge', name: 'knowledge' }, { path: '/chat', name: 'chat' }];
+  const tagsData = [{ path: '/knowledge', name: 'knowledge' }, { path: '/chat', name: 'chat' }, { path: '/file', name: 'file' }];
 
   return (
     <Layout className={styles.layout} >

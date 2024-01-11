@@ -15,7 +15,7 @@ const ABORT_REQUEST_ERR_MESSAGE = 'The user aborted a request.'; // 手动中断
 
 
 
-const codeMessage = {
+const retcodeMessage = {
   200: '服务器成功返回请求的数据。',
   201: '新建或修改数据成功。',
   202: '一个请求已经进入后台排队（异步任务）。',
@@ -43,7 +43,7 @@ const errorHandler = (error: any) => {
     console.log('user abort  request');
   } else {
     if (response && response.status) {
-      const errorText = codeMessage[response.status] || response.statusText;
+      const errorText = retcodeMessage[response.status] || response.statusText;
       const { status, url } = response;
       notification.error({
         message: `请求错误 ${status}: ${url}`,
@@ -91,37 +91,26 @@ request.interceptors.request.use((url, options) => {
  * */
 request.interceptors.response.use(async (response, request) => {
   const data = await response.clone().json();
-  if (data.code && data.code !== 0) {
-    const payload = {
-      token: request.headers.Authorization,
-      res: data,
-      body: request.data,
-      url: response.url
-    };
-  }
   // response 拦截
-  if (data.code === 401 || data.Code === 401) {
+  if (data.retcode === 401 || data.retcode === 401) {
     notification.error({
       message: data.errorMessage,
       description: data.errorMessage,
       duration: 3,
-      top: 65
     });
-    store.domainPrefix = '';
-  } else if (data.code !== 0) {
-    if (data.code === 100) {
-      //code为100 时账户名或者密码错误, 为了跟之前弹窗一样所以用message
+  } else if (data.retcode !== 0) {
+    if (data.retcode === 100) {
+      //retcode为100 时账户名或者密码错误, 为了跟之前弹窗一样所以用message
       message.error(data.errorMessage);
     } else {
       notification.error({
-        message: `提示 : ${data.code}`,
+        message: `提示 : ${data.retcode}`,
         description: data.errorMessage,
         duration: 3,
-        top: 65
       });
     }
 
-    return response; //这里return response, 是为了避免modal里面报code undefined
+    return response; //这里return response, 是为了避免modal里面报retcode undefined
   } else {
     return response;
   }

@@ -69,6 +69,15 @@ const routes = [
     pathname: "setting"
   },
   {
+    id: 1,
+    name: '文件',
+    icon: 'file',
+    auth: [3, 4, 100],
+    path: '/file',
+    component: '@/pages/file',
+    pathname: 'file'
+  },
+  {
     path: '/*',
     component: '@/pages/404',
     layout: false

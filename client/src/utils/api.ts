@@ -1,13 +1,8 @@
 import config from '@/utils/config';
 
-const host = window.location.host;
 
-let api_host = `//mp.test.amnetapi.com/mp/v1`;
+let api_host = `/v1`;
 
-
-// api_host = '//mpcompany3.test.amnetapi.com/mp/v1';
-let login = '//mp41.test.amnetapi.com/mp/v1/user/ssoLogin';
-// sso_host = `//test120-sso.amnetapi.com`;
 
 export { api_host };
 
@@ -19,7 +14,8 @@ export default {
   segment_upload: `${api_host}/uploadPopulation`,
 
   // 用户
-  login: login,
+  login: `${api_host}/user/login`,
+  register: `${api_host}/user/register`,
   user: `${api_host}/user/validate`,
   getUrl: `${api_host}/requestGetUrl`,
   getAdPermits: `${api_host}/adServer/getAdPermits`,

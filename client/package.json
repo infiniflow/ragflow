@@ -15,6 +15,8 @@
     "axios": "^1.6.3",
     "classnames": "^2.5.1",
     "i18next": "^23.7.16",
+    "js-base64": "^3.7.5",
+    "jsencrypt": "^3.3.2",
     "lodash": "^4.17.21",
     "react-i18next": "^14.0.0",
     "react-infinite-scroll-component": "^6.1.0",

@@ -40,6 +40,7 @@ const App: React.FC = () => {
                 action="https://run.mocky.io/v3/435e224c-44fb-4773-9faf-380c5e6a2188"
                 listType="picture"
                 fileList={[...fileList]}
+                multiple
             >
                 <Button icon={<UploadOutlined />}>Upload</Button>
             </Upload>
