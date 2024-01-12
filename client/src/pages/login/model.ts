@@ -39,15 +39,13 @@ const Model = {
         }, 300);
       }
     },
-    *register({ payload = {} }, { call, put }) {
+    *register({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(userService.register, payload);
       console.log()
       const { retcode, data: res, retmsg } = data
       if (retcode === 0) {
         message.success('注册成功！');
-        setTimeout(() => {
-          window.location.href = '/login';
-        }, 300);
+        callback && callback()
       }
     }
   },

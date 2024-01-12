@@ -14,7 +14,7 @@ interface DataType {
 }
 
 const Index = ({ settingModel, dispatch }) => {
-    const { isShowTntModal, tenantData, loading } = settingModel
+    const { isShowTntModal, tenantIfo, loading } = settingModel
     const { t } = useTranslation()
     const handleCancel = () => {
         dispatch({
@@ -24,7 +24,7 @@ const Index = ({ settingModel, dispatch }) => {
             }
         });
     };
-    console.log(tenantData)
+    console.log(tenantIfo)
     const handleOk = async () => {
         dispatch({
             type: 'settingModel/updateState',
@@ -40,8 +40,11 @@ const Index = ({ settingModel, dispatch }) => {
     ];
 
     return (
-        <Modal title="Basic Modal" open={isShowTntModal} onOk={handleOk} onCancel={handleCancel}>
-            <Table rowKey='name' loading={loading} columns={columns} dataSource={tenantData} />
+        <Modal title="用户" open={isShowTntModal} onOk={handleOk} onCancel={handleCancel}>
+            <div className={styles.tenantIfo}>
+                {tenantIfo.name}
+            </div>
+            <Table rowKey='name' loading={loading} columns={columns} dataSource={[]} />
         </Modal >
     );
 }

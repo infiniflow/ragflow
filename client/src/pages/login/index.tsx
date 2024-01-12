@@ -38,7 +38,10 @@ const View = ({
           payload: {
             nickname: params.nickname,
             email: params.email,
-            password: rsaPassWord
+            password: rsaPassWord,
+          },
+          callback() {
+            setTitle('login')
           }
         });
       }

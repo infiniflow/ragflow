@@ -1,3 +1,4 @@
+import { connect, useNavigate, useLocation } from 'umi'
 import React, { useMemo, useState, useEffect } from 'react';
 import type { MenuProps } from 'antd';
 import { Radio, Space, Tabs, Menu } from 'antd';
@@ -13,11 +14,12 @@ import styles from './index.less'
 import { getWidth } from '@/utils'
 
 
-const App: React.FC = () => {
-    const [activeKey, setActiveKey] = useState<string>('file')
+const Index: React.FC = ({ kAModel, dispatch }) => {
     const [collapsed, setCollapsed] = useState(false);
+    const { id, activeKey } = kAModel
     const [windowWidth, setWindowWidth] = useState(getWidth());
-
+    let navigate = useNavigate();
+    const location = useLocation();
     // 标记一下
     useEffect(() => {
         const widthSize = () => {
@@ -31,6 +33,21 @@ const App: React.FC = () => {
             window.removeEventListener("resize", widthSize);
         };
     }, []);
+    useEffect(() => {
+        console.log(location)
+        const search = location.search.slice(1)
+        const map = search.split('&').reduce((obj, cur) => {
+            const [key, value] = cur.split('=')
+            obj[key] = value
+            return obj
+        }, {})
+        dispatch({
+            type: 'kAModel/updateState',
+            payload: {
+                ...map
+            }
+        });
+    }, [location])
     useEffect(() => {
         if (windowWidth.width > 957) {
             setCollapsed(false)
@@ -61,7 +78,7 @@ const App: React.FC = () => {
         getItem('搜索测试', 'search', <SearchOutlined />),
     ];
     const handleSelect: MenuProps['onSelect'] = (e) => {
-        setActiveKey(e.key)
+        navigate(`/knowledge/add/setting?activeKey=${e.key}&id=${id}`);
     }
     return (
         <>
@@ -77,13 +94,13 @@ const App: React.FC = () => {
                     />
                 </div>
                 <div className={styles.content}>
-                    {activeKey === 'file' && <File />}
-                    {activeKey === 'setting' && <Setting />}
-                    {activeKey === 'search' && <Search />}
+                    {activeKey === 'file' && <File id={id} />}
+                    {activeKey === 'setting' && <Setting id={id} />}
+                    {activeKey === 'search' && <Search id={id} />}
                 </div>
             </div>
         </>
     );
 };
 
-export default App;
+export default connect(({ kAModel, loading }) => ({ kAModel, loading }))(Index);

@@ -1,9 +1,9 @@
 import { message } from 'antd';
 import { addParam } from '@/utils';
-import userService from '@/services/userService';
+import kbService from '@/services/kbService';
 
 const Model = {
-  namespace: 'settingModel',
+  namespace: 'kSModel',
   state: {
     isShowPSwModal: false,
     isShowTntModal: false,
@@ -17,12 +17,20 @@ const Model = {
     }
   },
   effects: {
-    *setting({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(userService.setting, payload);
+    * createKb({ payload = {}, callback }, { call, put }) {
+      const { data, response } = yield call(kbService.createKb, payload);
       const { retcode, data: res, retmsg } = data
       if (retcode === 0) {
-        message.success('密码修改成功！');
-        callback && callback()
+
+
+      }
+    },
+    * updateKb({ payload = {}, callback }, { call, put }) {
+      const { data, response } = yield call(kbService.updateKb, payload);
+      const { retcode, data: res, retmsg } = data
+      if (retcode === 0) {
+
+
       }
     },
     *getUserInfo({ payload = {} }, { call, put }) {

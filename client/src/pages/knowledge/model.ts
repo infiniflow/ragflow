@@ -1,24 +1,33 @@
 import { message } from 'antd';
 import { addParam } from '@/utils';
-import userService from '@/services/userService';
+import kbService from '@/services/kbService';
 
 const Model = {
-  namespace: 'settingModel',
+  namespace: 'knowledgeModel',
   state: {
     isShowPSwModal: false,
     isShowTntModal: false,
     loading: false,
-    tenantIfo: {}
+    data: []
   },
   subscriptions: {
     setup({ dispatch, history }) {
       history.listen(location => {
+        console.log(location)
       });
     }
   },
   effects: {
+    * rmKb({ payload = {}, callback }, { call, put }) {
+      const { data, response } = yield call(kbService.rmKb, payload);
+      const { retcode, data: res, retmsg } = data
+      if (retcode === 0) {
+        callback && callback()
+
+      }
+    },
     *setting({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(userService.setting, payload);
+      const { data, response } = yield call(kbService.setting, payload);
       const { retcode, data: res, retmsg } = data
       if (retcode === 0) {
         message.success('密码修改成功！');
@@ -26,7 +35,7 @@ const Model = {
       }
     },
     *getUserInfo({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(userService.user_info, payload);
+      const { data, response } = yield call(kbService.user_info, payload);
       const { retcode, data: res, retmsg } = data
       const userInfo = {
         avatar: res.avatar,
@@ -38,14 +47,14 @@ const Model = {
         // localStorage.setItem('userInfo',res.)
       }
     },
-    *getTenantInfo({ payload = {} }, { call, put }) {
+    *getList({ payload = {} }, { call, put }) {
       yield put({
         type: 'updateState',
         payload: {
           loading: true
         }
       });
-      const { data, response } = yield call(userService.get_tenant_info, payload);
+      const { data, response } = yield call(kbService.getList, payload);
       const { retcode, data: res, retmsg } = data
       yield put({
         type: 'updateState',
@@ -57,7 +66,7 @@ const Model = {
         yield put({
           type: 'updateState',
           payload: {
-            tenantIfo: res
+            data: res
           }
         });
       }

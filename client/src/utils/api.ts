@@ -23,9 +23,11 @@ export default {
   getUrl: `${api_host}/requestGetUrl`,
   getAdPermits: `${api_host}/adServer/getAdPermits`,
 
-  //子用户管理
-  account_list: `${api_host}/user/getUserList`,
-  create_account: `${api_host}/user/createUserAccountSso`,
+  //知识库管理
+  kb_list: `${api_host}/kb/list`,
+  create_kb: `${api_host}/kb/create`,
+  update_kb: `${api_host}/kb/update`,
+  rm_kb: `${api_host}/kb/rm`,
   update_account: `${api_host}/user/updateUserAccountSso`,
   account_detail: `${api_host}/user/getUserDetail`,
   getUserDetail: `${api_host}/user/getUserDetail`,

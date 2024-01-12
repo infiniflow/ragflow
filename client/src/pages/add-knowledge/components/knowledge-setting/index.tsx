@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate, connect } from 'umi'
 import { Button, Form, Input, InputNumber, Radio, Select, Tag, Space, Avatar, Divider, List, Skeleton } from 'antd';
-import InfiniteScroll from 'react-infinite-scroll-component';
 import styles from './index.less'
-
+const { CheckableTag } = Tag;
 const layout = {
     labelCol: { span: 8 },
     wrapperCol: { span: 16 },
@@ -22,9 +22,7 @@ const validateMessages = {
 };
 /* eslint-enable no-template-curly-in-string */
 
-const onFinish = (values: any) => {
-    console.log(values);
-};
+
 interface DataType {
     gender: string;
     name: {
@@ -42,46 +40,95 @@ interface DataType {
 }
 const tags = [{ title: '研报' }, { title: '法律' }, { title: '简历' }, { title: '说明书' }, { title: '书籍' }, { title: '演讲稿' }]
 
-const App: React.FC = () => {
+const Index: React.FC = ({ settingModel, kSModel, dispatch, ...props }) => {
+    const { tenantIfo = {} } = settingModel
+    const { parser_ids = '', embd_id = '' } = tenantIfo
+    const { id = '' } = props
+    useEffect(() => {
+        dispatch({
+            type: 'settingModel/getTenantInfo',
+            payload: {
+            }
+        });
+    }, [])
+    const [selectedTag, setSelectedTag] = useState('')
+    const onFinish = (values: any) => {
+        console.log(values);
+        if (id) {
+            dispatch({
+                type: 'kSModel/updateKb',
+                payload: {
+                    ...values,
+                    parser_id: selectedTag,
+                    kb_id: id
+                }
+            });
+        } else {
+            dispatch({
+                type: 'kSModel/createKb',
+                payload: {
+                    ...values,
+                    parser_id: selectedTag
+                }
+            });
+        }
+
+
+    };
+
+    const handleChange = (tag: string, checked: boolean) => {
+        const nextSelectedTag = checked
+            ? tag
+            : selectedTag;
+        console.log('You are interested in: ', nextSelectedTag);
+        setSelectedTag(nextSelectedTag);
+    };
 
     return <Form
         {...layout}
         name="nest-messages"
         onFinish={onFinish}
         style={{ maxWidth: 1000, padding: 14 }}
-        validateMessages={validateMessages}
     >
-        <Form.Item name={['user', 'name']} label="知识库名称" rules={[{ required: true }]}>
+        <Form.Item name='name' label="知识库名称" rules={[{ required: true }]}>
             <Input />
         </Form.Item>
-        <Form.Item name={['user', 'introduction']} label="知识库描述">
+        <Form.Item name='description' label="知识库描述">
             <Input.TextArea />
         </Form.Item>
-        <Form.Item name="radio-group" label="可见权限">
+        <Form.Item name="permission" label="可见权限">
             <Radio.Group>
-                <Radio value="a">只有我</Radio>
-                <Radio value="b">所有团队成员</Radio>
+                <Radio value="me">只有我</Radio>
+                <Radio value="team">所有团队成员</Radio>
             </Radio.Group>
         </Form.Item>
         <Form.Item
-            name="select"
+            name="embd_id"
             label="Embedding 模型"
             hasFeedback
             rules={[{ required: true, message: 'Please select your country!' }]}
         >
             <Select placeholder="Please select a country">
-                <Option value="china">China</Option>
-                <Option value="usa">U.S.A</Option>
+                {embd_id.split(',').map(item => {
+                    return <Option value={item} key={item}>{item}</Option>
+                })}
+
             </Select>
-            <div style={{ marginTop: '5px' }}>
-                修改Embedding 模型，请去<span style={{ color: '#1677ff' }}>设置</span>
-            </div>
         </Form.Item>
+        <div style={{ marginTop: '5px' }}>
+            修改Embedding 模型，请去<span style={{ color: '#1677ff' }}>设置</span>
+        </div>
         <Space size={[0, 8]} wrap>
             <div className={styles.tags}>
                 {
-                    tags.map(item => {
-                        return (<Tag key={item.title}>{item.title}</Tag>)
+                    parser_ids.split(',').map(tag => {
+                        return (<CheckableTag
+                            key={tag}
+                            checked={selectedTag === tag}
+                            onChange={(checked) => handleChange(tag, checked)}
+                        >
+                            {tag}
+                        </CheckableTag>)
                     })
                 }
             </div>
@@ -110,4 +157,4 @@ const App: React.FC = () => {
 
 
 
-export default App;
+export default connect(({ settingModel, kSModel, kAModel, loading }) => ({ settingModel, kSModel, loading }))(Index);
