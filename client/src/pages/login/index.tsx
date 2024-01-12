@@ -1,19 +1,14 @@
 import { connect } from 'umi';
 import { Input, Form, Button, Checkbox } from 'antd';
-// import md5 from 'md5';
 import styles from './index.less';
-import JSEncrypt from 'jsencrypt';
-import { Base64 } from 'js-base64';
-import Title from 'antd/es/skeleton/Title';
+import { rsaPsw } from '@/utils'
 import { useState, useEffect } from 'react';
-// import Base64 from 'crypto-js/enc-base64';
+
 const View = ({
-  loginModel,
   dispatch,
-  location,
 }) => {
   const [title, setTitle] = useState('login')
-  const pub = "-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB-----END PUBLIC KEY-----"
+
   const changeTitle = () => {
     setTitle((title) => title === 'login' ? 'register' : 'login')
   }
@@ -27,10 +22,8 @@ const View = ({
   const onCheck = async () => {
     try {
       const params = await form.validateFields();
-      console.log('Success:', params);
-      const encryptor = new JSEncrypt()
-      encryptor.setPublicKey(pub)
-      var rsaPassWord = encryptor.encrypt(Base64.encode(params.password))
+
+      var rsaPassWord = rsaPsw(params.password)
       if (title === 'login') {
         dispatch({
           type: 'loginModel/login',
@@ -103,6 +96,7 @@ const View = ({
                 已有账号?<a onClick={changeTitle}>登录</a>
               </div>)
             }</div>
+          <div><a href="https://github.com/login/oauth/authorize?scope=user:email&client_id=302129228f0d96055bee">第三方登录</a></div>
           <Form.Item {...formTailLayout}>
             <Button type="primary" onClick={onCheck}>
               Check

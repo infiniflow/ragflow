@@ -19,48 +19,36 @@ const Model = {
   effects: {
     *login({ payload = {} }, { call, put }) {
       console.log(111, payload)
-      const { retcode, data, retmsg } = yield call(userService.login, payload);
+      const { data, response } = yield call(userService.login, payload);
+      const { retcode, data: res, retmsg } = data
+      console.log()
+      const Authorization = response.headers.get('Authorization')
       if (retcode === 0) {
         message.success('登录成功！');
-        const name = data.name;
-        const token = data.access_token;
-        const role = data.role;
-        const title = data.title;
+        const token = res.access_token;
         const userInfo = {
-          role: data.avatar,
-          title: data.title,
-          name: data.nickname,
+          avatar: res.avatar,
+          name: res.nickname,
+          email: res.email
         };
         localStorage.setItem('token', token)
         localStorage.setItem('userInfo', JSON.stringify(userInfo))
-        // setTimeout(() => {
-        //   window.location.href = '/file';
-        // }, 300);
+        localStorage.setItem('Authorization', Authorization)
+        setTimeout(() => {
+          window.location.href = '/file';
+        }, 300);
       }
     },
     *register({ payload = {} }, { call, put }) {
-      console.log(111)
-      const { retcode, data, retmsg } = yield call(userService.register, payload);
-      // setTimeout(() => {
-      //   window.location.href = '/';
-      // }, 300);
-      // if (code === 0) {
-      //   message.success('登录成功！');
-      //   const name = data.name;
-      //   const token = data.token;
-      //   const role = data.role;
-      //   const title = data.title;
-      //   const userInfo = {
-      //     role: data.role,
-      //     title: data.title,
-      //     name: data.name || data.Name,
-      //   };
-      //   store.token = token;
-      //   store.userInfo = userInfo;
-      //   setTimeout(() => {
-      //     window.location.href = '/file';
-      //   }, 300);
-      // }
+      const { data, response } = yield call(userService.register, payload);
+      console.log()
+      const { retcode, data: res, retmsg } = data
+      if (retcode === 0) {
+        message.success('注册成功！');
+        setTimeout(() => {
+          window.location.href = '/login';
+        }, 300);
+      }
     }
   },
   reducers: {

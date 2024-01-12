@@ -16,6 +16,9 @@ export default {
   // 用户
   login: `${api_host}/user/login`,
   register: `${api_host}/user/register`,
+  setting: `${api_host}/user/setting`,
+  user_info: `${api_host}/user/info`,
+  tenant_info: `${api_host}/user/tenant_info`,
   user: `${api_host}/user/validate`,
   getUrl: `${api_host}/requestGetUrl`,
   getAdPermits: `${api_host}/adServer/getAdPermits`,

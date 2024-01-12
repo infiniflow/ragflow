@@ -48,13 +48,11 @@ const errorHandler = (error: any) => {
       notification.error({
         message: `请求错误 ${status}: ${url}`,
         description: errorText,
-        top: 65
       });
     } else if (!response) {
       notification.error({
         description: '您的网络发生异常，无法连接服务器',
         message: '网络异常',
-        top: 65
       });
     }
   }
@@ -67,18 +65,20 @@ const errorHandler = (error: any) => {
 const request = extend({
   errorHandler, // 默认错误处理
   // credentials: 'include', // 默认请求是否带上cookie
-  timeout: 3000000
+  timeout: 3000000,
+  getResponse: true
 });
 
 request.interceptors.request.use((url, options) => {
   let prefix = '';
   console.log(url)
+  const Authorization = localStorage.getItem('Authorization')
   return {
     url,
     options: {
       ...options,
       headers: {
-        ...(options.skipToken ? undefined : { Authorization: 'Bearer ' + store.token }),
+        ...(options.skipToken ? undefined : { Authorization }),
         ...options.headers
       },
       interceptors: true
@@ -90,28 +90,30 @@ request.interceptors.request.use((url, options) => {
  * 请求response拦截器
  * */
 request.interceptors.response.use(async (response, request) => {
+  console.log(response, request)
   const data = await response.clone().json();
   // response 拦截
+
   if (data.retcode === 401 || data.retcode === 401) {
     notification.error({
-      message: data.errorMessage,
-      description: data.errorMessage,
+      message: data.retmsg,
+      description: data.retmsg,
       duration: 3,
     });
   } else if (data.retcode !== 0) {
     if (data.retcode === 100) {
-      //retcode为100 时账户名或者密码错误, 为了跟之前弹窗一样所以用message
-      message.error(data.errorMessage);
+      message.error(data.retmsg);
     } else {
       notification.error({
         message: `提示 : ${data.retcode}`,
-        description: data.errorMessage,
+        description: data.retmsg,
         duration: 3,
       });
     }
 
-    return response; //这里return response, 是为了避免modal里面报retcode undefined
+    return response;
   } else {
+
     return response;
   }
 });
