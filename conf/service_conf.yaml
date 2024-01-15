@@ -1,0 +1,28 @@
+authentication:
+  client:
+    switch: false
+    http_app_key:
+    http_secret_key:
+  site:
+    switch: false
+permission:
+  switch: false
+  component: false
+  dataset: false
+ragflow:
+  # you must set real ip address, 127.0.0.1 and 0.0.0.0 is not supported
+  host: 127.0.0.1
+  http_port: 9380
+database:
+  name: 'rag_flow'
+  user: 'root'
+  passwd: 'infini_rag_flow'
+  host: '123.60.95.134'
+  port: 5455
+  max_connections: 100
+  stale_timeout: 30
+oauth:
+  github:
+    client_id: 302129228f0d96055bee
+    secret_key: e518e55ccfcdfcae8996afc40f110e9c95f14fc4
+    url: https://github.com/login/oauth/access_token
