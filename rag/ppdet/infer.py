@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 from functools import reduce
 
+
 import cv2
 import numpy as np
 import math
@@ -28,6 +29,7 @@ from paddle.inference import create_predictor
 
 import sys
 # add deploy path of PaddleDetection to sys.path
+
 parent_path = os.path.abspath(os.path.join(__file__, *(['..'])))
 sys.path.insert(0, parent_path)
 

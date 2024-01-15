@@ -28,6 +28,7 @@ from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 from rag.utils import ELASTICSEARCH
 from rag.utils import MINIO
 from rag.utils import rmSpace, findMaxTm
+
 from rag.nlp import huchunk, huqie, search
 from io import BytesIO
 import pandas as pd
@@ -106,18 +107,18 @@ def build(row, cvmdl):
         set_progress(row["id"], -1, "File size exceeds( <= %dMb )" %
                      (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
-    # If just change the kb for doc
-    # res = ELASTICSEARCH.search(Q("term", doc_id=row["id"]), idxnm=search.index_name(row["tenant_id"]))
-    # if ELASTICSEARCH.getTotal(res) > 0:
-    #     ELASTICSEARCH.updateScriptByQuery(Q("term", doc_id=row["id"]),
-    #                                       scripts="""
-    #                            if(!ctx._source.kb_id.contains('%s'))
-    #                              ctx._source.kb_id.add('%s');
-    #                            """ % (str(row["kb_id"]), str(row["kb_id"])),
-    #         idxnm=search.index_name(row["tenant_id"])
-    #     )
-    #     set_progress(row["id"], 1, "Done")
-    #     return []
+
+    res = ELASTICSEARCH.search(Q("term", doc_id=row["id"]))
+    if ELASTICSEARCH.getTotal(res) > 0:
+        ELASTICSEARCH.updateScriptByQuery(Q("term", doc_id=row["id"]),
+                                          scripts="""
+                               if(!ctx._source.kb_id.contains('%s'))
+                                 ctx._source.kb_id.add('%s');
+                               """ % (str(row["kb_id"]), str(row["kb_id"])),
+            idxnm=search.index_name(row["tenant_id"])
+        )
+        set_progress(row["id"], 1, "Done")
+        return []
 
     random.seed(time.time())
     set_progress(row["id"], random.randint(0, 20) /
@@ -135,7 +136,9 @@ def build(row, cvmdl):
                 row["id"], -1, f"Internal server error: %s" %
                 str(e).replace(
                     "'", ""))
+
         cron_logger.warn("Chunkking {}/{}: {}".format(row["location"], row["name"], str(e)))
+
         return []
 
     if not obj.text_chunks and not obj.table_chunks:

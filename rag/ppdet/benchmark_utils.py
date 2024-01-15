@@ -158,6 +158,7 @@ class PaddleInferBenchmark(object):
         return:
             config_status(dict): dict style config info
         """
+        
         if isinstance(config, paddle_infer.Config):
             config_status = {}
             config_status['runtime_device'] = "gpu" if config.use_gpu(

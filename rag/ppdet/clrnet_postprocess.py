@@ -15,7 +15,6 @@
 import numpy as np
 import paddle
 import paddle.nn as nn
-from scipy.special import softmax
 from scipy.interpolate import InterpolatedUnivariateSpline
 
 

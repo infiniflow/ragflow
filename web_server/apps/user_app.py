@@ -183,7 +183,9 @@ def rollback_user_registration(user_id):
     except Exception as e:
         pass
 
+      
 def user_register(user_id, user):
+
     user_id = get_uuid()
     user["id"] = user_id
     tenant = {

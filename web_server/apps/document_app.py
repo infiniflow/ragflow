@@ -277,3 +277,4 @@ def change_parser():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+

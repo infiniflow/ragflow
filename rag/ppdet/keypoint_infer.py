@@ -19,6 +19,7 @@ import glob
 from functools import reduce
 
 from PIL import Image
+
 import cv2
 import math
 import numpy as np
@@ -35,6 +36,7 @@ from keypoint_postprocess import HrHRNetPostProcess, HRNetPostProcess
 from visualize import visualize_pose
 from paddle.inference import Config
 from paddle.inference import create_predictor
+
 from utils import argsparser, Timer, get_current_memory_mb
 from benchmark_utils import PaddleInferBenchmark
 from infer import Detector, get_test_images, print_arguments

@@ -31,7 +31,6 @@ class LLMService(CommonService):
     model = LLM
 
 
-
 class TenantLLMService(CommonService):
     model = TenantLLM
 
@@ -51,3 +50,4 @@ class TenantLLMService(CommonService):
 
         if not objs:return
         return objs[0]
+

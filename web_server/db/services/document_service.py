@@ -86,3 +86,4 @@ class DocumentService(CommonService):
         if num == 0:raise LookupError("Document not found which is supposed to be there")
         num = Knowledgebase.update(token_num=Knowledgebase.token_num+token_num, chunk_num=Knowledgebase.chunk_num+chunk_num).where(Knowledgebase.id==kb_id).execute()
         return num
+

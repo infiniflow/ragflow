@@ -114,6 +114,7 @@ class JDE_Detector(Detector):
             tracked_thresh=tracked_thresh,
             metric_type=metric_type)
 
+
     def postprocess(self, inputs, result):
         # postprocess output of predictor
         np_boxes = result['pred_dets']
@@ -247,6 +248,7 @@ class JDE_Detector(Detector):
                     online_scores,
                     frame_id=frame_id,
                     ids2names=ids2names)
+
                 if seq_name is None:
                     seq_name = image_list[0].split('/')[-2]
                 save_dir = os.path.join(self.output_dir, seq_name)
@@ -254,6 +256,7 @@ class JDE_Detector(Detector):
                     os.makedirs(save_dir)
                 cv2.imwrite(
                     os.path.join(save_dir, '{:05d}.jpg'.format(frame_id)), im)
+
 
             mot_results.append([online_tlwhs, online_scores, online_ids])
         return mot_results

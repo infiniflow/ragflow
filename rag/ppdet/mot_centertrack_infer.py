@@ -371,6 +371,7 @@ class CenterTrack(Detector):
                     online_scores,
                     frame_id=frame_id,
                     ids2names=ids2names)
+
                 if seq_name is None:
                     seq_name = image_list[0].split('/')[-2]
                 save_dir = os.path.join(self.output_dir, seq_name)
@@ -442,12 +443,12 @@ class CenterTrack(Detector):
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
+
         if self.save_mot_txts:
             result_filename = os.path.join(
                 self.output_dir, video_out_name.split('.')[-2] + '.txt')
 
             write_mot_results(result_filename, results, data_type, num_classes)
-
         writer.release()
 
 
