@@ -11,26 +11,37 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import collections
+
 import os
 import json
-import time
-
 import cv2
+import math
+
 import numpy as np
 import paddle
 import yaml
 import copy
+from collections import defaultdict
 
 from mot_keypoint_unite_utils import argsparser
 from preprocess import decode_image
 from infer import print_arguments, get_test_images, bench_log
-from mot_jde_infer import MOT_JDE_SUPPORT_MODELS
+from mot_sde_infer import SDE_Detector
+from mot_jde_infer import JDE_Detector, MOT_JDE_SUPPORT_MODELS
 from keypoint_infer import KeyPointDetector, KEYPOINT_SUPPORT_MODELS
 from det_keypoint_unite_infer import predict_with_given_det
-from rag.ppdet import MOTTimer
 from visualize import visualize_pose
+from benchmark_utils import PaddleInferBenchmark
 from utils import get_current_memory_mb
+from keypoint_postprocess import translate_to_ori_images
+
+# add python path
+import sys
+parent_path = os.path.abspath(os.path.join(__file__, *(['..'] * 2)))
+sys.path.insert(0, parent_path)
+
+from pptracking.python.mot.visualize import plot_tracking, plot_tracking_dict
+from pptracking.python.mot.utils import MOTTimer as FPSTimer
 
 
 def convert_mot_to_det(tlwhs, scores):
@@ -140,7 +151,7 @@ def mot_topdown_unite_predict_video(mot_detector,
     fourcc = cv2.VideoWriter_fourcc(* 'mp4v')
     writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
     frame_id = 0
-    timer_mot, timer_kp, timer_mot_kp = MOTTimer(), MOTTimer(), MOTTimer()
+    timer_mot, timer_kp, timer_mot_kp = FPSTimer(), FPSTimer(), FPSTimer()
 
     num_classes = mot_detector.num_classes
     assert num_classes == 1, 'Only one category mot model supported for uniting keypoint deploy.'
@@ -186,6 +197,15 @@ def mot_topdown_unite_predict_video(mot_detector,
             visual_thresh=FLAGS.keypoint_threshold,
             returnimg=True,
             ids=online_ids[0])
+
+        im = plot_tracking_dict(
+            im,
+            num_classes,
+            online_tlwhs,
+            online_ids,
+            online_scores,
+            frame_id=frame_id,
+            fps=mot_kp_fps)
 
         writer.write(im)
         if camera_id != -1:

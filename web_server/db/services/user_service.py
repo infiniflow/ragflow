@@ -79,7 +79,7 @@ class TenantService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_user_id(cls, user_id):
-        fields = [cls.model.id.alias("tenant_id"), cls.model.name, cls.model.llm_id, cls.model.embd_id, cls.model.asr_id, cls.model.img2txt_id, UserTenant.role]
+        fields = [cls.model.id.alias("tenant_id"), cls.model.name, cls.model.llm_id, cls.model.embd_id, cls.model.asr_id, cls.model.img2txt_id, cls.model.parser_ids, UserTenant.role]
         return list(cls.model.select(*fields)\
             .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id==user_id) & (UserTenant.status == StatusEnum.VALID.value)))\
             .where(cls.model.status == StatusEnum.VALID.value).dicts())

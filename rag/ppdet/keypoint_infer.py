@@ -11,21 +11,32 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
+
 import os
-# add deploy path of PaddleDetection to sys.path
-parent_path = os.path.abspath(os.path.join(__file__, *(['..'])))
-import sys
-sys.path.insert(0, parent_path)
+import time
 import yaml
+import glob
+from functools import reduce
+
+from PIL import Image
+
 import cv2
 import math
 import numpy as np
 import paddle
 
-from keypoint_preprocess import expand_crop
+import sys
+# add deploy path of PaddleDetection to sys.path
+parent_path = os.path.abspath(os.path.join(__file__, *(['..'])))
+sys.path.insert(0, parent_path)
+
+from preprocess import preprocess, NormalizeImage, Permute
+from keypoint_preprocess import EvalAffine, TopDownEvalAffine, expand_crop
 from keypoint_postprocess import HrHRNetPostProcess, HRNetPostProcess
 from visualize import visualize_pose
+from paddle.inference import Config
+from paddle.inference import create_predictor
+
 from utils import argsparser, Timer, get_current_memory_mb
 from benchmark_utils import PaddleInferBenchmark
 from infer import Detector, get_test_images, print_arguments
