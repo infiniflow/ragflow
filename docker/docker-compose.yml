@@ -1,7 +1,7 @@
 version: '2.2'
 services:
   es01:
-    container_name: docgpt-es-01
+    container_name: ragflow-es-01
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - esdata01:/usr/share/elasticsearch/data
@@ -20,14 +20,14 @@ services:
         soft: -1
         hard: -1
     networks:
-      - docgpt
+      - ragflow
     restart: always
 
   kibana:
     depends_on: 
       - es01
     image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
-    container_name: docgpt-kibana
+    container_name: ragflow-kibana
     volumes:
       - kibanadata:/usr/share/kibana/data
     ports:
@@ -37,26 +37,39 @@ services:
       - ELASTICSEARCH_HOSTS=http://es01:9200
     mem_limit: ${MEM_LIMIT}
     networks:
-      - docgpt
+      - ragflow
 
-  postgres:
-    image: postgres
-    container_name: docgpt-postgres
+  mysql:
+    image: mysql:5.7.18
+    container_name: ragflow-mysql
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
+      - TZ="Asia/Shanghai"
+    command:
+      --max_connections=1000
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+      --default-authentication-plugin=mysql_native_password
+      --tls_version="TLSv1.2,TLSv1.3"
+      --init-file /data/application/init.sql
     ports:
-      - 5455:5432
+      - ${MYSQL_PORT}:3306
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/data/application/init.sql
     networks:
-      - docgpt
+      - ragflow
+    healthcheck:
+          test: [ "CMD-SHELL", "curl --silent localhost:3306 >/dev/null || exit 1" ]
+          interval: 10s
+          timeout: 10s
+          retries: 3
     restart: always
+
 
   minio:
     image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
-    container_name: docgpt-minio
+    container_name: ragflow-minio
     command: server --console-address ":9001" /data
     ports:
       - 9000:9000
@@ -67,7 +80,7 @@ services:
     volumes:
       - minio_data:/data
     networks:
-      - docgpt
+      - ragflow
     restart: always
 
 
@@ -76,11 +89,11 @@ volumes:
     driver: local
   kibanadata:
     driver: local
-  pg_data:
+  mysql_data:
     driver: local
   minio_data:
     driver: local
 
 networks:
-  docgpt:
+  ragflow:
     driver: bridge
