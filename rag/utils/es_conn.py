@@ -294,6 +294,7 @@ class HuEs:
             except Exception as e:
                 es_logger.error("ES updateByQuery deleteByQuery: " +
                                 str(e) + "【Q】：" + str(query.to_dict()))
+                if str(e).find("NotFoundError") > 0: return True
                 if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
                     continue
 

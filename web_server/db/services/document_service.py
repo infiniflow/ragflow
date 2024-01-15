@@ -13,12 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from peewee import Expression
+
 from web_server.db import TenantPermission, FileType
-from web_server.db.db_models import DB, Knowledgebase
+from web_server.db.db_models import DB, Knowledgebase, Tenant
 from web_server.db.db_models import Document
 from web_server.db.services.common_service import CommonService
 from web_server.db.services.kb_service import KnowledgebaseService
-from web_server.utils import get_uuid, get_format_time
 from web_server.db.db_utils import StatusEnum
 
 
@@ -61,15 +62,28 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_newly_uploaded(cls, tm, mod, comm, items_per_page=64):
-        fields = [cls.model.id, cls.model.kb_id, cls.model.parser_id, cls.model.name, cls.model.location, Knowledgebase.tenant_id]
-        docs = cls.model.select(fields).join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id)).where(
-            cls.model.status == StatusEnum.VALID.value,
-            cls.model.type != FileType.VIRTUAL,
-            cls.model.progress == 0,
-            cls.model.update_time >= tm,
-            cls.model.create_time %
-            comm == mod).order_by(
-            cls.model.update_time.asc()).paginate(
-            1,
-            items_per_page)
+        fields = [cls.model.id, cls.model.kb_id, cls.model.parser_id, cls.model.name, cls.model.location, cls.model.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, cls.model.update_time]
+        docs = cls.model.select(*fields) \
+            .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id)) \
+            .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))\
+            .where(
+                cls.model.status == StatusEnum.VALID.value,
+                ~(cls.model.type == FileType.VIRTUAL.value),
+                cls.model.progress == 0,
+                cls.model.update_time >= tm,
+                (Expression(cls.model.create_time, "%%", comm) == mod))\
+            .order_by(cls.model.update_time.asc())\
+            .paginate(1, items_per_page)
         return list(docs.dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
+        num = cls.model.update(token_num=cls.model.token_num + token_num,
+                                   chunk_num=cls.model.chunk_num + chunk_num,
+                                   process_duation=cls.model.process_duation+duation).where(
+            cls.model.id == doc_id).execute()
+        if num == 0:raise LookupError("Document not found which is supposed to be there")
+        num = Knowledgebase.update(token_num=Knowledgebase.token_num+token_num, chunk_num=Knowledgebase.chunk_num+chunk_num).where(Knowledgebase.id==kb_id).execute()
+        return num
+

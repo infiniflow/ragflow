@@ -40,6 +40,25 @@ def findMaxDt(fnm):
         print("WARNING: can't find " + fnm)
     return m
 
+  
+def findMaxTm(fnm):
+    m = 0
+    try:
+        with open(fnm, "r") as f:
+            while True:
+                l = f.readline()
+                if not l:
+                    break
+                l = l.strip("\n")
+                if l == 'nan':
+                    continue
+                if int(l) > m:
+                    m = int(l)
+    except Exception as e:
+        print("WARNING: can't find " + fnm)
+    return m
+
+  
 def num_tokens_from_string(string: str) -> int:
     """Returns the number of tokens in a text string."""
     encoding = tiktoken.get_encoding('cl100k_base')
