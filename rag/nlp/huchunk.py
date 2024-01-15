@@ -411,9 +411,12 @@ class TextChunker(HuChunker):
         flds = self.Fields()
         if self.is_binary_file(fnm):
             return flds
-        with open(fnm, "r") as f:
-            txt = f.read()
-            flds.text_chunks = [(c, None) for c in self.naive_text_chunk(txt)]
+        txt = ""
+        if isinstance(fnm, str):
+            with open(fnm, "r") as f:
+                txt = f.read()
+        else: txt = fnm.decode("utf-8")
+        flds.text_chunks = [(c, None) for c in self.naive_text_chunk(txt)]
         flds.table_chunks = []
         return flds
 

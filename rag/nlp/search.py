@@ -8,7 +8,7 @@ from rag.nlp import huqie, query
 import numpy as np
 
 
-def index_name(uid): return f"docgpt_{uid}"
+def index_name(uid): return f"ragflow_{uid}"
 
 
 class Dealer:
