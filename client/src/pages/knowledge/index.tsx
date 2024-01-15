@@ -63,11 +63,19 @@ const Index: React.FC = ({ knowledgeModel, dispatch }) => {
                       <Popconfirm
                         title="Delete the task"
                         description="Are you sure to delete this task?"
-                        onConfirm={() => { confirm(item.id) }}
+                        onConfirm={(e) => {
+                          e.stopPropagation();
+                          e.nativeEvent.stopImmediatePropagation()
+                          confirm(item.id)
+
+                        }}
                         okText="Yes"
                         cancelText="No"
                       >
-                        <DeleteOutlined />
+                        <DeleteOutlined onClick={(e) => {
+                          e.stopPropagation();
+                          e.nativeEvent.stopImmediatePropagation()
+                        }} />
                       </Popconfirm>
 
                     </span>

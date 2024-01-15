@@ -1,11 +1,6 @@
-/**
- * request 网络请求工具
- * 更详细的 api 文档: https://github.com/umijs/umi-request
- */
+
 import { extend } from 'umi-request';
 import { notification, message } from 'antd';
-import store from '@/utils/persistStore';
-import config from '@/utils/config';
 import _ from 'lodash';
 
 import api from '@/utils/api';

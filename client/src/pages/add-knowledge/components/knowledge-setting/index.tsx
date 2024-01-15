@@ -44,34 +44,61 @@ const Index: React.FC = ({ settingModel, kSModel, dispatch, ...props }) => {
     const { tenantIfo = {} } = settingModel
     const { parser_ids = '', embd_id = '' } = tenantIfo
     const { id = '' } = props
+    const [form] = Form.useForm();
+
     useEffect(() => {
-        dispatch({
-            type: 'settingModel/getTenantInfo',
-            payload: {
-            }
-        });
-    }, [])
-    const [selectedTag, setSelectedTag] = useState('')
-    const onFinish = (values: any) => {
-        console.log(values);
         if (id) {
             dispatch({
-                type: 'kSModel/updateKb',
+                type: 'settingModel/getTenantInfo',
                 payload: {
-                    ...values,
-                    parser_id: selectedTag,
-                    kb_id: id
                 }
             });
-        } else {
             dispatch({
-                type: 'kSModel/createKb',
+                type: 'kSModel/getKbDetail',
                 payload: {
-                    ...values,
-                    parser_id: selectedTag
+                    kb_id: id
+                },
+                callback(detail) {
+                    console.log(detail)
+                    const { description, name, permission, embd_id } = detail
+                    form.setFieldsValue({ description, name, permission, embd_id })
+                    setSelectedTag(detail.parser_id)
                 }
             });
         }
+
+    }, [id])
+    const [selectedTag, setSelectedTag] = useState('')
+    const values = Form.useWatch([], form);
+    console.log(values, '......变化')
+    const onFinish = () => {
+        form.validateFields().then(
+            () => {
+                if (id) {
+                    dispatch({
+                        type: 'kSModel/updateKb',
+                        payload: {
+                            ...values,
+                            parser_id: selectedTag,
+                            kb_id: id,
+                            embd_id: undefined
+                        }
+                    });
+                } else {
+                    dispatch({
+                        type: 'kSModel/createKb',
+                        payload: {
+                            ...values,
+                            parser_id: selectedTag
+                        }
+                    });
+                }
+            },
+            () => {
+
+            },
+        );
+
 
 
     };
@@ -86,8 +113,8 @@ const Index: React.FC = ({ settingModel, kSModel, dispatch, ...props }) => {
 
     return <Form
         {...layout}
-        name="nest-messages"
-        onFinish={onFinish}
+        form={form}
+        name="validateOnly"
         style={{ maxWidth: 1000, padding: 14 }}
     >
         <Form.Item name='name' label="知识库名称" rules={[{ required: true }]}>
@@ -108,7 +135,7 @@ const Index: React.FC = ({ settingModel, kSModel, dispatch, ...props }) => {
             hasFeedback
             rules={[{ required: true, message: 'Please select your country!' }]}
         >
-            <Select placeholder="Please select a country">
+            <Select placeholder="Please select a country" disabled={id}>
                 {embd_id.split(',').map(item => {
                     return <Option value={item} key={item}>{item}</Option>
                 })}
@@ -145,7 +172,7 @@ const Index: React.FC = ({ settingModel, kSModel, dispatch, ...props }) => {
             </div>
         </div>
         <Form.Item wrapperCol={{ ...layout.wrapperCol, offset: 8 }}>
-            <Button type="primary" htmlType="submit">
+            <Button type="primary" onClick={onFinish}>
                 保存并处理
             </Button>
             <Button htmlType="button" style={{ marginLeft: '20px' }}>
