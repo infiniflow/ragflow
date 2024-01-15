@@ -428,6 +428,7 @@ class LLMFactories(DataBaseModel):
 class LLM(DataBaseModel):
     # defautlt LLMs for every users
     llm_name = CharField(max_length=128, null=False, help_text="LLM name", primary_key=True)
+    model_type = CharField(max_length=128, null=False, help_text="LLM, Text Embedding, Image2Text, ASR")
     fid = CharField(max_length=128, null=False, help_text="LLM factory id")
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, Chat, 32k...")
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
@@ -442,8 +443,8 @@ class LLM(DataBaseModel):
 class TenantLLM(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False)
     llm_factory = CharField(max_length=128, null=False, help_text="LLM factory name")
-    model_type = CharField(max_length=128, null=False, help_text="LLM, Text Embedding, Image2Text, ASR")
-    llm_name = CharField(max_length=128, null=False, help_text="LLM name")
+    model_type = CharField(max_length=128, null=True, help_text="LLM, Text Embedding, Image2Text, ASR")
+    llm_name = CharField(max_length=128, null=True, help_text="LLM name", default="")
     api_key = CharField(max_length=255, null=True, help_text="API KEY")
     api_base = CharField(max_length=255, null=True, help_text="API Base")
 
@@ -452,7 +453,7 @@ class TenantLLM(DataBaseModel):
 
     class Meta:
         db_table = "tenant_llm"
-        primary_key = CompositeKey('tenant_id', 'llm_factory')
+        primary_key = CompositeKey('tenant_id', 'llm_factory', 'llm_name')
 
 
 class Knowledgebase(DataBaseModel):
@@ -464,7 +465,8 @@ class Knowledgebase(DataBaseModel):
     permission = CharField(max_length=16, null=False, help_text="me|team")
     created_by = CharField(max_length=32, null=False)
     doc_num = IntegerField(default=0)
-    embd_id = CharField(max_length=32, null=False, help_text="default embedding model ID")
+    token_num = IntegerField(default=0)
+    chunk_num = IntegerField(default=0)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID")
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
 

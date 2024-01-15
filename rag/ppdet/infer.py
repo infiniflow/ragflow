@@ -17,6 +17,7 @@ import yaml
 import glob
 import json
 from pathlib import Path
+from functools import reduce
 
 import cv2
 import numpy as np
@@ -26,12 +27,14 @@ from paddle.inference import Config
 from paddle.inference import create_predictor
 
 import sys
+# add deploy path of PaddleDetection to sys.path
 parent_path = os.path.abspath(os.path.join(__file__, *(['..'])))
 sys.path.insert(0, parent_path)
 
 from benchmark_utils import PaddleInferBenchmark
 from picodet_postprocess import PicoDetPostProcess
-from preprocess import preprocess
+from preprocess import preprocess, Resize, NormalizeImage, Permute, PadStride, LetterBoxResize, WarpAffine, Pad, decode_image, CULaneResize
+from keypoint_preprocess import EvalAffine, TopDownEvalAffine, expand_crop
 from clrnet_postprocess import CLRNetPostProcess
 from visualize import visualize_box_mask, imshow_lanes
 from utils import argsparser, Timer, get_current_memory_mb, multiclass_nms, coco_clsid2catid

@@ -29,7 +29,7 @@ from web_server.utils.api_utils import get_json_result
 
 @manager.route('/create', methods=['post'])
 @login_required
-@validate_request("name", "description", "permission", "embd_id", "parser_id")
+@validate_request("name", "description", "permission", "parser_id")
 def create():
     req = request.json
     req["name"] = req["name"].strip()
@@ -46,7 +46,7 @@ def create():
 
 @manager.route('/update', methods=['post'])
 @login_required
-@validate_request("kb_id", "name", "description", "permission", "embd_id", "parser_id")
+@validate_request("kb_id", "name", "description", "permission", "parser_id")
 def update():
     req = request.json
     req["name"] = req["name"].strip()
@@ -68,6 +68,18 @@ def update():
         if not e: return get_data_error_result(retmsg="Database error (Knowledgebase rename)!")
 
         return get_json_result(data=kb.to_json())
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/detail', methods=['GET'])
+@login_required
+def detail():
+    kb_id = request.args["kb_id"]
+    try:
+        kb = KnowledgebaseService.get_detail(kb_id)
+        if not kb: return get_data_error_result(retmsg="Can't find this knowledgebase!")
+        return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
 

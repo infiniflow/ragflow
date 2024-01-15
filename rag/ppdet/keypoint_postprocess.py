@@ -17,6 +17,8 @@ from collections import abc, defaultdict
 import cv2
 import numpy as np
 import math
+import paddle
+import paddle.nn as nn
 from keypoint_preprocess import get_affine_mat_kernel, get_affine_transform
 
 

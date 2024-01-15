@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
 import pathlib
 
 from elasticsearch_dsl import Q
@@ -195,11 +196,15 @@ def rm():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
+        if not ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(doc.kb_id)):
+            return get_json_result(data=False, retmsg='Remove from ES failure"', retcode=RetCode.SERVER_ERROR)
+
+        DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num*-1, doc.chunk_num*-1, 0)
         if not DocumentService.delete_by_id(req["doc_id"]):
             return get_data_error_result(
                 retmsg="Database error (Document removal)!")
-        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-        MINIO.rm(kb.id, doc.location)
+
+        MINIO.rm(doc.kb_id, doc.location)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -229,6 +234,45 @@ def rename():
                 req["doc_id"], {"name": req["name"]}):
             return get_data_error_result(
                 retmsg="Database error (Document rename)!")
+
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/get', methods=['GET'])
+@login_required
+def get():
+    doc_id = request.args["doc_id"]
+    try:
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return get_data_error_result(retmsg="Document not found!")
+
+        blob = MINIO.get(doc.kb_id, doc.location)
+        return get_json_result(data={"base64": base64.b64decode(blob)})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/change_parser', methods=['POST'])
+@login_required
+@validate_request("doc_id", "parser_id")
+def change_parser():
+    req = request.json
+    try:
+        e, doc = DocumentService.get_by_id(req["doc_id"])
+        if not e:
+            return get_data_error_result(retmsg="Document not found!")
+        if doc.parser_id.lower() == req["parser_id"].lower():
+            return get_json_result(data=True)
+
+        e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress":0, "progress_msg": ""})
+        if not e:
+            return get_data_error_result(retmsg="Document not found!")
+        e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num*-1, doc.chunk_num*-1, doc.process_duation*-1)
+        if not e:
+            return get_data_error_result(retmsg="Document not found!")
 
         return get_json_result(data=True)
     except Exception as e:

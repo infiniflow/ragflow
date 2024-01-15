@@ -15,16 +15,18 @@
 import os
 import copy
 import math
+import time
+import yaml
 import cv2
 import numpy as np
 from collections import defaultdict
 import paddle
 
-from rag.ppdet import MOTTimer
-from utils import gaussian_radius, draw_umich_gaussian
-from preprocess import preprocess, decode_image
+from benchmark_utils import PaddleInferBenchmark
+from utils import gaussian_radius, gaussian2D, draw_umich_gaussian
+from preprocess import preprocess, decode_image, WarpAffine, NormalizeImage, Permute
 from utils import argsparser, Timer, get_current_memory_mb
-from infer import Detector, get_test_images, print_arguments, bench_log
+from infer import Detector, get_test_images, print_arguments, bench_log, PredictConfig
 from keypoint_preprocess import get_affine_transform
 
 # add python path
@@ -32,6 +34,9 @@ import sys
 parent_path = os.path.abspath(os.path.join(__file__, *(['..'] * 2)))
 sys.path.insert(0, parent_path)
 
+from pptracking.python.mot import CenterTracker
+from pptracking.python.mot.utils import MOTTimer, write_mot_results
+from pptracking.python.mot.visualize import plot_tracking
 
 
 def transform_preds_with_trans(coords, trans):
@@ -119,12 +124,12 @@ class CenterTrack(Detector):
         track_thresh = cfg.get('track_thresh', 0.4)
         pre_thresh = cfg.get('pre_thresh', 0.5)
 
-        # self.tracker = CenterTracker(
-        #     num_classes=self.num_classes,
-        #     min_box_area=min_box_area,
-        #     vertical_ratio=vertical_ratio,
-        #     track_thresh=track_thresh,
-        #     pre_thresh=pre_thresh)
+        self.tracker = CenterTracker(
+            num_classes=self.num_classes,
+            min_box_area=min_box_area,
+            vertical_ratio=vertical_ratio,
+            track_thresh=track_thresh,
+            pre_thresh=pre_thresh)
 
         self.pre_image = None
 
@@ -359,20 +364,20 @@ class CenterTrack(Detector):
                     print('Tracking frame {}'.format(frame_id))
                 frame, _ = decode_image(img_file, {})
 
-                # im = plot_tracking(
-                #     frame,
-                #     online_tlwhs,
-                #     online_ids,
-                #     online_scores,
-                #     frame_id=frame_id,
-                #     ids2names=ids2names)
+                im = plot_tracking(
+                    frame,
+                    online_tlwhs,
+                    online_ids,
+                    online_scores,
+                    frame_id=frame_id,
+                    ids2names=ids2names)
                 if seq_name is None:
                     seq_name = image_list[0].split('/')[-2]
                 save_dir = os.path.join(self.output_dir, seq_name)
                 if not os.path.exists(save_dir):
                     os.makedirs(save_dir)
-                # cv2.imwrite(
-                #     os.path.join(save_dir, '{:05d}.jpg'.format(frame_id)), im)
+                cv2.imwrite(
+                    os.path.join(save_dir, '{:05d}.jpg'.format(frame_id)), im)
 
             mot_results.append([online_tlwhs, online_scores, online_ids])
         return mot_results
@@ -422,26 +427,26 @@ class CenterTrack(Detector):
             online_tlwhs, online_scores, online_ids = mot_results[0]
             results[0].append(
                 (frame_id + 1, online_tlwhs, online_scores, online_ids))
-            # im = plot_tracking(
-            #     frame,
-            #     online_tlwhs,
-            #     online_ids,
-            #     online_scores,
-            #     frame_id=frame_id,
-            #     fps=fps,
-            #     ids2names=ids2names)
-            #
-            # writer.write(im)
-            # if camera_id != -1:
-            #     cv2.imshow('Mask Detection', im)
-            #     if cv2.waitKey(1) & 0xFF == ord('q'):
-            #         break
+            im = plot_tracking(
+                frame,
+                online_tlwhs,
+                online_ids,
+                online_scores,
+                frame_id=frame_id,
+                fps=fps,
+                ids2names=ids2names)
+
+            writer.write(im)
+            if camera_id != -1:
+                cv2.imshow('Mask Detection', im)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
         if self.save_mot_txts:
             result_filename = os.path.join(
                 self.output_dir, video_out_name.split('.')[-2] + '.txt')
 
-            #write_mot_results(result_filename, results, data_type, num_classes)
+            write_mot_results(result_filename, results, data_type, num_classes)
 
         writer.release()
 

@@ -31,5 +31,23 @@ class LLMService(CommonService):
     model = LLM
 
 
+
 class TenantLLMService(CommonService):
     model = TenantLLM
+
+    @classmethod
+    @DB.connection_context()
+    def get_api_key(cls, tenant_id, model_type):
+        objs = cls.query(tenant_id=tenant_id, model_type=model_type)
+        if objs and len(objs)>0 and objs[0].llm_name:
+            return objs[0]
+
+        fields = [LLM.llm_name, cls.model.llm_factory, cls.model.api_key]
+        objs = cls.model.select(*fields).join(LLM, on=(LLM.fid == cls.model.llm_factory)).where(
+            (cls.model.tenant_id == tenant_id),
+            (cls.model.model_type == model_type),
+            (LLM.status == StatusEnum.VALID)
+        )
+
+        if not objs:return
+        return objs[0]

@@ -16,9 +16,12 @@
 from flask import request, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import login_required, current_user, login_user, logout_user
+
+from web_server.db.db_models import TenantLLM
+from web_server.db.services.llm_service import TenantLLMService
 from web_server.utils.api_utils import server_error_response, validate_request
 from web_server.utils import get_uuid, get_format_time, decrypt, download_img
-from web_server.db import UserTenantRole
+from web_server.db import UserTenantRole, LLMType
 from web_server.settings import RetCode, GITHUB_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS
 from web_server.db.services.user_service import UserService, TenantService, UserTenantService
 from web_server.settings import stat_logger
@@ -47,8 +50,9 @@ def login():
             avatar = download_img(userinfo["avatar_url"])
         except Exception as e:
             stat_logger.exception(e)
+        user_id = get_uuid()
         try:
-            users = user_register({
+            users = user_register(user_id, {
                 "access_token": session["access_token"],
                 "email": userinfo["email"],
                 "avatar": avatar,
@@ -63,6 +67,7 @@ def login():
             login_user(user)
             return cors_reponse(data=user.to_json(), auth=user.get_id(), retmsg="Welcome back!")
         except Exception as e:
+            rollback_user_registration(user_id)
             stat_logger.exception(e)
             return server_error_response(e)
     elif not request.json:
@@ -162,7 +167,23 @@ def user_info():
     return get_json_result(data=current_user.to_dict())
 
 
-def user_register(user):
+def rollback_user_registration(user_id):
+    try:
+        TenantService.delete_by_id(user_id)
+    except Exception as e:
+        pass
+    try:
+        u = UserTenantService.query(tenant_id=user_id)
+        if u:
+            UserTenantService.delete_by_id(u[0].id)
+    except Exception as e:
+        pass
+    try:
+        TenantLLM.delete().where(TenantLLM.tenant_id==user_id).excute()
+    except Exception as e:
+        pass
+
+def user_register(user_id, user):
     user_id = get_uuid()
     user["id"] = user_id
     tenant = {
@@ -180,10 +201,12 @@ def user_register(user):
         "invited_by": user_id,
         "role": UserTenantRole.OWNER
     }
+    tenant_llm = {"tenant_id": user_id, "llm_factory": "OpenAI", "api_key": "infiniflow API Key"}
 
     if not UserService.save(**user):return
     TenantService.save(**tenant)
     UserTenantService.save(**usr_tenant)
+    TenantLLMService.save(**tenant_llm)
     return UserService.query(email=user["email"])
 
 
@@ -203,14 +226,17 @@ def user_add():
         "last_login_time": get_format_time(),
         "is_superuser": False,
     }
+
+    user_id = get_uuid()
     try:
-        users = user_register(user_dict)
+        users = user_register(user_id, user_dict)
         if not users: raise Exception('Register user failure.')
         if len(users) > 1: raise Exception('Same E-mail exist!')
         user = users[0]
         login_user(user)
         return cors_reponse(data=user.to_json(), auth=user.get_id(), retmsg="Welcome aboard!")
     except Exception as e:
+        rollback_user_registration(user_id)
         stat_logger.exception(e)
         return get_json_result(data=False, retmsg='User registration failure!', retcode=RetCode.EXCEPTION_ERROR)
 
@@ -220,7 +246,7 @@ def user_add():
 @login_required
 def tenant_info():
     try:
-        tenants = TenantService.get_by_user_id(current_user.id)
+        tenants = TenantService.get_by_user_id(current_user.id)[0]
         return get_json_result(data=tenants)
     except Exception as e:
         return server_error_response(e)
