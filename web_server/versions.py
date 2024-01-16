@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The FATE Authors. All Rights Reserved.
+#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -26,5 +26,5 @@ def get_versions() -> typing.Mapping[str, typing.Any]:
         dotenv_path=os.path.join(get_project_base_directory(), "rag.env")
     )
 
-def get_fate_version() -> typing.Optional[str]:
+def get_rag_version() -> typing.Optional[str]:
     return get_versions().get("RAG")

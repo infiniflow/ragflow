@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The FATE Authors. All Rights Reserved.
+#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     # init runtime config
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--version', default=False, help="fate flow version", action='store_true')
+    parser.add_argument('--version', default=False, help="rag flow version", action='store_true')
     parser.add_argument('--debug', default=False, help="debug mode", action='store_true')
     args = parser.parse_args()
     if args.version:
@@ -64,13 +64,13 @@ if __name__ == '__main__':
 
     peewee_logger = logging.getLogger('peewee')
     peewee_logger.propagate = False
-    # fate_arch.common.log.ROpenHandler
+    # rag_arch.common.log.ROpenHandler
     peewee_logger.addHandler(database_logger.handlers[0])
     peewee_logger.setLevel(database_logger.level)
 
     # start http server
     try:
-        stat_logger.info("FATE Flow http server start...")
+        stat_logger.info("RAG Flow http server start...")
         werkzeug_logger = logging.getLogger("werkzeug")
         for h in access_logger.handlers:
             werkzeug_logger.addHandler(h)

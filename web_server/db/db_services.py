@@ -1,5 +1,5 @@
 #
-#  Copyright 2021 The FATE Authors. All Rights Reserved.
+#  Copyright 2021 The RAG Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import time
 from functools import wraps
 from shortuuid import ShortUUID
 
-from web_server.versions import get_fate_version
+from web_server.versions import get_rag_version
 
 from web_server.errors.error_services import *
 from web_server.settings import (
@@ -34,7 +34,7 @@ server_instance = (
     json.dumps({
         'instance_id': instance_id,
         'timestamp': round(time.time() * 1000),
-        'version': get_fate_version() or '',
+        'version': get_rag_version() or '',
         'host': HOST,
         'grpc_port': GRPC_PORT,
         'http_port': HTTP_PORT,
@@ -68,7 +68,7 @@ class ServicesDB(abc.ABC):
     @abc.abstractmethod
     def supported_services(self):
         """The names of supported services.
-        The returned list SHOULD contain `fateflow` (model download) and `servings` (FATE-Serving).
+        The returned list SHOULD contain `ragflow` (model download) and `servings` (RAG-Serving).
 
         :return: The service names.
         :rtype: list
@@ -142,8 +142,8 @@ class ServicesDB(abc.ABC):
     @check_service_supported
     def get_urls(self, service_name, with_values=False):
         """Query service urls from database. The urls may belong to other nodes.
-        Currently, only `fateflow` (model download) urls and `servings` (FATE-Serving) urls are supported.
-        `fateflow` is a url containing scheme, host, port and path,
+        Currently, only `ragflow` (model download) urls and `servings` (RAG-Serving) urls are supported.
+        `ragflow` is a url containing scheme, host, port and path,
         while `servings` only contains host and port.
 
         :param str service_name: The service name.

@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The FATE Authors. All Rights Reserved.
+#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -24,10 +24,10 @@ from web_server.utils.log_utils import LoggerFactory, getLogger
 
 # Server
 API_VERSION = "v1"
-FATE_FLOW_SERVICE_NAME = "ragflow"
+RAG_FLOW_SERVICE_NAME = "ragflow"
 SERVER_MODULE = "rag_flow_server.py"
 TEMP_DIRECTORY = os.path.join(get_project_base_directory(), "temp")
-FATE_FLOW_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
+RAG_FLOW_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 
 SUBPROCESS_STD_LOG_NAME = "std.log"
 
@@ -52,21 +52,21 @@ IMAGE2TEXT_MDL = LLM.get("image2text_model", "gpt-4-vision-preview")
 
 # distribution
 DEPENDENT_DISTRIBUTION = get_base_config("dependent_distribution", False)
-FATE_FLOW_UPDATE_CHECK = False
+RAG_FLOW_UPDATE_CHECK = False
 
-HOST = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("host", "127.0.0.1")
-HTTP_PORT = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("http_port")
+HOST = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("host", "127.0.0.1")
+HTTP_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
 
-SECRET_KEY = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("secret_key", "infiniflow")
-TOKEN_EXPIRE_IN = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("token_expires_in", 3600)
+SECRET_KEY = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("secret_key", "infiniflow")
+TOKEN_EXPIRE_IN = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("token_expires_in", 3600)
 
-NGINX_HOST = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("nginx", {}).get("host") or HOST
-NGINX_HTTP_PORT = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("nginx", {}).get("http_port") or HTTP_PORT
+NGINX_HOST = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("nginx", {}).get("host") or HOST
+NGINX_HTTP_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("nginx", {}).get("http_port") or HTTP_PORT
 
-RANDOM_INSTANCE_ID = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("random_instance_id", False)
+RANDOM_INSTANCE_ID = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("random_instance_id", False)
 
-PROXY = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("proxy")
-PROXY_PROTOCOL = get_base_config(FATE_FLOW_SERVICE_NAME, {}).get("protocol")
+PROXY = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("proxy")
+PROXY_PROTOCOL = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("protocol")
 
 DATABASE = decrypt_database_config()
 
@@ -133,7 +133,7 @@ class CustomEnum(Enum):
 
 
 class PythonDependenceName(CustomEnum):
-    Fate_Source_Code = "python"
+    Rag_Source_Code = "python"
     Python_Env = "miniconda"
 
 

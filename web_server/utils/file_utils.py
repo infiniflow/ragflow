@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The FATE Authors. All Rights Reserved.
+#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ from ruamel.yaml import YAML
 from web_server.db import FileType
 
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
-FATE_BASE = os.getenv("RAG_BASE")
+RAG_BASE = os.getenv("RAG_BASE")
 
 def get_project_base_directory(*args):
     global PROJECT_BASE
@@ -42,10 +42,10 @@ def get_project_base_directory(*args):
     return PROJECT_BASE
 
 
-def get_fate_directory(*args):
-    global FATE_BASE
-    if FATE_BASE is None:
-        FATE_BASE = os.path.abspath(
+def get_rag_directory(*args):
+    global RAG_BASE
+    if RAG_BASE is None:
+        RAG_BASE = os.path.abspath(
             os.path.join(
                 os.path.dirname(os.path.realpath(__file__)),
                 os.pardir,
@@ -54,12 +54,12 @@ def get_fate_directory(*args):
             )
         )
     if args:
-        return os.path.join(FATE_BASE, *args)
-    return FATE_BASE
+        return os.path.join(RAG_BASE, *args)
+    return RAG_BASE
 
 
-def get_fate_python_directory(*args):
-    return get_fate_directory("python", *args)
+def get_rag_python_directory(*args):
+    return get_rag_directory("python", *args)
 
 
 

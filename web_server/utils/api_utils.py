@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The FATE Authors. All Rights Reserved.
+#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ from flask import (
 from werkzeug.http import HTTP_STATUS_CODES
 
 from web_server.utils import json_dumps
-from web_server.versions import get_fate_version
+from web_server.versions import get_rag_version
 from web_server.settings import RetCode
 from web_server.settings import (
     REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC,
@@ -73,7 +73,7 @@ def request(**kwargs):
     return sess.send(prepped, stream=stream, timeout=timeout)
 
 
-fate_version = get_fate_version() or ''
+rag_version = get_rag_version() or ''
 
 
 def get_exponential_backoff_interval(retries, full_jitter=False):
@@ -93,7 +93,7 @@ def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None, job_id
     result_dict = {
         "retcode": retcode,
         "retmsg":retmsg,
-        # "retmsg": re.sub(r"fate", "seceum", retmsg, flags=re.IGNORECASE),
+        # "retmsg": re.sub(r"rag", "seceum", retmsg, flags=re.IGNORECASE),
         "data": data,
         "jobId": job_id,
         "meta": meta,
@@ -109,7 +109,7 @@ def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None, job_id
 
 def get_data_error_result(retcode=RetCode.DATA_ERROR, retmsg='Sorry! Data missing!'):
     import re
-    result_dict = {"retcode": retcode, "retmsg": re.sub(r"fate", "seceum", retmsg, flags=re.IGNORECASE)}
+    result_dict = {"retcode": retcode, "retmsg": re.sub(r"rag", "seceum", retmsg, flags=re.IGNORECASE)}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "retcode":

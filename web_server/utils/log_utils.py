@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The FATE Authors. All Rights Reserved.
+#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -127,13 +127,9 @@ class LoggerFactory(object):
             else:
                 log_file = os.path.join(log_dir, "{}.log".format(class_name))
         else:
-            log_file = os.path.join(log_dir, "fate_flow_{}.log".format(
-                log_type) if level == LoggerFactory.LEVEL else 'fate_flow_{}_error.log'.format(log_type))
-        job_id = job_id or os.getenv("FATE_JOB_ID")
-        if job_id:
-            formatter = logging.Formatter(LoggerFactory.LOG_FORMAT.replace("jobId", job_id))
-        else:
-            formatter = logging.Formatter(LoggerFactory.LOG_FORMAT.replace("jobId", "Server"))
+            log_file = os.path.join(log_dir, "rag_flow_{}.log".format(
+                log_type) if level == LoggerFactory.LEVEL else 'rag_flow_{}_error.log'.format(log_type))
+
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
         if LoggerFactory.log_share:
             handler = ROpenHandler(log_file,
@@ -150,7 +146,6 @@ class LoggerFactory(object):
         if level:
             handler.level = level
 
-        handler.setFormatter(formatter)
         return handler
 
     @staticmethod
@@ -264,28 +259,28 @@ def exception_to_trace_string(ex):
 
 
 def get_logger_base_dir():
-    job_log_dir = file_utils.get_fate_flow_directory('logs')
+    job_log_dir = file_utils.get_rag_flow_directory('logs')
     return job_log_dir
 
 
 def get_job_logger(job_id, log_type):
-    fate_flow_log_dir = file_utils.get_fate_flow_directory('logs', 'fate_flow')
-    job_log_dir = file_utils.get_fate_flow_directory('logs', job_id)
+    rag_flow_log_dir = file_utils.get_rag_flow_directory('logs', 'rag_flow')
+    job_log_dir = file_utils.get_rag_flow_directory('logs', job_id)
     if not job_id:
-        log_dirs = [fate_flow_log_dir]
+        log_dirs = [rag_flow_log_dir]
     else:
         if log_type == 'audit':
-            log_dirs = [job_log_dir, fate_flow_log_dir]
+            log_dirs = [job_log_dir, rag_flow_log_dir]
         else:
             log_dirs = [job_log_dir]
     if LoggerFactory.log_share:
         oldmask = os.umask(000)
         os.makedirs(job_log_dir, exist_ok=True)
-        os.makedirs(fate_flow_log_dir, exist_ok=True)
+        os.makedirs(rag_flow_log_dir, exist_ok=True)
         os.umask(oldmask)
     else:
         os.makedirs(job_log_dir, exist_ok=True)
-        os.makedirs(fate_flow_log_dir, exist_ok=True)
+        os.makedirs(rag_flow_log_dir, exist_ok=True)
     logger = LoggerFactory.new_logger(f"{job_id}_{log_type}")
     for job_log_dir in log_dirs:
         handler = LoggerFactory.get_handler(class_name=None, level=LoggerFactory.LEVEL,
