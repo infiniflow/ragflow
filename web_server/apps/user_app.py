@@ -252,3 +252,17 @@ def tenant_info():
         return get_json_result(data=tenants)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/set_tenant_info", methods=["POST"])
+@login_required
+@validate_request("tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id")
+def set_tenant_info():
+    req = request.json
+    try:
+        tid = req["tenant_id"]
+        del req["tenant_id"]
+        TenantService.update_by_id(tid, req)
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)

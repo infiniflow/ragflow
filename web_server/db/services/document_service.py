@@ -87,3 +87,10 @@ class DocumentService(CommonService):
         num = Knowledgebase.update(token_num=Knowledgebase.token_num+token_num, chunk_num=Knowledgebase.chunk_num+chunk_num).where(Knowledgebase.id==kb_id).execute()
         return num
 
+    @classmethod
+    @DB.connection_context()
+    def get_tenant_id(cls, doc_id):
+        docs = cls.model.select(Knowledgebase.tenant_id).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.id == doc_id, Knowledgebase.status==StatusEnum.VALID.value)
+        docs = docs.dicts()
+        if not docs:return
+        return docs[0]["tenant_id"]

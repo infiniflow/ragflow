@@ -33,7 +33,7 @@ from web_server.utils.api_utils import get_json_result
 def factories():
     try:
         fac = LLMFactoriesService.get_all()
-        return get_json_result(data=fac.to_json())
+        return get_json_result(data=[f.to_dict() for f in fac])
     except Exception as e:
         return server_error_response(e)
 
@@ -60,9 +60,7 @@ def set_api_key():
 @login_required
 def my_llms():
     try:
-        objs = TenantLLMService.query(tenant_id=current_user.id)
-        objs = [o.to_dict() for o in objs]
-        for o in objs: del o["api_key"]
+        objs = TenantLLMService.get_my_llms(current_user.id)
         return get_json_result(data=objs)
     except Exception as e:
         return server_error_response(e)

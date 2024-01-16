@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import base64
-from datetime import datetime
+import datetime
 import io
 import json
 import os
@@ -287,16 +287,16 @@ def get_uuid():
     return uuid.uuid1().hex
 
 
-def datetime_format(date_time: datetime) -> datetime:
-    return datetime(date_time.year, date_time.month, date_time.day, date_time.hour, date_time.minute, date_time.second)
+def datetime_format(date_time: datetime.datetime) -> datetime.datetime:
+    return datetime.datetime(date_time.year, date_time.month, date_time.day, date_time.hour, date_time.minute, date_time.second)
 
 
-def get_format_time() -> datetime:
-    return datetime_format(datetime.now())
+def get_format_time() -> datetime.datetime:
+    return datetime_format(datetime.datetime.now())
 
 
 def str2date(date_time: str):
-    return datetime.strptime(date_time, '%Y-%m-%d')
+    return datetime.datetime.strptime(date_time, '%Y-%m-%d')
 
 
 def elapsed2time(elapsed):

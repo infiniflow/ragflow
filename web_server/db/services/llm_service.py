@@ -16,10 +16,11 @@
 import peewee
 from werkzeug.security import generate_password_hash, check_password_hash
 
+from rag.llm import EmbeddingModel, CvModel
+from web_server.db import LLMType
 from web_server.db.db_models import DB, UserTenant
 from web_server.db.db_models import LLMFactories, LLM, TenantLLM
 from web_server.db.services.common_service import CommonService
-from web_server.utils import get_uuid, get_format_time
 from web_server.db.db_utils import StatusEnum
 
 
@@ -51,3 +52,25 @@ class TenantLLMService(CommonService):
         if not objs:return
         return objs[0]
 
+    @classmethod
+    @DB.connection_context()
+    def get_my_llms(cls, tenant_id):
+        fields = [cls.model.llm_factory, LLMFactories.logo, LLMFactories.tags, cls.model.model_type, cls.model.llm_name]
+        objs = cls.model.select(*fields).join(LLMFactories, on=(cls.model.llm_factory==LLMFactories.name)).where(cls.model.tenant_id==tenant_id).dicts()
+
+        return list(objs)
+
+    @classmethod
+    @DB.connection_context()
+    def model_instance(cls, tenant_id, llm_type):
+        model_config = cls.get_api_key(tenant_id, model_type=LLMType.EMBEDDING)
+        if not model_config:
+            model_config = {"llm_factory": "local", "api_key": "", "llm_name": ""}
+        else:
+            model_config = model_config[0].to_dict()
+        if llm_type == LLMType.EMBEDDING:
+            if model_config["llm_factory"] not in EmbeddingModel: return
+            return EmbeddingModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"])
+        if llm_type == LLMType.IMAGE2TEXT:
+            if model_config["llm_factory"] not in CvModel: return
+            return CvModel[model_config.llm_factory](model_config["api_key"], model_config["llm_name"])

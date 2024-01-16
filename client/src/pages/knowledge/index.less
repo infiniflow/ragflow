@@ -1,0 +1,41 @@
+.knowledge {
+    padding: 24px;
+}
+
+.container {
+    height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+
+    .content {
+        display: flex;
+        justify-content: space-between;
+
+        .context {
+            flex: 1
+        }
+    }
+
+    .footer {
+        height: 20px;
+
+        .text {
+            margin-left: 10px;
+        }
+    }
+}
+
+.card {
+    :global {
+        .ant-card-body {
+            padding: 10px;
+            margin: 0;
+        }
+
+        margin-bottom: 10px;
+    }
+
+    cursor: pointer;
+
+}

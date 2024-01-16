@@ -24,10 +24,9 @@ from rag.nlp import search
 from rag.utils import ELASTICSEARCH
 from web_server.db.services import duplicate_name
 from web_server.db.services.kb_service import KnowledgebaseService
-from web_server.db.services.user_service import TenantService
 from web_server.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from web_server.utils import get_uuid, get_format_time
-from web_server.db import StatusEnum, FileType
+from web_server.utils import get_uuid
+from web_server.db import FileType
 from web_server.db.services.document_service import DocumentService
 from web_server.settings import RetCode
 from web_server.utils.api_utils import get_json_result
