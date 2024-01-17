@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -24,16 +24,16 @@ from flask import (
 )
 from werkzeug.http import HTTP_STATUS_CODES
 
-from web_server.utils import json_dumps
-from web_server.versions import get_rag_version
-from web_server.settings import RetCode
-from web_server.settings import (
+from api.utils import json_dumps
+from api.versions import get_rag_version
+from api.settings import RetCode
+from api.settings import (
     REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC,
     stat_logger,CLIENT_AUTHENTICATION, HTTP_APP_KEY, SECRET_KEY
 )
 import requests
 import functools
-from web_server.utils import CustomJSONEncoder
+from api.utils import CustomJSONEncoder
 from uuid import uuid1
 from base64 import b64encode
 from hmac import HMAC

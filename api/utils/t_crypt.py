@@ -1,7 +1,7 @@
 import base64, os, sys
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-from web_server.utils import decrypt, file_utils
+from api.utils import decrypt, file_utils
 
 def crypt(line):
     file_path = os.path.join(file_utils.get_project_base_directory(), "conf", "public.pem")

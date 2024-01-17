@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import inspect
 from logging.handlers import TimedRotatingFileHandler
 from threading import RLock
 
-from web_server.utils import file_utils
+from api.utils import file_utils
 
 class LoggerFactory(object):
     TYPE = "FILE"

@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,15 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import peewee
-from werkzeug.security import generate_password_hash, check_password_hash
-
 from rag.llm import EmbeddingModel, CvModel
-from web_server.db import LLMType
-from web_server.db.db_models import DB, UserTenant
-from web_server.db.db_models import LLMFactories, LLM, TenantLLM
-from web_server.db.services.common_service import CommonService
-from web_server.db.db_utils import StatusEnum
+from api.db import LLMType
+from api.db.db_models import DB, UserTenant
+from api.db.db_models import LLMFactories, LLM, TenantLLM
+from api.db.services.common_service import CommonService
+from api.db import StatusEnum
 
 
 class LLMFactoriesService(CommonService):

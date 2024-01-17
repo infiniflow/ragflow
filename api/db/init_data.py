@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 import time
 import uuid
 
-from web_server.db import LLMType
-from web_server.db.db_models import init_database_tables as init_web_db
-from web_server.db.services import UserService
-from web_server.db.services.llm_service import LLMFactoriesService, LLMService
+from api.db import LLMType
+from api.db.db_models import init_database_tables as init_web_db
+from api.db.services import UserService
+from api.db.services.llm_service import LLMFactoriesService, LLMService
 
 
 def init_superuser():

@@ -1,11 +1,11 @@
 import requests
 
-from web_server.db.service_registry import ServiceRegistry
-from web_server.settings import RegistryServiceName
-from web_server.hook import HookManager
-from web_server.hook.common.parameters import SignatureParameters, AuthenticationParameters, AuthenticationReturn,\
+from api.db.service_registry import ServiceRegistry
+from api.settings import RegistryServiceName
+from api.hook import HookManager
+from api.hook.common.parameters import SignatureParameters, AuthenticationParameters, AuthenticationReturn,\
     SignatureReturn
-from web_server.settings import HOOK_SERVER_NAME, PARTY_ID
+from api.settings import HOOK_SERVER_NAME, PARTY_ID
 
 
 @HookManager.register_site_signature_hook
