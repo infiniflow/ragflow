@@ -1,0 +1,20 @@
+{
+    "header": {
+        "register": "Register",
+        "signin": "Sign In",
+        "home": "Home",
+        "setting": "用户设置",
+        "logout": "登出"
+    },
+    "footer": {
+        "detail": "All rights reserved @ React"
+    },
+    "layout": {
+        "file": "file",
+        "knowledge": "knowledge",
+        "chat": "chat"
+    },
+    "setting": {
+        "btn": "en"
+    }
+}

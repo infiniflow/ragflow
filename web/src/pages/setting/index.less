@@ -1,0 +1,49 @@
+.settingPage {
+    padding: 10px;
+}
+
+.avatar {
+    display: flex;
+    justify-content: center;
+}
+
+.tenantIfo {
+    height: 50px;
+    background-color: #f4dfdf;
+    margin-bottom: 10px;
+    padding: 5px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+}
+
+.list {
+    :global {
+        .ant-pro-card-header {
+            height: 150px;
+            background-color: rgb(229, 231, 235);
+        }
+    }
+}
+
+ul {
+    li {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+
+        .statusDisaabled {
+            width: 10px;
+            height: 10px;
+            border-radius: 40%;
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        .statusAvailable {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: green;
+        }
+    }
+}
