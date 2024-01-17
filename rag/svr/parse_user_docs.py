@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The FATE Authors. All Rights Reserved.
+#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import datetime
 import json
 import logging
 import os
@@ -108,17 +109,17 @@ def build(row, cvmdl):
                      (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
-    res = ELASTICSEARCH.search(Q("term", doc_id=row["id"]))
-    if ELASTICSEARCH.getTotal(res) > 0:
-        ELASTICSEARCH.updateScriptByQuery(Q("term", doc_id=row["id"]),
-                                          scripts="""
-                               if(!ctx._source.kb_id.contains('%s'))
-                                 ctx._source.kb_id.add('%s');
-                               """ % (str(row["kb_id"]), str(row["kb_id"])),
-            idxnm=search.index_name(row["tenant_id"])
-        )
-        set_progress(row["id"], 1, "Done")
-        return []
+    # res = ELASTICSEARCH.search(Q("term", doc_id=row["id"]))
+    # if ELASTICSEARCH.getTotal(res) > 0:
+    #     ELASTICSEARCH.updateScriptByQuery(Q("term", doc_id=row["id"]),
+    #                                       scripts="""
+    #                            if(!ctx._source.kb_id.contains('%s'))
+    #                              ctx._source.kb_id.add('%s');
+    #                            """ % (str(row["kb_id"]), str(row["kb_id"])),
+    #         idxnm=search.index_name(row["tenant_id"])
+    #     )
+    #     set_progress(row["id"], 1, "Done")
+    #     return []
 
     random.seed(time.time())
     set_progress(row["id"], random.randint(0, 20) /
@@ -155,8 +156,7 @@ def build(row, cvmdl):
         "doc_id": row["id"],
         "kb_id": [str(row["kb_id"])],
         "docnm_kwd": os.path.split(row["location"])[-1],
-        "title_tks": huqie.qie(row["name"]),
-        "updated_at": str(row["update_time"]).replace("T", " ")[:19]
+        "title_tks": huqie.qie(row["name"])
     }
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     output_buffer = BytesIO()
@@ -179,6 +179,7 @@ def build(row, cvmdl):
 
         MINIO.put(row["kb_id"], d["_id"], output_buffer.getvalue())
         d["img_id"] = "{}-{}".format(row["kb_id"], d["_id"])
+        d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
         docs.append(d)
 
     for arr, img in obj.table_chunks:
@@ -193,6 +194,7 @@ def build(row, cvmdl):
             img.save(output_buffer, format='JPEG')
             MINIO.put(row["kb_id"], d["_id"], output_buffer.getvalue())
             d["img_id"] = "{}-{}".format(row["kb_id"], d["_id"])
+            d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
             docs.append(d)
     set_progress(row["id"], random.randint(60, 70) /
                  100., "Continue embedding the content.")
@@ -218,21 +220,9 @@ def embedding(docs, mdl):
     vects = 0.1 * tts + 0.9 * cnts
     assert len(vects) == len(docs)
     for i, d in enumerate(docs):
-        d["q_vec"] = vects[i].tolist()
+        v = vects[i].tolist()
+        d["q_%d_vec"%len(v)] = v
     return tk_count
-
-
-def model_instance(tenant_id, llm_type):
-    model_config = TenantLLMService.get_api_key(tenant_id, model_type=LLMType.EMBEDDING)
-    if not model_config:
-        model_config = {"llm_factory": "local", "api_key": "", "llm_name": ""}
-    else: model_config = model_config[0].to_dict()
-    if llm_type == LLMType.EMBEDDING:
-        if model_config["llm_factory"] not in EmbeddingModel: return
-        return EmbeddingModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"])
-    if llm_type == LLMType.IMAGE2TEXT:
-        if model_config["llm_factory"] not in CvModel: return
-        return CvModel[model_config.llm_factory](model_config["api_key"], model_config["llm_name"])
 
 
 def main(comm, mod):
@@ -247,12 +237,12 @@ def main(comm, mod):
 
     tmf = open(tm_fnm, "a+")
     for _, r in rows.iterrows():
-        embd_mdl = model_instance(r["tenant_id"], LLMType.EMBEDDING)
+        embd_mdl = TenantLLMService.model_instance(r["tenant_id"], LLMType.EMBEDDING)
         if not embd_mdl:
             set_progress(r["id"], -1, "Can't find embedding model!")
             cron_logger.error("Tenant({}) can't find embedding model!".format(r["tenant_id"]))
             continue
-        cv_mdl = model_instance(r["tenant_id"], LLMType.IMAGE2TEXT)
+        cv_mdl = TenantLLMService.model_instance(r["tenant_id"], LLMType.IMAGE2TEXT)
         st_tm = timer()
         cks = build(r, cv_mdl)
         if not cks:

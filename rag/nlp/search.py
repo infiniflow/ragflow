@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
+import json
 import re
 from elasticsearch_dsl import Q, Search, A
 from typing import List, Optional, Tuple, Dict, Union
 from dataclasses import dataclass
+
+from rag.settings import es_logger
 from rag.utils import rmSpace
 from rag.nlp import huqie, query
 import numpy as np
@@ -34,30 +37,30 @@ class Dealer:
         group_docs: List[List] = None
 
     def _vector(self, txt, sim=0.8, topk=10):
+        qv = self.emb_mdl.encode_queries(txt)
         return {
-            "field": "q_vec",
+            "field": "q_%d_vec"%len(qv),
             "k": topk,
             "similarity": sim,
             "num_candidates": 1000,
-            "query_vector": self.emb_mdl.encode_queries(txt)
+            "query_vector": qv
         }
 
     def search(self, req, idxnm, tks_num=3):
-        keywords = []
         qst = req.get("question", "")
-
         bqry, keywords = self.qryr.question(qst)
         if req.get("kb_ids"):
             bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
-        bqry.filter.append(Q("exists", field="q_tks"))
+        if req.get("doc_ids"):
+            bqry.filter.append(Q("terms", doc_id=req["doc_ids"]))
         bqry.boost = 0.05
-        print(bqry)
 
         s = Search()
         pg = int(req.get("page", 1)) - 1
         ps = int(req.get("size", 1000))
-        src = req.get("field", ["docnm_kwd", "content_ltks", "kb_id",
-                                "image_id", "doc_id", "q_vec"])
+        src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id","img_id",
+                                "image_id", "doc_id", "q_512_vec", "q_768_vec",
+                                "q_1024_vec", "q_1536_vec"])
 
         s = s.query(bqry)[pg * ps:(pg + 1) * ps]
         s = s.highlight("content_ltks")
@@ -66,22 +69,24 @@ class Dealer:
             s = s.sort(
                 {"create_time": {"order": "desc", "unmapped_type": "date"}})
 
-        s = s.highlight_options(
-            fragment_size=120,
-            number_of_fragments=5,
-            boundary_scanner_locale="zh-CN",
-            boundary_scanner="SENTENCE",
-            boundary_chars=",./;:\\!()，。？：！……（）——、"
-        )
+        if qst:
+            s = s.highlight_options(
+                fragment_size=120,
+                number_of_fragments=5,
+                boundary_scanner_locale="zh-CN",
+                boundary_scanner="SENTENCE",
+                boundary_chars=",./;:\\!()，。？：！……（）——、"
+            )
         s = s.to_dict()
         q_vec = []
         if req.get("vector"):
             s["knn"] = self._vector(qst, req.get("similarity", 0.4), ps)
             s["knn"]["filter"] = bqry.to_dict()
-            del s["highlight"]
+            if "highlight" in s: del s["highlight"]
             q_vec = s["knn"]["query_vector"]
+        es_logger.info("【Q】: {}".format(json.dumps(s)))
         res = self.es.search(s, idxnm=idxnm, timeout="600s", src=src)
-        print("TOTAL: ", self.es.getTotal(res))
+        es_logger.info("TOTAL: {}".format(self.es.getTotal(res)))
         if self.es.getTotal(res) == 0 and "knn" in s:
             bqry, _ = self.qryr.question(qst, min_match="10%")
             if req.get("kb_ids"):
@@ -109,8 +114,7 @@ class Dealer:
             query_vector=q_vec,
             aggregation=aggs,
             highlight=self.getHighlight(res),
-            field=self.getFields(res, ["docnm_kwd", "content_ltks",
-                                       "kb_id", "image_id", "doc_id", "q_vec"]),
+            field=self.getFields(res, src),
             keywords=list(kwds)
         )
 
@@ -237,14 +241,4 @@ class Dealer:
         return sim
 
 
-if __name__ == "__main__":
-    from util import es_conn
-    SE = Dealer(es_conn.HuEs("infiniflow"))
-    qs = [
-        "胡凯",
-        ""
-    ]
-    for q in qs:
-        print(">>>>>>>>>>>>>>>>>>>>", q)
-        print(SE.search(
-            {"question": q, "kb_ids": "64f072a75f3b97c865718c4a"}, "infiniflow_*"))
+
