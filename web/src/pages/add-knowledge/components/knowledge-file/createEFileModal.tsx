@@ -1,14 +1,22 @@
-import { connect } from 'umi';
+import React from 'react'
+import { connect, Dispatch } from 'umi';
 import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next'
 import { Input, Modal, Form } from 'antd'
 import { rsaPsw } from '@/utils'
 import styles from './index.less';
+import type { kFModelState } from './model'
 
 type FieldType = {
     name?: string;
 };
-const Index = ({ kFModel, dispatch, getKfList, kb_id }) => {
+interface kFProps {
+    dispatch: Dispatch;
+    kFModel: kFModelState;
+    getKfList: () => void;
+    kb_id: string
+}
+const Index: React.FC<kFProps> = ({ kFModel, dispatch, getKfList, kb_id }) => {
     const { isShowCEFwModal } = kFModel
     const { t } = useTranslation()
     const handleCancel = () => {

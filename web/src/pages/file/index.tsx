@@ -20,7 +20,7 @@ const App: React.FC = () => {
     }
     useEffect(() => {
         const timer = setInterval(() => {
-            setFileList((fileList) => {
+            setFileList((fileList: any) => {
                 const percent = fileList[0]?.percent
                 if (percent + 10 >= 100) {
                     clearInterval(timer)

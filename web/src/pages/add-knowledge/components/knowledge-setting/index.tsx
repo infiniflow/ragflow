@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, connect } from 'umi'
+import { useNavigate, connect, Dispatch } from 'umi'
 import { Button, Form, Input, InputNumber, Radio, Select, Tag, Space, Avatar, Divider, List, Skeleton } from 'antd';
+import type { kSModelState } from './model'
+import type { settingModelState } from '@/pages/setting/model'
 import styles from './index.less'
 const { CheckableTag } = Tag;
 const layout = {
@@ -10,41 +12,17 @@ const layout = {
 };
 const { Option } = Select
 /* eslint-disable no-template-curly-in-string */
-const validateMessages = {
-    required: '${label} is required!',
-    types: {
-        email: '${label} is not a valid email!',
-        number: '${label} is not a valid number!',
-    },
-    number: {
-        range: '${label} must be between ${min} and ${max}',
-    },
-};
-/* eslint-enable no-template-curly-in-string */
 
-
-interface DataType {
-    gender: string;
-    name: {
-        title: string;
-        first: string;
-        last: string;
-    };
-    email: string;
-    picture: {
-        large: string;
-        medium: string;
-        thumbnail: string;
-    };
-    nat: string;
+interface kSProps {
+    dispatch: Dispatch;
+    kSModel: kSModelState;
+    settingModel: settingModelState;
+    id: string
 }
-const tags = [{ title: '研报' }, { title: '法律' }, { title: '简历' }, { title: '说明书' }, { title: '书籍' }, { title: '演讲稿' }]
-
-const Index: React.FC = ({ settingModel, kSModel, dispatch, ...props }) => {
+const Index: React.FC<kSProps> = ({ settingModel, kSModel, dispatch, id }) => {
     let navigate = useNavigate();
     const { tenantIfo = {} } = settingModel
     const { parser_ids = '', embd_id = '' } = tenantIfo
-    const { id = '' } = props
     const [form] = Form.useForm();
 
     useEffect(() => {
@@ -140,7 +118,7 @@ const Index: React.FC = ({ settingModel, kSModel, dispatch, ...props }) => {
             hasFeedback
             rules={[{ required: true, message: 'Please select your country!' }]}
         >
-            <Select placeholder="Please select a country" disabled={id}>
+            <Select placeholder="Please select a country" >
                 {embd_id.split(',').map((item: string) => {
                     return <Option value={item} key={item}>{item}</Option>
                 })}

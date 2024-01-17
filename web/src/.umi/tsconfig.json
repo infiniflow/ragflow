@@ -27,7 +27,7 @@
         "src/.umi/*"
       ],
       "umi": [
-        "C:\\Users\\zfc\\Desktop\\docgpt\\client\\node_modules\\umi"
+        "C:\\Users\\zfc\\Desktop\\doc\\ragflow\\web\\node_modules\\umi"
       ],
       "umi/typings": [
         "src/.umi/typings"

@@ -3,7 +3,7 @@
 // DO NOT CHANGE IT MANUALLY!
 import './core/polyfill';
 
-import { renderClient } from 'C:/Users/zfc/Desktop/docgpt/client/node_modules/@umijs/renderer-react';
+import { renderClient } from 'C:/Users/zfc/Desktop/doc/ragflow/web/node_modules/@umijs/renderer-react';
 import { getRoutes } from './core/route';
 import { createPluginManager } from './core/plugin';
 import { createHistory } from './core/history';

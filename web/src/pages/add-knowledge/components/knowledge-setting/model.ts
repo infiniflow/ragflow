@@ -1,8 +1,27 @@
 import { message } from 'antd';
-import { addParam } from '@/utils';
+import { Effect, Reducer, Subscription } from 'umi'
 import kbService from '@/services/kbService';
 
-const Model = {
+export interface kSModelState {
+  isShowPSwModal: boolean;
+  isShowTntModal: boolean;
+  loading: boolean;
+  tenantIfo: any
+}
+export interface kSModelType {
+  namespace: 'kSModel';
+  state: kSModelState;
+  effects: {
+    createKb: Effect;
+    updateKb: Effect;
+    getKbDetail: Effect;
+  };
+  reducers: {
+    updateState: Reducer<kSModelState>;
+  };
+  subscriptions: { setup: Subscription };
+}
+const Model: kSModelType = {
   namespace: 'kSModel',
   state: {
     isShowPSwModal: false,

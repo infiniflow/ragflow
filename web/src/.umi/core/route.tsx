@@ -16,7 +16,7 @@ export async function getRoutes() {
 '6': React.lazy(() => import(/* webpackChunkName: "p__setting__index" */'@/pages/setting/index.tsx')),
 '7': React.lazy(() => import(/* webpackChunkName: "p__file__index" */'@/pages/file/index.tsx')),
 '8': React.lazy(() => import(/* webpackChunkName: "p__404" */'@/pages/404.jsx')),
-'@@/global-layout': React.lazy(() => import(/* webpackChunkName: "layouts__index" */'C:/Users/zfc/Desktop/docgpt/client/src/layouts/index.tsx')),
+'@@/global-layout': React.lazy(() => import(/* webpackChunkName: "layouts__index" */'C:/Users/zfc/Desktop/doc/ragflow/web/src/layouts/index.tsx')),
 },
   };
 }

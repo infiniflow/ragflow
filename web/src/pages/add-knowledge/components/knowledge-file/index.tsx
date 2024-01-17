@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { connect, useNavigate, useLocation } from 'umi'
+import { connect, Dispatch } from 'umi'
 import { Space, Table, Tag, Input, Button, Switch, Popover, Dropdown, } from 'antd';
 import type { MenuProps } from 'antd';
 import { PlusOutlined, DownOutlined } from '@ant-design/icons'
@@ -9,6 +9,8 @@ import UploadFile from './upload'
 import CreateEPModal from './createEFileModal'
 import SegmentSetModal from './segmentSetModal'
 import styles from './index.less'
+import type { kFModelState } from './model'
+import type { settingModelState } from '@/pages/setting/model'
 
 interface DataType {
     name: string;
@@ -21,9 +23,14 @@ interface DataType {
     parser_id: string
 }
 
+interface kFProps {
+    dispatch: Dispatch;
+    kFModel: kFModelState;
+    settingModel: settingModelState;
+    id: string
+}
 
-
-const Index: React.FC = ({ kFModel, dispatch, id }) => {
+const Index: React.FC<kFProps> = ({ kFModel, dispatch, id }) => {
     const { data, loading } = kFModel
     const [inputValue, setInputValue] = useState('')
     const [doc_id, setDocId] = useState('0')

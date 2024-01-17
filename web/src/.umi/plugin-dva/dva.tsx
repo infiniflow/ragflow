@@ -3,8 +3,8 @@
 // DO NOT CHANGE IT MANUALLY!
 // It's faked dva
 // aliased to @umijs/plugins/templates/dva
-import { create, Provider } from 'C:/Users/zfc/Desktop/docgpt/client/node_modules/@umijs/plugins/libs/dva.tsx';
-import createLoading from 'C:/Users/zfc/Desktop/docgpt/client/node_modules/dva-loading/dist/index.js';
+import { create, Provider } from 'C:/Users/zfc/Desktop/doc/ragflow/web/node_modules/@umijs/plugins/libs/dva.tsx';
+import createLoading from 'C:/Users/zfc/Desktop/doc/ragflow/web/node_modules/dva-loading/dist/index.js';
 
 import React, { useRef } from 'react';
 import { history, ApplyPluginsType, useAppData } from 'umi';
