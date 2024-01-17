@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -47,12 +47,12 @@ from rag.nlp.huchunk import (
     PptChunker,
     TextChunker
 )
-from web_server.db import LLMType
-from web_server.db.services.document_service import DocumentService
-from web_server.db.services.llm_service import TenantLLMService
-from web_server.settings import database_logger
-from web_server.utils import get_format_time
-from web_server.utils.file_utils import get_project_base_directory
+from api.db import LLMType
+from api.db.services.document_service import DocumentService
+from api.db.services.llm_service import TenantLLMService
+from api.settings import database_logger
+from api.utils import get_format_time
+from api.utils.file_utils import get_project_base_directory
 
 BATCH_SIZE = 64
 
@@ -256,7 +256,6 @@ def main(comm, mod):
             set_progress(r["id"], -1, "Embedding error:{}".format(str(e)))
             cron_logger.error(str(e))
             continue
-
 
         set_progress(r["id"], random.randint(70, 95) / 100.,
                      "Finished embedding! Start to build index!")

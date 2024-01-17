@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -59,6 +59,10 @@ class HuEmbedding(Base):
         for i in range(0, len(texts), batch_size):
             res.extend(self.model.encode(texts[i:i + batch_size]).tolist())
         return np.array(res), token_count
+
+    def encode_queries(self, text: str):
+        token_count = num_tokens_from_string(text)
+        return self.model.encode_queries([text]).tolist()[0], token_count
 
 
 class OpenAIEmbed(Base):

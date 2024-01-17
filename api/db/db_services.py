@@ -1,5 +1,5 @@
 #
-#  Copyright 2021 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2021 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -19,10 +19,10 @@ import time
 from functools import wraps
 from shortuuid import ShortUUID
 
-from web_server.versions import get_rag_version
+from api.versions import get_rag_version
 
-from web_server.errors.error_services import *
-from web_server.settings import (
+from api.errors.error_services import *
+from api.settings import (
     GRPC_PORT, HOST, HTTP_PORT,
     RANDOM_INSTANCE_ID,  stat_logger,
 )

@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
 #
 from peewee import Expression
 
-from web_server.db import TenantPermission, FileType
-from web_server.db.db_models import DB, Knowledgebase, Tenant
-from web_server.db.db_models import Document
-from web_server.db.services.common_service import CommonService
-from web_server.db.services.kb_service import KnowledgebaseService
-from web_server.db.db_utils import StatusEnum
+from api.db import TenantPermission, FileType
+from api.db.db_models import DB, Knowledgebase, Tenant
+from api.db.db_models import Document
+from api.db.services.common_service import CommonService
+from api.db.services.kb_service import KnowledgebaseService
+from api.db import StatusEnum
 
 
 class DocumentService(CommonService):

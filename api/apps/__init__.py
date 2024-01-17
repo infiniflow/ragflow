@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -21,17 +21,17 @@ from flask import Blueprint, Flask, request
 from werkzeug.wrappers.request import Request
 from flask_cors import CORS
 
-from web_server.db import StatusEnum
-from web_server.db.services import UserService
-from web_server.utils import CustomJSONEncoder
+from api.db import StatusEnum
+from api.db.services import UserService
+from api.utils import CustomJSONEncoder
 
 from flask_session import Session
 from flask_login import LoginManager
-from web_server.settings import RetCode, SECRET_KEY, stat_logger
-from web_server.hook import HookManager
-from web_server.hook.common.parameters import AuthenticationParameters, ClientAuthenticationParameters
-from web_server.settings import API_VERSION, CLIENT_AUTHENTICATION, SITE_AUTHENTICATION, access_logger
-from web_server.utils.api_utils import get_json_result, server_error_response
+from api.settings import RetCode, SECRET_KEY, stat_logger
+from api.hook import HookManager
+from api.hook.common.parameters import AuthenticationParameters, ClientAuthenticationParameters
+from api.settings import API_VERSION, CLIENT_AUTHENTICATION, SITE_AUTHENTICATION, access_logger
+from api.utils.api_utils import get_json_result, server_error_response
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 __all__ = ['app']
@@ -68,7 +68,7 @@ def search_pages_path(pages_dir):
 
 def register_page(page_path):
     page_name = page_path.stem.rstrip('_app')
-    module_name = '.'.join(page_path.parts[page_path.parts.index('web_server'):-1] + (page_name, ))
+    module_name = '.'.join(page_path.parts[page_path.parts.index('api'):-1] + (page_name, ))
 
     spec = spec_from_file_location(module_name, page_path)
     page = module_from_spec(spec)
@@ -86,7 +86,7 @@ def register_page(page_path):
 
 pages_dir = [
     Path(__file__).parent,
-    Path(__file__).parent.parent / 'web_server' / 'apps',
+    Path(__file__).parent.parent / 'api' / 'apps',
 ]
 
 client_urls_prefix = [

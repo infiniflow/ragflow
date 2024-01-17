@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -29,10 +29,10 @@ from peewee import (
 )
 from playhouse.pool import PooledMySQLDatabase
 
-from web_server.db import SerializedType
-from web_server.settings import DATABASE, stat_logger, SECRET_KEY
-from web_server.utils.log_utils import getLogger
-from web_server import utils
+from api.db import SerializedType
+from api.settings import DATABASE, stat_logger, SECRET_KEY
+from api.utils.log_utils import getLogger
+from api import utils
 
 LOGGER = getLogger()
 
@@ -467,6 +467,8 @@ class Knowledgebase(DataBaseModel):
     doc_num = IntegerField(default=0)
     token_num = IntegerField(default=0)
     chunk_num = IntegerField(default=0)
+    similarity_threshold = FloatField(default=0.4)
+    vector_similarity_weight = FloatField(default=0.3)
 
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID")
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
@@ -516,19 +518,20 @@ class Dialog(DataBaseModel):
     prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced")
     prompt_config = JSONField(null=False, default={"system": "", "prologue": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
                                                    "parameters": [], "empty_response": "Sorry! 知识库中未找到相关内容！"})
+    kb_ids = JSONField(null=False, default=[])
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
 
     class Meta:
         db_table = "dialog"
 
 
-class DialogKb(DataBaseModel):
-    dialog_id = CharField(max_length=32, null=False, index=True)
-    kb_id = CharField(max_length=32, null=False)
-
-    class Meta:
-        db_table = "dialog_kb"
-        primary_key = CompositeKey('dialog_id', 'kb_id')
+# class DialogKb(DataBaseModel):
+#     dialog_id = CharField(max_length=32, null=False, index=True)
+#     kb_id = CharField(max_length=32, null=False)
+#
+#     class Meta:
+#         db_table = "dialog_kb"
+#         primary_key = CompositeKey('dialog_id', 'kb_id')
 
 
 class Conversation(DataBaseModel):

@@ -1,4 +1,4 @@
-from web_server.errors import RagFlowError
+from api.errors import RagFlowError
 
 __all__ = ['ServicesError', 'ServiceNotSupported', 'ZooKeeperNotConfigured',
            'MissingZooKeeperUsernameOrPassword', 'ZooKeeperBackendError']

@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 #  limitations under the License.
 #
 import os
-from web_server.utils import get_base_config,decrypt_database_config
-from web_server.utils.file_utils import get_project_base_directory
-from web_server.utils.log_utils import LoggerFactory, getLogger
+from api.utils import get_base_config,decrypt_database_config
+from api.utils.file_utils import get_project_base_directory
+from api.utils.log_utils import LoggerFactory, getLogger
 
 
 # Server
