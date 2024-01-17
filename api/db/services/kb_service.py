@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,15 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import peewee
-from werkzeug.security import generate_password_hash, check_password_hash
 
-from web_server.db import TenantPermission
-from web_server.db.db_models import DB, UserTenant, Tenant
-from web_server.db.db_models import Knowledgebase
-from web_server.db.services.common_service import CommonService
-from web_server.utils import get_uuid, get_format_time
-from web_server.db.db_utils import StatusEnum
+from api.db import TenantPermission
+from api.db.db_models import DB, Tenant
+from api.db.db_models import Knowledgebase
+from api.db.services.common_service import CommonService
+from api.db import StatusEnum
 
 
 class KnowledgebaseService(CommonService):

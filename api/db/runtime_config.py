@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from web_server.versions import get_versions
+from api.versions import get_versions
 from .reload_config_base import ReloadConfigBase
 
 

@@ -15,7 +15,7 @@ def index_name(uid): return f"ragflow_{uid}"
 
 
 class Dealer:
-    def __init__(self, es, emb_mdl):
+    def __init__(self, es):
         self.qryr = query.EsQueryer(es)
         self.qryr.flds = [
             "title_tks^10",
@@ -23,7 +23,6 @@ class Dealer:
             "content_ltks^2",
             "content_sm_ltks"]
         self.es = es
-        self.emb_mdl = emb_mdl
 
     @dataclass
     class SearchResult:
@@ -36,23 +35,26 @@ class Dealer:
         keywords: Optional[List[str]] = None
         group_docs: List[List] = None
 
-    def _vector(self, txt, sim=0.8, topk=10):
-        qv = self.emb_mdl.encode_queries(txt)
+    def _vector(self, txt, emb_mdl, sim=0.8, topk=10):
+        qv, c = emb_mdl.encode_queries(txt)
         return {
             "field": "q_%d_vec"%len(qv),
             "k": topk,
             "similarity": sim,
-            "num_candidates": 1000,
+            "num_candidates": topk*2,
             "query_vector": qv
         }
 
-    def search(self, req, idxnm, tks_num=3):
+    def search(self, req, idxnm, emb_mdl=None):
         qst = req.get("question", "")
         bqry, keywords = self.qryr.question(qst)
         if req.get("kb_ids"):
             bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
         if req.get("doc_ids"):
             bqry.filter.append(Q("terms", doc_id=req["doc_ids"]))
+        if "available_int" in req:
+            if req["available_int"] == 0: bqry.filter.append(Q("range", available_int={"lt": 1}))
+            else: bqry.filter.append(Q("bool", must_not=Q("range", available_int={"lt": 1})))
         bqry.boost = 0.05
 
         s = Search()
@@ -60,7 +62,7 @@ class Dealer:
         ps = int(req.get("size", 1000))
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id","img_id",
                                 "image_id", "doc_id", "q_512_vec", "q_768_vec",
-                                "q_1024_vec", "q_1536_vec"])
+                                "q_1024_vec", "q_1536_vec", "available_int"])
 
         s = s.query(bqry)[pg * ps:(pg + 1) * ps]
         s = s.highlight("content_ltks")
@@ -80,7 +82,8 @@ class Dealer:
         s = s.to_dict()
         q_vec = []
         if req.get("vector"):
-            s["knn"] = self._vector(qst, req.get("similarity", 0.4), ps)
+            assert emb_mdl, "No embedding model selected"
+            s["knn"] = self._vector(qst, emb_mdl, req.get("similarity", 0.4), ps)
             s["knn"]["filter"] = bqry.to_dict()
             if "highlight" in s: del s["highlight"]
             q_vec = s["knn"]["query_vector"]
@@ -168,7 +171,7 @@ class Dealer:
     def trans2floats(txt):
         return [float(t) for t in txt.split("\t")]
 
-    def insert_citations(self, ans, top_idx, sres,
+    def insert_citations(self, ans, top_idx, sres, emb_mdl,
                          vfield="q_vec", cfield="content_ltks"):
 
         ins_embd = [Dealer.trans2floats(
@@ -179,15 +182,14 @@ class Dealer:
         res = ""
 
         def citeit():
-            nonlocal s, e, ans, res
+            nonlocal s, e, ans, res, emb_mdl
             if not ins_embd:
                 return
-            embd = self.emb_mdl.encode(ans[s: e])
+            embd = emb_mdl.encode(ans[s: e])
             sim = self.qryr.hybrid_similarity(embd,
                                               ins_embd,
                                               huqie.qie(ans[s:e]).split(" "),
                                               ins_tw)
-            print(ans[s: e], sim)
             mx = np.max(sim) * 0.99
             if mx < 0.55:
                 return
@@ -225,20 +227,18 @@ class Dealer:
 
         return res
 
-    def rerank(self, sres, query, tkweight=0.3, vtweight=0.7,
-               vfield="q_vec", cfield="content_ltks"):
+    def rerank(self, sres, query, tkweight=0.3, vtweight=0.7, cfield="content_ltks"):
         ins_embd = [
             Dealer.trans2floats(
-                sres.field[i]["q_vec"]) for i in sres.ids]
+                sres.field[i]["q_%d_vec"%len(sres.query_vector)]) for i in sres.ids]
         if not ins_embd:
             return []
         ins_tw = [sres.field[i][cfield].split(" ") for i in sres.ids]
-        # return CosineSimilarity([sres.query_vector], ins_embd)[0]
-        sim = self.qryr.hybrid_similarity(sres.query_vector,
+        sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                           ins_embd,
                                           huqie.qie(query).split(" "),
                                           ins_tw, tkweight, vtweight)
-        return sim
+        return sim, tksim, vtsim
 
 
 
