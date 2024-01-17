@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -52,3 +52,10 @@ class LLMType(StrEnum):
     EMBEDDING = 'embedding'
     SPEECH2TEXT = 'speech2text'
     IMAGE2TEXT = 'image2text'
+
+
+class ChatStyle(StrEnum):
+    CREATIVE = 'Creative'
+    PRECISE = 'Precise'
+    EVENLY = 'Evenly'
+    CUSTOM = 'Custom'

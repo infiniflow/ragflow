@@ -9,7 +9,7 @@ import string
 import sys
 from hanziconv import HanziConv
 
-from web_server.utils.file_utils import get_project_base_directory
+from api.utils.file_utils import get_project_base_directory
 
 
 class Huqie:

@@ -66,7 +66,6 @@ class HuEs:
                             body=d,
                             id=id,
                             refresh=False,
-                            doc_type="_doc",
                             retry_on_conflict=100)
                     es_logger.info("Successfully upsert: %s" % id)
                     T = True

@@ -1,4 +1,4 @@
-from web_server.settings import RetCode
+from api.settings import RetCode
 
 
 class ParametersBase:

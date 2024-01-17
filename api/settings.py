@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@ import os
 
 from enum import IntEnum, Enum
 
-from web_server.utils import get_base_config,decrypt_database_config
-from web_server.utils.file_utils import get_project_base_directory
-from web_server.utils.log_utils import LoggerFactory, getLogger
+from api.utils import get_base_config,decrypt_database_config
+from api.utils.file_utils import get_project_base_directory
+from api.utils.log_utils import LoggerFactory, getLogger
 
 
 # Server
@@ -71,7 +71,7 @@ PROXY_PROTOCOL = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("protocol")
 DATABASE = decrypt_database_config()
 
 # Logger
-LoggerFactory.set_directory(os.path.join(get_project_base_directory(), "logs", "web_server"))
+LoggerFactory.set_directory(os.path.join(get_project_base_directory(), "logs", "api"))
 # {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
 LoggerFactory.LEVEL = 10
 

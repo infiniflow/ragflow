@@ -4,7 +4,7 @@ import time
 import logging
 import re
 
-from web_server.utils.file_utils import get_project_base_directory
+from api.utils.file_utils import get_project_base_directory
 
 
 class Dealer:

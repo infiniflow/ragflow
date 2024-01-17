@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,22 +16,23 @@
 import base64
 import pathlib
 
+import flask
 from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
 from rag.nlp import search
 from rag.utils import ELASTICSEARCH
-from web_server.db.services import duplicate_name
-from web_server.db.services.kb_service import KnowledgebaseService
-from web_server.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from web_server.utils import get_uuid
-from web_server.db import FileType
-from web_server.db.services.document_service import DocumentService
-from web_server.settings import RetCode
-from web_server.utils.api_utils import get_json_result
+from api.db.services import duplicate_name
+from api.db.services.kb_service import KnowledgebaseService
+from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from api.utils import get_uuid
+from api.db import FileType
+from api.db.services.document_service import DocumentService
+from api.settings import RetCode
+from api.utils.api_utils import get_json_result
 from rag.utils.minio_conn import MINIO
-from web_server.utils.file_utils import filename_type
+from api.utils.file_utils import filename_type
 
 
 @manager.route('/upload', methods=['POST'])
@@ -163,21 +164,13 @@ def change_status():
 
         if str(req["status"]) == "0":
             ELASTICSEARCH.updateScriptByQuery(Q("term", doc_id=req["doc_id"]),
-                                              scripts="""
-                                           if(ctx._source.kb_id.contains('%s'))
-                                             ctx._source.kb_id.remove(
-                                                 ctx._source.kb_id.indexOf('%s')
-                                           );
-                                        """ % (doc.kb_id, doc.kb_id),
+                                              scripts="ctx._source.available_int=0;",
                                               idxnm=search.index_name(
                                                   kb.tenant_id)
                                               )
         else:
             ELASTICSEARCH.updateScriptByQuery(Q("term", doc_id=req["doc_id"]),
-                                              scripts="""
-                                           if(!ctx._source.kb_id.contains('%s'))
-                                             ctx._source.kb_id.add('%s');
-                                        """ % (doc.kb_id, doc.kb_id),
+                                              scripts="ctx._source.available_int=1;",
                                               idxnm=search.index_name(
                                                   kb.tenant_id)
                                               )
@@ -195,8 +188,7 @@ def rm():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
-        if not ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(doc.kb_id)):
-            return get_json_result(data=False, retmsg='Remove from ES failure"', retcode=RetCode.SERVER_ERROR)
+        ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(doc.kb_id))
 
         DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num*-1, doc.chunk_num*-1, 0)
         if not DocumentService.delete_by_id(req["doc_id"]):
@@ -274,6 +266,18 @@ def change_parser():
             return get_data_error_result(retmsg="Document not found!")
 
         return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/image/<image_id>', methods=['GET'])
+@login_required
+def get_image(image_id):
+    try:
+        bkt, nm = image_id.split("-")
+        response = flask.make_response(MINIO.get(bkt, nm))
+        response.headers.set('Content-Type', 'image/JPEG')
+        return response
     except Exception as e:
         return server_error_response(e)
 

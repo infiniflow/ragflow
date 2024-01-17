@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@ import operator
 from functools import reduce
 from typing import Dict, Type, Union
 
-from web_server.utils import current_timestamp, timestamp_to_date
+from api.utils import current_timestamp, timestamp_to_date
 
-from web_server.db.db_models import DB, DataBaseModel
-from web_server.db.runtime_config import RuntimeConfig
-from web_server.utils.log_utils import getLogger
+from api.db.db_models import DB, DataBaseModel
+from api.db.runtime_config import RuntimeConfig
+from api.utils.log_utils import getLogger
 from enum import Enum
 
 
@@ -123,9 +123,3 @@ def query_db(model: Type[DataBaseModel], limit: int = 0, offset: int = 0,
         data = data.offset(offset)
 
     return list(data), count
-
-
-class StatusEnum(Enum):
-    # 样本可用状态
-    VALID = "1"
-    IN_VALID = "0"

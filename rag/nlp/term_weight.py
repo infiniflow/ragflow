@@ -5,7 +5,7 @@ import re
 import os
 import numpy as np
 from rag.nlp import huqie
-from web_server.utils.file_utils import get_project_base_directory
+from api.utils.file_utils import get_project_base_directory
 
 
 class Dealer:
