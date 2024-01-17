@@ -1,0 +1,63 @@
+@import '../../theme/vars';
+
+.loginPage {
+  // width: 100%;
+  display: flex;
+
+
+  .loginLeft {
+    // width: 610px;
+    width: 40%;
+    background-color: #fff;
+    height: 100vh;
+  }
+
+
+
+  @media screen and (max-width:957px) {
+    .loginLeft {
+      // width: 610px;
+      width: 100%;
+      background-color: #fff;
+      height: 100vh;
+    }
+
+    .modal {
+      width: 80%;
+    }
+  }
+
+  .loginRight {
+    flex: 1;
+    background-color: #F2F4F7;
+    ;
+  }
+
+  .loginTitle {
+    //styleName: Heading/1;
+    font-family: SF Pro Text;
+    font-size: 38px;
+    font-weight: 600;
+    line-height: 46px;
+    letter-spacing: 0em;
+    height: 80px;
+    margin-bottom: 69px;
+
+    // text-align: center;
+    span {
+      font-size: 16px;
+      line-height: 24px;
+
+      color: #000000A6;
+    }
+
+  }
+}
+
+.modal {
+  // width: 360px;
+  width: 60%;
+  height: 724px;
+  padding: 5px, 0px, 5px, 0px;
+  margin: 80px auto
+}

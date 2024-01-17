@@ -1,0 +1,27 @@
+.umiIconDoNotUseThisHover {
+  display: none;
+}
+.umiIconDoNotUseThis:hover svg {
+  display: none;
+}
+.umiIconDoNotUseThis:hover .umiIconDoNotUseThisHover {
+  display: inline-block;
+}
+.umiIconLoadingCircle {
+  display: inline-block;
+  -webkit-animation: loadingCircle 1s infinite linear;
+  animation: umiIconLoadingCircle 1s linear infinite;
+}
+
+@-webkit-keyframes umiIconLoadingCircle {
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+@keyframes umiIconLoadingCircle {
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
