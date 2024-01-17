@@ -1,10 +1,10 @@
 import requests
 
-from web_server.db.service_registry import ServiceRegistry
-from web_server.settings import RegistryServiceName
-from web_server.hook import HookManager
-from web_server.hook.common.parameters import ClientAuthenticationParameters, ClientAuthenticationReturn
-from web_server.settings import HOOK_SERVER_NAME
+from api.db.service_registry import ServiceRegistry
+from api.settings import RegistryServiceName
+from api.hook import HookManager
+from api.hook.common.parameters import ClientAuthenticationParameters, ClientAuthenticationReturn
+from api.settings import HOOK_SERVER_NAME
 
 
 @HookManager.register_client_authentication_hook

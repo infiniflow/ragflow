@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@ from datetime import datetime
 
 import peewee
 
-from web_server.db.db_models import DB
-from web_server.utils import datetime_format
+from api.db.db_models import DB
+from api.utils import datetime_format
 
 
 class CommonService:

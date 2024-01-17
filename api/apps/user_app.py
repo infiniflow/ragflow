@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -17,15 +17,15 @@ from flask import request, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import login_required, current_user, login_user, logout_user
 
-from web_server.db.db_models import TenantLLM
-from web_server.db.services.llm_service import TenantLLMService
-from web_server.utils.api_utils import server_error_response, validate_request
-from web_server.utils import get_uuid, get_format_time, decrypt, download_img
-from web_server.db import UserTenantRole, LLMType
-from web_server.settings import RetCode, GITHUB_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS
-from web_server.db.services.user_service import UserService, TenantService, UserTenantService
-from web_server.settings import stat_logger
-from web_server.utils.api_utils import get_json_result, cors_reponse
+from api.db.db_models import TenantLLM
+from api.db.services.llm_service import TenantLLMService
+from api.utils.api_utils import server_error_response, validate_request
+from api.utils import get_uuid, get_format_time, decrypt, download_img
+from api.db import UserTenantRole, LLMType
+from api.settings import RetCode, GITHUB_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS
+from api.db.services.user_service import UserService, TenantService, UserTenantService
+from api.settings import stat_logger
+from api.utils.api_utils import get_json_result, cors_reponse
 
 
 @manager.route('/login', methods=['POST', 'GET'])

@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -23,17 +23,17 @@ import traceback
 
 from werkzeug.serving import run_simple
 
-from web_server.apps import app
-from web_server.db.runtime_config import RuntimeConfig
-from web_server.hook import HookManager
-from web_server.settings import (
+from api.apps import app
+from api.db.runtime_config import RuntimeConfig
+from api.hook import HookManager
+from api.settings import (
     HOST, HTTP_PORT, access_logger, database_logger, stat_logger,
 )
-from web_server import utils
+from api import utils
 
-from web_server.db.db_models import init_database_tables as init_web_db
-from web_server.db.init_data import init_web_data
-from web_server.versions import get_versions
+from api.db.db_models import init_database_tables as init_web_db
+from api.db.init_data import init_web_data
+from api.versions import get_versions
 
 if __name__ == '__main__':
     stat_logger.info(

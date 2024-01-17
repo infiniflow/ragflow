@@ -1,8 +1,8 @@
 import importlib
 
-from web_server.hook.common.parameters import SignatureParameters, AuthenticationParameters, \
+from api.hook.common.parameters import SignatureParameters, AuthenticationParameters, \
     SignatureReturn, AuthenticationReturn, PermissionReturn, ClientAuthenticationReturn, ClientAuthenticationParameters
-from web_server.settings import HOOK_MODULE, stat_logger,RetCode
+from api.settings import HOOK_MODULE, stat_logger,RetCode
 
 
 class HookManager:

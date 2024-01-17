@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The RAG Flow Authors. All Rights Reserved.
+#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 from flask import request
 from flask_login import login_required, current_user
 
-from web_server.db.services import duplicate_name
-from web_server.db.services.user_service import TenantService, UserTenantService
-from web_server.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from web_server.utils import get_uuid, get_format_time
-from web_server.db import StatusEnum, UserTenantRole
-from web_server.db.services.kb_service import KnowledgebaseService
-from web_server.db.db_models import Knowledgebase
-from web_server.settings import stat_logger, RetCode
-from web_server.utils.api_utils import get_json_result
+from api.db.services import duplicate_name
+from api.db.services.user_service import TenantService, UserTenantService
+from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from api.utils import get_uuid, get_format_time
+from api.db import StatusEnum, UserTenantRole
+from api.db.services.kb_service import KnowledgebaseService
+from api.db.db_models import Knowledgebase
+from api.settings import stat_logger, RetCode
+from api.utils.api_utils import get_json_result
 
 
 @manager.route('/create', methods=['post'])
