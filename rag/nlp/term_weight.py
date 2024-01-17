@@ -62,7 +62,7 @@ class Dealer:
                 return set(res.keys())
             return res
 
-        fnm = os.path.join(get_project_base_directory(), "res")
+        fnm = os.path.join(get_project_base_directory(), "rag/res")
         self.ne, self.df = {}, {}
         try:
             self.ne = json.load(open(os.path.join(fnm, "ner.json"), "r"))
