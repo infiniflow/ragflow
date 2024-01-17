@@ -241,6 +241,26 @@ class HuEs:
         es_logger.error("ES search timeout for 3 times!")
         raise Exception("ES search timeout.")
 
+    def get(self, doc_id, idxnm=None):
+        for i in range(3):
+            try:
+                res = self.es.get(index=(self.idxnm if not idxnm else idxnm),
+                                     id=doc_id)
+                if str(res.get("timed_out", "")).lower() == "true":
+                    raise Exception("Es Timeout.")
+                return res
+            except Exception as e:
+                es_logger.error(
+                    "ES get exception: " +
+                    str(e) +
+                    "【Q】：" +
+                    doc_id)
+                if str(e).find("Timeout") > 0:
+                    continue
+                raise e
+        es_logger.error("ES search timeout for 3 times!")
+        raise Exception("ES search timeout.")
+
     def updateByQuery(self, q, d):
         ubq = UpdateByQuery(index=self.idxnm).using(self.es).query(q)
         scripts = ""
