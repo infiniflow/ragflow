@@ -1,25 +1,23 @@
-import { Effect, ImmerReducer, Reducer, Subscription } from 'umi';
+import { Effect, Reducer, Subscription } from 'umi';
 
-export interface IndexModelState {
+export interface chatModelState {
     name: string;
 }
 
-export interface IndexModelType {
-    namespace: 'index';
-    state: IndexModelState;
+export interface chatModelType {
+    namespace: 'chatModel';
+    state: chatModelState;
     effects: {
         query: Effect;
     };
     reducers: {
-        save: Reducer<IndexModelState>;
-        // 启用 immer 之后
-        // save: ImmerReducer<IndexModelState>;
+        save: Reducer<chatModelState>;
     };
     subscriptions: { setup: Subscription };
 }
 
-const IndexModel: IndexModelType = {
-    namespace: 'index',
+const Model: chatModelType = {
+    namespace: 'chatModel',
     state: {
         name: 'kate',
     },
@@ -34,10 +32,6 @@ const IndexModel: IndexModelType = {
                 ...action.payload,
             };
         },
-        // 启用 immer 之后
-        // save(state, action) {
-        //   state.name = action.payload;
-        // },
     },
     subscriptions: {
         setup({ dispatch, history }) {
@@ -49,4 +43,4 @@ const IndexModel: IndexModelType = {
     },
 };
 
-export default IndexModel;
+export default Model;

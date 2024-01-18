@@ -1,20 +1,20 @@
 import React, { useEffect, useState, } from 'react';
-import { useNavigate, connect } from 'umi'
+import { useNavigate, connect, Dispatch } from 'umi'
 import { Card, List, Popconfirm, message, FloatButton, Row, Col } from 'antd';
 import { MinusSquareOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import styles from './index.less'
 import { formatDate } from '@/utils/date'
-
-const dd = [{
-  title: 'Title 4',
-  text: '4',
-  des: '111'
-}]
-const Index: React.FC = ({ knowledgeModel, dispatch }) => {
+import type { knowledgeModelState } from './model'
+interface KnowledgeProps {
+  dispatch: Dispatch;
+  knowledgeModel: knowledgeModelState
+}
+const Index: React.FC<KnowledgeProps> = ({ knowledgeModel, dispatch }) => {
   const navigate = useNavigate()
   // const [datas, setDatas] = useState(data)
-  const { data } = knowledgeModel
-  const confirm = (id) => {
+  const { data = [] } = knowledgeModel
+  console.log(knowledgeModel)
+  const confirm = (id: string) => {
     dispatch({
       type: 'knowledgeModel/rmKb',
       payload: {
@@ -49,8 +49,8 @@ const Index: React.FC = ({ knowledgeModel, dispatch }) => {
       <FloatButton onClick={handleAddKnowledge} icon={<PlusOutlined />} type="primary" style={{ right: 24, top: 100 }} />
       <Row gutter={{ xs: 8, sm: 16, md: 24, lg: 32 }}>
         {
-          data.map((item, index) => {
-            return (<Col className="gutter-row" key={item.title} xs={24} sm={12} md={8} lg={6}>
+          data.map((item: any) => {
+            return (<Col className="gutter-row" key={item.name} xs={24} sm={12} md={8} lg={6}>
               <Card className={styles.card}
                 onClick={() => { handleEditKnowledge(item.id) }}
               >
@@ -63,7 +63,7 @@ const Index: React.FC = ({ knowledgeModel, dispatch }) => {
                       <Popconfirm
                         title="Delete the task"
                         description="Are you sure to delete this task?"
-                        onConfirm={(e) => {
+                        onConfirm={(e: any) => {
                           e.stopPropagation();
                           e.nativeEvent.stopImmediatePropagation()
                           confirm(item.id)

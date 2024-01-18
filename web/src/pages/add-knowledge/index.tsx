@@ -1,7 +1,7 @@
-import { connect, useNavigate, useLocation } from 'umi'
-import React, { useMemo, useState, useEffect } from 'react';
+import { connect, useNavigate, useLocation, Dispatch } from 'umi'
+import React, { useState, useEffect } from 'react';
 import type { MenuProps } from 'antd';
-import { Radio, Space, Tabs, Menu } from 'antd';
+import { Menu } from 'antd';
 import {
     ToolOutlined,
     BarsOutlined,
@@ -10,17 +10,24 @@ import {
 import File from './components/knowledge-file'
 import Setting from './components/knowledge-setting'
 import Search from './components/knowledge-search'
+import Chunk from './components/knowledge-chunk'
 import styles from './index.less'
 import { getWidth } from '@/utils'
+import { kAModelState } from './model'
 
 
-const Index: React.FC = ({ kAModel, dispatch }) => {
+interface kAProps {
+    dispatch: Dispatch;
+    kAModel: kAModelState;
+}
+const Index: React.FC<kAProps> = ({ kAModel, dispatch }) => {
     const [collapsed, setCollapsed] = useState(false);
-    const { id, activeKey } = kAModel
+    const { id, activeKey, doc_id } = kAModel
     const [windowWidth, setWindowWidth] = useState(getWidth());
     let navigate = useNavigate();
     const location = useLocation();
     // 标记一下
+    console.log(doc_id, '>>>>>>>>>>>>>doc_id')
     useEffect(() => {
         const widthSize = () => {
             const width = getWidth()
@@ -44,7 +51,9 @@ const Index: React.FC = ({ kAModel, dispatch }) => {
         dispatch({
             type: 'kAModel/updateState',
             payload: {
-                ...map
+                doc_id: undefined,
+                ...map,
+
             }
         });
     }, [location])
@@ -94,9 +103,11 @@ const Index: React.FC = ({ kAModel, dispatch }) => {
                     />
                 </div>
                 <div className={styles.content}>
-                    {activeKey === 'file' && <File id={id} />}
-                    {activeKey === 'setting' && <Setting id={id} />}
-                    {activeKey === 'search' && <Search id={id} />}
+                    {activeKey === 'file' && !doc_id && <File kb_id={id} />}
+                    {activeKey === 'setting' && <Setting kb_id={id} />}
+                    {activeKey === 'search' && <Search />}
+                    {activeKey === 'file' && !!doc_id && <Chunk doc_id={doc_id} />}
+
                 </div>
             </div>
         </>

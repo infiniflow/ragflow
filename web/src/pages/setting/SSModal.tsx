@@ -3,7 +3,6 @@ import { FC } from 'react'
 import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next'
 import { Input, Modal, Form, Select } from 'antd'
-import { rsaPsw } from '@/utils'
 import styles from './index.less';
 
 type FieldType = {

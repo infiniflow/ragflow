@@ -1,19 +1,15 @@
-import React, { FC } from 'react';
-import { IndexModelState, ConnectProps, Loading, connect } from 'umi';
+import React from 'react';
+import { connect, Dispatch } from 'umi';
+import type { chatModelState } from './model'
 
-interface PageProps extends ConnectProps {
-    index: IndexModelState;
-    loading: boolean;
+interface chatProps {
+    chatModel: chatModelState;
+    dispatch: Dispatch
 }
 
-const IndexPage: FC<PageProps> = ({ index, dispatch }) => {
-    const { name } = index;
-    return <div>chat: {name}</div>;
+const View: React.FC<chatProps> = ({ chatModel, dispatch }) => {
+    const { name } = chatModel;
+    return <div>chat:{name} </div>;
 };
 
-export default connect(
-    ({ index, loading }: { index: IndexModelState; loading: Loading }) => ({
-        index,
-        loading: loading.models.index,
-    }),
-)(IndexPage);
+export default connect(({ chatModel, loading }) => ({ chatModel, loading }))(View);

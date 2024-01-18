@@ -1,8 +1,6 @@
 import { Effect, Reducer, Subscription } from 'umi';
 import { message } from 'antd';
-import { addParam } from '@/utils';
 import userService from '@/services/userService';
-import { rearg } from 'lodash';
 
 export interface settingModelState {
   isShowPSwModal: boolean;

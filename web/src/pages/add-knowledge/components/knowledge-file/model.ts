@@ -1,15 +1,42 @@
 import { message } from 'antd';
-import { addParam } from '@/utils';
+import { Effect, Reducer, Subscription } from 'umi'
 import kbService from '@/services/kbService';
 
-const Model = {
+export interface kFModelState {
+  isShowCEFwModal: boolean;
+  isShowTntModal: boolean;
+  isShowSegmentSetModal: boolean;
+  loading: boolean;
+  tenantIfo: any;
+  data: any[]
+}
+export interface kFModelType {
+  namespace: 'kFModel';
+  state: kFModelState;
+  effects: {
+    createKf: Effect;
+    updateKf: Effect;
+    getKfDetail: Effect;
+    getKfList: Effect;
+    updateDocumentStatus: Effect;
+    document_rm: Effect;
+    document_create: Effect;
+    document_change_parser: Effect;
+  };
+  reducers: {
+    updateState: Reducer<kFModelState>;
+  };
+  subscriptions: { setup: Subscription };
+}
+const Model: kFModelType = {
   namespace: 'kFModel',
   state: {
     isShowCEFwModal: false,
     isShowTntModal: false,
     isShowSegmentSetModal: false,
     loading: false,
-    tenantIfo: {}
+    tenantIfo: {},
+    data: []
   },
   subscriptions: {
     setup({ dispatch, history }) {
