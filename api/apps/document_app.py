@@ -271,7 +271,7 @@ def change_parser():
 
 
 @manager.route('/image/<image_id>', methods=['GET'])
-@login_required
+#@login_required
 def get_image(image_id):
     try:
         bkt, nm = image_id.split("-")
