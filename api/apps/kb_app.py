@@ -108,7 +108,7 @@ def rm():
         if not KnowledgebaseService.query(created_by=current_user.id, id=req["kb_id"]):
             return get_json_result(data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
 
-        if not KnowledgebaseService.update_by_id(req["kb_id"], {"status": StatusEnum.IN_VALID.value}): return get_data_error_result(retmsg="Database error (Knowledgebase removal)!")
+        if not KnowledgebaseService.update_by_id(req["kb_id"], {"status": StatusEnum.INVALID.value}): return get_data_error_result(retmsg="Database error (Knowledgebase removal)!")
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

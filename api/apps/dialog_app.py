@@ -13,28 +13,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import hashlib
-import re
 
-import numpy as np
 from flask import request
 from flask_login import login_required, current_user
-
 from api.db.services.dialog_service import DialogService
-from rag.nlp import search, huqie
-from rag.utils import ELASTICSEARCH, rmSpace
-from api.db import LLMType, StatusEnum
-from api.db.services import duplicate_name
+from api.db import StatusEnum
 from api.db.services.kb_service import KnowledgebaseService
-from api.db.services.llm_service import TenantLLMService
-from api.db.services.user_service import UserTenantService, TenantService
+from api.db.services.user_service import TenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
-from api.db.services.document_service import DocumentService
-from api.settings import RetCode, stat_logger
 from api.utils.api_utils import get_json_result
-from rag.utils.minio_conn import MINIO
-from api.utils.file_utils import filename_type
 
 
 @manager.route('/set', methods=['POST'])
@@ -128,6 +116,7 @@ def set():
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route('/get', methods=['GET'])
 @login_required
 def get():
@@ -159,5 +148,18 @@ def list():
         for d in diags:
             d["kb_ids"], d["kb_names"] = get_kb_names(d["kb_ids"])
         return get_json_result(data=diags)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/rm', methods=['POST'])
+@login_required
+@validate_request("dialog_id")
+def rm():
+    req = request.json
+    try:
+        if not DialogService.update_by_id(req["dialog_id"], {"status": StatusEnum.INVALID.value}):
+            return get_data_error_result(retmsg="Dialog not found!")
+        return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

@@ -30,3 +30,9 @@ CvModel = {
     "通义千问": QWenCV,
 }
 
+
+ChatModel = {
+    "OpenAI": GptTurbo,
+    "通义千问": QWenChat,
+}
+
