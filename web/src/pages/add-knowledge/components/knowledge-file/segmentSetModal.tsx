@@ -1,15 +1,22 @@
-import { connect } from 'umi';
+import React from 'react';
+import { connect, Dispatch } from 'umi';
 import i18n from 'i18next';
-import { useTranslation, Trans } from 'react-i18next'
-import { Input, Modal, Form, Tag, Space } from 'antd'
-import { rsaPsw } from '@/utils'
+import { useTranslation, } from 'react-i18next'
+import { Modal, Tag, Space } from 'antd'
 import { useEffect, useState } from 'react';
 import styles from './index.less';
+import type { kFModelState } from './model'
+import type { settingModelState } from '@/pages/setting/model'
 const { CheckableTag } = Tag;
-type FieldType = {
-    name?: string;
-};
-const Index = ({ kFModel, settingModel, dispatch, getKfList, parser_id, doc_id }) => {
+interface kFProps {
+    dispatch: Dispatch;
+    kFModel: kFModelState;
+    settingModel: settingModelState;
+    getKfList: () => void;
+    parser_id: string;
+    doc_id: string;
+}
+const Index: React.FC<kFProps> = ({ kFModel, settingModel, dispatch, getKfList, parser_id, doc_id }) => {
     const [selectedTag, setSelectedTag] = useState('')
     const { tenantIfo = {} } = settingModel
     const { parser_ids = '' } = tenantIfo

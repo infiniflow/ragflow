@@ -1,15 +1,30 @@
+import { Effect, Reducer, Subscription } from 'umi'
 import { message } from 'antd';
-import { addParam } from '@/utils';
 import userService from '@/services/userService';
 
-const Model = {
+export interface loginModelState {
+  list: any[];
+  info: any;
+  visible: boolean;
+}
+export interface logingModelType {
+  namespace: 'loginModel';
+  state: loginModelState;
+  effects: {
+    login: Effect;
+    register: Effect;
+  };
+  reducers: {
+    updateState: Reducer<loginModelState>;
+  };
+  subscriptions: { setup: Subscription };
+}
+const Model: logingModelType = {
   namespace: 'loginModel',
   state: {
     list: [],
     info: {},
     visible: false,
-    pagination: {},
-    campaignInfo: {}
   },
   subscriptions: {
     setup({ dispatch, history }) {

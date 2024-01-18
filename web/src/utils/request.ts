@@ -1,7 +1,6 @@
 
 import { extend } from 'umi-request';
 import { notification, message } from 'antd';
-import _ from 'lodash';
 
 import api from '@/utils/api';
 const { login } = api;
@@ -27,18 +26,39 @@ const retcodeMessage = {
   503: '服务不可用，服务器暂时过载或维护。',
   504: '网关超时。'
 };
-
+type retcode =
+  | 200
+  | 201
+  | 202
+  | 204
+  | 400
+  | 401
+  | 403
+  | 404
+  | 406
+  | 410
+  | 422
+  | 500
+  | 502
+  | 503
+  | 504;
 /**
  * 异常处理程序
  */
-const errorHandler = (error: any) => {
+interface responseType {
+  retcode: number;
+  data: any;
+  retmsg: string;
+  status: number
+}
+const errorHandler = (error: { response: Response, message: string }): Response => {
   const { response } = error;
   // 手动中断请求 abort
   if (error.message === ABORT_REQUEST_ERR_MESSAGE) {
     console.log('user abort  request');
   } else {
     if (response && response.status) {
-      const errorText = retcodeMessage[response.status] || response.statusText;
+      const errorText = retcodeMessage[response.status as retcode] || response.statusText;
       const { status, url } = response;
       notification.error({
         message: `请求错误 ${status}: ${url}`,
@@ -59,14 +79,11 @@ const errorHandler = (error: any) => {
  */
 const request = extend({
   errorHandler, // 默认错误处理
-  // credentials: 'include', // 默认请求是否带上cookie
   timeout: 3000000,
   getResponse: true
 });
 
-request.interceptors.request.use((url, options) => {
-  let prefix = '';
-  console.log(url)
+request.interceptors.request.use((url: string, options: any) => {
   const Authorization = localStorage.getItem('Authorization')
   return {
     url,
@@ -84,9 +101,10 @@ request.interceptors.request.use((url, options) => {
 /*
  * 请求response拦截器
  * */
-request.interceptors.response.use(async (response, request) => {
+
+request.interceptors.response.use(async (response: any, request) => {
   console.log(response, request)
-  const data = await response.clone().json();
+  const data: responseType = await response.clone().json();
   // response 拦截
 
   if (data.retcode === 401 || data.retcode === 401) {

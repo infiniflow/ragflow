@@ -1,7 +1,7 @@
 
 
 
-let api_host = `/v1`;
+let api_host = `http://54.80.112.79:9380/v1`;
 
 
 export { api_host };
@@ -24,12 +24,23 @@ export default {
   set_api_key: `${api_host}/llm/set_api_key`,
 
 
+
   //知识库管理
   kb_list: `${api_host}/kb/list`,
   create_kb: `${api_host}/kb/create`,
   update_kb: `${api_host}/kb/update`,
   rm_kb: `${api_host}/kb/rm`,
   get_kb_detail: `${api_host}/kb/detail`,
+
+  // chunk管理
+  chunk_list: `${api_host}/chunk/list`,
+  create_chunk: `${api_host}/chunk/create`,
+  set_chunk: `${api_host}/chunk/set`,
+  get_chunk: `${api_host}/chunk/get`,
+  switch_chunk: `${api_host}/chunk/switch`,
+  rm_chunk: `${api_host}/chunk/rm`,
+
+
 
   // 上传
   upload: `${api_host}/document/upload`,

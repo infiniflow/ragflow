@@ -7,7 +7,16 @@ const {
   update_kb,
   rm_kb,
   get_kb_detail,
-  kb_list, get_document_list, document_change_status, document_rm, document_create, document_change_parser } = api;
+  kb_list,
+  get_document_list,
+  document_change_status,
+  document_rm,
+  document_create,
+  document_change_parser,
+  chunk_list,
+  create_chunk,
+  set_chunk,
+  get_chunk, switch_chunk, rm_chunk } = api;
 interface kbService {
   createKb: () => void;
   updateKb: () => void;
@@ -19,9 +28,16 @@ interface kbService {
   document_rm: () => void;
   document_create: () => void;
   document_change_parser: () => void;
+  chunk_list: () => void;
+  create_chunk: () => void;
+  set_chunk: () => void;
+  get_chunk: () => void;
+  switch_chunk: () => void;
+  rm_chunk: () => void;
 }
 const kbService: kbService = registerServer(
   {
+    // 知识库管理
     createKb: {
       url: create_kb,
       method: 'post'
@@ -42,6 +58,7 @@ const kbService: kbService = registerServer(
       url: kb_list,
       method: 'get'
     },
+    // 文件管理
     get_document_list: {
       url: get_document_list,
       method: 'get'
@@ -60,6 +77,31 @@ const kbService: kbService = registerServer(
     },
     document_change_parser: {
       url: document_change_parser,
+      method: 'post'
+    },
+    // chunk管理
+    chunk_list: {
+      url: chunk_list,
+      method: 'post'
+    },
+    create_chunk: {
+      url: create_chunk,
+      method: 'post'
+    },
+    set_chunk: {
+      url: set_chunk,
+      method: 'post'
+    },
+    get_chunk: {
+      url: get_chunk,
+      method: 'get'
+    },
+    switch_chunk: {
+      url: switch_chunk,
+      method: 'post'
+    },
+    rm_chunk: {
+      url: rm_chunk,
       method: 'post'
     },
 
