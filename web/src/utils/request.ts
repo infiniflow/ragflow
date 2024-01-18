@@ -1,7 +1,6 @@
 
 import { extend } from 'umi-request';
 import { notification, message } from 'antd';
-import _ from 'lodash';
 
 import api from '@/utils/api';
 const { login } = api;

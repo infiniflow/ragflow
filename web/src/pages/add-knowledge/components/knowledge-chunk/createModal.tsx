@@ -48,10 +48,6 @@ const Index: React.FC<kFProps> = ({ chunkModel, dispatch, getChunkList, doc_id }
     const handleOk = async () => {
         try {
             const values = await form.validateFields();
-            // let url = 'chunkModel/create_hunk'
-            // if(chunk_id){
-            //     url='chunkModel/create_hunk'
-            // }
             dispatch({
                 type: 'chunkModel/create_hunk',
                 payload: {
