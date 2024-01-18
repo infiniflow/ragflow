@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { connect, useNavigate, useLocation } from 'umi'
-import { Space, Table, Tag, Input, Button, Switch, Popover, Dropdown, } from 'antd';
+import { connect, Dispatch, useNavigate } from 'umi'
+import { Space, Table, Input, Button, Switch, Dropdown, } from 'antd';
 import type { MenuProps } from 'antd';
-import { PlusOutlined, DownOutlined } from '@ant-design/icons'
+import { DownOutlined } from '@ant-design/icons'
 import { debounce } from 'lodash';
 import type { ColumnsType } from 'antd/es/table';
 import UploadFile from './upload'
 import CreateEPModal from './createEFileModal'
 import SegmentSetModal from './segmentSetModal'
 import styles from './index.less'
+import type { kFModelState } from './model'
 
 interface DataType {
     name: string;
@@ -21,32 +22,37 @@ interface DataType {
     parser_id: string
 }
 
+interface kFProps {
+    dispatch: Dispatch;
+    kFModel: kFModelState;
+    kb_id: string
+}
 
-
-const Index: React.FC = ({ kFModel, dispatch, id }) => {
+const Index: React.FC<kFProps> = ({ kFModel, dispatch, kb_id }) => {
     const { data, loading } = kFModel
     const [inputValue, setInputValue] = useState('')
     const [doc_id, setDocId] = useState('0')
     const [parser_id, setParserId] = useState('0')
-    const changeValue = (value: string) => {
-        {
-            console.log(value)
+    let navigate = useNavigate();
+    const getKfList = (keywords?: string) => {
+        const payload = {
+            kb_id,
+            keywords
         }
-    }
-    const getKfList = () => {
+        if (!keywords) {
+            delete payload.keywords
+        }
         dispatch({
             type: 'kFModel/getKfList',
-            payload: {
-                kb_id: id
-            }
+            payload
         });
     }
     useEffect(() => {
-        if (id) {
+        if (kb_id) {
             getKfList()
         }
-    }, [id])
-    const debounceChange = debounce(changeValue, 300)
+    }, [kb_id])
+    const debounceChange = debounce(getKfList, 300)
     const debounceCallback = useCallback((value: string) => debounceChange(value), [])
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const value = e.target.value
@@ -101,7 +107,7 @@ const Index: React.FC = ({ kFModel, dispatch, id }) => {
                 key: '1',
                 label: (
                     <div>
-                        <UploadFile kb_id={id} getKfList={getKfList} />
+                        <UploadFile kb_id={kb_id} getKfList={getKfList} />
                     </div>
 
                 ),
@@ -116,7 +122,7 @@ const Index: React.FC = ({ kFModel, dispatch, id }) => {
                 // disabled: true,
             },
         ]
-    }, [id]);
+    }, [kb_id]);
     const chunkItems: MenuProps['items'] = [
         {
             key: '1',
@@ -138,12 +144,16 @@ const Index: React.FC = ({ kFModel, dispatch, id }) => {
             // disabled: true,
         },
     ]
+    const toChunk = (id: string) => {
+        console.log(id)
+        navigate(`/knowledge/add/setting?activeKey=file&id=${kb_id}&doc_id=${id}`);
+    }
     const columns: ColumnsType<DataType> = [
         {
             title: '名称',
             dataIndex: 'name',
             key: 'name',
-            render: (text) => <a><img className={styles.img} src='https://gw.alipayobjects.com/zos/antfincdn/efFD%24IOql2/weixintupian_20170331104822.jpg' alt="" />{text}</a>,
+            render: (text: any, { id }) => <div className={styles.tochunks} onClick={() => toChunk(id)}><img className={styles.img} src='https://gw.alipayobjects.com/zos/antfincdn/efFD%24IOql2/weixintupian_20170331104822.jpg' alt="" />{text}</div>,
             className: `${styles.column}`
         },
         {
@@ -198,7 +208,7 @@ const Index: React.FC = ({ kFModel, dispatch, id }) => {
     return <>
         <div className={styles.filter}>
             <div className="search">
-                <Input placeholder="搜索" value={inputValue} allowClear onChange={handleInputChange} />
+                <Input placeholder="搜索" value={inputValue} style={{ width: 220 }} allowClear onChange={handleInputChange} />
             </div>
             <div className="operate">
                 <Dropdown menu={{ items: actionItems }} trigger={['click']} >
@@ -210,7 +220,7 @@ const Index: React.FC = ({ kFModel, dispatch, id }) => {
             </div>
         </div>
         <Table rowKey='id' columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ scrollToFirstRowOnChange: true, x: true }} />
-        <CreateEPModal getKfList={getKfList} kb_id={id} />
+        <CreateEPModal getKfList={getKfList} kb_id={kb_id} />
         <SegmentSetModal getKfList={getKfList} parser_id={parser_id} doc_id={doc_id} />
     </>
 };

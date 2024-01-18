@@ -9,7 +9,6 @@ import { useEffect, useState, FC } from 'react';
 import { RadarChartOutlined } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
 import { Button, Tag, Row, Col, Card } from 'antd';
-import { divide } from 'lodash';
 
 
 interface DataType {

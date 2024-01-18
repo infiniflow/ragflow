@@ -1,20 +1,23 @@
 import React from 'react';
 import { connect } from 'umi'
-import { UploadOutlined } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
-import { Button, message, Upload } from 'antd';
+import { Button, Upload } from 'antd';
 import uploadService from '@/services/uploadService'
-
-
-const Index = ({ kb_id, getKfList }) => {
-    console.log(kb_id)
-    const createRequest = async function ({ file, onSuccess, onError }) {
+interface PropsType {
+    kb_id: string;
+    getKfList: () => void
+}
+type UploadRequestOption = Parameters<
+    NonNullable<UploadProps["customRequest"]>
+>[0];
+const Index: React.FC<PropsType> = ({ kb_id, getKfList }) => {
+    const createRequest: (props: UploadRequestOption) => void = async function ({ file, onSuccess, onError }) {
         const { retcode, data } = await uploadService.uploadFile(file, kb_id);
         if (retcode === 0) {
-            onSuccess(data, file);
+            onSuccess && onSuccess(data, file);
 
         } else {
-            onError(data);
+            onError && onError(data);
         }
         getKfList && getKfList()
     };

@@ -1,8 +1,24 @@
+import { Effect, Reducer, Subscription } from 'umi'
 import { message } from 'antd';
-import { addParam } from '@/utils';
 import kbService from '@/services/kbService';
 
-const Model = {
+export interface knowledgeModelState {
+  loading: boolean;
+  data: any[]
+}
+export interface knowledgegModelType {
+  namespace: 'knowledgeModel';
+  state: knowledgeModelState;
+  effects: {
+    rmKb: Effect;
+    getList: Effect;
+  };
+  reducers: {
+    updateState: Reducer<knowledgeModelState>;
+  };
+  subscriptions: { setup: Subscription };
+}
+const Model: knowledgegModelType = {
   namespace: 'knowledgeModel',
   state: {
     loading: false,
