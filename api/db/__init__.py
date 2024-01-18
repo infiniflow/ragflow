@@ -20,7 +20,7 @@ from strenum import StrEnum
 
 class StatusEnum(Enum):
     VALID = "1"
-    IN_VALID = "0"
+    INVALID = "0"
 
 
 class UserTenantRole(StrEnum):
