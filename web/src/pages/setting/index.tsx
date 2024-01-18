@@ -1,7 +1,7 @@
 import { connect, Dispatch } from 'umi';
 import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next'
-import { Button, Input, Modal, Form, FloatButton, Table } from 'antd'
+import { Button, FloatButton } from 'antd'
 
 
 import styles from './index.less';

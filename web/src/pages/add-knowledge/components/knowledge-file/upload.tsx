@@ -1,7 +1,7 @@
 import React from 'react';
 import { connect } from 'umi'
 import type { UploadProps } from 'antd';
-import { Button, message, Upload } from 'antd';
+import { Button, Upload } from 'antd';
 import uploadService from '@/services/uploadService'
 interface PropsType {
     kb_id: string;

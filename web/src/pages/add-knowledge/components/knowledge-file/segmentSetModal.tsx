@@ -1,9 +1,8 @@
 import React from 'react';
 import { connect, Dispatch } from 'umi';
 import i18n from 'i18next';
-import { useTranslation, Trans } from 'react-i18next'
-import { Input, Modal, Form, Tag, Space } from 'antd'
-import { rsaPsw } from '@/utils'
+import { useTranslation, } from 'react-i18next'
+import { Modal, Tag, Space } from 'antd'
 import { useEffect, useState } from 'react';
 import styles from './index.less';
 import type { kFModelState } from './model'

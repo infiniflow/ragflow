@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, connect, Dispatch } from 'umi'
-import { Button, Form, Input, InputNumber, Radio, Select, Tag, Space, Avatar, Divider, List, Skeleton } from 'antd';
+import { Button, Form, Input, Radio, Select, Tag, Space, } from 'antd';
 import type { kSModelState } from './model'
 import type { settingModelState } from '@/pages/setting/model'
 import styles from './index.less'
@@ -17,9 +17,9 @@ interface kSProps {
     dispatch: Dispatch;
     kSModel: kSModelState;
     settingModel: settingModelState;
-    id: string
+    kb_id: string
 }
-const Index: React.FC<kSProps> = ({ settingModel, kSModel, dispatch, id }) => {
+const Index: React.FC<kSProps> = ({ settingModel, kSModel, dispatch, kb_id }) => {
     let navigate = useNavigate();
     const { tenantIfo = {} } = settingModel
     const { parser_ids = '', embd_id = '' } = tenantIfo
@@ -31,12 +31,12 @@ const Index: React.FC<kSProps> = ({ settingModel, kSModel, dispatch, id }) => {
             payload: {
             }
         });
-        if (id) {
+        if (kb_id) {
 
             dispatch({
                 type: 'kSModel/getKbDetail',
                 payload: {
-                    kb_id: id
+                    kb_id
                 },
                 callback(detail: any) {
                     console.log(detail)
@@ -47,20 +47,20 @@ const Index: React.FC<kSProps> = ({ settingModel, kSModel, dispatch, id }) => {
             });
         }
 
-    }, [id])
+    }, [kb_id])
     const [selectedTag, setSelectedTag] = useState('')
     const values = Form.useWatch([], form);
     console.log(values, '......变化')
     const onFinish = () => {
         form.validateFields().then(
             () => {
-                if (id) {
+                if (kb_id) {
                     dispatch({
                         type: 'kSModel/updateKb',
                         payload: {
                             ...values,
                             parser_id: selectedTag,
-                            kb_id: id,
+                            kb_id,
                             embd_id: undefined
                         }
                     });
@@ -72,7 +72,7 @@ const Index: React.FC<kSProps> = ({ settingModel, kSModel, dispatch, id }) => {
                             parser_id: selectedTag
                         },
                         callback(id: string) {
-                            navigate(`/knowledge/add/setting?activeKey=file&id=${id}`);
+                            navigate(`/knowledge/add/setting?activeKey=file&id=${kb_id}`);
                         }
                     });
                 }

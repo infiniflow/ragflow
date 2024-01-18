@@ -3,7 +3,6 @@ import { connect, Dispatch } from 'umi';
 import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next'
 import { Input, Modal, Form } from 'antd'
-import { rsaPsw } from '@/utils'
 import styles from './index.less';
 import type { kFModelState } from './model'
 

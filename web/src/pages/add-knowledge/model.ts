@@ -1,8 +1,27 @@
+import { Effect, Reducer, Subscription } from 'umi'
 import { message } from 'antd';
-import { addParam } from '@/utils';
 import kbService from '@/services/kbService';
+export interface kAModelState {
+  isShowPSwModal: boolean;
+  isShowTntModal: boolean;
+  loading: boolean;
+  tenantIfo: any;
+  activeKey: string;
+  id: string;
+  doc_id: string
+}
+export interface kAModelType {
+  namespace: 'kAModel';
+  state: kAModelState;
+  effects: {
 
-const Model = {
+  };
+  reducers: {
+    updateState: Reducer<kAModelState>;
+  };
+  subscriptions: { setup: Subscription };
+}
+const Model: kAModelType = {
   namespace: 'kAModel',
   state: {
     isShowPSwModal: false,
@@ -10,7 +29,8 @@ const Model = {
     loading: false,
     tenantIfo: {},
     activeKey: 'setting',
-    id: ''
+    id: '',
+    doc_id: ''
 
   },
   subscriptions: {
