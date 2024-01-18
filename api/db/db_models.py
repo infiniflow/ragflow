@@ -430,6 +430,7 @@ class LLM(DataBaseModel):
     llm_name = CharField(max_length=128, null=False, help_text="LLM name", primary_key=True)
     model_type = CharField(max_length=128, null=False, help_text="LLM, Text Embedding, Image2Text, ASR")
     fid = CharField(max_length=128, null=False, help_text="LLM factory id")
+    max_tokens = IntegerField(default=0)
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, Chat, 32k...")
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
 
@@ -467,8 +468,8 @@ class Knowledgebase(DataBaseModel):
     doc_num = IntegerField(default=0)
     token_num = IntegerField(default=0)
     chunk_num = IntegerField(default=0)
-    similarity_threshold = FloatField(default=0.4)
-    vector_similarity_weight = FloatField(default=0.3)
+    #similarity_threshold = FloatField(default=0.4)
+    #vector_similarity_weight = FloatField(default=0.3)
 
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID")
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
@@ -518,6 +519,11 @@ class Dialog(DataBaseModel):
     prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced")
     prompt_config = JSONField(null=False, default={"system": "", "prologue": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
                                                    "parameters": [], "empty_response": "Sorry! 知识库中未找到相关内容！"})
+
+    similarity_threshold = FloatField(default=0.4)
+    vector_similarity_weight = FloatField(default=0.3)
+    top_n = IntegerField(default=6)
+
     kb_ids = JSONField(null=False, default=[])
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
 
