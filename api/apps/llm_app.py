@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -71,18 +71,12 @@ def my_llms():
 def list():
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
-        objs = [o.to_dict() for o in objs if o.api_key]
-        fct = {}
-        for o in objs:
-            if o["llm_factory"] not in fct: fct[o["llm_factory"]] = []
-            if o["llm_name"]: fct[o["llm_factory"]].append(o["llm_name"])
-
+        mdlnms = set([o.to_dict()["llm_name"] for o in objs if o.api_key])
         llms = LLMService.get_all()
         llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value]
         for m in llms:
-            m["available"] = False
-            if m["fid"] in fct and (not fct[m["fid"]] or m["llm_name"] in fct[m["fid"]]):
-                m["available"] = True
+            m["available"] = m.llm_name in mdlnms
+
         res = {}
         for m in llms:
             if m["fid"] not in res: res[m["fid"]] = []

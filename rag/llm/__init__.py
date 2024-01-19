@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ from .cv_model import *
 
 
 EmbeddingModel = {
-    "local": HuEmbedding,
+    "Infiniflow": HuEmbedding,
     "OpenAI": OpenAIEmbed,
     "通义千问": QWenEmbed,
 }
@@ -27,12 +27,14 @@ EmbeddingModel = {
 
 CvModel = {
     "OpenAI": GptV4,
+    "Infiniflow": GptV4,
     "通义千问": QWenCV,
 }
 
 
 ChatModel = {
     "OpenAI": GptTurbo,
+    "Infiniflow": GptTurbo,
     "通义千问": QWenChat,
 }
 
