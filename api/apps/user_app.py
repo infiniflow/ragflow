@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,12 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import re
+
 from flask import request, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import login_required, current_user, login_user, logout_user
 
 from api.db.db_models import TenantLLM
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import TenantLLMService, LLMService
 from api.utils.api_utils import server_error_response, validate_request
 from api.utils import get_uuid, get_format_time, decrypt, download_img
 from api.db import UserTenantRole, LLMType
@@ -185,8 +187,6 @@ def rollback_user_registration(user_id):
 
       
 def user_register(user_id, user):
-
-    user_id = get_uuid()
     user["id"] = user_id
     tenant = {
         "id": user_id,
@@ -203,12 +203,14 @@ def user_register(user_id, user):
         "invited_by": user_id,
         "role": UserTenantRole.OWNER
     }
-    tenant_llm = {"tenant_id": user_id, "llm_factory": "OpenAI", "api_key": "infiniflow API Key"}
+    tenant_llm = []
+    for llm in LLMService.query(fid="Infiniflow"):
+        tenant_llm.append({"tenant_id": user_id, "llm_factory": "Infiniflow", "llm_name": llm.llm_name, "model_type":llm.model_type, "api_key": "infiniflow API Key"})
 
     if not UserService.save(**user):return
     TenantService.save(**tenant)
     UserTenantService.save(**usr_tenant)
-    TenantLLMService.save(**tenant_llm)
+    TenantLLMService.insert_many(tenant_llm)
     return UserService.query(email=user["email"])
 
 
@@ -218,6 +220,9 @@ def user_add():
     req = request.json
     if UserService.query(email=req["email"]):
         return get_json_result(data=False, retmsg=f'Email: {req["email"]} has already registered!', retcode=RetCode.OPERATING_ERROR)
+    if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,4}$", req["email"]):
+        return get_json_result(data=False, retmsg=f'Invaliad e-mail: {req["email"]}!',
+                               retcode=RetCode.OPERATING_ERROR)
 
     user_dict = {
         "access_token": get_uuid(),

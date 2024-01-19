@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -43,6 +43,11 @@ def init_llm_factory():
             "status": "1",
         },{
             "name": "通义千问",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "status": "1",
+        },{
+            "name": "Infiniflow",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
@@ -127,6 +132,30 @@ def init_llm_factory():
         },{
             "fid": factory_infos[1]["name"],
             "llm_name": "qwen_vl_chat_v1",
+            "tags": "LLM,CHAT,IMAGE2TEXT",
+            "max_tokens": 765,
+            "model_type": LLMType.IMAGE2TEXT.value
+        },{
+            "fid": factory_infos[2]["name"],
+            "llm_name": "gpt-3.5-turbo",
+            "tags": "LLM,CHAT,4K",
+            "max_tokens": 4096,
+            "model_type": LLMType.CHAT.value
+        },{
+            "fid": factory_infos[2]["name"],
+            "llm_name": "text-embedding-ada-002",
+            "tags": "TEXT EMBEDDING,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.EMBEDDING.value
+        },{
+            "fid": factory_infos[2]["name"],
+            "llm_name": "whisper-1",
+            "tags": "SPEECH2TEXT",
+            "max_tokens": 25*1024*1024,
+            "model_type": LLMType.SPEECH2TEXT.value
+        },{
+            "fid": factory_infos[2]["name"],
+            "llm_name": "gpt-4-vision-preview",
             "tags": "LLM,CHAT,IMAGE2TEXT",
             "max_tokens": 765,
             "model_type": LLMType.IMAGE2TEXT.value
