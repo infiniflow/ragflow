@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import datetime
 
 from flask import request
 from flask_login import login_required, current_user
@@ -177,6 +178,7 @@ def create():
     d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
     d["important_kwd"] = req.get("important_kwd", [])
     d["important_tks"] = huqie.qie(" ".join(req.get("important_kwd", [])))
+    d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
 
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
@@ -223,7 +225,7 @@ def retrieval_test():
         embd_mdl = TenantLLMService.model_instance(
             kb.tenant_id, LLMType.EMBEDDING.value)
         ranks = retrievaler.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size, similarity_threshold,
-                          vector_similarity_weight, top, doc_ids)
+                                      vector_similarity_weight, top, doc_ids)
 
         return get_json_result(data=ranks)
     except Exception as e:
@@ -231,4 +233,3 @@ def retrieval_test():
             return get_json_result(data=False, retmsg=f'Index not found!',
                                    retcode=RetCode.DATA_ERROR)
         return server_error_response(e)
-

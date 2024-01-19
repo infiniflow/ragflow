@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -24,6 +24,9 @@ import numpy as np
 
 from rag.utils import num_tokens_from_string
 
+flag_model = FlagModel("BAAI/bge-large-zh-v1.5",
+                       query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
+                       use_fp16=torch.cuda.is_available())
 
 class Base(ABC):
     def __init__(self, key, model_name):
@@ -47,9 +50,7 @@ class HuEmbedding(Base):
         ^_-
 
         """
-        self.model = FlagModel("BAAI/bge-large-zh-v1.5",
-                               query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
-                               use_fp16=torch.cuda.is_available())
+        self.model = flag_model
 
 
     def encode(self, texts: list, batch_size=32):

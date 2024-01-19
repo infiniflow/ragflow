@@ -42,7 +42,7 @@ class EsQueryer:
 
     def question(self, txt, tbl="qa", min_match="60%"):
         txt = re.sub(
-            r"[ \t,，。？?/`!！&]+",
+            r"[ \r\n\t,，。？?/`!！&]+",
             " ",
             huqie.tradi2simp(
                 huqie.strQ2B(

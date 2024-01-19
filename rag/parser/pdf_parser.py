@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import fitz
 import xgboost as xgb
 from io import BytesIO
 import torch
@@ -1527,8 +1528,6 @@ class HuParser:
         return "\n\n".join(res)
 
     def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
-        self.pdf = pdfplumber.open(fnm) if isinstance(
-            fnm, str) else pdfplumber.open(BytesIO(fnm))
         self.lefted_chars = []
         self.mean_height = []
         self.mean_width = []
@@ -1536,13 +1535,26 @@ class HuParser:
         self.garbages = {}
         self.page_cum_height = [0]
         self.page_layout = []
-        self.page_images = [p.to_image(
-            resolution=72 * zoomin).annotated for i, p in enumerate(self.pdf.pages[:299])]
+        try:
+            self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
+            self.page_images = [p.to_image(resolution=72*zoomin).annotated for i,p in enumerate(self.pdf.pages[:299])]
+            self.page_chars = [[c for c in self.pdf.pages[i].chars if self._has_color(c)] for i in range(len(self.page_images))]
+        except Exception as e:
+            self.pdf = fitz.open(fnm) if isinstance(fnm, str) else fitz.open(stream=fnm, filetype="pdf")
+            self.page_images = []
+            self.page_chars = []
+            mat = fitz.Matrix(zoomin, zoomin)
+            for page in self.pdf:
+                pix = page.getPixmap(matrix = mat)
+                img = Image.frombytes("RGB", [pix.width, pix.height],
+                                      pix.samples)
+                self.page_images.append(img)
+                self.page_chars.append([])
+
         logging.info("Images converted.")
-        logging.info("Table processed.")
 
         for i, img in enumerate(self.page_images):
-            chars = [c for c in self.pdf.pages[i].chars if self._has_color(c)]
+            chars = self.page_chars[i]
             self.mean_height.append(
                 np.median(sorted([c["height"] for c in chars])) if chars else 0
             )
