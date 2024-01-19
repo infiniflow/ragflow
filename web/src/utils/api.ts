@@ -1,7 +1,7 @@
 
 
 
-let api_host = `/v1`;
+let api_host = `http://54.80.112.79:9380/v1`;
 
 
 export { api_host };
