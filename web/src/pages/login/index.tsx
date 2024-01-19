@@ -79,9 +79,9 @@ const View: FC<LoginProps> = ({
               {...formItemLayout}
               name="email"
               label="Email"
-              rules={[{ required: true, message: 'Please input your name' }]}
+              rules={[{ required: true, message: 'Please input value' }]}
             >
-              <Input size='large' placeholder="Please input your name" />
+              <Input size='large' placeholder="Please input value" />
             </Form.Item>
             {
               title === 'register' && <Form.Item
@@ -97,9 +97,9 @@ const View: FC<LoginProps> = ({
               {...formItemLayout}
               name="password"
               label="Password"
-              rules={[{ required: true, message: 'Please input your name' }]}
+              rules={[{ required: true, message: 'Please input value' }]}
             >
-              <Input size='large' placeholder="Please input your name" />
+              <Input size='large' placeholder="Please input value" />
             </Form.Item>
             {
               title === 'login' && <Form.Item

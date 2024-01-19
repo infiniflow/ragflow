@@ -14,10 +14,12 @@ interface kFProps {
     dispatch: Dispatch;
     chunkModel: chunkModelState;
     getChunkList: () => void;
-    doc_id: string
+    isShowCreateModal: boolean;
+    doc_id: string;
+    chunk_id: string
 }
-const Index: React.FC<kFProps> = ({ chunkModel, dispatch, getChunkList, doc_id }) => {
-    const { isShowCreateModal, chunk_id, chunkInfo } = chunkModel
+const Index: React.FC<kFProps> = ({ dispatch, getChunkList, doc_id, isShowCreateModal, chunk_id }) => {
+    // const { , chunkInfo } = chunkModel
     const [important_kwd, setImportantKwd] = useState(['Unremovable', 'Tag 2', 'Tag 3']);
     const { t } = useTranslation()
     const handleCancel = () => {
@@ -29,6 +31,7 @@ const Index: React.FC<kFProps> = ({ chunkModel, dispatch, getChunkList, doc_id }
         });
     };
     useEffect(() => {
+        console.log(chunk_id, isShowCreateModal)
         if (chunk_id && isShowCreateModal) {
             dispatch({
                 type: 'chunkModel/get_chunk',
@@ -85,7 +88,7 @@ const Index: React.FC<kFProps> = ({ chunkModel, dispatch, getChunkList, doc_id }
                 <Form.Item<FieldType>
                     label="chunk 内容"
                     name="content_ltks"
-                    rules={[{ required: true, message: 'Please input name!' }]}
+                    rules={[{ required: true, message: 'Please input value!' }]}
                 >
                     <Input.TextArea />
                 </Form.Item>

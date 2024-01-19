@@ -2,40 +2,50 @@ import { Effect, Reducer, Subscription } from 'umi'
 import { message } from 'antd';
 import kbService from '@/services/kbService';
 
-export interface chunkModelState {
+export interface kSearchModelState {
   loading: boolean;
   data: any[];
   total: number;
   isShowCreateModal: boolean;
   chunk_id: string;
-  doc_id: string;
-  chunkInfo: any
+  chunkInfo: any;
+  d_list: any[];
+  question: string;
+  doc_ids: any[];
+  pagination: any;
+  doc_id: string
+
 }
 export interface chunkgModelType {
-  namespace: 'chunkModel';
-  state: chunkModelState;
+  namespace: 'kSearchModel';
+  state: kSearchModelState;
   effects: {
     chunk_list: Effect;
     get_chunk: Effect;
     create_hunk: Effect;
     switch_chunk: Effect;
     rm_chunk: Effect;
+    getKfList: Effect;
   };
   reducers: {
-    updateState: Reducer<chunkModelState>;
+    updateState: Reducer<kSearchModelState>;
   };
   subscriptions: { setup: Subscription };
 }
 const Model: chunkgModelType = {
-  namespace: 'chunkModel',
+  namespace: 'kSearchModel',
   state: {
     loading: false,
     data: [],
     total: 0,
     isShowCreateModal: false,
     chunk_id: '',
-    doc_id: '',
-    chunkInfo: {}
+    chunkInfo: {},
+    d_list: [],
+    question: '',
+    doc_ids: [],
+    pagination: { page: 1, size: 30 },
+    doc_id: ''
   },
   subscriptions: {
     setup({ dispatch, history }) {
@@ -45,9 +55,21 @@ const Model: chunkgModelType = {
     }
   },
   effects: {
-    * chunk_list({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(kbService.chunk_list, payload);
+    *getKfList({ payload = {} }, { call, put }) {
+      const { data, response } = yield call(kbService.get_document_list, payload);
 
+      const { retcode, data: res, retmsg } = data
+      if (retcode === 0) {
+        yield put({
+          type: 'updateState',
+          payload: {
+            d_list: res
+          }
+        });
+      }
+    },
+    * chunk_list({ payload = {}, callback }, { call, put }) {
+      const { data, response } = yield call(kbService.retrieval_test, payload);
       const { retcode, data: res, retmsg } = data
       if (retcode === 0) {
         console.log(res)

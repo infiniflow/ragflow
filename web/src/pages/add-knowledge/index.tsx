@@ -1,5 +1,5 @@
 import { connect, useNavigate, useLocation, Dispatch } from 'umi'
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { MenuProps } from 'antd';
 import { Menu } from 'antd';
 import {
@@ -70,8 +70,10 @@ const Index: React.FC<kAProps> = ({ kAModel, dispatch }) => {
         label: React.ReactNode,
         key: React.Key,
         icon?: React.ReactNode,
+        disabled?: boolean,
         children?: MenuItem[],
         type?: 'group',
+
     ): MenuItem {
         return {
             key,
@@ -79,13 +81,17 @@ const Index: React.FC<kAProps> = ({ kAModel, dispatch }) => {
             children,
             label,
             type,
+            disabled
         } as MenuItem;
     }
-    const items: MenuItem[] = [
-        getItem('配置', 'setting', <ToolOutlined />),
-        getItem('知识库', 'file', <BarsOutlined />),
-        getItem('搜索测试', 'search', <SearchOutlined />),
-    ];
+    const items: MenuItem[] = useMemo(() => {
+        const disabled = !id
+        return [
+            getItem('配置', 'setting', <ToolOutlined />),
+            getItem('知识库', 'file', <BarsOutlined />, disabled),
+            getItem('搜索测试', 'search', <SearchOutlined />, disabled),
+        ]
+    }, [id]);
     const handleSelect: MenuProps['onSelect'] = (e) => {
         navigate(`/knowledge/add/setting?activeKey=${e.key}&id=${id}`);
     }
@@ -105,7 +111,7 @@ const Index: React.FC<kAProps> = ({ kAModel, dispatch }) => {
                 <div className={styles.content}>
                     {activeKey === 'file' && !doc_id && <File kb_id={id} />}
                     {activeKey === 'setting' && <Setting kb_id={id} />}
-                    {activeKey === 'search' && <Search />}
+                    {activeKey === 'search' && <Search kb_id={id} />}
                     {activeKey === 'file' && !!doc_id && <Chunk doc_id={doc_id} />}
 
                 </div>
