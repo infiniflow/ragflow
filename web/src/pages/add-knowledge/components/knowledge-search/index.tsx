@@ -78,6 +78,23 @@ const Index: React.FC<chunkProps> = ({ kSearchModel, chunkModel, dispatch, kb_id
       }
     });
   };
+  useEffect(() => {
+    dispatch({
+      type: 'kSearchModel/updateState',
+      payload: {
+        loading: false,
+        doc_ids: [],
+        question: ""
+      }
+    });
+    dispatch({
+      type: 'kSearchModel/getKfList',
+      payload: {
+        kb_id
+      }
+
+    });
+  }, [])
   const switchChunk = (item: any, available_int: boolean) => {
     const { chunk_id, doc_id } = item
     dispatch({
@@ -97,16 +114,6 @@ const Index: React.FC<chunkProps> = ({ kSearchModel, chunkModel, dispatch, kb_id
     });
   }
 
-  useEffect(() => {
-    if (kb_id) {
-      dispatch({
-        type: 'kSearchModel/getKfList',
-        payload: {
-          kb_id
-        }
-      });
-    }
-  }, [kb_id])
 
   useEffect(() => {
     getChunkList()
@@ -144,12 +151,11 @@ const Index: React.FC<chunkProps> = ({ kSearchModel, chunkModel, dispatch, kb_id
           onChange={handleSelectChange}
           style={{ width: 300, marginBottom: 20 }}
           options={d_list}
-          value={doc_ids}
           fieldNames={{ label: 'name', value: 'id' }}
           mode='multiple'
         />
 
-        <Input.TextArea autoSize={{ minRows: 6, maxRows: 6 }} placeholder="搜索" style={{ width: 300 }} allowClear value={question} onChange={handleInputChange} />
+        <Input.TextArea autoSize={{ minRows: 6, maxRows: 6 }} placeholder="搜索" style={{ width: 300 }} allowClear onChange={handleInputChange} />
 
       </div>
       <div className={styles.pageContainer}>

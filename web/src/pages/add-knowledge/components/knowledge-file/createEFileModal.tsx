@@ -65,7 +65,7 @@ const Index: React.FC<kFProps> = ({ kFModel, dispatch, getKfList, kb_id }) => {
                 <Form.Item<FieldType>
                     label="文件名"
                     name="name"
-                    rules={[{ required: true, message: 'Please input name!' }]}
+                    rules={[{ required: true, message: 'Please input value!' }]}
                 >
                     <Input />
                 </Form.Item>

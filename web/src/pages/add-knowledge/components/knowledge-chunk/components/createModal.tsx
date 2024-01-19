@@ -88,7 +88,7 @@ const Index: React.FC<kFProps> = ({ dispatch, getChunkList, doc_id, isShowCreate
                 <Form.Item<FieldType>
                     label="chunk 内容"
                     name="content_ltks"
-                    rules={[{ required: true, message: 'Please input name!' }]}
+                    rules={[{ required: true, message: 'Please input value!' }]}
                 >
                     <Input.TextArea />
                 </Form.Item>
