@@ -2,7 +2,7 @@
   "private": true,
   "author": "zhaofengchao <13723060510@163.com>",
   "scripts": {
-    "dev": "umi dev",
+    "dev": "set PORT=9000&&umi dev",
     "build": "umi build",
     "postinstall": "umi setup",
     "setup": "umi setup",
@@ -19,6 +19,7 @@
     "js-base64": "^3.7.5",
     "jsencrypt": "^3.3.2",
     "lodash": "^4.17.21",
+    "moment": "^2.30.1",
     "react-i18next": "^14.0.0",
     "react-infinite-scroll-component": "^6.1.0",
     "umi": "^4.0.90",

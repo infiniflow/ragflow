@@ -7,14 +7,14 @@ export default defineConfig({
   routes,
   npmClient: 'npm',
   base: '/',
-  publicPath: '/client/dist/',
+  publicPath: '/web/dist/',
   esbuildMinifyIIFE: true,
   icons: {
 
   },
   hash: true,
   history: {
-    type: 'hash',
+    type: 'browser',
   },
   plugins: ['@umijs/plugins/dist/dva'],
   dva: {},
