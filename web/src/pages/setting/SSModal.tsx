@@ -76,7 +76,7 @@ const Index: FC<SSModalProps> = ({ settingModel, dispatch }) => {
                 <Form.Item<FieldType>
                     label="embedding 模型"
                     name="embd_id"
-                    rules={[{ required: true, message: 'Please input your password!' }]}
+                    rules={[{ required: true, message: 'Please input value' }]}
                     initialValue={tenantIfo.embd_id}
 
                 >
@@ -93,7 +93,7 @@ const Index: FC<SSModalProps> = ({ settingModel, dispatch }) => {
                 <Form.Item<FieldType>
                     label="chat 模型"
                     name="llm_id"
-                    rules={[{ required: true, message: 'Please input your password!' }]}
+                    rules={[{ required: true, message: 'Please input value' }]}
                     initialValue={tenantIfo.llm_id}
 
                 >
@@ -110,7 +110,7 @@ const Index: FC<SSModalProps> = ({ settingModel, dispatch }) => {
                 <Form.Item<FieldType>
                     label="image2text 模型"
                     name="img2txt_id"
-                    rules={[{ required: true, message: 'Please input your password!' }]}
+                    rules={[{ required: true, message: 'Please input value' }]}
                     initialValue={tenantIfo.img2txt_id}
 
                 >
@@ -127,7 +127,7 @@ const Index: FC<SSModalProps> = ({ settingModel, dispatch }) => {
                 <Form.Item<FieldType>
                     label="speech2text 模型"
                     name="asr_id"
-                    rules={[{ required: true, message: 'Please input your password!' }]}
+                    rules={[{ required: true, message: 'Please input value' }]}
                     initialValue={tenantIfo.asr_id}
 
                 >

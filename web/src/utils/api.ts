@@ -39,6 +39,8 @@ export default {
   get_chunk: `${api_host}/chunk/get`,
   switch_chunk: `${api_host}/chunk/switch`,
   rm_chunk: `${api_host}/chunk/rm`,
+  retrieval_test: `${api_host}/chunk/retrieval_test`,
+
 
 
 

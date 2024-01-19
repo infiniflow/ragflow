@@ -16,7 +16,10 @@ const {
   chunk_list,
   create_chunk,
   set_chunk,
-  get_chunk, switch_chunk, rm_chunk } = api;
+  get_chunk,
+  switch_chunk,
+  rm_chunk,
+  retrieval_test } = api;
 interface kbService {
   createKb: () => void;
   updateKb: () => void;
@@ -34,6 +37,7 @@ interface kbService {
   get_chunk: () => void;
   switch_chunk: () => void;
   rm_chunk: () => void;
+  retrieval_test: () => void;
 }
 const kbService: kbService = registerServer(
   {
@@ -104,7 +108,10 @@ const kbService: kbService = registerServer(
       url: rm_chunk,
       method: 'post'
     },
-
+    retrieval_test: {
+      url: retrieval_test,
+      method: 'post'
+    },
   },
   request
 );

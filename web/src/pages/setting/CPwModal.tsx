@@ -71,7 +71,7 @@ const Index: FC<CPwModalProps> = ({ settingModel, dispatch }) => {
                 <Form.Item<FieldType>
                     label="旧密码"
                     name="password"
-                    rules={[{ required: true, message: 'Please input your password!' }]}
+                    rules={[{ required: true, message: 'Please input value' }]}
                 >
                     <Input.Password />
                 </Form.Item>
