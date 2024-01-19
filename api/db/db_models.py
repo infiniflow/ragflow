@@ -1,5 +1,5 @@
 #
-#  Copyright 2019 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -426,8 +426,8 @@ class LLMFactories(DataBaseModel):
 
 
 class LLM(DataBaseModel):
-    # defautlt LLMs for every users
-    llm_name = CharField(max_length=128, null=False, help_text="LLM name", primary_key=True)
+    # LLMs dictionary
+    llm_name = CharField(max_length=128, null=False, help_text="LLM name", index=True)
     model_type = CharField(max_length=128, null=False, help_text="LLM, Text Embedding, Image2Text, ASR")
     fid = CharField(max_length=128, null=False, help_text="LLM factory id")
     max_tokens = IntegerField(default=0)
@@ -448,6 +448,7 @@ class TenantLLM(DataBaseModel):
     llm_name = CharField(max_length=128, null=True, help_text="LLM name", default="")
     api_key = CharField(max_length=255, null=True, help_text="API KEY")
     api_base = CharField(max_length=255, null=True, help_text="API Base")
+    used_tokens = IntegerField(default=0)
 
     def __str__(self):
         return self.llm_name
@@ -468,8 +469,8 @@ class Knowledgebase(DataBaseModel):
     doc_num = IntegerField(default=0)
     token_num = IntegerField(default=0)
     chunk_num = IntegerField(default=0)
-    #similarity_threshold = FloatField(default=0.4)
-    #vector_similarity_weight = FloatField(default=0.3)
+    similarity_threshold = FloatField(default=0.4)
+    vector_similarity_weight = FloatField(default=0.3)
 
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID")
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
