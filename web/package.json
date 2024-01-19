@@ -2,7 +2,7 @@
   "private": true,
   "author": "zhaofengchao <13723060510@163.com>",
   "scripts": {
-    "dev": "set PORT=9000&&umi dev",
+    "dev": "cross-env PORT=9000 umi dev",
     "build": "umi build",
     "postinstall": "umi setup",
     "setup": "umi setup",
@@ -30,6 +30,7 @@
     "@types/react": "^18.0.33",
     "@types/react-dom": "^18.0.11",
     "@umijs/plugins": "^4.1.0",
+    "cross-env": "^7.0.3",
     "typescript": "^5.0.3",
     "umi-plugin-icons": "^0.1.1"
   }

@@ -4,7 +4,7 @@ import { Card, Row, Col, Input, Select, Switch, Pagination, Spin, Button, Popcon
 import { MinusSquareOutlined, DeleteOutlined, } from '@ant-design/icons';
 import type { PaginationProps } from 'antd';
 import { api_host } from '@/utils/api'
-import CreateModal from './createModal'
+import CreateModal from './components/createModal'
 
 
 import styles from './index.less'
@@ -21,7 +21,7 @@ const Index: React.FC<chunkProps> = ({ chunkModel, dispatch, doc_id }) => {
   const navigate = useNavigate()
   const [pagination, setPagination] = useState({ page: 1, size: 30 })
   // const [datas, setDatas] = useState(data)
-  const { data = [], total, loading } = chunkModel
+  const { data = [], total, loading, chunk_id, isShowCreateModal } = chunkModel
   console.log(chunkModel)
   const getChunkList = (value?: string) => {
     dispatch({
@@ -66,7 +66,8 @@ const Index: React.FC<chunkProps> = ({ chunkModel, dispatch, doc_id }) => {
       type: 'chunkModel/updateState',
       payload: {
         isShowCreateModal: true,
-        chunk_id
+        chunk_id,
+        doc_id
       },
       callback: getChunkList
     });
@@ -216,7 +217,7 @@ const Index: React.FC<chunkProps> = ({ chunkModel, dispatch, doc_id }) => {
       </div>
 
     </div >
-    <CreateModal doc_id={doc_id} getChunkList={getChunkList} />
+    <CreateModal doc_id={doc_id} isShowCreateModal={isShowCreateModal} chunk_id={chunk_id} getChunkList={getChunkList} />
   </>
   )
 };

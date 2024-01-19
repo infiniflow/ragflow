@@ -1,0 +1,79 @@
+.chunkPage {
+    padding: 24px;
+    display: flex;
+    height: calc(100vh - 112px);
+    // flex-direction: column;
+
+    .filter {
+        margin-right: 20px;
+        display: flex;
+        height: 32px;
+        width: 300px;
+        flex-wrap: wrap;
+        justify-content: space-between;
+    }
+
+    .pageContainer {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+
+        .pageContent {
+            flex: 1;
+            width: 100%;
+            padding-right: 12px;
+            overflow-y: auto;
+
+            .spin {
+                min-height: 400px;
+            }
+        }
+
+        .pageFooter {
+            height: 32px;
+            float: right;
+        }
+    }
+
+}
+
+.container {
+    height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+
+    .content {
+        display: flex;
+        justify-content: space-between;
+
+        .context {
+            flex: 1;
+            // width: 207px;
+            height: 88px;
+            overflow: hidden;
+        }
+    }
+
+    .footer {
+        height: 20px;
+
+        .text {
+            margin-left: 10px;
+        }
+    }
+}
+
+.card {
+    :global {
+        .ant-card-body {
+            padding: 10px;
+            margin: 0;
+        }
+
+        margin-bottom: 10px;
+    }
+
+    cursor: pointer;
+
+}
