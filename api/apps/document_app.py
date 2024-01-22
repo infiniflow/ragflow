@@ -11,7 +11,8 @@
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
-#  limitations under the License.
+#  limitations under the License
+#
 #
 import base64
 import pathlib
@@ -65,7 +66,7 @@ def upload():
         while MINIO.obj_exist(kb_id, location):
             location += "_"
         blob = request.files['file'].read()
-        MINIO.put(kb_id, filename, blob)
+        MINIO.put(kb_id, location, blob)
         doc = DocumentService.insert({
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -188,7 +189,10 @@ def rm():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
-        ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(doc.kb_id))
+        tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+        if not tenant_id:
+            return get_data_error_result(retmsg="Tenant not found!")
+        ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
 
         DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num*-1, doc.chunk_num*-1, 0)
         if not DocumentService.delete_by_id(req["doc_id"]):

@@ -170,7 +170,7 @@ def chat(dialog, messages, **kwargs):
         if p["key"] not in kwargs:
             prompt_config["system"] = prompt_config["system"].replace("{%s}"%p["key"], " ")
 
-    model_config = TenantLLMService.get_api_key(dialog.tenant_id, LLMType.CHAT.value, dialog.llm_id)
+    model_config = TenantLLMService.get_api_key(dialog.tenant_id, dialog.llm_id)
     if not model_config: raise LookupError("LLM({}) API key not found".format(dialog.llm_id))
 
     question = messages[-1]["content"]
@@ -186,10 +186,10 @@ def chat(dialog, messages, **kwargs):
     kwargs["knowledge"] = "\n".join(knowledges)
     gen_conf = dialog.llm_setting[dialog.llm_setting_type]
     msg = [{"role": m["role"], "content": m["content"]} for m in messages if m["role"] != "system"]
-    used_token_count = message_fit_in(msg, int(llm.max_tokens * 0.97))
+    used_token_count, msg = message_fit_in(msg, int(llm.max_tokens * 0.97))
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], llm.max_tokens - used_token_count)
-    mdl = ChatModel[model_config.llm_factory](model_config["api_key"], dialog.llm_id)
+    mdl = ChatModel[model_config.llm_factory](model_config.api_key, dialog.llm_id)
     answer = mdl.chat(prompt_config["system"].format(**kwargs), msg, gen_conf)
 
     answer = retrievaler.insert_citations(answer,
@@ -198,4 +198,6 @@ def chat(dialog, messages, **kwargs):
                                  embd_mdl,
                                  tkweight=1-dialog.vector_similarity_weight,
                                  vtweight=dialog.vector_similarity_weight)
+    for c in kbinfos["chunks"]:
+        if c.get("vector"):del c["vector"]
     return {"answer": answer, "retrieval": kbinfos}

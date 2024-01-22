@@ -63,7 +63,7 @@ class TenantLLMService(CommonService):
 
         model_config = cls.get_api_key(tenant_id, mdlnm)
         if not model_config: raise LookupError("Model({}) not found".format(mdlnm))
-        model_config = model_config[0].to_dict()
+        model_config = model_config.to_dict()
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel: return
             return EmbeddingModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"])
