@@ -214,7 +214,7 @@ def retrieval_test():
     question = req["question"]
     kb_id = req["kb_id"]
     doc_ids = req.get("doc_ids", [])
-    similarity_threshold = float(req.get("similarity_threshold", 0.4))
+    similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top", 1024))
     try:

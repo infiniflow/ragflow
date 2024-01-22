@@ -28,6 +28,8 @@ class Base(ABC):
         raise NotImplementedError("Please implement encode method!")
 
     def image2base64(self, image):
+        if isinstance(image, bytes):
+            return base64.b64encode(image).decode("utf-8")
         if isinstance(image, BytesIO):
             return base64.b64encode(image.getvalue()).decode("utf-8")
         buffered = BytesIO()
@@ -59,7 +61,7 @@ class Base(ABC):
 
 class GptV4(Base):
     def __init__(self, key, model_name="gpt-4-vision-preview"):
-        self.client = OpenAI(key)
+        self.client = OpenAI(api_key = key)
         self.model_name = model_name
 
     def describe(self, image, max_tokens=300):

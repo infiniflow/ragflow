@@ -187,9 +187,10 @@ class Dealer:
             if len(t) < 5: continue
             idx.append(i)
             pieces_.append(t)
+        es_logger.info("{} => {}".format(answer, pieces_))
         if not pieces_: return answer
 
-        ans_v = embd_mdl.encode(pieces_)
+        ans_v, c = embd_mdl.encode(pieces_)
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
             len(ans_v[0]), len(chunk_v[0]))
 
@@ -219,7 +220,7 @@ class Dealer:
             Dealer.trans2floats(
                 sres.field[i]["q_%d_vec" % len(sres.query_vector)]) for i in sres.ids]
         if not ins_embd:
-            return []
+            return [], [], []
         ins_tw = [huqie.qie(sres.field[i][cfield]).split(" ") for i in sres.ids]
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                                         ins_embd,
@@ -235,6 +236,8 @@ class Dealer:
 
     def retrieval(self, question, embd_mdl, tenant_id, kb_ids, page, page_size, similarity_threshold=0.2,
                   vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True):
+        ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
+        if not question: return ranks
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": top,
                "question": question, "vector": True,
                "similarity": similarity_threshold}
@@ -243,7 +246,7 @@ class Dealer:
         sim, tsim, vsim = self.rerank(
             sres, question, 1 - vector_similarity_weight, vector_similarity_weight)
         idx = np.argsort(sim * -1)
-        ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
+
         dim = len(sres.query_vector)
         start_idx = (page - 1) * page_size
         for i in idx:

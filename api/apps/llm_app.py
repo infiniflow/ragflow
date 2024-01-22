@@ -75,7 +75,7 @@ def list():
         llms = LLMService.get_all()
         llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value]
         for m in llms:
-            m["available"] = m.llm_name in mdlnms
+            m["available"] = m["llm_name"] in mdlnms
 
         res = {}
         for m in llms:
