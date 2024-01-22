@@ -469,7 +469,7 @@ class Knowledgebase(DataBaseModel):
     doc_num = IntegerField(default=0)
     token_num = IntegerField(default=0)
     chunk_num = IntegerField(default=0)
-    similarity_threshold = FloatField(default=0.4)
+    similarity_threshold = FloatField(default=0.2)
     vector_similarity_weight = FloatField(default=0.3)
 
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID")
@@ -521,7 +521,7 @@ class Dialog(DataBaseModel):
     prompt_config = JSONField(null=False, default={"system": "", "prologue": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
                                                    "parameters": [], "empty_response": "Sorry! 知识库中未找到相关内容！"})
 
-    similarity_threshold = FloatField(default=0.4)
+    similarity_threshold = FloatField(default=0.2)
     vector_similarity_weight = FloatField(default=0.3)
     top_n = IntegerField(default=6)
 
