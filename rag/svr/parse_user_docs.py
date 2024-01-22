@@ -78,6 +78,7 @@ def chuck_doc(name, binary, cvmdl=None):
         field = TextChunker.Fields()
         field.text_chunks = [(txt, binary)]
         field.table_chunks = []
+        return field
 
     return TextChunker()(binary)
 
@@ -161,9 +162,9 @@ def build(row, cvmdl):
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     output_buffer = BytesIO()
     docs = []
-    md5 = hashlib.md5()
     for txt, img in obj.text_chunks:
         d = copy.deepcopy(doc)
+        md5 = hashlib.md5()
         md5.update((txt + str(d["doc_id"])).encode("utf-8"))
         d["_id"] = md5.hexdigest()
         d["content_ltks"] = huqie.qie(txt)
@@ -186,6 +187,7 @@ def build(row, cvmdl):
         for i, txt in enumerate(arr):
             d = copy.deepcopy(doc)
             d["content_ltks"] = huqie.qie(txt)
+            md5 = hashlib.md5()
             md5.update((txt + str(d["doc_id"])).encode("utf-8"))
             d["_id"] = md5.hexdigest()
             if not img:
@@ -226,9 +228,6 @@ def embedding(docs, mdl):
 
 
 def main(comm, mod):
-    global model
-    from rag.llm import HuEmbedding
-    model = HuEmbedding()
     tm_fnm = os.path.join(get_project_base_directory(), "rag/res", f"{comm}-{mod}.tm")
     tm = findMaxTm(tm_fnm)
     rows = collect(comm, mod, tm)
@@ -260,13 +259,14 @@ def main(comm, mod):
         set_progress(r["id"], random.randint(70, 95) / 100.,
                      "Finished embedding! Start to build index!")
         init_kb(r)
+        chunk_count = len(set([c["_id"] for c in cks]))
         es_r = ELASTICSEARCH.bulk(cks, search.index_name(r["tenant_id"]))
         if es_r:
             set_progress(r["id"], -1, "Index failure!")
             cron_logger.error(str(es_r))
         else:
             set_progress(r["id"], 1., "Done!")
-            DocumentService.increment_chunk_num(r["id"], r["kb_id"], tk_count, len(cks), timer()-st_tm)
+            DocumentService.increment_chunk_num(r["id"], r["kb_id"], tk_count, chunk_count, timer()-st_tm)
             cron_logger.info("Chunk doc({}), token({}), chunks({})".format(r["id"], tk_count, len(cks)))
 
         tmf.write(str(r["update_time"]) + "\n")
