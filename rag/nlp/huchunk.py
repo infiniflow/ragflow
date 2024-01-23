@@ -11,6 +11,11 @@ from io import BytesIO
 
 class HuChunker:
 
+    @dataclass
+    class Fields:
+        text_chunks: List = None
+        table_chunks: List = None
+
     def __init__(self):
         self.MAX_LVL = 12
         self.proj_patt = [
@@ -228,11 +233,6 @@ class HuChunker:
 
 class PdfChunker(HuChunker):
 
-    @dataclass
-    class Fields:
-        text_chunks: List = None
-        table_chunks: List = None
-
     def __init__(self, pdf_parser):
         self.pdf = pdf_parser
         super().__init__()
@@ -293,11 +293,6 @@ class PdfChunker(HuChunker):
 
 class DocxChunker(HuChunker):
 
-    @dataclass
-    class Fields:
-        text_chunks: List = None
-        table_chunks: List = None
-
     def __init__(self, doc_parser):
         self.doc = doc_parser
         super().__init__()
@@ -344,11 +339,6 @@ class DocxChunker(HuChunker):
 
 class ExcelChunker(HuChunker):
 
-    @dataclass
-    class Fields:
-        text_chunks: List = None
-        table_chunks: List = None
-
     def __init__(self, excel_parser):
         self.excel = excel_parser
         super().__init__()
@@ -370,18 +360,51 @@ class PptChunker(HuChunker):
     def __init__(self):
         super().__init__()
 
+    def __extract(self, shape):
+        if shape.shape_type == 19:
+            tb = shape.table
+            rows = []
+            for i in range(1, len(tb.rows)):
+                rows.append("; ".join([tb.cell(0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
+            return "\n".join(rows)
+
+        if shape.has_text_frame:
+            return shape.text_frame.text
+
+        if shape.shape_type == 6:
+            texts = []
+            for p in shape.shapes:
+                t = self.__extract(p)
+                if t: texts.append(t)
+            return "\n".join(texts)
+
     def __call__(self, fnm):
         from pptx import Presentation
         ppt = Presentation(fnm) if isinstance(
             fnm, str) else Presentation(
             BytesIO(fnm))
-        flds = self.Fields()
-        flds.text_chunks = []
+        txts = []
         for slide in ppt.slides:
+            texts = []
             for shape in slide.shapes:
-                if hasattr(shape, "text"):
-                    flds.text_chunks.append((shape.text, None))
+                txt = self.__extract(shape)
+                if txt: texts.append(txt)
+            txts.append("\n".join(texts))
+
+        import aspose.slides as slides
+        import aspose.pydrawing as drawing
+        imgs = []
+        with slides.Presentation(BytesIO(fnm)) as presentation:
+            for slide in presentation.slides:
+                buffered = BytesIO()
+                slide.get_thumbnail(0.5, 0.5).save(buffered, drawing.imaging.ImageFormat.jpeg)
+                imgs.append(buffered.getvalue())
+        assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
+
+        flds = self.Fields()
+        flds.text_chunks = [(txts[i], imgs[i]) for i in range(len(txts))]
         flds.table_chunks = []
+
         return flds
 
 

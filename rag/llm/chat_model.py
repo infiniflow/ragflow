@@ -37,7 +37,7 @@ class GptTurbo(Base):
             model=self.model_name,
             messages=history,
             **gen_conf)
-        return res.choices[0].message.content.strip()
+        return res.choices[0].message.content.strip(), res.usage.completion_tokens
 
 
 from dashscope import Generation
@@ -56,5 +56,5 @@ class QWenChat(Base):
             result_format='message'
         )
         if response.status_code == HTTPStatus.OK:
-            return response.output.choices[0]['message']['content']
-        return response.message
+            return response.output.choices[0]['message']['content'], response.usage.output_tokens
+        return response.message, 0
