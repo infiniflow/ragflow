@@ -58,7 +58,8 @@ class Dealer:
             if req["available_int"] == 0:
                 bqry.filter.append(Q("range", available_int={"lt": 1}))
             else:
-                bqry.filter.append(Q("bool", must_not=Q("range", available_int={"lt": 1})))
+                bqry.filter.append(
+                    Q("bool", must_not=Q("range", available_int={"lt": 1})))
         bqry.boost = 0.05
 
         s = Search()
@@ -87,9 +88,12 @@ class Dealer:
         q_vec = []
         if req.get("vector"):
             assert emb_mdl, "No embedding model selected"
-            s["knn"] = self._vector(qst, emb_mdl, req.get("similarity", 0.4), ps)
+            s["knn"] = self._vector(
+                qst, emb_mdl, req.get(
+                    "similarity", 0.4), ps)
             s["knn"]["filter"] = bqry.to_dict()
-            if "highlight" in s: del s["highlight"]
+            if "highlight" in s:
+                del s["highlight"]
             q_vec = s["knn"]["query_vector"]
         es_logger.info("【Q】: {}".format(json.dumps(s)))
         res = self.es.search(s, idxnm=idxnm, timeout="600s", src=src)
@@ -175,7 +179,8 @@ class Dealer:
     def trans2floats(txt):
         return [float(t) for t in txt.split("\t")]
 
-    def insert_citations(self, answer, chunks, chunk_v, embd_mdl, tkweight=0.3, vtweight=0.7):
+    def insert_citations(self, answer, chunks, chunk_v,
+                         embd_mdl, tkweight=0.3, vtweight=0.7):
         pieces = re.split(r"([；。？!！\n]|[a-z][.?;!][ \n])", answer)
         for i in range(1, len(pieces)):
             if re.match(r"[a-z][.?;!][ \n]", pieces[i]):
@@ -184,47 +189,57 @@ class Dealer:
         idx = []
         pieces_ = []
         for i, t in enumerate(pieces):
-            if len(t) < 5: continue
+            if len(t) < 5:
+                continue
             idx.append(i)
             pieces_.append(t)
         es_logger.info("{} => {}".format(answer, pieces_))
-        if not pieces_: return answer
+        if not pieces_:
+            return answer
 
-        ans_v, c = embd_mdl.encode(pieces_)
+        ans_v, _ = embd_mdl.encode(pieces_)
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
             len(ans_v[0]), len(chunk_v[0]))
 
         chunks_tks = [huqie.qie(ck).split(" ") for ck in chunks]
         cites = {}
-        for i,a in enumerate(pieces_):
+        for i, a in enumerate(pieces_):
             sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i],
                                                             chunk_v,
-                                                            huqie.qie(pieces_[i]).split(" "),
+                                                            huqie.qie(
+                                                                pieces_[i]).split(" "),
                                                             chunks_tks,
                                                             tkweight, vtweight)
             mx = np.max(sim) * 0.99
-            if mx < 0.55: continue
-            cites[idx[i]] = list(set([str(i) for i in range(len(chunk_v)) if sim[i] > mx]))[:4]
+            if mx < 0.55:
+                continue
+            cites[idx[i]] = list(
+                set([str(i) for i in range(len(chunk_v)) if sim[i] > mx]))[:4]
 
         res = ""
-        for i,p in enumerate(pieces):
+        for i, p in enumerate(pieces):
             res += p
-            if i not in idx:continue
-            if i not in cites:continue
-            res += "##%s$$"%"$".join(cites[i])
+            if i not in idx:
+                continue
+            if i not in cites:
+                continue
+            res += "##%s$$" % "$".join(cites[i])
 
         return res
 
-    def rerank(self, sres, query, tkweight=0.3, vtweight=0.7, cfield="content_ltks"):
+    def rerank(self, sres, query, tkweight=0.3,
+               vtweight=0.7, cfield="content_ltks"):
         ins_embd = [
             Dealer.trans2floats(
-                sres.field[i]["q_%d_vec" % len(sres.query_vector)]) for i in sres.ids]
+                sres.field[i].get("q_%d_vec" % len(sres.query_vector), "\t".join(["0"] * len(sres.query_vector)))) for i in sres.ids]
         if not ins_embd:
             return [], [], []
-        ins_tw = [huqie.qie(sres.field[i][cfield]).split(" ") for i in sres.ids]
+        ins_tw = [huqie.qie(sres.field[i][cfield]).split(" ")
+                  for i in sres.ids]
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                                         ins_embd,
-                                                        huqie.qie(query).split(" "),
+                                                        huqie.qie(
+                                                            query).split(" "),
                                                         ins_tw, tkweight, vtweight)
         return sim, tksim, vtsim
 
@@ -237,7 +252,8 @@ class Dealer:
     def retrieval(self, question, embd_mdl, tenant_id, kb_ids, page, page_size, similarity_threshold=0.2,
                   vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
-        if not question: return ranks
+        if not question:
+            return ranks
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": top,
                "question": question, "vector": True,
                "similarity": similarity_threshold}
