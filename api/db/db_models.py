@@ -524,6 +524,7 @@ class Dialog(DataBaseModel):
     similarity_threshold = FloatField(default=0.2)
     vector_similarity_weight = FloatField(default=0.3)
     top_n = IntegerField(default=6)
+    do_refer = CharField(max_length=1, null=False, help_text="it needs to insert reference index into answer or not", default="1")
 
     kb_ids = JSONField(null=False, default=[])
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")

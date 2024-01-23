@@ -36,6 +36,9 @@ class Base(ABC):
     def encode(self, texts: list, batch_size=32):
         raise NotImplementedError("Please implement encode method!")
 
+    def encode_queries(self, text: str):
+        raise NotImplementedError("Please implement encode method!")
+
 
 class HuEmbedding(Base):
     def __init__(self, key="", model_name=""):
@@ -68,15 +71,18 @@ class HuEmbedding(Base):
 
 class OpenAIEmbed(Base):
     def __init__(self, key, model_name="text-embedding-ada-002"):
-        self.client = OpenAI(key)
+        self.client = OpenAI(api_key=key)
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=32):
-        token_count = 0
-        for t in texts: token_count += num_tokens_from_string(t)
         res = self.client.embeddings.create(input=texts,
                                             model=self.model_name)
-        return [d["embedding"] for d in res["data"]], token_count
+        return np.array([d.embedding for d in res.data]), res.usage.total_tokens
+
+    def encode_queries(self, text):
+        res = self.client.embeddings.create(input=[text],
+                                            model=self.model_name)
+        return np.array(res.data[0].embedding), res.usage.total_tokens
 
 
 class QWenEmbed(Base):
@@ -84,16 +90,28 @@ class QWenEmbed(Base):
         dashscope.api_key = key
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32, text_type="document"):
+    def encode(self, texts: list, batch_size=10):
         import dashscope
         res = []
         token_count = 0
-        for txt in texts:
+        texts = [txt[:2048] for txt in texts]
+        for i in range(0, len(texts), batch_size):
             resp = dashscope.TextEmbedding.call(
                 model=self.model_name,
-                input=txt[:2048],
-                text_type=text_type
+                input=texts[i:i+batch_size],
+                text_type="document"
             )
-            res.append(resp["output"]["embeddings"][0]["embedding"])
-            token_count += resp["usage"]["total_tokens"]
-        return res, token_count
+            embds = [[]] * len(resp["output"]["embeddings"])
+            for e in resp["output"]["embeddings"]:
+                embds[e["text_index"]] = e["embedding"]
+            res.extend(embds)
+            token_count += resp["usage"]["input_tokens"]
+        return np.array(res), token_count
+
+    def encode_queries(self, text):
+        resp = dashscope.TextEmbedding.call(
+                model=self.model_name,
+                input=text[:2048],
+                text_type="query"
+            )
+        return np.array(resp["output"]["embeddings"][0]["embedding"]), resp["usage"]["input_tokens"]

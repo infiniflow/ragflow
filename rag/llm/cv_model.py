@@ -72,7 +72,7 @@ class GptV4(Base):
             messages=self.prompt(b64),
             max_tokens=max_tokens,
         )
-        return res.choices[0].message.content.strip()
+        return res.choices[0].message.content.strip(), res.usage.total_tokens
 
 
 class QWenCV(Base):
@@ -87,5 +87,5 @@ class QWenCV(Base):
         response = MultiModalConversation.call(model=self.model_name,
                                                messages=self.prompt(self.image2base64(image)))
         if response.status_code == HTTPStatus.OK:
-            return response.output.choices[0]['message']['content']
-        return response.message
+            return response.output.choices[0]['message']['content'], response.usage.output_tokens
+        return response.message, 0
