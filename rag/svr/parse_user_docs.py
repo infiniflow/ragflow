@@ -49,7 +49,7 @@ from rag.nlp.huchunk import (
 )
 from api.db import LLMType
 from api.db.services.document_service import DocumentService
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import TenantLLMService, LLMBundle
 from api.settings import database_logger
 from api.utils import get_format_time
 from api.utils.file_utils import get_project_base_directory
@@ -62,7 +62,7 @@ EXC = ExcelChunker(ExcelParser())
 PPT = PptChunker()
 
 
-def chuck_doc(name, binary, cvmdl=None):
+def chuck_doc(name, binary, tenant_id, cvmdl=None):
     suff = os.path.split(name)[-1].lower().split(".")[-1]
     if suff.find("pdf") >= 0:
         return PDF(binary)
@@ -127,7 +127,7 @@ def build(row, cvmdl):
                  100., "Finished preparing! Start to slice file!", True)
     try:
         cron_logger.info("Chunkking {}/{}".format(row["location"], row["name"]))
-        obj = chuck_doc(row["name"], MINIO.get(row["kb_id"], row["location"]), cvmdl)
+        obj = chuck_doc(row["name"], MINIO.get(row["kb_id"], row["location"]), row["tenant_id"], cvmdl)
     except Exception as e:
         if re.search("(No such file|not found)", str(e)):
             set_progress(
@@ -236,12 +236,14 @@ def main(comm, mod):
 
     tmf = open(tm_fnm, "a+")
     for _, r in rows.iterrows():
-        embd_mdl = TenantLLMService.model_instance(r["tenant_id"], LLMType.EMBEDDING)
-        if not embd_mdl:
-            set_progress(r["id"], -1, "Can't find embedding model!")
-            cron_logger.error("Tenant({}) can't find embedding model!".format(r["tenant_id"]))
+        try:
+            embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING)
+            cv_mdl = LLMBundle(r["tenant_id"], LLMType.IMAGE2TEXT)
+            #TODO: sequence2text model
+        except Exception as e:
+            set_progress(r["id"], -1, str(e))
             continue
-        cv_mdl = TenantLLMService.model_instance(r["tenant_id"], LLMType.IMAGE2TEXT)
+
         st_tm = timer()
         cks = build(r, cv_mdl)
         if not cks:
