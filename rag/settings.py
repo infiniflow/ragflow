@@ -35,3 +35,4 @@ LoggerFactory.LEVEL = 10
 es_logger = getLogger("es")
 minio_logger = getLogger("minio")
 cron_logger = getLogger("cron_logger")
+chunk_logger = getLogger("chunk_logger")
