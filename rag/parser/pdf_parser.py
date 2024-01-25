@@ -370,7 +370,7 @@ class HuParser:
             res.append(lts)
         return res
 
-    def __table_transformer_job(self, ZM):
+    def _table_transformer_job(self, ZM):
         logging.info("Table processing...")
         imgs, pos = [], []
         tbcnt = [0]
@@ -416,6 +416,50 @@ class HuParser:
                     pg.append(it)
             self.tb_cpns.extend(pg)
 
+        def gather(kwd, fzy=10, ption=0.6):
+            eles = self.sort_Y_firstly(
+                [r for r in self.tb_cpns if re.match(kwd, r["label"])], fzy)
+            eles = self.__layouts_cleanup(self.boxes, eles, 5, ption)
+            return self.sort_Y_firstly(eles, 0)
+
+        # add R,H,C,SP tag to boxes within table layout
+        headers = gather(r".*header$")
+        rows = gather(r".* (row|header)")
+        spans = gather(r".*spanning")
+        clmns = sorted([r for r in self.tb_cpns if re.match(
+            r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0"]))
+        clmns = self.__layouts_cleanup(self.boxes, clmns, 5, 0.5)
+        for b in self.boxes:
+            if b.get("layout_type", "") != "table":
+                continue
+            ii = self.__find_overlapped_with_threashold(b, rows, thr=0.3)
+            if ii is not None:
+                b["R"] = ii
+                b["R_top"] = rows[ii]["top"]
+                b["R_bott"] = rows[ii]["bottom"]
+
+            ii = self.__find_overlapped_with_threashold(b, headers, thr=0.3)
+            if ii is not None:
+                b["H_top"] = headers[ii]["top"]
+                b["H_bott"] = headers[ii]["bottom"]
+                b["H_left"] = headers[ii]["x0"]
+                b["H_right"] = headers[ii]["x1"]
+                b["H"] = ii
+
+            ii = self.__find_overlapped_with_threashold(b, clmns, thr=0.3)
+            if ii is not None:
+                b["C"] = ii
+                b["C_left"] = clmns[ii]["x0"]
+                b["C_right"] = clmns[ii]["x1"]
+
+            ii = self.__find_overlapped_with_threashold(b, spans, thr=0.3)
+            if ii is not None:
+                b["H_top"] = spans[ii]["top"]
+                b["H_bott"] = spans[ii]["bottom"]
+                b["H_left"] = spans[ii]["x0"]
+                b["H_right"] = spans[ii]["x1"]
+                b["SP"] = ii
+
     def __ocr_paddle(self, pagenum, img, chars, ZM=3):
         bxs = self.ocr.ocr(np.array(img), cls=True)[0]
         if not bxs:
@@ -453,7 +497,7 @@ class HuParser:
 
         self.boxes.append(bxs)
 
-    def __layouts_paddle(self, ZM):
+    def _layouts_paddle(self, ZM):
         assert len(self.page_images) == len(self.boxes)
         # Tag layout type
         boxes = []
@@ -524,7 +568,24 @@ class HuParser:
 
         self.boxes = boxes
 
-    def __text_merge(self, garbage):
+        garbage = set()
+        for k in self.garbages.keys():
+            self.garbages[k] = Counter(self.garbages[k])
+            for g, c in self.garbages[k].items():
+                if c > 1:
+                    garbage.add(g)
+
+        logging.debug("GARBAGE:" + ",".join(garbage))
+        self.boxes = [b for b in self.boxes if b["text"].strip() not in garbage]
+
+        # cumlative Y
+        for i in range(len(self.boxes)):
+            self.boxes[i]["top"] += \
+                self.page_cum_height[self.boxes[i]["page_number"] - 1]
+            self.boxes[i]["bottom"] += \
+                self.page_cum_height[self.boxes[i]["page_number"] - 1]
+
+    def _text_merge(self):
         # merge adjusted boxes
         bxs = self.boxes
 
@@ -537,6 +598,7 @@ class HuParser:
             tt = b.get("text", "").strip()
             return tt and any([tt.find(t.strip()) == 0 for t in txts])
 
+        # horizontally merge adjacent box with the same layout
         i = 0
         while i < len(bxs) - 1:
             b = bxs[i]
@@ -567,7 +629,8 @@ class HuParser:
             i += 1
         self.boxes = bxs
 
-        # count boxes in the same row
+    def _concat_downward(self):
+        # count boxes in the same row as a feature
         for i in range(len(self.boxes)):
             mh = self.mean_height[self.boxes[i]["page_number"] - 1]
             self.boxes[i]["in_row"] = 0
@@ -583,49 +646,6 @@ class HuParser:
                     break
                 j += 1
 
-        def gather(kwd, fzy=10, ption=0.6):
-            eles = self.sort_Y_firstly(
-                [r for r in self.tb_cpns if re.match(kwd, r["label"])], fzy)
-            eles = self.__layouts_cleanup(self.boxes, eles, 5, ption)
-            return self.sort_Y_firstly(eles, 0)
-
-        headers = gather(r".*header$")
-        rows = gather(r".* (row|header)")
-        spans = gather(r".*spanning")
-        clmns = sorted([r for r in self.tb_cpns if re.match(
-            r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0"]))
-        clmns = self.__layouts_cleanup(self.boxes, clmns, 5, 0.5)
-        for b in self.boxes:
-            if b.get("layout_type", "") != "table":
-                continue
-            ii = self.__find_overlapped_with_threashold(b, rows, thr=0.3)
-            if ii is not None:
-                b["R"] = ii
-                b["R_top"] = rows[ii]["top"]
-                b["R_bott"] = rows[ii]["bottom"]
-
-            ii = self.__find_overlapped_with_threashold(b, headers, thr=0.3)
-            if ii is not None:
-                b["H_top"] = headers[ii]["top"]
-                b["H_bott"] = headers[ii]["bottom"]
-                b["H_left"] = headers[ii]["x0"]
-                b["H_right"] = headers[ii]["x1"]
-                b["H"] = ii
-
-            ii = self.__find_overlapped_with_threashold(b, clmns, thr=0.3)
-            if ii is not None:
-                b["C"] = ii
-                b["C_left"] = clmns[ii]["x0"]
-                b["C_right"] = clmns[ii]["x1"]
-
-            ii = self.__find_overlapped_with_threashold(b, spans, thr=0.3)
-            if ii is not None:
-                b["H_top"] = spans[ii]["top"]
-                b["H_bott"] = spans[ii]["bottom"]
-                b["H_left"] = spans[ii]["x0"]
-                b["H_right"] = spans[ii]["x1"]
-                b["SP"] = ii
-
         # concat between rows
         boxes = deepcopy(self.boxes)
         blocks = []
@@ -633,8 +653,6 @@ class HuParser:
             chunks = []
 
             def dfs(up, dp):
-                if not up["text"].strip() or up["text"].strip() in garbage:
-                    return
                 chunks.append(up)
                 i = dp
                 while i < min(dp + 12, len(boxes)):
@@ -658,8 +676,7 @@ class HuParser:
                         i += 1
                         continue
 
-                    if not down["text"].strip() \
-                            or down["text"].strip() in garbage:
+                    if not down["text"].strip():
                         i += 1
                         continue
 
@@ -1444,18 +1461,19 @@ class HuParser:
                 return j
         return
 
-    def __filterout_scraps(self, boxes, ZM):
-        def line_tag(bx):
-            pn = [bx["page_number"]]
-            top = bx["top"] - self.page_cum_height[pn[0] - 1]
-            bott = bx["bottom"] - self.page_cum_height[pn[0] - 1]
-            while bott * ZM > self.page_images[pn[-1] - 1].size[1]:
-                bott -= self.page_images[pn[-1] - 1].size[1] / ZM
-                pn.append(pn[-1] + 1)
+    def _line_tag(self, bx, ZM):
+        pn = [bx["page_number"]]
+        top = bx["top"] - self.page_cum_height[pn[0] - 1]
+        bott = bx["bottom"] - self.page_cum_height[pn[0] - 1]
+        while bott * ZM > self.page_images[pn[-1] - 1].size[1]:
+            bott -= self.page_images[pn[-1] - 1].size[1] / ZM
+            pn.append(pn[-1] + 1)
 
-            return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
-                .format("-".join([str(p) for p in pn]),
-                        bx["x0"], bx["x1"], top, bott)
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
+            .format("-".join([str(p) for p in pn]),
+                    bx["x0"], bx["x1"], top, bott)
+
+    def __filterout_scraps(self, boxes, ZM):
 
         def width(b):
             return b["x1"] - b["x0"]
@@ -1520,14 +1538,14 @@ class HuParser:
             boxes.pop(0)
             mw = np.mean(widths)
             if mj or mw / pw >= 0.35 or mw > 200:
-                res.append("\n".join([c["text"] + line_tag(c) for c in lines]))
+                res.append("\n".join([c["text"] + self._line_tag(c, ZM) for c in lines]))
             else:
                 logging.debug("REMOVED: " +
                               "<<".join([c["text"] for c in lines]))
 
         return "\n\n".join(res)
 
-    def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
+    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299):
         self.lefted_chars = []
         self.mean_height = []
         self.mean_width = []
@@ -1537,22 +1555,25 @@ class HuParser:
         self.page_layout = []
         try:
             self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
-            self.page_images = [p.to_image(resolution=72*zoomin).annotated for i,p in enumerate(self.pdf.pages[:299])]
-            self.page_chars = [[c for c in self.pdf.pages[i].chars if self._has_color(c)] for i in range(len(self.page_images))]
+            self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                                enumerate(self.pdf.pages[page_from:page_to])]
+            self.page_chars = [[c for c in self.pdf.pages[i].chars if self._has_color(c)] for i in
+                               range(len(self.page_images))]
+            self.total_page = len(self.pdf.pages)
         except Exception as e:
             self.pdf = fitz.open(fnm) if isinstance(fnm, str) else fitz.open(stream=fnm, filetype="pdf")
             self.page_images = []
             self.page_chars = []
             mat = fitz.Matrix(zoomin, zoomin)
-            for page in self.pdf:
-                pix = page.getPixmap(matrix = mat)
+            self.total_page = len(self.pdf)
+            for page in self.pdf[page_from:page_to]:
+                pix = page.getPixmap(matrix=mat)
                 img = Image.frombytes("RGB", [pix.width, pix.height],
                                       pix.samples)
                 self.page_images.append(img)
                 self.page_chars.append([])
 
         logging.info("Images converted.")
-
         for i, img in enumerate(self.page_images):
             chars = self.page_chars[i]
             self.mean_height.append(
@@ -1561,40 +1582,26 @@ class HuParser:
             self.mean_width.append(
                 np.median(sorted([c["width"] for c in chars])) if chars else 8
             )
-            if i > 0:
-                if not chars:
-                    self.page_cum_height.append(img.size[1] / zoomin)
-                else:
-                    self.page_cum_height.append(
-                        np.max([c["bottom"] for c in chars]))
+            self.page_cum_height.append(img.size[1] / zoomin)
+            # if i > 0:
+            #     if not chars:
+            #         self.page_cum_height.append(img.size[1] / zoomin)
+            #     else:
+            #         self.page_cum_height.append(
+            #             np.max([c["bottom"] for c in chars]))
             self.__ocr_paddle(i + 1, img, chars, zoomin)
-        self.__layouts_paddle(zoomin)
 
         self.page_cum_height = np.cumsum(self.page_cum_height)
-        assert len(self.page_cum_height) == len(self.page_images)
+        assert len(self.page_cum_height) == len(self.page_images)+1
 
-        garbage = set()
-        for k in self.garbages.keys():
-            self.garbages[k] = Counter(self.garbages[k])
-            for g, c in self.garbages[k].items():
-                if c > 1:
-                    garbage.add(g)
-
-        logging.debug("GARBAGE:" + ",".join(garbage))
-        self.boxes = [b for b in self.boxes if b["text"] not in garbage]
-
-        # cumlative Y
-        for i in range(len(self.boxes)):
-            self.boxes[i]["top"] += \
-                self.page_cum_height[self.boxes[i]["page_number"] - 1]
-            self.boxes[i]["bottom"] += \
-                self.page_cum_height[self.boxes[i]["page_number"] - 1]
-
-        self.__table_transformer_job(zoomin)
-        self.__text_merge(garbage)
+    def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
+        self.__images__(fnm, zoomin)
+        self._layouts_paddle(zoomin)
+        self._table_transformer_job(zoomin)
+        self._text_merge()
+        self._concat_downward()
         self.__filter_forpages()
         tbls = self.__extract_table_figure(need_image, zoomin, return_html)
-
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
     def remove_tag(self, txt):
