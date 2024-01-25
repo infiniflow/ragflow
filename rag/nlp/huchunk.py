@@ -352,11 +352,6 @@ class ExcelChunker(HuChunker):
 
 class PptChunker(HuChunker):
 
-    @dataclass
-    class Fields:
-        text_chunks: List = None
-        table_chunks: List = None
-
     def __init__(self):
         super().__init__()
 
