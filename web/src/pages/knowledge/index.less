@@ -1,41 +1,40 @@
 .knowledge {
-    padding: 24px;
+  padding: 24px;
 }
 
 .container {
-    height: 100px;
+  height: 100px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+
+  .content {
     display: flex;
-    flex-direction: column;
     justify-content: space-between;
 
-    .content {
-        display: flex;
-        justify-content: space-between;
-
-        .context {
-            flex: 1
-        }
+    .context {
+      flex: 1;
     }
+  }
 
-    .footer {
-        height: 20px;
+  .footer {
+    height: 20px;
 
-        .text {
-            margin-left: 10px;
-        }
+    .text {
+      margin-left: 10px;
     }
+  }
 }
 
 .card {
-    :global {
-        .ant-card-body {
-            padding: 10px;
-            margin: 0;
-        }
-
-        margin-bottom: 10px;
+  :global {
+    .ant-card-body {
+      padding: 10px;
+      margin: 0;
     }
 
-    cursor: pointer;
+    margin-bottom: 10px;
+  }
 
+  cursor: pointer;
 }

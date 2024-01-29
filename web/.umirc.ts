@@ -16,7 +16,7 @@ export default defineConfig({
   history: {
     type: 'browser',
   },
-  plugins: ['@umijs/plugins/dist/dva'],
+  plugins: ['@react-dev-inspector/umi4-plugin','@umijs/plugins/dist/dva',],
   dva: {},
   // proxy: {
   //   '/v1': {

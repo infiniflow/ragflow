@@ -1,10 +1,9 @@
-import { Effect, Reducer, Subscription } from 'umi'
-import { message } from 'antd';
 import kbService from '@/services/kbService';
+import { Effect, Reducer, Subscription } from 'umi';
 
 export interface knowledgeModelState {
   loading: boolean;
-  data: any[]
+  data: any[];
 }
 export interface knowledgegModelType {
   namespace: 'knowledgeModel';
@@ -22,45 +21,44 @@ const Model: knowledgegModelType = {
   namespace: 'knowledgeModel',
   state: {
     loading: false,
-    data: []
+    data: [],
   },
   subscriptions: {
     setup({ dispatch, history }) {
-      history.listen(location => {
-        console.log(location)
+      history.listen((location) => {
+        console.log(location);
       });
-    }
+    },
   },
   effects: {
-    * rmKb({ payload = {}, callback }, { call, put }) {
+    *rmKb({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.rmKb, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-        callback && callback()
-
+        callback && callback();
       }
     },
     *getList({ payload = {} }, { call, put }) {
       yield put({
         type: 'updateState',
         payload: {
-          loading: true
-        }
+          loading: true,
+        },
       });
       const { data, response } = yield call(kbService.getList, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       yield put({
         type: 'updateState',
         payload: {
-          loading: false
-        }
+          loading: false,
+        },
       });
       if (retcode === 0) {
         yield put({
           type: 'updateState',
           payload: {
-            data: res
-          }
+            data: res,
+          },
         });
       }
     },
@@ -69,9 +67,9 @@ const Model: knowledgegModelType = {
     updateState(state, { payload }) {
       return {
         ...state,
-        ...payload
+        ...payload,
       };
-    }
-  }
+    },
+  },
 };
 export default Model;
