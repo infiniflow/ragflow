@@ -1,6 +1,5 @@
-import { Effect, Reducer, Subscription } from 'umi'
-import { message } from 'antd';
 import kbService from '@/services/kbService';
+import { Effect, Reducer } from 'umi';
 
 export interface chunkModelState {
   loading: boolean;
@@ -9,7 +8,7 @@ export interface chunkModelState {
   isShowCreateModal: boolean;
   chunk_id: string;
   doc_id: string;
-  chunkInfo: any
+  chunkInfo: any;
 }
 export interface chunkgModelType {
   namespace: 'chunkModel';
@@ -24,7 +23,7 @@ export interface chunkgModelType {
   reducers: {
     updateState: Reducer<chunkModelState>;
   };
-  subscriptions: { setup: Subscription };
+  // subscriptions: { setup: Subscription };
 }
 const Model: chunkgModelType = {
   namespace: 'chunkModel',
@@ -35,91 +34,86 @@ const Model: chunkgModelType = {
     isShowCreateModal: false,
     chunk_id: '',
     doc_id: '',
-    chunkInfo: {}
+    chunkInfo: {},
   },
-  subscriptions: {
-    setup({ dispatch, history }) {
-      history.listen(location => {
-        console.log(location)
-      });
-    }
-  },
+  // subscriptions: {
+  //   setup({ dispatch, history }) {
+  //     history.listen(location => {
+  //       console.log(location)
+  //     });
+  //   }
+  // },
   effects: {
-    * chunk_list({ payload = {}, callback }, { call, put }) {
+    *chunk_list({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.chunk_list, payload);
 
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-        console.log(res)
+        console.log(res);
         yield put({
           type: 'updateState',
           payload: {
             data: res.chunks,
             total: res.total,
-            loading: false
-          }
+            loading: false,
+          },
         });
-        callback && callback()
-
+        callback && callback();
       }
     },
     *switch_chunk({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.switch_chunk, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-        callback && callback()
-
+        callback && callback();
       }
     },
     *rm_chunk({ payload = {}, callback }, { call, put }) {
-      console.log('shanchu')
+      console.log('shanchu');
       const { data, response } = yield call(kbService.rm_chunk, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-        callback && callback()
-
+        callback && callback();
       }
     },
-    * get_chunk({ payload = {}, callback }, { call, put }) {
+    *get_chunk({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.get_chunk, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-
         yield put({
           type: 'updateState',
           payload: {
-            chunkInfo: res
-          }
+            chunkInfo: res,
+          },
         });
-        callback && callback(res)
-
+        callback && callback(res);
       }
     },
     *create_hunk({ payload = {} }, { call, put }) {
       yield put({
         type: 'updateState',
         payload: {
-          loading: true
-        }
+          loading: true,
+        },
       });
-      let service = kbService.create_chunk
+      let service = kbService.create_chunk;
       if (payload.chunk_id) {
-        service = kbService.set_chunk
+        service = kbService.set_chunk;
       }
       const { data, response } = yield call(service, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       yield put({
         type: 'updateState',
         payload: {
-          loading: false
-        }
+          loading: false,
+        },
       });
       if (retcode === 0) {
         yield put({
           type: 'updateState',
           payload: {
-            isShowCreateModal: false
-          }
+            isShowCreateModal: false,
+          },
         });
       }
     },
@@ -128,9 +122,9 @@ const Model: chunkgModelType = {
     updateState(state, { payload }) {
       return {
         ...state,
-        ...payload
+        ...payload,
       };
-    }
-  }
+    },
+  },
 };
 export default Model;
