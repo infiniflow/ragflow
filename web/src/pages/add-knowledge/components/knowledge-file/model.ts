@@ -1,6 +1,6 @@
-import { message } from 'antd';
-import { Effect, Reducer, Subscription } from 'umi'
 import kbService from '@/services/kbService';
+import { message } from 'antd';
+import { Effect, Reducer, Subscription } from 'umi';
 
 export interface kFModelState {
   isShowCEFwModal: boolean;
@@ -8,7 +8,7 @@ export interface kFModelState {
   isShowSegmentSetModal: boolean;
   loading: boolean;
   tenantIfo: any;
-  data: any[]
+  data: any[];
 }
 export interface kFModelType {
   namespace: 'kFModel';
@@ -36,60 +36,60 @@ const Model: kFModelType = {
     isShowSegmentSetModal: false,
     loading: false,
     tenantIfo: {},
-    data: []
+    data: [],
   },
   subscriptions: {
     setup({ dispatch, history }) {
-      history.listen(location => {
-      });
-    }
+      history.listen((location) => {});
+    },
   },
   effects: {
-    * createKf({ payload = {}, callback }, { call, put }) {
+    *createKf({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.createKb, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-
         message.success('创建成功！');
       }
     },
-    * updateKf({ payload = {}, callback }, { call, put }) {
+    *updateKf({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.updateKb, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('修改成功！');
-
       }
     },
     *getKfDetail({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.get_kb_detail, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         // localStorage.setItem('userInfo',res.)
-        callback && callback(res)
+        callback && callback(res);
       }
     },
     *getKfList({ payload = {} }, { call, put }) {
       yield put({
         type: 'updateState',
         payload: {
-          loading: true
-        }
+          loading: true,
+        },
       });
-      const { data, response } = yield call(kbService.get_document_list, payload);
-      const { retcode, data: res, retmsg } = data
+      const { data, response } = yield call(
+        kbService.get_document_list,
+        payload,
+      );
+      const { retcode, data: res, retmsg } = data;
       yield put({
         type: 'updateState',
         payload: {
-          loading: false
-        }
+          loading: false,
+        },
       });
       if (retcode === 0) {
         yield put({
           type: 'updateState',
           payload: {
-            data: res
-          }
+            data: res,
+          },
         });
       }
     },
@@ -97,58 +97,60 @@ const Model: kFModelType = {
       yield put({
         type: 'updateState',
         payload: {
-          loading: true
-        }
+          loading: true,
+        },
       });
-      const { data, response } = yield call(kbService.document_change_status, payload);
-      const { retcode, data: res, retmsg } = data
+      const { data, response } = yield call(
+        kbService.document_change_status,
+        payload,
+      );
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('修改成功！');
         yield put({
           type: 'updateState',
           payload: {
-            loading: false
-          }
+            loading: false,
+          },
         });
-        callback && callback()
+        callback && callback();
       }
-
     },
     *document_rm({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.document_rm, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('删除成功！');
-        callback && callback()
+        callback && callback();
       }
-
     },
     *document_create({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.document_create, payload);
-      const { retcode, data: res, retmsg } = data
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('创建成功！');
-        callback && callback()
+        callback && callback();
       }
-
     },
     *document_change_parser({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(kbService.document_change_parser, payload);
-      const { retcode, data: res, retmsg } = data
+      const { data, response } = yield call(
+        kbService.document_change_parser,
+        payload,
+      );
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('修改成功！');
-        callback && callback()
+        callback && callback();
       }
-
     },
   },
   reducers: {
     updateState(state, { payload }) {
       return {
         ...state,
-        ...payload
+        ...payload,
       };
-    }
-  }
+    },
+  },
 };
 export default Model;

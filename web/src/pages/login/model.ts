@@ -1,6 +1,8 @@
-import { Effect, Reducer, Subscription } from 'umi'
-import { message } from 'antd';
+import { Authorization } from '@/constants/authorization';
 import userService from '@/services/userService';
+import authorizationUtil from '@/utils/authorizationUtil';
+import { message } from 'antd';
+import { Effect, Reducer, Subscription } from 'umi';
 
 export interface loginModelState {
   list: any[];
@@ -28,49 +30,52 @@ const Model: logingModelType = {
   },
   subscriptions: {
     setup({ dispatch, history }) {
-      history.listen(location => { });
-    }
+      history.listen((location) => {});
+    },
   },
   effects: {
     *login({ payload = {} }, { call, put }) {
-      console.log(111, payload)
+      console.log(111, payload);
       const { data, response } = yield call(userService.login, payload);
-      const { retcode, data: res, retmsg } = data
-      console.log()
-      const Authorization = response.headers.get('Authorization')
+      const { retcode, data: res, retmsg } = data;
+      console.log();
+      const authorization = response.headers.get(Authorization);
       if (retcode === 0) {
         message.success('登录成功！');
         const token = res.access_token;
         const userInfo = {
           avatar: res.avatar,
           name: res.nickname,
-          email: res.email
+          email: res.email,
         };
-        localStorage.setItem('token', token)
-        localStorage.setItem('userInfo', JSON.stringify(userInfo))
-        localStorage.setItem('Authorization', Authorization)
-        setTimeout(() => {
-          window.location.href = '/file';
-        }, 300);
+        authorizationUtil.setItems({
+          Authorization: authorization,
+          userInfo: JSON.stringify(userInfo),
+          Token: token,
+        });
+        // setTimeout(() => {
+        //   window.location.href = '/file';
+        // }, 300);
       }
+      return data;
     },
     *register({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(userService.register, payload);
-      console.log()
-      const { retcode, data: res, retmsg } = data
+      console.log();
+      const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('注册成功！');
-        callback && callback()
+        callback && callback();
       }
-    }
+    },
   },
   reducers: {
     updateState(state, { payload }) {
       return {
         ...state,
-        ...payload
+        ...payload,
       };
-    }
-  }
+    },
+  },
 };
 export default Model;
