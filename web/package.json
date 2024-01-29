@@ -2,8 +2,8 @@
   "private": true,
   "author": "zhaofengchao <13723060510@163.com>",
   "scripts": {
-    "dev": "cross-env PORT=9000 umi dev",
     "build": "umi build",
+    "dev": "cross-env PORT=9000 umi dev",
     "postinstall": "umi setup",
     "setup": "umi setup",
     "start": "npm run dev"
@@ -32,6 +32,9 @@
     "@types/react-dom": "^18.0.11",
     "@umijs/plugins": "^4.1.0",
     "cross-env": "^7.0.3",
+    "prettier": "^3.2.4",
+    "prettier-plugin-organize-imports": "^3.2.4",
+    "prettier-plugin-packagejson": "^2.4.9",
     "react-dev-inspector": "^2.0.1",
     "typescript": "^5.0.3",
     "umi-plugin-icons": "^0.1.1"
