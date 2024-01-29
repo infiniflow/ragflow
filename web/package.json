@@ -26,11 +26,13 @@
     "umi-request": "^1.4.0"
   },
   "devDependencies": {
+    "@react-dev-inspector/umi4-plugin": "^2.0.1",
     "@types/lodash": "^4.14.202",
     "@types/react": "^18.0.33",
     "@types/react-dom": "^18.0.11",
     "@umijs/plugins": "^4.1.0",
     "cross-env": "^7.0.3",
+    "react-dev-inspector": "^2.0.1",
     "typescript": "^5.0.3",
     "umi-plugin-icons": "^0.1.1"
   }
