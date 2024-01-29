@@ -1,5 +1,5 @@
 import kbService from '@/services/kbService';
-import { Effect, Reducer, Subscription } from 'umi';
+import { Effect, Reducer } from 'umi';
 
 export interface knowledgeModelState {
   loading: boolean;
@@ -15,7 +15,7 @@ export interface knowledgegModelType {
   reducers: {
     updateState: Reducer<knowledgeModelState>;
   };
-  subscriptions: { setup: Subscription };
+  // subscriptions: { setup: Subscription };
 }
 const Model: knowledgegModelType = {
   namespace: 'knowledgeModel',
@@ -23,13 +23,13 @@ const Model: knowledgegModelType = {
     loading: false,
     data: [],
   },
-  subscriptions: {
-    setup({ dispatch, history }) {
-      history.listen((location) => {
-        console.log(location);
-      });
-    },
-  },
+  // subscriptions: {
+  //   setup({ dispatch, history }) {
+  //     history.listen((location) => {
+  //       console.log(location);
+  //     });
+  //   },
+  // },
   effects: {
     *rmKb({ payload = {}, callback }, { call, put }) {
       const { data, response } = yield call(kbService.rmKb, payload);

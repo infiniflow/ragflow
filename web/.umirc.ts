@@ -1,22 +1,20 @@
-import { defineConfig } from "umi";
-import routes from './routes'
+import { defineConfig } from 'umi';
+import routes from './src/routes';
 
 export default defineConfig({
   outputPath: 'dist',
   // alias: { '@': './src' },
-  routes,
   npmClient: 'npm',
   base: '/',
+  routes,
   publicPath: '/web/dist/',
   esbuildMinifyIIFE: true,
-  icons: {
-
-  },
+  icons: {},
   hash: true,
   history: {
     type: 'browser',
   },
-  plugins: ['@react-dev-inspector/umi4-plugin','@umijs/plugins/dist/dva',],
+  plugins: ['@react-dev-inspector/umi4-plugin', '@umijs/plugins/dist/dva'],
   dva: {},
   // proxy: {
   //   '/v1': {
@@ -26,4 +24,3 @@ export default defineConfig({
   //   },
   // },
 });
-

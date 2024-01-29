@@ -1,13 +1,13 @@
-
+import { message, notification } from 'antd';
 import { extend } from 'umi-request';
-import { notification, message } from 'antd';
 
+import { Authorization } from '@/constants/authorization';
 import api from '@/utils/api';
+import authorizationUtil from '@/utils/authorizationUtil';
+
 const { login } = api;
 
 const ABORT_REQUEST_ERR_MESSAGE = 'The user aborted a request.'; // 手动中断请求。errorHandler 抛出的error message
-
-
 
 const retcodeMessage = {
   200: '服务器成功返回请求的数据。',
@@ -24,7 +24,7 @@ const retcodeMessage = {
   500: '服务器发生错误，请检查服务器。',
   502: '网关错误。',
   503: '服务不可用，服务器暂时过载或维护。',
-  504: '网关超时。'
+  504: '网关超时。',
 };
 type retcode =
   | 200
@@ -49,16 +49,20 @@ interface responseType {
   retcode: number;
   data: any;
   retmsg: string;
-  status: number
+  status: number;
 }
-const errorHandler = (error: { response: Response, message: string }): Response => {
+const errorHandler = (error: {
+  response: Response;
+  message: string;
+}): Response => {
   const { response } = error;
   // 手动中断请求 abort
   if (error.message === ABORT_REQUEST_ERR_MESSAGE) {
     console.log('user abort  request');
   } else {
     if (response && response.status) {
-      const errorText = retcodeMessage[response.status as retcode] || response.statusText;
+      const errorText =
+        retcodeMessage[response.status as retcode] || response.statusText;
       const { status, url } = response;
       notification.error({
         message: `请求错误 ${status}: ${url}`,
@@ -80,21 +84,21 @@ const errorHandler = (error: { response: Response, message: string }): Response 
 const request = extend({
   errorHandler, // 默认错误处理
   timeout: 3000000,
-  getResponse: true
+  getResponse: true,
 });
 
 request.interceptors.request.use((url: string, options: any) => {
-  const Authorization = localStorage.getItem('Authorization')
+  const authorization = authorizationUtil.getAuthorization();
   return {
     url,
     options: {
       ...options,
       headers: {
-        ...(options.skipToken ? undefined : { Authorization }),
-        ...options.headers
+        ...(options.skipToken ? undefined : { [Authorization]: authorization }),
+        ...options.headers,
       },
-      interceptors: true
-    }
+      interceptors: true,
+    },
   };
 });
 
@@ -103,7 +107,7 @@ request.interceptors.request.use((url: string, options: any) => {
  * */
 
 request.interceptors.response.use(async (response: any, request) => {
-  console.log(response, request)
+  console.log(response, request);
   const data: responseType = await response.clone().json();
   // response 拦截
 
@@ -113,6 +117,8 @@ request.interceptors.response.use(async (response: any, request) => {
       description: data.retmsg,
       duration: 3,
     });
+    authorizationUtil.removeAll();
+    // history.push('/login'); // Will not jump to the login page
   } else if (data.retcode !== 0) {
     if (data.retcode === 100) {
       message.error(data.retmsg);
@@ -126,7 +132,6 @@ request.interceptors.response.use(async (response: any, request) => {
 
     return response;
   } else {
-
     return response;
   }
 });
