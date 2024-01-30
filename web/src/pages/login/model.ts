@@ -50,19 +50,15 @@ const model: DvaModel<LoginModelState> = {
           userInfo: JSON.stringify(userInfo),
           Token: token,
         });
-        // setTimeout(() => {
-        //   window.location.href = '/file';
-        // }, 300);
       }
       return data;
     },
-    *register({ payload = {}, callback }, { call, put }) {
+    *register({ payload = {} }, { call, put }) {
       const { data, response } = yield call(userService.register, payload);
       console.log();
       const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('注册成功！');
-        callback && callback();
       }
     },
   },

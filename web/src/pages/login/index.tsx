@@ -1,15 +1,19 @@
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
-import { FC, useEffect, useState } from 'react';
-import { Dispatch, Icon, connect, useNavigate } from 'umi';
+import { useEffect, useState } from 'react';
+import { Icon, useDispatch, useNavigate, useSelector } from 'umi';
 import styles from './index.less';
 
-interface LoginProps {
-  dispatch: Dispatch;
-}
-const View: FC<LoginProps> = ({ dispatch }) => {
-  let navigate = useNavigate();
+const Login = () => {
   const [title, setTitle] = useState('login');
+  let navigate = useNavigate();
+  const dispatch = useDispatch();
+  const effectsLoading: any = useSelector<any>( // TODO: Type needs to be improved
+    (state) => state.loading.effects,
+  );
+
+  const signLoading =
+    effectsLoading['loginModel/login'] || effectsLoading['loginModel/register'];
 
   const changeTitle = () => {
     setTitle((title) => (title === 'login' ? 'register' : 'login'));
@@ -37,17 +41,15 @@ const View: FC<LoginProps> = ({ dispatch }) => {
         console.info(ret);
         navigate('/knowledge');
       } else {
-        dispatch({
+        const ret = await dispatch({
           type: 'loginModel/register',
           payload: {
             nickname: params.nickname,
             email: params.email,
             password: rsaPassWord,
           },
-          callback() {
-            setTitle('login');
-          },
         });
+        setTitle('login');
       }
     } catch (errorInfo) {
       console.log('Failed:', errorInfo);
@@ -133,7 +135,13 @@ const View: FC<LoginProps> = ({ dispatch }) => {
                 </div>
               )}
             </div>
-            <Button type="primary" block size="large" onClick={onCheck}>
+            <Button
+              type="primary"
+              block
+              size="large"
+              onClick={onCheck}
+              loading={signLoading}
+            >
               {title === 'login' ? 'Sign in' : 'Continue'}
             </Button>
             {title === 'login' && (
@@ -176,6 +184,4 @@ const View: FC<LoginProps> = ({ dispatch }) => {
   );
 };
 
-export default connect(({ loginModel, loading }) => ({ loginModel, loading }))(
-  View,
-);
+export default Login;
