@@ -19,101 +19,83 @@ const {
   get_chunk,
   switch_chunk,
   rm_chunk,
-  retrieval_test } = api;
-interface kbService {
-  createKb: () => void;
-  updateKb: () => void;
-  rmKb: () => void;
-  get_kb_detail: () => void;
-  getList: () => void;
-  get_document_list: () => void;
-  document_change_status: () => void;
-  document_rm: () => void;
-  document_create: () => void;
-  document_change_parser: () => void;
-  chunk_list: () => void;
-  create_chunk: () => void;
-  set_chunk: () => void;
-  get_chunk: () => void;
-  switch_chunk: () => void;
-  rm_chunk: () => void;
-  retrieval_test: () => void;
-}
-const kbService: kbService = registerServer(
-  {
-    // 知识库管理
-    createKb: {
-      url: create_kb,
-      method: 'post'
-    },
-    updateKb: {
-      url: update_kb,
-      method: 'post'
-    },
-    rmKb: {
-      url: rm_kb,
-      method: 'post'
-    },
-    get_kb_detail: {
-      url: get_kb_detail,
-      method: 'get'
-    },
-    getList: {
-      url: kb_list,
-      method: 'get'
-    },
-    // 文件管理
-    get_document_list: {
-      url: get_document_list,
-      method: 'get'
-    },
-    document_change_status: {
-      url: document_change_status,
-      method: 'post'
-    },
-    document_rm: {
-      url: document_rm,
-      method: 'post'
-    },
-    document_create: {
-      url: document_create,
-      method: 'post'
-    },
-    document_change_parser: {
-      url: document_change_parser,
-      method: 'post'
-    },
-    // chunk管理
-    chunk_list: {
-      url: chunk_list,
-      method: 'post'
-    },
-    create_chunk: {
-      url: create_chunk,
-      method: 'post'
-    },
-    set_chunk: {
-      url: set_chunk,
-      method: 'post'
-    },
-    get_chunk: {
-      url: get_chunk,
-      method: 'get'
-    },
-    switch_chunk: {
-      url: switch_chunk,
-      method: 'post'
-    },
-    rm_chunk: {
-      url: rm_chunk,
-      method: 'post'
-    },
-    retrieval_test: {
-      url: retrieval_test,
-      method: 'post'
-    },
+  retrieval_test,
+} = api;
+
+const methods = {
+  // 知识库管理
+  createKb: {
+    url: create_kb,
+    method: 'post',
   },
-  request
-);
+  updateKb: {
+    url: update_kb,
+    method: 'post',
+  },
+  rmKb: {
+    url: rm_kb,
+    method: 'post',
+  },
+  get_kb_detail: {
+    url: get_kb_detail,
+    method: 'get',
+  },
+  getList: {
+    url: kb_list,
+    method: 'get',
+  },
+  // 文件管理
+  get_document_list: {
+    url: get_document_list,
+    method: 'get',
+  },
+  document_change_status: {
+    url: document_change_status,
+    method: 'post',
+  },
+  document_rm: {
+    url: document_rm,
+    method: 'post',
+  },
+  document_create: {
+    url: document_create,
+    method: 'post',
+  },
+  document_change_parser: {
+    url: document_change_parser,
+    method: 'post',
+  },
+  // chunk管理
+  chunk_list: {
+    url: chunk_list,
+    method: 'post',
+  },
+  create_chunk: {
+    url: create_chunk,
+    method: 'post',
+  },
+  set_chunk: {
+    url: set_chunk,
+    method: 'post',
+  },
+  get_chunk: {
+    url: get_chunk,
+    method: 'get',
+  },
+  switch_chunk: {
+    url: switch_chunk,
+    method: 'post',
+  },
+  rm_chunk: {
+    url: rm_chunk,
+    method: 'post',
+  },
+  retrieval_test: {
+    url: retrieval_test,
+    method: 'post',
+  },
+};
+
+const kbService = registerServer<keyof typeof methods>(methods, request);
 
 export default kbService;

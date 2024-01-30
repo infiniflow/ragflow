@@ -1,9 +1,9 @@
 import userService from '@/services/userService';
 import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
-import { Effect, Reducer, Subscription } from 'umi';
+import { DvaModel } from 'umi';
 
-export interface settingModelState {
+export interface SettingModelState {
   isShowPSwModal: boolean;
   isShowTntModal: boolean;
   isShowSAKModal: boolean;
@@ -16,25 +16,7 @@ export interface settingModelState {
   factoriesList: any[];
 }
 
-export interface settingModelType {
-  namespace: 'settingModel';
-  state: settingModelState;
-  effects: {
-    setting: Effect;
-    getUserInfo: Effect;
-    getTenantInfo: Effect;
-    set_tenant_info: Effect;
-    factories_list: Effect;
-    llm_list: Effect;
-    my_llm: Effect;
-    set_api_key: Effect;
-  };
-  reducers: {
-    updateState: Reducer<settingModelState>;
-  };
-  subscriptions: { setup: Subscription };
-}
-const Model: settingModelType = {
+const model: DvaModel<SettingModelState> = {
   namespace: 'settingModel',
   state: {
     isShowPSwModal: false,
@@ -47,6 +29,14 @@ const Model: settingModelType = {
     llmInfo: {},
     myLlm: [],
     factoriesList: [],
+  },
+  reducers: {
+    updateState(state, { payload }) {
+      return {
+        ...state,
+        ...payload,
+      };
+    },
   },
   subscriptions: {
     setup({ dispatch, history }) {
@@ -176,13 +166,5 @@ const Model: settingModelType = {
       }
     },
   },
-  reducers: {
-    updateState(state, { payload }) {
-      return {
-        ...state,
-        ...payload,
-      };
-    },
-  },
 };
-export default Model;
+export default model;

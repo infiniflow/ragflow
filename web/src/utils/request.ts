@@ -1,5 +1,5 @@
 import { message, notification } from 'antd';
-import { extend } from 'umi-request';
+import { RequestMethod, extend } from 'umi-request';
 
 import { Authorization } from '@/constants/authorization';
 import api from '@/utils/api';
@@ -9,7 +9,7 @@ const { login } = api;
 
 const ABORT_REQUEST_ERR_MESSAGE = 'The user aborted a request.'; // 手动中断请求。errorHandler 抛出的error message
 
-const retcodeMessage = {
+const RetcodeMessage = {
   200: '服务器成功返回请求的数据。',
   201: '新建或修改数据成功。',
   202: '一个请求已经进入后台排队（异步任务）。',
@@ -26,7 +26,7 @@ const retcodeMessage = {
   503: '服务不可用，服务器暂时过载或维护。',
   504: '网关超时。',
 };
-type retcode =
+type ResultCode =
   | 200
   | 201
   | 202
@@ -45,7 +45,7 @@ type retcode =
 /**
  * 异常处理程序
  */
-interface responseType {
+interface ResponseType {
   retcode: number;
   data: any;
   retmsg: string;
@@ -62,7 +62,7 @@ const errorHandler = (error: {
   } else {
     if (response && response.status) {
       const errorText =
-        retcodeMessage[response.status as retcode] || response.statusText;
+        RetcodeMessage[response.status as ResultCode] || response.statusText;
       const { status, url } = response;
       notification.error({
         message: `请求错误 ${status}: ${url}`,
@@ -81,7 +81,7 @@ const errorHandler = (error: {
 /**
  * 配置request请求时的默认参数
  */
-const request = extend({
+const request: RequestMethod = extend({
   errorHandler, // 默认错误处理
   timeout: 3000000,
   getResponse: true,
@@ -108,7 +108,7 @@ request.interceptors.request.use((url: string, options: any) => {
 
 request.interceptors.response.use(async (response: any, request) => {
   console.log(response, request);
-  const data: responseType = await response.clone().json();
+  const data: ResponseType = await response.clone().json();
   // response 拦截
 
   if (data.retcode === 401 || data.retcode === 401) {
