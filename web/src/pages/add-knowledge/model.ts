@@ -1,6 +1,4 @@
-import { Effect, Reducer, Subscription } from 'umi'
-import { message } from 'antd';
-import kbService from '@/services/kbService';
+import { DvaModel } from 'umi';
 export interface kAModelState {
   isShowPSwModal: boolean;
   isShowTntModal: boolean;
@@ -8,20 +6,10 @@ export interface kAModelState {
   tenantIfo: any;
   activeKey: string;
   id: string;
-  doc_id: string
+  doc_id: string;
 }
-export interface kAModelType {
-  namespace: 'kAModel';
-  state: kAModelState;
-  effects: {
 
-  };
-  reducers: {
-    updateState: Reducer<kAModelState>;
-  };
-  subscriptions: { setup: Subscription };
-}
-const Model: kAModelType = {
+const model: DvaModel<kAModelState> = {
   namespace: 'kAModel',
   state: {
     isShowPSwModal: false,
@@ -30,25 +18,21 @@ const Model: kAModelType = {
     tenantIfo: {},
     activeKey: 'setting',
     id: '',
-    doc_id: ''
-
-  },
-  subscriptions: {
-    setup({ dispatch, history }) {
-      history.listen(location => {
-      });
-    }
-  },
-  effects: {
-
+    doc_id: '',
   },
   reducers: {
     updateState(state, { payload }) {
       return {
         ...state,
-        ...payload
+        ...payload,
       };
-    }
-  }
+    },
+  },
+  subscriptions: {
+    setup({ dispatch, history }) {
+      history.listen((location) => {});
+    },
+  },
+  effects: {},
 };
-export default Model;
+export default model;

@@ -1,58 +1,38 @@
 import kbService from '@/services/kbService';
-import { Effect, Reducer } from 'umi';
+import { DvaModel } from 'umi';
 
-export interface knowledgeModelState {
-  loading: boolean;
+export interface KnowledgeModelState {
   data: any[];
 }
-export interface knowledgegModelType {
-  namespace: 'knowledgeModel';
-  state: knowledgeModelState;
-  effects: {
-    rmKb: Effect;
-    getList: Effect;
-  };
-  reducers: {
-    updateState: Reducer<knowledgeModelState>;
-  };
-  // subscriptions: { setup: Subscription };
-}
-const Model: knowledgegModelType = {
+
+const model: DvaModel<KnowledgeModelState> = {
   namespace: 'knowledgeModel',
   state: {
-    loading: false,
     data: [],
   },
-  // subscriptions: {
-  //   setup({ dispatch, history }) {
-  //     history.listen((location) => {
-  //       console.log(location);
-  //     });
-  //   },
-  // },
+  reducers: {
+    updateState(state, { payload }) {
+      return {
+        ...state,
+        ...payload,
+      };
+    },
+  },
   effects: {
     *rmKb({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(kbService.rmKb, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(kbService.rmKb, payload);
+      const { retcode } = data;
       if (retcode === 0) {
-        callback && callback();
+        yield put({
+          type: 'getList',
+          payload: {},
+        });
       }
     },
     *getList({ payload = {} }, { call, put }) {
-      yield put({
-        type: 'updateState',
-        payload: {
-          loading: true,
-        },
-      });
-      const { data, response } = yield call(kbService.getList, payload);
+      const { data } = yield call(kbService.getList, payload);
       const { retcode, data: res, retmsg } = data;
-      yield put({
-        type: 'updateState',
-        payload: {
-          loading: false,
-        },
-      });
+
       if (retcode === 0) {
         yield put({
           type: 'updateState',
@@ -63,13 +43,5 @@ const Model: knowledgegModelType = {
       }
     },
   },
-  reducers: {
-    updateState(state, { payload }) {
-      return {
-        ...state,
-        ...payload,
-      };
-    },
-  },
 };
-export default Model;
+export default model;
