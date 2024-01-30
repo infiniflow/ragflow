@@ -1,5 +1,9 @@
 import re
 
+from nltk import word_tokenize
+
+from rag.nlp import stemmer, huqie
+
 
 def callback__(progress, msg, func):
     if not func :return
@@ -46,3 +50,21 @@ def bullets_category(sections):
         res = i
         maxium = h
     return res
+
+def is_english(texts):
+    eng = 0
+    for t in texts:
+        if re.match(r"[a-zA-Z]", t.strip()):
+            eng += 1
+    if eng / len(texts) > 0.8:
+        return True
+    return False
+
+def tokenize(d, t, eng):
+    d["content_with_weight"] = t
+    if eng:
+        t = re.sub(r"([a-z])-([a-z])", r"\1\2", t)
+        d["content_ltks"] = " ".join([stemmer.stem(w) for w in word_tokenize(t)])
+    else:
+        d["content_ltks"] = huqie.qie(t)
+        d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])

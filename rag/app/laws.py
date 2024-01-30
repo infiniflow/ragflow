@@ -3,12 +3,13 @@ import re
 from io import BytesIO
 from docx import Document
 import numpy as np
-from rag.app import callback__, bullets_category, BULLET_PATTERN
+from rag.app import callback__, bullets_category, BULLET_PATTERN, is_english, tokenize
 from rag.nlp import huqie
+from rag.parser.docx_parser import HuDocxParser
 from rag.parser.pdf_parser import HuParser
 
 
-class Docx(object):
+class Docx(HuDocxParser):
     def __init__(self):
         pass
 
@@ -42,14 +43,7 @@ class Pdf(HuParser):
         print("paddle layouts:", timer()-start)
         bxs = self.sort_Y_firstly(self.boxes, np.median(self.mean_height) / 3)
         # is it English
-        eng = 0
-        for b in bxs:
-            if re.match(r"[a-zA-Z]", b["text"].strip()):
-                eng += 1
-        if eng / len(bxs) > 0.8:
-            eng = True
-        else:
-            eng = False
+        eng = is_english([b["text"] for b in bxs])
         # Merge vertically
         i = 0
         while i + 1 < len(bxs):
@@ -59,7 +53,7 @@ class Pdf(HuParser):
                 bxs.pop(i)
                 continue
             concatting_feats = [
-                b["text"].strip()[-1] in ",;:'\"，、‘“；：",
+                b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
                 len(b["text"].strip())>1 and b["text"].strip()[-2] in ",;:'\"，‘“、；：",
                 b["text"].strip()[0] in "。；？！?”）),，、：",
             ]
@@ -118,14 +112,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
         sections = [l for l in sections if l]
 
     # is it English
-    eng = 0
-    for sec in sections:
-        if re.match(r"[a-zA-Z]", sec.strip()):
-            eng += 1
-    if eng / len(sections) > 0.8:
-        eng = True
-    else:
-        eng = False
+    eng = is_english(sections)
     # Remove 'Contents' part
     i = 0
     while i < len(sections):
@@ -181,8 +168,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
         if pdf_parser:
             d["image"] = pdf_parser.crop(ck)
             ck = pdf_parser.remove_tag(ck)
-        d["content_ltks"] = huqie.qie(ck)
-        d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
+        tokenize(d, ck, eng)
         res.append(d)
     return res
 
