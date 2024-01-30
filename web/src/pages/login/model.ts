@@ -2,31 +2,28 @@ import { Authorization } from '@/constants/authorization';
 import userService from '@/services/userService';
 import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
-import { Effect, Reducer, Subscription } from 'umi';
+import { DvaModel } from 'umi';
 
-export interface loginModelState {
+export interface LoginModelState {
   list: any[];
   info: any;
   visible: boolean;
 }
-export interface logingModelType {
-  namespace: 'loginModel';
-  state: loginModelState;
-  effects: {
-    login: Effect;
-    register: Effect;
-  };
-  reducers: {
-    updateState: Reducer<loginModelState>;
-  };
-  subscriptions: { setup: Subscription };
-}
-const Model: logingModelType = {
+
+const model: DvaModel<LoginModelState> = {
   namespace: 'loginModel',
   state: {
     list: [],
     info: {},
     visible: false,
+  },
+  reducers: {
+    updateState(state, { payload }) {
+      return {
+        ...state,
+        ...payload,
+      };
+    },
   },
   subscriptions: {
     setup({ dispatch, history }) {
@@ -69,13 +66,5 @@ const Model: logingModelType = {
       }
     },
   },
-  reducers: {
-    updateState(state, { payload }) {
-      return {
-        ...state,
-        ...payload,
-      };
-    },
-  },
 };
-export default Model;
+export default model;

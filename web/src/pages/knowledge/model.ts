@@ -1,27 +1,24 @@
 import kbService from '@/services/kbService';
-import { Effect, Reducer } from 'umi';
+import { DvaModel } from 'umi';
 
-export interface knowledgeModelState {
+export interface KnowledgeModelState {
   loading: boolean;
   data: any[];
 }
-export interface knowledgegModelType {
-  namespace: 'knowledgeModel';
-  state: knowledgeModelState;
-  effects: {
-    rmKb: Effect;
-    getList: Effect;
-  };
-  reducers: {
-    updateState: Reducer<knowledgeModelState>;
-  };
-  // subscriptions: { setup: Subscription };
-}
-const Model: knowledgegModelType = {
+
+const model: DvaModel<KnowledgeModelState> = {
   namespace: 'knowledgeModel',
   state: {
     loading: false,
     data: [],
+  },
+  reducers: {
+    updateState(state, { payload }) {
+      return {
+        ...state,
+        ...payload,
+      };
+    },
   },
   // subscriptions: {
   //   setup({ dispatch, history }) {
@@ -63,13 +60,5 @@ const Model: knowledgegModelType = {
       }
     },
   },
-  reducers: {
-    updateState(state, { payload }) {
-      return {
-        ...state,
-        ...payload,
-      };
-    },
-  },
 };
-export default Model;
+export default model;

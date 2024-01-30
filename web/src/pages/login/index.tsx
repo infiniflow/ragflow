@@ -10,6 +10,7 @@ interface LoginProps {
 const View: FC<LoginProps> = ({ dispatch }) => {
   let navigate = useNavigate();
   const [title, setTitle] = useState('login');
+
   const changeTitle = () => {
     setTitle((title) => (title === 'login' ? 'register' : 'login'));
   };
@@ -106,7 +107,7 @@ const View: FC<LoginProps> = ({ dispatch }) => {
               label="Password"
               rules={[{ required: true, message: 'Please input value' }]}
             >
-              <Input size="large" placeholder="Please input value" />
+              <Input.Password size="large" placeholder="Please input value" />
             </Form.Item>
             {title === 'login' && (
               <Form.Item name="remember" valuePropName="checked">

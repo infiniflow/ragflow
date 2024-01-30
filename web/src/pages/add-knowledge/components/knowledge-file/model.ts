@@ -1,8 +1,8 @@
 import kbService from '@/services/kbService';
 import { message } from 'antd';
-import { Effect, Reducer, Subscription } from 'umi';
+import { DvaModel } from 'umi';
 
-export interface kFModelState {
+export interface KFModelState {
   isShowCEFwModal: boolean;
   isShowTntModal: boolean;
   isShowSegmentSetModal: boolean;
@@ -10,25 +10,8 @@ export interface kFModelState {
   tenantIfo: any;
   data: any[];
 }
-export interface kFModelType {
-  namespace: 'kFModel';
-  state: kFModelState;
-  effects: {
-    createKf: Effect;
-    updateKf: Effect;
-    getKfDetail: Effect;
-    getKfList: Effect;
-    updateDocumentStatus: Effect;
-    document_rm: Effect;
-    document_create: Effect;
-    document_change_parser: Effect;
-  };
-  reducers: {
-    updateState: Reducer<kFModelState>;
-  };
-  subscriptions: { setup: Subscription };
-}
-const Model: kFModelType = {
+
+const model: DvaModel<KFModelState> = {
   namespace: 'kFModel',
   state: {
     isShowCEFwModal: false,
@@ -37,6 +20,14 @@ const Model: kFModelType = {
     loading: false,
     tenantIfo: {},
     data: [],
+  },
+  reducers: {
+    updateState(state, { payload }) {
+      return {
+        ...state,
+        ...payload,
+      };
+    },
   },
   subscriptions: {
     setup({ dispatch, history }) {
@@ -144,13 +135,5 @@ const Model: kFModelType = {
       }
     },
   },
-  reducers: {
-    updateState(state, { payload }) {
-      return {
-        ...state,
-        ...payload,
-      };
-    },
-  },
 };
-export default Model;
+export default model;

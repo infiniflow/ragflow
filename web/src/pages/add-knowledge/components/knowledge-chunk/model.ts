@@ -1,7 +1,7 @@
 import kbService from '@/services/kbService';
-import { Effect, Reducer } from 'umi';
+import { DvaModel } from 'umi';
 
-export interface chunkModelState {
+export interface ChunkModelState {
   loading: boolean;
   data: any[];
   total: number;
@@ -10,22 +10,8 @@ export interface chunkModelState {
   doc_id: string;
   chunkInfo: any;
 }
-export interface chunkgModelType {
-  namespace: 'chunkModel';
-  state: chunkModelState;
-  effects: {
-    chunk_list: Effect;
-    get_chunk: Effect;
-    create_hunk: Effect;
-    switch_chunk: Effect;
-    rm_chunk: Effect;
-  };
-  reducers: {
-    updateState: Reducer<chunkModelState>;
-  };
-  // subscriptions: { setup: Subscription };
-}
-const Model: chunkgModelType = {
+
+const model: DvaModel<ChunkModelState> = {
   namespace: 'chunkModel',
   state: {
     loading: false,
@@ -35,6 +21,14 @@ const Model: chunkgModelType = {
     chunk_id: '',
     doc_id: '',
     chunkInfo: {},
+  },
+  reducers: {
+    updateState(state, { payload }) {
+      return {
+        ...state,
+        ...payload,
+      };
+    },
   },
   // subscriptions: {
   //   setup({ dispatch, history }) {
@@ -118,13 +112,5 @@ const Model: chunkgModelType = {
       }
     },
   },
-  reducers: {
-    updateState(state, { payload }) {
-      return {
-        ...state,
-        ...payload,
-      };
-    },
-  },
 };
-export default Model;
+export default model;
