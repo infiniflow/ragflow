@@ -17,15 +17,15 @@ const model: DvaModel<ChatModelState> = {
       };
     },
   },
-  effects: {
-    *query({ payload }, { call, put }) {},
-  },
   subscriptions: {
     setup({ dispatch, history }) {
       return history.listen((query) => {
         console.log(query);
       });
     },
+  },
+  effects: {
+    *query({ payload }, { call, put }) {},
   },
 };
 

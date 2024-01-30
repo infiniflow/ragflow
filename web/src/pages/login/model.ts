@@ -51,7 +51,7 @@ const model: DvaModel<LoginModelState> = {
           Token: token,
         });
       }
-      return data;
+      return retcode;
     },
     *register({ payload = {} }, { call, put }) {
       const { data, response } = yield call(userService.register, payload);
@@ -60,6 +60,7 @@ const model: DvaModel<LoginModelState> = {
       if (retcode === 0) {
         message.success('注册成功！');
       }
+      return retcode;
     },
   },
 };

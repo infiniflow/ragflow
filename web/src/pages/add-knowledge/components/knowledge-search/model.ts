@@ -1,4 +1,5 @@
 import kbService from '@/services/kbService';
+import omit from 'lodash/omit';
 import { DvaModel } from 'umi';
 
 export interface KSearchModelState {
@@ -62,38 +63,59 @@ const model: DvaModel<KSearchModelState> = {
         });
       }
     },
-    *chunk_list({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(kbService.retrieval_test, payload);
+    *chunk_list({ payload = {} }, { call, put, select }) {
+      const { question, doc_ids, pagination }: KSearchModelState = yield select(
+        (state: any) => state.kSearchModel,
+      );
+      const { data } = yield call(kbService.retrieval_test, {
+        ...payload,
+        ...pagination,
+        question,
+        doc_ids,
+        similarity_threshold: 0.1,
+      });
       const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-        console.log(res);
         yield put({
           type: 'updateState',
           payload: {
             data: res.chunks,
             total: res.total,
-            loading: false,
           },
         });
-        callback && callback();
       }
     },
-    *switch_chunk({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(kbService.switch_chunk, payload);
+    *switch_chunk({ payload = {} }, { call, put }) {
+      const { data } = yield call(
+        kbService.switch_chunk,
+        omit(payload, ['kb_id']),
+      );
+      const { retcode } = data;
+      if (retcode === 0) {
+        yield put({
+          type: 'chunk_list',
+          payload: {
+            kb_id: payload.kb_id,
+          },
+        });
+      }
+    },
+    *rm_chunk({ payload = {} }, { call, put }) {
+      const { data } = yield call(kbService.rm_chunk, {
+        chunk_ids: payload.chunk_ids,
+      });
       const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-        callback && callback();
+        // TODO: Can be extracted
+        yield put({
+          type: 'chunk_list',
+          payload: {
+            kb_id: payload.kb_id,
+          },
+        });
       }
     },
-    *rm_chunk({ payload = {}, callback }, { call, put }) {
-      console.log('shanchu');
-      const { data, response } = yield call(kbService.rm_chunk, payload);
-      const { retcode, data: res, retmsg } = data;
-      if (retcode === 0) {
-        callback && callback();
-      }
-    },
-    *get_chunk({ payload = {}, callback }, { call, put }) {
+    *get_chunk({ payload = {} }, { call, put }) {
       const { data, response } = yield call(kbService.get_chunk, payload);
       const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
@@ -103,7 +125,6 @@ const model: DvaModel<KSearchModelState> = {
             chunkInfo: res,
           },
         });
-        callback && callback(res);
       }
     },
     *create_hunk({ payload = {} }, { call, put }) {

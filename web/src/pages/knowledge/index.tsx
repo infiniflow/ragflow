@@ -5,33 +5,28 @@ import {
   PlusOutlined,
 } from '@ant-design/icons';
 import { Card, Col, FloatButton, Popconfirm, Row } from 'antd';
-import React, { useEffect } from 'react';
-import { Dispatch, connect, useNavigate } from 'umi';
+import { useCallback, useEffect } from 'react';
+import { useDispatch, useNavigate, useSelector } from 'umi';
 import styles from './index.less';
-import type { knowledgeModelState } from './model';
-interface KnowledgeProps {
-  dispatch: Dispatch;
-  knowledgeModel: knowledgeModelState;
-}
-const Index: React.FC<KnowledgeProps> = ({ knowledgeModel, dispatch }) => {
-  const navigate = useNavigate();
-  // const [datas, setDatas] = useState(data)
-  const { data = [] } = knowledgeModel;
-  console.log(knowledgeModel);
 
-  // const x = useSelector((state) => state.knowledgeModel);
+const Knowledge = () => {
+  const dispatch = useDispatch();
+  const knowledgeModel = useSelector((state: any) => state.knowledgeModel);
+  const navigate = useNavigate();
+  const { data = [] } = knowledgeModel;
+
+  const fetchList = useCallback(() => {
+    dispatch({
+      type: 'knowledgeModel/getList',
+      payload: {},
+    });
+  }, []);
 
   const confirm = (id: string) => {
     dispatch({
       type: 'knowledgeModel/rmKb',
       payload: {
         kb_id: id,
-      },
-      callback: () => {
-        dispatch({
-          type: 'knowledgeModel/getList',
-          payload: {},
-        });
       },
     });
   };
@@ -42,11 +37,8 @@ const Index: React.FC<KnowledgeProps> = ({ knowledgeModel, dispatch }) => {
     navigate(`add/setting?activeKey=file&id=${id}`);
   };
   useEffect(() => {
-    dispatch({
-      type: 'knowledgeModel/getList',
-      payload: {},
-    });
-  }, []);
+    fetchList();
+  }, [fetchList]);
   return (
     <>
       <div className={styles.knowledge}>
@@ -125,7 +117,4 @@ const Index: React.FC<KnowledgeProps> = ({ knowledgeModel, dispatch }) => {
   );
 };
 
-export default connect(({ knowledgeModel, loading }) => ({
-  knowledgeModel,
-  loading,
-}))(Index);
+export default Knowledge;

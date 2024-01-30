@@ -2,7 +2,6 @@ import kbService from '@/services/kbService';
 import { DvaModel } from 'umi';
 
 export interface ChunkModelState {
-  loading: boolean;
   data: any[];
   total: number;
   isShowCreateModal: boolean;
@@ -14,7 +13,6 @@ export interface ChunkModelState {
 const model: DvaModel<ChunkModelState> = {
   namespace: 'chunkModel',
   state: {
-    loading: false,
     data: [],
     total: 0,
     isShowCreateModal: false,
@@ -38,7 +36,7 @@ const model: DvaModel<ChunkModelState> = {
   //   }
   // },
   effects: {
-    *chunk_list({ payload = {}, callback }, { call, put }) {
+    *chunk_list({ payload = {} }, { call, put }) {
       const { data, response } = yield call(kbService.chunk_list, payload);
 
       const { retcode, data: res, retmsg } = data;
@@ -49,28 +47,23 @@ const model: DvaModel<ChunkModelState> = {
           payload: {
             data: res.chunks,
             total: res.total,
-            loading: false,
           },
         });
-        callback && callback();
       }
     },
-    *switch_chunk({ payload = {}, callback }, { call, put }) {
+    *switch_chunk({ payload = {} }, { call, put }) {
       const { data, response } = yield call(kbService.switch_chunk, payload);
       const { retcode, data: res, retmsg } = data;
-      if (retcode === 0) {
-        callback && callback();
-      }
+      return retcode;
     },
-    *rm_chunk({ payload = {}, callback }, { call, put }) {
+    *rm_chunk({ payload = {} }, { call, put }) {
       console.log('shanchu');
       const { data, response } = yield call(kbService.rm_chunk, payload);
       const { retcode, data: res, retmsg } = data;
-      if (retcode === 0) {
-        callback && callback();
-      }
+
+      return retcode;
     },
-    *get_chunk({ payload = {}, callback }, { call, put }) {
+    *get_chunk({ payload = {} }, { call, put }) {
       const { data, response } = yield call(kbService.get_chunk, payload);
       const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
@@ -80,28 +73,16 @@ const model: DvaModel<ChunkModelState> = {
             chunkInfo: res,
           },
         });
-        callback && callback(res);
       }
+      return data;
     },
     *create_hunk({ payload = {} }, { call, put }) {
-      yield put({
-        type: 'updateState',
-        payload: {
-          loading: true,
-        },
-      });
       let service = kbService.create_chunk;
       if (payload.chunk_id) {
         service = kbService.set_chunk;
       }
       const { data, response } = yield call(service, payload);
       const { retcode, data: res, retmsg } = data;
-      yield put({
-        type: 'updateState',
-        payload: {
-          loading: false,
-        },
-      });
       if (retcode === 0) {
         yield put({
           type: 'updateState',

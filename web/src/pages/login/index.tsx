@@ -31,17 +31,19 @@ const Login = () => {
 
       var rsaPassWord = rsaPsw(params.password);
       if (title === 'login') {
-        const ret = await dispatch({
+        const retcode = await dispatch<any>({
           type: 'loginModel/login',
           payload: {
             email: params.email,
             password: rsaPassWord,
           },
         });
-        console.info(ret);
-        navigate('/knowledge');
+        if (retcode === 0) {
+          navigate('/knowledge');
+        }
       } else {
-        const ret = await dispatch({
+        // TODO: Type needs to be improved
+        const retcode = await dispatch<any>({
           type: 'loginModel/register',
           payload: {
             nickname: params.nickname,
@@ -49,7 +51,9 @@ const Login = () => {
             password: rsaPassWord,
           },
         });
-        setTitle('login');
+        if (retcode === 0) {
+          setTitle('login');
+        }
       }
     } catch (errorInfo) {
       console.log('Failed:', errorInfo);
