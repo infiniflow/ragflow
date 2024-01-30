@@ -17,8 +17,9 @@ import torch
 from transformers import \
     TableTransformerForObjectDetection,\
     AutoImageProcessor
-from PIL import ImageDraw
+from PIL import ImageDraw, Image
 from random import randint
+import numpy as np
 
 
 class TableTransformer:
@@ -74,8 +75,9 @@ class TableTransformer:
                 )] + ":{:.2f}".format(score), fill=(r, g, b))
             img.save(f"./t{i}.%d.jpg" % randint(0, 1000))
 
-    def __call__(self, images, threshold=0.8):
+    def __call__(self, images, thr=0.8):
         res = []
+        images = [Image.fromarray(img) if isinstance(img, np.ndarray) else img for img in images]
         for i in range(0, len(images), self.batch_size):
             imgs = images[i: i + self.batch_size]
             inputs = self.rec_img_pro(imgs, return_tensors="pt")
@@ -87,7 +89,7 @@ class TableTransformer:
             # [scores, labels, boxes}]
             with torch.no_grad():
                 bres = self.rec_img_pro.post_process_object_detection(outputs,
-                                                                      threshold=threshold,
+                                                                      threshold=thr,
                                                                       target_sizes=target_sizes)
                 #self.__draw(bres, imgs, self.rec_mdl.config.id2label)
                 res.extend(self.__friendly(bres, self.rec_mdl.config.id2label))
