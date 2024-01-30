@@ -3,7 +3,7 @@ import re
 from io import BytesIO
 from pptx import Presentation
 
-from rag.app import callback__
+from rag.app import callback__, tokenize, is_english
 from rag.nlp import huqie
 from rag.parser.pdf_parser import HuParser
 
@@ -57,7 +57,7 @@ class Ppt(object):
         assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
         callback__((min(to_page, self.total_page) - from_page) / self.total_page,
                    "Page {}~{}: Image extraction finished".format(from_page, min(to_page, self.total_page)), callback)
-
+        self.is_english = is_english(txts)
         return [(txts[i], imgs[i]) for i in range(len(txts))]
 
 
@@ -103,19 +103,19 @@ def chunk(filename, binary=None,  from_page=0, to_page=100000, callback=None):
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
-        for txt,img in Ppt()(filename if not binary else binary, from_page, to_page, callback):
+        ppt_parser = Ppt()
+        for txt,img in ppt_parser(filename if not binary else binary, from_page, to_page, callback):
             d = copy.deepcopy(doc)
-            d["content_ltks"] = huqie.qie(txt)
-            d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
             d["image"] = img
+            tokenize(d, txt, ppt_parser.is_english)
             res.append(d)
         return res
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        for txt,img in Pdf()(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback):
+        pdf_parser = Pdf()
+        for txt,img in pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback):
             d = copy.deepcopy(doc)
-            d["content_ltks"] = huqie.qie(txt)
-            d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
             d["image"] = img
+            tokenize(d, txt, pdf_parser.is_english)
             res.append(d)
         return res
     callback__(-1, "This kind of presentation document did not support yet!", callback)
