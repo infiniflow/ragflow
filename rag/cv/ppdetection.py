@@ -21,9 +21,11 @@ from huggingface_hub import snapshot_download
 
 
 class PPDet:
-    def __init__(self):
-        model_dir = snapshot_download(
+    def __init__(self, model_dir=None):
+        if not model_dir:
+            model_dir = snapshot_download(
             repo_id="InfiniFlow/picodet_lcnet_x1_0_fgd_layout_cdla")
+
         self.mdl = Detector(model_dir)
         with open(os.path.join(model_dir, 'infer_cfg.yml'), "r") as f:
             self.conf = yaml.safe_load(f)
