@@ -1,15 +1,20 @@
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
-import { FC, useEffect, useState } from 'react';
-import { Dispatch, Icon, connect, useNavigate } from 'umi';
+import { useEffect, useState } from 'react';
+import { Icon, useDispatch, useNavigate, useSelector } from 'umi';
 import styles from './index.less';
 
-interface LoginProps {
-  dispatch: Dispatch;
-}
-const View: FC<LoginProps> = ({ dispatch }) => {
-  let navigate = useNavigate();
+const Login = () => {
   const [title, setTitle] = useState('login');
+  let navigate = useNavigate();
+  const dispatch = useDispatch();
+  const effectsLoading: any = useSelector<any>( // TODO: Type needs to be improved
+    (state) => state.loading.effects,
+  );
+
+  const signLoading =
+    effectsLoading['loginModel/login'] || effectsLoading['loginModel/register'];
+
   const changeTitle = () => {
     setTitle((title) => (title === 'login' ? 'register' : 'login'));
   };
@@ -26,27 +31,29 @@ const View: FC<LoginProps> = ({ dispatch }) => {
 
       var rsaPassWord = rsaPsw(params.password);
       if (title === 'login') {
-        const ret = await dispatch({
+        const retcode = await dispatch<any>({
           type: 'loginModel/login',
           payload: {
             email: params.email,
             password: rsaPassWord,
           },
         });
-        console.info(ret);
-        navigate('/knowledge');
+        if (retcode === 0) {
+          navigate('/knowledge');
+        }
       } else {
-        dispatch({
+        // TODO: Type needs to be improved
+        const retcode = await dispatch<any>({
           type: 'loginModel/register',
           payload: {
             nickname: params.nickname,
             email: params.email,
             password: rsaPassWord,
           },
-          callback() {
-            setTitle('login');
-          },
         });
+        if (retcode === 0) {
+          setTitle('login');
+        }
       }
     } catch (errorInfo) {
       console.log('Failed:', errorInfo);
@@ -106,7 +113,7 @@ const View: FC<LoginProps> = ({ dispatch }) => {
               label="Password"
               rules={[{ required: true, message: 'Please input value' }]}
             >
-              <Input size="large" placeholder="Please input value" />
+              <Input.Password size="large" placeholder="Please input value" />
             </Form.Item>
             {title === 'login' && (
               <Form.Item name="remember" valuePropName="checked">
@@ -132,7 +139,13 @@ const View: FC<LoginProps> = ({ dispatch }) => {
                 </div>
               )}
             </div>
-            <Button type="primary" block size="large" onClick={onCheck}>
+            <Button
+              type="primary"
+              block
+              size="large"
+              onClick={onCheck}
+              loading={signLoading}
+            >
               {title === 'login' ? 'Sign in' : 'Continue'}
             </Button>
             {title === 'login' && (
@@ -175,6 +188,4 @@ const View: FC<LoginProps> = ({ dispatch }) => {
   );
 };
 
-export default connect(({ loginModel, loading }) => ({ loginModel, loading }))(
-  View,
-);
+export default Login;
