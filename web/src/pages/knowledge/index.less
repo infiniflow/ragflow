@@ -1,40 +1,43 @@
+// @import '~@/less/variable.less';
+
 .knowledge {
-  padding: 24px;
+  padding: 48px 60px;
 }
 
-.container {
-  height: 100px;
+.topWrapper {
   display: flex;
-  flex-direction: column;
   justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 72px;
 
-  .content {
+  .title {
+    font-family: Inter;
+    font-size: 30px;
+    font-style: normal;
+    font-weight: @fontWeight600;
+    line-height: 38px;
+    color: rgba(16, 24, 40, 1);
+  }
+  .description {
+    font-family: Inter;
+    font-size: 16px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 24px;
+    color: rgba(71, 84, 103, 1);
+  }
+
+  .topButton {
+    font-family: Inter;
+    font-size: 14px;
+    font-style: normal;
+    font-weight: @fontWeight600;
+    line-height: 20px;
+  }
+
+  .filterButton {
     display: flex;
-    justify-content: space-between;
-
-    .context {
-      flex: 1;
-    }
+    align-items: center;
+    .topButton();
   }
-
-  .footer {
-    height: 20px;
-
-    .text {
-      margin-left: 10px;
-    }
-  }
-}
-
-.card {
-  :global {
-    .ant-card-body {
-      padding: 10px;
-      margin: 0;
-    }
-
-    margin-bottom: 10px;
-  }
-
-  cursor: pointer;
 }

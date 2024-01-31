@@ -2,7 +2,6 @@ import { DvaModel } from 'umi';
 export interface kAModelState {
   isShowPSwModal: boolean;
   isShowTntModal: boolean;
-  loading: boolean;
   tenantIfo: any;
   activeKey: string;
   id: string;
@@ -14,7 +13,6 @@ const model: DvaModel<kAModelState> = {
   state: {
     isShowPSwModal: false,
     isShowTntModal: false,
-    loading: false,
     tenantIfo: {},
     activeKey: 'setting',
     id: '',

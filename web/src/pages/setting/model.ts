@@ -9,7 +9,6 @@ export interface SettingModelState {
   isShowSAKModal: boolean;
   isShowSSModal: boolean;
   llm_factory: string;
-  loading: boolean;
   tenantIfo: any;
   llmInfo: any;
   myLlm: any[];
@@ -24,7 +23,6 @@ const model: DvaModel<SettingModelState> = {
     isShowSAKModal: false,
     isShowSSModal: false,
     llm_factory: '',
-    loading: false,
     tenantIfo: {},
     llmInfo: {},
     myLlm: [],
@@ -44,12 +42,21 @@ const model: DvaModel<SettingModelState> = {
     },
   },
   effects: {
-    *setting({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(userService.setting, payload);
-      const { retcode, data: res, retmsg } = data;
+    *setting({ payload = {} }, { call, put }) {
+      const { data } = yield call(userService.setting, payload);
+      const { retcode } = data;
       if (retcode === 0) {
         message.success('密码修改成功！');
-        callback && callback();
+        yield put({
+          type: 'updateState',
+          payload: {
+            isShowPSwModal: false,
+          },
+        });
+        yield put({
+          type: 'getUserInfo',
+          payload: {},
+        });
       }
     },
     *getUserInfo({ payload = {} }, { call, put }) {
@@ -72,11 +79,8 @@ const model: DvaModel<SettingModelState> = {
           loading: true,
         },
       });
-      const { data, response } = yield call(
-        userService.get_tenant_info,
-        payload,
-      );
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(userService.get_tenant_info, payload);
+      const { retcode, data: res } = data;
       // llm_id 对应chat_id
       // asr_id 对应speech2txt
 
@@ -98,11 +102,8 @@ const model: DvaModel<SettingModelState> = {
       }
     },
     *set_tenant_info({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(
-        userService.set_tenant_info,
-        payload,
-      );
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(userService.set_tenant_info, payload);
+      const { retcode } = data;
       // llm_id 对应chat_id
       // asr_id 对应speech2txt
       if (retcode === 0) {
@@ -116,6 +117,7 @@ const model: DvaModel<SettingModelState> = {
           type: 'getTenantInfo',
         });
       }
+      return retcode;
     },
 
     *factories_list({ payload = {} }, { call, put }) {
@@ -157,12 +159,17 @@ const model: DvaModel<SettingModelState> = {
         });
       }
     },
-    *set_api_key({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(userService.set_api_key, payload);
-      const { retcode, data: res, retmsg } = data;
+    *set_api_key({ payload = {} }, { call, put }) {
+      const { data } = yield call(userService.set_api_key, payload);
+      const { retcode } = data;
       if (retcode === 0) {
         message.success('设置API KEY成功！');
-        callback && callback();
+        yield put({
+          type: 'updateState',
+          payload: {
+            isShowSAKModal: false,
+          },
+        });
       }
     },
   },

@@ -1,34 +1,35 @@
 import { Button, FloatButton } from 'antd';
 import i18n from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { Dispatch, connect } from 'umi';
 
 import authorizationUtil from '@/utils/authorizationUtil';
-import { FC, useEffect } from 'react';
+import { useEffect } from 'react';
+import { useDispatch, useSelector } from 'umi';
 import CPwModal from './CPwModal';
 import List from './List';
 import SAKModal from './SAKModal';
 import SSModal from './SSModal';
 import TntModal from './TntModal';
 import styles from './index.less';
-interface CPwModalProps {
-  dispatch: Dispatch;
-  settingModel: any;
-}
-const Index: FC<CPwModalProps> = ({ settingModel, dispatch }) => {
-  // const [llm_factory, set_llm_factory] = useState('')
+
+const Setting = () => {
+  const dispatch = useDispatch();
+  const settingModel = useSelector((state: any) => state.settingModel);
   const { t } = useTranslation();
   const userInfo = authorizationUtil.getUserInfoObject();
+
   const changeLang = (val: string) => {
     // 改变状态里的 语言 进行切换
     i18n.changeLanguage(val);
   };
+
   useEffect(() => {
     dispatch({
       type: 'settingModel/getTenantInfo',
       payload: {},
     });
   }, []);
+
   const showCPwModal = () => {
     dispatch({
       type: 'settingModel/updateState',
@@ -52,11 +53,6 @@ const Index: FC<CPwModalProps> = ({ settingModel, dispatch }) => {
         isShowSSModal: true,
       },
     });
-    // dispatch({
-    //     type: 'settingModel/getTenantInfo',
-    //     payload: {
-    //     }
-    // });
   };
   return (
     <div className={styles.settingPage}>
@@ -99,7 +95,4 @@ const Index: FC<CPwModalProps> = ({ settingModel, dispatch }) => {
     </div>
   );
 };
-export default connect(({ settingModel, loading }) => ({
-  settingModel,
-  loading,
-}))(Index);
+export default Setting;

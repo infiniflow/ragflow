@@ -19,7 +19,7 @@ const model: DvaModel<KnowledgeModelState> = {
     },
   },
   effects: {
-    *rmKb({ payload = {}, callback }, { call, put }) {
+    *rmKb({ payload = {} }, { call, put }) {
       const { data } = yield call(kbService.rmKb, payload);
       const { retcode } = data;
       if (retcode === 0) {
