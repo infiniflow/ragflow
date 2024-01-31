@@ -22,6 +22,8 @@ from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
+from api.db.db_models import Task
+from api.db.services.task_service import TaskService
 from rag.nlp import search
 from rag.utils import ELASTICSEARCH
 from api.db.services import duplicate_name
@@ -205,6 +207,26 @@ def rm():
         return server_error_response(e)
 
 
+@manager.route('/run', methods=['POST'])
+@login_required
+@validate_request("doc_ids", "run")
+def rm():
+    req = request.json
+    try:
+        for id in req["doc_ids"]:
+            DocumentService.update_by_id(id, {"run": str(req["run"])})
+            if req["run"] == "2":
+                TaskService.filter_delete([Task.doc_id == id])
+                tenant_id = DocumentService.get_tenant_id(id)
+                if not tenant_id:
+                    return get_data_error_result(retmsg="Tenant not found!")
+                ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route('/rename', methods=['POST'])
 @login_required
 @validate_request("doc_id", "name", "old_name")
@@ -262,7 +284,7 @@ def change_parser():
         if doc.parser_id.lower() == req["parser_id"].lower():
             return get_json_result(data=True)
 
-        e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress":0, "progress_msg": ""})
+        e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress":0, "progress_msg": "", "run": 1})
         if not e:
             return get_data_error_result(retmsg="Document not found!")
         e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num*-1, doc.chunk_num*-1, doc.process_duation*-1)
