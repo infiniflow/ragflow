@@ -32,14 +32,12 @@ class Pdf(HuParser):
             zoomin,
             from_page,
             to_page)
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page / 2,
-                   "Page {}~{}: OCR finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.1, "OCR finished", callback)
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_paddle(zoomin)
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page / 2,
-                   "Page {}~{}: Layout analysis finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.77, "Layout analysis finished", callback)
         print("paddle layouts:", timer()-start)
         bxs = self.sort_Y_firstly(self.boxes, np.median(self.mean_height) / 3)
         # is it English
@@ -77,8 +75,7 @@ class Pdf(HuParser):
             b["x1"] = max(b["x1"], b_["x1"])
             bxs.pop(i + 1)
 
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page / 2,
-                   "Page {}~{}: Text extraction finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.8, "Text extraction finished", callback)
 
         return [b["text"] + self._line_tag(b, zoomin) for b in bxs]
 
@@ -92,14 +89,17 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
     pdf_parser = None
     sections = []
     if re.search(r"\.docx?$", filename, re.IGNORECASE):
+        callback__(0.1, "Start to parse.", callback)
         for txt in Docx()(filename, binary):
             sections.append(txt)
-    if re.search(r"\.pdf$", filename, re.IGNORECASE):
+        callback__(0.8, "Finish parsing.", callback)
+    elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
         for txt in pdf_parser(filename if not binary else binary,
                          from_page=from_page, to_page=to_page, callback=callback):
             sections.append(txt)
-    if re.search(r"\.txt$", filename, re.IGNORECASE):
+    elif re.search(r"\.txt$", filename, re.IGNORECASE):
+        callback__(0.1, "Start to parse.", callback)
         txt = ""
         if binary:txt = binary.decode("utf-8")
         else:
@@ -110,6 +110,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
                     txt += l
             sections = txt.split("\n")
         sections = [l for l in sections if l]
+        callback__(0.8, "Finish parsing.", callback)
+    else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
     # is it English
     eng = is_english(sections)

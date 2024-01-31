@@ -496,13 +496,25 @@ class Document(DataBaseModel):
     token_num = IntegerField(default=0)
     chunk_num = IntegerField(default=0)
     progress = FloatField(default=0)
-    progress_msg = CharField(max_length=255, null=True, help_text="process message", default="")
+    progress_msg = CharField(max_length=512, null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True)
     process_duation = FloatField(default=0)
+    run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0")
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
 
     class Meta:
         db_table = "document"
+
+
+class Task(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    doc_id = CharField(max_length=32, null=False, index=True)
+    from_page = IntegerField(default=0)
+    to_page = IntegerField(default=-1)
+    begin_at = DateTimeField(null=True)
+    process_duation = FloatField(default=0)
+    progress = FloatField(default=0)
+    progress_msg = CharField(max_length=255, null=True, help_text="process message", default="")
 
 
 class Dialog(DataBaseModel):
@@ -553,72 +565,6 @@ class Conversation(DataBaseModel):
 
 
 """
-class Job(DataBaseModel):
-    # multi-party common configuration
-    f_user_id = CharField(max_length=25, null=True)
-    f_job_id = CharField(max_length=25, index=True)
-    f_name = CharField(max_length=500, null=True, default='')
-    f_description = TextField(null=True, default='')
-    f_tag = CharField(max_length=50, null=True, default='')
-    f_dsl = JSONField()
-    f_runtime_conf = JSONField()
-    f_runtime_conf_on_party = JSONField()
-    f_train_runtime_conf = JSONField(null=True)
-    f_roles = JSONField()
-    f_initiator_role = CharField(max_length=50)
-    f_initiator_party_id = CharField(max_length=50)
-    f_status = CharField(max_length=50)
-    f_status_code = IntegerField(null=True)
-    f_user = JSONField()
-    # this party configuration
-    f_role = CharField(max_length=50, index=True)
-    f_party_id = CharField(max_length=10, index=True)
-    f_is_initiator = BooleanField(null=True, default=False)
-    f_progress = IntegerField(null=True, default=0)
-    f_ready_signal = BooleanField(default=False)
-    f_ready_time = BigIntegerField(null=True)
-    f_cancel_signal = BooleanField(default=False)
-    f_cancel_time = BigIntegerField(null=True)
-    f_rerun_signal = BooleanField(default=False)
-    f_end_scheduling_updates = IntegerField(null=True, default=0)
-
-    f_engine_name = CharField(max_length=50, null=True)
-    f_engine_type = CharField(max_length=10, null=True)
-    f_cores = IntegerField(default=0)
-    f_memory = IntegerField(default=0)  # MB
-    f_remaining_cores = IntegerField(default=0)
-    f_remaining_memory = IntegerField(default=0)  # MB
-    f_resource_in_use = BooleanField(default=False)
-    f_apply_resource_time = BigIntegerField(null=True)
-    f_return_resource_time = BigIntegerField(null=True)
-
-    f_inheritance_info = JSONField(null=True)
-    f_inheritance_status = CharField(max_length=50, null=True)
-
-    f_start_time = BigIntegerField(null=True)
-    f_start_date = DateTimeField(null=True)
-    f_end_time = BigIntegerField(null=True)
-    f_end_date = DateTimeField(null=True)
-    f_elapsed = BigIntegerField(null=True)
-
-    class Meta:
-        db_table = "t_job"
-        primary_key = CompositeKey('f_job_id', 'f_role', 'f_party_id')
-
-
-
-class PipelineComponentMeta(DataBaseModel):
-    f_model_id = CharField(max_length=100, index=True)
-    f_model_version = CharField(max_length=100, index=True)
-    f_role = CharField(max_length=50, index=True)
-    f_party_id = CharField(max_length=10, index=True)
-    f_component_name = CharField(max_length=100, index=True)
-    f_component_module_name = CharField(max_length=100)
-    f_model_alias = CharField(max_length=100, index=True)
-    f_model_proto_index = JSONField(null=True)
-    f_run_parameters = JSONField(null=True)
-    f_archive_sha256 = CharField(max_length=100, null=True)
-    f_archive_from_ip = CharField(max_length=100, null=True)
 
     class Meta:
         db_table = 't_pipeline_component_meta'
