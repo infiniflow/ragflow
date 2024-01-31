@@ -16,6 +16,11 @@ export default defineConfig({
   },
   plugins: ['@react-dev-inspector/umi4-plugin', '@umijs/plugins/dist/dva'],
   dva: {},
+  lessLoader: {
+    modifyVars: {
+      hack: `true; @import "~@/less/variable.less";`,
+    },
+  },
   // proxy: {
   //   '/v1': {
   //     'target': 'http://54.80.112.79:9380/',

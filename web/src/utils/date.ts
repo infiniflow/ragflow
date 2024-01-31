@@ -12,9 +12,9 @@ export function lastWeek() {
   return formatDate(moment().subtract(1, 'weeks'));
 }
 
-export function formatDate(date) {
+export function formatDate(date: any) {
   if (!date) {
     return '';
   }
-  return moment(date).format('YYYY-MM-DD');
+  return moment(date).format('DD/MM/YYYY');
 }

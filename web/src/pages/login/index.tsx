@@ -12,6 +12,8 @@ const Login = () => {
     (state) => state.loading.effects,
   );
 
+  // TODO: When the server address request is not accessible, the value of dva-loading always remains true.
+
   const signLoading =
     effectsLoading['loginModel/login'] || effectsLoading['loginModel/register'];
 
