@@ -83,7 +83,7 @@ const errorHandler = (error: {
  */
 const request: RequestMethod = extend({
   errorHandler, // 默认错误处理
-  timeout: 3000000,
+  timeout: 300000,
   getResponse: true,
 });
 

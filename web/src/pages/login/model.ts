@@ -32,10 +32,8 @@ const model: DvaModel<LoginModelState> = {
   },
   effects: {
     *login({ payload = {} }, { call, put }) {
-      console.log(111, payload);
       const { data, response } = yield call(userService.login, payload);
-      const { retcode, data: res, retmsg } = data;
-      console.log();
+      const { retcode, data: res } = data;
       const authorization = response.headers.get(Authorization);
       if (retcode === 0) {
         message.success('登录成功！');
