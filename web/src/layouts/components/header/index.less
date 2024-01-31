@@ -11,3 +11,36 @@
   color: #1677ff;
   border-color: #1677ff;
 }
+
+.appIcon {
+  vertical-align: middle;
+}
+
+.appName {
+  vertical-align: middle;
+  font-family: Inter;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.radioGroup {
+  background: rgba(249, 249, 249, 1) !important;
+  & > label {
+    border: 0 !important;
+    &::before {
+      display: none !important;
+    }
+  }
+  :global(.ant-radio-button-wrapper-checked) {
+    border-radius: 6px !important;
+  }
+}
+
+.ant-radio-button-wrapper-checked {
+  border-radius: 6px !important;
+}
+.radioButtonIcon {
+  vertical-align: middle;
+}

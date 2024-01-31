@@ -1,6 +1,6 @@
-import logo from '@/assets/logo.png';
-import { Layout, Space, theme } from 'antd';
-import classnames from 'classnames';
+import { ReactComponent as StarIon } from '@/assets/svg/chat-star.svg';
+import { ReactComponent as Logo } from '@/assets/svg/logo.svg';
+import { Layout, Radio, Space, theme } from 'antd';
 
 import styles from './index.less';
 
@@ -34,7 +34,7 @@ const RagHeader = () => {
   return (
     <Header
       style={{
-        padding: '0 8px',
+        padding: '0 16px',
         background: colorBgContainer,
         display: 'flex',
         justifyContent: 'space-between',
@@ -42,19 +42,29 @@ const RagHeader = () => {
         height: '72px',
       }}
     >
-      <img src={logo} alt="" style={{ height: 30, width: 30 }} />
+      <Space size={12}>
+        <Logo className={styles.appIcon}></Logo>
+        <label className={styles.appName}>Infinity flow</label>
+      </Space>
       <Space size={[0, 8]} wrap>
-        {tagsData.map((item) => (
-          <span
-            key={item.name}
-            className={classnames(styles.tag, {
-              [styles.checked]: currentPath === item.name,
-            })}
-            onClick={() => handleChange(item.path)}
-          >
-            {item.name}
-          </span>
-        ))}
+        <Radio.Group
+          defaultValue="a"
+          buttonStyle="solid"
+          className={styles.radioGroup}
+          value={currentPath}
+        >
+          {tagsData.map((item) => (
+            <Radio.Button
+              value={item.name}
+              onClick={() => handleChange(item.path)}
+            >
+              <Space>
+                <StarIon className={styles.radioButtonIcon}></StarIon>
+                {item.name}
+              </Space>
+            </Radio.Button>
+          ))}
+        </Radio.Group>
       </Space>
       <User></User>
     </Header>
