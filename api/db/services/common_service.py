@@ -70,6 +70,7 @@ class CommonService:
     @DB.connection_context()
     def insert_many(cls, data_list, batch_size=100):
         with DB.atomic():
+            for d in data_list: d["create_time"] = datetime_format(datetime.now())
             for i in range(0, len(data_list), batch_size):
                 cls.model.insert_many(data_list[i:i + batch_size]).execute()
 

@@ -32,19 +32,19 @@ LOGGER = getLogger()
 def bulk_insert_into_db(model, data_source, replace_on_conflict=False):
     DB.create_tables([model])
 
-    current_time = current_timestamp()
-    current_date = timestamp_to_date(current_time)
 
     for data in data_source:
-        if 'f_create_time' not in data:
-            data['f_create_time'] = current_time
-        data['f_create_date'] = timestamp_to_date(data['f_create_time'])
-        data['f_update_time'] = current_time
-        data['f_update_date'] = current_date
+        current_time = current_timestamp()
+        current_date = timestamp_to_date(current_time)
+        if 'create_time' not in data:
+            data['create_time'] = current_time
+        data['create_date'] = timestamp_to_date(data['create_time'])
+        data['update_time'] = current_time
+        data['update_date'] = current_date
 
-    preserve = tuple(data_source[0].keys() - {'f_create_time', 'f_create_date'})
+    preserve = tuple(data_source[0].keys() - {'create_time', 'create_date'})
 
-    batch_size = 50 if RuntimeConfig.USE_LOCAL_DATABASE else 1000
+    batch_size = 1000
 
     for i in range(0, len(data_source), batch_size):
         with DB.atomic():

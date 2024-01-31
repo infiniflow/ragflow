@@ -1559,6 +1559,15 @@ class HuParser:
 
         return "\n\n".join(res)
 
+    @staticmethod
+    def total_page_number(fnm, binary=None):
+        try:
+            pdf = pdfplumber.open(fnm) if not binary else pdfplumber.open(BytesIO(binary))
+            return len(pdf.pages)
+        except Exception as e:
+            pdf = fitz.open(fnm) if not binary else fitz.open(stream=fnm, filetype="pdf")
+            return len(pdf)
+
     def __images__(self, fnm, zoomin=3, page_from=0, page_to=299):
         self.lefted_chars = []
         self.mean_height = []

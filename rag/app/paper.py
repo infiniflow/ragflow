@@ -18,24 +18,20 @@ class Pdf(HuParser):
             zoomin,
             from_page,
             to_page)
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page / 4,
-                   "Page {}~{}: OCR finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.2, "OCR finished.", callback)
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_paddle(zoomin)
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page / 4,
-                   "Page {}~{}: Layout analysis finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.47, "Layout analysis finished", callback)
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page / 4,
-                   "Page {}~{}: Table analysis finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.68, "Table analysis finished", callback)
         self._text_merge()
         column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page / 4,
-                   "Page {}~{}: Text merging finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.75, "Text merging finished.", callback)
         tbls = self._extract_table_figure(True, zoomin, False)
 
         # clean mess
@@ -105,6 +101,7 @@ class Pdf(HuParser):
                 break
         if not abstr: i = 0
 
+        callback__(0.8, "Page {}~{}: Text merging finished".format(from_page, min(to_page, self.total_page)), callback)
         for b in self.boxes: print(b["text"], b.get("layoutno"))
         print(tbls)
 
@@ -126,6 +123,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
         pdf_parser = Pdf()
         paper = pdf_parser(filename if not binary else binary,
                            from_page=from_page, to_page=to_page, callback=callback)
+    else: raise NotImplementedError("file type not supported yet(pdf supported)")
     doc = {
         "docnm_kwd": paper["title"] if paper["title"] else filename,
         "authors_tks": paper["authors"]
