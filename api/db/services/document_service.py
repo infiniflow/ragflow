@@ -61,8 +61,8 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_newly_uploaded(cls, tm, mod, comm, items_per_page=64):
-        fields = [cls.model.id, cls.model.kb_id, cls.model.parser_id, cls.model.name, cls.model.location, cls.model.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, cls.model.update_time]
+    def get_newly_uploaded(cls, tm, mod=0, comm=1, items_per_page=64):
+        fields = [cls.model.id, cls.model.kb_id, cls.model.parser_id, cls.model.name, cls.model.type, cls.model.location, cls.model.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, Tenant.asr_id, cls.model.update_time]
         docs = cls.model.select(*fields) \
             .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id)) \
             .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))\
@@ -74,6 +74,18 @@ class DocumentService(CommonService):
                 (Expression(cls.model.create_time, "%%", comm) == mod))\
             .order_by(cls.model.update_time.asc())\
             .paginate(1, items_per_page)
+        return list(docs.dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def get_unfinished_docs(cls):
+        fields = [cls.model.id, cls.model.process_begin_at]
+        docs = cls.model.select(*fields) \
+            .where(
+                cls.model.status == StatusEnum.VALID.value,
+                ~(cls.model.type == FileType.VIRTUAL.value),
+                cls.model.progress < 1,
+                cls.model.progress > 0)
         return list(docs.dicts())
 
     @classmethod

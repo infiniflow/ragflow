@@ -59,3 +59,14 @@ class ChatStyle(StrEnum):
     PRECISE = 'Precise'
     EVENLY = 'Evenly'
     CUSTOM = 'Custom'
+
+
+class ParserType(StrEnum):
+    GENERAL = "general"
+    PRESENTATION = "presentation"
+    LAWS = "laws"
+    MANUAL = "manual"
+    PAPER = "paper"
+    RESUME = ""
+    BOOK = ""
+    QA = ""

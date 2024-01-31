@@ -42,10 +42,8 @@ class Ppt(object):
                 txt = self.__extract(shape)
                 if txt: texts.append(txt)
             txts.append("\n".join(texts))
-            callback__((i+1)/self.total_page/2, "", callback)
 
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page,
-                   "Page {}~{}: Text extraction finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.5, "Text extraction finished.", callback)
         import aspose.slides as slides
         import aspose.pydrawing as drawing
         imgs = []
@@ -55,8 +53,7 @@ class Ppt(object):
                 slide.get_thumbnail(0.5, 0.5).save(buffered, drawing.imaging.ImageFormat.jpeg)
                 imgs.append(buffered.getvalue())
         assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
-        callback__((min(to_page, self.total_page) - from_page) / self.total_page,
-                   "Page {}~{}: Image extraction finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.9, "Image extraction finished", callback)
         self.is_english = is_english(txts)
         return [(txts[i], imgs[i]) for i in range(len(txts))]
 
@@ -73,7 +70,7 @@ class Pdf(HuParser):
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page)
-        callback__((min(to_page, self.total_page)-from_page) / self.total_page, "Page {}~{}: OCR finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback__(0.8, "Page {}~{}: OCR finished".format(from_page, min(to_page, self.total_page)), callback)
         assert len(self.boxes) == len(self.page_images), "{} vs. {}".format(len(self.boxes), len(self.page_images))
         res = []
         #################### More precisely ###################
@@ -92,6 +89,7 @@ class Pdf(HuParser):
         for i in range(len(self.boxes)):
             lines = "\n".join([b["text"] for b in self.boxes[i] if not self.__garbage(b["text"])])
             res.append((lines, self.page_images[i]))
+        callback__(0.9, "Page {}~{}: Parsing finished".format(from_page, min(to_page, self.total_page)), callback)
         return res
 
 
@@ -104,13 +102,13 @@ def chunk(filename, binary=None,  from_page=0, to_page=100000, callback=None):
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
         ppt_parser = Ppt()
-        for txt,img in ppt_parser(filename if not binary else binary, from_page, to_page, callback):
+        for txt,img in ppt_parser(filename if not binary else binary, from_page, 1000000, callback):
             d = copy.deepcopy(doc)
             d["image"] = img
             tokenize(d, txt, ppt_parser.is_english)
             res.append(d)
         return res
-    if re.search(r"\.pdf$", filename, re.IGNORECASE):
+    elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
         for txt,img in pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback):
             d = copy.deepcopy(doc)
@@ -118,7 +116,8 @@ def chunk(filename, binary=None,  from_page=0, to_page=100000, callback=None):
             tokenize(d, txt, pdf_parser.is_english)
             res.append(d)
         return res
-    callback__(-1, "This kind of presentation document did not support yet!", callback)
+
+    raise NotImplementedError("file type not supported yet(pptx, pdf supported)")
 
 
 if __name__== "__main__":
