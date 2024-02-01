@@ -22,7 +22,7 @@ from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid, get_format_time
 from api.db import StatusEnum, UserTenantRole
-from api.db.services.kb_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import Knowledgebase, TenantLLM
 from api.settings import stat_logger, RetCode
 from api.utils.api_utils import get_json_result

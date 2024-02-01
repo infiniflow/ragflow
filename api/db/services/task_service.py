@@ -15,9 +15,10 @@
 #
 from peewee import Expression
 from api.db.db_models import DB
-from api.db import StatusEnum, FileType
+from api.db import StatusEnum, FileType, TaskStatus
 from api.db.db_models import Task, Document, Knowledgebase, Tenant
 from api.db.services.common_service import CommonService
+from api.db.services.document_service import DocumentService
 
 
 class TaskService(CommonService):
@@ -46,8 +47,9 @@ class TaskService(CommonService):
     @DB.connection_context()
     def do_cancel(cls, id):
         try:
-            cls.model.get_by_id(id)
-            return False
+            task = cls.model.get_by_id(id)
+            _, doc = DocumentService.get_by_id(task.doc_id)
+            return doc.run == TaskStatus.CANCEL.value
         except Exception as e:
             pass
         return True

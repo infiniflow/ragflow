@@ -763,7 +763,7 @@ class HuParser:
             return
         i = 0
         while i < len(self.boxes):
-            if not re.match(r"(contents|目录|目次|table of contents)$", re.sub(r"( | |\u3000)+", "", self.boxes[i]["text"].lower())):
+            if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", self.boxes[i]["text"].lower())):
                 i += 1
                 continue
             eng = re.match(r"[0-9a-zA-Z :'.-]{5,}", self.boxes[i]["text"].strip())
@@ -781,6 +781,22 @@ class HuParser:
                     continue
                 for k in range(i, j): self.boxes.pop(i)
                 break
+
+    def _merge_with_same_bullet(self):
+        i = 0
+        while i + 1 < len(self.boxes):
+            b = self.boxes[i]
+            b_ = self.boxes[i + 1]
+            if b["text"].strip()[0] != b_["text"].strip()[0] \
+                    or b["text"].strip()[0].lower() in set("qwertyuopasdfghjklzxcvbnm") \
+                    or b["top"] > b_["bottom"]:
+                i += 1
+                continue
+            b_["text"] = b["text"] + "\n" + b_["text"]
+            b_["x0"] = min(b["x0"], b_["x0"])
+            b_["x1"] = max(b["x1"], b_["x1"])
+            b_["top"] = b["top"]
+            self.boxes.pop(i)
 
     def _blockType(self, b):
         patt = [
