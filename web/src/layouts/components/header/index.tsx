@@ -3,12 +3,12 @@ import { ReactComponent as FileIcon } from '@/assets/svg/file-management.svg';
 import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base.svg';
 import { ReactComponent as Logo } from '@/assets/svg/logo.svg';
 import { Layout, Radio, Space, theme } from 'antd';
+import Toolbar from '../right-toolbar';
 
 import styles from './index.less';
 
 import { useMemo } from 'react';
 import { useLocation, useNavigate } from 'umi';
-import User from '../user';
 
 const { Header } = Layout;
 
@@ -71,7 +71,7 @@ const RagHeader = () => {
           ))}
         </Radio.Group>
       </Space>
-      <User></User>
+      <Toolbar></Toolbar>
     </Header>
   );
 };
