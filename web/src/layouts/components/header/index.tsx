@@ -1,4 +1,6 @@
 import { ReactComponent as StarIon } from '@/assets/svg/chat-star.svg';
+import { ReactComponent as FileIcon } from '@/assets/svg/file-management.svg';
+import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base.svg';
 import { ReactComponent as Logo } from '@/assets/svg/logo.svg';
 import { Layout, Radio, Space, theme } from 'antd';
 
@@ -18,9 +20,9 @@ const RagHeader = () => {
   const { pathname } = useLocation();
 
   const tagsData = [
-    { path: '/knowledge', name: 'knowledge' },
-    { path: '/chat', name: 'chat' },
-    { path: '/file', name: 'file' },
+    { path: '/knowledge', name: 'Knowledge Base', icon: KnowledgeBaseIcon },
+    { path: '/chat', name: 'Chat', icon: StarIon },
+    { path: '/file', name: 'File Management', icon: FileIcon },
   ];
 
   const currentPath = useMemo(() => {
@@ -59,7 +61,10 @@ const RagHeader = () => {
               onClick={() => handleChange(item.path)}
             >
               <Space>
-                <StarIon className={styles.radioButtonIcon}></StarIon>
+                <item.icon
+                  className={styles.radioButtonIcon}
+                  stroke={item.name === currentPath ? 'black' : 'white'}
+                ></item.icon>
                 {item.name}
               </Space>
             </Radio.Button>
