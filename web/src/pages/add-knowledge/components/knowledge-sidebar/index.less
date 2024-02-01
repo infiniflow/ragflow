@@ -22,22 +22,42 @@
       color: @gray8;
       margin: 0;
     }
+    padding-bottom: 20px;
   }
-}
-
-.menu {
-  .defaultWidth {
-    width: 256px;
+  .divider {
+    height: 2px;
+    background-image: linear-gradient(
+      to right,
+      @gray11 0%,
+      @gray11 50%,
+      transparent 50%
+    );
+    background-size: 10px 2px;
+    background-repeat: repeat-x;
   }
 
-  .minWidth {
-    width: 50px;
-  }
+  .menuWrapper {
+    padding-top: 10px;
 
-  .menuText {
-    color: @gray3;
-    font-family: @fontFamilyNunitoSans;
-    font-size: @fontSize14;
-    font-weight: @fontWeight700;
+    .menu {
+      border: none;
+      font-size: @fontSize14;
+      font-weight: @fontWeight600;
+    }
+
+    .defaultWidth {
+      width: 240px;
+    }
+
+    .minWidth {
+      width: 50px;
+    }
+
+    .menuText {
+      color: @gray3;
+      font-family: @fontFamilyNunitoSans;
+      font-size: @fontSize14;
+      font-weight: @fontWeight700;
+    }
   }
 }

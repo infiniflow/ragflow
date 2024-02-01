@@ -1,14 +1,13 @@
+import { ReactComponent as ConfigrationIcon } from '@/assets/svg/knowledge-configration.svg';
+import { ReactComponent as DatasetIcon } from '@/assets/svg/knowledge-dataset.svg';
+import { ReactComponent as TestingIcon } from '@/assets/svg/knowledge-testing.svg';
 import { getWidth } from '@/utils';
-import {
-  AntDesignOutlined,
-  BarsOutlined,
-  SearchOutlined,
-  ToolOutlined,
-} from '@ant-design/icons';
-import { Avatar, Divider, Menu, MenuProps, Space } from 'antd';
+import { AntDesignOutlined } from '@ant-design/icons';
+import { Avatar, Menu, MenuProps, Space } from 'antd';
 import classNames from 'classnames';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSelector } from 'umi';
+import { KnowledgeRouteKey, routeMap } from '../../constant';
 import styles from './index.less';
 
 const KnowledgeSidebar = () => {
@@ -16,7 +15,7 @@ const KnowledgeSidebar = () => {
   const { id } = kAModel;
   let navigate = useNavigate();
   const params = useParams();
-  const activeKey = params.module || 'file';
+  const activeKey = params.module || KnowledgeRouteKey.Dataset;
 
   const [windowWidth, setWindowWidth] = useState(getWidth());
   const [collapsed, setCollapsed] = useState(false);
@@ -45,11 +44,22 @@ const KnowledgeSidebar = () => {
     } as MenuItem;
   }
   const items: MenuItem[] = useMemo(() => {
-    // const disabled = !id;
     return [
-      getItem('配置', 'setting', <ToolOutlined />),
-      getItem('知识库', 'file', <BarsOutlined />),
-      getItem('搜索测试', 'search', <SearchOutlined />),
+      getItem(
+        routeMap[KnowledgeRouteKey.Dataset], // TODO: Change icon color when selected
+        KnowledgeRouteKey.Dataset,
+        <DatasetIcon />,
+      ),
+      getItem(
+        routeMap[KnowledgeRouteKey.Testing],
+        KnowledgeRouteKey.Testing,
+        <TestingIcon />,
+      ),
+      getItem(
+        routeMap[KnowledgeRouteKey.Configration],
+        KnowledgeRouteKey.Configration,
+        <ConfigrationIcon />,
+      ),
     ];
   }, [id]);
 
@@ -87,12 +97,12 @@ const KnowledgeSidebar = () => {
           computing and data storage.
         </p>
       </div>
-      <Divider dashed />
-      <div className={styles.menu}>
+      <div className={styles.divider}></div>
+      <div className={styles.menuWrapper}>
         <Menu
           selectedKeys={[activeKey]}
-          mode="inline"
-          className={classNames({
+          // mode="inline"
+          className={classNames(styles.menu, {
             [styles.defaultWidth]: windowWidth.width > 957,
             [styles.minWidth]: windowWidth.width <= 957,
           })}

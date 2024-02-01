@@ -1,13 +1,13 @@
 import { ReactComponent as MoreIcon } from '@/assets/svg/more.svg';
+import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { formatDate } from '@/utils/date';
 import {
-  AntDesignOutlined,
   CalendarOutlined,
   DeleteOutlined,
   FileTextOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Card, Dropdown, MenuProps, Space, Tooltip } from 'antd';
+import { Avatar, Card, Dropdown, MenuProps, Space } from 'antd';
 import { MouseEvent } from 'react';
 import { useDispatch, useNavigate } from 'umi';
 
@@ -47,7 +47,7 @@ const KnowledgeCard = ({ item }: IProps) => {
   };
 
   const handleCardClick = () => {
-    navigate(`/knowledge/file?id=${item.id}`);
+    navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${item.id}`);
   };
 
   const onConfirmDelete = (e?: MouseEvent<HTMLElement>) => {
@@ -97,7 +97,7 @@ const KnowledgeCard = ({ item }: IProps) => {
                 {formatDate(item.update_date)}
               </span>
             </div>
-            <Avatar.Group size={25}>
+            {/* <Avatar.Group size={25}>
               <Avatar src="https://api.dicebear.com/7.x/miniavs/svg?seed=1" />
               <a href="https://ant.design">
                 <Avatar style={{ backgroundColor: '#f56a00' }}>K</Avatar>
@@ -112,7 +112,7 @@ const KnowledgeCard = ({ item }: IProps) => {
                 style={{ backgroundColor: '#1677ff' }}
                 icon={<AntDesignOutlined />}
               />
-            </Avatar.Group>
+            </Avatar.Group> */}
           </div>
         </div>
       </div>
