@@ -18,10 +18,12 @@ import datetime
 from flask import request
 from flask_login import login_required, current_user
 from elasticsearch_dsl import Q
+
+from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import search, huqie, retrievaler
 from rag.utils import ELASTICSEARCH, rmSpace
-from api.db import LLMType
-from api.db.services.kb_service import KnowledgebaseService
+from api.db import LLMType, ParserType
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
@@ -89,10 +91,8 @@ def get():
         res["chunk_id"] = id
         k = []
         for n in res.keys():
-            if re.search(r"(_vec$|_sm_)", n):
+            if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
                 k.append(n)
-            if re.search(r"(_tks|_ltks)", n):
-                res[n] = rmSpace(res[n])
         for n in k:
             del res[n]
 
@@ -106,12 +106,12 @@ def get():
 
 @manager.route('/set', methods=['POST'])
 @login_required
-@validate_request("doc_id", "chunk_id", "content_ltks",
+@validate_request("doc_id", "chunk_id", "content_with_weight",
                   "important_kwd")
 def set():
     req = request.json
     d = {"id": req["chunk_id"]}
-    d["content_ltks"] = huqie.qie(req["content_ltks"])
+    d["content_ltks"] = huqie.qie(req["content_with_weight"])
     d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
     d["important_kwd"] = req["important_kwd"]
     d["important_tks"] = huqie.qie(" ".join(req["important_kwd"]))
@@ -127,8 +127,15 @@ def set():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
+
+        if doc.parser_id == ParserType.QA:
+            arr = [t for t in re.split(r"[\n\t]", req["content_with_weight"]) if len(t)>1]
+            if len(arr) != 2: return get_data_error_result(retmsg="Q&A must be separated by TAB/ENTER key.")
+            q, a = rmPrefix(arr[0]), rmPrefix[arr[1]]
+            d = beAdoc(d, arr[0], arr[1], not any([huqie.is_chinese(t) for t in q+a]))
+
         v, c = embd_mdl.encode([doc.name, req["content_ltks"]])
-        v = 0.1 * v[0] + 0.9 * v[1]
+        v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
         ELASTICSEARCH.upsert([d], search.index_name(tenant_id))
         return get_json_result(data=True)
