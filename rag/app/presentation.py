@@ -3,7 +3,7 @@ import re
 from io import BytesIO
 from pptx import Presentation
 
-from rag.app import callback__, tokenize, is_english
+from rag.app import tokenize, is_english
 from rag.nlp import huqie
 from rag.parser.pdf_parser import HuParser
 
@@ -43,7 +43,7 @@ class Ppt(object):
                 if txt: texts.append(txt)
             txts.append("\n".join(texts))
 
-        callback__(0.5, "Text extraction finished.", callback)
+        callback(0.5, "Text extraction finished.")
         import aspose.slides as slides
         import aspose.pydrawing as drawing
         imgs = []
@@ -53,7 +53,7 @@ class Ppt(object):
                 slide.get_thumbnail(0.5, 0.5).save(buffered, drawing.imaging.ImageFormat.jpeg)
                 imgs.append(buffered.getvalue())
         assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
-        callback__(0.9, "Image extraction finished", callback)
+        callback(0.9, "Image extraction finished")
         self.is_english = is_english(txts)
         return [(txts[i], imgs[i]) for i in range(len(txts))]
 
@@ -70,7 +70,7 @@ class Pdf(HuParser):
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page)
-        callback__(0.8, "Page {}~{}: OCR finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback(0.8, "Page {}~{}: OCR finished".format(from_page, min(to_page, self.total_page)))
         assert len(self.boxes) == len(self.page_images), "{} vs. {}".format(len(self.boxes), len(self.page_images))
         res = []
         #################### More precisely ###################
@@ -89,7 +89,7 @@ class Pdf(HuParser):
         for i in range(len(self.boxes)):
             lines = "\n".join([b["text"] for b in self.boxes[i] if not self.__garbage(b["text"])])
             res.append((lines, self.page_images[i]))
-        callback__(0.9, "Page {}~{}: Parsing finished".format(from_page, min(to_page, self.total_page)), callback)
+        callback(0.9, "Page {}~{}: Parsing finished".format(from_page, min(to_page, self.total_page)))
         return res
 
 

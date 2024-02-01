@@ -17,7 +17,7 @@ import logging
 import os
 import time
 import random
-from timeit import default_timer as timer
+from datetime import datetime
 from api.db.db_models import Task
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.task_service import TaskService
@@ -26,7 +26,7 @@ from rag.settings import cron_logger
 from rag.utils import MINIO
 from rag.utils import findMaxTm
 import pandas as pd
-from api.db import FileType
+from api.db import FileType, TaskStatus
 from api.db.services.document_service import DocumentService
 from api.settings import database_logger
 from api.utils import get_format_time, get_uuid
@@ -105,15 +105,23 @@ def update_progress():
             prg = 0
             finished = True
             bad = 0
+            status = TaskStatus.RUNNING.value
             for t in tsks:
                 if 0 <= t.progress < 1: finished = False
                 prg += t.progress if t.progress >= 0 else 0
                 msg.append(t.progress_msg)
                 if t.progress == -1: bad += 1
             prg /= len(tsks)
-            if finished and bad: prg = -1
+            if finished and bad:
+                prg = -1
+                status = TaskStatus.FAIL.value
+            elif finished: status = TaskStatus.DONE.value
+
             msg = "\n".join(msg)
-            DocumentService.update_by_id(d["id"], {"progress": prg, "progress_msg": msg, "process_duation": timer()-d["process_begin_at"].timestamp()})
+            info = {"process_duation": datetime.timestamp(datetime.now())-d["process_begin_at"].timestamp(), "run": status}
+            if prg !=0 : info["progress"] = prg
+            if msg: info["progress_msg"] = msg
+            DocumentService.update_by_id(d["id"], info)
         except Exception as e:
             cron_logger.error("fetch task exception:" + str(e))
 

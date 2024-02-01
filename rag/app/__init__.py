@@ -4,14 +4,8 @@ from nltk import word_tokenize
 
 from rag.nlp import stemmer, huqie
 
-
-def callback__(progress, msg, func):
-    if not func :return
-    func(progress, msg)
-
-
 BULLET_PATTERN = [[
-        r"第[零一二三四五六七八九十百]+编",
+        r"第[零一二三四五六七八九十百]+(编|部分)",
         r"第[零一二三四五六七八九十百]+章",
         r"第[零一二三四五六七八九十百]+节",
         r"第[零一二三四五六七八九十百]+条",
@@ -22,6 +16,8 @@ BULLET_PATTERN = [[
         r"[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}",
         r"[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}",
     ], [
+        r"第[零一二三四五六七八九十百]+章",
+        r"第[零一二三四五六七八九十百]+节",
         r"[零一二三四五六七八九十百]+[ 、]",
         r"[\(（][零一二三四五六七八九十百]+[\)）]",
         r"[\(（][0-9]{,2}[\)）]",
@@ -54,7 +50,7 @@ def bullets_category(sections):
 def is_english(texts):
     eng = 0
     for t in texts:
-        if re.match(r"[a-zA-Z]", t.strip()):
+        if re.match(r"[a-zA-Z]{2,}", t.strip()):
             eng += 1
     if eng / len(texts) > 0.8:
         return True
@@ -70,3 +66,26 @@ def tokenize(d, t, eng):
         d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
 
 
+def remove_contents_table(sections, eng=False):
+    i = 0
+    while i < len(sections):
+        def get(i):
+            nonlocal sections
+            return (sections[i] if type(sections[i]) == type("") else sections[i][0]).strip()
+        if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], re.IGNORECASE)):
+            i += 1
+            continue
+        sections.pop(i)
+        if i >= len(sections): break
+        prefix = get(i)[:3] if not eng else " ".join(get(i).split(" ")[:2])
+        while not prefix:
+            sections.pop(i)
+            if i >= len(sections): break
+            prefix = get(i)[:3] if not eng else " ".join(get(i).split(" ")[:2])
+        sections.pop(i)
+        if i >= len(sections) or not prefix: break
+        for j in range(i, min(i+128, len(sections))):
+            if not re.match(prefix, get(j)):
+                continue
+            for _ in range(i, j):sections.pop(i)
+            break
