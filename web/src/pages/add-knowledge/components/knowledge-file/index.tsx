@@ -159,7 +159,7 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
   ];
   const toChunk = (id: string) => {
     console.log(id);
-    navigate(`/knowledge/add/setting?activeKey=file&id=${kb_id}&doc_id=${id}`);
+    navigate(`/knowledge/file?id=${kb_id}&doc_id=${id}`);
   };
   const columns: ColumnsType<DataType> = [
     {

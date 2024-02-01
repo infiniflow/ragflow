@@ -26,7 +26,9 @@ const RagHeader = () => {
   ];
 
   const currentPath = useMemo(() => {
-    return tagsData.find((x) => x.path === pathname)?.name || 'knowledge';
+    return (
+      tagsData.find((x) => pathname.startsWith(x.path))?.name || 'knowledge'
+    );
   }, [pathname]);
 
   const handleChange = (path: string) => {
@@ -59,6 +61,7 @@ const RagHeader = () => {
             <Radio.Button
               value={item.name}
               onClick={() => handleChange(item.path)}
+              key={item.name}
             >
               <Space>
                 <item.icon

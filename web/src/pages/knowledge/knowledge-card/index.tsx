@@ -47,7 +47,7 @@ const KnowledgeCard = ({ item }: IProps) => {
   };
 
   const handleCardClick = () => {
-    navigate(`add/setting?activeKey=file&id=${item.id}`);
+    navigate(`/knowledge/file?id=${item.id}`);
   };
 
   const onConfirmDelete = (e?: MouseEvent<HTMLElement>) => {
