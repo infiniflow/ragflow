@@ -1,6 +1,6 @@
 import copy
 import re
-from rag.app import callback__, tokenize
+from rag.app import tokenize
 from rag.nlp import huqie
 from rag.parser.pdf_parser import HuParser
 from rag.utils import num_tokens_from_string
@@ -14,19 +14,19 @@ class Pdf(HuParser):
             zoomin,
             from_page,
             to_page)
-        callback__(0.2, "OCR finished.", callback)
+        callback(0.2, "OCR finished.")
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_paddle(zoomin)
-        callback__(0.5, "Layout analysis finished.", callback)
+        callback(0.5, "Layout analysis finished.")
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
-        callback__(0.7, "Table analysis finished.", callback)
+        callback(0.7, "Table analysis finished.")
         self._text_merge()
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
-        callback__(0.77, "Text merging finished", callback)
+        callback(0.77, "Text merging finished")
         tbls = self._extract_table_figure(True, zoomin, False)
 
         # clean mess
@@ -34,20 +34,8 @@ class Pdf(HuParser):
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
         # merge chunks with the same bullets
-        i = 0
-        while i + 1 < len(self.boxes):
-            b = self.boxes[i]
-            b_ = self.boxes[i + 1]
-            if b["text"].strip()[0] != b_["text"].strip()[0] \
-                    or b["page_number"]!=b_["page_number"] \
-                    or b["top"] > b_["bottom"]:
-                i += 1
-                continue
-            b_["text"] = b["text"] + "\n" + b_["text"]
-            b_["x0"] = min(b["x0"], b_["x0"])
-            b_["x1"] = max(b["x1"], b_["x1"])
-            b_["top"] = b["top"]
-            self.boxes.pop(i)
+        self._merge_with_same_bullet()
+
         # merge title with decent chunk
         i = 0
         while i + 1 < len(self.boxes):
@@ -62,7 +50,7 @@ class Pdf(HuParser):
             b_["top"] = b["top"]
             self.boxes.pop(i)
 
-        callback__(0.8, "Parsing finished", callback)
+        callback(0.8, "Parsing finished")
         for b in self.boxes: print(b["text"], b.get("layoutno"))
 
         print(tbls)

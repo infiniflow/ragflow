@@ -33,8 +33,8 @@ def bulk_insert_into_db(model, data_source, replace_on_conflict=False):
     DB.create_tables([model])
 
 
-    for data in data_source:
-        current_time = current_timestamp()
+    for i,data in enumerate(data_source):
+        current_time = current_timestamp() + i
         current_date = timestamp_to_date(current_time)
         if 'create_time' not in data:
             data['create_time'] = current_time

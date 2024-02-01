@@ -3,7 +3,7 @@ import re
 from io import BytesIO
 from docx import Document
 import numpy as np
-from rag.app import callback__, bullets_category, BULLET_PATTERN, is_english, tokenize
+from rag.app import bullets_category, BULLET_PATTERN, is_english, tokenize
 from rag.nlp import huqie
 from rag.parser.docx_parser import HuDocxParser
 from rag.parser.pdf_parser import HuParser
@@ -32,12 +32,12 @@ class Pdf(HuParser):
             zoomin,
             from_page,
             to_page)
-        callback__(0.1, "OCR finished", callback)
+        callback(0.1, "OCR finished")
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_paddle(zoomin)
-        callback__(0.77, "Layout analysis finished", callback)
+        callback(0.77, "Layout analysis finished")
         print("paddle layouts:", timer()-start)
         bxs = self.sort_Y_firstly(self.boxes, np.median(self.mean_height) / 3)
         # is it English
@@ -75,7 +75,7 @@ class Pdf(HuParser):
             b["x1"] = max(b["x1"], b_["x1"])
             bxs.pop(i + 1)
 
-        callback__(0.8, "Text extraction finished", callback)
+        callback(0.8, "Text extraction finished")
 
         return [b["text"] + self._line_tag(b, zoomin) for b in bxs]
 
@@ -89,17 +89,17 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
     pdf_parser = None
     sections = []
     if re.search(r"\.docx?$", filename, re.IGNORECASE):
-        callback__(0.1, "Start to parse.", callback)
+        callback(0.1, "Start to parse.")
         for txt in Docx()(filename, binary):
             sections.append(txt)
-        callback__(0.8, "Finish parsing.", callback)
+        callback(0.8, "Finish parsing.")
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
         for txt in pdf_parser(filename if not binary else binary,
                          from_page=from_page, to_page=to_page, callback=callback):
             sections.append(txt)
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
-        callback__(0.1, "Start to parse.", callback)
+        callback(0.1, "Start to parse.")
         txt = ""
         if binary:txt = binary.decode("utf-8")
         else:
@@ -110,7 +110,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
                     txt += l
             sections = txt.split("\n")
         sections = [l for l in sections if l]
-        callback__(0.8, "Finish parsing.", callback)
+        callback(0.8, "Finish parsing.")
     else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
     # is it English
@@ -118,7 +118,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
     # Remove 'Contents' part
     i = 0
     while i < len(sections):
-        if not re.match(r"(Contents|目录|目次)$", re.sub(r"( | |\u3000)+", "", sections[i].split("@@")[0])):
+        if not re.match(r"(contents|目录|目次|table of contents)$", re.sub(r"( | |\u3000)+", "", sections[i].split("@@")[0], re.IGNORECASE)):
             i += 1
             continue
         sections.pop(i)
@@ -133,7 +133,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
         for j in range(i, min(i+128, len(sections))):
             if not re.match(prefix, sections[j]):
                 continue
-            for k in range(i, j):sections.pop(i)
+            for _ in range(i, j):sections.pop(i)
             break
 
     bull = bullets_category(sections)
