@@ -61,12 +61,19 @@ class ChatStyle(StrEnum):
     CUSTOM = 'Custom'
 
 
+class TaskStatus(StrEnum):
+    RUNNING = "1"
+    CANCEL = "2"
+    DONE = "3"
+    FAIL = "4"
+
+
 class ParserType(StrEnum):
     GENERAL = "general"
     PRESENTATION = "presentation"
     LAWS = "laws"
     MANUAL = "manual"
     PAPER = "paper"
-    RESUME = ""
-    BOOK = ""
-    QA = ""
+    RESUME = "resume"
+    BOOK = "book"
+    QA = "qa"

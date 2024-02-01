@@ -15,11 +15,11 @@
 #
 from peewee import Expression
 
-from api.db import TenantPermission, FileType
+from api.db import TenantPermission, FileType, TaskStatus
 from api.db.db_models import DB, Knowledgebase, Tenant
 from api.db.db_models import Document
 from api.db.services.common_service import CommonService
-from api.db.services.kb_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db import StatusEnum
 
 
@@ -71,6 +71,7 @@ class DocumentService(CommonService):
                 ~(cls.model.type == FileType.VIRTUAL.value),
                 cls.model.progress == 0,
                 cls.model.update_time >= tm,
+                cls.model.run == TaskStatus.RUNNING.value,
                 (Expression(cls.model.create_time, "%%", comm) == mod))\
             .order_by(cls.model.update_time.asc())\
             .paginate(1, items_per_page)
