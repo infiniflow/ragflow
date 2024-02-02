@@ -1,4 +1,5 @@
 import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import { getOneNamespaceEffectsLoading } from '@/utils/stroreUtil';
 import { DownOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
@@ -23,15 +24,13 @@ interface DataType {
   parser_id: string;
 }
 
-interface KFProps {
-  kb_id: string;
-}
-
-const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
+const KnowledgeFile = () => {
   const dispatch = useDispatch();
   const kFModel = useSelector((state: any) => state.kFModel);
   const effects = useSelector((state: any) => state.loading.effects);
   const { data } = kFModel;
+  const knowledgeBaseId = useKnowledgeBaseId();
+
   const loading = getOneNamespaceEffectsLoading('kFModel', effects, [
     'getKfList',
     'updateDocumentStatus',
@@ -43,7 +42,7 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
 
   const getKfList = (keywords?: string) => {
     const payload = {
-      kb_id,
+      kb_id: knowledgeBaseId,
       keywords,
     };
     if (!keywords) {
@@ -56,10 +55,10 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
   };
 
   useEffect(() => {
-    if (kb_id) {
+    if (knowledgeBaseId) {
       getKfList();
     }
-  }, [kb_id]);
+  }, [knowledgeBaseId]);
 
   const debounceChange = debounce(getKfList, 300);
   const debounceCallback = useCallback(
@@ -79,7 +78,7 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
       payload: {
         doc_id,
         status: Number(e),
-        kb_id,
+        kb_id: knowledgeBaseId,
       },
     });
   };
@@ -88,7 +87,7 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
       type: 'kFModel/document_rm',
       payload: {
         doc_id,
-        kb_id,
+        kb_id: knowledgeBaseId,
       },
     });
   };
@@ -115,7 +114,7 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
         key: '1',
         label: (
           <div>
-            <UploadFile kb_id={kb_id} getKfList={getKfList} />
+            <UploadFile kb_id={knowledgeBaseId} getKfList={getKfList} />
           </div>
         ),
       },
@@ -132,7 +131,7 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
         // disabled: true,
       },
     ];
-  }, [kb_id]);
+  }, [knowledgeBaseId]);
   const chunkItems: MenuProps['items'] = [
     {
       key: '1',
@@ -160,7 +159,7 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
   ];
   const toChunk = (id: string) => {
     navigate(
-      `/knowledge/${KnowledgeRouteKey.Dataset}?id=${kb_id}&doc_id=${id}`,
+      `/knowledge/${KnowledgeRouteKey.Dataset}/chunk?id=${knowledgeBaseId}&doc_id=${id}`,
     );
   };
   const columns: ColumnsType<DataType> = [
@@ -262,7 +261,7 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
         pagination={false}
         scroll={{ scrollToFirstRowOnChange: true, x: true }}
       />
-      <CreateEPModal getKfList={getKfList} kb_id={kb_id} />
+      <CreateEPModal getKfList={getKfList} kb_id={knowledgeBaseId} />
       <SegmentSetModal
         getKfList={getKfList}
         parser_id={parser_id}

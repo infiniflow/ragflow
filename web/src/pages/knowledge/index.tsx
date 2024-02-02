@@ -1,4 +1,5 @@
 import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
+import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { PlusOutlined } from '@ant-design/icons';
 import { Button, Col, Row, Space } from 'antd';
 import { useCallback, useEffect } from 'react';
@@ -20,7 +21,7 @@ const Knowledge = () => {
   }, []);
 
   const handleAddKnowledge = () => {
-    navigate(`add/setting`);
+    navigate(`/knowledge/${KnowledgeRouteKey.Configuration}`);
   };
 
   useEffect(() => {
