@@ -98,8 +98,19 @@ class HuDocxParser:
             return lines
         return ["\n".join(lines)]
 
-    def __call__(self, fnm):
+    def __call__(self, fnm, from_page=0, to_page=100000):
         self.doc = Document(fnm) if isinstance(fnm, str) else Document(BytesIO(fnm))
-        secs = [(p.text, p.style.name) for p in self.doc.paragraphs]
+        pn = 0
+        secs = []
+        for p in self.doc.paragraphs:
+            if pn > to_page: break
+            if from_page <= pn < to_page and p.text.strip(): secs.append((p.text, p.style.name))
+            for run in p.runs:
+                if 'lastRenderedPageBreak' in run._element.xml:
+                    pn += 1
+                    continue
+                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
+                    pn += 1
+
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls

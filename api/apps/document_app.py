@@ -133,9 +133,9 @@ def list():
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", True)
     try:
-        docs = DocumentService.get_by_kb_id(
+        docs, tol = DocumentService.get_by_kb_id(
             kb_id, page_number, items_per_page, orderby, desc, keywords)
-        return get_json_result(data=docs)
+        return get_json_result(data={"total":tol, "docs": docs})
     except Exception as e:
         return server_error_response(e)
 
@@ -228,20 +228,18 @@ def run():
 
 @manager.route('/rename', methods=['POST'])
 @login_required
-@validate_request("doc_id", "name", "old_name")
+@validate_request("doc_id", "name")
 def rename():
     req = request.json
-    if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
-            req["old_name"].lower()).suffix:
-        get_json_result(
-            data=False,
-            retmsg="The extension of file can't be changed",
-            retcode=RetCode.ARGUMENT_ERROR)
-
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
+        if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
+            return get_json_result(
+                data=False,
+                retmsg="The extension of file can't be changed",
+                retcode=RetCode.ARGUMENT_ERROR)
         if DocumentService.query(name=req["name"], kb_id=doc.kb_id):
             return get_data_error_result(
                 retmsg="Duplicated document name in the same knowledgebase.")
