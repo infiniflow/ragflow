@@ -1,14 +1,19 @@
+import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/kbService';
 import { message } from 'antd';
+import omit from 'lodash/omit';
 import pick from 'lodash/pick';
+import { Nullable } from 'typings';
 import { DvaModel } from 'umi';
 
 export interface KFModelState {
   isShowCEFwModal: boolean;
   isShowTntModal: boolean;
   isShowSegmentSetModal: boolean;
+  isShowRenameModal: boolean;
   tenantIfo: any;
-  data: any[];
+  data: IKnowledgeFile[];
+  currentRecord: Nullable<IKnowledgeFile>;
 }
 
 const model: DvaModel<KFModelState> = {
@@ -17,8 +22,10 @@ const model: DvaModel<KFModelState> = {
     isShowCEFwModal: false,
     isShowTntModal: false,
     isShowSegmentSetModal: false,
+    isShowRenameModal: false,
     tenantIfo: {},
     data: [],
+    currentRecord: null,
   },
   reducers: {
     updateState(state, { payload }) {
@@ -26,6 +33,12 @@ const model: DvaModel<KFModelState> = {
         ...state,
         ...payload,
       };
+    },
+    setIsShowRenameModal(state, { payload }) {
+      return { ...state, isShowRenameModal: payload };
+    },
+    setCurrentRecord(state, { payload }) {
+      return { ...state, currentRecord: payload };
     },
   },
   subscriptions: {
@@ -98,6 +111,26 @@ const model: DvaModel<KFModelState> = {
           payload: { kb_id: payload.kb_id },
         });
       }
+    },
+    *document_rename({ payload = {} }, { call, put }) {
+      const { data } = yield call(
+        kbService.document_rename,
+        omit(payload, ['kb_id']),
+      );
+      const { retcode, data: res, retmsg } = data;
+      if (retcode === 0) {
+        message.success('rename success！');
+        yield put({
+          type: 'setIsShowRenameModal',
+          payload: false,
+        });
+        yield put({
+          type: 'getKfList',
+          payload: { kb_id: payload.kb_id },
+        });
+      }
+
+      return retcode;
     },
     *document_create({ payload = {} }, { call, put }) {
       const { data, response } = yield call(kbService.document_create, payload);

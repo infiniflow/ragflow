@@ -33,11 +33,12 @@ export default {
   rm_chunk: `${api_host}/chunk/rm`,
   retrieval_test: `${api_host}/chunk/retrieval_test`,
 
-  // 上传
+  // 文件管理
   upload: `${api_host}/document/upload`,
   get_document_list: `${api_host}/document/list`,
   document_change_status: `${api_host}/document/change_status`,
   document_rm: `${api_host}/document/rm`,
+  document_rename: `${api_host}/document/rename`,
   document_create: `${api_host}/document/create`,
   document_change_parser: `${api_host}/document/change_parser`,
 };

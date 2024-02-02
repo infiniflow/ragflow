@@ -41,7 +41,6 @@ const SegmentSetModal: React.FC<kFProps> = ({
   };
 
   const handleOk = async () => {
-    console.log(1111, selectedTag);
     const retcode = await dispatch<any>({
       type: 'kFModel/document_change_parser',
       payload: {
