@@ -36,6 +36,7 @@ class DocumentService(CommonService):
                 cls.model.name.like(f"%%{keywords}%%"))
         else:
             docs = cls.model.select().where(cls.model.kb_id == kb_id)
+        count = docs.count()
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -43,7 +44,7 @@ class DocumentService(CommonService):
 
         docs = docs.paginate(page_number, items_per_page)
 
-        return list(docs.dicts())
+        return list(docs.dicts()), count
 
     @classmethod
     @DB.connection_context()

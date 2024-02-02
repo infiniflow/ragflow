@@ -650,6 +650,41 @@ class HuParser:
             i += 1
         self.boxes = bxs
 
+    def _naive_vertical_merge(self):
+        bxs = self.sort_Y_firstly(self.boxes, np.median(self.mean_height) / 3)
+        i = 0
+        while i + 1 < len(bxs):
+            b = bxs[i]
+            b_ = bxs[i + 1]
+            if b["page_number"] < b_["page_number"] and re.match(r"[0-9  •一—-]+$", b["text"]):
+                bxs.pop(i)
+                continue
+            concatting_feats = [
+                b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
+                len(b["text"].strip()) > 1 and b["text"].strip()[-2] in ",;:'\"，‘“、；：",
+                b["text"].strip()[0] in "。；？！?”）),，、：",
+            ]
+            # features for not concating
+            feats = [
+                b.get("layoutno", 0) != b.get("layoutno", 0),
+                b["text"].strip()[-1] in "。？！?",
+                self.is_english and b["text"].strip()[-1] in ".!?",
+                b["page_number"] == b_["page_number"] and b_["top"] - \
+                b["bottom"] > self.mean_height[b["page_number"] - 1] * 1.5,
+                b["page_number"] < b_["page_number"] and abs(
+                    b["x0"] - b_["x0"]) > self.mean_width[b["page_number"] - 1] * 4
+            ]
+            if any(feats) and not any(concatting_feats):
+                i += 1
+                continue
+            # merge up and down
+            b["bottom"] = b_["bottom"]
+            b["text"] += b_["text"]
+            b["x0"] = min(b["x0"], b_["x0"])
+            b["x1"] = max(b["x1"], b_["x1"])
+            bxs.pop(i + 1)
+        self.boxes = bxs
+
     def _concat_downward(self, concat_between_pages=True):
         # count boxes in the same row as a feature
         for i in range(len(self.boxes)):
@@ -761,11 +796,13 @@ class HuParser:
     def _filter_forpages(self):
         if not self.boxes:
             return
+        findit = False
         i = 0
         while i < len(self.boxes):
             if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", self.boxes[i]["text"].lower())):
                 i += 1
                 continue
+            findit = True
             eng = re.match(r"[0-9a-zA-Z :'.-]{5,}", self.boxes[i]["text"].strip())
             self.boxes.pop(i)
             if i >= len(self.boxes): break
@@ -781,14 +818,36 @@ class HuParser:
                     continue
                 for k in range(i, j): self.boxes.pop(i)
                 break
+        if findit:return
+
+        page_dirty = [0] * len(self.page_images)
+        for b in self.boxes:
+            if re.search(r"(··|··|··)", b["text"]):
+                page_dirty[b["page_number"]-1] += 1
+        page_dirty = set([i+1 for i, t in enumerate(page_dirty) if t > 3])
+        if not page_dirty: return
+        i = 0
+        while i < len(self.boxes):
+            if self.boxes[i]["page_number"] in page_dirty:
+                self.boxes.pop(i)
+                continue
+            i += 1
 
     def _merge_with_same_bullet(self):
         i = 0
         while i + 1 < len(self.boxes):
             b = self.boxes[i]
             b_ = self.boxes[i + 1]
+            if not b["text"].strip():
+                self.boxes.pop(i)
+                continue
+            if not b_["text"].strip():
+                self.boxes.pop(i+1)
+                continue
+
             if b["text"].strip()[0] != b_["text"].strip()[0] \
                     or b["text"].strip()[0].lower() in set("qwertyuopasdfghjklzxcvbnm") \
+                    or huqie.is_chinese(b["text"].strip()[0]) \
                     or b["top"] > b_["bottom"]:
                 i += 1
                 continue
@@ -1596,8 +1655,7 @@ class HuParser:
             self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
             self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
                                 enumerate(self.pdf.pages[page_from:page_to])]
-            self.page_chars = [[c for c in self.pdf.pages[i].chars if self._has_color(c)] for i in
-                               range(len(self.page_images))]
+            self.page_chars = [[c for c in page.chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
             self.total_page = len(self.pdf.pages)
         except Exception as e:
             self.pdf = fitz.open(fnm) if isinstance(fnm, str) else fitz.open(stream=fnm, filetype="pdf")
@@ -1605,15 +1663,17 @@ class HuParser:
             self.page_chars = []
             mat = fitz.Matrix(zoomin, zoomin)
             self.total_page = len(self.pdf)
-            for page in self.pdf[page_from:page_to]:
-                pix = page.getPixmap(matrix=mat)
+            for i, page in enumerate(self.pdf):
+                if i < page_from:continue
+                if i >= page_to:break
+                pix = page.get_pixmap(matrix=mat)
                 img = Image.frombytes("RGB", [pix.width, pix.height],
                                       pix.samples)
                 self.page_images.append(img)
                 self.page_chars.append([])
 
         logging.info("Images converted.")
-        self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(random.choices([c["text"] for c in self.page_chars[i]], k=100))) for i in range(len(self.page_chars))]
+        self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i]))))) for i in range(len(self.page_chars))]
         if sum([1 if e else 0 for e in self.is_english]) > len(self.page_images) / 2:
             self.is_english = True
         else:
@@ -1644,8 +1704,8 @@ class HuParser:
             #             np.max([c["bottom"] for c in chars]))
             self.__ocr_paddle(i + 1, img, chars, zoomin)
 
-        if not self.is_english and not all([c for c in self.page_chars]) and self.boxes:
-            self.is_english = re.search(r"[\na-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join([b["text"] for b in random.choices(self.boxes, k=30)]))
+        if not self.is_english and not any([c for c in self.page_chars]) and self.boxes:
+            self.is_english = re.search(r"[\na-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join([b["text"] for b in random.choices([b for bxs in self.boxes for b in bxs], k=30)]))
 
         logging.info("Is it English:", self.is_english)
 

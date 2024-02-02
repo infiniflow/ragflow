@@ -1,7 +1,7 @@
 import copy
 import re
 from collections import Counter
-from rag.app import tokenize
+from rag.parser import tokenize
 from rag.nlp import huqie
 from rag.parser.pdf_parser import HuParser
 import numpy as np
@@ -113,7 +113,7 @@ class Pdf(HuParser):
         }
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
+def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
     pdf_parser = None
     paper = {}
 
@@ -232,5 +232,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
 
 if __name__ == "__main__":
     import sys
-
-    chunk(sys.argv[1])
+    def dummy(a, b):
+        pass
+    chunk(sys.argv[1], callback=dummy)
