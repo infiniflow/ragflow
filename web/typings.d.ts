@@ -1,2 +1,4 @@
 import 'umi/typings';
-declare module 'lodash'
+declare module 'lodash';
+
+export type Nullable<T> = T | null;

@@ -16,8 +16,37 @@ const routes = [
         component: '@/pages/knowledge',
       },
       {
-        path: '/knowledge/:module',
+        path: '/knowledge',
         component: '@/pages/add-knowledge',
+        routes: [
+          {
+            path: '/knowledge/dataset',
+            component: '@/pages/add-knowledge/components/knowledge-dataset',
+            routes: [
+              {
+                path: '/knowledge/dataset',
+                component: '@/pages/add-knowledge/components/knowledge-file',
+              },
+              {
+                path: '/knowledge/dataset/upload',
+                component:
+                  '@/pages/add-knowledge/components/knowledge-dataset/knowledge-upload-file',
+              },
+              {
+                path: '/knowledge/dataset/chunk',
+                component: '@/pages/add-knowledge/components/knowledge-chunk',
+              },
+            ],
+          },
+          {
+            path: '/knowledge/configuration',
+            component: '@/pages/add-knowledge/components/knowledge-setting',
+          },
+          {
+            path: '/knowledge/testing',
+            component: '@/pages/add-knowledge/components/knowledge-search',
+          },
+        ],
       },
       {
         path: '/chat',

@@ -1,12 +1,13 @@
 import { ReactComponent as ConfigrationIcon } from '@/assets/svg/knowledge-configration.svg';
 import { ReactComponent as DatasetIcon } from '@/assets/svg/knowledge-dataset.svg';
 import { ReactComponent as TestingIcon } from '@/assets/svg/knowledge-testing.svg';
+import { useSecondPathName } from '@/hooks/routeHook';
 import { getWidth } from '@/utils';
 import { AntDesignOutlined } from '@ant-design/icons';
 import { Avatar, Menu, MenuProps, Space } from 'antd';
 import classNames from 'classnames';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams, useSelector } from 'umi';
+import { useNavigate, useSelector } from 'umi';
 import { KnowledgeRouteKey, routeMap } from '../../constant';
 import styles from './index.less';
 
@@ -14,8 +15,7 @@ const KnowledgeSidebar = () => {
   const kAModel = useSelector((state: any) => state.kAModel);
   const { id } = kAModel;
   let navigate = useNavigate();
-  const params = useParams();
-  const activeKey = params.module || KnowledgeRouteKey.Dataset;
+  const activeKey = useSecondPathName();
 
   const [windowWidth, setWindowWidth] = useState(getWidth());
   const [collapsed, setCollapsed] = useState(false);
@@ -56,8 +56,8 @@ const KnowledgeSidebar = () => {
         <TestingIcon />,
       ),
       getItem(
-        routeMap[KnowledgeRouteKey.Configration],
-        KnowledgeRouteKey.Configration,
+        routeMap[KnowledgeRouteKey.Configuration],
+        KnowledgeRouteKey.Configuration,
         <ConfigrationIcon />,
       ),
     ];

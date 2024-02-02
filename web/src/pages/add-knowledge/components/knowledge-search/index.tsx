@@ -1,3 +1,5 @@
+import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { api_host } from '@/utils/api';
 import { DeleteOutlined, MinusSquareOutlined } from '@ant-design/icons';
 import type { PaginationProps } from 'antd';
@@ -12,18 +14,14 @@ import {
   Spin,
   Switch,
 } from 'antd';
+import { debounce } from 'lodash';
 import React, { useCallback, useEffect } from 'react';
 import { useDispatch, useSelector } from 'umi';
 import CreateModal from '../knowledge-chunk/components/createModal';
 
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import { debounce } from 'lodash';
 import styles from './index.less';
-interface chunkProps {
-  kb_id: string;
-}
 
-const KnowledgeSearching: React.FC<chunkProps> = ({ kb_id }) => {
+const KnowledgeSearching = () => {
   const dispatch = useDispatch();
   const kSearchModel = useSelector((state: any) => state.kSearchModel);
   const chunkModel = useSelector((state: any) => state.chunkModel);
@@ -31,6 +29,7 @@ const KnowledgeSearching: React.FC<chunkProps> = ({ kb_id }) => {
     'chunk_list',
     'switch_chunk',
   ]);
+  const knowledgeBaseId = useKnowledgeBaseId();
 
   const {
     data = [],
@@ -46,7 +45,7 @@ const KnowledgeSearching: React.FC<chunkProps> = ({ kb_id }) => {
     dispatch({
       type: 'kSearchModel/chunk_list',
       payload: {
-        kb_id,
+        kb_id: knowledgeBaseId,
       },
     });
   };
@@ -55,7 +54,7 @@ const KnowledgeSearching: React.FC<chunkProps> = ({ kb_id }) => {
       type: 'kSearchModel/rm_chunk',
       payload: {
         chunk_ids: [id],
-        kb_id,
+        kb_id: knowledgeBaseId,
       },
     });
   };
@@ -93,7 +92,7 @@ const KnowledgeSearching: React.FC<chunkProps> = ({ kb_id }) => {
     dispatch({
       type: 'kSearchModel/getKfList',
       payload: {
-        kb_id,
+        kb_id: knowledgeBaseId,
       },
     });
   }, []);
@@ -106,7 +105,7 @@ const KnowledgeSearching: React.FC<chunkProps> = ({ kb_id }) => {
         chunk_ids: [chunk_id],
         doc_id,
         available_int,
-        kb_id,
+        kb_id: knowledgeBaseId,
       },
     });
   };
