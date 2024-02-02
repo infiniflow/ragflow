@@ -1,40 +1,10 @@
 import copy
 import re
-from io import BytesIO
-from docx import Document
-import numpy as np
-from rag.parser import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
-    make_colon_as_title
+from rag.app import laws
+from rag.parser import is_english, tokenize, naive_merge
 from rag.nlp import huqie
-from rag.parser.docx_parser import HuDocxParser
 from rag.parser.pdf_parser import HuParser
 from rag.settings import cron_logger
-
-
-class Docx(HuDocxParser):
-    def __init__(self):
-        pass
-
-    def __clean(self, line):
-        line = re.sub(r"\u3000", " ", line).strip()
-        return line
-
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000):
-        self.doc = Document(
-            filename) if not binary else Document(BytesIO(binary))
-        pn = 0
-        lines = []
-        for p in self.doc.paragraphs:
-            if pn > to_page:break
-            if from_page <= pn < to_page and p.text.strip(): lines.append(self.__clean(p.text))
-            for run in p.runs:
-                if 'lastRenderedPageBreak' in run._element.xml:
-                    pn += 1
-                    continue
-                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
-                    pn += 1
-        return [l for l in lines if l]
-
 
 class Pdf(HuParser):
     def __call__(self, filename, binary=None, from_page=0,
@@ -52,10 +22,7 @@ class Pdf(HuParser):
         callback(0.77, "Layout analysis finished")
         cron_logger.info("paddle layouts:".format((timer()-start)/(self.total_page+0.1)))
         self._naive_vertical_merge()
-
-        callback(0.8, "Text extraction finished")
-
-        return [b["text"] + self._line_tag(b, zoomin) for b in self.boxes]
+        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes]
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
@@ -68,14 +35,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
     sections = []
     if re.search(r"\.docx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        for txt in Docx()(filename, binary):
-            sections.append(txt)
+        for txt in laws.Docx()(filename, binary):
+            sections.append((txt, ""))
         callback(0.8, "Finish parsing.")
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        for txt in pdf_parser(filename if not binary else binary,
-                         from_page=from_page, to_page=to_page, callback=callback):
-            sections.append(txt)
+        sections = pdf_parser(filename if not binary else binary,
+                         from_page=from_page, to_page=to_page, callback=callback)
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -87,25 +53,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
                     if not l:break
                     txt += l
             sections = txt.split("\n")
-        sections = [l for l in sections if l]
+        sections = [(l,"") for l in sections if l]
         callback(0.8, "Finish parsing.")
     else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
-    # is it English
-    eng = is_english(sections)
-    # Remove 'Contents' part
-    remove_contents_table(sections, eng)
-
-    make_colon_as_title(sections)
-    bull = bullets_category(sections)
-    cks = hierarchical_merge(bull, sections, 3)
-    if not cks: callback(0.99, "No chunk parsed out.")
-
+    cks = naive_merge(sections, kwargs.get("chunk_token_num", 128), kwargs.get("delimer", "\n。；！？"))
+    eng = is_english(cks)
     res = []
     # wrap up to es documents
     for ck in cks:
-        print("\n-".join(ck))
-        ck = "\n".join(ck)
+        print("--", ck)
         d = copy.deepcopy(doc)
         if pdf_parser:
             d["image"] = pdf_parser.crop(ck)
@@ -119,4 +76,4 @@ if __name__ == "__main__":
     import sys
     def dummy(a, b):
         pass
-    chunk(sys.argv[1], callback=dummy)
+    chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
