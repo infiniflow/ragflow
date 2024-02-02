@@ -1,7 +1,9 @@
+import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { Button, Form, Input, Radio, Select, Space, Tag } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import styles from './index.less';
+
 const { CheckableTag } = Tag;
 const layout = {
   labelCol: { span: 8 },
@@ -67,7 +69,7 @@ const KnowledgeSetting: React.FC<kSProps> = ({ kb_id }) => {
           },
         });
         retcode === 0 &&
-          navigate(`/knowledge/add/setting?activeKey=file&id=${kb_id}`);
+          navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${kb_id}`);
       }
     } catch (error) {
       console.warn(error);

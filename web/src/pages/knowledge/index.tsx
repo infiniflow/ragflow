@@ -20,7 +20,7 @@ const Knowledge = () => {
   }, []);
 
   const handleAddKnowledge = () => {
-    navigate(`add/setting?activeKey=setting`);
+    navigate(`add/setting`);
   };
 
   useEffect(() => {

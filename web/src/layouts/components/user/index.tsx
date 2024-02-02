@@ -1,6 +1,6 @@
 import authorizationUtil from '@/utils/authorizationUtil';
 import type { MenuProps } from 'antd';
-import { Button, Dropdown } from 'antd';
+import { Avatar, Button, Dropdown } from 'antd';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { history } from 'umi';
@@ -39,14 +39,12 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <>
-      <Dropdown menu={{ items }} placement="bottomLeft" arrow>
-        <img
-          style={{ width: '50px', height: '50px', borderRadius: '25px' }}
-          src="https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png"
-        />
-      </Dropdown>
-    </>
+    <Dropdown menu={{ items }} placement="bottomLeft" arrow>
+      <Avatar
+        size={32}
+        src="https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png"
+      />
+    </Dropdown>
   );
 };
 

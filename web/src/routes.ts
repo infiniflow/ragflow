@@ -16,7 +16,7 @@ const routes = [
         component: '@/pages/knowledge',
       },
       {
-        path: '/knowledge/add/*',
+        path: '/knowledge/:module',
         component: '@/pages/add-knowledge',
       },
       {
