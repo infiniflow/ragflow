@@ -3,7 +3,7 @@ import re
 from io import BytesIO
 from nltk import word_tokenize
 from openpyxl import load_workbook
-from rag.app import is_english
+from rag.parser import is_english
 from rag.nlp import huqie, stemmer
 
 
@@ -55,7 +55,7 @@ def beAdoc(d, q, a, eng):
     return d
 
 
-def chunk(filename, binary=None,  from_page=0, to_page=100000, callback=None):
+def chunk(filename, binary=None, callback=None, **kwargs):
 
     res = []
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
@@ -98,7 +98,7 @@ def chunk(filename, binary=None,  from_page=0, to_page=100000, callback=None):
 
 if __name__== "__main__":
     import sys
-    def kk(rat, ss):
+    def dummy(a, b):
         pass
-    print(chunk(sys.argv[1], callback=kk))
+    chunk(sys.argv[1], callback=dummy)
 

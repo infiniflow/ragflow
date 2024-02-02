@@ -1,6 +1,6 @@
 import copy
 import re
-from rag.app import tokenize
+from rag.parser import tokenize
 from rag.nlp import huqie
 from rag.parser.pdf_parser import HuParser
 from rag.utils import num_tokens_from_string
@@ -57,7 +57,7 @@ class Pdf(HuParser):
         return [b["text"] + self._line_tag(b, zoomin) for b in self.boxes], tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
+def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
     pdf_parser = None
     paper = {}
 
@@ -117,5 +117,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None):
 
 if __name__ == "__main__":
     import sys
-
-    chunk(sys.argv[1])
+    def dummy(a, b):
+        pass
+    chunk(sys.argv[1], callback=dummy)
