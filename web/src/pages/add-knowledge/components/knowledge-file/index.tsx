@@ -1,3 +1,4 @@
+import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { getOneNamespaceEffectsLoading } from '@/utils/stroreUtil';
 import { DownOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
@@ -158,8 +159,9 @@ const KnowledgeFile: React.FC<KFProps> = ({ kb_id }) => {
     },
   ];
   const toChunk = (id: string) => {
-    console.log(id);
-    navigate(`/knowledge/add/setting?activeKey=file&id=${kb_id}&doc_id=${id}`);
+    navigate(
+      `/knowledge/${KnowledgeRouteKey.Dataset}?id=${kb_id}&doc_id=${id}`,
+    );
   };
   const columns: ColumnsType<DataType> = [
     {
