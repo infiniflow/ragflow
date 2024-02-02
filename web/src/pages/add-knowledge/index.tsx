@@ -1,39 +1,46 @@
-import { getWidth } from '@/utils';
-import { BarsOutlined, SearchOutlined, ToolOutlined } from '@ant-design/icons';
-import type { MenuProps } from 'antd';
-import { Menu } from 'antd';
-import React, { useEffect, useMemo, useState } from 'react';
-import { useDispatch, useLocation, useNavigate, useSelector } from 'umi';
+import { Breadcrumb } from 'antd';
+import { useEffect, useMemo } from 'react';
+import {
+  useDispatch,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSelector,
+} from 'umi';
 import Chunk from './components/knowledge-chunk';
 import File from './components/knowledge-file';
 import Search from './components/knowledge-search';
 import Setting from './components/knowledge-setting';
+import Siderbar from './components/knowledge-sidebar';
+import { KnowledgeRouteKey, routeMap } from './constant';
 import styles from './index.less';
 
 const KnowledgeAdding = () => {
   const dispatch = useDispatch();
   const kAModel = useSelector((state: any) => state.kAModel);
-  const { id, activeKey, doc_id } = kAModel;
+  const navigate = useNavigate();
+  const { id, doc_id } = kAModel;
 
-  const [collapsed, setCollapsed] = useState(false);
-  const [windowWidth, setWindowWidth] = useState(getWidth());
-  let navigate = useNavigate();
   const location = useLocation();
+  const params = useParams();
+  const activeKey: KnowledgeRouteKey =
+    (params.module as KnowledgeRouteKey) || KnowledgeRouteKey.Dataset;
 
-  // 标记一下
-  console.log(doc_id, '>>>>>>>>>>>>>doc_id');
-  useEffect(() => {
-    const widthSize = () => {
-      const width = getWidth();
-      console.log(width);
+  const gotoList = () => {
+    navigate('/knowledge');
+  };
 
-      setWindowWidth(width);
-    };
-    window.addEventListener('resize', widthSize);
-    return () => {
-      window.removeEventListener('resize', widthSize);
-    };
-  }, []);
+  const breadcrumbItems = useMemo(() => {
+    return [
+      {
+        title: <a onClick={gotoList}>Knowledge Base</a>,
+      },
+      {
+        title: routeMap[activeKey],
+      },
+    ];
+  }, [activeKey]);
+
   useEffect(() => {
     const search: string = location.search.slice(1);
     const map = search.split('&').reduce<Record<string, string>>((obj, cur) => {
@@ -51,66 +58,24 @@ const KnowledgeAdding = () => {
     });
   }, [location]);
 
-  useEffect(() => {
-    if (windowWidth.width > 957) {
-      setCollapsed(false);
-    } else {
-      setCollapsed(true);
-    }
-  }, [windowWidth.width]);
-
-  type MenuItem = Required<MenuProps>['items'][number];
-
-  function getItem(
-    label: React.ReactNode,
-    key: React.Key,
-    icon?: React.ReactNode,
-    disabled?: boolean,
-    children?: MenuItem[],
-    type?: 'group',
-  ): MenuItem {
-    return {
-      key,
-      icon,
-      children,
-      label,
-      type,
-      disabled,
-    } as MenuItem;
-  }
-  const items: MenuItem[] = useMemo(() => {
-    const disabled = !id;
-    return [
-      getItem('配置', 'setting', <ToolOutlined />),
-      getItem('知识库', 'file', <BarsOutlined />, disabled),
-      getItem('搜索测试', 'search', <SearchOutlined />, disabled),
-    ];
-  }, [id]);
-
-  const handleSelect: MenuProps['onSelect'] = (e) => {
-    navigate(`/knowledge/add/setting?activeKey=${e.key}&id=${id}`);
-  };
-
   return (
     <>
       <div className={styles.container}>
-        <div className={styles.menu}>
-          <Menu
-            selectedKeys={[activeKey]}
-            mode="inline"
-            className={
-              windowWidth.width > 957 ? styles.defaultWidth : styles.minWidth
-            }
-            inlineCollapsed={collapsed}
-            items={items}
-            onSelect={handleSelect}
-          />
-        </div>
-        <div className={styles.content}>
-          {activeKey === 'file' && !doc_id && <File kb_id={id} />}
-          {activeKey === 'setting' && <Setting kb_id={id} />}
-          {activeKey === 'search' && <Search kb_id={id} />}
-          {activeKey === 'file' && !!doc_id && <Chunk doc_id={doc_id} />}
+        <Siderbar></Siderbar>
+        <div className={styles.contentWrapper}>
+          <Breadcrumb items={breadcrumbItems} />
+          <div className={styles.content}>
+            {activeKey === KnowledgeRouteKey.Dataset && !doc_id && (
+              <File kb_id={id} />
+            )}
+            {activeKey === KnowledgeRouteKey.Configration && (
+              <Setting kb_id={id} />
+            )}
+            {activeKey === KnowledgeRouteKey.Testing && <Search kb_id={id} />}
+            {activeKey === KnowledgeRouteKey.Dataset && !!doc_id && (
+              <Chunk doc_id={doc_id} />
+            )}
+          </div>
         </div>
       </div>
     </>

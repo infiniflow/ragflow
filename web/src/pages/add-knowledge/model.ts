@@ -3,7 +3,6 @@ export interface kAModelState {
   isShowPSwModal: boolean;
   isShowTntModal: boolean;
   tenantIfo: any;
-  activeKey: string;
   id: string;
   doc_id: string;
 }
@@ -14,7 +13,6 @@ const model: DvaModel<kAModelState> = {
     isShowPSwModal: false,
     isShowTntModal: false,
     tenantIfo: {},
-    activeKey: 'setting',
     id: '',
     doc_id: '',
   },
