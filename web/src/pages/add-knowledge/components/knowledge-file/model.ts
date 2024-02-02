@@ -13,7 +13,13 @@ export interface KFModelState {
   isShowRenameModal: boolean;
   tenantIfo: any;
   data: IKnowledgeFile[];
+  total: number;
   currentRecord: Nullable<IKnowledgeFile>;
+  pagination: {
+    currentPage: number;
+    pageSize: number;
+  };
+  searchString: string;
 }
 
 const model: DvaModel<KFModelState> = {
@@ -25,7 +31,13 @@ const model: DvaModel<KFModelState> = {
     isShowRenameModal: false,
     tenantIfo: {},
     data: [],
+    total: 0,
     currentRecord: null,
+    searchString: '',
+    pagination: {
+      currentPage: 1,
+      pageSize: 10,
+    },
   },
   reducers: {
     updateState(state, { payload }) {
@@ -39,6 +51,12 @@ const model: DvaModel<KFModelState> = {
     },
     setCurrentRecord(state, { payload }) {
       return { ...state, currentRecord: payload };
+    },
+    setSearchString(state, { payload }) {
+      return { ...state, searchString: payload };
+    },
+    setPagination(state, { payload }) {
+      return { ...state, pagination: payload };
     },
   },
   subscriptions: {
@@ -80,7 +98,8 @@ const model: DvaModel<KFModelState> = {
         yield put({
           type: 'updateState',
           payload: {
-            data: res,
+            data: res.docs,
+            total: res.total,
           },
         });
       }

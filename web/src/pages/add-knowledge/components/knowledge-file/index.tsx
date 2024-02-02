@@ -15,6 +15,7 @@ import {
   Tag,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { PaginationProps } from 'antd/lib';
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
@@ -30,14 +31,13 @@ const KnowledgeFile = () => {
   const dispatch = useDispatch();
   const kFModel = useSelector((state: any) => state.kFModel);
   const effects = useSelector((state: any) => state.loading.effects);
-  const { data } = kFModel;
+  const { data, total } = kFModel;
   const knowledgeBaseId = useKnowledgeBaseId();
 
   const loading = getOneNamespaceEffectsLoading('kFModel', effects, [
     'getKfList',
     'updateDocumentStatus',
   ]);
-  const [inputValue, setInputValue] = useState('');
   const [doc_id, setDocId] = useState('0');
   const [parser_id, setParserId] = useState('0');
   let navigate = useNavigate();
@@ -56,6 +56,20 @@ const KnowledgeFile = () => {
     });
   };
 
+  const onPageChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
+    console.log('Page: ', pageNumber, pageSize);
+  };
+
+  const pagination: PaginationProps = useMemo(() => {
+    return {
+      showQuickJumper: true,
+      total,
+      showSizeChanger: true,
+      pageSizeOptions: [1, 2, 10, 20, 50, 100],
+      onChange: onPageChange,
+    };
+  }, [total]);
+
   useEffect(() => {
     if (knowledgeBaseId) {
       getKfList();
@@ -67,13 +81,15 @@ const KnowledgeFile = () => {
     (value: string) => debounceChange(value),
     [],
   );
+
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const value = e.target.value;
-    setInputValue(value);
+    dispatch({ type: 'kFModel/setSearchString', payload: value });
     debounceCallback(e.target.value);
   };
+
   const onChangeStatus = (e: boolean, doc_id: string) => {
     dispatch({
       type: 'kFModel/updateDocumentStatus',
@@ -248,12 +264,12 @@ const KnowledgeFile = () => {
       <div className={styles.filter}>
         <Space>
           <h3>Total</h3>
-          <Tag color="purple">100 files</Tag>
+          <Tag color="purple">{total} files</Tag>
         </Space>
         <Space>
           <Input
             placeholder="Seach your files"
-            value={inputValue}
+            value={kFModel.searchString}
             style={{ width: 220 }}
             allowClear
             onChange={handleInputChange}
@@ -272,7 +288,7 @@ const KnowledgeFile = () => {
         columns={finalColumns}
         dataSource={data}
         loading={loading}
-        pagination={false}
+        pagination={pagination}
         scroll={{ scrollToFirstRowOnChange: true, x: true, y: 'fill' }}
       />
       <CreateEPModal getKfList={getKfList} kb_id={knowledgeBaseId} />
