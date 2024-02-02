@@ -20,6 +20,7 @@ const {
   switch_chunk,
   rm_chunk,
   retrieval_test,
+  document_rename,
 } = api;
 
 const methods = {
@@ -55,6 +56,10 @@ const methods = {
   },
   document_rm: {
     url: document_rm,
+    method: 'post',
+  },
+  document_rename: {
+    url: document_rename,
     method: 'post',
   },
   document_create: {

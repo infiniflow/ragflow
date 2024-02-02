@@ -1,3 +1,4 @@
+import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import { useSecondPathName, useThirdPathName } from '@/hooks/routeHook';
 import { Breadcrumb } from 'antd';
 import { ItemType } from 'antd/es/breadcrumb/Breadcrumb';
@@ -15,6 +16,7 @@ import styles from './index.less';
 const KnowledgeAdding = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const knowledgeBaseId = useKnowledgeBaseId();
 
   const location = useLocation();
   const activeKey: KnowledgeRouteKey =
@@ -34,7 +36,11 @@ const KnowledgeAdding = () => {
       },
       {
         title: datasetActiveKey ? (
-          <Link to={`/knowledge/dataset`}>{routeMap[activeKey]}</Link>
+          <Link
+            to={`/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeBaseId}`}
+          >
+            {routeMap[activeKey]}
+          </Link>
         ) : (
           routeMap[activeKey]
         ),

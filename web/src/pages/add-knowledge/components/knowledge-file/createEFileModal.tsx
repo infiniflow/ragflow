@@ -13,9 +13,9 @@ interface kFProps {
 
 const FileCreatingModal: React.FC<kFProps> = ({ getKfList, kb_id }) => {
   const dispatch = useDispatch();
+  const [form] = Form.useForm();
   const kFModel = useSelector((state: any) => state.kFModel);
   const { isShowCEFwModal } = kFModel;
-  const [form] = Form.useForm();
   const { t } = useTranslation();
 
   const handleCancel = () => {
@@ -26,7 +26,8 @@ const FileCreatingModal: React.FC<kFProps> = ({ getKfList, kb_id }) => {
       },
     });
   };
-  const handleOk = async () => {
+
+  const createDocument = async () => {
     try {
       const values = await form.validateFields();
       const retcode = await dispatch<any>({
@@ -44,9 +45,13 @@ const FileCreatingModal: React.FC<kFProps> = ({ getKfList, kb_id }) => {
     }
   };
 
+  const handleOk = async () => {
+    createDocument();
+  };
+
   return (
     <Modal
-      title="Basic Modal"
+      title="File Name"
       open={isShowCEFwModal}
       onOk={handleOk}
       onCancel={handleCancel}
@@ -54,15 +59,15 @@ const FileCreatingModal: React.FC<kFProps> = ({ getKfList, kb_id }) => {
       <Form
         form={form}
         name="validateOnly"
-        labelCol={{ span: 8 }}
-        wrapperCol={{ span: 16 }}
+        labelCol={{ span: 4 }}
+        wrapperCol={{ span: 20 }}
         style={{ maxWidth: 600 }}
         autoComplete="off"
       >
         <Form.Item<FieldType>
-          label="文件名"
+          label="File Name"
           name="name"
-          rules={[{ required: true, message: 'Please input value!' }]}
+          rules={[{ required: true, message: 'Please input name!' }]}
         >
           <Input />
         </Form.Item>

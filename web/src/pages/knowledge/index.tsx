@@ -1,7 +1,7 @@
 import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { PlusOutlined } from '@ant-design/icons';
-import { Button, Col, Row, Space } from 'antd';
+import { Button, Flex, Space } from 'antd';
 import { useCallback, useEffect } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import styles from './index.less';
@@ -51,7 +51,7 @@ const Knowledge = () => {
           </Button>
         </Space>
       </div>
-      <Row gutter={{ xs: 8, sm: 16, md: 24, lg: 32 }}>
+      {/* <Row gutter={{ xs: 8, sm: 16, md: 24, lg: 32 }}>
         {data.map((item: any) => {
           return (
             <Col
@@ -59,14 +59,19 @@ const Knowledge = () => {
               key={item.name}
               xs={24}
               sm={12}
-              md={8}
-              lg={6}
+              md={10}
+              lg={8}
             >
               <KnowledgeCard item={item}></KnowledgeCard>
             </Col>
           );
         })}
-      </Row>
+      </Row> */}
+      <Flex gap="large" wrap="wrap">
+        {data.map((item: any) => {
+          return <KnowledgeCard item={item} key={item.name}></KnowledgeCard>;
+        })}
+      </Flex>
     </div>
   );
 };

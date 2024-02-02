@@ -1,28 +1,30 @@
 import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getOneNamespaceEffectsLoading } from '@/utils/stroreUtil';
-import { DownOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
-import { Button, Dropdown, Input, Space, Switch, Table } from 'antd';
+import {
+  Button,
+  Divider,
+  Dropdown,
+  Input,
+  Space,
+  Switch,
+  Table,
+  Tag,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import CreateEPModal from './createEFileModal';
 import styles from './index.less';
+import ParsingActionCell from './parsing-action-cell';
+import ParsingStatusCell from './parsing-status-cell';
+import RenameModal from './rename-modal';
 import SegmentSetModal from './segmentSetModal';
 import UploadFile from './upload';
-
-interface DataType {
-  name: string;
-  chunk_num: string;
-  token_num: number;
-  update_date: string;
-  size: string;
-  status: string;
-  id: string;
-  parser_id: string;
-}
 
 const KnowledgeFile = () => {
   const dispatch = useDispatch();
@@ -108,6 +110,7 @@ const KnowledgeFile = () => {
       },
     });
   };
+
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
       {
@@ -157,14 +160,21 @@ const KnowledgeFile = () => {
       // disabled: true,
     },
   ];
+
   const toChunk = (id: string) => {
     navigate(
       `/knowledge/${KnowledgeRouteKey.Dataset}/chunk?id=${knowledgeBaseId}&doc_id=${id}`,
     );
   };
-  const columns: ColumnsType<DataType> = [
+
+  const setDocumentAndParserId = (record: IKnowledgeFile) => () => {
+    setDocId(record.id);
+    setParserId(record.parser_id);
+  };
+
+  const columns: ColumnsType<IKnowledgeFile> = [
     {
-      title: '名称',
+      title: 'Name',
       dataIndex: 'name',
       key: 'name',
       render: (text: any, { id }) => (
@@ -177,32 +187,30 @@ const KnowledgeFile = () => {
           {text}
         </div>
       ),
-      className: `${styles.column}`,
     },
     {
-      title: '数据总量',
+      title: 'Chunk Number',
       dataIndex: 'chunk_num',
       key: 'chunk_num',
-      className: `${styles.column}`,
     },
     {
-      title: 'Tokens',
-      dataIndex: 'token_num',
-      key: 'token_num',
-      className: `${styles.column}`,
+      title: 'Upload Date',
+      dataIndex: 'create_date',
+      key: 'create_date',
     },
     {
-      title: '文件大小',
-      dataIndex: 'size',
-      key: 'size',
-      className: `${styles.column}`,
+      title: 'Parsing Status',
+      dataIndex: 'run',
+      key: 'run',
+      render: (text, record) => {
+        return <ParsingStatusCell record={record}></ParsingStatusCell>;
+      },
     },
     {
-      title: '状态',
+      title: 'Enabled',
       key: 'status',
       dataIndex: 'status',
-      className: `${styles.column}`,
-      render: (_, { status: string, id }) => (
+      render: (_, { status, id }) => (
         <>
           <Switch
             defaultChecked={status === '1'}
@@ -216,50 +224,56 @@ const KnowledgeFile = () => {
     {
       title: 'Action',
       key: 'action',
-      className: `${styles.column}`,
       render: (_, record) => (
-        <Space size="middle">
-          <Dropdown menu={{ items: chunkItems }} trigger={['click']}>
-            <a
-              onClick={() => {
-                setDocId(record.id);
-                setParserId(record.parser_id);
-              }}
-            >
-              分段设置 <DownOutlined />
-            </a>
-          </Dropdown>
-        </Space>
+        <ParsingActionCell
+          documentId={doc_id}
+          knowledgeBaseId={knowledgeBaseId}
+          setDocumentAndParserId={setDocumentAndParserId(record)}
+          record={record}
+        ></ParsingActionCell>
       ),
     },
   ];
+
+  const finalColumns = columns.map((x) => ({
+    ...x,
+    className: `${styles.column}`,
+  }));
+
   return (
-    <>
+    <div className={styles.datasetWrapper}>
+      <h3>Dataset</h3>
+      <p>Hey, don't forget to adjust the chunk after adding the dataset! 😉</p>
+      <Divider></Divider>
       <div className={styles.filter}>
-        <div className="search">
+        <Space>
+          <h3>Total</h3>
+          <Tag color="purple">100 files</Tag>
+        </Space>
+        <Space>
           <Input
-            placeholder="搜索"
+            placeholder="Seach your files"
             value={inputValue}
             style={{ width: 220 }}
             allowClear
             onChange={handleInputChange}
+            prefix={<SearchOutlined />}
           />
-        </div>
-        <div className="operate">
+
           <Dropdown menu={{ items: actionItems }} trigger={['click']}>
-            <a>
-              导入文件 <DownOutlined />
-            </a>
+            <Button type="primary" icon={<PlusOutlined />}>
+              Add file
+            </Button>
           </Dropdown>
-        </div>
+        </Space>
       </div>
       <Table
         rowKey="id"
-        columns={columns}
+        columns={finalColumns}
         dataSource={data}
         loading={loading}
         pagination={false}
-        scroll={{ scrollToFirstRowOnChange: true, x: true }}
+        scroll={{ scrollToFirstRowOnChange: true, x: true, y: 'fill' }}
       />
       <CreateEPModal getKfList={getKfList} kb_id={knowledgeBaseId} />
       <SegmentSetModal
@@ -267,7 +281,8 @@ const KnowledgeFile = () => {
         parser_id={parser_id}
         doc_id={doc_id}
       />
-    </>
+      <RenameModal></RenameModal>
+    </div>
   );
 };
 

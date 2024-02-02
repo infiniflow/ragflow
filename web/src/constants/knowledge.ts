@@ -3,3 +3,11 @@ export enum KnowledgeRouteKey {
   Testing = 'testing',
   Configuration = 'configuration',
 }
+
+export enum RunningStatus {
+  UNSTART = '0',
+  RUNNING = '1',
+  CANCEL = '2',
+  DONE = '3',
+  FAIL = '4',
+}
