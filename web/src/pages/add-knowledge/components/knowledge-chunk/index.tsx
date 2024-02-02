@@ -14,11 +14,11 @@ import {
   Spin,
   Switch,
 } from 'antd';
+import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useState } from 'react';
-import { useDispatch, useNavigate, useSelector } from 'umi';
+import { useDispatch, useSearchParams, useSelector } from 'umi';
 import CreateModal from './components/createModal';
 
-import { debounce } from 'lodash';
 import styles from './index.less';
 
 interface PayloadType {
@@ -27,18 +27,13 @@ interface PayloadType {
   available_int?: number;
 }
 
-interface IProps {
-  doc_id: string;
-}
-
-const Chunk = ({ doc_id }: IProps) => {
+const Chunk = () => {
   const dispatch = useDispatch();
   const chunkModel = useSelector((state: any) => state.chunkModel);
   const [keywords, SetKeywords] = useState('');
   const [available_int, setAvailableInt] = useState(-1);
-  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [pagination, setPagination] = useState({ page: 1, size: 30 });
-  // const [datas, setDatas] = useState(data)
   const { data = [], total, chunk_id, isShowCreateModal } = chunkModel;
   const effects = useSelector((state: any) => state.loading.effects);
   const loading = getOneNamespaceEffectsLoading('chunkModel', effects, [
@@ -46,10 +41,11 @@ const Chunk = ({ doc_id }: IProps) => {
     'chunk_list',
     'switch_chunk',
   ]);
+  const documentId: string = searchParams.get('doc_id') || '';
 
   const getChunkList = (value?: string) => {
     const payload: PayloadType = {
-      doc_id,
+      doc_id: documentId,
       keywords: value || keywords,
       available_int,
     };
@@ -81,7 +77,7 @@ const Chunk = ({ doc_id }: IProps) => {
       payload: {
         isShowCreateModal: true,
         chunk_id,
-        doc_id,
+        doc_id: documentId,
       },
     });
     getChunkList();
@@ -100,7 +96,7 @@ const Chunk = ({ doc_id }: IProps) => {
       payload: {
         chunk_ids: [id],
         available_int: Number(available_int),
-        doc_id,
+        doc_id: documentId,
       },
     });
 
@@ -109,7 +105,7 @@ const Chunk = ({ doc_id }: IProps) => {
 
   useEffect(() => {
     getChunkList();
-  }, [doc_id, available_int, pagination]);
+  }, [documentId, available_int, pagination]);
 
   const debounceChange = debounce(getChunkList, 300);
   const debounceCallback = useCallback(
@@ -270,7 +266,7 @@ const Chunk = ({ doc_id }: IProps) => {
         </div>
       </div>
       <CreateModal
-        doc_id={doc_id}
+        doc_id={documentId}
         isShowCreateModal={isShowCreateModal}
         chunk_id={chunk_id}
         getChunkList={getChunkList}

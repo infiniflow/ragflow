@@ -1,6 +1,7 @@
 import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import { Button, Form, Input, Radio, Select, Space, Tag } from 'antd';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import styles from './index.less';
 
@@ -13,10 +14,7 @@ const layout = {
 const { Option } = Select;
 /* eslint-disable no-template-curly-in-string */
 
-interface kSProps {
-  kb_id: string;
-}
-const KnowledgeSetting: React.FC<kSProps> = ({ kb_id }) => {
+const KnowledgeSetting = () => {
   const dispatch = useDispatch();
   const settingModel = useSelector((state: any) => state.settingModel);
   let navigate = useNavigate();
@@ -25,17 +23,18 @@ const KnowledgeSetting: React.FC<kSProps> = ({ kb_id }) => {
   const [form] = Form.useForm();
   const [selectedTag, setSelectedTag] = useState('');
   const values = Form.useWatch([], form);
+  const knowledgeBaseId = useKnowledgeBaseId();
 
   const getTenantInfo = useCallback(async () => {
     dispatch({
       type: 'settingModel/getTenantInfo',
       payload: {},
     });
-    if (kb_id) {
+    if (knowledgeBaseId) {
       const data = await dispatch<any>({
         type: 'kSModel/getKbDetail',
         payload: {
-          kb_id,
+          kb_id: knowledgeBaseId,
         },
       });
       if (data.retcode === 0) {
@@ -44,19 +43,19 @@ const KnowledgeSetting: React.FC<kSProps> = ({ kb_id }) => {
         setSelectedTag(data.data.parser_id);
       }
     }
-  }, [kb_id]);
+  }, [knowledgeBaseId]);
 
   const onFinish = async () => {
     try {
       await form.validateFields();
 
-      if (kb_id) {
+      if (knowledgeBaseId) {
         dispatch({
           type: 'kSModel/updateKb',
           payload: {
             ...values,
             parser_id: selectedTag,
-            kb_id,
+            kb_id: knowledgeBaseId,
             embd_id: undefined,
           },
         });
@@ -69,7 +68,9 @@ const KnowledgeSetting: React.FC<kSProps> = ({ kb_id }) => {
           },
         });
         retcode === 0 &&
-          navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${kb_id}`);
+          navigate(
+            `/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeBaseId}`,
+          );
       }
     } catch (error) {
       console.warn(error);
