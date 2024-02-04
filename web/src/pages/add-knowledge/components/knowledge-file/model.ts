@@ -1,3 +1,4 @@
+import { BaseState } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/kbService';
 import { message } from 'antd';
@@ -6,7 +7,7 @@ import pick from 'lodash/pick';
 import { Nullable } from 'typings';
 import { DvaModel } from 'umi';
 
-export interface KFModelState {
+export interface KFModelState extends BaseState {
   isShowCEFwModal: boolean;
   isShowTntModal: boolean;
   isShowSegmentSetModal: boolean;
@@ -15,10 +16,6 @@ export interface KFModelState {
   data: IKnowledgeFile[];
   total: number;
   currentRecord: Nullable<IKnowledgeFile>;
-  pagination: {
-    currentPage: number;
-    pageSize: number;
-  };
   searchString: string;
 }
 
@@ -35,7 +32,7 @@ const model: DvaModel<KFModelState> = {
     currentRecord: null,
     searchString: '',
     pagination: {
-      currentPage: 1,
+      current: 1,
       pageSize: 10,
     },
   },
@@ -56,7 +53,7 @@ const model: DvaModel<KFModelState> = {
       return { ...state, searchString: payload };
     },
     setPagination(state, { payload }) {
-      return { ...state, pagination: payload };
+      return { ...state, pagination: { ...state.pagination, ...payload } };
     },
   },
   subscriptions: {
@@ -87,12 +84,18 @@ const model: DvaModel<KFModelState> = {
         callback && callback(res);
       }
     },
-    *getKfList({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(
-        kbService.get_document_list,
-        payload,
-      );
-      const { retcode, data: res, retmsg } = data;
+    *getKfList({ payload = {} }, { call, put, select }) {
+      const state: KFModelState = yield select((state: any) => state.kFModel);
+      const requestBody = {
+        ...payload,
+        page: state.pagination.current,
+        page_size: state.pagination.pageSize,
+      };
+      if (state.searchString) {
+        requestBody['keywords'] = state.searchString;
+      }
+      const { data } = yield call(kbService.get_document_list, requestBody);
+      const { retcode, data: res } = data;
 
       if (retcode === 0) {
         yield put({
@@ -104,6 +107,12 @@ const model: DvaModel<KFModelState> = {
         });
       }
     },
+    throttledGetDocumentList: [
+      function* ({ payload }, { call, put }) {
+        yield put({ type: 'getKfList', payload: { kb_id: payload } });
+      },
+      { type: 'throttle', ms: 1000 }, // TODO: Provide type support for this effect
+    ],
     *updateDocumentStatus({ payload = {} }, { call, put }) {
       const { data, response } = yield call(
         kbService.document_change_status,

@@ -1,5 +1,6 @@
 import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getOneNamespaceEffectsLoading } from '@/utils/stroreUtil';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
@@ -16,8 +17,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { PaginationProps } from 'antd/lib';
-import { debounce } from 'lodash';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import CreateEPModal from './createEFileModal';
 import styles from './index.less';
@@ -42,22 +42,40 @@ const KnowledgeFile = () => {
   const [parser_id, setParserId] = useState('0');
   let navigate = useNavigate();
 
-  const getKfList = (keywords?: string) => {
+  const getKfList = () => {
     const payload = {
       kb_id: knowledgeBaseId,
-      keywords,
     };
-    if (!keywords) {
-      delete payload.keywords;
-    }
+
     dispatch({
       type: 'kFModel/getKfList',
       payload,
     });
   };
 
+  const throttledGetDocumentList = () => {
+    dispatch({
+      type: 'kFModel/throttledGetDocumentList',
+      payload: knowledgeBaseId,
+    });
+  };
+
+  const setPagination = (pageNumber = 1, pageSize?: number) => {
+    const pagination: Pagination = {
+      current: pageNumber,
+    } as Pagination;
+    if (pageSize) {
+      pagination.pageSize = pageSize;
+    }
+    dispatch({
+      type: 'kFModel/setPagination',
+      payload: pagination,
+    });
+  };
+
   const onPageChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
-    console.log('Page: ', pageNumber, pageSize);
+    setPagination(pageNumber, pageSize);
+    getKfList();
   };
 
   const pagination: PaginationProps = useMemo(() => {
@@ -65,10 +83,12 @@ const KnowledgeFile = () => {
       showQuickJumper: true,
       total,
       showSizeChanger: true,
+      current: kFModel.pagination.currentPage,
+      pageSize: kFModel.pagination.pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
     };
-  }, [total]);
+  }, [total, kFModel.pagination]);
 
   useEffect(() => {
     if (knowledgeBaseId) {
@@ -76,18 +96,13 @@ const KnowledgeFile = () => {
     }
   }, [knowledgeBaseId]);
 
-  const debounceChange = debounce(getKfList, 300);
-  const debounceCallback = useCallback(
-    (value: string) => debounceChange(value),
-    [],
-  );
-
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const value = e.target.value;
     dispatch({ type: 'kFModel/setSearchString', payload: value });
-    debounceCallback(e.target.value);
+    setPagination();
+    throttledGetDocumentList();
   };
 
   const onChangeStatus = (e: boolean, doc_id: string) => {
