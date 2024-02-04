@@ -140,11 +140,12 @@ const model: DvaModel<KFModelState> = {
       const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('删除成功！');
-        put({
+        yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
         });
       }
+      return retcode;
     },
     *document_rename({ payload = {} }, { call, put }) {
       const { data } = yield call(

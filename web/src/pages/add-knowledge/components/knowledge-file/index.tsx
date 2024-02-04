@@ -1,5 +1,8 @@
 import { KnowledgeRouteKey } from '@/constants/knowledge';
-import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import {
+  useDeleteDocumentById,
+  useKnowledgeBaseId,
+} from '@/hooks/knowledgeHook';
 import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getOneNamespaceEffectsLoading } from '@/utils/stroreUtil';
@@ -33,6 +36,7 @@ const KnowledgeFile = () => {
   const effects = useSelector((state: any) => state.loading.effects);
   const { data, total } = kFModel;
   const knowledgeBaseId = useKnowledgeBaseId();
+  const { removeDocument } = useDeleteDocumentById();
 
   const loading = getOneNamespaceEffectsLoading('kFModel', effects, [
     'getKfList',
@@ -125,13 +129,7 @@ const KnowledgeFile = () => {
     });
   };
   const onRmDocument = () => {
-    dispatch({
-      type: 'kFModel/document_rm',
-      payload: {
-        doc_id,
-        kb_id: knowledgeBaseId,
-      },
-    });
+    removeDocument(doc_id);
   };
   const showCEFModal = () => {
     dispatch({
@@ -266,7 +264,6 @@ const KnowledgeFile = () => {
       key: 'action',
       render: (_, record) => (
         <ParsingActionCell
-          documentId={doc_id}
           knowledgeBaseId={knowledgeBaseId}
           setDocumentAndParserId={setDocumentAndParserId(record)}
           record={record}
