@@ -93,7 +93,16 @@ const KnowledgeFile = () => {
   useEffect(() => {
     if (knowledgeBaseId) {
       getKfList();
+      dispatch({
+        type: 'kFModel/pollGetDocumentList-start',
+        payload: knowledgeBaseId,
+      });
     }
+    return () => {
+      dispatch({
+        type: 'kFModel/pollGetDocumentList-stop',
+      });
+    };
   }, [knowledgeBaseId]);
 
   const handleInputChange = (

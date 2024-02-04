@@ -113,6 +113,12 @@ const model: DvaModel<KFModelState> = {
       },
       { type: 'throttle', ms: 1000 }, // TODO: Provide type support for this effect
     ],
+    pollGetDocumentList: [
+      function* ({ payload }, { call, put }) {
+        yield put({ type: 'getKfList', payload: { kb_id: payload } });
+      },
+      { type: 'poll', delay: 5000 }, // TODO: Provide type support for this effect
+    ],
     *updateDocumentStatus({ payload = {} }, { call, put }) {
       const { data, response } = yield call(
         kbService.document_change_status,
