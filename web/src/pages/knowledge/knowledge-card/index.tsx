@@ -32,7 +32,7 @@ const KnowledgeCard = ({ item }: IProps) => {
       key: '1',
       label: (
         <Space>
-          删除
+          Delete
           <DeleteOutlined />
         </Space>
       ),
