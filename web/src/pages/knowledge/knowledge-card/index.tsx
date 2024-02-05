@@ -1,5 +1,6 @@
 import { ReactComponent as MoreIcon } from '@/assets/svg/more.svg';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { IKnowledge } from '@/interfaces/database/knowledge';
 import { formatDate } from '@/utils/date';
 import {
   CalendarOutlined,
@@ -11,18 +12,19 @@ import { Avatar, Card, Dropdown, MenuProps, Space } from 'antd';
 import { MouseEvent } from 'react';
 import { useDispatch, useNavigate } from 'umi';
 
+import showDeleteConfirm from '@/components/deleting-confirm';
 import styles from './index.less';
 
 interface IProps {
-  item: any;
+  item: IKnowledge;
 }
 
 const KnowledgeCard = ({ item }: IProps) => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  const handleDelete = (e: MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
+  const handleDelete = () => {
+    showDeleteConfirm({ onOk: removeKnowledge });
   };
 
   const items: MenuProps['items'] = [
@@ -31,29 +33,31 @@ const KnowledgeCard = ({ item }: IProps) => {
       label: (
         <Space>
           删除
-          <DeleteOutlined onClick={handleDelete} />
+          <DeleteOutlined />
         </Space>
       ),
     },
   ];
 
-  const confirm = (id: string) => {
-    dispatch({
+  const handleDropdownMenuClick: MenuProps['onClick'] = ({ domEvent, key }) => {
+    domEvent.preventDefault();
+    domEvent.stopPropagation();
+    if (key === '1') {
+      handleDelete();
+    }
+  };
+
+  const removeKnowledge = () => {
+    return dispatch({
       type: 'knowledgeModel/rmKb',
       payload: {
-        kb_id: id,
+        kb_id: item.id,
       },
     });
   };
 
-  const handleCardClick = () => {
+  const handleCardClick = (e: MouseEvent<HTMLElement>) => {
     navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${item.id}`);
-  };
-
-  const onConfirmDelete = (e?: MouseEvent<HTMLElement>) => {
-    e?.stopPropagation();
-    e?.nativeEvent.stopImmediatePropagation();
-    confirm(item.id);
   };
 
   return (
@@ -63,16 +67,12 @@ const KnowledgeCard = ({ item }: IProps) => {
           <Avatar size={34} icon={<UserOutlined />} />
 
           <span className={styles.delete}>
-            {/* <Popconfirm
-              title="Delete the task"
-              description="Are you sure to delete this task?"
-              onConfirm={onConfirmDelete}
-              okText="Yes"
-              cancelText="No"
+            <Dropdown
+              menu={{
+                items,
+                onClick: handleDropdownMenuClick,
+              }}
             >
-              <DeleteOutlined onClick={handleDelete} />
-            </Popconfirm> */}
-            <Dropdown menu={{ items }}>
               <MoreIcon />
             </Dropdown>
           </span>
