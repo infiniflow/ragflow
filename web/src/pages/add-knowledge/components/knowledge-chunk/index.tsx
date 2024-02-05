@@ -1,5 +1,5 @@
 import { api_host } from '@/utils/api';
-import { getOneNamespaceEffectsLoading } from '@/utils/stroreUtil';
+import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import { DeleteOutlined, MinusSquareOutlined } from '@ant-design/icons';
 import type { PaginationProps } from 'antd';
 import {
@@ -19,6 +19,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import CreateModal from './components/createModal';
 
+import ChunkToolBar from './components/chunk-toolbar';
 import styles from './index.less';
 
 interface PayloadType {
@@ -126,6 +127,7 @@ const Chunk = () => {
   return (
     <>
       <div className={styles.chunkPage}>
+        <ChunkToolBar></ChunkToolBar>
         <div className={styles.filter}>
           <div>
             <Input

@@ -40,5 +40,6 @@ export default {
   document_rm: `${api_host}/document/rm`,
   document_rename: `${api_host}/document/rename`,
   document_create: `${api_host}/document/create`,
+  document_run: `${api_host}/document/run`,
   document_change_parser: `${api_host}/document/change_parser`,
 };

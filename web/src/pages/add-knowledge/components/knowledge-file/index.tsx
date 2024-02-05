@@ -5,8 +5,13 @@ import {
 } from '@/hooks/knowledgeHook';
 import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { getOneNamespaceEffectsLoading } from '@/utils/stroreUtil';
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
+import {
+  FileOutlined,
+  FileTextOutlined,
+  PlusOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import {
   Button,
@@ -21,14 +26,13 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { PaginationProps } from 'antd/lib';
 import React, { useEffect, useMemo, useState } from 'react';
-import { useDispatch, useNavigate, useSelector } from 'umi';
+import { Link, useDispatch, useNavigate, useSelector } from 'umi';
 import CreateEPModal from './createEFileModal';
 import styles from './index.less';
 import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 import SegmentSetModal from './segmentSetModal';
-import UploadFile from './upload';
 
 const KnowledgeFile = () => {
   const dispatch = useDispatch();
@@ -155,24 +159,32 @@ const KnowledgeFile = () => {
         key: '1',
         label: (
           <div>
-            <UploadFile kb_id={knowledgeBaseId} getKfList={getKfList} />
+            <Button type="link">
+              <Link to={`/knowledge/dataset/upload?id=${knowledgeBaseId}`}>
+                <Space>
+                  <FileTextOutlined />
+                  Local files
+                </Space>
+              </Link>
+            </Button>
           </div>
         ),
       },
+      { type: 'divider' },
       {
         key: '2',
         label: (
           <div>
             <Button type="link" onClick={showCEFModal}>
-              {' '}
-              导入虚拟文件
+              <FileOutlined />
+              Create empty file
             </Button>
           </div>
         ),
         // disabled: true,
       },
     ];
-  }, [knowledgeBaseId]);
+  }, []);
   const chunkItems: MenuProps['items'] = [
     {
       key: '1',
@@ -191,7 +203,7 @@ const KnowledgeFile = () => {
         <div>
           <Button type="link" onClick={onRmDocument}>
             {' '}
-            删除
+            Delete
           </Button>
         </div>
       ),
