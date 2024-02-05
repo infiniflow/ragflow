@@ -75,7 +75,6 @@ const KnowledgeSidebar = () => {
   useEffect(() => {
     const widthSize = () => {
       const width = getWidth();
-      console.log(width);
 
       setWindowWidth(width);
     };
@@ -106,7 +105,7 @@ const KnowledgeSidebar = () => {
             [styles.defaultWidth]: windowWidth.width > 957,
             [styles.minWidth]: windowWidth.width <= 957,
           })}
-          inlineCollapsed={collapsed}
+          // inlineCollapsed={collapsed}
           items={items}
           onSelect={handleSelect}
         />

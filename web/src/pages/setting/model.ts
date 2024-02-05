@@ -1,6 +1,8 @@
+import { ITenantInfo } from '@/interfaces/database/knowledge';
 import userService from '@/services/userService';
 import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
+import { Nullable } from 'typings';
 import { DvaModel } from 'umi';
 
 export interface SettingModelState {
@@ -9,7 +11,7 @@ export interface SettingModelState {
   isShowSAKModal: boolean;
   isShowSSModal: boolean;
   llm_factory: string;
-  tenantIfo: any;
+  tenantIfo: Nullable<ITenantInfo>;
   llmInfo: any;
   myLlm: any[];
   factoriesList: any[];
@@ -23,7 +25,7 @@ const model: DvaModel<SettingModelState> = {
     isShowSAKModal: false,
     isShowSSModal: false,
     llm_factory: '',
-    tenantIfo: {},
+    tenantIfo: null,
     llmInfo: {},
     myLlm: [],
     factoriesList: [],
@@ -73,23 +75,11 @@ const model: DvaModel<SettingModelState> = {
       }
     },
     *getTenantInfo({ payload = {} }, { call, put }) {
-      yield put({
-        type: 'updateState',
-        payload: {
-          loading: true,
-        },
-      });
       const { data } = yield call(userService.get_tenant_info, payload);
       const { retcode, data: res } = data;
       // llm_id 对应chat_id
       // asr_id 对应speech2txt
 
-      yield put({
-        type: 'updateState',
-        payload: {
-          loading: false,
-        },
-      });
       if (retcode === 0) {
         res.chat_id = res.llm_id;
         res.speech2text_id = res.asr_id;

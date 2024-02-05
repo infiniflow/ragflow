@@ -1,3 +1,4 @@
+import { BaseState } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/kbService';
 import { message } from 'antd';
@@ -6,14 +7,16 @@ import pick from 'lodash/pick';
 import { Nullable } from 'typings';
 import { DvaModel } from 'umi';
 
-export interface KFModelState {
+export interface KFModelState extends BaseState {
   isShowCEFwModal: boolean;
   isShowTntModal: boolean;
   isShowSegmentSetModal: boolean;
   isShowRenameModal: boolean;
   tenantIfo: any;
   data: IKnowledgeFile[];
+  total: number;
   currentRecord: Nullable<IKnowledgeFile>;
+  searchString: string;
 }
 
 const model: DvaModel<KFModelState> = {
@@ -25,7 +28,13 @@ const model: DvaModel<KFModelState> = {
     isShowRenameModal: false,
     tenantIfo: {},
     data: [],
+    total: 0,
     currentRecord: null,
+    searchString: '',
+    pagination: {
+      current: 1,
+      pageSize: 10,
+    },
   },
   reducers: {
     updateState(state, { payload }) {
@@ -39,6 +48,12 @@ const model: DvaModel<KFModelState> = {
     },
     setCurrentRecord(state, { payload }) {
       return { ...state, currentRecord: payload };
+    },
+    setSearchString(state, { payload }) {
+      return { ...state, searchString: payload };
+    },
+    setPagination(state, { payload }) {
+      return { ...state, pagination: { ...state.pagination, ...payload } };
     },
   },
   subscriptions: {
@@ -69,22 +84,41 @@ const model: DvaModel<KFModelState> = {
         callback && callback(res);
       }
     },
-    *getKfList({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(
-        kbService.get_document_list,
-        payload,
-      );
-      const { retcode, data: res, retmsg } = data;
+    *getKfList({ payload = {} }, { call, put, select }) {
+      const state: KFModelState = yield select((state: any) => state.kFModel);
+      const requestBody = {
+        ...payload,
+        page: state.pagination.current,
+        page_size: state.pagination.pageSize,
+      };
+      if (state.searchString) {
+        requestBody['keywords'] = state.searchString;
+      }
+      const { data } = yield call(kbService.get_document_list, requestBody);
+      const { retcode, data: res } = data;
 
       if (retcode === 0) {
         yield put({
           type: 'updateState',
           payload: {
-            data: res,
+            data: res.docs,
+            total: res.total,
           },
         });
       }
     },
+    throttledGetDocumentList: [
+      function* ({ payload }, { call, put }) {
+        yield put({ type: 'getKfList', payload: { kb_id: payload } });
+      },
+      { type: 'throttle', ms: 1000 }, // TODO: Provide type support for this effect
+    ],
+    pollGetDocumentList: [
+      function* ({ payload }, { call, put }) {
+        yield put({ type: 'getKfList', payload: { kb_id: payload } });
+      },
+      { type: 'poll', delay: 5000 }, // TODO: Provide type support for this effect
+    ],
     *updateDocumentStatus({ payload = {} }, { call, put }) {
       const { data, response } = yield call(
         kbService.document_change_status,
@@ -106,11 +140,12 @@ const model: DvaModel<KFModelState> = {
       const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
         message.success('删除成功！');
-        put({
+        yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
         });
       }
+      return retcode;
     },
     *document_rename({ payload = {} }, { call, put }) {
       const { data } = yield call(

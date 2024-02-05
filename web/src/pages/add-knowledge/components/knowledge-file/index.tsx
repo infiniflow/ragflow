@@ -1,5 +1,9 @@
 import { KnowledgeRouteKey } from '@/constants/knowledge';
-import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import {
+  useDeleteDocumentById,
+  useKnowledgeBaseId,
+} from '@/hooks/knowledgeHook';
+import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getOneNamespaceEffectsLoading } from '@/utils/stroreUtil';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
@@ -15,8 +19,8 @@ import {
   Tag,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { debounce } from 'lodash';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { PaginationProps } from 'antd/lib';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import CreateEPModal from './createEFileModal';
 import styles from './index.less';
@@ -30,50 +34,90 @@ const KnowledgeFile = () => {
   const dispatch = useDispatch();
   const kFModel = useSelector((state: any) => state.kFModel);
   const effects = useSelector((state: any) => state.loading.effects);
-  const { data } = kFModel;
+  const { data, total } = kFModel;
   const knowledgeBaseId = useKnowledgeBaseId();
+  const { removeDocument } = useDeleteDocumentById();
 
   const loading = getOneNamespaceEffectsLoading('kFModel', effects, [
     'getKfList',
     'updateDocumentStatus',
   ]);
-  const [inputValue, setInputValue] = useState('');
   const [doc_id, setDocId] = useState('0');
   const [parser_id, setParserId] = useState('0');
   let navigate = useNavigate();
 
-  const getKfList = (keywords?: string) => {
+  const getKfList = () => {
     const payload = {
       kb_id: knowledgeBaseId,
-      keywords,
     };
-    if (!keywords) {
-      delete payload.keywords;
-    }
+
     dispatch({
       type: 'kFModel/getKfList',
       payload,
     });
   };
 
+  const throttledGetDocumentList = () => {
+    dispatch({
+      type: 'kFModel/throttledGetDocumentList',
+      payload: knowledgeBaseId,
+    });
+  };
+
+  const setPagination = (pageNumber = 1, pageSize?: number) => {
+    const pagination: Pagination = {
+      current: pageNumber,
+    } as Pagination;
+    if (pageSize) {
+      pagination.pageSize = pageSize;
+    }
+    dispatch({
+      type: 'kFModel/setPagination',
+      payload: pagination,
+    });
+  };
+
+  const onPageChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
+    setPagination(pageNumber, pageSize);
+    getKfList();
+  };
+
+  const pagination: PaginationProps = useMemo(() => {
+    return {
+      showQuickJumper: true,
+      total,
+      showSizeChanger: true,
+      current: kFModel.pagination.currentPage,
+      pageSize: kFModel.pagination.pageSize,
+      pageSizeOptions: [1, 2, 10, 20, 50, 100],
+      onChange: onPageChange,
+    };
+  }, [total, kFModel.pagination]);
+
   useEffect(() => {
     if (knowledgeBaseId) {
       getKfList();
+      dispatch({
+        type: 'kFModel/pollGetDocumentList-start',
+        payload: knowledgeBaseId,
+      });
     }
+    return () => {
+      dispatch({
+        type: 'kFModel/pollGetDocumentList-stop',
+      });
+    };
   }, [knowledgeBaseId]);
 
-  const debounceChange = debounce(getKfList, 300);
-  const debounceCallback = useCallback(
-    (value: string) => debounceChange(value),
-    [],
-  );
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const value = e.target.value;
-    setInputValue(value);
-    debounceCallback(e.target.value);
+    dispatch({ type: 'kFModel/setSearchString', payload: value });
+    setPagination();
+    throttledGetDocumentList();
   };
+
   const onChangeStatus = (e: boolean, doc_id: string) => {
     dispatch({
       type: 'kFModel/updateDocumentStatus',
@@ -85,13 +129,7 @@ const KnowledgeFile = () => {
     });
   };
   const onRmDocument = () => {
-    dispatch({
-      type: 'kFModel/document_rm',
-      payload: {
-        doc_id,
-        kb_id: knowledgeBaseId,
-      },
-    });
+    removeDocument(doc_id);
   };
   const showCEFModal = () => {
     dispatch({
@@ -226,7 +264,6 @@ const KnowledgeFile = () => {
       key: 'action',
       render: (_, record) => (
         <ParsingActionCell
-          documentId={doc_id}
           knowledgeBaseId={knowledgeBaseId}
           setDocumentAndParserId={setDocumentAndParserId(record)}
           record={record}
@@ -248,12 +285,12 @@ const KnowledgeFile = () => {
       <div className={styles.filter}>
         <Space>
           <h3>Total</h3>
-          <Tag color="purple">100 files</Tag>
+          <Tag color="purple">{total} files</Tag>
         </Space>
         <Space>
           <Input
             placeholder="Seach your files"
-            value={inputValue}
+            value={kFModel.searchString}
             style={{ width: 220 }}
             allowClear
             onChange={handleInputChange}
@@ -272,7 +309,7 @@ const KnowledgeFile = () => {
         columns={finalColumns}
         dataSource={data}
         loading={loading}
-        pagination={false}
+        pagination={pagination}
         scroll={{ scrollToFirstRowOnChange: true, x: true, y: 'fill' }}
       />
       <CreateEPModal getKfList={getKfList} kb_id={knowledgeBaseId} />
