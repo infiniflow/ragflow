@@ -3,7 +3,7 @@ import random
 import re
 import numpy as np
 from rag.parser import bullets_category, BULLET_PATTERN, is_english, tokenize, remove_contents_table, \
-    hierarchical_merge, make_colon_as_title, naive_merge
+    hierarchical_merge, make_colon_as_title, naive_merge, random_choices
 from rag.nlp import huqie
 from rag.parser.docx_parser import HuDocxParser
 from rag.parser.pdf_parser import HuParser
@@ -51,7 +51,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
         doc_parser = HuDocxParser()
         # TODO: table of contents need to be removed
         sections, tbls = doc_parser(binary if binary else filename, from_page=from_page, to_page=to_page)
-        remove_contents_table(sections, eng=is_english(random.choices([t for t,_ in sections], k=200)))
+        remove_contents_table(sections, eng=is_english(random_choices([t for t,_ in sections], k=200)))
         callback(0.8, "Finish parsing.")
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
@@ -67,20 +67,20 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
                     l = f.readline()
                     if not l:break
                     txt += l
-            sections = txt.split("\n")
+        sections = txt.split("\n")
         sections = [(l,"") for l in sections if l]
-        remove_contents_table(sections, eng = is_english(random.choices([t for t,_ in sections], k=200)))
+        remove_contents_table(sections, eng = is_english(random_choices([t for t,_ in sections], k=200)))
         callback(0.8, "Finish parsing.")
     else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
     make_colon_as_title(sections)
-    bull = bullets_category([t for t in random.choices([t for t,_ in sections], k=100)])
+    bull = bullets_category([t for t in random_choices([t for t,_ in sections], k=100)])
     if bull >= 0: cks = hierarchical_merge(bull, sections, 3)
     else: cks = naive_merge(sections, kwargs.get("chunk_token_num", 256), kwargs.get("delimer", "\n。；！？"))
 
     sections = [t for t, _ in sections]
     # is it English
-    eng = is_english(random.choices(sections, k=218))
+    eng = is_english(random_choices(sections, k=218))
 
     res = []
     # add tables

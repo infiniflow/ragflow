@@ -77,3 +77,4 @@ class ParserType(StrEnum):
     RESUME = "resume"
     BOOK = "book"
     QA = "qa"
+    TABLE = "table"

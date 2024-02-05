@@ -57,7 +57,7 @@ def list():
         for id in sres.ids:
             d = {
                 "chunk_id": id,
-                "content_ltks": rmSpace(sres.highlight[id]) if question else sres.field[id]["content_ltks"],
+                "content_with_weight": rmSpace(sres.highlight[id]) if question else sres.field[id]["content_with_weight"],
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_kwd": sres.field[id].get("important_kwd", []),
@@ -134,7 +134,7 @@ def set():
             q, a = rmPrefix(arr[0]), rmPrefix[arr[1]]
             d = beAdoc(d, arr[0], arr[1], not any([huqie.is_chinese(t) for t in q+a]))
 
-        v, c = embd_mdl.encode([doc.name, req["content_ltks"]])
+        v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
         ELASTICSEARCH.upsert([d], search.index_name(tenant_id))
@@ -175,13 +175,13 @@ def rm():
 
 @manager.route('/create', methods=['POST'])
 @login_required
-@validate_request("doc_id", "content_ltks")
+@validate_request("doc_id", "content_with_weight")
 def create():
     req = request.json
     md5 = hashlib.md5()
-    md5.update((req["content_ltks"] + req["doc_id"]).encode("utf-8"))
+    md5.update((req["content_with_weight"] + req["doc_id"]).encode("utf-8"))
     chunck_id = md5.hexdigest()
-    d = {"id": chunck_id, "content_ltks": huqie.qie(req["content_ltks"])}
+    d = {"id": chunck_id, "content_ltks": huqie.qie(req["content_with_weight"])}
     d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
     d["important_kwd"] = req.get("important_kwd", [])
     d["important_tks"] = huqie.qie(" ".join(req.get("important_kwd", [])))
@@ -201,7 +201,7 @@ def create():
 
         embd_mdl = TenantLLMService.model_instance(
             tenant_id, LLMType.EMBEDDING.value)
-        v, c = embd_mdl.encode([doc.name, req["content_ltks"]])
+        v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         DocumentService.increment_chunk_num(req["doc_id"], doc.kb_id, c, 1, 0)
         v = 0.1 * v[0] + 0.9 * v[1]
         d["q_%d_vec" % len(v)] = v.tolist()

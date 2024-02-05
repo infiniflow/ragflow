@@ -47,7 +47,7 @@ class PPDet:
                     continue
                 bb.append({
                     "type": cate[clsid].lower(),
-                    "bbox": bbox,
+                    "bbox": bbox.tolist(),
                     "score": score
                 })
 

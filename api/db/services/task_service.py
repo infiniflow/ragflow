@@ -27,7 +27,7 @@ class TaskService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_tasks(cls, tm, mod=0, comm=1, items_per_page=64):
-        fields = [cls.model.id, cls.model.doc_id, cls.model.from_page,cls.model.to_page, Document.kb_id, Document.parser_id, Document.name, Document.type, Document.location, Document.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, Tenant.asr_id, cls.model.update_time]
+        fields = [cls.model.id, cls.model.doc_id, cls.model.from_page,cls.model.to_page, Document.kb_id, Document.parser_id, Document.parser_config, Document.name, Document.type, Document.location, Document.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, Tenant.asr_id, cls.model.update_time]
         docs = cls.model.select(*fields) \
             .join(Document, on=(cls.model.doc_id == Document.id)) \
             .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id)) \
@@ -53,3 +53,13 @@ class TaskService(CommonService):
         except Exception as e:
             pass
         return True
+
+
+    @classmethod
+    @DB.connection_context()
+    def update_progress(cls, id, info):
+        cls.model.update(progress_msg=cls.model.progress_msg + "\n"+info["progress_msg"]).where(
+            cls.model.id == id).execute()
+        if "progress" in info:
+            cls.model.update(progress=info["progress"]).where(
+            cls.model.id == id).execute()

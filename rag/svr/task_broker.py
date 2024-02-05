@@ -134,5 +134,5 @@ if __name__ == "__main__":
 
     while True:
         dispatch()
-        time.sleep(3)
+        time.sleep(1)
         update_progress()

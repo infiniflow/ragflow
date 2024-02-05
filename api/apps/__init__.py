@@ -28,8 +28,6 @@ from api.utils import CustomJSONEncoder
 from flask_session import Session
 from flask_login import LoginManager
 from api.settings import RetCode, SECRET_KEY, stat_logger
-from api.hook import HookManager
-from api.hook.common.parameters import AuthenticationParameters, ClientAuthenticationParameters
 from api.settings import API_VERSION, CLIENT_AUTHENTICATION, SITE_AUTHENTICATION, access_logger
 from api.utils.api_utils import get_json_result, server_error_response
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
@@ -96,37 +94,7 @@ client_urls_prefix = [
 ]
 
 
-def client_authentication_before_request():
-    result = HookManager.client_authentication(ClientAuthenticationParameters(
-        request.full_path, request.headers,
-        request.form, request.data, request.json,
-    ))
 
-    if result.code != RetCode.SUCCESS:
-        return get_json_result(result.code, result.message)
-
-
-def site_authentication_before_request():
-    for url_prefix in client_urls_prefix:
-        if request.path.startswith(url_prefix):
-            return
-
-    result = HookManager.site_authentication(AuthenticationParameters(
-        request.headers.get('site_signature'),
-        request.json,
-    ))
-
-    if result.code != RetCode.SUCCESS:
-        return get_json_result(result.code, result.message)
-
-
-@app.before_request
-def authentication_before_request():
-    if CLIENT_AUTHENTICATION:
-        return client_authentication_before_request()
-
-    if SITE_AUTHENTICATION:
-        return site_authentication_before_request()
 
 @login_manager.request_loader
 def load_user(web_request):

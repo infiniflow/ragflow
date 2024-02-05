@@ -29,7 +29,7 @@ from api.utils.api_utils import get_json_result
 
 @manager.route('/create', methods=['post'])
 @login_required
-@validate_request("name", "description", "permission", "parser_id")
+@validate_request("name")
 def create():
     req = request.json
     req["name"] = req["name"].strip()
