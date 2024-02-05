@@ -3,7 +3,7 @@ import re
 from io import BytesIO
 from pptx import Presentation
 
-from rag.app import tokenize, is_english
+from rag.parser import tokenize, is_english
 from rag.nlp import huqie
 from rag.parser.pdf_parser import HuParser
 
@@ -93,7 +93,7 @@ class Pdf(HuParser):
         return res
 
 
-def chunk(filename, binary=None,  from_page=0, to_page=100000, callback=None):
+def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
     doc = {
         "docnm_kwd": filename,
         "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -122,5 +122,7 @@ def chunk(filename, binary=None,  from_page=0, to_page=100000, callback=None):
 
 if __name__== "__main__":
     import sys
-    print(chunk(sys.argv[1]))
+    def dummy(a, b):
+        pass
+    chunk(sys.argv[1], callback=dummy)
 
