@@ -1,5 +1,6 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
-import { useDispatch, useSearchParams } from 'umi';
+import { IKnowledge } from '@/interfaces/database/knowledge';
+import { useDispatch, useSearchParams, useSelector } from 'umi';
 
 export const useKnowledgeBaseId = (): string => {
   const [searchParams] = useSearchParams();
@@ -30,5 +31,18 @@ export const useDeleteDocumentById = (): {
 
   return {
     removeDocument: onRmDocument,
+  };
+};
+
+export const useGetDocumentDefaultParser = (knowledgeBaseId: string) => {
+  const data: IKnowledge[] = useSelector(
+    (state: any) => state.knowledgeModel.data,
+  );
+
+  const item = data.find((x) => x.id === knowledgeBaseId);
+
+  return {
+    defaultParserId: item?.parser_id ?? '',
+    parserConfig: item?.parser_config ?? '',
   };
 };

@@ -2,13 +2,37 @@ import { ReactComponent as SelectFilesEndIcon } from '@/assets/svg/select-files-
 import { ReactComponent as SelectFilesStartIcon } from '@/assets/svg/select-files-start.svg';
 import {
   useDeleteDocumentById,
+  useGetDocumentDefaultParser,
   useKnowledgeBaseId,
 } from '@/hooks/knowledgeHook';
+import { ITenantInfo } from '@/interfaces/database/knowledge';
 import uploadService from '@/services/uploadService';
-import { ArrowLeftOutlined, InboxOutlined } from '@ant-design/icons';
-import { Flex, Progress, Space, Upload, UploadProps } from 'antd';
-import { Link } from 'umi';
+import {
+  ArrowLeftOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  FileDoneOutlined,
+  InboxOutlined,
+} from '@ant-design/icons';
+import {
+  Button,
+  Card,
+  Flex,
+  Popover,
+  Progress,
+  Radio,
+  RadioChangeEvent,
+  Space,
+  Upload,
+  UploadFile,
+  UploadProps,
+} from 'antd';
+import classNames from 'classnames';
+import { ReactElement, useEffect, useState } from 'react';
+import { Nullable } from 'typings';
+import { Link, useDispatch, useNavigate, useSelector } from 'umi';
 
+import { KnowledgeRouteKey } from '@/constants/knowledge';
 import styles from './index.less';
 
 const { Dragger } = Upload;
@@ -17,9 +41,114 @@ type UploadRequestOption = Parameters<
   NonNullable<UploadProps['customRequest']>
 >[0];
 
+const UploaderItem = ({
+  file,
+  actions,
+  isUpload,
+  parserArray,
+}: {
+  isUpload: boolean;
+  originNode: ReactElement;
+  file: UploadFile;
+  fileList: object[];
+  parserArray: string[];
+  actions: { download: Function; preview: Function; remove: any };
+}) => {
+  const { parserConfig, defaultParserId } = useGetDocumentDefaultParser(
+    file?.response?.kb_id,
+  );
+  const { removeDocument } = useDeleteDocumentById();
+  const [value, setValue] = useState(defaultParserId);
+  const dispatch = useDispatch();
+
+  const documentId = file?.response?.id;
+
+  const onChange = (e: RadioChangeEvent) => {
+    const val = e.target.value;
+    setValue(val);
+    saveParser(val);
+  };
+
+  const content = (
+    <Radio.Group onChange={onChange} value={value}>
+      <Space direction="vertical">
+        {parserArray.map((x) => (
+          <Radio value={x} key={x}>
+            {x}
+          </Radio>
+        ))}
+      </Space>
+    </Radio.Group>
+  );
+
+  const handleRemove = async () => {
+    const ret: any = await removeDocument(documentId);
+    if (ret === 0) {
+      actions?.remove();
+    }
+  };
+
+  const saveParser = (parserId: string) => {
+    dispatch({
+      type: 'kFModel/document_change_parser',
+      payload: {
+        parser_id: parserId,
+        doc_id: documentId,
+        parser_config: parserConfig,
+      },
+    });
+  };
+
+  useEffect(() => {
+    setValue(defaultParserId);
+  }, [defaultParserId]);
+
+  return (
+    <Card className={styles.uploaderItem}>
+      <Flex justify="space-between">
+        <FileDoneOutlined className={styles.fileIcon} />
+        <section className={styles.uploaderItemTextWrapper}>
+          <div>
+            <b>{file.name}</b>
+          </div>
+          <span>{file.size}</span>
+        </section>
+        {isUpload ? (
+          <DeleteOutlined
+            className={styles.deleteIcon}
+            onClick={handleRemove}
+          />
+        ) : (
+          <Popover content={content} placement="bottom">
+            <EditOutlined />
+          </Popover>
+        )}
+      </Flex>
+      <Flex>
+        <Progress
+          showInfo={false}
+          percent={100}
+          className={styles.uploaderItemProgress}
+          strokeColor="
+        rgba(127, 86, 217, 1)
+        "
+        />
+        <span>100%</span>
+      </Flex>
+    </Card>
+  );
+};
+
 const KnowledgeUploadFile = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
-  const { removeDocument } = useDeleteDocumentById();
+  const [isUpload, setIsUpload] = useState(true);
+  const dispatch = useDispatch();
+  const tenantIfo: Nullable<ITenantInfo> = useSelector(
+    (state: any) => state.settingModel.tenantIfo,
+  );
+  const navigate = useNavigate();
+
+  const parserArray = tenantIfo?.parser_ids.split(',') ?? [];
 
   const createRequest: (props: UploadRequestOption) => void = async function ({
     file,
@@ -38,16 +167,37 @@ const KnowledgeUploadFile = () => {
   const props: UploadProps = {
     name: 'file',
     multiple: true,
+    itemRender(originNode, file, fileList, actions) {
+      return (
+        <UploaderItem
+          isUpload={isUpload}
+          file={file}
+          fileList={fileList}
+          originNode={originNode}
+          actions={actions}
+          parserArray={parserArray}
+        ></UploaderItem>
+      );
+    },
     customRequest: createRequest,
     onDrop(e) {
       console.log('Dropped files', e.dataTransfer.files);
     },
-    async onRemove(file) {
-      console.info(file);
-      const ret: any = await removeDocument(file.response.id);
-      return ret === 0;
-    },
   };
+
+  const handleNextClick = () => {
+    if (!isUpload) {
+      navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeBaseId}`);
+    } else {
+      setIsUpload(false);
+    }
+  };
+
+  useEffect(() => {
+    dispatch({
+      type: 'settingModel/getTenantInfo',
+    });
+  }, []);
 
   return (
     <div className={styles.uploadWrapper}>
@@ -81,8 +231,13 @@ const KnowledgeUploadFile = () => {
           </Flex>
         </div>
       </section>
-      <section>
-        <Dragger {...props}>
+      <section className={styles.uploadContent}>
+        <Dragger
+          {...props}
+          className={classNames(styles.uploader, {
+            [styles.hiddenUploader]: !isUpload,
+          })}
+        >
           <p className="ant-upload-drag-icon">
             <InboxOutlined />
           </p>
@@ -94,6 +249,15 @@ const KnowledgeUploadFile = () => {
             uploading company data or other banned files.
           </p>
         </Dragger>
+      </section>
+      <section className={styles.footer}>
+        <Button
+          type="primary"
+          className={styles.nextButton}
+          onClick={handleNextClick}
+        >
+          Next
+        </Button>
       </section>
     </div>
   );

@@ -1,7 +1,50 @@
 .uploadWrapper {
+  display: flex;
+  flex-direction: column;
   padding: 32px;
+  height: 100%;
   .backToList {
     padding-bottom: 60px;
+  }
+  .footer {
+    text-align: right;
+    .nextButton {
+      background-color: @purple;
+    }
+  }
+  .uploadContent {
+    flex: 1;
+    padding-top: 60px;
+  }
+  .uploader {
+    display: block;
+    height: 200px;
+  }
+  .hiddenUploader {
+    :global(.ant-upload-drag) {
+      display: none;
+    }
+  }
+  .fileIcon {
+    font-size: 40px;
+    align-items: end;
+  }
+  .deleteIcon {
+    font-size: 20px;
+  }
+  .uploaderItem {
+    margin-top: 16px;
+    :global(.ant-card-body) {
+      padding: 16px;
+    }
+  }
+  .uploaderItemProgress {
+    padding-left: 50px;
+  }
+  .uploaderItemTextWrapper {
+    flex: 1;
+    text-align: left;
+    padding-left: 10px;
   }
 }
 
