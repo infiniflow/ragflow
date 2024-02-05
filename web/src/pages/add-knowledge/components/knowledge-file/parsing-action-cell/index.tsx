@@ -5,19 +5,18 @@ import { Button, Dropdown, MenuProps, Space, Tooltip } from 'antd';
 import { useDispatch } from 'umi';
 
 interface IProps {
-  documentId: string;
   knowledgeBaseId: string;
   record: IKnowledgeFile;
   setDocumentAndParserId: () => void;
 }
 
 const ParsingActionCell = ({
-  documentId,
   knowledgeBaseId,
   record,
   setDocumentAndParserId,
 }: IProps) => {
   const dispatch = useDispatch();
+  const documentId = record.id;
 
   const removeDocument = () => {
     dispatch({

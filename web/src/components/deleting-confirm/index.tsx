@@ -8,20 +8,31 @@ interface IProps {
   onCancel?: (...args: any[]) => any;
 }
 
-export const showDeleteConfirm = ({ onOk, onCancel }: IProps) => {
-  confirm({
-    title: 'Are you sure delete this item?',
-    icon: <ExclamationCircleFilled />,
-    content: 'Some descriptions',
-    okText: 'Yes',
-    okType: 'danger',
-    cancelText: 'No',
-    onOk() {
-      onOk?.();
-    },
-    onCancel() {
-      onCancel?.();
-    },
+export const showDeleteConfirm = ({
+  onOk,
+  onCancel,
+}: IProps): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    confirm({
+      title: 'Are you sure delete this item?',
+      icon: <ExclamationCircleFilled />,
+      content: 'Some descriptions',
+      okText: 'Yes',
+      okType: 'danger',
+      cancelText: 'No',
+      async onOk() {
+        try {
+          const ret = await onOk?.();
+          resolve(ret);
+          console.info(ret);
+        } catch (error) {
+          reject(error);
+        }
+      },
+      onCancel() {
+        onCancel?.();
+      },
+    });
   });
 };
 

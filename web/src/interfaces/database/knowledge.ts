@@ -1,5 +1,33 @@
 import { RunningStatus } from '@/constants/knowledge';
 
+// knowledge base
+export interface IKnowledge {
+  avatar?: any;
+  chunk_num: number;
+  create_date: string;
+  create_time: number;
+  created_by: string;
+  description: string;
+  doc_num: number;
+  id: string;
+  name: string;
+  parser_config: Parserconfig;
+  parser_id: string;
+  permission: string;
+  similarity_threshold: number;
+  status: string;
+  tenant_id: string;
+  token_num: number;
+  update_date: string;
+  update_time: number;
+  vector_similarity_weight: number;
+}
+
+export interface Parserconfig {
+  from_page: number;
+  to_page: number;
+}
+
 export interface IKnowledgeFile {
   chunk_num: number;
   create_date: string;
@@ -23,4 +51,17 @@ export interface IKnowledgeFile {
   type: string;
   update_date: string;
   update_time: number;
+}
+
+export interface ITenantInfo {
+  asr_id: string;
+  embd_id: string;
+  img2txt_id: string;
+  llm_id: string;
+  name: string;
+  parser_ids: string;
+  role: string;
+  tenant_id: string;
+  chat_id: string;
+  speech2text_id: string;
 }

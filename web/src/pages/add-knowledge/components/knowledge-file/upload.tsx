@@ -1,7 +1,8 @@
+import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import uploadService from '@/services/uploadService';
 import type { UploadProps } from 'antd';
-import { Button, Upload } from 'antd';
 import React from 'react';
+import { Link } from 'umi';
 interface PropsType {
   kb_id: string;
   getKfList: () => void;
@@ -12,6 +13,8 @@ type UploadRequestOption = Parameters<
 >[0];
 
 const FileUpload: React.FC<PropsType> = ({ kb_id, getKfList }) => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
   const createRequest: (props: UploadRequestOption) => void = async function ({
     file,
     onSuccess,
@@ -30,9 +33,9 @@ const FileUpload: React.FC<PropsType> = ({ kb_id, getKfList }) => {
     showUploadList: false,
   };
   return (
-    <Upload {...uploadProps}>
-      <Button type="link">导入文件</Button>
-    </Upload>
+    // <Upload {...uploadProps}>
+    <Link to={`/knowledge/dataset/upload?id=${knowledgeBaseId}`}>导入文件</Link>
+    // </Upload>
   );
 };
 

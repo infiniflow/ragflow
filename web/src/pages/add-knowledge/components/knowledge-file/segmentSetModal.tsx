@@ -18,8 +18,7 @@ const SegmentSetModal: React.FC<kFProps> = ({
   const kFModel = useSelector((state: any) => state.kFModel);
   const settingModel = useSelector((state: any) => state.settingModel);
   const [selectedTag, setSelectedTag] = useState('');
-  const { tenantIfo = {} } = settingModel;
-  const { parser_ids = '' } = tenantIfo;
+  const parser_ids = settingModel?.tenantIfo?.parser_ids ?? '';
   const { isShowSegmentSetModal } = kFModel;
   const { t } = useTranslation();
 
