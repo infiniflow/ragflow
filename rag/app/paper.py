@@ -1,6 +1,9 @@
 import copy
 import re
 from collections import Counter
+
+from api.db import ParserType
+from rag.cv.ppdetection import PPDet
 from rag.parser import tokenize
 from rag.nlp import huqie
 from rag.parser.pdf_parser import HuParser
@@ -9,6 +12,10 @@ from rag.utils import num_tokens_from_string
 
 
 class Pdf(HuParser):
+    def __init__(self):
+        self.model_speciess = ParserType.PAPER.value
+        super().__init__()
+
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         self.__images__(
@@ -63,6 +70,15 @@ class Pdf(HuParser):
                 "[0-9. 一、i]*(introduction|abstract|摘要|引言|keywords|key words|关键词|background|背景|目录|前言|contents)",
                 txt.lower().strip())
 
+        if from_page > 0:
+            return {
+                "title":"",
+                "authors": "",
+                "abstract": "",
+                "lines": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes[i:] if
+                          re.match(r"(text|title)", b.get("layoutno", "text"))],
+                "tables": tbls
+            }
         # get title and authors
         title = ""
         authors = []
@@ -115,18 +131,13 @@ class Pdf(HuParser):
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
     pdf_parser = None
-    paper = {}
-
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
         paper = pdf_parser(filename if not binary else binary,
                            from_page=from_page, to_page=to_page, callback=callback)
     else: raise NotImplementedError("file type not supported yet(pdf supported)")
-    doc = {
-        "docnm_kwd": paper["title"] if paper["title"] else filename,
-        "authors_tks": paper["authors"]
-    }
-    doc["title_tks"] = huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", doc["docnm_kwd"]))
+    doc = {"docnm_kwd": filename, "authors_tks": paper["authors"],
+           "title_tks": huqie.qie(paper["title"] if paper["title"] else filename)}
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     doc["authors_sm_tks"] = huqie.qieqie(doc["authors_tks"])
     # is it English
