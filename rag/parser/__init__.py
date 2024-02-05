@@ -1,4 +1,5 @@
 import copy
+import random
 
 from .pdf_parser import HuParser as PdfParser
 from .docx_parser import HuDocxParser as DocxParser
@@ -38,6 +39,9 @@ BULLET_PATTERN = [[
 ]
 ]
 
+def random_choices(arr, k):
+    k = min(len(arr), k)
+    return random.choices(arr, k=k)
 
 def bullets_category(sections):
     global BULLET_PATTERN

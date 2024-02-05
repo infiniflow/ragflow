@@ -67,7 +67,7 @@ class Dealer:
         ps = int(req.get("size", 1000))
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id",
                                  "image_id", "doc_id", "q_512_vec", "q_768_vec",
-                                 "q_1024_vec", "q_1536_vec", "available_int"])
+                                 "q_1024_vec", "q_1536_vec", "available_int", "content_with_weight"])
 
         s = s.query(bqry)[pg * ps:(pg + 1) * ps]
         s = s.highlight("content_ltks")
@@ -234,7 +234,7 @@ class Dealer:
                 sres.field[i].get("q_%d_vec" % len(sres.query_vector), "\t".join(["0"] * len(sres.query_vector)))) for i in sres.ids]
         if not ins_embd:
             return [], [], []
-        ins_tw = [huqie.qie(sres.field[i][cfield]).split(" ")
+        ins_tw = [sres.field[i][cfield].split(" ")
                   for i in sres.ids]
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                                         ins_embd,
@@ -281,6 +281,7 @@ class Dealer:
             d = {
                 "chunk_id": id,
                 "content_ltks": sres.field[id]["content_ltks"],
+                "content_with_weight": sres.field[id]["content_with_weight"],
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": dnm,
                 "kb_id": sres.field[id]["kb_id"],

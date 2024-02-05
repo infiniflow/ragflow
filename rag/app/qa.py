@@ -3,7 +3,7 @@ import re
 from io import BytesIO
 from nltk import word_tokenize
 from openpyxl import load_workbook
-from rag.parser import is_english
+from rag.parser import is_english, random_choices
 from rag.nlp import huqie, stemmer
 
 
@@ -33,9 +33,9 @@ class Excel(object):
                 if len(res) % 999 == 0:
                     callback(len(res)*0.6/total, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..."%(",".join(fails[:3])) if fails else "")))
 
-        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
+        callback(0.6, ("Extract Q&A: {}. ".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
-        self.is_english = is_english([rmPrefix(q) for q, _ in random.choices(res, k=30) if len(q)>1])
+        self.is_english = is_english([rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q)>1])
         return res
 
 

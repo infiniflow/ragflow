@@ -20,12 +20,9 @@ import os
 import signal
 import sys
 import traceback
-
 from werkzeug.serving import run_simple
-
 from api.apps import app
 from api.db.runtime_config import RuntimeConfig
-from api.hook import HookManager
 from api.settings import (
     HOST, HTTP_PORT, access_logger, database_logger, stat_logger,
 )
@@ -59,8 +56,6 @@ if __name__ == '__main__':
 
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=HOST, HTTP_PORT=HTTP_PORT)
-
-    HookManager.init()
 
     peewee_logger = logging.getLogger('peewee')
     peewee_logger.propagate = False

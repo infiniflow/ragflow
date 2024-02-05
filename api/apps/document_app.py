@@ -73,6 +73,7 @@ def upload():
             "id": get_uuid(),
             "kb_id": kb.id,
             "parser_id": kb.parser_id,
+            "parser_config": kb.parser_config,
             "created_by": current_user.id,
             "type": filename_type(filename),
             "name": filename,
@@ -108,6 +109,7 @@ def create():
             "id": get_uuid(),
             "kb_id": kb.id,
             "parser_id": kb.parser_id,
+            "parser_config": kb.parser_config,
             "created_by": current_user.id,
             "type": FileType.VIRTUAL,
             "name": req["name"],
@@ -128,8 +130,8 @@ def list():
             data=False, retmsg='Lack of "KB ID"', retcode=RetCode.ARGUMENT_ERROR)
     keywords = request.args.get("keywords", "")
 
-    page_number = request.args.get("page", 1)
-    items_per_page = request.args.get("page_size", 15)
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 15))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", True)
     try:
@@ -214,7 +216,9 @@ def run():
     req = request.json
     try:
         for id in req["doc_ids"]:
-            DocumentService.update_by_id(id, {"run": str(req["run"]), "progress": 0})
+            info = {"run": str(req["run"]), "progress": 0}
+            if str(req["run"]) == TaskStatus.RUNNING.value:info["progress_msg"] = ""
+            DocumentService.update_by_id(id, info)
             if str(req["run"]) == TaskStatus.CANCEL.value:
                 tenant_id = DocumentService.get_tenant_id(id)
                 if not tenant_id:

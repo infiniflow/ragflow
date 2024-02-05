@@ -92,6 +92,12 @@ class TenantService(CommonService):
             .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id==user_id) & (UserTenant.status == StatusEnum.VALID.value) & (UserTenant.role==UserTenantRole.NORMAL.value)))\
             .where(cls.model.status == StatusEnum.VALID.value).dicts())
 
+    @classmethod
+    @DB.connection_context()
+    def decrease(cls, user_id, num):
+        num = cls.model.update(credit=cls.model.credit - num).where(
+            cls.model.id == user_id).execute()
+        if num == 0: raise LookupError("Tenant not found which is supposed to be there")
 
 class UserTenantService(CommonService):
     model = UserTenant

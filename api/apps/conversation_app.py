@@ -175,7 +175,7 @@ def chat(dialog, messages, **kwargs):
     chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     kbinfos = retrievaler.retrieval(question, embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n, dialog.similarity_threshold,
                         dialog.vector_similarity_weight, top=1024, aggs=False)
-    knowledges = [ck["content_ltks"] for ck in kbinfos["chunks"]]
+    knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
 
     if not knowledges and prompt_config["empty_response"]:
         return {"answer": prompt_config["empty_response"], "retrieval": kbinfos}

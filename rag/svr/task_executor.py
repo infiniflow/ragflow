@@ -36,7 +36,7 @@ from rag.nlp import search
 from io import BytesIO
 import pandas as pd
 
-from rag.app import laws, paper, presentation, manual, qa
+from rag.app import laws, paper, presentation, manual, qa, table,book
 
 from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
@@ -49,10 +49,12 @@ BATCH_SIZE = 64
 FACTORY = {
     ParserType.GENERAL.value: laws,
     ParserType.PAPER.value: paper,
+    ParserType.BOOK.value: book,
     ParserType.PRESENTATION.value: presentation,
     ParserType.MANUAL.value: manual,
     ParserType.LAWS.value: laws,
     ParserType.QA.value: qa,
+    ParserType.TABLE.value: table,
 }
 
 
@@ -66,7 +68,7 @@ def set_progress(task_id, from_page, to_page, prog=None, msg="Processing..."):
     d = {"progress_msg": msg}
     if prog is not None: d["progress"] = prog
     try:
-        TaskService.update_by_id(task_id, d)
+        TaskService.update_progress(task_id, d)
     except Exception as e:
         cron_logger.error("set_progress:({}), {}".format(task_id, str(e)))
 
@@ -113,7 +115,7 @@ def build(row, cvmdl):
         return []
 
     callback = partial(set_progress, row["id"], row["from_page"], row["to_page"])
-    chunker = FACTORY[row["parser_id"]]
+    chunker = FACTORY[row["parser_id"].lower()]
     try:
         cron_logger.info("Chunkking {}/{}".format(row["location"], row["name"]))
         cks = chunker.chunk(row["name"], MINIO.get(row["kb_id"], row["location"]), row["from_page"], row["to_page"],
@@ -154,6 +156,7 @@ def build(row, cvmdl):
 
         MINIO.put(row["kb_id"], d["_id"], output_buffer.getvalue())
         d["img_id"] = "{}-{}".format(row["kb_id"], d["_id"])
+        del d["image"]
         docs.append(d)
 
     return docs
@@ -168,7 +171,7 @@ def init_kb(row):
 
 
 def embedding(docs, mdl):
-    tts, cnts = [d["docnm_kwd"] for d in docs if d.get("docnm_kwd")], [d["content_with_weight"] for d in docs]
+    tts, cnts = [rmSpace(d["title_tks"]) for d in docs if d.get("title_tks")], [d["content_with_weight"] for d in docs]
     tk_count = 0
     if len(tts) == len(cnts):
         tts, c = mdl.encode(tts)
@@ -207,6 +210,7 @@ def main(comm, mod):
         cks = build(r, cv_mdl)
         if not cks:
             tmf.write(str(r["update_time"]) + "\n")
+            callback(1., "No chunk! Done!")
             continue
         # TODO: exception handler
         ## set_progress(r["did"], -1, "ERROR: ")
@@ -215,7 +219,6 @@ def main(comm, mod):
         except Exception as e:
             callback(-1, "Embedding error:{}".format(str(e)))
             cron_logger.error(str(e))
-            continue
 
         callback(msg="Finished embedding! Start to build index!")
         init_kb(r)
@@ -227,6 +230,7 @@ def main(comm, mod):
         else:
             if TaskService.do_cancel(r["id"]):
                 ELASTICSEARCH.deleteByQuery(Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
+                continue
             callback(1., "Done!")
             DocumentService.increment_chunk_num(r["doc_id"], r["kb_id"], tk_count, chunk_count, 0)
             cron_logger.info("Chunk doc({}), token({}), chunks({})".format(r["id"], tk_count, len(cks)))

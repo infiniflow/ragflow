@@ -29,7 +29,7 @@ from peewee import (
 )
 from playhouse.pool import PooledMySQLDatabase
 
-from api.db import SerializedType
+from api.db import SerializedType, ParserType
 from api.settings import DATABASE, stat_logger, SECRET_KEY
 from api.utils.log_utils import getLogger
 from api import utils
@@ -381,7 +381,8 @@ class Tenant(DataBaseModel):
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID")
     asr_id = CharField(max_length=128, null=False, help_text="default ASR model ID")
     img2txt_id = CharField(max_length=128, null=False, help_text="default image to text model ID")
-    parser_ids = CharField(max_length=128, null=False, help_text="default image to text model ID")
+    parser_ids = CharField(max_length=128, null=False, help_text="document processors")
+    credit = IntegerField(default=512)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
 
     class Meta:
@@ -472,7 +473,8 @@ class Knowledgebase(DataBaseModel):
     similarity_threshold = FloatField(default=0.2)
     vector_similarity_weight = FloatField(default=0.3)
 
-    parser_id = CharField(max_length=32, null=False, help_text="default parser ID")
+    parser_id = CharField(max_length=32, null=False, help_text="default parser ID", default=ParserType.GENERAL.value)
+    parser_config = JSONField(null=False, default={"from_page":0, "to_page": 100000})
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
 
     def __str__(self):
@@ -487,6 +489,7 @@ class Document(DataBaseModel):
     thumbnail = TextField(null=True, help_text="thumbnail base64 string")
     kb_id = CharField(max_length=256, null=False, index=True)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID")
+    parser_config = JSONField(null=False, default={"from_page":0, "to_page": 100000})
     source_type = CharField(max_length=128, null=False, default="local", help_text="where dose this document from")
     type = CharField(max_length=32, null=False, help_text="file extension")
     created_by = CharField(max_length=32, null=False, help_text="who created it")

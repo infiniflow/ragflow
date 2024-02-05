@@ -63,7 +63,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_newly_uploaded(cls, tm, mod=0, comm=1, items_per_page=64):
-        fields = [cls.model.id, cls.model.kb_id, cls.model.parser_id, cls.model.name, cls.model.type, cls.model.location, cls.model.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, Tenant.asr_id, cls.model.update_time]
+        fields = [cls.model.id, cls.model.kb_id, cls.model.parser_id, cls.model.parser_config, cls.model.name, cls.model.type, cls.model.location, cls.model.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, Tenant.asr_id, cls.model.update_time]
         docs = cls.model.select(*fields) \
             .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id)) \
             .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))\
