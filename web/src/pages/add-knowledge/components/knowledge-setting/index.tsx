@@ -19,7 +19,8 @@ const KnowledgeSetting = () => {
   const settingModel = useSelector((state: any) => state.settingModel);
   let navigate = useNavigate();
   const { tenantIfo = {} } = settingModel;
-  const { parser_ids = '', embd_id = '' } = tenantIfo;
+  const parser_ids = tenantIfo?.parser_ids ?? '';
+  const embd_id = tenantIfo?.embd_id ?? '';
   const [form] = Form.useForm();
   const [selectedTag, setSelectedTag] = useState('');
   const values = Form.useWatch([], form);

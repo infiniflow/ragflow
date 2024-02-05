@@ -35,7 +35,7 @@ const model: DvaModel<KSModelState> = {
       if (retcode === 0) {
         message.success('创建知识库成功！');
       }
-      return retcode;
+      return data;
     },
     *updateKb({ payload = {} }, { call, put }) {
       const { data } = yield call(kbService.updateKb, payload);

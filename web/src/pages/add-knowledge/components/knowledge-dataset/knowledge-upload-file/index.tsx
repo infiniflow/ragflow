@@ -28,7 +28,7 @@ import {
   UploadProps,
 } from 'antd';
 import classNames from 'classnames';
-import { ReactElement, useEffect, useState } from 'react';
+import { ReactElement, useEffect, useRef, useState } from 'react';
 import { Nullable } from 'typings';
 import { Link, useDispatch, useNavigate, useSelector } from 'umi';
 
@@ -72,11 +72,15 @@ const UploaderItem = ({
   const content = (
     <Radio.Group onChange={onChange} value={value}>
       <Space direction="vertical">
-        {parserArray.map((x) => (
-          <Radio value={x} key={x}>
-            {x}
-          </Radio>
-        ))}
+        {parserArray.map(
+          (
+            x, // value is lowercase, key is uppercase
+          ) => (
+            <Radio value={x.toLowerCase()} key={x}>
+              {x}
+            </Radio>
+          ),
+        )}
       </Space>
     </Radio.Group>
   );
@@ -147,6 +151,7 @@ const KnowledgeUploadFile = () => {
     (state: any) => state.settingModel.tenantIfo,
   );
   const navigate = useNavigate();
+  const fileListRef = useRef<UploadFile[]>([]);
 
   const parserArray = tenantIfo?.parser_ids.split(',') ?? [];
 
@@ -168,6 +173,7 @@ const KnowledgeUploadFile = () => {
     name: 'file',
     multiple: true,
     itemRender(originNode, file, fileList, actions) {
+      fileListRef.current = fileList;
       return (
         <UploaderItem
           isUpload={isUpload}
@@ -185,8 +191,17 @@ const KnowledgeUploadFile = () => {
     },
   };
 
+  const runSelectedDocument = () => {
+    const ids = fileListRef.current.map((x) => x.response.id);
+    dispatch({
+      type: 'kFModel/document_run',
+      payload: { doc_ids: ids, run: 1 },
+    });
+  };
+
   const handleNextClick = () => {
     if (!isUpload) {
+      runSelectedDocument();
       navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeBaseId}`);
     } else {
       setIsUpload(false);

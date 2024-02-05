@@ -1,11 +1,12 @@
 import { useState } from 'react';
 
+export interface IModalManagerChildrenProps {
+  showModal(): void;
+  hideModal(): void;
+  visible: boolean;
+}
 interface IProps {
-  children: (props: {
-    showModal(): void;
-    hideModal(): void;
-    visible: boolean;
-  }) => React.ReactNode;
+  children: (props: IModalManagerChildrenProps) => React.ReactNode;
 }
 
 const ModalManager = ({ children }: IProps) => {

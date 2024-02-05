@@ -168,8 +168,8 @@ const model: DvaModel<KFModelState> = {
       return retcode;
     },
     *document_create({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(kbService.document_create, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(kbService.document_create, payload);
+      const { retcode, data: res } = data;
       if (retcode === 0) {
         put({
           type: 'kFModel/updateState',
@@ -178,6 +178,14 @@ const model: DvaModel<KFModelState> = {
           },
         });
         message.success('创建成功！');
+      }
+      return retcode;
+    },
+    *document_run({ payload = {} }, { call, put }) {
+      const { data } = yield call(kbService.document_run, payload);
+      const { retcode } = data;
+      if (retcode === 0) {
+        message.success('Run successfully ！');
       }
       return retcode;
     },

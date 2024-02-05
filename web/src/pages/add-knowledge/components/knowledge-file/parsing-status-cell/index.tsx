@@ -55,7 +55,8 @@ export const ParsingStatusCell = ({ record }: IProps) => {
         {isRunning ? (
           <Space>
             <Badge color={runningStatus.color} />
-            `${runningStatus.label}${record.progress * 100}%`
+            {runningStatus.label}
+            <span>{record.progress * 100}%</span>
           </Space>
         ) : (
           runningStatus.label

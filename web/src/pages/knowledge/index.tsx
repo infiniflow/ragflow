@@ -1,11 +1,13 @@
 import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
-import { KnowledgeRouteKey } from '@/constants/knowledge';
+import ModalManager from '@/components/modal-manager';
 import { PlusOutlined } from '@ant-design/icons';
 import { Button, Flex, Space } from 'antd';
 import { useCallback, useEffect } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
-import styles from './index.less';
 import KnowledgeCard from './knowledge-card';
+import KnowledgeCreatingModal from './knowledge-creating-modal';
+
+import styles from './index.less';
 
 const Knowledge = () => {
   const dispatch = useDispatch();
@@ -20,9 +22,9 @@ const Knowledge = () => {
     });
   }, []);
 
-  const handleAddKnowledge = () => {
-    navigate(`/knowledge/${KnowledgeRouteKey.Configuration}`);
-  };
+  // const handleAddKnowledge = () => {
+  //   navigate(`/knowledge/${KnowledgeRouteKey.Configuration}`);
+  // };
 
   useEffect(() => {
     fetchList();
@@ -41,32 +43,28 @@ const Knowledge = () => {
           <Button icon={<FilterIcon />} className={styles.filterButton}>
             Filters
           </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleAddKnowledge}
-            className={styles.topButton}
-          >
-            Create knowledge base
-          </Button>
+          <ModalManager>
+            {({ visible, hideModal, showModal }) => (
+              <>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    showModal();
+                  }}
+                  className={styles.topButton}
+                >
+                  Create knowledge base
+                </Button>
+                <KnowledgeCreatingModal
+                  visible={visible}
+                  hideModal={hideModal}
+                ></KnowledgeCreatingModal>
+              </>
+            )}
+          </ModalManager>
         </Space>
       </div>
-      {/* <Row gutter={{ xs: 8, sm: 16, md: 24, lg: 32 }}>
-        {data.map((item: any) => {
-          return (
-            <Col
-              className="gutter-row"
-              key={item.name}
-              xs={24}
-              sm={12}
-              md={10}
-              lg={8}
-            >
-              <KnowledgeCard item={item}></KnowledgeCard>
-            </Col>
-          );
-        })}
-      </Row> */}
       <Flex gap="large" wrap="wrap">
         {data.map((item: any) => {
           return <KnowledgeCard item={item} key={item.name}></KnowledgeCard>;
