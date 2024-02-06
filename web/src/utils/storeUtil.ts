@@ -7,3 +7,8 @@ export const getOneNamespaceEffectsLoading = (
     (effectName) => effects[`${namespace}/${effectName}`],
   );
 };
+
+export const delay = (ms: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });

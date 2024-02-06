@@ -9,7 +9,6 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Card, Dropdown, MenuProps, Space } from 'antd';
-import { MouseEvent } from 'react';
 import { useDispatch, useNavigate } from 'umi';
 
 import showDeleteConfirm from '@/components/deleting-confirm';
@@ -22,6 +21,15 @@ interface IProps {
 const KnowledgeCard = ({ item }: IProps) => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+
+  const removeKnowledge = () => {
+    return dispatch({
+      type: 'knowledgeModel/rmKb',
+      payload: {
+        kb_id: item.id,
+      },
+    });
+  };
 
   const handleDelete = () => {
     showDeleteConfirm({ onOk: removeKnowledge });
@@ -47,16 +55,7 @@ const KnowledgeCard = ({ item }: IProps) => {
     }
   };
 
-  const removeKnowledge = () => {
-    return dispatch({
-      type: 'knowledgeModel/rmKb',
-      payload: {
-        kb_id: item.id,
-      },
-    });
-  };
-
-  const handleCardClick = (e: MouseEvent<HTMLElement>) => {
+  const handleCardClick = () => {
     navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${item.id}`);
   };
 

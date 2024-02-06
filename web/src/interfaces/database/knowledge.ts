@@ -65,3 +65,13 @@ export interface ITenantInfo {
   chat_id: string;
   speech2text_id: string;
 }
+
+export interface IChunk {
+  available_int: number; // Whether to enable, 0: not enabled, 1: enabled
+  chunk_id: string;
+  content_with_weight: string;
+  doc_id: string;
+  docnm_kwd: string;
+  img_id: string;
+  important_kwd: any[];
+}
