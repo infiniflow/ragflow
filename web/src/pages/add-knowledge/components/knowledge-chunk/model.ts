@@ -1,10 +1,11 @@
+import { BaseState } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/kbService';
 import { message } from 'antd';
 // import { delay } from '@/utils/storeUtil';
 import { DvaModel } from 'umi';
 
-export interface ChunkModelState {
+export interface ChunkModelState extends BaseState {
   data: any[];
   total: number;
   isShowCreateModal: boolean;
@@ -12,6 +13,7 @@ export interface ChunkModelState {
   doc_id: string;
   chunkInfo: any;
   documentInfo: Partial<IKnowledgeFile>;
+  available?: number;
 }
 
 const model: DvaModel<ChunkModelState> = {
@@ -24,6 +26,12 @@ const model: DvaModel<ChunkModelState> = {
     doc_id: '',
     chunkInfo: {},
     documentInfo: {},
+    pagination: {
+      current: 1,
+      pageSize: 10,
+    },
+    searchString: '',
+    available: undefined, // set to undefined to select all
   },
   reducers: {
     updateState(state, { payload }) {
@@ -32,17 +40,38 @@ const model: DvaModel<ChunkModelState> = {
         ...payload,
       };
     },
+    setAvailable(state, { payload }) {
+      return { ...state, available: payload };
+    },
+    setSearchString(state, { payload }) {
+      return { ...state, searchString: payload };
+    },
+    setPagination(state, { payload }) {
+      return { ...state, pagination: { ...state.pagination, ...payload } };
+    },
+    resetFilter(state, { payload }) {
+      return {
+        ...state,
+        pagination: {
+          current: 1,
+          pageSize: 10,
+        },
+        searchString: '',
+        available: undefined,
+      };
+    },
   },
-  // subscriptions: {
-  //   setup({ dispatch, history }) {
-  //     history.listen(location => {
-  //       console.log(location)
-  //     });
-  //   }
-  // },
   effects: {
-    *chunk_list({ payload = {} }, { call, put }) {
-      const { data } = yield call(kbService.chunk_list, payload);
+    *chunk_list({ payload = {} }, { call, put, select }) {
+      const { available, searchString, pagination }: ChunkModelState =
+        yield select((state: any) => state.chunkModel);
+      const { data } = yield call(kbService.chunk_list, {
+        ...payload,
+        available_int: available,
+        keywords: searchString,
+        page: pagination.current,
+        size: pagination.pageSize,
+      });
       const { retcode, data: res } = data;
       if (retcode === 0) {
         yield put({

@@ -1,6 +1,6 @@
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
-import { Button, Input, Pagination, Select, Space, Spin } from 'antd';
+import { Button, Input, Pagination, Space, Spin } from 'antd';
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
@@ -14,7 +14,6 @@ import { ChunkModelState } from './model';
 interface PayloadType {
   doc_id: string;
   keywords?: string;
-  available_int?: number;
 }
 
 const Chunk = () => {
@@ -23,10 +22,15 @@ const Chunk = () => {
     (state: any) => state.chunkModel,
   );
   const [keywords, SetKeywords] = useState('');
-  const [available_int, setAvailableInt] = useState(-1);
+  const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const [searchParams] = useSearchParams();
-  const [pagination, setPagination] = useState({ page: 1, size: 30 });
-  const { data = [], total, chunk_id, isShowCreateModal } = chunkModel;
+  const {
+    data = [],
+    total,
+    chunk_id,
+    isShowCreateModal,
+    pagination,
+  } = chunkModel;
   const effects = useSelector((state: any) => state.loading.effects);
   const loading = getOneNamespaceEffectsLoading('chunkModel', effects, [
     'create_hunk',
@@ -35,23 +39,19 @@ const Chunk = () => {
   ]);
   const documentId: string = searchParams.get('doc_id') || '';
 
-  const getChunkList = (value?: string) => {
+  const getChunkList = () => {
     const payload: PayloadType = {
       doc_id: documentId,
-      keywords: value || keywords,
-      available_int,
     };
-    if (payload.available_int === -1) {
-      delete payload.available_int;
-    }
+
     dispatch({
       type: 'chunkModel/chunk_list',
       payload: {
         ...payload,
-        ...pagination,
       },
     });
   };
+
   const confirm = async (id: string) => {
     const retcode = await dispatch<any>({
       type: 'chunkModel/rm_chunk',
@@ -75,29 +75,55 @@ const Chunk = () => {
     getChunkList();
   };
 
-  const onShowSizeChange: PaginationProps['onShowSizeChange'] = (
+  const onPaginationChange: PaginationProps['onShowSizeChange'] = (
     page,
     size,
   ) => {
-    setPagination({ page, size });
-  };
-
-  const switchChunk = async (id: string, available_int: boolean) => {
-    const retcode = await dispatch<any>({
-      type: 'chunkModel/switch_chunk',
+    setSelectedChunkIds([]);
+    dispatch({
+      type: 'chunkModel/setPagination',
       payload: {
-        chunk_ids: [id],
-        available_int: Number(available_int),
-        doc_id: documentId,
+        current: page,
+        pageSize: size,
       },
     });
-
-    retcode === 0 && getChunkList();
+    getChunkList();
   };
+
+  const selectAllChunk = useCallback(
+    (checked: boolean) => {
+      setSelectedChunkIds(checked ? data.map((x) => x.chunk_id) : []);
+      // setSelectedChunkIds((previousIds) => {
+      //   return checked ? [...previousIds, ...data.map((x) => x.chunk_id)] : [];
+      // });
+    },
+    [data],
+  );
+
+  const handleSingleCheckboxClick = useCallback(
+    (chunkId: string, checked: boolean) => {
+      setSelectedChunkIds((previousIds) => {
+        const idx = previousIds.findIndex((x) => x === chunkId);
+        const nextIds = [...previousIds];
+        if (checked && idx === -1) {
+          nextIds.push(chunkId);
+        } else if (!checked && idx !== -1) {
+          nextIds.splice(idx, 1);
+        }
+        return nextIds;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     getChunkList();
-  }, [documentId, available_int, pagination]);
+    return () => {
+      dispatch({
+        type: 'chunkModel/resetFilter', // TODO: need to reset state uniformly
+      });
+    };
+  }, [documentId]);
 
   const debounceChange = debounce(getChunkList, 300);
   const debounceCallback = useCallback(
@@ -108,17 +134,20 @@ const Chunk = () => {
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
+    setSelectedChunkIds([]);
     const value = e.target.value;
     SetKeywords(value);
     debounceCallback(value);
   };
-  const handleSelectChange = (value: number) => {
-    setAvailableInt(value);
-  };
+
   return (
     <>
       <div className={styles.chunkPage}>
-        <ChunkToolBar></ChunkToolBar>
+        <ChunkToolBar
+          getChunkList={getChunkList}
+          selectAllChunk={selectAllChunk}
+          checked={selectedChunkIds.length === data.length}
+        ></ChunkToolBar>
         <div className={styles.filter}>
           <div>
             <Input
@@ -127,28 +156,6 @@ const Chunk = () => {
               value={keywords}
               allowClear
               onChange={handleInputChange}
-            />
-            <Select
-              showSearch
-              placeholder="是否启用"
-              optionFilterProp="children"
-              value={available_int}
-              onChange={handleSelectChange}
-              style={{ width: 220 }}
-              options={[
-                {
-                  value: -1,
-                  label: '全部',
-                },
-                {
-                  value: 1,
-                  label: '启用',
-                },
-                {
-                  value: 0,
-                  label: '未启用',
-                },
-              ]}
             />
           </div>
           <Button
@@ -164,7 +171,12 @@ const Chunk = () => {
           <Spin spinning={loading} className={styles.spin} size="large">
             <Space direction="vertical" size={'middle'}>
               {data.map((item) => (
-                <ChunkCard item={item} key={item.chunk_id}></ChunkCard>
+                <ChunkCard
+                  item={item}
+                  key={item.chunk_id}
+                  checked={selectedChunkIds.some((x) => x === item.chunk_id)}
+                  handleCheckboxClick={handleSingleCheckboxClick}
+                ></ChunkCard>
               ))}
             </Space>
           </Spin>
@@ -175,10 +187,10 @@ const Chunk = () => {
             showLessItems
             showQuickJumper
             showSizeChanger
-            onChange={onShowSizeChange}
-            defaultPageSize={30}
-            pageSizeOptions={[30, 60, 90]}
-            defaultCurrent={pagination.page}
+            onChange={onPaginationChange}
+            defaultPageSize={10}
+            pageSizeOptions={[10, 30, 60, 90]}
+            defaultCurrent={pagination.current}
             total={total}
           />
         </div>

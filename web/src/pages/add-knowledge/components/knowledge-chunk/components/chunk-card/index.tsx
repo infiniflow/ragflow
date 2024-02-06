@@ -1,6 +1,6 @@
 import { IChunk } from '@/interfaces/database/knowledge';
 import { api_host } from '@/utils/api';
-import { Card, Flex, Popover, Switch } from 'antd';
+import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
 import { useDispatch } from 'umi';
 
 import { useState } from 'react';
@@ -8,6 +8,8 @@ import styles from './index.less';
 
 interface IProps {
   item: IChunk;
+  checked: boolean;
+  handleCheckboxClick: (chunkId: string, checked: boolean) => void;
 }
 
 interface IImage {
@@ -26,16 +28,11 @@ const Image = ({ id, className, ...props }: IImage) => {
   );
 };
 
-const ChunkCard = ({ item }: IProps) => {
+const ChunkCard = ({ item, checked, handleCheckboxClick }: IProps) => {
   const dispatch = useDispatch();
 
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(available === 1);
-
-  const onChange = (checked: boolean) => {
-    setEnabled(checked);
-    switchChunk();
-  };
 
   const switchChunk = () => {
     dispatch({
@@ -48,10 +45,20 @@ const ChunkCard = ({ item }: IProps) => {
     });
   };
 
+  const onChange = (checked: boolean) => {
+    setEnabled(checked);
+    switchChunk();
+  };
+
+  const handleCheck: CheckboxProps['onChange'] = (e) => {
+    handleCheckboxClick(item.chunk_id, e.target.checked);
+  };
+
   return (
     <div>
       <Card>
         <Flex gap={'middle'} justify={'space-between'}>
+          <Checkbox onChange={handleCheck} checked={checked}></Checkbox>
           {item.img_id && (
             <Popover
               placement="topRight"
