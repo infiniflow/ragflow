@@ -5,4 +5,5 @@ export interface Pagination {
 
 export interface BaseState {
   pagination: Pagination;
+  searchString: string;
 }

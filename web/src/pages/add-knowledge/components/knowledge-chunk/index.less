@@ -1,70 +1,69 @@
 .chunkPage {
-    padding: 24px;
+  padding: 24px;
 
+  display: flex;
+  // height: calc(100vh - 112px);
+  flex-direction: column;
+
+  .filter {
+    margin: 10px 0;
     display: flex;
-    height: calc(100vh - 112px);
-    flex-direction: column;
+    height: 32px;
+    justify-content: space-between;
+  }
 
-    .filter {
-        margin: 10px 0;
-        display: flex;
-        height: 32px;
-        justify-content: space-between;
+  .pageContent {
+    flex: 1;
+    width: 100%;
+    padding-right: 12px;
+    overflow-y: auto;
+
+    .spin {
+      min-height: 400px;
     }
+  }
 
-    .pageContent {
-        flex: 1;
-        width: 100%;
-        padding-right: 12px;
-        overflow-y: auto;
-
-        .spin {
-            min-height: 400px;
-        }
-    }
-
-    .pageFooter {
-        height: 32px;
-    }
+  .pageFooter {
+    height: 32px;
+  }
 }
 
 .container {
-    height: 100px;
+  height: 100px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+
+  .content {
     display: flex;
-    flex-direction: column;
     justify-content: space-between;
 
-    .content {
-        display: flex;
-        justify-content: space-between;
-
-        .context {
-            flex: 1;
-            // width: 207px;
-            height: 88px;
-            overflow: hidden;
-        }
+    .context {
+      flex: 1;
+      // width: 207px;
+      height: 88px;
+      overflow: hidden;
     }
+  }
 
-    .footer {
-        height: 20px;
+  .footer {
+    height: 20px;
 
-        .text {
-            margin-left: 10px;
-        }
+    .text {
+      margin-left: 10px;
     }
+  }
 }
 
 .card {
-    :global {
-        .ant-card-body {
-            padding: 10px;
-            margin: 0;
-        }
-
-        margin-bottom: 10px;
+  :global {
+    .ant-card-body {
+      padding: 10px;
+      margin: 0;
     }
 
-    cursor: pointer;
+    margin-bottom: 10px;
+  }
 
+  cursor: pointer;
 }

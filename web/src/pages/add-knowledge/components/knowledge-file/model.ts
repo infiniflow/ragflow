@@ -16,7 +16,6 @@ export interface KFModelState extends BaseState {
   data: IKnowledgeFile[];
   total: number;
   currentRecord: Nullable<IKnowledgeFile>;
-  searchString: string;
 }
 
 const model: DvaModel<KFModelState> = {
