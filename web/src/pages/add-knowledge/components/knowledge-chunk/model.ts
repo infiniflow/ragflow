@@ -1,4 +1,7 @@
+import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/kbService';
+import { message } from 'antd';
+// import { delay } from '@/utils/storeUtil';
 import { DvaModel } from 'umi';
 
 export interface ChunkModelState {
@@ -8,6 +11,7 @@ export interface ChunkModelState {
   chunk_id: string;
   doc_id: string;
   chunkInfo: any;
+  documentInfo: Partial<IKnowledgeFile>;
 }
 
 const model: DvaModel<ChunkModelState> = {
@@ -19,6 +23,7 @@ const model: DvaModel<ChunkModelState> = {
     chunk_id: '',
     doc_id: '',
     chunkInfo: {},
+    documentInfo: {},
   },
   reducers: {
     updateState(state, { payload }) {
@@ -37,23 +42,25 @@ const model: DvaModel<ChunkModelState> = {
   // },
   effects: {
     *chunk_list({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(kbService.chunk_list, payload);
-
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(kbService.chunk_list, payload);
+      const { retcode, data: res } = data;
       if (retcode === 0) {
-        console.log(res);
         yield put({
           type: 'updateState',
           payload: {
             data: res.chunks,
             total: res.total,
+            documentInfo: res.doc,
           },
         });
       }
     },
     *switch_chunk({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(kbService.switch_chunk, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(kbService.switch_chunk, payload);
+      const { retcode } = data;
+      if (retcode === 0) {
+        message.success('Modified successfully ！');
+      }
       return retcode;
     },
     *rm_chunk({ payload = {} }, { call, put }) {

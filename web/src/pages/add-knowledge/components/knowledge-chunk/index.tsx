@@ -1,26 +1,15 @@
-import { api_host } from '@/utils/api';
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
-import { DeleteOutlined, MinusSquareOutlined } from '@ant-design/icons';
 import type { PaginationProps } from 'antd';
-import {
-  Button,
-  Card,
-  Col,
-  Input,
-  Pagination,
-  Popconfirm,
-  Row,
-  Select,
-  Spin,
-  Switch,
-} from 'antd';
+import { Button, Input, Pagination, Select, Space, Spin } from 'antd';
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import CreateModal from './components/createModal';
 
+import ChunkCard from './components/chunk-card';
 import ChunkToolBar from './components/chunk-toolbar';
 import styles from './index.less';
+import { ChunkModelState } from './model';
 
 interface PayloadType {
   doc_id: string;
@@ -30,7 +19,9 @@ interface PayloadType {
 
 const Chunk = () => {
   const dispatch = useDispatch();
-  const chunkModel = useSelector((state: any) => state.chunkModel);
+  const chunkModel: ChunkModelState = useSelector(
+    (state: any) => state.chunkModel,
+  );
   const [keywords, SetKeywords] = useState('');
   const [available_int, setAvailableInt] = useState(-1);
   const [searchParams] = useSearchParams();
@@ -171,86 +162,11 @@ const Chunk = () => {
         </div>
         <div className={styles.pageContent}>
           <Spin spinning={loading} className={styles.spin} size="large">
-            <Row gutter={{ xs: 8, sm: 16, md: 24, lg: 24 }}>
-              {data.map((item: any) => {
-                return (
-                  <Col
-                    className="gutter-row"
-                    key={item.chunk_id}
-                    xs={24}
-                    sm={12}
-                    md={12}
-                    lg={8}
-                  >
-                    <Card
-                      className={styles.card}
-                      onClick={() => {
-                        handleEditchunk(item.chunk_id);
-                      }}
-                    >
-                      <img
-                        style={{ width: '50px' }}
-                        src={`${api_host}/document/image/${item.img_id}`}
-                        alt=""
-                      />
-                      <div className={styles.container}>
-                        <div className={styles.content}>
-                          <span className={styles.context}>
-                            {item.content_ltks}
-                          </span>
-                          <span className={styles.delete}>
-                            <Switch
-                              size="small"
-                              defaultValue={item.available_int == '1'}
-                              onChange={(checked: boolean, e: any) => {
-                                e.stopPropagation();
-                                e.nativeEvent.stopImmediatePropagation();
-                                switchChunk(item.chunk_id, checked);
-                              }}
-                            />
-                          </span>
-                        </div>
-                        <div className={styles.footer}>
-                          <span className={styles.text}>
-                            <MinusSquareOutlined />
-                            {item.doc_num}文档
-                          </span>
-                          <span className={styles.text}>
-                            <MinusSquareOutlined />
-                            {item.chunk_num}个
-                          </span>
-                          <span className={styles.text}>
-                            <MinusSquareOutlined />
-                            {item.token_num}千字符
-                          </span>
-                          <span style={{ float: 'right' }}>
-                            <Popconfirm
-                              title="Delete the task"
-                              description="Are you sure to delete this task?"
-                              onConfirm={(e: any) => {
-                                e.stopPropagation();
-                                e.nativeEvent.stopImmediatePropagation();
-                                console.log(confirm);
-                                confirm(item.chunk_id);
-                              }}
-                              okText="Yes"
-                              cancelText="No"
-                            >
-                              <DeleteOutlined
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.nativeEvent.stopImmediatePropagation();
-                                }}
-                              />
-                            </Popconfirm>
-                          </span>
-                        </div>
-                      </div>
-                    </Card>
-                  </Col>
-                );
-              })}
-            </Row>
+            <Space direction="vertical" size={'middle'}>
+              {data.map((item) => (
+                <ChunkCard item={item} key={item.chunk_id}></ChunkCard>
+              ))}
+            </Space>
           </Spin>
         </div>
         <div className={styles.pageFooter}>

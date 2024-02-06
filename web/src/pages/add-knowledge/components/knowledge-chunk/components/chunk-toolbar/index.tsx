@@ -1,4 +1,7 @@
 import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
+import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -11,8 +14,15 @@ import {
 } from '@ant-design/icons';
 import { Button, Checkbox, Flex, Menu, MenuProps, Popover, Space } from 'antd';
 import { useMemo } from 'react';
+import { Link, useSelector } from 'umi';
 
 const ChunkToolBar = () => {
+  const documentInfo: IKnowledgeFile = useSelector(
+    (state: any) => state.chunkModel.documentInfo,
+  );
+
+  const knowledgeBaseId = useKnowledgeBaseId();
+
   const items: MenuProps['items'] = useMemo(() => {
     return [
       {
@@ -63,31 +73,16 @@ const ChunkToolBar = () => {
 
   return (
     <Flex justify="space-between" align="center">
-      <Space>
-        <ArrowLeftOutlined />
+      <Space size={'middle'}>
+        <Link
+          to={`/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeBaseId}`}
+        >
+          <ArrowLeftOutlined />
+        </Link>
         <FilePdfOutlined />
-        xxx.pdf
+        {documentInfo.name}
       </Space>
       <Space>
-        {/* <Select
-          defaultValue="lucy"
-          style={{ width: 100 }}
-          popupMatchSelectWidth={false}
-          optionRender={() => null}
-          dropdownRender={(menu) => (
-            <div style={{ width: 300 }}>
-              {menu}
-              <Menu
-                // onClick={onClick}
-                style={{ width: 256 }}
-                // defaultSelectedKeys={['1']}
-                // defaultOpenKeys={['sub1']}
-                // mode="inline"
-                items={actionItems}
-              />
-            </div>
-          )}
-        ></Select> */}
         <Popover content={content} placement="bottomLeft" arrow={false}>
           <Button>
             Bulk
