@@ -100,11 +100,17 @@ const model: DvaModel<ChunkModelState> = {
       }
       return retcode;
     },
-    *rm_chunk({ payload = {} }, { call }) {
-      console.log('shanchu');
+    *rm_chunk({ payload = {} }, { call, put }) {
       const { data } = yield call(kbService.rm_chunk, payload);
       const { retcode } = data;
-
+      if (retcode === 0) {
+        yield put({
+          type: 'setIsShowCreateModal',
+          payload: false,
+        });
+        yield put({ type: 'setPagination', payload: { current: 1 } });
+        yield put({ type: 'chunk_list', payload: pick(payload, ['doc_id']) });
+      }
       return retcode;
     },
     *get_chunk({ payload = {} }, { call, put }) {

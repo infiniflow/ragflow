@@ -1,6 +1,6 @@
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
-import { Button, Input, Pagination, Space, Spin } from 'antd';
+import { Input, Pagination, Space, Spin } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import CreatingModal from './components/chunk-creating-modal';
@@ -154,14 +154,6 @@ const Chunk = () => {
               onChange={handleInputChange}
             />
           </div>
-          <Button
-            onClick={() => {
-              handleEditChunk();
-            }}
-            type="link"
-          >
-            添加分段
-          </Button>
         </div>
         <div className={styles.pageContent}>
           <Spin spinning={loading} className={styles.spin} size="large">
@@ -185,9 +177,9 @@ const Chunk = () => {
             showQuickJumper
             showSizeChanger
             onChange={onPaginationChange}
-            defaultPageSize={10}
+            pageSize={pagination.pageSize}
             pageSizeOptions={[10, 30, 60, 90]}
-            defaultCurrent={pagination.current}
+            current={pagination.current}
             total={total}
           />
         </div>

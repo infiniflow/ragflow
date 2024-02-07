@@ -1,3 +1,4 @@
+import showDeleteConfirm from '@/components/deleting-confirm';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Checkbox, Form, Input, Modal, Space } from 'antd';
@@ -74,7 +75,16 @@ const ChunkCreatingModal: React.FC<kFProps> = ({ doc_id, chunkId }) => {
     }
   };
 
-  const handleRemove = () => {};
+  const removeChunk = () => {
+    return dispatch({
+      type: 'chunkModel/rm_chunk',
+      payload: { chunk_ids: [chunkId], doc_id },
+    });
+  };
+
+  const handleRemove = () => {
+    showDeleteConfirm({ onOk: removeChunk });
+  };
   const handleCheck = () => {
     setChecked(!checked);
   };
@@ -113,8 +123,8 @@ const ChunkCreatingModal: React.FC<kFProps> = ({ doc_id, chunkId }) => {
               Enabled
             </Checkbox>
 
-            <span>
-              <DeleteOutlined onClick={handleRemove} /> Delete
+            <span onClick={handleRemove}>
+              <DeleteOutlined /> Delete
             </span>
           </Space>
         </section>
