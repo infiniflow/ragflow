@@ -96,6 +96,9 @@ const Chunk = () => {
     },
     [],
   );
+  const showSelectedChunkWarning = () => {
+    message.warning('Please select chunk!');
+  };
 
   const handleRemoveChunk = useCallback(async () => {
     if (selectedChunkIds.length > 0) {
@@ -104,9 +107,35 @@ const Chunk = () => {
         setSelectedChunkIds([]);
       }
     } else {
-      message.warning('Please select the chunk to delete!');
+      showSelectedChunkWarning();
     }
   }, [selectedChunkIds, documentId, removeChunk]);
+
+  const switchChunk = useCallback(
+    async (available?: number, chunkIds?: string[]) => {
+      let ids = chunkIds;
+      if (!chunkIds) {
+        ids = selectedChunkIds;
+        if (selectedChunkIds.length === 0) {
+          showSelectedChunkWarning();
+          return;
+        }
+      }
+
+      const resCode: number = await dispatch<any>({
+        type: 'chunkModel/switch_chunk',
+        payload: {
+          chunk_ids: ids,
+          available_int: available,
+          doc_id: documentId,
+        },
+      });
+      if (!chunkIds && resCode === 0) {
+        getChunkList();
+      }
+    },
+    [dispatch, documentId, getChunkList, selectedChunkIds],
+  );
 
   useEffect(() => {
     getChunkList();
@@ -126,11 +155,16 @@ const Chunk = () => {
           createChunk={handleEditChunk}
           removeChunk={handleRemoveChunk}
           checked={selectedChunkIds.length === data.length}
+          switchChunk={switchChunk}
         ></ChunkToolBar>
         <Divider></Divider>
         <div className={styles.pageContent}>
           <Spin spinning={loading} className={styles.spin} size="large">
-            <Space direction="vertical" size={'middle'}>
+            <Space
+              direction="vertical"
+              size={'middle'}
+              className={styles.chunkContainer}
+            >
               {data.map((item) => (
                 <ChunkCard
                   item={item}
@@ -138,6 +172,7 @@ const Chunk = () => {
                   editChunk={handleEditChunk}
                   checked={selectedChunkIds.some((x) => x === item.chunk_id)}
                   handleCheckboxClick={handleSingleCheckboxClick}
+                  switchChunk={switchChunk}
                 ></ChunkCard>
               ))}
             </Space>

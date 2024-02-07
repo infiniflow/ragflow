@@ -1,7 +1,6 @@
 import { IChunk } from '@/interfaces/database/knowledge';
 import { api_host } from '@/utils/api';
 import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
-import { useDispatch } from 'umi';
 
 import { useState } from 'react';
 import styles from './index.less';
@@ -9,6 +8,7 @@ import styles from './index.less';
 interface IProps {
   item: IChunk;
   checked: boolean;
+  switchChunk: (available?: number, chunkIds?: string[]) => void;
   editChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
 }
@@ -34,26 +34,14 @@ const ChunkCard = ({
   checked,
   handleCheckboxClick,
   editChunk,
+  switchChunk,
 }: IProps) => {
-  const dispatch = useDispatch();
-
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(available === 1);
 
-  const switchChunk = () => {
-    dispatch({
-      type: 'chunkModel/switch_chunk',
-      payload: {
-        chunk_ids: [item.chunk_id],
-        available_int: available === 0 ? 1 : 0,
-        doc_id: item.doc_id,
-      },
-    });
-  };
-
   const onChange = (checked: boolean) => {
     setEnabled(checked);
-    switchChunk();
+    switchChunk(available === 0 ? 1 : 0, [item.chunk_id]);
   };
 
   const handleCheck: CheckboxProps['onChange'] = (e) => {

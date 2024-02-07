@@ -33,6 +33,7 @@ interface IProps {
   selectAllChunk: (checked: boolean) => void;
   createChunk: () => void;
   removeChunk: () => void;
+  switchChunk: (available: number) => void;
 }
 
 const ChunkToolBar = ({
@@ -41,6 +42,7 @@ const ChunkToolBar = ({
   checked,
   createChunk,
   removeChunk,
+  switchChunk,
 }: IProps) => {
   const { documentInfo, available, searchString }: ChunkModelState =
     useSelector((state: any) => state.chunkModel);
@@ -78,6 +80,13 @@ const ChunkToolBar = ({
     removeChunk();
   }, [removeChunk]);
 
+  const handleEnabledClick = () => {
+    switchChunk(1);
+  };
+  const handleDisabledClick = () => {
+    switchChunk(0);
+  };
+
   const items: MenuProps['items'] = useMemo(() => {
     return [
       {
@@ -94,7 +103,7 @@ const ChunkToolBar = ({
       {
         key: '2',
         label: (
-          <Space>
+          <Space onClick={handleEnabledClick}>
             <CheckCircleOutlined />
             <b>Enabled Selected</b>
           </Space>
@@ -103,7 +112,7 @@ const ChunkToolBar = ({
       {
         key: '3',
         label: (
-          <Space>
+          <Space onClick={handleDisabledClick}>
             <CloseCircleOutlined />
             <b>Disabled Selected</b>
           </Space>
