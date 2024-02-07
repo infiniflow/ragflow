@@ -17,7 +17,7 @@ import {
 import { debounce } from 'lodash';
 import React, { useCallback, useEffect } from 'react';
 import { useDispatch, useSelector } from 'umi';
-import CreateModal from '../knowledge-chunk/components/createModal';
+import CreateModal from '../knowledge-chunk/components/chunk-creating-modal';
 
 import styles from './index.less';
 
@@ -265,7 +265,6 @@ const KnowledgeSearching = () => {
         </div>
       </div>
       <CreateModal
-        getChunkList={getChunkList}
         isShowCreateModal={isShowCreateModal}
         chunk_id={chunk_id}
         doc_id={doc_id}

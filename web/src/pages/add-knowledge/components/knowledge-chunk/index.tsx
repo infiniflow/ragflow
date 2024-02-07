@@ -1,10 +1,9 @@
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
 import { Button, Input, Pagination, Space, Spin } from 'antd';
-import { debounce } from 'lodash';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
-import CreateModal from './components/createModal';
+import CreatingModal from './components/chunk-creating-modal';
 
 import ChunkCard from './components/chunk-card';
 import ChunkToolBar from './components/chunk-toolbar';
@@ -24,13 +23,7 @@ const Chunk = () => {
   const [keywords, SetKeywords] = useState('');
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const [searchParams] = useSearchParams();
-  const {
-    data = [],
-    total,
-    chunk_id,
-    isShowCreateModal,
-    pagination,
-  } = chunkModel;
+  const { data = [], total, pagination } = chunkModel;
   const effects = useSelector((state: any) => state.loading.effects);
   const loading = getOneNamespaceEffectsLoading('chunkModel', effects, [
     'create_hunk',
@@ -38,8 +31,9 @@ const Chunk = () => {
     'switch_chunk',
   ]);
   const documentId: string = searchParams.get('doc_id') || '';
+  const [chunkId, setChunkId] = useState<string | undefined>();
 
-  const getChunkList = () => {
+  const getChunkList = useCallback(() => {
     const payload: PayloadType = {
       doc_id: documentId,
     };
@@ -50,30 +44,31 @@ const Chunk = () => {
         ...payload,
       },
     });
-  };
+  }, [dispatch, documentId]);
 
-  const confirm = async (id: string) => {
-    const retcode = await dispatch<any>({
-      type: 'chunkModel/rm_chunk',
-      payload: {
-        chunk_ids: [id],
-      },
-    });
+  // const confirm = async (id: string) => {
+  //   const retcode = await dispatch<any>({
+  //     type: 'chunkModel/rm_chunk',
+  //     payload: {
+  //       chunk_ids: [id],
+  //     },
+  //   });
 
-    retcode === 0 && getChunkList();
-  };
+  //   retcode === 0 && getChunkList();
+  // };
 
-  const handleEditchunk = (chunk_id?: string) => {
-    dispatch({
-      type: 'chunkModel/updateState',
-      payload: {
-        isShowCreateModal: true,
-        chunk_id,
-        doc_id: documentId,
-      },
-    });
-    getChunkList();
-  };
+  const handleEditChunk = useCallback(
+    (chunk_id?: string) => {
+      setChunkId(chunk_id);
+      // if (chunk_id) {
+      // }
+      dispatch({
+        type: 'chunkModel/setIsShowCreateModal',
+        payload: true,
+      });
+    },
+    [dispatch],
+  );
 
   const onPaginationChange: PaginationProps['onShowSizeChange'] = (
     page,
@@ -123,13 +118,13 @@ const Chunk = () => {
         type: 'chunkModel/resetFilter', // TODO: need to reset state uniformly
       });
     };
-  }, [documentId]);
+  }, [dispatch, getChunkList]);
 
-  const debounceChange = debounce(getChunkList, 300);
-  const debounceCallback = useCallback(
-    (value: string) => debounceChange(value),
-    [],
-  );
+  // const debounceChange = debounce(getChunkList, 300);
+  // const debounceCallback = useCallback(
+  //   (value: string) => debounceChange(value),
+  //   [],
+  // );
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -137,7 +132,7 @@ const Chunk = () => {
     setSelectedChunkIds([]);
     const value = e.target.value;
     SetKeywords(value);
-    debounceCallback(value);
+    // debounceCallback(value);
   };
 
   return (
@@ -146,6 +141,7 @@ const Chunk = () => {
         <ChunkToolBar
           getChunkList={getChunkList}
           selectAllChunk={selectAllChunk}
+          createChunk={handleEditChunk}
           checked={selectedChunkIds.length === data.length}
         ></ChunkToolBar>
         <div className={styles.filter}>
@@ -160,7 +156,7 @@ const Chunk = () => {
           </div>
           <Button
             onClick={() => {
-              handleEditchunk();
+              handleEditChunk();
             }}
             type="link"
           >
@@ -174,6 +170,7 @@ const Chunk = () => {
                 <ChunkCard
                   item={item}
                   key={item.chunk_id}
+                  editChunk={handleEditChunk}
                   checked={selectedChunkIds.some((x) => x === item.chunk_id)}
                   handleCheckboxClick={handleSingleCheckboxClick}
                 ></ChunkCard>
@@ -195,12 +192,7 @@ const Chunk = () => {
           />
         </div>
       </div>
-      <CreateModal
-        doc_id={documentId}
-        isShowCreateModal={isShowCreateModal}
-        chunk_id={chunk_id}
-        getChunkList={getChunkList}
-      />
+      <CreatingModal doc_id={documentId} chunkId={chunkId} />
     </>
   );
 };

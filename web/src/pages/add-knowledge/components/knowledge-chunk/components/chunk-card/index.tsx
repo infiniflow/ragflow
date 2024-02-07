@@ -9,6 +9,7 @@ import styles from './index.less';
 interface IProps {
   item: IChunk;
   checked: boolean;
+  editChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
 }
 
@@ -28,7 +29,12 @@ const Image = ({ id, className, ...props }: IImage) => {
   );
 };
 
-const ChunkCard = ({ item, checked, handleCheckboxClick }: IProps) => {
+const ChunkCard = ({
+  item,
+  checked,
+  handleCheckboxClick,
+  editChunk,
+}: IProps) => {
   const dispatch = useDispatch();
 
   const available = Number(item.available_int);
@@ -54,6 +60,10 @@ const ChunkCard = ({ item, checked, handleCheckboxClick }: IProps) => {
     handleCheckboxClick(item.chunk_id, e.target.checked);
   };
 
+  const handleContentClick = () => {
+    editChunk(item.chunk_id);
+  };
+
   return (
     <div>
       <Card>
@@ -75,7 +85,9 @@ const ChunkCard = ({ item, checked, handleCheckboxClick }: IProps) => {
             </Popover>
           )}
 
-          <section>{item.content_with_weight}</section>
+          <section onClick={handleContentClick} className={styles.content}>
+            {item.content_with_weight}
+          </section>
           <div>
             <Switch checked={enabled} onChange={onChange} />
           </div>

@@ -30,9 +30,15 @@ interface IProps {
   checked: boolean;
   getChunkList: () => void;
   selectAllChunk: (checked: boolean) => void;
+  createChunk: () => void;
 }
 
-const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
+const ChunkToolBar = ({
+  getChunkList,
+  selectAllChunk,
+  checked,
+  createChunk,
+}: IProps) => {
   const { documentInfo, available }: ChunkModelState = useSelector(
     (state: any) => state.chunkModel,
   );
@@ -42,7 +48,6 @@ const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
 
   const handleSelectAllCheck = useCallback(
     (e: any) => {
-      // console.info(e.target.checked);
       selectAllChunk(e.target.checked);
     },
     [selectAllChunk],
@@ -97,6 +102,7 @@ const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
   );
 
   const handleFilterChange = (e: RadioChangeEvent) => {
+    selectAllChunk(false);
     dispatch({ type: 'chunkModel/setAvailable', payload: e.target.value });
     getChunkList();
   };
@@ -133,8 +139,12 @@ const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
         <Popover content={filterContent} placement="bottom" arrow={false}>
           <Button icon={<FilterIcon />} />
         </Popover>
-        <Button icon={<DeleteOutlined />} />
-        <Button icon={<PlusOutlined />} type="primary" />
+        {/* <Button icon={<DeleteOutlined />} /> */}
+        <Button
+          icon={<PlusOutlined />}
+          type="primary"
+          onClick={() => createChunk()}
+        />
       </Space>
     </Flex>
   );
