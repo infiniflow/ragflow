@@ -92,6 +92,12 @@ const model: DvaModel<ChunkModelState> = {
         });
       }
     },
+    throttledGetChunkList: [
+      function* ({ payload }, { put }) {
+        yield put({ type: 'chunk_list', payload: { doc_id: payload } });
+      },
+      { type: 'throttle', ms: 1000 }, // TODO: Provide type support for this effect
+    ],
     *switch_chunk({ payload = {} }, { call }) {
       const { data } = yield call(kbService.switch_chunk, payload);
       const { retcode } = data;

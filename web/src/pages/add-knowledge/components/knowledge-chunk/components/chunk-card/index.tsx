@@ -85,8 +85,12 @@ const ChunkCard = ({
             </Popover>
           )}
 
-          <section onClick={handleContentClick} className={styles.content}>
-            {item.content_with_weight}
+          <section
+            onDoubleClick={handleContentClick}
+            className={styles.content}
+            dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
+          >
+            {/* {item.content_with_weight} */}
           </section>
           <div>
             <Switch checked={enabled} onChange={onChange} />

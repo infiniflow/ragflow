@@ -1,7 +1,7 @@
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
-import { Input, Pagination, Space, Spin } from 'antd';
-import React, { useCallback, useEffect, useState } from 'react';
+import { Divider, Pagination, Space, Spin } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import CreatingModal from './components/chunk-creating-modal';
 
@@ -20,7 +20,6 @@ const Chunk = () => {
   const chunkModel: ChunkModelState = useSelector(
     (state: any) => state.chunkModel,
   );
-  const [keywords, SetKeywords] = useState('');
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const [searchParams] = useSearchParams();
   const { data = [], total, pagination } = chunkModel;
@@ -46,22 +45,10 @@ const Chunk = () => {
     });
   }, [dispatch, documentId]);
 
-  // const confirm = async (id: string) => {
-  //   const retcode = await dispatch<any>({
-  //     type: 'chunkModel/rm_chunk',
-  //     payload: {
-  //       chunk_ids: [id],
-  //     },
-  //   });
-
-  //   retcode === 0 && getChunkList();
-  // };
-
   const handleEditChunk = useCallback(
     (chunk_id?: string) => {
       setChunkId(chunk_id);
-      // if (chunk_id) {
-      // }
+
       dispatch({
         type: 'chunkModel/setIsShowCreateModal',
         payload: true,
@@ -88,9 +75,6 @@ const Chunk = () => {
   const selectAllChunk = useCallback(
     (checked: boolean) => {
       setSelectedChunkIds(checked ? data.map((x) => x.chunk_id) : []);
-      // setSelectedChunkIds((previousIds) => {
-      //   return checked ? [...previousIds, ...data.map((x) => x.chunk_id)] : [];
-      // });
     },
     [data],
   );
@@ -120,21 +104,6 @@ const Chunk = () => {
     };
   }, [dispatch, getChunkList]);
 
-  // const debounceChange = debounce(getChunkList, 300);
-  // const debounceCallback = useCallback(
-  //   (value: string) => debounceChange(value),
-  //   [],
-  // );
-
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    setSelectedChunkIds([]);
-    const value = e.target.value;
-    SetKeywords(value);
-    // debounceCallback(value);
-  };
-
   return (
     <>
       <div className={styles.chunkPage}>
@@ -144,17 +113,7 @@ const Chunk = () => {
           createChunk={handleEditChunk}
           checked={selectedChunkIds.length === data.length}
         ></ChunkToolBar>
-        <div className={styles.filter}>
-          <div>
-            <Input
-              placeholder="搜索"
-              style={{ width: 220 }}
-              value={keywords}
-              allowClear
-              onChange={handleInputChange}
-            />
-          </div>
-        </div>
+        <Divider></Divider>
         <div className={styles.pageContent}>
           <Spin spinning={loading} className={styles.spin} size="large">
             <Space direction="vertical" size={'middle'}>
