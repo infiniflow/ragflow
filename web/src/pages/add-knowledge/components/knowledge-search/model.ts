@@ -138,8 +138,8 @@ const model: DvaModel<KSearchModelState> = {
       if (payload.chunk_id) {
         service = kbService.set_chunk;
       }
-      const { data, response } = yield call(service, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(service, payload);
+      const { retcode } = data;
       yield put({
         type: 'updateState',
         payload: {

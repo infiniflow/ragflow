@@ -15,6 +15,7 @@ import {
   Button,
   Checkbox,
   Flex,
+  Input,
   Menu,
   MenuProps,
   Popover,
@@ -22,7 +23,7 @@ import {
   RadioChangeEvent,
   Space,
 } from 'antd';
-import { useCallback, useMemo } from 'react';
+import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
 import { Link, useDispatch, useSelector } from 'umi';
 import { ChunkModelState } from '../../model';
 
@@ -30,23 +31,61 @@ interface IProps {
   checked: boolean;
   getChunkList: () => void;
   selectAllChunk: (checked: boolean) => void;
+  createChunk: () => void;
+  removeChunk: () => void;
+  switchChunk: (available: number) => void;
 }
 
-const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
-  const { documentInfo, available }: ChunkModelState = useSelector(
-    (state: any) => state.chunkModel,
-  );
+const ChunkToolBar = ({
+  getChunkList,
+  selectAllChunk,
+  checked,
+  createChunk,
+  removeChunk,
+  switchChunk,
+}: IProps) => {
+  const { documentInfo, available, searchString }: ChunkModelState =
+    useSelector((state: any) => state.chunkModel);
   const dispatch = useDispatch();
-
   const knowledgeBaseId = useKnowledgeBaseId();
+  const [isShowSearchBox, setIsShowSearchBox] = useState(false);
 
   const handleSelectAllCheck = useCallback(
     (e: any) => {
-      // console.info(e.target.checked);
       selectAllChunk(e.target.checked);
     },
     [selectAllChunk],
   );
+
+  const handleSearchIconClick = () => {
+    setIsShowSearchBox(true);
+  };
+
+  const handleSearchChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const val = e.target.value;
+    dispatch({ type: 'chunkModel/setSearchString', payload: val });
+    dispatch({
+      type: 'chunkModel/throttledGetChunkList',
+      payload: documentInfo.id,
+    });
+  };
+
+  const handleSearchBlur = () => {
+    if (!searchString.trim()) {
+      setIsShowSearchBox(false);
+    }
+  };
+
+  const handleDelete = useCallback(() => {
+    removeChunk();
+  }, [removeChunk]);
+
+  const handleEnabledClick = () => {
+    switchChunk(1);
+  };
+  const handleDisabledClick = () => {
+    switchChunk(0);
+  };
 
   const items: MenuProps['items'] = useMemo(() => {
     return [
@@ -64,7 +103,7 @@ const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
       {
         key: '2',
         label: (
-          <Space>
+          <Space onClick={handleEnabledClick}>
             <CheckCircleOutlined />
             <b>Enabled Selected</b>
           </Space>
@@ -73,7 +112,7 @@ const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
       {
         key: '3',
         label: (
-          <Space>
+          <Space onClick={handleDisabledClick}>
             <CloseCircleOutlined />
             <b>Disabled Selected</b>
           </Space>
@@ -83,20 +122,21 @@ const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
       {
         key: '4',
         label: (
-          <Space>
+          <Space onClick={handleDelete}>
             <DeleteOutlined />
             <b>Delete Selected</b>
           </Space>
         ),
       },
     ];
-  }, [checked, handleSelectAllCheck]);
+  }, [checked, handleSelectAllCheck, handleDelete]);
 
   const content = (
     <Menu style={{ width: 200 }} items={items} selectable={false} />
   );
 
   const handleFilterChange = (e: RadioChangeEvent) => {
+    selectAllChunk(false);
     dispatch({ type: 'chunkModel/setAvailable', payload: e.target.value });
     getChunkList();
   };
@@ -129,12 +169,28 @@ const ChunkToolBar = ({ getChunkList, selectAllChunk, checked }: IProps) => {
             <DownOutlined />
           </Button>
         </Popover>
-        <Button icon={<SearchOutlined />} />
+        {isShowSearchBox ? (
+          <Input
+            size="middle"
+            placeholder="Search"
+            prefix={<SearchOutlined />}
+            allowClear
+            onChange={handleSearchChange}
+            onBlur={handleSearchBlur}
+            value={searchString}
+          />
+        ) : (
+          <Button icon={<SearchOutlined />} onClick={handleSearchIconClick} />
+        )}
+
         <Popover content={filterContent} placement="bottom" arrow={false}>
           <Button icon={<FilterIcon />} />
         </Popover>
-        <Button icon={<DeleteOutlined />} />
-        <Button icon={<PlusOutlined />} type="primary" />
+        <Button
+          icon={<PlusOutlined />}
+          type="primary"
+          onClick={() => createChunk()}
+        />
       </Space>
     </Flex>
   );

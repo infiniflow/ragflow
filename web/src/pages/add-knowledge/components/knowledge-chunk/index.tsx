@@ -1,11 +1,11 @@
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
-import { Button, Input, Pagination, Space, Spin } from 'antd';
-import { debounce } from 'lodash';
-import React, { useCallback, useEffect, useState } from 'react';
+import { Divider, Pagination, Space, Spin, message } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
-import CreateModal from './components/createModal';
+import CreatingModal from './components/chunk-creating-modal';
 
+import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import ChunkCard from './components/chunk-card';
 import ChunkToolBar from './components/chunk-toolbar';
 import styles from './index.less';
@@ -21,16 +21,9 @@ const Chunk = () => {
   const chunkModel: ChunkModelState = useSelector(
     (state: any) => state.chunkModel,
   );
-  const [keywords, SetKeywords] = useState('');
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const [searchParams] = useSearchParams();
-  const {
-    data = [],
-    total,
-    chunk_id,
-    isShowCreateModal,
-    pagination,
-  } = chunkModel;
+  const { data = [], total, pagination } = chunkModel;
   const effects = useSelector((state: any) => state.loading.effects);
   const loading = getOneNamespaceEffectsLoading('chunkModel', effects, [
     'create_hunk',
@@ -38,8 +31,10 @@ const Chunk = () => {
     'switch_chunk',
   ]);
   const documentId: string = searchParams.get('doc_id') || '';
+  const [chunkId, setChunkId] = useState<string | undefined>();
+  const { removeChunk } = useDeleteChunkByIds();
 
-  const getChunkList = () => {
+  const getChunkList = useCallback(() => {
     const payload: PayloadType = {
       doc_id: documentId,
     };
@@ -50,30 +45,19 @@ const Chunk = () => {
         ...payload,
       },
     });
-  };
+  }, [dispatch, documentId]);
 
-  const confirm = async (id: string) => {
-    const retcode = await dispatch<any>({
-      type: 'chunkModel/rm_chunk',
-      payload: {
-        chunk_ids: [id],
-      },
-    });
+  const handleEditChunk = useCallback(
+    (chunk_id?: string) => {
+      setChunkId(chunk_id);
 
-    retcode === 0 && getChunkList();
-  };
-
-  const handleEditchunk = (chunk_id?: string) => {
-    dispatch({
-      type: 'chunkModel/updateState',
-      payload: {
-        isShowCreateModal: true,
-        chunk_id,
-        doc_id: documentId,
-      },
-    });
-    getChunkList();
-  };
+      dispatch({
+        type: 'chunkModel/setIsShowCreateModal',
+        payload: true,
+      });
+    },
+    [dispatch],
+  );
 
   const onPaginationChange: PaginationProps['onShowSizeChange'] = (
     page,
@@ -93,9 +77,6 @@ const Chunk = () => {
   const selectAllChunk = useCallback(
     (checked: boolean) => {
       setSelectedChunkIds(checked ? data.map((x) => x.chunk_id) : []);
-      // setSelectedChunkIds((previousIds) => {
-      //   return checked ? [...previousIds, ...data.map((x) => x.chunk_id)] : [];
-      // });
     },
     [data],
   );
@@ -115,6 +96,46 @@ const Chunk = () => {
     },
     [],
   );
+  const showSelectedChunkWarning = () => {
+    message.warning('Please select chunk!');
+  };
+
+  const handleRemoveChunk = useCallback(async () => {
+    if (selectedChunkIds.length > 0) {
+      const resCode: number = await removeChunk(selectedChunkIds, documentId);
+      if (resCode === 0) {
+        setSelectedChunkIds([]);
+      }
+    } else {
+      showSelectedChunkWarning();
+    }
+  }, [selectedChunkIds, documentId, removeChunk]);
+
+  const switchChunk = useCallback(
+    async (available?: number, chunkIds?: string[]) => {
+      let ids = chunkIds;
+      if (!chunkIds) {
+        ids = selectedChunkIds;
+        if (selectedChunkIds.length === 0) {
+          showSelectedChunkWarning();
+          return;
+        }
+      }
+
+      const resCode: number = await dispatch<any>({
+        type: 'chunkModel/switch_chunk',
+        payload: {
+          chunk_ids: ids,
+          available_int: available,
+          doc_id: documentId,
+        },
+      });
+      if (!chunkIds && resCode === 0) {
+        getChunkList();
+      }
+    },
+    [dispatch, documentId, getChunkList, selectedChunkIds],
+  );
 
   useEffect(() => {
     getChunkList();
@@ -123,22 +144,7 @@ const Chunk = () => {
         type: 'chunkModel/resetFilter', // TODO: need to reset state uniformly
       });
     };
-  }, [documentId]);
-
-  const debounceChange = debounce(getChunkList, 300);
-  const debounceCallback = useCallback(
-    (value: string) => debounceChange(value),
-    [],
-  );
-
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    setSelectedChunkIds([]);
-    const value = e.target.value;
-    SetKeywords(value);
-    debounceCallback(value);
-  };
+  }, [dispatch, getChunkList]);
 
   return (
     <>
@@ -146,36 +152,27 @@ const Chunk = () => {
         <ChunkToolBar
           getChunkList={getChunkList}
           selectAllChunk={selectAllChunk}
+          createChunk={handleEditChunk}
+          removeChunk={handleRemoveChunk}
           checked={selectedChunkIds.length === data.length}
+          switchChunk={switchChunk}
         ></ChunkToolBar>
-        <div className={styles.filter}>
-          <div>
-            <Input
-              placeholder="搜索"
-              style={{ width: 220 }}
-              value={keywords}
-              allowClear
-              onChange={handleInputChange}
-            />
-          </div>
-          <Button
-            onClick={() => {
-              handleEditchunk();
-            }}
-            type="link"
-          >
-            添加分段
-          </Button>
-        </div>
+        <Divider></Divider>
         <div className={styles.pageContent}>
           <Spin spinning={loading} className={styles.spin} size="large">
-            <Space direction="vertical" size={'middle'}>
+            <Space
+              direction="vertical"
+              size={'middle'}
+              className={styles.chunkContainer}
+            >
               {data.map((item) => (
                 <ChunkCard
                   item={item}
                   key={item.chunk_id}
+                  editChunk={handleEditChunk}
                   checked={selectedChunkIds.some((x) => x === item.chunk_id)}
                   handleCheckboxClick={handleSingleCheckboxClick}
+                  switchChunk={switchChunk}
                 ></ChunkCard>
               ))}
             </Space>
@@ -188,19 +185,14 @@ const Chunk = () => {
             showQuickJumper
             showSizeChanger
             onChange={onPaginationChange}
-            defaultPageSize={10}
+            pageSize={pagination.pageSize}
             pageSizeOptions={[10, 30, 60, 90]}
-            defaultCurrent={pagination.current}
+            current={pagination.current}
             total={total}
           />
         </div>
       </div>
-      <CreateModal
-        doc_id={documentId}
-        isShowCreateModal={isShowCreateModal}
-        chunk_id={chunk_id}
-        getChunkList={getChunkList}
-      />
+      <CreatingModal doc_id={documentId} chunkId={chunkId} />
     </>
   );
 };
