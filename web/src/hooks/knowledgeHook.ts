@@ -1,5 +1,6 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
 import { IKnowledge } from '@/interfaces/database/knowledge';
+import { useCallback } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 
 export const useKnowledgeBaseId = (): string => {
@@ -44,5 +45,35 @@ export const useGetDocumentDefaultParser = (knowledgeBaseId: string) => {
   return {
     defaultParserId: item?.parser_id ?? '',
     parserConfig: item?.parser_config ?? '',
+  };
+};
+
+export const useDeleteChunkByIds = (): {
+  removeChunk: (chunkIds: string[], documentId: string) => Promise<number>;
+} => {
+  const dispatch = useDispatch();
+
+  const removeChunk = useCallback(
+    (chunkIds: string[], documentId: string) => () => {
+      return dispatch({
+        type: 'chunkModel/rm_chunk',
+        payload: {
+          chunk_ids: chunkIds,
+          doc_id: documentId,
+        },
+      });
+    },
+    [dispatch],
+  );
+
+  const onRemoveChunk = useCallback(
+    (chunkIds: string[], documentId: string): Promise<number> => {
+      return showDeleteConfirm({ onOk: removeChunk(chunkIds, documentId) });
+    },
+    [removeChunk],
+  );
+
+  return {
+    removeChunk: onRemoveChunk,
   };
 };

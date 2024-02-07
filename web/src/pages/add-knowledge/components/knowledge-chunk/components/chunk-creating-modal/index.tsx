@@ -1,4 +1,4 @@
-import showDeleteConfirm from '@/components/deleting-confirm';
+import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Checkbox, Form, Input, Modal, Space } from 'antd';
@@ -23,6 +23,7 @@ const ChunkCreatingModal: React.FC<kFProps> = ({ doc_id, chunkId }) => {
   const [checked, setChecked] = useState(false);
   const [keywords, setKeywords] = useState<string[]>([]);
   const loading = useOneNamespaceEffectsLoading('chunkModel', ['create_chunk']);
+  const { removeChunk } = useDeleteChunkByIds();
 
   const handleCancel = () => {
     dispatch({
@@ -75,15 +76,10 @@ const ChunkCreatingModal: React.FC<kFProps> = ({ doc_id, chunkId }) => {
     }
   };
 
-  const removeChunk = () => {
-    return dispatch({
-      type: 'chunkModel/rm_chunk',
-      payload: { chunk_ids: [chunkId], doc_id },
-    });
-  };
-
   const handleRemove = () => {
-    showDeleteConfirm({ onOk: removeChunk });
+    if (chunkId) {
+      return removeChunk([chunkId], doc_id);
+    }
   };
   const handleCheck = () => {
     setChecked(!checked);

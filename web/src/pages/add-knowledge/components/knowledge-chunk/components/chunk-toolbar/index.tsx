@@ -32,6 +32,7 @@ interface IProps {
   getChunkList: () => void;
   selectAllChunk: (checked: boolean) => void;
   createChunk: () => void;
+  removeChunk: () => void;
 }
 
 const ChunkToolBar = ({
@@ -39,6 +40,7 @@ const ChunkToolBar = ({
   selectAllChunk,
   checked,
   createChunk,
+  removeChunk,
 }: IProps) => {
   const { documentInfo, available, searchString }: ChunkModelState =
     useSelector((state: any) => state.chunkModel);
@@ -71,6 +73,10 @@ const ChunkToolBar = ({
       setIsShowSearchBox(false);
     }
   };
+
+  const handleDelete = useCallback(() => {
+    removeChunk();
+  }, [removeChunk]);
 
   const items: MenuProps['items'] = useMemo(() => {
     return [
@@ -107,14 +113,14 @@ const ChunkToolBar = ({
       {
         key: '4',
         label: (
-          <Space>
+          <Space onClick={handleDelete}>
             <DeleteOutlined />
             <b>Delete Selected</b>
           </Space>
         ),
       },
     ];
-  }, [checked, handleSelectAllCheck]);
+  }, [checked, handleSelectAllCheck, handleDelete]);
 
   const content = (
     <Menu style={{ width: 200 }} items={items} selectable={false} />

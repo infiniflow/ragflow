@@ -1,10 +1,11 @@
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
-import { Divider, Pagination, Space, Spin } from 'antd';
+import { Divider, Pagination, Space, Spin, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import CreatingModal from './components/chunk-creating-modal';
 
+import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import ChunkCard from './components/chunk-card';
 import ChunkToolBar from './components/chunk-toolbar';
 import styles from './index.less';
@@ -31,6 +32,7 @@ const Chunk = () => {
   ]);
   const documentId: string = searchParams.get('doc_id') || '';
   const [chunkId, setChunkId] = useState<string | undefined>();
+  const { removeChunk } = useDeleteChunkByIds();
 
   const getChunkList = useCallback(() => {
     const payload: PayloadType = {
@@ -95,6 +97,17 @@ const Chunk = () => {
     [],
   );
 
+  const handleRemoveChunk = useCallback(async () => {
+    if (selectedChunkIds.length > 0) {
+      const resCode: number = await removeChunk(selectedChunkIds, documentId);
+      if (resCode === 0) {
+        setSelectedChunkIds([]);
+      }
+    } else {
+      message.warning('Please select the chunk to delete!');
+    }
+  }, [selectedChunkIds, documentId, removeChunk]);
+
   useEffect(() => {
     getChunkList();
     return () => {
@@ -111,6 +124,7 @@ const Chunk = () => {
           getChunkList={getChunkList}
           selectAllChunk={selectAllChunk}
           createChunk={handleEditChunk}
+          removeChunk={handleRemoveChunk}
           checked={selectedChunkIds.length === data.length}
         ></ChunkToolBar>
         <Divider></Divider>
