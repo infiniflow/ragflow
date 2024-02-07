@@ -3,7 +3,6 @@ import re
 from collections import Counter
 
 from api.db import ParserType
-from rag.cv.ppdetection import PPDet
 from rag.parser import tokenize
 from rag.nlp import huqie
 from rag.parser.pdf_parser import HuParser

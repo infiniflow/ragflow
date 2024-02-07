@@ -74,7 +74,9 @@ class Dealer:
         s = s.highlight("title_ltks")
         if not qst:
             s = s.sort(
-                {"create_time": {"order": "desc", "unmapped_type": "date"}})
+                {"create_time": {"order": "desc", "unmapped_type": "date"}},
+                {"create_timestamp_flt": {"order": "desc", "unmapped_type": "float"}}
+            )
 
         if qst:
             s = s.highlight_options(
@@ -298,3 +300,22 @@ class Dealer:
             ranks["doc_aggs"][dnm] += 1
 
         return ranks
+
+    def sql_retrieval(self, sql, fetch_size=128):
+        sql = re.sub(r"[ ]+", " ", sql)
+        replaces = []
+        for r in re.finditer(r" ([a-z_]+_l?tks like |[a-z_]+_l?tks ?= ?)'([^']+)'", sql):
+            fld, v = r.group(1), r.group(2)
+            fld = re.sub(r" ?(like|=)$", "", fld).lower()
+            if v[0] == "%%": v = v[1:-1]
+            match = " MATCH({}, '{}', 'operator=OR;fuzziness=AUTO:1,3;minimum_should_match=30%') ".format(fld, huqie.qie(v))
+            replaces.append((r.group(1)+r.group(2), match))
+
+        for p, r in replaces: sql.replace(p, r)
+
+        try:
+            tbl = self.es.sql(sql, fetch_size)
+            return tbl
+        except Exception as e:
+            es_logger(f"SQL failure: {sql} =>" + str(e))
+
