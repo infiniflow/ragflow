@@ -63,3 +63,31 @@ class KnowledgebaseService(CommonService):
         d = kbs[0].to_dict()
         d["embd_id"] = kbs[0].tenant.embd_id
         return d
+
+    @classmethod
+    @DB.connection_context()
+    def update_parser_config(cls, id, config):
+        e, m = cls.get_by_id(id)
+        if not e:raise LookupError(f"knowledgebase({id}) not found.")
+        def dfs_update(old, new):
+            for k,v in new.items():
+                if k not in old:
+                    old[k] = v
+                    continue
+                if isinstance(v, dict):
+                    assert isinstance(old[k], dict)
+                    dfs_update(old[k], v)
+                else: old[k] = v
+        dfs_update(m.parser_config, config)
+        cls.update_by_id(id, m.parser_config)
+
+
+    @classmethod
+    @DB.connection_context()
+    def get_field_map(cls, ids):
+        conf = {}
+        for k in cls.get_by_ids(ids):
+            if k.parser_config and "field_map" in k.parser_config:
+                conf.update(k.parser_config)
+        return conf
+

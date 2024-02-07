@@ -13,11 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import base64
 import json
 import os
 import re
+from io import BytesIO
 
+import fitz
+from PIL import Image
 from cachetools import LRUCache, cached
 from ruamel.yaml import YAML
 
@@ -151,3 +154,32 @@ def filename_type(filename):
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4)$", filename):
         return FileType.VISUAL
+
+
+def thumbnail(filename, blob):
+    filename = filename.lower()
+    if re.match(r".*\.pdf$", filename):
+        pdf = fitz.open(stream=blob, filetype="pdf")
+        pix = pdf[0].get_pixmap(matrix=fitz.Matrix(0.03, 0.03))
+        buffered = BytesIO()
+        Image.frombytes("RGB", [pix.width, pix.height],
+                        pix.samples).save(buffered, format="png")
+        return "data:image/png;base64," + base64.b64encode(buffered.getvalue())
+
+    if re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
+        return ("data:image/%s;base64,"%filename.split(".")[-1]) + base64.b64encode(Image.open(BytesIO(blob)).thumbnail((30, 30)).tobytes())
+
+    if re.match(r".*\.(ppt|pptx)$", filename):
+        import aspose.slides as slides
+        import aspose.pydrawing as drawing
+        try:
+            with slides.Presentation(BytesIO(blob)) as presentation:
+                buffered = BytesIO()
+                presentation.slides[0].get_thumbnail(0.03, 0.03).save(buffered, drawing.imaging.ImageFormat.png)
+                return "data:image/png;base64," + base64.b64encode(buffered.getvalue())
+        except Exception as e:
+            pass
+
+
+
+
