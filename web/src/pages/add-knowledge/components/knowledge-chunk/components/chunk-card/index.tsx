@@ -1,7 +1,6 @@
 import { IChunk } from '@/interfaces/database/knowledge';
 import { api_host } from '@/utils/api';
 import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
-import { useDispatch } from 'umi';
 
 import { useState } from 'react';
 import styles from './index.less';
@@ -9,6 +8,8 @@ import styles from './index.less';
 interface IProps {
   item: IChunk;
   checked: boolean;
+  switchChunk: (available?: number, chunkIds?: string[]) => void;
+  editChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
 }
 
@@ -28,30 +29,27 @@ const Image = ({ id, className, ...props }: IImage) => {
   );
 };
 
-const ChunkCard = ({ item, checked, handleCheckboxClick }: IProps) => {
-  const dispatch = useDispatch();
-
+const ChunkCard = ({
+  item,
+  checked,
+  handleCheckboxClick,
+  editChunk,
+  switchChunk,
+}: IProps) => {
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(available === 1);
 
-  const switchChunk = () => {
-    dispatch({
-      type: 'chunkModel/switch_chunk',
-      payload: {
-        chunk_ids: [item.chunk_id],
-        available_int: available === 0 ? 1 : 0,
-        doc_id: item.doc_id,
-      },
-    });
-  };
-
   const onChange = (checked: boolean) => {
     setEnabled(checked);
-    switchChunk();
+    switchChunk(available === 0 ? 1 : 0, [item.chunk_id]);
   };
 
   const handleCheck: CheckboxProps['onChange'] = (e) => {
     handleCheckboxClick(item.chunk_id, e.target.checked);
+  };
+
+  const handleContentClick = () => {
+    editChunk(item.chunk_id);
   };
 
   return (
@@ -75,7 +73,13 @@ const ChunkCard = ({ item, checked, handleCheckboxClick }: IProps) => {
             </Popover>
           )}
 
-          <section>{item.content_with_weight}</section>
+          <section
+            onDoubleClick={handleContentClick}
+            className={styles.content}
+            dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
+          >
+            {/* {item.content_with_weight} */}
+          </section>
           <div>
             <Switch checked={enabled} onChange={onChange} />
           </div>

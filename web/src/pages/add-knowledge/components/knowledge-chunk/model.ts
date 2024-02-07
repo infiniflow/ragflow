@@ -2,6 +2,7 @@ import { BaseState } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/kbService';
 import { message } from 'antd';
+import { pick } from 'lodash';
 // import { delay } from '@/utils/storeUtil';
 import { DvaModel } from 'umi';
 
@@ -40,6 +41,13 @@ const model: DvaModel<ChunkModelState> = {
         ...payload,
       };
     },
+    setIsShowCreateModal(state, { payload }) {
+      return {
+        ...state,
+        isShowCreateModal:
+          typeof payload === 'boolean' ? payload : !state.isShowCreateModal,
+      };
+    },
     setAvailable(state, { payload }) {
       return { ...state, available: payload };
     },
@@ -49,7 +57,7 @@ const model: DvaModel<ChunkModelState> = {
     setPagination(state, { payload }) {
       return { ...state, pagination: { ...state.pagination, ...payload } };
     },
-    resetFilter(state, { payload }) {
+    resetFilter(state, {}) {
       return {
         ...state,
         pagination: {
@@ -84,7 +92,13 @@ const model: DvaModel<ChunkModelState> = {
         });
       }
     },
-    *switch_chunk({ payload = {} }, { call, put }) {
+    throttledGetChunkList: [
+      function* ({ payload }, { put }) {
+        yield put({ type: 'chunk_list', payload: { doc_id: payload } });
+      },
+      { type: 'throttle', ms: 1000 }, // TODO: Provide type support for this effect
+    ],
+    *switch_chunk({ payload = {} }, { call }) {
       const { data } = yield call(kbService.switch_chunk, payload);
       const { retcode } = data;
       if (retcode === 0) {
@@ -93,15 +107,21 @@ const model: DvaModel<ChunkModelState> = {
       return retcode;
     },
     *rm_chunk({ payload = {} }, { call, put }) {
-      console.log('shanchu');
-      const { data, response } = yield call(kbService.rm_chunk, payload);
-      const { retcode, data: res, retmsg } = data;
-
+      const { data } = yield call(kbService.rm_chunk, payload);
+      const { retcode } = data;
+      if (retcode === 0) {
+        yield put({
+          type: 'setIsShowCreateModal',
+          payload: false,
+        });
+        yield put({ type: 'setPagination', payload: { current: 1 } });
+        yield put({ type: 'chunk_list', payload: pick(payload, ['doc_id']) });
+      }
       return retcode;
     },
     *get_chunk({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(kbService.get_chunk, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(kbService.get_chunk, payload);
+      const { retcode, data: res } = data;
       if (retcode === 0) {
         yield put({
           type: 'updateState',
@@ -112,20 +132,20 @@ const model: DvaModel<ChunkModelState> = {
       }
       return data;
     },
-    *create_hunk({ payload = {} }, { call, put }) {
+    *create_chunk({ payload = {} }, { call, put }) {
       let service = kbService.create_chunk;
       if (payload.chunk_id) {
         service = kbService.set_chunk;
       }
-      const { data, response } = yield call(service, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(service, payload);
+      const { retcode } = data;
       if (retcode === 0) {
         yield put({
-          type: 'updateState',
-          payload: {
-            isShowCreateModal: false,
-          },
+          type: 'setIsShowCreateModal',
+          payload: false,
         });
+
+        yield put({ type: 'chunk_list', payload: pick(payload, ['doc_id']) });
       }
     },
   },
