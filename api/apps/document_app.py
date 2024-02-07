@@ -21,9 +21,6 @@ import flask
 from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
-
-from api.db.db_models import Task
-from api.db.services.task_service import TaskService
 from rag.nlp import search
 from rag.utils import ELASTICSEARCH
 from api.db.services import duplicate_name
@@ -35,7 +32,7 @@ from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from rag.utils.minio_conn import MINIO
-from api.utils.file_utils import filename_type
+from api.utils.file_utils import filename_type, thumbnail
 
 
 @manager.route('/upload', methods=['POST'])
@@ -78,7 +75,8 @@ def upload():
             "type": filename_type(filename),
             "name": filename,
             "location": location,
-            "size": len(blob)
+            "size": len(blob),
+            "thumbnail": thumbnail(filename, blob)
         })
         return get_json_result(data=doc.to_json())
     except Exception as e:

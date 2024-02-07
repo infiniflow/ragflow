@@ -47,17 +47,20 @@ def list():
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
         if not tenant_id:
             return get_data_error_result(retmsg="Tenant not found!")
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return get_data_error_result(retmsg="Document not found!")
         query = {
             "doc_ids": [doc_id], "page": page, "size": size, "question": question
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
         sres = retrievaler.search(query, search.index_name(tenant_id))
-        res = {"total": sres.total, "chunks": []}
+        res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
                 "chunk_id": id,
-                "content_with_weight": rmSpace(sres.highlight[id]) if question else sres.field[id]["content_with_weight"],
+                "content_with_weight": rmSpace(sres.highlight[id]) if question else sres.field[id].get("content_with_weight", ""),
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_kwd": sres.field[id].get("important_kwd", []),
@@ -110,7 +113,7 @@ def get():
                   "important_kwd")
 def set():
     req = request.json
-    d = {"id": req["chunk_id"]}
+    d = {"id": req["chunk_id"], "content_with_weight": req["content_with_weight"]}
     d["content_ltks"] = huqie.qie(req["content_with_weight"])
     d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
     d["important_kwd"] = req["important_kwd"]
@@ -181,11 +184,12 @@ def create():
     md5 = hashlib.md5()
     md5.update((req["content_with_weight"] + req["doc_id"]).encode("utf-8"))
     chunck_id = md5.hexdigest()
-    d = {"id": chunck_id, "content_ltks": huqie.qie(req["content_with_weight"])}
+    d = {"id": chunck_id, "content_ltks": huqie.qie(req["content_with_weight"]), "content_with_weight": req["content_with_weight"]}
     d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
     d["important_kwd"] = req.get("important_kwd", [])
     d["important_tks"] = huqie.qie(" ".join(req.get("important_kwd", [])))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
+    d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
 
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])

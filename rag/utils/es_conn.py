@@ -3,13 +3,14 @@ import json
 import time
 import copy
 import elasticsearch
+from elastic_transport import ConnectionTimeout
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import UpdateByQuery, Search, Index
 from rag.settings import es_logger
 from rag import settings
 from rag.utils import singleton
 
-es_logger.info("Elasticsearch version: "+ str(elasticsearch.__version__))
+es_logger.info("Elasticsearch version: "+str(elasticsearch.__version__))
 
 
 @singleton
@@ -57,7 +58,7 @@ class HuEs:
                             body=d,
                             id=id,
                             doc_type="doc",
-                            refresh=False,
+                            refresh=True,
                             retry_on_conflict=100)
                     else:
                         r = self.es.update(
@@ -65,7 +66,7 @@ class HuEs:
                                 self.idxnm if not idxnm else idxnm),
                             body=d,
                             id=id,
-                            refresh=False,
+                            refresh=True,
                             retry_on_conflict=100)
                     es_logger.info("Successfully upsert: %s" % id)
                     T = True
@@ -240,6 +241,18 @@ class HuEs:
         es_logger.error("ES search timeout for 3 times!")
         raise Exception("ES search timeout.")
 
+    def sql(self, sql, fetch_size=128, format="json", timeout=2):
+        for i in range(3):
+            try:
+                res = self.es.sql.query(body={"query": sql, "fetch_size": fetch_size}, format=format, request_timeout=timeout)
+                return res
+            except ConnectionTimeout as e:
+                es_logger.error("Timeout【Q】：" + sql)
+                continue
+        es_logger.error("ES search timeout for 3 times!")
+        raise ConnectionTimeout()
+
+
     def get(self, doc_id, idxnm=None):
         for i in range(3):
             try:
@@ -308,7 +321,8 @@ class HuEs:
             try:
                 r = self.es.delete_by_query(
                     index=idxnm if idxnm else self.idxnm,
-                    body=Search().query(query).to_dict())
+                    refresh = True,
+                body=Search().query(query).to_dict())
                 return True
             except Exception as e:
                 es_logger.error("ES updateByQuery deleteByQuery: " +

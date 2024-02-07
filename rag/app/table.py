@@ -1,13 +1,13 @@
 import copy
-import random
 import re
 from io import BytesIO
 from xpinyin import Pinyin
 import numpy as np
 import pandas as pd
-from nltk import word_tokenize
 from openpyxl import load_workbook
 from dateutil.parser import parse as datetime_parse
+
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from rag.parser import is_english, tokenize
 from rag.nlp import huqie, stemmer
 
@@ -27,18 +27,19 @@ class Excel(object):
             ws = wb[sheetname]
             rows = list(ws.rows)
             headers = [cell.value for cell in rows[0]]
-            missed = set([i for i,h in enumerate(headers) if h is None])
-            headers = [cell.value for i,cell in enumerate(rows[0]) if i not in missed]
+            missed = set([i for i, h in enumerate(headers) if h is None])
+            headers = [cell.value for i, cell in enumerate(rows[0]) if i not in missed]
             data = []
             for i, r in enumerate(rows[1:]):
-                row = [cell.value for ii,cell in enumerate(r) if ii not in missed]
+                row = [cell.value for ii, cell in enumerate(r) if ii not in missed]
                 if len(row) != len(headers):
                     fails.append(str(i))
                     continue
                 data.append(row)
                 done += 1
                 if done % 999 == 0:
-                    callback(done * 0.6/total, ("Extract records: {}".format(len(res)) + (f"{len(fails)} failure({sheetname}), line: %s..."%(",".join(fails[:3])) if fails else "")))
+                    callback(done * 0.6 / total, ("Extract records: {}".format(len(res)) + (
+                        f"{len(fails)} failure({sheetname}), line: %s..." % (",".join(fails[:3])) if fails else "")))
             res.append(pd.DataFrame(np.array(data), columns=headers))
 
         callback(0.6, ("Extract records: {}. ".format(done) + (
@@ -61,9 +62,10 @@ def trans_bool(s):
 def column_data_type(arr):
     uni = len(set([a for a in arr if a is not None]))
     counts = {"int": 0, "float": 0, "text": 0, "datetime": 0, "bool": 0}
-    trans = {t:f for f,t in [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
+    trans = {t: f for f, t in
+             [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
     for a in arr:
-        if a is None:continue
+        if a is None: continue
         if re.match(r"[+-]?[0-9]+(\.0+)?$", str(a).replace("%%", "")):
             counts["int"] += 1
         elif re.match(r"[+-]?[0-9.]+$", str(a).replace("%%", "")):
@@ -72,17 +74,18 @@ def column_data_type(arr):
             counts["bool"] += 1
         elif trans_datatime(str(a)):
             counts["datetime"] += 1
-        else: counts["text"] += 1
-    counts = sorted(counts.items(), key=lambda x: x[1]*-1)
+        else:
+            counts["text"] += 1
+    counts = sorted(counts.items(), key=lambda x: x[1] * -1)
     ty = counts[0][0]
     for i in range(len(arr)):
-        if arr[i] is None:continue
+        if arr[i] is None: continue
         try:
             arr[i] = trans[ty](str(arr[i]))
         except Exception as e:
             arr[i] = None
     if ty == "text":
-        if len(arr) > 128 and uni/len(arr) < 0.1:
+        if len(arr) > 128 and uni / len(arr) < 0.1:
             ty = "keyword"
     return arr, ty
 
@@ -123,48 +126,51 @@ def chunk(filename, binary=None, callback=None, **kwargs):
 
         dfs = [pd.DataFrame(np.array(rows), columns=headers)]
 
-    else: raise NotImplementedError("file type not supported yet(excel, text, csv supported)")
+    else:
+        raise NotImplementedError("file type not supported yet(excel, text, csv supported)")
 
     res = []
     PY = Pinyin()
     fieds_map = {"text": "_tks", "int": "_int", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
     for df in dfs:
         for n in ["id", "_id", "index", "idx"]:
-            if n in df.columns:del df[n]
+            if n in df.columns: del df[n]
         clmns = df.columns.values
         txts = list(copy.deepcopy(clmns))
         py_clmns = [PY.get_pinyins(n)[0].replace("-", "_") for n in clmns]
         clmn_tys = []
         for j in range(len(clmns)):
-            cln,ty = column_data_type(df[clmns[j]])
+            cln, ty = column_data_type(df[clmns[j]])
             clmn_tys.append(ty)
             df[clmns[j]] = cln
             if ty == "text": txts.extend([str(c) for c in cln if c])
         clmns_map = [(py_clmns[j] + fieds_map[clmn_tys[j]], clmns[j]) for i in range(len(clmns))]
-        # TODO: set this column map to KB parser configuration
 
         eng = is_english(txts)
-        for ii,row in df.iterrows():
+        for ii, row in df.iterrows():
             d = {}
             row_txt = []
             for j in range(len(clmns)):
-                if row[clmns[j]] is None:continue
+                if row[clmns[j]] is None: continue
                 fld = clmns_map[j][0]
                 d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else huqie.qie(row[clmns[j]])
                 row_txt.append("{}:{}".format(clmns[j], row[clmns[j]]))
-            if not row_txt:continue
+            if not row_txt: continue
             tokenize(d, "; ".join(row_txt), eng)
-            print(d)
             res.append(d)
+
+        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
     callback(0.6, "")
 
     return res
 
 
-
-if __name__== "__main__":
+if __name__ == "__main__":
     import sys
+
+
     def dummy(a, b):
         pass
-    chunk(sys.argv[1], callback=dummy)
 
+
+    chunk(sys.argv[1], callback=dummy)

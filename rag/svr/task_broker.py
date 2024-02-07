@@ -81,11 +81,13 @@ def dispatch():
         tsks = []
         if r["type"] == FileType.PDF.value:
             pages = HuParser.total_page_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
-            for p in range(0, pages, 10):
-                task = new_task()
-                task["from_page"] = p
-                task["to_page"] = min(p + 10, pages)
-                tsks.append(task)
+            for s,e in r["parser_config"].get("pages", [(0,100000)]):
+                e = min(e, pages)
+                for p in range(s, e, 10):
+                    task = new_task()
+                    task["from_page"] = p
+                    task["to_page"] = min(p + 10, e)
+                    tsks.append(task)
         else:
             tsks.append(new_task())
         print(tsks)
