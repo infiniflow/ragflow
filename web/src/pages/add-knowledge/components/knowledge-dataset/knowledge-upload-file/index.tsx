@@ -28,7 +28,7 @@ import {
   UploadProps,
 } from 'antd';
 import classNames from 'classnames';
-import { ReactElement, useEffect, useRef, useState } from 'react';
+import { ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Nullable } from 'typings';
 import { Link, useDispatch, useNavigate, useSelector } from 'umi';
 
@@ -63,6 +63,24 @@ const UploaderItem = ({
 
   const documentId = file?.response?.id;
 
+  const parserList = useMemo(() => {
+    return parserArray.map((x) => {
+      const arr = x.split(':');
+      return { value: arr[0], label: arr[1] };
+    });
+  }, [parserArray]);
+
+  const saveParser = (parserId: string) => {
+    dispatch({
+      type: 'kFModel/document_change_parser',
+      payload: {
+        parser_id: parserId,
+        doc_id: documentId,
+        parser_config: parserConfig,
+      },
+    });
+  };
+
   const onChange = (e: RadioChangeEvent) => {
     const val = e.target.value;
     setValue(val);
@@ -72,12 +90,12 @@ const UploaderItem = ({
   const content = (
     <Radio.Group onChange={onChange} value={value}>
       <Space direction="vertical">
-        {parserArray.map(
+        {parserList.map(
           (
             x, // value is lowercase, key is uppercase
           ) => (
-            <Radio value={x.toLowerCase()} key={x}>
-              {x}
+            <Radio value={x.value} key={x.value}>
+              {x.label}
             </Radio>
           ),
         )}
@@ -90,17 +108,6 @@ const UploaderItem = ({
     if (ret === 0) {
       actions?.remove();
     }
-  };
-
-  const saveParser = (parserId: string) => {
-    dispatch({
-      type: 'kFModel/document_change_parser',
-      payload: {
-        parser_id: parserId,
-        doc_id: documentId,
-        parser_config: parserConfig,
-      },
-    });
   };
 
   useEffect(() => {
