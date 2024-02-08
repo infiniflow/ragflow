@@ -1,80 +1,71 @@
 import { ReactComponent as NavigationPointerIcon } from '@/assets/svg/navigation-pointer.svg';
+import { ITestingDocument } from '@/interfaces/database/knowledge';
+import { api_host } from '@/utils/api';
 import { Table, TableProps } from 'antd';
+import { useDispatch, useSelector } from 'umi';
 
-interface DataType {
-  key: string;
-  name: string;
-  hits: number;
-  address: string;
-  tags: string[];
+interface IProps {
+  handleTesting: () => Promise<any>;
 }
 
-const SelectFiles = () => {
-  const columns: TableProps<DataType>['columns'] = [
+const SelectFiles = ({ handleTesting }: IProps) => {
+  const documents: ITestingDocument[] = useSelector(
+    (state: any) => state.testingModel.documents,
+  );
+
+  const dispatch = useDispatch();
+
+  const columns: TableProps<ITestingDocument>['columns'] = [
     {
       title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
+      dataIndex: 'doc_name',
+      key: 'doc_name',
       render: (text) => <p>{text}</p>,
     },
 
     {
       title: 'Hits',
-      dataIndex: 'hits',
-      key: 'hits',
+      dataIndex: 'count',
+      key: 'count',
       width: 80,
     },
     {
       title: 'View',
       key: 'view',
       width: 50,
-      render: () => <NavigationPointerIcon />,
+      render: (_, { doc_id }) => (
+        <a
+          href={`${api_host}/document/get/${doc_id}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <NavigationPointerIcon />
+        </a>
+      ),
     },
   ];
 
   const rowSelection = {
-    onChange: (selectedRowKeys: React.Key[], selectedRows: DataType[]) => {
-      console.log(
-        `selectedRowKeys: ${selectedRowKeys}`,
-        'selectedRows: ',
-        selectedRows,
-      );
+    onChange: (selectedRowKeys: React.Key[]) => {
+      dispatch({
+        type: 'testingModel/setSelectedDocumentIds',
+        payload: selectedRowKeys,
+      });
+      handleTesting();
     },
-    getCheckboxProps: (record: DataType) => ({
-      disabled: record.name === 'Disabled User', // Column configuration not to be checked
-      name: record.name,
+    getCheckboxProps: (record: ITestingDocument) => ({
+      disabled: record.doc_name === 'Disabled User', // Column configuration not to be checked
+      name: record.doc_name,
     }),
   };
 
-  const data: DataType[] = [
-    {
-      key: '1',
-      name: 'John Brown',
-      hits: 32,
-      address: 'New York No. 1 Lake Park',
-      tags: ['nice', 'developer'],
-    },
-    {
-      key: '2',
-      name: 'Jim Green',
-      hits: 42,
-      address: 'London No. 1 Lake Park',
-      tags: ['loser'],
-    },
-    {
-      key: '3',
-      name: 'Joe Black',
-      hits: 32,
-      address: 'Sydney No. 1 Lake Park',
-      tags: ['cool', 'teacher'],
-    },
-  ];
   return (
     <Table
       columns={columns}
-      dataSource={data}
+      dataSource={documents}
       showHeader={false}
       rowSelection={rowSelection}
+      rowKey={'doc_id'}
     />
   );
 };
