@@ -47,7 +47,7 @@ LLM = get_base_config("llm", {})
 CHAT_MDL = LLM.get("chat_model", "gpt-3.5-turbo")
 EMBEDDING_MDL = LLM.get("embedding_model", "text-embedding-ada-002")
 ASR_MDL = LLM.get("asr_model", "whisper-1")
-PARSERS = LLM.get("parsers", "general:General,resume:esume,laws:Laws,manual:Manual,book:Book,paper:Paper,qa:Q&A,presentation:Presentation")
+PARSERS = LLM.get("parsers", "general:General,qa:Q&A,resume:Resume,naive:Naive,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture")
 IMAGE2TEXT_MDL = LLM.get("image2text_model", "gpt-4-vision-preview")
 
 # distribution
