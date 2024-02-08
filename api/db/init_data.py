@@ -63,7 +63,9 @@ def init_llm_factory():
             "status": "1",
         },
     ]
-    llm_infos = [{
+    llm_infos = [
+        # ---------------------- OpenAI ------------------------
+        {
             "fid": factory_infos[0]["name"],
             "llm_name": "gpt-3.5-turbo",
             "tags": "LLM,CHAT,4K",
@@ -105,7 +107,9 @@ def init_llm_factory():
             "tags": "LLM,CHAT,IMAGE2TEXT",
             "max_tokens": 765,
             "model_type": LLMType.IMAGE2TEXT.value
-        },{
+        },
+        # ----------------------- Qwen -----------------------
+        {
             "fid": factory_infos[1]["name"],
             "llm_name": "qwen-turbo",
             "tags": "LLM,CHAT,8K",
@@ -135,7 +139,9 @@ def init_llm_factory():
             "tags": "LLM,CHAT,IMAGE2TEXT",
             "max_tokens": 765,
             "model_type": LLMType.IMAGE2TEXT.value
-        },{
+        },
+        # ----------------------- Infiniflow -----------------------
+        {
             "fid": factory_infos[2]["name"],
             "llm_name": "gpt-3.5-turbo",
             "tags": "LLM,CHAT,4K",
@@ -159,6 +165,33 @@ def init_llm_factory():
             "tags": "LLM,CHAT,IMAGE2TEXT",
             "max_tokens": 765,
             "model_type": LLMType.IMAGE2TEXT.value
+        },
+        # ---------------------- ZhipuAI ----------------------
+        {
+            "fid": factory_infos[3]["name"],
+            "llm_name": "glm-3-turbo",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 128 * 1000,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[3]["name"],
+            "llm_name": "glm-4",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 128 * 1000,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[3]["name"],
+            "llm_name": "glm-4v",
+            "tags": "LLM,CHAT,IMAGE2TEXT",
+            "max_tokens": 2000,
+            "model_type": LLMType.IMAGE2TEXT.value
+        },
+        {
+            "fid": factory_infos[3]["name"],
+            "llm_name": "embedding-2",
+            "tags": "TEXT EMBEDDING",
+            "max_tokens": 512,
+            "model_type": LLMType.SPEECH2TEXT.value
         },
     ]
     for info in factory_infos:

@@ -24,31 +24,45 @@ class Excel(object):
             for i, r in enumerate(rows):
                 q, a = "", ""
                 for cell in r:
-                    if not cell.value: continue
-                    if not q: q = str(cell.value)
-                    elif not a: a = str(cell.value)
-                    else: break
-                if q and a: res.append((q, a))
-                else: fails.append(str(i+1))
+                    if not cell.value:
+                        continue
+                    if not q:
+                        q = str(cell.value)
+                    elif not a:
+                        a = str(cell.value)
+                    else:
+                        break
+                if q and a:
+                    res.append((q, a))
+                else:
+                    fails.append(str(i + 1))
                 if len(res) % 999 == 0:
-                    callback(len(res)*0.6/total, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..."%(",".join(fails[:3])) if fails else "")))
+                    callback(len(res) *
+                             0.6 /
+                             total, ("Extract Q&A: {}".format(len(res)) +
+                                     (f"{len(fails)} failure, line: %s..." %
+                                      (",".join(fails[:3])) if fails else "")))
 
         callback(0.6, ("Extract Q&A: {}. ".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
-        self.is_english = is_english([rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q)>1])
+        self.is_english = is_english(
+            [rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
         return res
 
 
 def rmPrefix(txt):
-    return re.sub(r"^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+", "", txt.strip(), flags=re.IGNORECASE)
+    return re.sub(
+        r"^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+", "", txt.strip(), flags=re.IGNORECASE)
 
 
 def beAdoc(d, q, a, eng):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
-    d["content_with_weight"] = "\t".join([qprefix+rmPrefix(q), aprefix+rmPrefix(a)])
+    d["content_with_weight"] = "\t".join(
+        [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
     if eng:
-        d["content_ltks"] = " ".join([stemmer.stem(w) for w in word_tokenize(q)])
+        d["content_ltks"] = " ".join([stemmer.stem(w)
+                                     for w in word_tokenize(q)])
     else:
         d["content_ltks"] = huqie.qie(q)
         d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
@@ -61,7 +75,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        for q,a in excel_parser(filename, binary, callback):
+        for q, a in excel_parser(filename, binary, callback):
             res.append(beAdoc({}, q, a, excel_parser.is_english))
         return res
     elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
@@ -73,7 +87,8 @@ def chunk(filename, binary=None, callback=None, **kwargs):
             with open(filename, "r") as f:
                 while True:
                     l = f.readline()
-                    if not l: break
+                    if not l:
+                        break
                     txt += l
         lines = txt.split("\n")
         eng = is_english([rmPrefix(l) for l in lines[:100]])
@@ -93,12 +108,13 @@ def chunk(filename, binary=None, callback=None, **kwargs):
 
         return res
 
-    raise NotImplementedError("file type not supported yet(pptx, pdf supported)")
+    raise NotImplementedError(
+        "file type not supported yet(pptx, pdf supported)")
 
 
-if __name__== "__main__":
+if __name__ == "__main__":
     import sys
+
     def dummy(a, b):
         pass
     chunk(sys.argv[1], callback=dummy)
-

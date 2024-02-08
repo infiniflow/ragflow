@@ -78,3 +78,5 @@ class ParserType(StrEnum):
     BOOK = "book"
     QA = "qa"
     TABLE = "table"
+    NAIVE = "naive"
+    PICTURE = "picture"
