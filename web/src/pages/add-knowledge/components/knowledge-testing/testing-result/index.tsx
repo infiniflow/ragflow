@@ -1,12 +1,55 @@
 import { ReactComponent as SelectedFilesCollapseIcon } from '@/assets/svg/selected-files-collapse.svg';
-import { Card, Collapse, Flex, Space } from 'antd';
+import { ITestingChunk } from '@/interfaces/database/knowledge';
+import { Card, Collapse, Flex, Pagination, PaginationProps, Space } from 'antd';
+import { useDispatch, useSelector } from 'umi';
+import { TestingModelState } from '../model';
+import styles from './index.less';
 import SelectFiles from './select-files';
 
-import styles from './index.less';
+const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
+  { field: 'similarity', label: 'Hybrid Similarity' },
+  { field: 'term_similarity', label: 'Term Similarity' },
+  { field: 'vector_similarity', label: 'Vector Similarity' },
+];
 
-const list = [1, 2, 3, 4];
+const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
+  return (
+    <Flex gap={10}>
+      {similarityList.map((x) => (
+        <Space key={x.field}>
+          <span className={styles.similarityCircle}>
+            {((item[x.field] as number) * 100).toFixed(2)}%
+          </span>
+          <span className={styles.similarityText}>Hybrid Similarity</span>
+        </Space>
+      ))}
+    </Flex>
+  );
+};
 
-const TestingResult = () => {
+interface IProps {
+  handleTesting: () => Promise<any>;
+}
+
+const TestingResult = ({ handleTesting }: IProps) => {
+  const {
+    documents,
+    chunks,
+    total,
+    pagination,
+    selectedDocumentIds,
+  }: TestingModelState = useSelector((state: any) => state.testingModel);
+  const dispatch = useDispatch();
+
+  const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
+    console.log('Page: ', pageNumber, pageSize);
+    dispatch({
+      type: 'testingModel/setPagination',
+      payload: { current: pageNumber, pageSize },
+    });
+    handleTesting();
+  };
+
   return (
     <section className={styles.testingResultWrapper}>
       <Collapse
@@ -23,7 +66,10 @@ const TestingResult = () => {
                 align="center"
                 className={styles.selectFilesTitle}
               >
-                <span>4/25 Files Selected</span>
+                <span>
+                  {selectedDocumentIds?.length ?? 0}/{documents.length} Files
+                  Selected
+                </span>
                 <Space size={52}>
                   <b>Hits</b>
                   <b>View</b>
@@ -32,21 +78,33 @@ const TestingResult = () => {
             ),
             children: (
               <div>
-                <SelectFiles></SelectFiles>
+                <SelectFiles handleTesting={handleTesting}></SelectFiles>
               </div>
             ),
           },
         ]}
       />
-      <Flex gap={'large'} vertical>
-        {list.map((x) => (
-          <Card key={x} title="Default size card" extra={<a href="#">More</a>}>
-            <p>Card content</p>
-            <p>Card content</p>
-            <p>Card content</p>
+      <Flex
+        gap={'large'}
+        vertical
+        flex={1}
+        className={styles.selectFilesCollapse}
+      >
+        {chunks.map((x) => (
+          <Card key={x.chunk_id} title={<ChunkTitle item={x}></ChunkTitle>}>
+            <div>{x.content_with_weight}</div>
           </Card>
         ))}
       </Flex>
+      <Pagination
+        size={'small'}
+        showQuickJumper
+        current={pagination.current}
+        pageSize={pagination.pageSize}
+        total={total}
+        showSizeChanger
+        onChange={onChange}
+      />
     </section>
   );
 };

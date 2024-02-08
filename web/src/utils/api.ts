@@ -1,4 +1,4 @@
-let api_host = `http://223.111.148.200:9380/v1`;
+let api_host = `http://123.60.95.134:9380/v1`;
 
 export { api_host };
 

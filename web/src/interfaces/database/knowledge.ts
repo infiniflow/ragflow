@@ -75,3 +75,30 @@ export interface IChunk {
   img_id: string;
   important_kwd: any[];
 }
+
+export interface ITestingChunk {
+  chunk_id: string;
+  content_ltks: string;
+  content_with_weight: string;
+  doc_id: string;
+  docnm_kwd: string;
+  img_id: string;
+  important_kwd: any[];
+  kb_id: string;
+  similarity: number;
+  term_similarity: number;
+  vector: number[];
+  vector_similarity: number;
+}
+
+export interface ITestingDocument {
+  count: number;
+  doc_id: string;
+  doc_name: string;
+}
+
+export interface ITestingResult {
+  chunks: ITestingChunk[];
+  doc_aggs: Record<string, number>;
+  total: number;
+}
