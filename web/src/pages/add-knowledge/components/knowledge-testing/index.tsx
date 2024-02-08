@@ -6,7 +6,7 @@ import styles from './index.less';
 
 const KnowledgeTesting = () => {
   return (
-    <Flex className={styles.testingWrapper}>
+    <Flex className={styles.testingWrapper} gap={16}>
       <TestingControl></TestingControl>
       <TestingResult></TestingResult>
     </Flex>
