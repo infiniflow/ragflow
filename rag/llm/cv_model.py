@@ -61,7 +61,7 @@ class Base(ABC):
 
 class GptV4(Base):
     def __init__(self, key, model_name="gpt-4-vision-preview"):
-        self.client = OpenAI(api_key = key)
+        self.client = OpenAI(api_key=key)
         self.model_name = model_name
 
     def describe(self, image, max_tokens=300):
@@ -89,3 +89,22 @@ class QWenCV(Base):
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'], response.usage.output_tokens
         return response.message, 0
+
+
+from zhipuai import ZhipuAI
+
+
+class Zhipu4V(Base):
+    def __init__(self, key, model_name="glm-4v"):
+        self.client = ZhipuAI(api_key=key)
+        self.model_name = model_name
+
+    def describe(self, image, max_tokens=1024):
+        b64 = self.image2base64(image)
+
+        res = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=self.prompt(b64),
+            max_tokens=max_tokens,
+        )
+        return res.choices[0].message.content.strip(), res.usage.total_tokens

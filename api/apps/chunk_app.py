@@ -227,7 +227,7 @@ def retrieval_test():
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    top = int(req.get("top", 1024))
+    top = int(req.get("top_k", 1024))
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
@@ -237,6 +237,9 @@ def retrieval_test():
             kb.tenant_id, LLMType.EMBEDDING.value)
         ranks = retrievaler.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size, similarity_threshold,
                                       vector_similarity_weight, top, doc_ids)
+        for c in ranks["chunks"]:
+            if "vector" in c:
+                del c["vector"]
 
         return get_json_result(data=ranks)
     except Exception as e:

@@ -58,3 +58,21 @@ class QWenChat(Base):
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'], response.usage.output_tokens
         return response.message, 0
+
+
+from zhipuai import ZhipuAI
+class ZhipuChat(Base):
+    def __init__(self, key, model_name="glm-3-turbo"):
+        self.client = ZhipuAI(api_key=key)
+        self.model_name = model_name
+
+    def chat(self, system, history, gen_conf):
+        from http import HTTPStatus
+        history.insert(0, {"role": "system", "content": system})
+        response = self.client.chat.completions.create(
+            self.model_name,
+            messages=history
+        )
+        if response.status_code == HTTPStatus.OK:
+            return response.output.choices[0]['message']['content'], response.usage.completion_tokens
+        return response.message, 0

@@ -268,9 +268,9 @@ class Dealer:
         dim = len(sres.query_vector)
         start_idx = (page - 1) * page_size
         for i in idx:
-            ranks["total"] += 1
             if sim[i] < similarity_threshold:
                 break
+            ranks["total"] += 1
             start_idx -= 1
             if start_idx >= 0:
                 continue
@@ -280,6 +280,7 @@ class Dealer:
                 break
             id = sres.ids[i]
             dnm = sres.field[id]["docnm_kwd"]
+            did = sres.field[id]["doc_id"]
             d = {
                 "chunk_id": id,
                 "content_ltks": sres.field[id]["content_ltks"],
@@ -296,8 +297,9 @@ class Dealer:
             }
             ranks["chunks"].append(d)
             if dnm not in ranks["doc_aggs"]:
-                ranks["doc_aggs"][dnm] = 0
-            ranks["doc_aggs"][dnm] += 1
+                ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
+            ranks["doc_aggs"][dnm]["count"] += 1
+        ranks["doc_aggs"] = [{"doc_name": k, "doc_id": v["doc_id"], "count": v["count"]} for k,v in sorted(ranks["doc_aggs"].items(), key=lambda x:x[1]["count"]*-1)]
 
         return ranks
 
