@@ -58,7 +58,7 @@ FACTORY = {
 }
 
 
-def set_progress(task_id, from_page, to_page, prog=None, msg="Processing..."):
+def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
     cancel = TaskService.do_cancel(task_id)
     if cancel:
         msg += " [Canceled]"
@@ -110,7 +110,7 @@ def collect(comm, mod, tm):
 
 def build(row, cvmdl):
     if row["size"] > DOC_MAXIMUM_SIZE:
-        set_progress(row["id"], -1, "File size exceeds( <= %dMb )" %
+        set_progress(row["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
                      (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
@@ -119,7 +119,7 @@ def build(row, cvmdl):
     try:
         cron_logger.info("Chunkking {}/{}".format(row["location"], row["name"]))
         cks = chunker.chunk(row["name"], MINIO.get(row["kb_id"], row["location"]), row["from_page"], row["to_page"],
-                            callback)
+                            callback, kb_id=row["kb_id"])
     except Exception as e:
         if re.search("(No such file|not found)", str(e)):
             callback(-1, "Can not find file <%s>" % row["doc_name"])
@@ -144,6 +144,7 @@ def build(row, cvmdl):
         md5.update((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8"))
         d["_id"] = md5.hexdigest()
         d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
+        d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
         if not d.get("image"):
             docs.append(d)
             continue
@@ -197,15 +198,15 @@ def main(comm, mod):
 
     tmf = open(tm_fnm, "a+")
     for _, r in rows.iterrows():
+        callback = partial(set_progress, r["id"], r["from_page"], r["to_page"])
         try:
             embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING)
             cv_mdl = LLMBundle(r["tenant_id"], LLMType.IMAGE2TEXT)
             # TODO: sequence2text model
         except Exception as e:
-            set_progress(r["id"], -1, str(e))
+            callback(prog=-1, msg=str(e))
             continue
 
-        callback = partial(set_progress, r["id"], r["from_page"], r["to_page"])
         st_tm = timer()
         cks = build(r, cv_mdl)
         if not cks:
