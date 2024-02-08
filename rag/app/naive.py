@@ -57,7 +57,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
         callback(0.8, "Finish parsing.")
     else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
-    cks = naive_merge(sections, kwargs.get("chunk_token_num", 128), kwargs.get("delimer", "\n。；！？"))
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 128, "delimer": "\n。；！？"})
+    cks = naive_merge(sections, parser_config["chunk_token_num"], parser_config["delimer"])
     eng = is_english(cks)
     res = []
     # wrap up to es documents

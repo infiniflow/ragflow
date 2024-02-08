@@ -28,10 +28,15 @@ class Excel(object):
             rows = list(ws.rows)
             headers = [cell.value for cell in rows[0]]
             missed = set([i for i, h in enumerate(headers) if h is None])
-            headers = [cell.value for i, cell in enumerate(rows[0]) if i not in missed]
+            headers = [
+                cell.value for i,
+                cell in enumerate(
+                    rows[0]) if i not in missed]
             data = []
             for i, r in enumerate(rows[1:]):
-                row = [cell.value for ii, cell in enumerate(r) if ii not in missed]
+                row = [
+                    cell.value for ii,
+                    cell in enumerate(r) if ii not in missed]
                 if len(row) != len(headers):
                     fails.append(str(i))
                     continue
@@ -55,8 +60,10 @@ def trans_datatime(s):
 
 
 def trans_bool(s):
-    if re.match(r"(true|yes|是)$", str(s).strip(), flags=re.IGNORECASE): return ["yes", "是"]
-    if re.match(r"(false|no|否)$", str(s).strip(), flags=re.IGNORECASE): return ["no", "否"]
+    if re.match(r"(true|yes|是)$", str(s).strip(), flags=re.IGNORECASE):
+        return ["yes", "是"]
+    if re.match(r"(false|no|否)$", str(s).strip(), flags=re.IGNORECASE):
+        return ["no", "否"]
 
 
 def column_data_type(arr):
@@ -65,7 +72,8 @@ def column_data_type(arr):
     trans = {t: f for f, t in
              [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
     for a in arr:
-        if a is None: continue
+        if a is None:
+            continue
         if re.match(r"[+-]?[0-9]+(\.0+)?$", str(a).replace("%%", "")):
             counts["int"] += 1
         elif re.match(r"[+-]?[0-9.]+$", str(a).replace("%%", "")):
@@ -79,7 +87,8 @@ def column_data_type(arr):
     counts = sorted(counts.items(), key=lambda x: x[1] * -1)
     ty = counts[0][0]
     for i in range(len(arr)):
-        if arr[i] is None: continue
+        if arr[i] is None:
+            continue
         try:
             arr[i] = trans[ty](str(arr[i]))
         except Exception as e:
@@ -105,7 +114,8 @@ def chunk(filename, binary=None, callback=None, **kwargs):
             with open(filename, "r") as f:
                 while True:
                     l = f.readline()
-                    if not l: break
+                    if not l:
+                        break
                     txt += l
         lines = txt.split("\n")
         fails = []
@@ -127,14 +137,22 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         dfs = [pd.DataFrame(np.array(rows), columns=headers)]
 
     else:
-        raise NotImplementedError("file type not supported yet(excel, text, csv supported)")
+        raise NotImplementedError(
+            "file type not supported yet(excel, text, csv supported)")
 
     res = []
     PY = Pinyin()
-    fieds_map = {"text": "_tks", "int": "_int", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
+    fieds_map = {
+        "text": "_tks",
+        "int": "_int",
+        "keyword": "_kwd",
+        "float": "_flt",
+        "datetime": "_dt",
+        "bool": "_kwd"}
     for df in dfs:
         for n in ["id", "_id", "index", "idx"]:
-            if n in df.columns: del df[n]
+            if n in df.columns:
+                del df[n]
         clmns = df.columns.values
         txts = list(copy.deepcopy(clmns))
         py_clmns = [PY.get_pinyins(n)[0].replace("-", "_") for n in clmns]
@@ -143,23 +161,29 @@ def chunk(filename, binary=None, callback=None, **kwargs):
             cln, ty = column_data_type(df[clmns[j]])
             clmn_tys.append(ty)
             df[clmns[j]] = cln
-            if ty == "text": txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[j] + fieds_map[clmn_tys[j]], clmns[j]) for i in range(len(clmns))]
+            if ty == "text":
+                txts.extend([str(c) for c in cln if c])
+        clmns_map = [(py_clmns[j] + fieds_map[clmn_tys[j]], clmns[j])
+                     for i in range(len(clmns))]
 
         eng = is_english(txts)
         for ii, row in df.iterrows():
             d = {}
             row_txt = []
             for j in range(len(clmns)):
-                if row[clmns[j]] is None: continue
+                if row[clmns[j]] is None:
+                    continue
                 fld = clmns_map[j][0]
-                d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else huqie.qie(row[clmns[j]])
+                d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else huqie.qie(
+                    row[clmns[j]])
                 row_txt.append("{}:{}".format(clmns[j], row[clmns[j]]))
-            if not row_txt: continue
+            if not row_txt:
+                continue
             tokenize(d, "; ".join(row_txt), eng)
             res.append(d)
 
-        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
+        KnowledgebaseService.update_parser_config(
+            kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
     callback(0.6, "")
 
     return res
@@ -168,9 +192,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
 if __name__ == "__main__":
     import sys
 
-
     def dummy(a, b):
         pass
-
 
     chunk(sys.argv[1], callback=dummy)

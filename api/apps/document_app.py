@@ -13,9 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-#
+
 import base64
 import pathlib
+import re
 
 import flask
 from elasticsearch_dsl import Q
@@ -27,7 +28,7 @@ from api.db.services import duplicate_name
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
-from api.db import FileType, TaskStatus
+from api.db import FileType, TaskStatus, ParserType
 from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
@@ -66,7 +67,7 @@ def upload():
             location += "_"
         blob = request.files['file'].read()
         MINIO.put(kb_id, location, blob)
-        doc = DocumentService.insert({
+        doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
             "parser_id": kb.parser_id,
@@ -77,7 +78,12 @@ def upload():
             "location": location,
             "size": len(blob),
             "thumbnail": thumbnail(filename, blob)
-        })
+        }
+        if doc["type"] == FileType.VISUAL:
+            doc["parser_id"] = ParserType.PICTURE.value
+        if re.search(r"\.(ppt|pptx|pages)$", filename):
+            doc["parser_id"] = ParserType.PRESENTATION.value
+        doc = DocumentService.insert(doc)
         return get_json_result(data=doc.to_json())
     except Exception as e:
         return server_error_response(e)
@@ -282,6 +288,9 @@ def change_parser():
             return get_data_error_result(retmsg="Document not found!")
         if doc.parser_id.lower() == req["parser_id"].lower():
             return get_json_result(data=True)
+
+        if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
+            return get_data_error_result(retmsg="Not supported yet!")
 
         e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress":0, "progress_msg": ""})
         if not e:
