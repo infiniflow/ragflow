@@ -1,7 +1,7 @@
+import Image from '@/components/image';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { api_host } from '@/utils/api';
 import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
-
 import { useState } from 'react';
 import styles from './index.less';
 
@@ -12,22 +12,6 @@ interface IProps {
   editChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
 }
-
-interface IImage {
-  id: string;
-  className: string;
-}
-// Pass onMouseEnter and onMouseLeave to img tag using props
-const Image = ({ id, className, ...props }: IImage) => {
-  return (
-    <img
-      {...props}
-      src={`${api_host}/document/image/${id}`}
-      alt=""
-      className={className}
-    />
-  );
-};
 
 const ChunkCard = ({
   item,

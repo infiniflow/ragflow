@@ -1,6 +1,15 @@
 import { ReactComponent as SelectedFilesCollapseIcon } from '@/assets/svg/selected-files-collapse.svg';
+import Image from '@/components/image';
 import { ITestingChunk } from '@/interfaces/database/knowledge';
-import { Card, Collapse, Flex, Pagination, PaginationProps, Space } from 'antd';
+import {
+  Card,
+  Collapse,
+  Flex,
+  Pagination,
+  PaginationProps,
+  Popover,
+  Space,
+} from 'antd';
 import { useDispatch, useSelector } from 'umi';
 import { TestingModelState } from '../model';
 import styles from './index.less';
@@ -92,7 +101,22 @@ const TestingResult = ({ handleTesting }: IProps) => {
       >
         {chunks.map((x) => (
           <Card key={x.chunk_id} title={<ChunkTitle item={x}></ChunkTitle>}>
-            <div>{x.content_with_weight}</div>
+            <Flex gap={'middle'}>
+              {x.img_id && (
+                <Popover
+                  placement="topRight"
+                  content={
+                    <Image
+                      id={x.img_id}
+                      className={styles.imagePreview}
+                    ></Image>
+                  }
+                >
+                  <Image id={x.img_id} className={styles.image}></Image>
+                </Popover>
+              )}
+              <div>{x.content_with_weight}</div>
+            </Flex>
           </Card>
         ))}
       </Flex>
