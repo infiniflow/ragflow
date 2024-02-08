@@ -6,7 +6,7 @@ import { getWidth } from '@/utils';
 import { AntDesignOutlined } from '@ant-design/icons';
 import { Avatar, Menu, MenuProps, Space } from 'antd';
 import classNames from 'classnames';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSelector } from 'umi';
 import { KnowledgeRouteKey, routeMap } from '../../constant';
 import styles from './index.less';
@@ -26,23 +26,27 @@ const KnowledgeSidebar = () => {
 
   type MenuItem = Required<MenuProps>['items'][number];
 
-  function getItem(
-    label: React.ReactNode,
-    key: React.Key,
-    icon?: React.ReactNode,
-    disabled?: boolean,
-    children?: MenuItem[],
-    type?: 'group',
-  ): MenuItem {
-    return {
-      key,
-      icon,
-      children,
-      label,
-      type,
-      disabled,
-    } as MenuItem;
-  }
+  const getItem = useCallback(
+    (
+      label: React.ReactNode,
+      key: React.Key,
+      icon?: React.ReactNode,
+      disabled?: boolean,
+      children?: MenuItem[],
+      type?: 'group',
+    ): MenuItem => {
+      return {
+        key,
+        icon,
+        children,
+        label,
+        type,
+        disabled,
+      } as MenuItem;
+    },
+    [],
+  );
+
   const items: MenuItem[] = useMemo(() => {
     return [
       getItem(
@@ -60,8 +64,13 @@ const KnowledgeSidebar = () => {
         KnowledgeRouteKey.Configuration,
         <ConfigrationIcon />,
       ),
+      getItem(
+        routeMap[KnowledgeRouteKey.TempTesting],
+        KnowledgeRouteKey.TempTesting,
+        <TestingIcon />,
+      ),
     ];
-  }, [id]);
+  }, [getItem]);
 
   useEffect(() => {
     if (windowWidth.width > 957) {

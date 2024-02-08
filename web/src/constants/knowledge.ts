@@ -2,6 +2,7 @@ export enum KnowledgeRouteKey {
   Dataset = 'dataset',
   Testing = 'testing',
   Configuration = 'configuration',
+  TempTesting = 'tempTesting',
 }
 
 export enum RunningStatus {
