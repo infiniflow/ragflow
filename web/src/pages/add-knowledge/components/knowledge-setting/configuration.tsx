@@ -1,4 +1,5 @@
 import {
+  useFetchKnowledgeBaseConfiguration,
   useFetchParserList,
   useKnowledgeBaseId,
   useSelectParserList,
@@ -20,6 +21,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { IKnowledge } from '@/interfaces/database/knowledge';
 import { IThirdOAIModelCollection } from '@/interfaces/database/llm';
 import { PlusOutlined } from '@ant-design/icons';
 import styles from './index.less';
@@ -35,6 +37,9 @@ const Configuration = () => {
 
   const llmInfo: IThirdOAIModelCollection = useSelector(
     (state: any) => state.settingModel.llmInfo,
+  );
+  const knowledgeDetails: IKnowledge = useSelector(
+    (state: any) => state.kSModel.knowledgeDetails,
   );
 
   const normFile = (e: any) => {
@@ -81,33 +86,7 @@ const Configuration = () => {
     console.log('Failed:', errorInfo);
   };
 
-  useFetchParserList();
-
-  const fetchLlmList = useCallback(async () => {
-    const data = await dispatch<any>({
-      type: 'kSModel/getKbDetail',
-      payload: {
-        kb_id: knowledgeBaseId,
-      },
-    });
-    const fileList: UploadFile[] = [
-      { uid: '1', name: 'file', thumbUrl: data.data.avatar, status: 'done' },
-    ];
-    if (data.retcode === 0) {
-      form.setFieldsValue({
-        ...pick(data.data, [
-          'description',
-          'name',
-          'permission',
-          'embd_id',
-          'parser_id',
-        ]),
-        avatar: fileList,
-      });
-    }
-  }, [dispatch, knowledgeBaseId, form]);
-
-  const fetchKnowledgeBaseConfiguration = useCallback(() => {
+  const fetchLlmList = useCallback(() => {
     dispatch({
       type: 'settingModel/llm_list',
       payload: { model_type: 'embedding' },
@@ -115,9 +94,30 @@ const Configuration = () => {
   }, [dispatch]);
 
   useEffect(() => {
-    fetchKnowledgeBaseConfiguration();
+    const avatar = knowledgeDetails.avatar;
+    let fileList: UploadFile[] = [];
+
+    if (avatar) {
+      fileList = [{ uid: '1', name: 'file', thumbUrl: avatar, status: 'done' }];
+    }
+    form.setFieldsValue({
+      ...pick(knowledgeDetails, [
+        'description',
+        'name',
+        'permission',
+        'embd_id',
+        'parser_id',
+      ]),
+      avatar: fileList,
+    });
+  }, [form, knowledgeDetails]);
+
+  useFetchParserList();
+  useFetchKnowledgeBaseConfiguration();
+
+  useEffect(() => {
     fetchLlmList();
-  }, [fetchLlmList, fetchKnowledgeBaseConfiguration]);
+  }, [fetchLlmList]);
 
   return (
     <div className={styles.configurationWrapper}>

@@ -106,3 +106,21 @@ export const useFetchParserList = () => {
     });
   }, [dispatch]);
 };
+
+export const useFetchKnowledgeBaseConfiguration = () => {
+  const dispatch = useDispatch();
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const fetchKnowledgeBaseConfiguration = useCallback(() => {
+    dispatch({
+      type: 'kSModel/getKbDetail',
+      payload: {
+        kb_id: knowledgeBaseId,
+      },
+    });
+  }, [dispatch, knowledgeBaseId]);
+
+  useEffect(() => {
+    fetchKnowledgeBaseConfiguration();
+  }, [fetchKnowledgeBaseConfiguration]);
+};
