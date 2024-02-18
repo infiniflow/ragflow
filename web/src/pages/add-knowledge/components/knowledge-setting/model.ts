@@ -23,17 +23,12 @@ const model: DvaModel<KSModelState> = {
       };
     },
   },
-  subscriptions: {
-    setup({ dispatch, history }) {
-      history.listen((location) => {});
-    },
-  },
   effects: {
     *createKb({ payload = {} }, { call, put }) {
       const { data } = yield call(kbService.createKb, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('创建知识库成功！');
+        message.success('Created successfully!');
       }
       return data;
     },
@@ -41,7 +36,7 @@ const model: DvaModel<KSModelState> = {
       const { data } = yield call(kbService.updateKb, payload);
       const { retcode, data: res, retmsg } = data;
       if (retcode === 0) {
-        message.success('更新知识库成功！');
+        message.success('Updated successfully!');
       }
     },
     *getKbDetail({ payload = {} }, { call, put }) {

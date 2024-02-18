@@ -2,10 +2,11 @@ import { ReactComponent as SelectFilesEndIcon } from '@/assets/svg/select-files-
 import { ReactComponent as SelectFilesStartIcon } from '@/assets/svg/select-files-start.svg';
 import {
   useDeleteDocumentById,
+  useFetchParserList,
   useGetDocumentDefaultParser,
   useKnowledgeBaseId,
+  useSelectParserList,
 } from '@/hooks/knowledgeHook';
-import { ITenantInfo } from '@/interfaces/database/knowledge';
 import uploadService from '@/services/uploadService';
 import {
   ArrowLeftOutlined,
@@ -28,9 +29,8 @@ import {
   UploadProps,
 } from 'antd';
 import classNames from 'classnames';
-import { ReactElement, useEffect, useMemo, useRef, useState } from 'react';
-import { Nullable } from 'typings';
-import { Link, useDispatch, useNavigate, useSelector } from 'umi';
+import { ReactElement, useEffect, useRef, useState } from 'react';
+import { Link, useDispatch, useNavigate } from 'umi';
 
 import { KnowledgeRouteKey } from '@/constants/knowledge';
 import styles from './index.less';
@@ -45,13 +45,11 @@ const UploaderItem = ({
   file,
   actions,
   isUpload,
-  parserArray,
 }: {
   isUpload: boolean;
   originNode: ReactElement;
   file: UploadFile;
   fileList: object[];
-  parserArray: string[];
   actions: { download: Function; preview: Function; remove: any };
 }) => {
   const { parserConfig, defaultParserId } = useGetDocumentDefaultParser(
@@ -63,12 +61,7 @@ const UploaderItem = ({
 
   const documentId = file?.response?.id;
 
-  const parserList = useMemo(() => {
-    return parserArray.map((x) => {
-      const arr = x.split(':');
-      return { value: arr[0], label: arr[1] };
-    });
-  }, [parserArray]);
+  const parserList = useSelectParserList();
 
   const saveParser = (parserId: string) => {
     dispatch({
@@ -154,13 +147,9 @@ const KnowledgeUploadFile = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const [isUpload, setIsUpload] = useState(true);
   const dispatch = useDispatch();
-  const tenantIfo: Nullable<ITenantInfo> = useSelector(
-    (state: any) => state.settingModel.tenantIfo,
-  );
+
   const navigate = useNavigate();
   const fileListRef = useRef<UploadFile[]>([]);
-
-  const parserArray = tenantIfo?.parser_ids.split(',') ?? [];
 
   const createRequest: (props: UploadRequestOption) => void = async function ({
     file,
@@ -170,9 +159,13 @@ const KnowledgeUploadFile = () => {
   }) {
     const { data } = await uploadService.uploadFile(file, knowledgeBaseId);
     if (data.retcode === 0) {
-      onSuccess && onSuccess(data.data);
+      if (onSuccess) {
+        onSuccess(data.data);
+      }
     } else {
-      onError && onError(data.data);
+      if (onError) {
+        onError(data.data);
+      }
     }
   };
 
@@ -188,7 +181,6 @@ const KnowledgeUploadFile = () => {
           fileList={fileList}
           originNode={originNode}
           actions={actions}
-          parserArray={parserArray}
         ></UploaderItem>
       );
     },
@@ -215,11 +207,7 @@ const KnowledgeUploadFile = () => {
     }
   };
 
-  useEffect(() => {
-    dispatch({
-      type: 'settingModel/getTenantInfo',
-    });
-  }, [dispatch]);
+  useFetchParserList();
 
   return (
     <div className={styles.uploadWrapper}>
