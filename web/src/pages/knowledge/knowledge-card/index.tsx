@@ -63,7 +63,7 @@ const KnowledgeCard = ({ item }: IProps) => {
     <Card className={styles.card} onClick={handleCardClick}>
       <div className={styles.container}>
         <div className={styles.content}>
-          <Avatar size={34} icon={<UserOutlined />} />
+          <Avatar size={34} icon={<UserOutlined />} src={item.avatar} />
 
           <span className={styles.delete}>
             <Dropdown
@@ -78,14 +78,14 @@ const KnowledgeCard = ({ item }: IProps) => {
         </div>
         <div className={styles.titleWrapper}>
           <span className={styles.title}>{item.name}</span>
-          <p>A comprehensive knowledge base for crafting effective resumes.</p>
+          <p>{item.description}</p>
         </div>
         <div className={styles.footer}>
           <div className={styles.footerTop}>
             <div className={styles.bottomLeft}>
               <FileTextOutlined className={styles.leftIcon} />
               <span className={styles.rightText}>
-                <Space>{item.doc_num}文档</Space>
+                <Space>{item.doc_num}Docs</Space>
               </span>
             </div>
           </div>
