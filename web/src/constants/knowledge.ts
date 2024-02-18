@@ -2,13 +2,12 @@ export enum KnowledgeRouteKey {
   Dataset = 'dataset',
   Testing = 'testing',
   Configuration = 'configuration',
-  TempTesting = 'tempTesting',
 }
 
 export enum RunningStatus {
-  UNSTART = '0',
-  RUNNING = '1',
-  CANCEL = '2',
-  DONE = '3',
-  FAIL = '4',
+  UNSTART = '0', // need to run
+  RUNNING = '1', // need to cancel
+  CANCEL = '2', // need to refresh
+  DONE = '3', // need to refresh
+  FAIL = '4', // need to refresh
 }
