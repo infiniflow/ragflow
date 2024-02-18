@@ -219,7 +219,7 @@ const KnowledgeUploadFile = () => {
     dispatch({
       type: 'settingModel/getTenantInfo',
     });
-  }, []);
+  }, [dispatch]);
 
   return (
     <div className={styles.uploadWrapper}>
