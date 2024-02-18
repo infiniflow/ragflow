@@ -3,6 +3,8 @@ import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import { Button, Form, Input, Radio, Select, Space, Tag } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
+import Configuration from './configuration';
+
 import styles from './index.less';
 
 const { CheckableTag } = Tag;
@@ -12,7 +14,6 @@ const layout = {
   labelAlign: 'left' as const,
 };
 const { Option } = Select;
-/* eslint-disable no-template-curly-in-string */
 
 const KnowledgeSetting = () => {
   const dispatch = useDispatch();
@@ -44,7 +45,7 @@ const KnowledgeSetting = () => {
         setSelectedTag(data.data.parser_id);
       }
     }
-  }, [knowledgeBaseId]);
+  }, [knowledgeBaseId, dispatch, form]);
 
   const onFinish = async () => {
     try {
@@ -68,10 +69,11 @@ const KnowledgeSetting = () => {
             parser_id: selectedTag,
           },
         });
-        retcode === 0 &&
+        if (retcode === 0) {
           navigate(
             `/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeBaseId}`,
           );
+        }
       }
     } catch (error) {
       console.warn(error);
@@ -158,4 +160,6 @@ const KnowledgeSetting = () => {
   );
 };
 
-export default KnowledgeSetting;
+// export default KnowledgeSetting;
+
+export default Configuration;

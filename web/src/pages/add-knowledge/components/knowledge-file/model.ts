@@ -55,33 +55,23 @@ const model: DvaModel<KFModelState> = {
       return { ...state, pagination: { ...state.pagination, ...payload } };
     },
   },
-  subscriptions: {
-    setup({ dispatch, history }) {
-      history.listen((location) => {});
-    },
-  },
   effects: {
-    *createKf({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(kbService.createKb, payload);
-      const { retcode, data: res, retmsg } = data;
+    *createKf({ payload = {} }, { call }) {
+      const { data } = yield call(kbService.createKb, payload);
+      const { retcode } = data;
       if (retcode === 0) {
         message.success('创建成功！');
       }
     },
-    *updateKf({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(kbService.updateKb, payload);
-      const { retcode, data: res, retmsg } = data;
+    *updateKf({ payload = {} }, { call }) {
+      const { data } = yield call(kbService.updateKb, payload);
+      const { retcode } = data;
       if (retcode === 0) {
         message.success('修改成功！');
       }
     },
-    *getKfDetail({ payload = {}, callback }, { call, put }) {
-      const { data, response } = yield call(kbService.get_kb_detail, payload);
-      const { retcode, data: res, retmsg } = data;
-      if (retcode === 0) {
-        // localStorage.setItem('userInfo',res.)
-        callback && callback(res);
-      }
+    *getKfDetail({ payload = {} }, { call }) {
+      const { data } = yield call(kbService.get_kb_detail, payload);
     },
     *getKfList({ payload = {} }, { call, put, select }) {
       const state: KFModelState = yield select((state: any) => state.kFModel);
@@ -119,11 +109,11 @@ const model: DvaModel<KFModelState> = {
       { type: 'poll', delay: 5000 }, // TODO: Provide type support for this effect
     ],
     *updateDocumentStatus({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(
+      const { data } = yield call(
         kbService.document_change_status,
         pick(payload, ['doc_id', 'status']),
       );
-      const { retcode, data: res, retmsg } = data;
+      const { retcode } = data;
       if (retcode === 0) {
         message.success('修改成功！');
         put({
@@ -133,10 +123,10 @@ const model: DvaModel<KFModelState> = {
       }
     },
     *document_rm({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(kbService.document_rm, {
+      const { data } = yield call(kbService.document_rm, {
         doc_id: payload.doc_id,
       });
-      const { retcode, data: res, retmsg } = data;
+      const { retcode } = data;
       if (retcode === 0) {
         message.success('删除成功！');
         yield put({
@@ -151,7 +141,7 @@ const model: DvaModel<KFModelState> = {
         kbService.document_rename,
         omit(payload, ['kb_id']),
       );
-      const { retcode, data: res, retmsg } = data;
+      const { retcode } = data;
       if (retcode === 0) {
         message.success('rename success！');
         yield put({
@@ -168,7 +158,7 @@ const model: DvaModel<KFModelState> = {
     },
     *document_create({ payload = {} }, { call, put }) {
       const { data } = yield call(kbService.document_create, payload);
-      const { retcode, data: res } = data;
+      const { retcode } = data;
       if (retcode === 0) {
         put({
           type: 'kFModel/updateState',
@@ -181,19 +171,25 @@ const model: DvaModel<KFModelState> = {
       return retcode;
     },
     *document_run({ payload = {} }, { call, put }) {
-      const { data } = yield call(kbService.document_run, payload);
+      const { data } = yield call(
+        kbService.document_run,
+        omit(payload, ['knowledgeBaseId']),
+      );
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Run successfully ！');
+        if (payload.knowledgeBaseId) {
+          yield put({
+            type: 'getKfList',
+            payload: { kb_id: payload.knowledgeBaseId },
+          });
+        }
+        message.success('Operation successfully ！');
       }
       return retcode;
     },
     *document_change_parser({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(
-        kbService.document_change_parser,
-        payload,
-      );
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(kbService.document_change_parser, payload);
+      const { retcode } = data;
       if (retcode === 0) {
         put({
           type: 'updateState',

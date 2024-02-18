@@ -44,10 +44,6 @@ const routes = [
           },
           {
             path: '/knowledge/testing',
-            component: '@/pages/add-knowledge/components/knowledge-search',
-          },
-          {
-            path: '/knowledge/tempTesting',
             component: '@/pages/add-knowledge/components/knowledge-testing',
           },
         ],

@@ -1,9 +1,10 @@
-import { ReactComponent as ConfigrationIcon } from '@/assets/svg/knowledge-configration.svg';
+import { ReactComponent as ConfigurationIcon } from '@/assets/svg/knowledge-configration.svg';
 import { ReactComponent as DatasetIcon } from '@/assets/svg/knowledge-dataset.svg';
 import { ReactComponent as TestingIcon } from '@/assets/svg/knowledge-testing.svg';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/knowledgeHook';
 import { useSecondPathName } from '@/hooks/routeHook';
+import { IKnowledge } from '@/interfaces/database/knowledge';
 import { getWidth } from '@/utils';
-import { AntDesignOutlined } from '@ant-design/icons';
 import { Avatar, Menu, MenuProps, Space } from 'antd';
 import classNames from 'classnames';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -16,6 +17,9 @@ const KnowledgeSidebar = () => {
   const { id } = kAModel;
   let navigate = useNavigate();
   const activeKey = useSecondPathName();
+  const knowledgeDetails: IKnowledge = useSelector(
+    (state: any) => state.kSModel.knowledgeDetails,
+  );
 
   const [windowWidth, setWindowWidth] = useState(getWidth());
   const [collapsed, setCollapsed] = useState(false);
@@ -62,12 +66,7 @@ const KnowledgeSidebar = () => {
       getItem(
         routeMap[KnowledgeRouteKey.Configuration],
         KnowledgeRouteKey.Configuration,
-        <ConfigrationIcon />,
-      ),
-      getItem(
-        routeMap[KnowledgeRouteKey.TempTesting],
-        KnowledgeRouteKey.TempTesting,
-        <TestingIcon />,
+        <ConfigurationIcon />,
       ),
     ];
   }, [getItem]);
@@ -93,16 +92,17 @@ const KnowledgeSidebar = () => {
     };
   }, []);
 
+  useFetchKnowledgeBaseConfiguration();
+
   return (
     <div className={styles.sidebarWrapper}>
       <div className={styles.sidebarTop}>
         <Space size={8} direction="vertical">
-          <Avatar size={64} icon={<AntDesignOutlined />} />
-          <div className={styles.knowledgeTitle}>Cloud Computing</div>
+          <Avatar size={64} src={knowledgeDetails.avatar} />
+          <div className={styles.knowledgeTitle}>{knowledgeDetails.name}</div>
         </Space>
         <p className={styles.knowledgeDescription}>
-          A scalable, secure cloud-based database optimized for high-performance
-          computing and data storage.
+          {knowledgeDetails.description}
         </p>
       </div>
       <div className={styles.divider}></div>

@@ -1,4 +1,5 @@
 import { ITenantInfo } from '@/interfaces/database/knowledge';
+import { IThirdOAIModelCollection as IThirdAiModelCollection } from '@/interfaces/database/llm';
 import userService from '@/services/userService';
 import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
@@ -12,7 +13,7 @@ export interface SettingModelState {
   isShowSSModal: boolean;
   llm_factory: string;
   tenantIfo: Nullable<ITenantInfo>;
-  llmInfo: any;
+  llmInfo: IThirdAiModelCollection;
   myLlm: any[];
   factoriesList: any[];
 }
@@ -126,8 +127,8 @@ const model: DvaModel<SettingModelState> = {
       }
     },
     *llm_list({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(userService.llm_list, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(userService.llm_list, payload);
+      const { retcode, data: res } = data;
       if (retcode === 0) {
         yield put({
           type: 'updateState',

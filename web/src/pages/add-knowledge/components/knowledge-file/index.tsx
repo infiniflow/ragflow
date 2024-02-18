@@ -1,8 +1,5 @@
 import { KnowledgeRouteKey } from '@/constants/knowledge';
-import {
-  useDeleteDocumentById,
-  useKnowledgeBaseId,
-} from '@/hooks/knowledgeHook';
+import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
@@ -40,7 +37,6 @@ const KnowledgeFile = () => {
   const effects = useSelector((state: any) => state.loading.effects);
   const { data, total } = kFModel;
   const knowledgeBaseId = useKnowledgeBaseId();
-  const { removeDocument } = useDeleteDocumentById();
 
   const loading = getOneNamespaceEffectsLoading('kFModel', effects, [
     'getKfList',
@@ -132,23 +128,12 @@ const KnowledgeFile = () => {
       },
     });
   };
-  const onRmDocument = () => {
-    removeDocument(doc_id);
-  };
+
   const showCEFModal = () => {
     dispatch({
       type: 'kFModel/updateState',
       payload: {
         isShowCEFwModal: true,
-      },
-    });
-  };
-
-  const showSegmentSetModal = () => {
-    dispatch({
-      type: 'kFModel/updateState',
-      payload: {
-        isShowSegmentSetModal: true,
       },
     });
   };
@@ -185,31 +170,6 @@ const KnowledgeFile = () => {
       },
     ];
   }, []);
-  const chunkItems: MenuProps['items'] = [
-    {
-      key: '1',
-      label: (
-        <div>
-          <Button type="link" onClick={showSegmentSetModal}>
-            {' '}
-            分段设置
-          </Button>
-        </div>
-      ),
-    },
-    {
-      key: '2',
-      label: (
-        <div>
-          <Button type="link" onClick={onRmDocument}>
-            {' '}
-            Delete
-          </Button>
-        </div>
-      ),
-      // disabled: true,
-    },
-  ];
 
   const toChunk = (id: string) => {
     navigate(
