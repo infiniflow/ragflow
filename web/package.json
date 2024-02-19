@@ -22,16 +22,19 @@
     "lodash": "^4.17.21",
     "moment": "^2.30.1",
     "rc-tween-one": "^3.0.6",
+    "react-chat-elements": "^12.0.13",
     "react-i18next": "^14.0.0",
     "react-infinite-scroll-component": "^6.1.0",
     "umi": "^4.0.90",
-    "umi-request": "^1.4.0"
+    "umi-request": "^1.4.0",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@react-dev-inspector/umi4-plugin": "^2.0.1",
     "@types/lodash": "^4.14.202",
     "@types/react": "^18.0.33",
     "@types/react-dom": "^18.0.11",
+    "@types/uuid": "^9.0.8",
     "@umijs/lint": "^4.1.1",
     "@umijs/plugins": "^4.1.0",
     "cross-env": "^7.0.3",

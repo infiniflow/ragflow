@@ -68,7 +68,7 @@ const Configuration = () => {
     const fileList = values.avatar;
     let avatar;
 
-    if (Array.isArray(fileList)) {
+    if (Array.isArray(fileList) && fileList.length > 0) {
       avatar = fileList[0].thumbUrl;
     }
 
