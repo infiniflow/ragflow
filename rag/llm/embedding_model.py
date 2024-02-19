@@ -100,11 +100,11 @@ class QWenEmbed(Base):
                 input=texts[i:i+batch_size],
                 text_type="document"
             )
-            embds = [[]] * len(resp["output"]["embeddings"])
+            embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
             for e in resp["output"]["embeddings"]:
                 embds[e["text_index"]] = e["embedding"]
             res.extend(embds)
-            token_count += resp["usage"]["input_tokens"]
+            token_count += resp["usage"]["total_tokens"]
         return np.array(res), token_count
 
     def encode_queries(self, text):
@@ -113,7 +113,7 @@ class QWenEmbed(Base):
                 input=text[:2048],
                 text_type="query"
             )
-        return np.array(resp["output"]["embeddings"][0]["embedding"]), resp["usage"]["input_tokens"]
+        return np.array(resp["output"]["embeddings"][0]["embedding"]), resp["usage"]["total_tokens"]
 
 
 from zhipuai import ZhipuAI

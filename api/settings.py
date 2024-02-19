@@ -43,12 +43,14 @@ REQUEST_MAX_WAIT_SEC = 300
 
 USE_REGISTRY = get_base_config("use_registry")
 
-LLM = get_base_config("llm", {})
-CHAT_MDL = LLM.get("chat_model", "gpt-3.5-turbo")
-EMBEDDING_MDL = LLM.get("embedding_model", "text-embedding-ada-002")
-ASR_MDL = LLM.get("asr_model", "whisper-1")
+LLM = get_base_config("user_default_llm", {})
+LLM_FACTORY=LLM.get("factory", "通义千问")
+CHAT_MDL = LLM.get("chat_model", "qwen-plus")
+EMBEDDING_MDL = LLM.get("embedding_model", "text-embedding-v2")
+ASR_MDL = LLM.get("asr_model", "paraformer-realtime-8k-v1")
+IMAGE2TEXT_MDL = LLM.get("image2text_model", "qwen-vl-max")
+API_KEY = LLM.get("api_key", "infiniflow API Key")
 PARSERS = LLM.get("parsers", "general:General,qa:Q&A,resume:Resume,naive:Naive,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture")
-IMAGE2TEXT_MDL = LLM.get("image2text_model", "gpt-4-vision-preview")
 
 # distribution
 DEPENDENT_DISTRIBUTION = get_base_config("dependent_distribution", False)

@@ -129,6 +129,10 @@ class Pdf(HuParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+    """
+        Only pdf is supported.
+        The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
+    """
     pdf_parser = None
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()

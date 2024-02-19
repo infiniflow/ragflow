@@ -262,17 +262,18 @@ def rename():
         return server_error_response(e)
 
 
-@manager.route('/get', methods=['GET'])
-@login_required
-def get():
-    doc_id = request.args["doc_id"]
+@manager.route('/get/<doc_id>', methods=['GET'])
+def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
             return get_data_error_result(retmsg="Document not found!")
 
-        blob = MINIO.get(doc.kb_id, doc.location)
-        return get_json_result(data={"base64": base64.b64decode(blob)})
+        response = flask.make_response(MINIO.get(doc.kb_id, doc.location))
+        ext = re.search(r"\.([^.]+)$", doc.name)
+        if ext:
+            response.headers.set('Content-Type', 'application/%s'%ext.group(1))
+        return response
     except Exception as e:
         return server_error_response(e)
 

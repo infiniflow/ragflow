@@ -39,6 +39,11 @@ class Pdf(HuParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+    """
+        Supported file formats are docx, pdf, txt.
+        Since a book is long and not all the parts are useful, if it's a PDF,
+        please setup the page ranges for every book in order eliminate negative effects and save elapsed computing time.
+    """
     doc = {
         "docnm_kwd": filename,
         "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))

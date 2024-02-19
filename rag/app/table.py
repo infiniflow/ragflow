@@ -100,7 +100,20 @@ def column_data_type(arr):
 
 
 def chunk(filename, binary=None, callback=None, **kwargs):
-    dfs = []
+    """
+        Excel and csv(txt) format files are supported.
+        For csv or txt file, the delimiter between columns is TAB.
+        The first line must be column headers.
+        Column headers must be meaningful terms inorder to make our NLP model understanding.
+        It's good to enumerate some synonyms using slash '/' to separate, and even better to
+        enumerate values using brackets like 'gender/sex(male, female)'.
+        Here are some examples for headers:
+            1. supplier/vendor\tcolor(yellow, red, brown)\tgender/sex(male, female)\tsize(M,L,XL,XXL)
+            2. 姓名/名字\t电话/手机/微信\t最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）
+
+        Every row in table will be treated as a chunk.
+    """
+
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
@@ -155,7 +168,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
                 del df[n]
         clmns = df.columns.values
         txts = list(copy.deepcopy(clmns))
-        py_clmns = [PY.get_pinyins(n)[0].replace("-", "_") for n in clmns]
+        py_clmns = [PY.get_pinyins(re.sub(r"(/.*|（[^（）]+?）|\([^()]+?\))", "", n), '_')[0] for n in clmns]
         clmn_tys = []
         for j in range(len(clmns)):
             cln, ty = column_data_type(df[clmns[j]])

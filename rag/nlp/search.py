@@ -92,7 +92,7 @@ class Dealer:
             assert emb_mdl, "No embedding model selected"
             s["knn"] = self._vector(
                 qst, emb_mdl, req.get(
-                    "similarity", 0.4), ps)
+                    "similarity", 0.1), ps)
             s["knn"]["filter"] = bqry.to_dict()
             if "highlight" in s:
                 del s["highlight"]
@@ -106,7 +106,7 @@ class Dealer:
                 bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
             s["query"] = bqry.to_dict()
             s["knn"]["filter"] = bqry.to_dict()
-            s["knn"]["similarity"] = 0.7
+            s["knn"]["similarity"] = 0.17
             res = self.es.search(s, idxnm=idxnm, timeout="600s", src=src)
 
         kwds = set([])
@@ -171,7 +171,7 @@ class Dealer:
                     continue
                 if not isinstance(v, type("")):
                     m[n] = str(m[n])
-                m[n] = rmSpace(m[n])
+                if n.find("tks")>0: m[n] = rmSpace(m[n])
 
             if m:
                 res[d["id"]] = m
@@ -303,21 +303,22 @@ class Dealer:
 
         return ranks
 
-    def sql_retrieval(self, sql, fetch_size=128):
+    def sql_retrieval(self, sql, fetch_size=128, format="json"):
         sql = re.sub(r"[ ]+", " ", sql)
+        sql = sql.replace("%", "")
+        es_logger.info(f"Get es sql: {sql}")
         replaces = []
-        for r in re.finditer(r" ([a-z_]+_l?tks like |[a-z_]+_l?tks ?= ?)'([^']+)'", sql):
-            fld, v = r.group(1), r.group(2)
-            fld = re.sub(r" ?(like|=)$", "", fld).lower()
-            if v[0] == "%%": v = v[1:-1]
-            match = " MATCH({}, '{}', 'operator=OR;fuzziness=AUTO:1,3;minimum_should_match=30%') ".format(fld, huqie.qie(v))
-            replaces.append((r.group(1)+r.group(2), match))
+        for r in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
+            fld, v = r.group(1), r.group(3)
+            match = " MATCH({}, '{}', 'operator=OR;fuzziness=AUTO:1,3;minimum_should_match=30%') ".format(fld, huqie.qieqie(huqie.qie(v)))
+            replaces.append(("{}{}'{}'".format(r.group(1), r.group(2), r.group(3)), match))
 
-        for p, r in replaces: sql.replace(p, r)
+        for p, r in replaces: sql = sql.replace(p, r, 1)
+        es_logger.info(f"To es: {sql}")
 
         try:
-            tbl = self.es.sql(sql, fetch_size)
+            tbl = self.es.sql(sql, fetch_size, format)
             return tbl
         except Exception as e:
-            es_logger(f"SQL failure: {sql} =>" + str(e))
+            es_logger.error(f"SQL failure: {sql} =>" + str(e))
 

@@ -70,7 +70,17 @@ def beAdoc(d, q, a, eng):
 
 
 def chunk(filename, binary=None, callback=None, **kwargs):
+    """
+        Excel and csv(txt) format files are supported.
+        If the file is in excel format, there should be 2 column question and answer without header.
+        And question column is ahead of answer column.
+        And it's O.K if it has multiple sheets as long as the columns are rightly composed.
 
+        If it's in csv format, it should be UTF-8 encoded. Use TAB as delimiter to separate question and answer.
+
+        All the deformed lines will be ignored.
+        Every pair of Q&A will be treated as a chunk.
+    """
     res = []
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
