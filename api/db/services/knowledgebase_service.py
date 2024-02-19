@@ -77,9 +77,12 @@ class KnowledgebaseService(CommonService):
                 if isinstance(v, dict):
                     assert isinstance(old[k], dict)
                     dfs_update(old[k], v)
+                if isinstance(v, list):
+                    assert isinstance(old[k], list)
+                    old[k] = list(set(old[k]+v))
                 else: old[k] = v
         dfs_update(m.parser_config, config)
-        cls.update_by_id(id, m.parser_config)
+        cls.update_by_id(id, {"parser_config": m.parser_config})
 
 
     @classmethod
@@ -88,6 +91,6 @@ class KnowledgebaseService(CommonService):
         conf = {}
         for k in cls.get_by_ids(ids):
             if k.parser_config and "field_map" in k.parser_config:
-                conf.update(k.parser_config)
+                conf.update(k.parser_config["field_map"])
         return conf
 

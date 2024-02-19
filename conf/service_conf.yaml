@@ -11,7 +11,7 @@ permission:
   dataset: false
 ragflow:
   # you must set real ip address, 127.0.0.1 and 0.0.0.0 is not supported
-  host: 127.0.0.1
+  host: 0.0.0.0
   http_port: 9380
 database:
   name: 'rag_flow'
@@ -21,6 +21,19 @@ database:
   port: 5455
   max_connections: 100
   stale_timeout: 30
+minio:
+  user: 'rag_flow'
+  passwd: 'infini_rag_flow'
+  host: '123.60.95.134:9000'
+es:
+  hosts: 'http://123.60.95.134:9200'
+user_default_llm:
+  factory: '通义千问'
+  chat_model: 'qwen-plus'
+  embedding_model: 'text-embedding-v2'
+  asr_model: 'paraformer-realtime-8k-v1'
+  image2text_model: 'qwen-vl-max'
+  api_key: 'sk-xxxxxxxxxxxxx'
 oauth:
   github:
     client_id: 302129228f0d96055bee

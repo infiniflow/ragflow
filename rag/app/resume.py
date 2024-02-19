@@ -4,24 +4,34 @@ import os
 import re
 import requests
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.settings import stat_logger
 from rag.nlp import huqie
 
 from rag.settings import cron_logger
 from rag.utils import rmSpace
 
+forbidden_select_fields4resume = [
+    "name_pinyin_kwd", "edu_first_fea_kwd", "degree_kwd", "sch_rank_kwd", "edu_fea_kwd"
+]
 
 def chunk(filename, binary=None, callback=None, **kwargs):
+    """
+    The supported file formats are pdf, docx and txt.
+    To maximize the effectiveness, parse the resume correctly,
+    please visit https://github.com/infiniflow/ragflow, and sign in the our demo web-site
+    to get token. It's FREE!
+    Set INFINIFLOW_SERVER and INFINIFLOW_TOKEN in '.env' file or
+    using 'export' to set both environment variables: INFINIFLOW_SERVER and INFINIFLOW_TOKEN in docker container.
+    """
     if not re.search(r"\.(pdf|doc|docx|txt)$", filename, flags=re.IGNORECASE):
         raise NotImplementedError("file type not supported yet(pdf supported)")
 
     url = os.environ.get("INFINIFLOW_SERVER")
-    if not url:
-        raise EnvironmentError(
-            "Please set environment variable: 'INFINIFLOW_SERVER'")
     token = os.environ.get("INFINIFLOW_TOKEN")
-    if not token:
-        raise EnvironmentError(
-            "Please set environment variable: 'INFINIFLOW_TOKEN'")
+    if not url or not token:
+        stat_logger.warning(
+            "INFINIFLOW_SERVER is not specified. To maximize the effectiveness, please visit https://github.com/infiniflow/ragflow, and sign in the our demo web site to get token. It's FREE! Using 'export' to set both environment variables: INFINIFLOW_SERVER and INFINIFLOW_TOKEN.")
+        return []
 
     if not binary:
         with open(filename, "rb") as f:
@@ -44,22 +54,28 @@ def chunk(filename, binary=None, callback=None, **kwargs):
 
     callback(0.2, "Resume parsing is going on...")
     resume = remote_call()
+    if len(resume.keys()) < 7:
+        callback(-1, "Resume is not successfully parsed.")
+        return []
     callback(0.6, "Done parsing. Chunking...")
     print(json.dumps(resume, ensure_ascii=False, indent=2))
 
     field_map = {
         "name_kwd": "姓名/名字",
+        "name_pinyin_kwd": "姓名拼音/名字拼音",
         "gender_kwd": "性别（男，女）",
         "age_int": "年龄/岁/年纪",
         "phone_kwd": "电话/手机/微信",
         "email_tks": "email/e-mail/邮箱",
         "position_name_tks": "职位/职能/岗位/职责",
-        "expect_position_name_tks": "期望职位/期望职能/期望岗位",
+        "expect_city_names_tks": "期望城市",
+        "work_exp_flt": "工作年限/工作年份/N年经验/毕业了多少年",
+        "corporation_name_tks": "最近就职(上班)的公司/上一家公司",
 
-        "hightest_degree_kwd": "最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）",
-        "first_degree_kwd": "第一学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）",
-        "first_major_tks": "第一学历专业",
         "first_school_name_tks": "第一学历毕业学校",
+        "first_degree_kwd": "第一学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）",
+        "highest_degree_kwd": "最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）",
+        "first_major_tks": "第一学历专业",
         "edu_first_fea_kwd": "第一学历标签（211，留学，双一流，985，海外知名，重点大学，中专，专升本，专科，本科，大专）",
 
         "degree_kwd": "过往学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）",
@@ -68,14 +84,14 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         "sch_rank_kwd": "学校标签（顶尖学校，精英学校，优质学校，一般学校）",
         "edu_fea_kwd": "教育标签（211，留学，双一流，985，海外知名，重点大学，中专，专升本，专科，本科，大专）",
 
-        "work_exp_flt": "工作年限/工作年份/N年经验/毕业了多少年",
-        "birth_dt": "生日/出生年份",
         "corp_nm_tks": "就职过的公司/之前的公司/上过班的公司",
-        "corporation_name_tks": "最近就职(上班)的公司/上一家公司",
         "edu_end_int": "毕业年份",
-        "expect_city_names_tks": "期望城市",
-        "industry_name_tks": "所在行业"
+        "industry_name_tks": "所在行业",
+
+        "birth_dt": "生日/出生年份",
+        "expect_position_name_tks": "期望职位/期望职能/期望岗位",
     }
+
     titles = []
     for n in ["name_kwd", "gender_kwd", "position_name_tks", "age_int"]:
         v = resume.get(n, "")
@@ -105,6 +121,10 @@ def chunk(filename, binary=None, callback=None, **kwargs):
     doc["content_ltks"] = huqie.qie(doc["content_with_weight"])
     doc["content_sm_ltks"] = huqie.qieqie(doc["content_ltks"])
     for n, _ in field_map.items():
+        if n not in resume:continue
+        if isinstance(resume[n], list) and (len(resume[n]) == 1 or n not in forbidden_select_fields4resume):
+            resume[n] = resume[n][0]
+        if n.find("_tks")>0: resume[n] = huqie.qieqie(resume[n])
         doc[n] = resume[n]
 
     print(doc)

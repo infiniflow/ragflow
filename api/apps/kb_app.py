@@ -38,6 +38,9 @@ def create():
         req["id"] = get_uuid()
         req["tenant_id"] = current_user.id
         req["created_by"] = current_user.id
+        e, t = TenantService.get_by_id(current_user.id)
+        if not e: return get_data_error_result(retmsg="Tenant not found.")
+        req["embd_id"] = t.embd_id
         if not KnowledgebaseService.save(**req): return get_data_error_result()
         return get_json_result(data={"kb_id": req["id"]})
     except Exception as e:

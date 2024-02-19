@@ -53,9 +53,10 @@ class HuParser:
 
     def __remote_call(self, species, images, thr=0.7):
         url = os.environ.get("INFINIFLOW_SERVER")
-        if not url:raise EnvironmentError("Please set environment variable: 'INFINIFLOW_SERVER'")
         token = os.environ.get("INFINIFLOW_TOKEN")
-        if not token:raise EnvironmentError("Please set environment variable: 'INFINIFLOW_TOKEN'")
+        if not url or not token:
+            logging.warning("INFINIFLOW_SERVER is not specified. To maximize the effectiveness, please visit https://github.com/infiniflow/ragflow, and sign in the our demo web site to get token. It's FREE! Using 'export' to set both environment variables: INFINIFLOW_SERVER and INFINIFLOW_TOKEN.")
+            return []
 
         def convert_image_to_bytes(PILimage):
             image = BytesIO()
