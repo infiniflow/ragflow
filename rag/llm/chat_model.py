@@ -32,7 +32,7 @@ class GptTurbo(Base):
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
-        history.insert(0, {"role": "system", "content": system})
+        if system: history.insert(0, {"role": "system", "content": system})
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=history,
@@ -49,11 +49,12 @@ class QWenChat(Base):
 
     def chat(self, system, history, gen_conf):
         from http import HTTPStatus
-        history.insert(0, {"role": "system", "content": system})
+        if system: history.insert(0, {"role": "system", "content": system})
         response = Generation.call(
             self.model_name,
             messages=history,
-            result_format='message'
+            result_format='message',
+            **gen_conf
         )
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'], response.usage.output_tokens
@@ -68,10 +69,11 @@ class ZhipuChat(Base):
 
     def chat(self, system, history, gen_conf):
         from http import HTTPStatus
-        history.insert(0, {"role": "system", "content": system})
+        if system: history.insert(0, {"role": "system", "content": system})
         response = self.client.chat.completions.create(
             self.model_name,
-            messages=history
+            messages=history,
+            **gen_conf
         )
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'], response.usage.completion_tokens

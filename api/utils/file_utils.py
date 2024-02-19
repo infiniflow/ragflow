@@ -164,10 +164,10 @@ def thumbnail(filename, blob):
         buffered = BytesIO()
         Image.frombytes("RGB", [pix.width, pix.height],
                         pix.samples).save(buffered, format="png")
-        return "data:image/png;base64," + base64.b64encode(buffered.getvalue())
+        return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
-        return ("data:image/%s;base64,"%filename.split(".")[-1]) + base64.b64encode(Image.open(BytesIO(blob)).thumbnail((30, 30)).tobytes())
+        return ("data:image/%s;base64,"%filename.split(".")[-1]) + base64.b64encode(Image.open(BytesIO(blob)).thumbnail((30, 30)).tobytes()).decode("utf-8")
 
     if re.match(r".*\.(ppt|pptx)$", filename):
         import aspose.slides as slides
@@ -176,7 +176,7 @@ def thumbnail(filename, blob):
             with slides.Presentation(BytesIO(blob)) as presentation:
                 buffered = BytesIO()
                 presentation.slides[0].get_thumbnail(0.03, 0.03).save(buffered, drawing.imaging.ImageFormat.png)
-                return "data:image/png;base64," + base64.b64encode(buffered.getvalue())
+                return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
         except Exception as e:
             pass
 

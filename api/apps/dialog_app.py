@@ -27,7 +27,7 @@ from api.utils.api_utils import get_json_result
 
 @manager.route('/set', methods=['POST'])
 @login_required
-def set():
+def set_dialog():
     req = request.json
     dialog_id = req.get("dialog_id")
     name = req.get("name", "New Dialog")

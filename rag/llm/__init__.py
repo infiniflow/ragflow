@@ -21,7 +21,7 @@ from .cv_model import *
 EmbeddingModel = {
     "Infiniflow": HuEmbedding,
     "OpenAI": OpenAIEmbed,
-    "通义千问": QWenEmbed,
+    "通义千问": HuEmbedding, #QWenEmbed,
 }
 
 
