@@ -1,3 +1,4 @@
+import { DeleteOutlined } from '@ant-design/icons';
 import {
   Button,
   Col,
@@ -10,18 +11,20 @@ import {
   Table,
   TableProps,
 } from 'antd';
+import classNames from 'classnames';
+import { useState } from 'react';
 import { v4 as uuid } from 'uuid';
+import { EditableCell, EditableRow } from './editable-cell';
 import { ISegmentedContentProps } from './interface';
 
-import { DeleteOutlined } from '@ant-design/icons';
-import { useState } from 'react';
-import { EditableCell, EditableRow } from './editable-cell';
 import styles from './index.less';
 
 interface DataType {
   key: string;
   optional: boolean;
 }
+
+const { Option } = Select;
 
 const PromptEngine = ({ show }: ISegmentedContentProps) => {
   const [dataSource, setDataSource] = useState<DataType[]>([]);
@@ -96,17 +99,20 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
   };
 
   return (
-    <>
+    <section
+      className={classNames({
+        [styles.segmentedHidden]: !show,
+      })}
+    >
       <Form.Item
         label="Orchestrate"
         name="orchestrate"
-        hidden={!show}
         rules={[{ required: true, message: 'Please input!' }]}
       >
-        <Input.TextArea />
+        <Input.TextArea autoSize={{ maxRows: 5, minRows: 5 }} />
       </Form.Item>
       <Divider></Divider>
-      <section className={styles.variableContainer}>
+      <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
           <Col span={6} className={styles.variableAlign}>
             <label className={styles.variableLabel}>Variables</label>
@@ -136,12 +142,21 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
       <Form.Item
         label="Select one context"
         name="context"
-        hidden={!show}
-        rules={[{ required: true, message: 'Please input!' }]}
+        rules={[
+          {
+            required: true,
+            message: 'Please select your favourite colors!',
+            type: 'array',
+          },
+        ]}
       >
-        <Select />
+        <Select mode="multiple" placeholder="Please select favourite colors">
+          <Option value="red">Red</Option>
+          <Option value="green">Green</Option>
+          <Option value="blue">Blue</Option>
+        </Select>
       </Form.Item>
-    </>
+    </section>
   );
 };
 
