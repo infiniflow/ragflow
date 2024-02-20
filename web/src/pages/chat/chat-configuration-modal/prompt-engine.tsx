@@ -1,3 +1,4 @@
+import SimilaritySlider from '@/components/similarity-slider';
 import { DeleteOutlined } from '@ant-design/icons';
 import {
   Button,
@@ -6,7 +7,7 @@ import {
   Form,
   Input,
   Row,
-  Select,
+  Slider,
   Switch,
   Table,
   TableProps,
@@ -24,7 +25,11 @@ interface DataType {
   optional: boolean;
 }
 
-const { Option } = Select;
+type FieldType = {
+  similarity_threshold?: number;
+  vector_similarity_weight?: number;
+  top_n?: number;
+};
 
 const PromptEngine = ({ show }: ISegmentedContentProps) => {
   const [dataSource, setDataSource] = useState<DataType[]>([]);
@@ -112,6 +117,10 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
         <Input.TextArea autoSize={{ maxRows: 5, minRows: 5 }} />
       </Form.Item>
       <Divider></Divider>
+      <SimilaritySlider></SimilaritySlider>
+      <Form.Item<FieldType> label="Top n" name={'top_n'}>
+        <Slider defaultValue={0} max={30} />
+      </Form.Item>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
           <Col span={6} className={styles.variableAlign}>
@@ -139,23 +148,6 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
           </Row>
         )}
       </section>
-      <Form.Item
-        label="Select one context"
-        name="context"
-        rules={[
-          {
-            required: true,
-            message: 'Please select your favourite colors!',
-            type: 'array',
-          },
-        ]}
-      >
-        <Select mode="multiple" placeholder="Please select favourite colors">
-          <Option value="red">Red</Option>
-          <Option value="green">Green</Option>
-          <Option value="blue">Blue</Option>
-        </Select>
-      </Form.Item>
     </section>
   );
 };

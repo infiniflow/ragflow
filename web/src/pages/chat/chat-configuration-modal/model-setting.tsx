@@ -4,8 +4,6 @@ import { ISegmentedContentProps } from './interface';
 
 import styles from './index.less';
 
-const { Option } = Select;
-
 const ModelSetting = ({ show }: ISegmentedContentProps) => {
   return (
     <section
@@ -32,22 +30,23 @@ const ModelSetting = ({ show }: ISegmentedContentProps) => {
         <Flex gap={20}>
           <Flex flex={1}>
             <Form.Item
-              name={['address', 'province']}
+              name={'temperature'}
               noStyle
               rules={[{ required: true, message: 'Province is required' }]}
             >
-              <Slider style={{ display: 'inline-block', width: '100%' }} />
+              <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
           </Flex>
           <Form.Item
-            name={['address', 'street']}
+            name={'temperature'}
             noStyle
             rules={[{ required: true, message: 'Street is required' }]}
           >
             <InputNumber
-              style={{
-                width: 50,
-              }}
+              className={styles.sliderInputNumber}
+              max={1}
+              min={0}
+              step={0.01}
             />
           </Form.Item>
         </Flex>
@@ -56,22 +55,23 @@ const ModelSetting = ({ show }: ISegmentedContentProps) => {
         <Flex gap={20}>
           <Flex flex={1}>
             <Form.Item
-              name={['address', 'province']}
+              name={'top_p'}
               noStyle
               rules={[{ required: true, message: 'Province is required' }]}
             >
-              <Slider style={{ display: 'inline-block', width: '100%' }} />
+              <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
           </Flex>
           <Form.Item
-            name={['address', 'street']}
+            name={'top_p'}
             noStyle
             rules={[{ required: true, message: 'Street is required' }]}
           >
             <InputNumber
-              style={{
-                width: 50,
-              }}
+              className={styles.sliderInputNumber}
+              max={1}
+              min={0}
+              step={0.01}
             />
           </Form.Item>
         </Flex>
@@ -80,22 +80,23 @@ const ModelSetting = ({ show }: ISegmentedContentProps) => {
         <Flex gap={20}>
           <Flex flex={1}>
             <Form.Item
-              name={['address', 'province']}
+              name={'presence_penalty'}
               noStyle
               rules={[{ required: true, message: 'Province is required' }]}
             >
-              <Slider style={{ display: 'inline-block', width: '100%' }} />
+              <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
           </Flex>
           <Form.Item
-            name={['address', 'street']}
+            name={'presence_penalty'}
             noStyle
             rules={[{ required: true, message: 'Street is required' }]}
           >
             <InputNumber
-              style={{
-                width: 50,
-              }}
+              className={styles.sliderInputNumber}
+              max={1}
+              min={0}
+              step={0.01}
             />
           </Form.Item>
         </Flex>
@@ -104,22 +105,23 @@ const ModelSetting = ({ show }: ISegmentedContentProps) => {
         <Flex gap={20}>
           <Flex flex={1}>
             <Form.Item
-              name={['address', 'province']}
+              name={'frequency_penalty'}
               noStyle
               rules={[{ required: true, message: 'Province is required' }]}
             >
-              <Slider style={{ display: 'inline-block', width: '100%' }} />
+              <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
           </Flex>
           <Form.Item
-            name={['address', 'street']}
+            name={'frequency_penalty'}
             noStyle
             rules={[{ required: true, message: 'Street is required' }]}
           >
             <InputNumber
-              style={{
-                width: 50,
-              }}
+              className={styles.sliderInputNumber}
+              max={1}
+              min={0}
+              step={0.01}
             />
           </Form.Item>
         </Flex>
@@ -128,22 +130,26 @@ const ModelSetting = ({ show }: ISegmentedContentProps) => {
         <Flex gap={20}>
           <Flex flex={1}>
             <Form.Item
-              name={['address', 'province']}
+              name={'max_tokens'}
               noStyle
               rules={[{ required: true, message: 'Province is required' }]}
             >
-              <Slider style={{ display: 'inline-block', width: '100%' }} />
+              <Slider
+                className={styles.variableSlider}
+                defaultValue={0}
+                max={2048}
+              />
             </Form.Item>
           </Flex>
           <Form.Item
-            name={['address', 'street']}
+            name={'max_tokens'}
             noStyle
             rules={[{ required: true, message: 'Street is required' }]}
           >
             <InputNumber
-              style={{
-                width: 50,
-              }}
+              className={styles.sliderInputNumber}
+              max={2048}
+              min={0}
             />
           </Form.Item>
         </Flex>

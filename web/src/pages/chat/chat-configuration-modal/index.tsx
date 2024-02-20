@@ -11,8 +11,8 @@ import styles from './index.less';
 
 enum ConfigurationSegmented {
   AssistantSetting = 'Assistant Setting',
-  ModelSetting = 'Model Setting',
   PromptEngine = 'Prompt Engine',
+  ModelSetting = 'Model Setting',
 }
 
 const segmentedMap = {

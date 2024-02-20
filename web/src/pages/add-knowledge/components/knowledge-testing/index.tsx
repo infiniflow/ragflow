@@ -16,14 +16,10 @@ const KnowledgeTesting = () => {
   const handleTesting = async () => {
     const values = await form.validateFields();
     console.info(values);
-    const similarity_threshold = values.similarity_threshold / 100;
-    const vector_similarity_weight = values.vector_similarity_weight / 100;
     dispatch({
       type: 'testingModel/testDocumentChunk',
       payload: {
         ...values,
-        similarity_threshold,
-        vector_similarity_weight,
         kb_id: knowledgeBaseId,
       },
     });
