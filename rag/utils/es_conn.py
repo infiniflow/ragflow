@@ -241,7 +241,7 @@ class HuEs:
         es_logger.error("ES search timeout for 3 times!")
         raise Exception("ES search timeout.")
 
-    def sql(self, sql, fetch_size=128, format="json", timeout=2):
+    def sql(self, sql, fetch_size=128, format="json", timeout="2s"):
         for i in range(3):
             try:
                 res = self.es.sql.query(body={"query": sql, "fetch_size": fetch_size}, format=format, request_timeout=timeout)

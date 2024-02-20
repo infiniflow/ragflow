@@ -47,7 +47,7 @@ from api.utils.file_utils import get_project_base_directory
 BATCH_SIZE = 64
 
 FACTORY = {
-    ParserType.GENERAL.value: laws,
+    ParserType.GENERAL.value: manual,
     ParserType.PAPER.value: paper,
     ParserType.BOOK.value: book,
     ParserType.PRESENTATION.value: presentation,
@@ -119,8 +119,8 @@ def build(row, cvmdl):
     chunker = FACTORY[row["parser_id"].lower()]
     try:
         cron_logger.info("Chunkking {}/{}".format(row["location"], row["name"]))
-        cks = chunker.chunk(row["name"], MINIO.get(row["kb_id"], row["location"]), row["from_page"], row["to_page"],
-                            callback, kb_id=row["kb_id"], parser_config=row["parser_config"])
+        cks = chunker.chunk(row["name"], binary = MINIO.get(row["kb_id"], row["location"]), from_page=row["from_page"], to_page=row["to_page"],
+                            callback = callback, kb_id=row["kb_id"], parser_config=row["parser_config"])
     except Exception as e:
         if re.search("(No such file|not found)", str(e)):
             callback(-1, "Can not find file <%s>" % row["doc_name"])
@@ -129,7 +129,7 @@ def build(row, cvmdl):
 
         cron_logger.warn("Chunkking {}/{}: {}".format(row["location"], row["name"], str(e)))
 
-        return []
+        return
 
     callback(msg="Finished slicing files. Start to embedding the content.")
 
@@ -211,6 +211,7 @@ def main(comm, mod):
 
         st_tm = timer()
         cks = build(r, cv_mdl)
+        if cks is None:continue
         if not cks:
             tmf.write(str(r["update_time"]) + "\n")
             callback(1., "No chunk! Done!")

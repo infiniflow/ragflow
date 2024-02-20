@@ -58,8 +58,10 @@ class Pdf(HuParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+    """
+        Only pdf is supported.
+    """
     pdf_parser = None
-    paper = {}
 
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()

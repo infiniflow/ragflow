@@ -47,11 +47,6 @@ def init_llm_factory():
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
         },{
-            "name": "Infiniflow",
-            "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-            "status": "1",
-        },{
             "name": "智普AI",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
@@ -135,59 +130,33 @@ def init_llm_factory():
             "model_type": LLMType.SPEECH2TEXT.value
         },{
             "fid": factory_infos[1]["name"],
-            "llm_name": "qwen_vl_chat_v1",
-            "tags": "LLM,CHAT,IMAGE2TEXT",
-            "max_tokens": 765,
-            "model_type": LLMType.IMAGE2TEXT.value
-        },
-        # ----------------------- Infiniflow -----------------------
-        {
-            "fid": factory_infos[2]["name"],
-            "llm_name": "gpt-3.5-turbo",
-            "tags": "LLM,CHAT,4K",
-            "max_tokens": 4096,
-            "model_type": LLMType.CHAT.value
-        },{
-            "fid": factory_infos[2]["name"],
-            "llm_name": "text-embedding-ada-002",
-            "tags": "TEXT EMBEDDING,8K",
-            "max_tokens": 8191,
-            "model_type": LLMType.EMBEDDING.value
-        },{
-            "fid": factory_infos[2]["name"],
-            "llm_name": "whisper-1",
-            "tags": "SPEECH2TEXT",
-            "max_tokens": 25*1024*1024,
-            "model_type": LLMType.SPEECH2TEXT.value
-        },{
-            "fid": factory_infos[2]["name"],
-            "llm_name": "gpt-4-vision-preview",
+            "llm_name": "qwen-vl-max",
             "tags": "LLM,CHAT,IMAGE2TEXT",
             "max_tokens": 765,
             "model_type": LLMType.IMAGE2TEXT.value
         },
         # ---------------------- ZhipuAI ----------------------
         {
-            "fid": factory_infos[3]["name"],
+            "fid": factory_infos[2]["name"],
             "llm_name": "glm-3-turbo",
             "tags": "LLM,CHAT,",
             "max_tokens": 128 * 1000,
             "model_type": LLMType.CHAT.value
         }, {
-            "fid": factory_infos[3]["name"],
+            "fid": factory_infos[2]["name"],
             "llm_name": "glm-4",
             "tags": "LLM,CHAT,",
             "max_tokens": 128 * 1000,
             "model_type": LLMType.CHAT.value
         }, {
-            "fid": factory_infos[3]["name"],
+            "fid": factory_infos[2]["name"],
             "llm_name": "glm-4v",
             "tags": "LLM,CHAT,IMAGE2TEXT",
             "max_tokens": 2000,
             "model_type": LLMType.IMAGE2TEXT.value
         },
         {
-            "fid": factory_infos[3]["name"],
+            "fid": factory_infos[2]["name"],
             "llm_name": "embedding-2",
             "tags": "TEXT EMBEDDING",
             "max_tokens": 512,

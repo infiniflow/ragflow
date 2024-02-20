@@ -21,20 +21,21 @@ from api.db.services.dialog_service import DialogService, ConversationService
 from api.db import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, LLMBundle
-from api.settings import access_logger
+from api.settings import access_logger, stat_logger
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
+from rag.app.resume import forbidden_select_fields4resume
 from rag.llm import ChatModel
 from rag.nlp import retrievaler
 from rag.nlp.search import index_name
-from rag.utils import num_tokens_from_string, encoder
+from rag.utils import num_tokens_from_string, encoder, rmSpace
 
 
 @manager.route('/set', methods=['POST'])
 @login_required
 @validate_request("dialog_id")
-def set():
+def set_conversation():
     req = request.json
     conv_id = req.get("conversation_id")
     if conv_id:
@@ -96,9 +97,10 @@ def rm():
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route('/list', methods=['GET'])
 @login_required
-def list():
+def list_convsersation():
     dialog_id = request.args["dialog_id"]
     try:
         convs = ConversationService.query(dialog_id=dialog_id)
@@ -112,7 +114,7 @@ def message_fit_in(msg, max_length=4000):
     def count():
         nonlocal msg
         tks_cnts = []
-        for m in msg:tks_cnts.append({"role": m["role"], "count": num_tokens_from_string(m["content"])})
+        for m in msg: tks_cnts.append({"role": m["role"], "count": num_tokens_from_string(m["content"])})
         total = 0
         for m in tks_cnts: total += m["count"]
         return total
@@ -121,22 +123,22 @@ def message_fit_in(msg, max_length=4000):
     if c < max_length: return c, msg
     msg = [m for m in msg if m.role in ["system", "user"]]
     c = count()
-    if c < max_length:return c, msg
+    if c < max_length: return c, msg
     msg_ = [m for m in msg[:-1] if m.role == "system"]
     msg_.append(msg[-1])
     msg = msg_
     c = count()
-    if c < max_length:return c, msg
+    if c < max_length: return c, msg
     ll = num_tokens_from_string(msg_[0].content)
     l = num_tokens_from_string(msg_[-1].content)
-    if ll/(ll + l) > 0.8:
+    if ll / (ll + l) > 0.8:
         m = msg_[0].content
-        m = encoder.decode(encoder.encode(m)[:max_length-l])
+        m = encoder.decode(encoder.encode(m)[:max_length - l])
         msg[0].content = m
         return max_length, msg
 
     m = msg_[1].content
-    m = encoder.decode(encoder.encode(m)[:max_length-l])
+    m = encoder.decode(encoder.encode(m)[:max_length - l])
     msg[1].content = m
     return max_length, msg
 
@@ -148,8 +150,8 @@ def completion():
     req = request.json
     msg = []
     for m in req["messages"]:
-        if m["role"] == "system":continue
-        if m["role"] == "assistant" and not msg:continue
+        if m["role"] == "system": continue
+        if m["role"] == "assistant" and not msg: continue
         msg.append({"role": m["role"], "content": m["content"]})
     try:
         e, dia = DialogService.get_by_id(req["dialog_id"])
@@ -166,7 +168,7 @@ def chat(dialog, messages, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     llm = LLMService.query(llm_name=dialog.llm_id)
     if not llm:
-        raise LookupError("LLM(%s) not found"%dialog.llm_id)
+        raise LookupError("LLM(%s) not found" % dialog.llm_id)
     llm = llm[0]
     question = messages[-1]["content"]
     embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING)
@@ -175,19 +177,21 @@ def chat(dialog, messages, **kwargs):
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     ## try to use sql if field mapping is good to go
     if field_map:
-        markdown_tbl,chunks = use_sql(question, field_map, dialog.tenant_id, chat_mdl)
+        stat_logger.info("Use SQL to retrieval.")
+        markdown_tbl, chunks = use_sql(question, field_map, dialog.tenant_id, chat_mdl)
         if markdown_tbl:
             return {"answer": markdown_tbl, "retrieval": {"chunks": chunks}}
 
     prompt_config = dialog.prompt_config
     for p in prompt_config["parameters"]:
-        if p["key"] == "knowledge":continue
-        if p["key"] not in kwargs and not p["optional"]:raise KeyError("Miss parameter: " + p["key"])
+        if p["key"] == "knowledge": continue
+        if p["key"] not in kwargs and not p["optional"]: raise KeyError("Miss parameter: " + p["key"])
         if p["key"] not in kwargs:
-            prompt_config["system"] = prompt_config["system"].replace("{%s}"%p["key"], " ")
+            prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
-    kbinfos = retrievaler.retrieval(question, embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n, dialog.similarity_threshold,
-                        dialog.vector_similarity_weight, top=1024, aggs=False)
+    kbinfos = retrievaler.retrieval(question, embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
+                                    dialog.similarity_threshold,
+                                    dialog.vector_similarity_weight, top=1024, aggs=False)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
 
     if not knowledges and prompt_config["empty_response"]:
@@ -202,17 +206,17 @@ def chat(dialog, messages, **kwargs):
     answer = chat_mdl.chat(prompt_config["system"].format(**kwargs), msg, gen_conf)
 
     answer = retrievaler.insert_citations(answer,
-                                 [ck["content_ltks"] for ck in kbinfos["chunks"]],
-                                 [ck["vector"] for ck in kbinfos["chunks"]],
-                                 embd_mdl,
-                                 tkweight=1-dialog.vector_similarity_weight,
-                                 vtweight=dialog.vector_similarity_weight)
+                                          [ck["content_ltks"] for ck in kbinfos["chunks"]],
+                                          [ck["vector"] for ck in kbinfos["chunks"]],
+                                          embd_mdl,
+                                          tkweight=1 - dialog.vector_similarity_weight,
+                                          vtweight=dialog.vector_similarity_weight)
     for c in kbinfos["chunks"]:
-        if c.get("vector"):del c["vector"]
+        if c.get("vector"): del c["vector"]
     return {"answer": answer, "retrieval": kbinfos}
 
 
-def use_sql(question,field_map, tenant_id, chat_mdl):
+def use_sql(question, field_map, tenant_id, chat_mdl):
     sys_prompt = "你是一个DBA。你需要这对以下表的字段结构，根据我的问题写出sql。"
     user_promt = """
 表名：{}；
@@ -220,37 +224,47 @@ def use_sql(question,field_map, tenant_id, chat_mdl):
 {}
 
 问题：{}
-请写出SQL。
+请写出SQL，且只要SQL，不要有其他说明及文字。
 """.format(
         index_name(tenant_id),
-        "\n".join([f"{k}: {v}" for k,v in field_map.items()]),
+        "\n".join([f"{k}: {v}" for k, v in field_map.items()]),
         question
     )
-    sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_promt}], {"temperature": 0.1})
-    sql = re.sub(r".*?select ", "select ", sql, flags=re.IGNORECASE)
+    sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_promt}], {"temperature": 0.06})
+    stat_logger.info(f"“{question}” get SQL: {sql}")
+    sql = re.sub(r"[\r\n]+", " ", sql.lower())
+    sql = re.sub(r".*?select ", "select ", sql.lower())
     sql = re.sub(r" +", " ", sql)
-    sql = re.sub(r"[;；].*", "", sql)
-    if sql[:len("select ")].lower() != "select ":
+    sql = re.sub(r"([;；]|```).*", "", sql)
+    if sql[:len("select ")] != "select ":
         return None, None
-    if sql[:len("select *")].lower() != "select *":
+    if sql[:len("select *")] != "select *":
         sql = "select doc_id,docnm_kwd," + sql[6:]
+    else:
+        flds = []
+        for k in field_map.keys():
+            if k in forbidden_select_fields4resume:continue
+            if len(flds) > 11:break
+            flds.append(k)
+        sql = "select doc_id,docnm_kwd," + ",".join(flds) + sql[8:]
 
-    tbl = retrievaler.sql_retrieval(sql)
-    if not tbl: return None, None
+    stat_logger.info(f"“{question}” get SQL(refined): {sql}")
+    tbl = retrievaler.sql_retrieval(sql, format="json")
+    if not tbl or len(tbl["rows"]) == 0: return None, None
 
     docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"] == "doc_id"])
     docnm_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"] == "docnm_kwd"])
-    clmn_idx = [ii for ii in range(len(tbl["columns"])) if ii not in (docid_idx|docnm_idx)]
+    clmn_idx = [ii for ii in range(len(tbl["columns"])) if ii not in (docid_idx | docnm_idx)]
 
     # compose markdown table
-    clmns = "|".join([re.sub(r"/.*", "", field_map.get(tbl["columns"][i]["name"], f"C{i}")) for i in clmn_idx]) + "|原文"
+    clmns = "|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], f"C{i}")) for i in clmn_idx]) + "|原文"
     line = "|".join(["------" for _ in range(len(clmn_idx))]) + "|------"
-    rows = ["|".join([str(r[i]) for i in clmn_idx])+"|" for r in tbl["rows"]]
+    rows = ["|".join([rmSpace(str(r[i])) for i in clmn_idx]).replace("None", " ") + "|" for r in tbl["rows"]]
     if not docid_idx or not docnm_idx:
         access_logger.error("SQL missing field: " + sql)
         return "\n".join([clmns, line, "\n".join(rows)]), []
 
-    rows = "\n".join([r+f"##{ii}$$" for ii,r in enumerate(rows)])
+    rows = "\n".join([r + f"##{ii}$$" for ii, r in enumerate(rows)])
     docid_idx = list(docid_idx)[0]
     docnm_idx = list(docnm_idx)[0]
     return "\n".join([clmns, line, rows]), [{"doc_id": r[docid_idx], "docnm_kwd": r[docnm_idx]} for r in tbl["rows"]]

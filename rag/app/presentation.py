@@ -94,6 +94,11 @@ class Pdf(HuParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+    """
+    The supported file formats are pdf, pptx.
+    Every page will be treated as a chunk. And the thumbnail of every page will be stored.
+    PPT file will be parsed by using this method automatically, setting-up for every PPT file is not necessary.
+    """
     doc = {
         "docnm_kwd": filename,
         "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))

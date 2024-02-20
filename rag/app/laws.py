@@ -2,7 +2,6 @@ import copy
 import re
 from io import BytesIO
 from docx import Document
-import numpy as np
 from rag.parser import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
     make_colon_as_title
 from rag.nlp import huqie
@@ -59,6 +58,9 @@ class Pdf(HuParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+    """
+        Supported file formats are docx, pdf, txt.
+    """
     doc = {
         "docnm_kwd": filename,
         "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
