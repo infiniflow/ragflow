@@ -4,6 +4,17 @@
   .chatAppWrapper {
     width: 288px;
     padding: 26px;
+
+    .chatAppCard {
+      :global(.ant-card-body) {
+        padding: 10px;
+      }
+      .cubeIcon {
+        &:hover {
+          cursor: pointer;
+        }
+      }
+    }
   }
   .chatTitleWrapper {
     width: 220px;

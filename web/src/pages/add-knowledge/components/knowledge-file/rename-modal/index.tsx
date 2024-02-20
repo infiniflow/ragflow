@@ -53,7 +53,7 @@ const RenameModal = () => {
 
   useEffect(() => {
     form.setFieldValue('name', initialName);
-  }, [initialName, documentId]);
+  }, [initialName, documentId, form]);
 
   return (
     <Modal

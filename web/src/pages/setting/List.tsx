@@ -37,7 +37,7 @@ const SettingList = () => {
       type: 'settingModel/my_llm',
       payload: {},
     });
-  }, []);
+  }, [dispatch]);
 
   return (
     <div

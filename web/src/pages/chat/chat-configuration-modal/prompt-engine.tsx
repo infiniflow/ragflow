@@ -13,7 +13,13 @@ import {
   TableProps,
 } from 'antd';
 import classNames from 'classnames';
-import { useState } from 'react';
+import {
+  ForwardedRef,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useState,
+} from 'react';
 import { v4 as uuid } from 'uuid';
 import { EditableCell, EditableRow } from './editable-cell';
 import { ISegmentedContentProps } from './interface';
@@ -22,6 +28,7 @@ import styles from './index.less';
 
 interface DataType {
   key: string;
+  variable: string;
   optional: boolean;
 }
 
@@ -31,7 +38,10 @@ type FieldType = {
   top_n?: number;
 };
 
-const PromptEngine = ({ show }: ISegmentedContentProps) => {
+const PromptEngine = (
+  { show, form }: ISegmentedContentProps,
+  ref: ForwardedRef<Array<Omit<DataType, 'variable'>>>,
+) => {
   const [dataSource, setDataSource] = useState<DataType[]>([]);
 
   const components = {
@@ -57,6 +67,44 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
     setDataSource(newData);
   };
 
+  const handleAdd = () => {
+    setDataSource((state) => [
+      ...state,
+      {
+        key: uuid(),
+        variable: '',
+        optional: true,
+      },
+    ]);
+  };
+
+  const handleOptionalChange = (row: DataType) => (checked: boolean) => {
+    const newData = [...dataSource];
+    const index = newData.findIndex((item) => row.key === item.key);
+    const item = newData[index];
+    newData.splice(index, 1, {
+      ...item,
+      optional: checked,
+    });
+    setDataSource(newData);
+  };
+
+  useImperativeHandle(
+    ref,
+    () => {
+      return dataSource
+        .filter((x) => x.variable.trim() !== '')
+        .map((x) => ({ key: x.variable, optional: x.optional }));
+    },
+    [dataSource],
+  );
+
+  useEffect(() => {
+    form.setFieldValue(['prompt_config', 'parameters'], dataSource);
+    const x = form.getFieldValue(['prompt_config', 'parameters']);
+    console.info(x);
+  }, [dataSource, form]);
+
   const columns: TableProps<DataType>['columns'] = [
     {
       title: 'key',
@@ -76,8 +124,14 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
       key: 'optional',
       width: 40,
       align: 'center',
-      render() {
-        return <Switch size="small" />;
+      render(text, record) {
+        return (
+          <Switch
+            size="small"
+            checked={text}
+            onChange={handleOptionalChange(record)}
+          />
+        );
       },
     },
     {
@@ -92,17 +146,6 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
     },
   ];
 
-  const handleAdd = () => {
-    setDataSource((state) => [
-      ...state,
-      {
-        key: uuid(),
-        variable: '',
-        optional: true,
-      },
-    ]);
-  };
-
   return (
     <section
       className={classNames({
@@ -111,15 +154,19 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
     >
       <Form.Item
         label="Orchestrate"
-        name="orchestrate"
         rules={[{ required: true, message: 'Please input!' }]}
+        name={['prompt_config', 'system']}
+        initialValue={`你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
+        以下是知识库：
+        {knowledge}
+        以上是知识库。`}
       >
         <Input.TextArea autoSize={{ maxRows: 5, minRows: 5 }} />
       </Form.Item>
       <Divider></Divider>
       <SimilaritySlider></SimilaritySlider>
-      <Form.Item<FieldType> label="Top n" name={'top_n'}>
-        <Slider defaultValue={0} max={30} />
+      <Form.Item<FieldType> label="Top n" name={'top_n'} initialValue={0}>
+        <Slider max={30} />
       </Form.Item>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
@@ -152,4 +199,4 @@ const PromptEngine = ({ show }: ISegmentedContentProps) => {
   );
 };
 
-export default PromptEngine;
+export default forwardRef(PromptEngine);

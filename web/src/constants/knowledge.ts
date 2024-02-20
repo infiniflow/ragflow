@@ -11,3 +11,40 @@ export enum RunningStatus {
   DONE = '3', // need to refresh
   FAIL = '4', // need to refresh
 }
+
+export enum ModelVariableType {
+  Improvise = 'Improvise',
+  Precise = 'Precise',
+  Balance = 'Balance',
+}
+
+export const settledModelVariableMap = {
+  [ModelVariableType.Improvise]: {
+    temperature: 0.9,
+    top_p: 0.9,
+    frequency_penalty: 0.2,
+    presence_penalty: 0.4,
+    max_tokens: 512,
+  },
+  [ModelVariableType.Precise]: {
+    temperature: 0.1,
+    top_p: 0.3,
+    frequency_penalty: 0.7,
+    presence_penalty: 0.4,
+    max_tokens: 215,
+  },
+  [ModelVariableType.Balance]: {
+    temperature: 0.5,
+    top_p: 0.5,
+    frequency_penalty: 0.7,
+    presence_penalty: 0.4,
+    max_tokens: 215,
+  },
+};
+
+export enum LlmModelType {
+  Embedding = 'embedding',
+  Chat = 'chat',
+  Image2text = 'image2text',
+  Speech2text = 'speech2text',
+}

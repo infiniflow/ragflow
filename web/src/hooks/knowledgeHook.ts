@@ -124,3 +124,22 @@ export const useFetchKnowledgeBaseConfiguration = () => {
     fetchKnowledgeBaseConfiguration();
   }, [fetchKnowledgeBaseConfiguration]);
 };
+
+export const useFetchKnowledgeList = (): IKnowledge[] => {
+  const dispatch = useDispatch();
+
+  const knowledgeModel = useSelector((state: any) => state.knowledgeModel);
+  const { data = [] } = knowledgeModel;
+
+  const fetchList = useCallback(() => {
+    dispatch({
+      type: 'knowledgeModel/getList',
+    });
+  }, [dispatch]);
+
+  useEffect(() => {
+    fetchList();
+  }, [fetchList]);
+
+  return data;
+};

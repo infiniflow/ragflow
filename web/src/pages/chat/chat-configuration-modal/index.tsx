@@ -2,11 +2,14 @@ import { ReactComponent as ChatConfigurationAtom } from '@/assets/svg/chat-confi
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { Divider, Flex, Form, Modal, Segmented } from 'antd';
 import { SegmentedValue } from 'antd/es/segmented';
-import { useState } from 'react';
+import omit from 'lodash/omit';
+import { useRef, useState } from 'react';
 import AssistantSetting from './assistant-setting';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
+import { useSetDialog } from '../hooks';
+import { variableEnabledFieldMap } from './constants';
 import styles from './index.less';
 
 enum ConfigurationSegmented {
@@ -45,10 +48,24 @@ const ChatConfigurationModal = ({
   const [value, setValue] = useState<ConfigurationSegmented>(
     ConfigurationSegmented.AssistantSetting,
   );
+  const promptEngineRef = useRef(null);
+
+  const setDialog = useSetDialog();
 
   const handleOk = async () => {
-    const x = await form.validateFields();
-    console.info(x);
+    const values = await form.validateFields();
+    const nextValues: any = omit(values, Object.keys(variableEnabledFieldMap));
+    const finalValues = {
+      ...nextValues,
+      prompt_config: {
+        ...nextValues.prompt_config,
+        parameters: promptEngineRef.current,
+      },
+    };
+    console.info(promptEngineRef.current);
+    console.info(nextValues);
+    console.info(finalValues);
+    setDialog(finalValues);
   };
 
   const handleCancel = () => {
@@ -97,7 +114,14 @@ const ChatConfigurationModal = ({
         colon={false}
       >
         {Object.entries(segmentedMap).map(([key, Element]) => (
-          <Element key={key} show={key === value}></Element>
+          <Element
+            key={key}
+            show={key === value}
+            form={form}
+            {...(key === ConfigurationSegmented.PromptEngine
+              ? { ref: promptEngineRef }
+              : {})}
+          ></Element>
         ))}
       </Form>
     </Modal>

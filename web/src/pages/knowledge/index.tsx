@@ -2,33 +2,14 @@ import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
 import ModalManager from '@/components/modal-manager';
 import { PlusOutlined } from '@ant-design/icons';
 import { Button, Flex, Space } from 'antd';
-import { useCallback, useEffect } from 'react';
-import { useDispatch, useNavigate, useSelector } from 'umi';
 import KnowledgeCard from './knowledge-card';
 import KnowledgeCreatingModal from './knowledge-creating-modal';
 
+import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import styles from './index.less';
 
 const Knowledge = () => {
-  const dispatch = useDispatch();
-  const knowledgeModel = useSelector((state: any) => state.knowledgeModel);
-  const navigate = useNavigate();
-  const { data = [] } = knowledgeModel;
-
-  const fetchList = useCallback(() => {
-    dispatch({
-      type: 'knowledgeModel/getList',
-      payload: {},
-    });
-  }, []);
-
-  // const handleAddKnowledge = () => {
-  //   navigate(`/knowledge/${KnowledgeRouteKey.Configuration}`);
-  // };
-
-  useEffect(() => {
-    fetchList();
-  }, [fetchList]);
+  const data = useFetchKnowledgeList();
 
   return (
     <div className={styles.knowledge}>

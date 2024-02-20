@@ -42,4 +42,14 @@ export default {
   document_create: `${api_host}/document/create`,
   document_run: `${api_host}/document/run`,
   document_change_parser: `${api_host}/document/change_parser`,
+
+  setDialog: `${api_host}/dialog/set`,
+  getDialog: `${api_host}/dialog/get`,
+  listDialog: `${api_host}/dialog/list`,
+
+  setConversation: `${api_host}/conversation/set`,
+  getConversation: `${api_host}/conversation/get`,
+  listConversation: `${api_host}/conversation/list`,
+  removeConversation: `${api_host}/conversation/rm`,
+  completeConversation: `${api_host}/conversation/completion`,
 };
