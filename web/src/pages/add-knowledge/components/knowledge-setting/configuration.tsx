@@ -17,13 +17,14 @@ import {
   UploadFile,
 } from 'antd';
 import pick from 'lodash/pick';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
+import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
-import { IThirdOAIModelCollection } from '@/interfaces/database/llm';
 import { PlusOutlined } from '@ant-design/icons';
+import { LlmModelType } from '../../constant';
 import styles from './index.less';
 
 const { Title } = Typography;
@@ -35,9 +36,6 @@ const Configuration = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const loading = useOneNamespaceEffectsLoading('kSModel', ['updateKb']);
 
-  const llmInfo: IThirdOAIModelCollection = useSelector(
-    (state: any) => state.settingModel.llmInfo,
-  );
   const knowledgeDetails: IKnowledge = useSelector(
     (state: any) => state.kSModel.knowledgeDetails,
   );
@@ -51,17 +49,7 @@ const Configuration = () => {
 
   const parserList = useSelectParserList();
 
-  const embeddingModelOptions = useMemo(() => {
-    return Object.entries(llmInfo).map(([key, value]) => {
-      return {
-        label: key,
-        options: value.map((x) => ({
-          label: x.llm_name,
-          value: x.llm_name,
-        })),
-      };
-    });
-  }, [llmInfo]);
+  const embeddingModelOptions = useSelectLlmOptions();
 
   const onFinish = async (values: any) => {
     console.info(values);
@@ -86,13 +74,6 @@ const Configuration = () => {
     console.log('Failed:', errorInfo);
   };
 
-  const fetchLlmList = useCallback(() => {
-    dispatch({
-      type: 'settingModel/llm_list',
-      payload: { model_type: 'embedding' },
-    });
-  }, [dispatch]);
-
   useEffect(() => {
     const avatar = knowledgeDetails.avatar;
     let fileList: UploadFile[] = [];
@@ -115,9 +96,7 @@ const Configuration = () => {
   useFetchParserList();
   useFetchKnowledgeBaseConfiguration();
 
-  useEffect(() => {
-    fetchLlmList();
-  }, [fetchLlmList]);
+  useFetchLlmList(LlmModelType.Embedding);
 
   return (
     <div className={styles.configurationWrapper}>

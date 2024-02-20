@@ -1,3 +1,5 @@
+import SimilaritySlider from '@/components/similarity-slider';
+import { DeleteOutlined, HistoryOutlined } from '@ant-design/icons';
 import {
   Button,
   Card,
@@ -6,21 +8,14 @@ import {
   Form,
   Input,
   Slider,
-  SliderSingleProps,
   Space,
   Tag,
 } from 'antd';
-
-import { DeleteOutlined, HistoryOutlined } from '@ant-design/icons';
 import { FormInstance } from 'antd/lib';
+
 import styles from './index.less';
 
 const list = [1, 2, 3];
-
-const marks: SliderSingleProps['marks'] = {
-  0: '0',
-  100: '1',
-};
 
 type FieldType = {
   similarity_threshold?: number;
@@ -28,12 +23,6 @@ type FieldType = {
   top_k?: number;
   question: string;
 };
-
-const formatter = (value: number | undefined) => {
-  return typeof value === 'number' ? value / 100 : 0;
-};
-
-const tooltip = { formatter };
 
 interface IProps {
   form: FormInstance;
@@ -59,23 +48,12 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
           layout="vertical"
           form={form}
           initialValues={{
-            similarity_threshold: 20,
-            vector_similarity_weight: 30,
+            similarity_threshold: 0.2,
+            vector_similarity_weight: 0.3,
             top_k: 1024,
           }}
         >
-          <Form.Item<FieldType>
-            label="Similarity threshold"
-            name={'similarity_threshold'}
-          >
-            <Slider marks={marks} defaultValue={0} tooltip={tooltip} />
-          </Form.Item>
-          <Form.Item<FieldType>
-            label="Vector similarity weight"
-            name={'vector_similarity_weight'}
-          >
-            <Slider marks={marks} defaultValue={0} tooltip={tooltip} />
-          </Form.Item>
+          <SimilaritySlider></SimilaritySlider>
           <Form.Item<FieldType> label="Top k" name={'top_k'}>
             <Slider marks={{ 0: 0, 2048: 2048 }} defaultValue={0} max={2048} />
           </Form.Item>
