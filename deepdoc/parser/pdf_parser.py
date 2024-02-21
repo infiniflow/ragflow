@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
 import random
-from functools import partial
 
 import fitz
 import requests
@@ -15,6 +14,7 @@ from PIL import Image
 import numpy as np
 
 from api.db import ParserType
+from deepdoc.visual import OCR, Recognizer
 from rag.nlp import huqie
 from collections import Counter
 from copy import deepcopy
@@ -26,13 +26,32 @@ logging.getLogger("pdfminer").setLevel(logging.WARNING)
 
 class HuParser:
     def __init__(self):
-        from paddleocr import PaddleOCR
-        logging.getLogger("ppocr").setLevel(logging.ERROR)
-        self.ocr = PaddleOCR(use_angle_cls=False, lang="ch")
+        self.ocr = OCR()
         if not hasattr(self, "model_speciess"):
             self.model_speciess = ParserType.GENERAL.value
-        self.layouter = partial(self.__remote_call, self.model_speciess)
-        self.tbl_det = partial(self.__remote_call, "table_component")
+        self.layout_labels = [
+             "_background_",
+             "Text",
+             "Title",
+             "Figure",
+             "Figure caption",
+             "Table",
+             "Table caption",
+             "Header",
+             "Footer",
+             "Reference",
+             "Equation",
+        ]
+        self.tsr_labels = [
+            "table",
+            "table column",
+            "table row",
+            "table column header",
+            "table projected row header",
+            "table spanning cell",
+        ]
+        self.layouter = Recognizer(self.layout_labels, "layout", "/data/newpeak/medical-gpt/res/ppdet/")
+        self.tbl_det = Recognizer(self.tsr_labels, "tsr", "/data/newpeak/medical-gpt/res/ppdet.tbl/")
 
         self.updown_cnt_mdl = xgb.Booster()
         if torch.cuda.is_available():
@@ -56,7 +75,7 @@ class HuParser:
         token = os.environ.get("INFINIFLOW_TOKEN")
         if not url or not token:
             logging.warning("INFINIFLOW_SERVER is not specified. To maximize the effectiveness, please visit https://github.com/infiniflow/ragflow, and sign in the our demo web site to get token. It's FREE! Using 'export' to set both environment variables: INFINIFLOW_SERVER and INFINIFLOW_TOKEN.")
-            return []
+            return [[] for _ in range(len(images))]
 
         def convert_image_to_bytes(PILimage):
             image = BytesIO()
@@ -382,7 +401,7 @@ class HuParser:
 
         return layouts
 
-    def __table_paddle(self, images):
+    def __table_tsr(self, images):
         tbls = self.tbl_det(images, thr=0.5)
         res = []
         # align left&right for rows, align top&bottom for columns
@@ -452,7 +471,7 @@ class HuParser:
         assert len(self.page_images) == len(tbcnt) - 1
         if not imgs:
             return
-        recos = self.__table_paddle(imgs)
+        recos = self.__table_tsr(imgs)
         tbcnt = np.cumsum(tbcnt)
         for i in range(len(tbcnt) - 1):  # for page
             pg = []
@@ -517,8 +536,8 @@ class HuParser:
                 b["H_right"] = spans[ii]["x1"]
                 b["SP"] = ii
 
-    def __ocr_paddle(self, pagenum, img, chars, ZM=3):
-        bxs = self.ocr.ocr(np.array(img), cls=True)[0]
+    def __ocr(self, pagenum, img, chars, ZM=3):
+        bxs = self.ocr(np.array(img))
         if not bxs:
             self.boxes.append([])
             return
@@ -557,11 +576,12 @@ class HuParser:
 
         self.boxes.append(bxs)
 
-    def _layouts_paddle(self, ZM):
+    def _layouts_rec(self, ZM):
         assert len(self.page_images) == len(self.boxes)
         # Tag layout type
         boxes = []
         layouts = self.layouter(self.page_images)
+        #save_results(self.page_images, layouts, self.layout_labels, output_dir='output/', threshold=0.7)
         assert len(self.page_images) == len(layouts)
         for pn, lts in enumerate(layouts):
             bxs = self.boxes[pn]
@@ -1741,7 +1761,7 @@ class HuParser:
             #     else:
             #         self.page_cum_height.append(
             #             np.max([c["bottom"] for c in chars]))
-            self.__ocr_paddle(i + 1, img, chars, zoomin)
+            self.__ocr(i + 1, img, chars, zoomin)
 
         if not self.is_english and not any([c for c in self.page_chars]) and self.boxes:
             bxes = [b for bxs in self.boxes for b in bxs]
@@ -1754,7 +1774,7 @@ class HuParser:
 
     def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
         self.__images__(fnm, zoomin)
-        self._layouts_paddle(zoomin)
+        self._layouts_rec(zoomin)
         self._table_transformer_job(zoomin)
         self._text_merge()
         self._concat_downward()
