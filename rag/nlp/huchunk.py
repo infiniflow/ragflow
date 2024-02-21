@@ -1,3 +1,15 @@
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
 import re
 import os
 import copy
@@ -443,13 +455,13 @@ if __name__ == "__main__":
     import sys
     sys.path.append(os.path.dirname(__file__) + "/../")
     if sys.argv[1].split(".")[-1].lower() == "pdf":
-        from parser import PdfParser
+        from deepdoc.parser import PdfParser
         ckr = PdfChunker(PdfParser())
     if sys.argv[1].split(".")[-1].lower().find("doc") >= 0:
-        from parser import DocxParser
+        from deepdoc.parser import DocxParser
         ckr = DocxChunker(DocxParser())
     if sys.argv[1].split(".")[-1].lower().find("xlsx") >= 0:
-        from parser import ExcelParser
+        from deepdoc.parser import ExcelParser
         ckr = ExcelChunker(ExcelParser())
 
     # ckr.html(sys.argv[1])

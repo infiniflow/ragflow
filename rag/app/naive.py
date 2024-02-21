@@ -1,13 +1,25 @@
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
 import copy
 import re
 from rag.app import laws
-from rag.parser import is_english, tokenize, naive_merge
+from deepdoc.parser import is_english, tokenize, naive_merge
 from rag.nlp import huqie
-from rag.parser.pdf_parser import HuParser
+from deepdoc.parser import PdfParser
 from rag.settings import cron_logger
 
 
-class Pdf(HuParser):
+class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         self.__images__(
@@ -19,7 +31,7 @@ class Pdf(HuParser):
 
         from timeit import default_timer as timer
         start = timer()
-        self._layouts_paddle(zoomin)
+        self._layouts_rec(zoomin)
         callback(0.77, "Layout analysis finished")
         cron_logger.info("paddle layouts:".format((timer() - start) / (self.total_page + 0.1)))
         self._naive_vertical_merge()

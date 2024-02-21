@@ -1,4 +1,3 @@
-import copy
 import random
 
 from .pdf_parser import HuParser as PdfParser
@@ -10,7 +9,7 @@ import re
 from nltk import word_tokenize
 
 from rag.nlp import stemmer, huqie
-from ..utils import num_tokens_from_string
+from rag.utils import num_tokens_from_string
 
 BULLET_PATTERN = [[
     r"第[零一二三四五六七八九十百0-9]+(分?编|部分)",
