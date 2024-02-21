@@ -1,59 +1,82 @@
-import copy
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+import base64
+import datetime
 import json
-import os
 import re
+
+import pandas as pd
 import requests
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.settings import stat_logger
 from rag.nlp import huqie
-
+from deepdoc.parser.resume import refactor
+from deepdoc.parser.resume import step_one, step_two
 from rag.settings import cron_logger
 from rag.utils import rmSpace
 
 forbidden_select_fields4resume = [
     "name_pinyin_kwd", "edu_first_fea_kwd", "degree_kwd", "sch_rank_kwd", "edu_fea_kwd"
 ]
+def remote_call(filename, binary):
+    q = {
+        "header": {
+            "uid": 1,
+            "user": "kevinhu",
+            "log_id": filename
+        },
+        "request": {
+            "p": {
+                "request_id": "1",
+                "encrypt_type": "base64",
+                "filename": filename,
+                "langtype": '',
+                "fileori": base64.b64encode(binary.stream.read()).decode('utf-8')
+            },
+            "c": "resume_parse_module",
+            "m": "resume_parse"
+        }
+    }
+    for _ in range(3):
+        try:
+            resume = requests.post("http://127.0.0.1:61670/tog", data=json.dumps(q))
+            resume = resume.json()["response"]["results"]
+            resume = refactor(resume)
+            for k in ["education", "work", "project", "training", "skill", "certificate", "language"]:
+                if not resume.get(k) and k in resume: del resume[k]
+
+            resume = step_one.refactor(pd.DataFrame([{"resume_content": json.dumps(resume), "tob_resume_id": "x",
+                                                "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]))
+            resume = step_two.parse(resume)
+            return resume
+        except Exception as e:
+            cron_logger.error("Resume parser error: "+str(e))
+    return {}
+
 
 def chunk(filename, binary=None, callback=None, **kwargs):
     """
     The supported file formats are pdf, docx and txt.
-    To maximize the effectiveness, parse the resume correctly,
-    please visit https://github.com/infiniflow/ragflow, and sign in the our demo web-site
-    to get token. It's FREE!
-    Set INFINIFLOW_SERVER and INFINIFLOW_TOKEN in '.env' file or
-    using 'export' to set both environment variables: INFINIFLOW_SERVER and INFINIFLOW_TOKEN in docker container.
+    To maximize the effectiveness, parse the resume correctly, please concat us: https://github.com/infiniflow/ragflow
     """
     if not re.search(r"\.(pdf|doc|docx|txt)$", filename, flags=re.IGNORECASE):
         raise NotImplementedError("file type not supported yet(pdf supported)")
-
-    url = os.environ.get("INFINIFLOW_SERVER")
-    token = os.environ.get("INFINIFLOW_TOKEN")
-    if not url or not token:
-        stat_logger.warning(
-            "INFINIFLOW_SERVER is not specified. To maximize the effectiveness, please visit https://github.com/infiniflow/ragflow, and sign in the our demo web site to get token. It's FREE! Using 'export' to set both environment variables: INFINIFLOW_SERVER and INFINIFLOW_TOKEN.")
-        return []
 
     if not binary:
         with open(filename, "rb") as f:
             binary = f.read()
 
-    def remote_call():
-        nonlocal filename, binary
-        for _ in range(3):
-            try:
-                res = requests.post(url + "/v1/layout/resume/", files=[(filename, binary)],
-                                    headers={"Authorization": token}, timeout=180)
-                res = res.json()
-                if res["retcode"] != 0:
-                    raise RuntimeError(res["retmsg"])
-                return res["data"]
-            except RuntimeError as e:
-                raise e
-            except Exception as e:
-                cron_logger.error("resume parsing:" + str(e))
-
     callback(0.2, "Resume parsing is going on...")
-    resume = remote_call()
+    resume = remote_call(filename, binary)
     if len(resume.keys()) < 7:
         callback(-1, "Resume is not successfully parsed.")
         return []

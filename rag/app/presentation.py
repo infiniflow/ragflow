@@ -1,11 +1,22 @@
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
 import copy
 import re
 from io import BytesIO
 from pptx import Presentation
-
-from rag.parser import tokenize, is_english
+from deepdoc.parser import tokenize, is_english
 from rag.nlp import huqie
-from rag.parser.pdf_parser import HuParser
+from deepdoc.parser import PdfParser
 
 
 class Ppt(object):
@@ -58,7 +69,7 @@ class Ppt(object):
         return [(txts[i], imgs[i]) for i in range(len(txts))]
 
 
-class Pdf(HuParser):
+class Pdf(PdfParser):
     def __init__(self):
         super().__init__()
 
@@ -74,7 +85,7 @@ class Pdf(HuParser):
         assert len(self.boxes) == len(self.page_images), "{} vs. {}".format(len(self.boxes), len(self.page_images))
         res = []
         #################### More precisely ###################
-        # self._layouts_paddle(zoomin)
+        # self._layouts_rec(zoomin)
         # self._text_merge()
         # pages = {}
         # for b in self.boxes:

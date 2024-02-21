@@ -198,7 +198,7 @@ def chat(dialog, messages, **kwargs):
         return {"answer": prompt_config["empty_response"], "retrieval": kbinfos}
 
     kwargs["knowledge"] = "\n".join(knowledges)
-    gen_conf = dialog.llm_setting[dialog.llm_setting_type]
+    gen_conf = dialog.llm_setting
     msg = [{"role": m["role"], "content": m["content"]} for m in messages if m["role"] != "system"]
     used_token_count, msg = message_fit_in(msg, int(llm.max_tokens * 0.97))
     if "max_tokens" in gen_conf:

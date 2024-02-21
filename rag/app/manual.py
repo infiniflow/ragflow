@@ -1,12 +1,12 @@
 import copy
 import re
-from rag.parser import tokenize
+from deepdoc.parser import tokenize
 from rag.nlp import huqie
-from rag.parser.pdf_parser import HuParser
+from deepdoc.parser import PdfParser
 from rag.utils import num_tokens_from_string
 
 
-class Pdf(HuParser):
+class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         self.__images__(
@@ -18,7 +18,7 @@ class Pdf(HuParser):
 
         from timeit import default_timer as timer
         start = timer()
-        self._layouts_paddle(zoomin)
+        self._layouts_rec(zoomin)
         callback(0.5, "Layout analysis finished.")
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
