@@ -14,7 +14,11 @@ import ChatContainer from './chat-container';
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import classNames from 'classnames';
 import ChatConfigurationModal from './chat-configuration-modal';
-import { useFetchDialogList, useSetCurrentDialog } from './hooks';
+import {
+  useFetchDialogList,
+  useRemoveDialog,
+  useSetCurrentDialog,
+} from './hooks';
 
 import { useSetModalState } from '@/hooks/commonHooks';
 import { useState } from 'react';
@@ -25,6 +29,7 @@ const Chat = () => {
   const [activated, setActivated] = useState<string>('');
   const { visible, hideModal, showModal } = useSetModalState();
   const { setCurrentDialog, currentDialog } = useSetCurrentDialog();
+  const { onRemoveDialog } = useRemoveDialog();
 
   const handleAppCardEnter = (id: string) => () => {
     setActivated(id);
@@ -71,6 +76,7 @@ const Chat = () => {
       { type: 'divider' },
       {
         key: '2',
+        onClick: () => onRemoveDialog([dialogId]),
         label: (
           <Space>
             <DeleteOutlined />
@@ -91,7 +97,7 @@ const Chat = () => {
             Create an Assistant
           </Button>
           <Divider></Divider>
-          <Space direction={'vertical'} size={'middle'}>
+          <Flex className={styles.chatAppContent} vertical gap={10}>
             {dialogList.map((x) => (
               <Card
                 key={x.id}
@@ -117,7 +123,7 @@ const Chat = () => {
                 </Flex>
               </Card>
             ))}
-          </Space>
+          </Flex>
         </Flex>
       </Flex>
       <Divider type={'vertical'} className={styles.divider}></Divider>

@@ -1,3 +1,4 @@
+import showDeleteConfirm from '@/components/deleting-confirm';
 import { IDialog } from '@/interfaces/database/chat';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
@@ -108,4 +109,23 @@ export const useSelectPromptConfigParameters = (): VariableTableDataType[] => {
   }, [currentDialog]);
 
   return finalParameters;
+};
+
+export const useRemoveDialog = () => {
+  const dispatch = useDispatch();
+
+  const removeDocument = (dialogIds: Array<string>) => () => {
+    return dispatch({
+      type: 'chatModel/removeDialog',
+      payload: {
+        dialog_ids: dialogIds,
+      },
+    });
+  };
+
+  const onRemoveDialog = (dialogIds: Array<string>) => {
+    showDeleteConfirm({ onOk: removeDocument(dialogIds) });
+  };
+
+  return { onRemoveDialog };
 };

@@ -52,6 +52,14 @@ const model: DvaModel<ChatModelState> = {
       }
       return data.retcode;
     },
+    *removeDialog({ payload }, { call, put }) {
+      const { data } = yield call(chatService.removeDialog, payload);
+      if (data.retcode === 0) {
+        yield put({ type: 'listDialog' });
+        message.success('Deleted successfully !');
+      }
+      return data.retcode;
+    },
     *listDialog({ payload }, { call, put }) {
       const { data } = yield call(chatService.listDialog, payload);
       yield put({ type: 'setDialogList', payload: data.data });
