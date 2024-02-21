@@ -6,10 +6,10 @@ import {
 import { Divider, Flex, Form, InputNumber, Select, Slider, Switch } from 'antd';
 import classNames from 'classnames';
 import { useEffect } from 'react';
-import { ISegmentedContentProps } from './interface';
+import { ISegmentedContentProps } from '../interface';
 
 import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
-import { variableEnabledFieldMap } from './constants';
+import { variableEnabledFieldMap } from '../constants';
 import styles from './index.less';
 
 const ModelSetting = ({ show, form }: ISegmentedContentProps) => {

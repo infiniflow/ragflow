@@ -21,13 +21,14 @@ import {
   useState,
 } from 'react';
 import { v4 as uuid } from 'uuid';
-import { EditableCell, EditableRow } from './editable-cell';
 import {
   VariableTableDataType as DataType,
   IPromptConfigParameters,
   ISegmentedContentProps,
-} from './interface';
+} from '../interface';
+import { EditableCell, EditableRow } from './editable-cell';
 
+import { useSelectPromptConfigParameters } from '../hooks';
 import styles from './index.less';
 
 type FieldType = {
@@ -37,10 +38,11 @@ type FieldType = {
 };
 
 const PromptEngine = (
-  { show, form }: ISegmentedContentProps,
+  { show }: ISegmentedContentProps,
   ref: ForwardedRef<Array<IPromptConfigParameters>>,
 ) => {
   const [dataSource, setDataSource] = useState<DataType[]>([]);
+  const parameters = useSelectPromptConfigParameters();
 
   const components = {
     body: {
@@ -97,12 +99,6 @@ const PromptEngine = (
     [dataSource],
   );
 
-  useEffect(() => {
-    form.setFieldValue(['prompt_config', 'parameters'], dataSource);
-    const x = form.getFieldValue(['prompt_config', 'parameters']);
-    console.info(x);
-  }, [dataSource, form]);
-
   const columns: TableProps<DataType>['columns'] = [
     {
       title: 'key',
@@ -144,6 +140,10 @@ const PromptEngine = (
     },
   ];
 
+  useEffect(() => {
+    setDataSource(parameters);
+  }, [parameters]);
+
   return (
     <section
       className={classNames({
@@ -151,7 +151,7 @@ const PromptEngine = (
       })}
     >
       <Form.Item
-        label="Orchestrate"
+        label="System"
         rules={[{ required: true, message: 'Please input!' }]}
         name={['prompt_config', 'system']}
         initialValue={`你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
@@ -159,7 +159,7 @@ const PromptEngine = (
         {knowledge}
         以上是知识库。`}
       >
-        <Input.TextArea autoSize={{ maxRows: 5, minRows: 5 }} />
+        <Input.TextArea autoSize={{ maxRows: 8, minRows: 5 }} />
       </Form.Item>
       <Divider></Divider>
       <SimilaritySlider></SimilaritySlider>

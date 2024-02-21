@@ -1,7 +1,7 @@
 import { Form, Input, Select } from 'antd';
 
 import classNames from 'classnames';
-import { ISegmentedContentProps } from './interface';
+import { ISegmentedContentProps } from '../interface';
 
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import styles from './index.less';

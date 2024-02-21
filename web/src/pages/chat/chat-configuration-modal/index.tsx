@@ -9,10 +9,11 @@ import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { variableEnabledFieldMap } from '../constants';
 import { useFetchDialog, useResetCurrentDialog, useSetDialog } from '../hooks';
-import { variableEnabledFieldMap } from './constants';
+import { IPromptConfigParameters } from '../interface';
+import { excludeUnEnabledVariables } from '../utils';
 import styles from './index.less';
-import { IPromptConfigParameters } from './interface';
 
 enum ConfigurationSegmented {
   AssistantSetting = 'Assistant Setting',
@@ -63,6 +64,7 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
     const nextValues: any = omit(values, [
       ...Object.keys(variableEnabledFieldMap),
       'parameters',
+      ...excludeUnEnabledVariables(values),
     ]);
     const finalValues = {
       dialog_id: id,

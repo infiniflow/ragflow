@@ -1,6 +1,8 @@
 import { IDialog } from '@/interfaces/database/chat';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
+import { v4 as uuid } from 'uuid';
+import { VariableTableDataType } from './interface';
 
 export const useFetchDialogList = () => {
   const dispatch = useDispatch();
@@ -85,4 +87,25 @@ export const useResetCurrentDialog = () => {
   }, [dispatch]);
 
   return { resetCurrentDialog };
+};
+
+export const useSelectPromptConfigParameters = (): VariableTableDataType[] => {
+  const currentDialog: IDialog = useSelector(
+    (state: any) => state.chatModel.currentDialog,
+  );
+
+  const finalParameters: VariableTableDataType[] = useMemo(() => {
+    const parameters = currentDialog?.prompt_config?.parameters ?? [];
+    if (!currentDialog.id) {
+      // The newly created chat has a default parameter
+      return [{ key: uuid(), variable: 'knowledge', optional: false }];
+    }
+    return parameters.map((x) => ({
+      key: uuid(),
+      variable: x.key,
+      optional: x.optional,
+    }));
+  }, [currentDialog]);
+
+  return finalParameters;
 };
