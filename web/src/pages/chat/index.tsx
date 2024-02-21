@@ -12,17 +12,19 @@ import {
 import ChatContainer from './chat-container';
 
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
-import ModalManager from '@/components/modal-manager';
 import classNames from 'classnames';
 import ChatConfigurationModal from './chat-configuration-modal';
-import { useFetchDialogList } from './hooks';
+import { useFetchDialogList, useSetCurrentDialog } from './hooks';
 
+import { useSetModalState } from '@/hooks/commonHooks';
 import { useState } from 'react';
 import styles from './index.less';
 
 const Chat = () => {
   const dialogList = useFetchDialogList();
   const [activated, setActivated] = useState<string>('');
+  const { visible, hideModal, showModal } = useSetModalState();
+  const { setCurrentDialog, currentDialog } = useSetCurrentDialog();
 
   const handleAppCardEnter = (id: string) => () => {
     setActivated(id);
@@ -30,6 +32,13 @@ const Chat = () => {
 
   const handleAppCardLeave = () => {
     setActivated('');
+  };
+
+  const handleShowChatConfigurationModal = (dialogId?: string) => () => {
+    if (dialogId) {
+      setCurrentDialog(dialogId);
+    }
+    showModal();
   };
 
   const items: MenuProps['items'] = [
@@ -47,49 +56,40 @@ const Chat = () => {
     },
   ];
 
-  const appItems: MenuProps['items'] = [
-    {
-      key: '1',
-      label: (
-        <Space>
-          <EditOutlined />
-          Edit
-        </Space>
-      ),
-    },
-    { type: 'divider' },
-    {
-      key: '2',
-      label: (
-        <Space>
-          <DeleteOutlined />
-          Delete chat
-        </Space>
-      ),
-    },
-  ];
+  const buildAppItems = (dialogId: string) => {
+    const appItems: MenuProps['items'] = [
+      {
+        key: '1',
+        onClick: handleShowChatConfigurationModal(dialogId),
+        label: (
+          <Space>
+            <EditOutlined />
+            Edit
+          </Space>
+        ),
+      },
+      { type: 'divider' },
+      {
+        key: '2',
+        label: (
+          <Space>
+            <DeleteOutlined />
+            Delete chat
+          </Space>
+        ),
+      },
+    ];
+
+    return appItems;
+  };
 
   return (
     <Flex className={styles.chatWrapper}>
       <Flex className={styles.chatAppWrapper}>
         <Flex flex={1} vertical>
-          <ModalManager>
-            {({ visible, showModal, hideModal }) => {
-              return (
-                <>
-                  <Button type="primary" onClick={() => showModal()}>
-                    Create an Assistant
-                  </Button>
-                  <ChatConfigurationModal
-                    visible={visible}
-                    showModal={showModal}
-                    hideModal={hideModal}
-                  ></ChatConfigurationModal>
-                </>
-              );
-            }}
-          </ModalManager>
-
+          <Button type="primary" onClick={handleShowChatConfigurationModal()}>
+            Create an Assistant
+          </Button>
           <Divider></Divider>
           <Space direction={'vertical'} size={'middle'}>
             {dialogList.map((x) => (
@@ -109,7 +109,7 @@ const Chat = () => {
                   </Space>
                   {activated === x.id && (
                     <section>
-                      <Dropdown menu={{ items: appItems }}>
+                      <Dropdown menu={{ items: buildAppItems(x.id) }}>
                         <ChatAppCube className={styles.cubeIcon}></ChatAppCube>
                       </Dropdown>
                     </section>
@@ -142,6 +142,12 @@ const Chat = () => {
       </Flex>
       <Divider type={'vertical'} className={styles.divider}></Divider>
       <ChatContainer></ChatContainer>
+      <ChatConfigurationModal
+        visible={visible}
+        showModal={showModal}
+        hideModal={hideModal}
+        id={currentDialog.id}
+      ></ChatConfigurationModal>
     </Flex>
   );
 };

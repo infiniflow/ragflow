@@ -6,6 +6,7 @@ import { DvaModel } from 'umi';
 export interface ChatModelState {
   name: string;
   dialogList: IDialog[];
+  currentDialog: IDialog;
 }
 
 const model: DvaModel<ChatModelState> = {
@@ -13,6 +14,7 @@ const model: DvaModel<ChatModelState> = {
   state: {
     name: 'kate',
     dialogList: [],
+    currentDialog: <IDialog>{},
   },
   reducers: {
     save(state, action) {
@@ -27,11 +29,20 @@ const model: DvaModel<ChatModelState> = {
         dialogList: payload,
       };
     },
+    setCurrentDialog(state, { payload }) {
+      return {
+        ...state,
+        currentDialog: payload,
+      };
+    },
   },
 
   effects: {
     *getDialog({ payload }, { call, put }) {
       const { data } = yield call(chatService.getDialog, payload);
+      if (data.retcode === 0) {
+        yield put({ type: 'setCurrentDialog', payload: data.data });
+      }
     },
     *setDialog({ payload }, { call, put }) {
       const { data } = yield call(chatService.setDialog, payload);
@@ -39,6 +50,7 @@ const model: DvaModel<ChatModelState> = {
         yield put({ type: 'listDialog' });
         message.success('Created successfully !');
       }
+      return data.retcode;
     },
     *listDialog({ payload }, { call, put }) {
       const { data } = yield call(chatService.listDialog, payload);

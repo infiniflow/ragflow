@@ -12,3 +12,11 @@ export interface IVariable {
   presence_penalty: number;
   max_tokens: number;
 }
+
+export interface VariableTableDataType {
+  key: string;
+  variable: string;
+  optional: boolean;
+}
+
+export type IPromptConfigParameters = Omit<VariableTableDataType, 'variable'>;

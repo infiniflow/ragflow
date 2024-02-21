@@ -22,15 +22,13 @@ import {
 } from 'react';
 import { v4 as uuid } from 'uuid';
 import { EditableCell, EditableRow } from './editable-cell';
-import { ISegmentedContentProps } from './interface';
+import {
+  VariableTableDataType as DataType,
+  IPromptConfigParameters,
+  ISegmentedContentProps,
+} from './interface';
 
 import styles from './index.less';
-
-interface DataType {
-  key: string;
-  variable: string;
-  optional: boolean;
-}
 
 type FieldType = {
   similarity_threshold?: number;
@@ -40,7 +38,7 @@ type FieldType = {
 
 const PromptEngine = (
   { show, form }: ISegmentedContentProps,
-  ref: ForwardedRef<Array<Omit<DataType, 'variable'>>>,
+  ref: ForwardedRef<Array<IPromptConfigParameters>>,
 ) => {
   const [dataSource, setDataSource] = useState<DataType[]>([]);
 

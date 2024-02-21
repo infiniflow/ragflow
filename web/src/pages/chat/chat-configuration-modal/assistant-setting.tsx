@@ -6,8 +6,6 @@ import { ISegmentedContentProps } from './interface';
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import styles from './index.less';
 
-const { Option } = Select;
-
 const AssistantSetting = ({ show }: ISegmentedContentProps) => {
   const knowledgeList = useFetchKnowledgeList();
   const knowledgeOptions = knowledgeList.map((x) => ({
