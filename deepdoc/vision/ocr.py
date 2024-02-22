@@ -74,7 +74,7 @@ class TextRecognizer(object):
         self.rec_batch_num = 16
         postprocess_params = {
             'name': 'CTCLabelDecode',
-            "character_dict_path": os.path.join(get_project_base_directory(), "rag/res", "ocr.res"),
+            "character_dict_path": os.path.join(os.path.dirname(os.path.realpath(__file__)), "ocr.res"),
             "use_space_char": True
         }
         self.postprocess_op = build_post_process(postprocess_params)
@@ -450,7 +450,7 @@ class OCR(object):
 
         """
         if not model_dir:
-            model_dir = snapshot_download(repo_id="InfiniFlow/ocr")
+            model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
 
         self.text_detector = TextDetector(model_dir)
         self.text_recognizer = TextRecognizer(model_dir)

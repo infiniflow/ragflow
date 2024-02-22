@@ -34,7 +34,6 @@ from rag.utils import num_tokens_from_string, encoder, rmSpace
 
 @manager.route('/set', methods=['POST'])
 @login_required
-@validate_request("dialog_id")
 def set_conversation():
     req = request.json
     conv_id = req.get("conversation_id")
@@ -145,7 +144,7 @@ def message_fit_in(msg, max_length=4000):
 
 @manager.route('/completion', methods=['POST'])
 @login_required
-@validate_request("dialog_id", "messages")
+@validate_request("conversation_id", "messages")
 def completion():
     req = request.json
     msg = []
@@ -154,12 +153,20 @@ def completion():
         if m["role"] == "assistant" and not msg: continue
         msg.append({"role": m["role"], "content": m["content"]})
     try:
-        e, dia = DialogService.get_by_id(req["dialog_id"])
+        e, conv = ConversationService.get_by_id(req["conversation_id"])
+        if not e:
+            return get_data_error_result(retmsg="Conversation not found!")
+        conv.message.append(msg[-1])
+        e, dia = DialogService.get_by_id(conv.dialog_id)
         if not e:
             return get_data_error_result(retmsg="Dialog not found!")
-        del req["dialog_id"]
+        del req["conversation_id"]
         del req["messages"]
-        return get_json_result(data=chat(dia, msg, **req))
+        ans = chat(dia, msg, **req)
+        conv.reference.append(ans["reference"])
+        conv.message.append({"role": "assistant", "content": ans["answer"]})
+        ConversationService.update_by_id(conv.id, conv.to_dict())
+        return get_json_result(data=ans)
     except Exception as e:
         return server_error_response(e)
 
@@ -194,8 +201,8 @@ def chat(dialog, messages, **kwargs):
                                     dialog.vector_similarity_weight, top=1024, aggs=False)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
 
-    if not knowledges and prompt_config["empty_response"]:
-        return {"answer": prompt_config["empty_response"], "retrieval": kbinfos}
+    if not knowledges and prompt_config.get("empty_response"):
+        return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n".join(knowledges)
     gen_conf = dialog.llm_setting
@@ -205,7 +212,8 @@ def chat(dialog, messages, **kwargs):
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], llm.max_tokens - used_token_count)
     answer = chat_mdl.chat(prompt_config["system"].format(**kwargs), msg, gen_conf)
 
-    answer = retrievaler.insert_citations(answer,
+    if knowledges:
+        answer = retrievaler.insert_citations(answer,
                                           [ck["content_ltks"] for ck in kbinfos["chunks"]],
                                           [ck["vector"] for ck in kbinfos["chunks"]],
                                           embd_mdl,
@@ -213,7 +221,7 @@ def chat(dialog, messages, **kwargs):
                                           vtweight=dialog.vector_similarity_weight)
     for c in kbinfos["chunks"]:
         if c.get("vector"): del c["vector"]
-    return {"answer": answer, "retrieval": kbinfos}
+    return {"answer": answer, "reference": kbinfos}
 
 
 def use_sql(question, field_map, tenant_id, chat_mdl):
