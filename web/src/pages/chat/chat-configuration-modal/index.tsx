@@ -3,13 +3,16 @@ import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { Divider, Flex, Form, Modal, Segmented } from 'antd';
 import { SegmentedValue } from 'antd/es/segmented';
 import omit from 'lodash/omit';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AssistantSetting from './assistant-setting';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
-import { useSetDialog } from '../hooks';
-import { variableEnabledFieldMap } from './constants';
+import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { variableEnabledFieldMap } from '../constants';
+import { useFetchDialog, useResetCurrentDialog, useSetDialog } from '../hooks';
+import { IPromptConfigParameters } from '../interface';
+import { excludeUnEnabledVariables } from '../utils';
 import styles from './index.less';
 
 enum ConfigurationSegmented {
@@ -40,32 +43,46 @@ const validateMessages = {
   },
 };
 
-const ChatConfigurationModal = ({
-  visible,
-  hideModal,
-}: IModalManagerChildrenProps) => {
+interface IProps extends IModalManagerChildrenProps {
+  id: string;
+}
+
+const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
   const [form] = Form.useForm();
   const [value, setValue] = useState<ConfigurationSegmented>(
     ConfigurationSegmented.AssistantSetting,
   );
-  const promptEngineRef = useRef(null);
+  const promptEngineRef = useRef<Array<IPromptConfigParameters>>([]);
+  const loading = useOneNamespaceEffectsLoading('chatModel', ['setDialog']);
 
   const setDialog = useSetDialog();
+  const currentDialog = useFetchDialog(id, visible);
+  const { resetCurrentDialog } = useResetCurrentDialog();
 
   const handleOk = async () => {
     const values = await form.validateFields();
-    const nextValues: any = omit(values, Object.keys(variableEnabledFieldMap));
+    const nextValues: any = omit(values, [
+      ...Object.keys(variableEnabledFieldMap),
+      'parameters',
+      ...excludeUnEnabledVariables(values),
+    ]);
+    const emptyResponse = nextValues.prompt_config?.empty_response ?? '';
     const finalValues = {
+      dialog_id: id,
       ...nextValues,
       prompt_config: {
         ...nextValues.prompt_config,
         parameters: promptEngineRef.current,
+        empty_response: emptyResponse,
       },
     };
     console.info(promptEngineRef.current);
     console.info(nextValues);
     console.info(finalValues);
-    setDialog(finalValues);
+    const retcode: number = await setDialog(finalValues);
+    if (retcode === 0) {
+      hideModal();
+    }
   };
 
   const handleCancel = () => {
@@ -74,6 +91,11 @@ const ChatConfigurationModal = ({
 
   const handleSegmentedChange = (val: SegmentedValue) => {
     setValue(val as ConfigurationSegmented);
+  };
+
+  const handleModalAfterClose = () => {
+    resetCurrentDialog();
+    form.resetFields();
   };
 
   const title = (
@@ -89,6 +111,10 @@ const ChatConfigurationModal = ({
     </Flex>
   );
 
+  useEffect(() => {
+    form.setFieldsValue(currentDialog);
+  }, [currentDialog, form]);
+
   return (
     <Modal
       title={title}
@@ -96,6 +122,9 @@ const ChatConfigurationModal = ({
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}
+      confirmLoading={loading}
+      destroyOnClose
+      afterClose={handleModalAfterClose}
     >
       <Segmented
         size={'large'}

@@ -6,6 +6,7 @@ const {
   getDialog,
   setDialog,
   listDialog,
+  removeDialog,
   getConversation,
   setConversation,
   completeConversation,
@@ -19,6 +20,10 @@ const methods = {
   },
   setDialog: {
     url: setDialog,
+    method: 'post',
+  },
+  removeDialog: {
+    url: removeDialog,
     method: 'post',
   },
   listDialog: {

@@ -1,15 +1,13 @@
 import { Form, Input, Select } from 'antd';
 
 import classNames from 'classnames';
-import { ISegmentedContentProps } from './interface';
+import { ISegmentedContentProps } from '../interface';
 
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import styles from './index.less';
 
-const { Option } = Select;
-
 const AssistantSetting = ({ show }: ISegmentedContentProps) => {
-  const knowledgeList = useFetchKnowledgeList();
+  const knowledgeList = useFetchKnowledgeList(true);
   const knowledgeOptions = knowledgeList.map((x) => ({
     label: x.name,
     value: x.id,

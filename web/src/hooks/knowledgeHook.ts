@@ -125,11 +125,18 @@ export const useFetchKnowledgeBaseConfiguration = () => {
   }, [fetchKnowledgeBaseConfiguration]);
 };
 
-export const useFetchKnowledgeList = (): IKnowledge[] => {
+export const useFetchKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+): IKnowledge[] => {
   const dispatch = useDispatch();
 
   const knowledgeModel = useSelector((state: any) => state.knowledgeModel);
   const { data = [] } = knowledgeModel;
+  const list = useMemo(() => {
+    return shouldFilterListWithoutDocument
+      ? data.filter((x: IKnowledge) => x.doc_num > 0)
+      : data;
+  }, [data, shouldFilterListWithoutDocument]);
 
   const fetchList = useCallback(() => {
     dispatch({
@@ -141,5 +148,5 @@ export const useFetchKnowledgeList = (): IKnowledge[] => {
     fetchList();
   }, [fetchList]);
 
-  return data;
+  return list;
 };

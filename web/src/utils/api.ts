@@ -45,6 +45,7 @@ export default {
 
   setDialog: `${api_host}/dialog/set`,
   getDialog: `${api_host}/dialog/get`,
+  removeDialog: `${api_host}/dialog/rm`,
   listDialog: `${api_host}/dialog/list`,
 
   setConversation: `${api_host}/conversation/set`,

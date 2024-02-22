@@ -75,9 +75,7 @@ export const ParsingStatusCell = ({ record }: IProps) => {
 
   return (
     <Flex justify={'space-between'}>
-      <Popover
-        content={isRunning && <PopoverContent record={record}></PopoverContent>}
-      >
+      <Popover content={<PopoverContent record={record}></PopoverContent>}>
         <Tag color={runningStatus.color}>
           {isRunning ? (
             <Space>
