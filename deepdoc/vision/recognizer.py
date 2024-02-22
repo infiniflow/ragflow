@@ -223,7 +223,7 @@ class Recognizer(object):
         return inputs
 
     @staticmethod
-    def find_overlapped(self, box, boxes_sorted_by_y, naive=False):
+    def find_overlapped(box, boxes_sorted_by_y, naive=False):
         if not boxes_sorted_by_y:
             return
         bxs = boxes_sorted_by_y
@@ -249,7 +249,7 @@ class Recognizer(object):
 
         max_overlaped_i, max_overlaped = None, 0
         for i in range(s, e):
-            ov = self.__overlapped_area(bxs[i], box)
+            ov = Recognizer.overlapped_area(bxs[i], box)
             if ov <= max_overlaped:
                 continue
             max_overlaped_i = i
