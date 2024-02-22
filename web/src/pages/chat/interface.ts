@@ -1,3 +1,4 @@
+import { IConversation, Message } from '@/interfaces/database/chat';
 import { FormInstance } from 'antd';
 
 export interface ISegmentedContentProps {
@@ -20,3 +21,11 @@ export interface VariableTableDataType {
 }
 
 export type IPromptConfigParameters = Omit<VariableTableDataType, 'variable'>;
+
+export interface IMessage extends Message {
+  id: string;
+}
+
+export interface IClientConversation extends IConversation {
+  message: IMessage[];
+}

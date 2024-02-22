@@ -7,7 +7,7 @@ import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import styles from './index.less';
 
 const AssistantSetting = ({ show }: ISegmentedContentProps) => {
-  const knowledgeList = useFetchKnowledgeList();
+  const knowledgeList = useFetchKnowledgeList(true);
   const knowledgeOptions = knowledgeList.map((x) => ({
     label: x.name,
     value: x.id,

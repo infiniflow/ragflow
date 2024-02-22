@@ -66,12 +66,14 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
       'parameters',
       ...excludeUnEnabledVariables(values),
     ]);
+    const emptyResponse = nextValues.prompt_config?.empty_response ?? '';
     const finalValues = {
       dialog_id: id,
       ...nextValues,
       prompt_config: {
         ...nextValues.prompt_config,
         parameters: promptEngineRef.current,
+        empty_response: emptyResponse,
       },
     };
     console.info(promptEngineRef.current);

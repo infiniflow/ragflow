@@ -1,3 +1,5 @@
+import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
+import { useSetModalState } from '@/hooks/commonHooks';
 import { DeleteOutlined, EditOutlined, FormOutlined } from '@ant-design/icons';
 import {
   Button,
@@ -9,27 +11,39 @@ import {
   Space,
   Tag,
 } from 'antd';
-import ChatContainer from './chat-container';
-
-import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import classNames from 'classnames';
+import { useCallback, useState } from 'react';
 import ChatConfigurationModal from './chat-configuration-modal';
+import ChatContainer from './chat-container';
 import {
-  useFetchDialogList,
+  useClickConversationCard,
+  useClickDialogCard,
+  useCreateTemporaryConversation,
+  useFetchConversationList,
+  useFetchDialog,
+  useGetChatSearchParams,
   useRemoveDialog,
+  useSelectFirstDialogOnMount,
   useSetCurrentDialog,
 } from './hooks';
 
-import { useSetModalState } from '@/hooks/commonHooks';
-import { useState } from 'react';
 import styles from './index.less';
 
 const Chat = () => {
-  const dialogList = useFetchDialogList();
+  const dialogList = useSelectFirstDialogOnMount();
   const [activated, setActivated] = useState<string>('');
   const { visible, hideModal, showModal } = useSetModalState();
   const { setCurrentDialog, currentDialog } = useSetCurrentDialog();
   const { onRemoveDialog } = useRemoveDialog();
+  const { handleClickDialog } = useClickDialogCard();
+  const { handleClickConversation } = useClickConversationCard();
+  const { dialogId, conversationId } = useGetChatSearchParams();
+  const list = useFetchConversationList(dialogId);
+  const { createTemporaryConversation } = useCreateTemporaryConversation();
+
+  const selectedDialog = useFetchDialog(dialogId, true);
+
+  const prologue = selectedDialog?.prompt_config?.prologue || '';
 
   const handleAppCardEnter = (id: string) => () => {
     setActivated(id);
@@ -46,17 +60,26 @@ const Chat = () => {
     showModal();
   };
 
+  const handleDialogCardClick = (dialogId: string) => () => {
+    handleClickDialog(dialogId);
+  };
+
+  const handleConversationCardClick = (dialogId: string) => () => {
+    handleClickConversation(dialogId);
+  };
+
+  const handleCreateTemporaryConversation = useCallback(() => {
+    createTemporaryConversation(prologue);
+  }, [createTemporaryConversation, prologue]);
+
   const items: MenuProps['items'] = [
     {
       key: '1',
+      onClick: handleCreateTemporaryConversation,
       label: (
-        <a
-          target="_blank"
-          rel="noopener noreferrer"
-          href="https://www.antgroup.com"
-        >
-          1st menu item
-        </a>
+        <Space>
+          <EditOutlined /> New chat
+        </Space>
       ),
     },
   ];
@@ -101,9 +124,13 @@ const Chat = () => {
             {dialogList.map((x) => (
               <Card
                 key={x.id}
-                className={classNames(styles.chatAppCard)}
+                hoverable
+                className={classNames(styles.chatAppCard, {
+                  [styles.chatAppCardSelected]: dialogId === x.id,
+                })}
                 onMouseEnter={handleAppCardEnter(x.id)}
                 onMouseLeave={handleAppCardLeave}
+                onClick={handleDialogCardClick(x.id)}
               >
                 <Flex justify="space-between" align="center">
                   <Space>
@@ -143,7 +170,20 @@ const Chat = () => {
             </Dropdown>
           </Flex>
           <Divider></Divider>
-          <section className={styles.chatTitleContent}>today</section>
+          <Flex vertical gap={10} className={styles.chatTitleContent}>
+            {list.map((x) => (
+              <Card
+                key={x.id}
+                hoverable
+                onClick={handleConversationCardClick(x.id)}
+                className={classNames(styles.chatTitleCard, {
+                  [styles.chatTitleCardSelected]: x.id === conversationId,
+                })}
+              >
+                <div>{x.name}</div>
+              </Card>
+            ))}
+          </Flex>
         </Flex>
       </Flex>
       <Divider type={'vertical'} className={styles.divider}></Divider>

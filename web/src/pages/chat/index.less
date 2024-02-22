@@ -19,6 +19,12 @@
         }
       }
     }
+    .chatAppCardSelected {
+      :global(.ant-card-body) {
+        background-color: @gray11;
+        border-radius: 8px;
+      }
+    }
   }
   .chatTitleWrapper {
     width: 220px;
@@ -31,6 +37,19 @@
 
   .chatTitleContent {
     padding: 5px 10px;
+  }
+
+  .chatTitleCard {
+    :global(.ant-card-body) {
+      padding: 8px;
+    }
+  }
+
+  .chatTitleCardSelected {
+    :global(.ant-card-body) {
+      background-color: @gray11;
+      border-radius: 8px;
+    }
   }
 
   .divider {
