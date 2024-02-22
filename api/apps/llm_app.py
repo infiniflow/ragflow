@@ -94,11 +94,11 @@ def list():
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
-        mdlnms = set([o.to_dict()["llm_name"] for o in objs if o.api_key])
+        facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
         llms = LLMService.get_all()
         llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value]
         for m in llms:
-            m["available"] = m["llm_name"] in mdlnms
+            m["available"] = m["fid"] in facts
 
         res = {}
         for m in llms:

@@ -500,7 +500,7 @@ class Document(DataBaseModel):
     token_num = IntegerField(default=0)
     chunk_num = IntegerField(default=0)
     progress = FloatField(default=0)
-    progress_msg = CharField(max_length=512, null=True, help_text="process message", default="")
+    progress_msg = CharField(max_length=4096, null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True)
     process_duation = FloatField(default=0)
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0")
@@ -518,7 +518,7 @@ class Task(DataBaseModel):
     begin_at = DateTimeField(null=True)
     process_duation = FloatField(default=0)
     progress = FloatField(default=0)
-    progress_msg = CharField(max_length=255, null=True, help_text="process message", default="")
+    progress_msg = CharField(max_length=4096, null=True, help_text="process message", default="")
 
 
 class Dialog(DataBaseModel):
@@ -561,6 +561,7 @@ class Conversation(DataBaseModel):
     dialog_id = CharField(max_length=32, null=False, index=True)
     name = CharField(max_length=255, null=True, help_text="converastion name")
     message = JSONField(null=True)
+    reference = JSONField(null=True, default=[])
 
     class Meta:
         db_table = "conversation"
