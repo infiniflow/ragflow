@@ -21,7 +21,7 @@ from datetime import datetime
 from api.db.db_models import Task
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.task_service import TaskService
-from rag.parser.pdf_parser import HuParser
+from deepdoc.parser import HuParser
 from rag.settings import cron_logger
 from rag.utils import MINIO
 from rag.utils import findMaxTm

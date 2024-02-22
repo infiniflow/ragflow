@@ -1,16 +1,28 @@
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
 import copy
 import re
 from collections import Counter
 
 from api.db import ParserType
-from rag.parser import tokenize
+from deepdoc.parser import tokenize
 from rag.nlp import huqie
-from rag.parser.pdf_parser import HuParser
+from deepdoc.parser import PdfParser
 import numpy as np
 from rag.utils import num_tokens_from_string
 
 
-class Pdf(HuParser):
+class Pdf(PdfParser):
     def __init__(self):
         self.model_speciess = ParserType.PAPER.value
         super().__init__()
@@ -26,7 +38,7 @@ class Pdf(HuParser):
 
         from timeit import default_timer as timer
         start = timer()
-        self._layouts_paddle(zoomin)
+        self._layouts_rec(zoomin)
         callback(0.47, "Layout analysis finished")
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
