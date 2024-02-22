@@ -21,7 +21,7 @@ from datetime import datetime
 from api.db.db_models import Task
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.task_service import TaskService
-from deepdoc.parser import HuParser
+from deepdoc.parser import PdfParser
 from rag.settings import cron_logger
 from rag.utils import MINIO
 from rag.utils import findMaxTm
@@ -80,7 +80,7 @@ def dispatch():
 
         tsks = []
         if r["type"] == FileType.PDF.value:
-            pages = HuParser.total_page_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
+            pages = PdfParser.total_page_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
             for s,e in r["parser_config"].get("pages", [(0,100000)]):
                 e = min(e, pages)
                 for p in range(s, e, 10):
