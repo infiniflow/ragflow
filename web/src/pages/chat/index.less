@@ -5,6 +5,10 @@
     width: 288px;
     padding: 26px;
 
+    .chatAppContent {
+      overflow-y: auto;
+    }
+
     .chatAppCard {
       :global(.ant-card-body) {
         padding: 10px;
@@ -13,6 +17,12 @@
         &:hover {
           cursor: pointer;
         }
+      }
+    }
+    .chatAppCardSelected {
+      :global(.ant-card-body) {
+        background-color: @gray11;
+        border-radius: 8px;
       }
     }
   }
@@ -27,6 +37,19 @@
 
   .chatTitleContent {
     padding: 5px 10px;
+  }
+
+  .chatTitleCard {
+    :global(.ant-card-body) {
+      padding: 8px;
+    }
+  }
+
+  .chatTitleCardSelected {
+    :global(.ant-card-body) {
+      background-color: @gray11;
+      border-radius: 8px;
+    }
   }
 
   .divider {

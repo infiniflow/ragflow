@@ -31,7 +31,7 @@ const model: DvaModel<KnowledgeModelState> = {
     },
     *getList({ payload = {} }, { call, put }) {
       const { data } = yield call(kbService.getList, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { retcode, data: res } = data;
 
       if (retcode === 0) {
         yield put({

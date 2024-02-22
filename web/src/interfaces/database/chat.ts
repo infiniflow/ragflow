@@ -1,3 +1,5 @@
+import { MessageType } from '@/constants/chat';
+
 export interface PromptConfig {
   empty_response: string;
   parameters: Parameter[];
@@ -44,4 +46,21 @@ export interface IDialog {
   tenant_id: string;
   update_date: string;
   update_time: number;
+}
+
+export interface IConversation {
+  create_date: string;
+  create_time: number;
+  dialog_id: string;
+  id: string;
+  message: Message[];
+  reference: any[];
+  name: string;
+  update_date: string;
+  update_time: number;
+}
+
+export interface Message {
+  content: string;
+  role: MessageType;
 }
