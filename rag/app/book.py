@@ -12,7 +12,7 @@
 #
 import copy
 import re
-from deepdoc.parser import bullets_category, is_english, tokenize, remove_contents_table, \
+from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices
 from rag.nlp import huqie
 from deepdoc.parser import PdfParser, DocxParser
@@ -47,7 +47,7 @@ class Pdf(PdfParser):
         return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno","")) for b in self.boxes], tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, txt.
         Since a book is long and not all the parts are useful, if it's a PDF,
@@ -94,7 +94,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
 
     sections = [t for t, _ in sections]
     # is it English
-    eng = is_english(random_choices(sections, k=218))
+    eng = lang.lower() == "english"#is_english(random_choices(sections, k=218))
 
     res = []
     # add tables

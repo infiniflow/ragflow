@@ -13,8 +13,7 @@
 import copy
 import re
 from rag.app import laws
-from deepdoc.parser import is_english, tokenize, naive_merge
-from rag.nlp import huqie
+from rag.nlp import huqie, is_english, tokenize, naive_merge
 from deepdoc.parser import PdfParser
 from rag.settings import cron_logger
 
@@ -38,7 +37,7 @@ class Pdf(PdfParser):
         return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes]
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, txt.
         This method apply the naive ways to chunk files.
@@ -80,7 +79,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
 
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 128, "delimiter": "\n!?。；！？"})
     cks = naive_merge(sections, parser_config["chunk_token_num"], parser_config["delimiter"])
-    eng = is_english(cks)
+    eng = lang.lower() == "english"#is_english(cks)
     res = []
     # wrap up to es documents
     for ck in cks:

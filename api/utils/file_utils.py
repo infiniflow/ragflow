@@ -167,7 +167,11 @@ def thumbnail(filename, blob):
         return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
-        return ("data:image/%s;base64,"%filename.split(".")[-1]) + base64.b64encode(Image.open(BytesIO(blob)).thumbnail((30, 30)).tobytes()).decode("utf-8")
+        image = Image.open(BytesIO(blob))
+        image.thumbnail((30, 30))
+        buffered = BytesIO()
+        image.save(buffered, format="png")
+        return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     if re.match(r".*\.(ppt|pptx)$", filename):
         import aspose.slides as slides

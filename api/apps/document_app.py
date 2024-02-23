@@ -272,7 +272,9 @@ def get(doc_id):
         response = flask.make_response(MINIO.get(doc.kb_id, doc.location))
         ext = re.search(r"\.([^.]+)$", doc.name)
         if ext:
-            response.headers.set('Content-Type', 'application/%s'%ext.group(1))
+            if doc.type == FileType.VISUAL.value:
+                response.headers.set('Content-Type', 'image/%s'%ext.group(1))
+            else: response.headers.set('Content-Type', 'application/%s'%ext.group(1))
         return response
     except Exception as e:
         return server_error_response(e)

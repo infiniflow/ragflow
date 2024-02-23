@@ -14,7 +14,7 @@ import re
 from io import BytesIO
 from nltk import word_tokenize
 from openpyxl import load_workbook
-from deepdoc.parser import is_english, random_choices
+from rag.nlp import is_english, random_choices
 from rag.nlp import huqie, stemmer
 from deepdoc.parser import ExcelParser
 
@@ -81,7 +81,7 @@ def beAdoc(d, q, a, eng):
     return d
 
 
-def chunk(filename, binary=None, callback=None, **kwargs):
+def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
         If the file is in excel format, there should be 2 column question and answer without header.
@@ -113,7 +113,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
                         break
                     txt += l
         lines = txt.split("\n")
-        eng = is_english([rmPrefix(l) for l in lines[:100]])
+        eng = lang.lower() == "english"#is_english([rmPrefix(l) for l in lines[:100]])
         fails = []
         for i, line in enumerate(lines):
             arr = [l for l in line.split("\t") if len(l) > 1]

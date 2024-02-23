@@ -14,7 +14,7 @@ import copy
 import re
 from io import BytesIO
 from docx import Document
-from deepdoc.parser import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
+from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
     make_colon_as_title
 from rag.nlp import huqie
 from deepdoc.parser import PdfParser, DocxParser
@@ -68,7 +68,7 @@ class Pdf(PdfParser):
         return [b["text"] + self._line_tag(b, zoomin) for b in self.boxes]
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, txt.
     """
@@ -106,7 +106,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
     else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
     # is it English
-    eng = is_english(sections)
+    eng = lang.lower() == "english"#is_english(sections)
     # Remove 'Contents' part
     remove_contents_table(sections, eng)
 
