@@ -20,8 +20,7 @@ from openpyxl import load_workbook
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from deepdoc.parser import is_english, tokenize
-from rag.nlp import huqie
+from rag.nlp import huqie, is_english, tokenize
 from deepdoc.parser import ExcelParser
 
 
@@ -112,7 +111,7 @@ def column_data_type(arr):
     return arr, ty
 
 
-def chunk(filename, binary=None, callback=None, **kwargs):
+def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
         For csv or txt file, the delimiter between columns is TAB.
@@ -192,7 +191,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         clmns_map = [(py_clmns[j] + fieds_map[clmn_tys[j]], clmns[j])
                      for i in range(len(clmns))]
 
-        eng = is_english(txts)
+        eng = lang.lower() == "english"#is_english(txts)
         for ii, row in df.iterrows():
             d = {}
             row_txt = []

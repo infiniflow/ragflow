@@ -1,7 +1,6 @@
 import copy
 import re
-from deepdoc.parser import tokenize
-from rag.nlp import huqie
+from rag.nlp import huqie, tokenize
 from deepdoc.parser import PdfParser
 from rag.utils import num_tokens_from_string
 
@@ -57,7 +56,7 @@ class Pdf(PdfParser):
         return [b["text"] + self._line_tag(b, zoomin) for b in self.boxes], tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Only pdf is supported.
     """
@@ -74,7 +73,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
     doc["title_tks"] = huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", doc["docnm_kwd"]))
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     # is it English
-    eng = pdf_parser.is_english
+    eng = lang.lower() == "english"#pdf_parser.is_english
 
     res = []
     # add tables

@@ -13,46 +13,14 @@
 import copy
 import re
 from io import BytesIO
-from pptx import Presentation
-from deepdoc.parser import tokenize, is_english
+from rag.nlp import tokenize, is_english
 from rag.nlp import huqie
-from deepdoc.parser import PdfParser
+from deepdoc.parser import PdfParser, PptParser
 
 
-class Ppt(object):
-    def __init__(self):
-        super().__init__()
-
-    def __extract(self, shape):
-        if shape.shape_type == 19:
-            tb = shape.table
-            rows = []
-            for i in range(1, len(tb.rows)):
-                rows.append("; ".join([tb.cell(0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
-            return "\n".join(rows)
-
-        if shape.has_text_frame:
-            return shape.text_frame.text
-
-        if shape.shape_type == 6:
-            texts = []
-            for p in shape.shapes:
-                t = self.__extract(p)
-                if t: texts.append(t)
-            return "\n".join(texts)
-
+class Ppt(PptParser):
     def __call__(self, fnm, from_page, to_page, callback=None):
-        ppt = Presentation(fnm) if isinstance(
-            fnm, str) else Presentation(
-            BytesIO(fnm))
-        txts = []
-        self.total_page = len(ppt.slides)
-        for i, slide in enumerate(ppt.slides[from_page: to_page]):
-            texts = []
-            for shape in slide.shapes:
-                txt = self.__extract(shape)
-                if txt: texts.append(txt)
-            txts.append("\n".join(texts))
+        txts = super.__call__(fnm, from_page, to_page)
 
         callback(0.5, "Text extraction finished.")
         import aspose.slides as slides

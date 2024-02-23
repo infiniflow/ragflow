@@ -15,8 +15,7 @@ import re
 from collections import Counter
 
 from api.db import ParserType
-from deepdoc.parser import tokenize
-from rag.nlp import huqie
+from rag.nlp import huqie, tokenize
 from deepdoc.parser import PdfParser
 import numpy as np
 from rag.utils import num_tokens_from_string
@@ -140,7 +139,7 @@ class Pdf(PdfParser):
         }
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Only pdf is supported.
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
@@ -156,7 +155,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     doc["authors_sm_tks"] = huqie.qieqie(doc["authors_tks"])
     # is it English
-    eng = pdf_parser.is_english
+    eng = lang.lower() == "english"#pdf_parser.is_english
     print("It's English.....", eng)
 
     res = []

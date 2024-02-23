@@ -163,6 +163,7 @@ def completion():
         del req["conversation_id"]
         del req["messages"]
         ans = chat(dia, msg, **req)
+        if not conv.reference: conv.reference = []
         conv.reference.append(ans["reference"])
         conv.message.append({"role": "assistant", "content": ans["answer"]})
         ConversationService.update_by_id(conv.id, conv.to_dict())

@@ -464,6 +464,7 @@ class Knowledgebase(DataBaseModel):
     avatar = TextField(null=True, help_text="avatar base64 string")
     tenant_id = CharField(max_length=32, null=False)
     name = CharField(max_length=128, null=False, help_text="KB name", index=True)
+    language = CharField(max_length=32, null=True, default="Chinese", help_text="English|Chinese")
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID")
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me")

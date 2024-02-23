@@ -64,7 +64,11 @@ def load_model(model_dir, nm):
     if not os.path.exists(model_file_path):
         raise ValueError("not find model file path {}".format(
             model_file_path))
-    sess = ort.InferenceSession(model_file_path)
+
+    if ort.get_device() == "GPU":
+        sess = ort.InferenceSession(model_file_path, providers=['CUDAExecutionProvider'])
+    else:
+        sess = ort.InferenceSession(model_file_path, providers=['CPUExecutionProvider'])
     return sess, sess.get_inputs()[0]
 
 
