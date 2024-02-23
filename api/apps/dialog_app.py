@@ -32,7 +32,6 @@ def set_dialog():
     dialog_id = req.get("dialog_id")
     name = req.get("name", "New Dialog")
     description = req.get("description", "A helpful Dialog")
-    language = req.get("language", "Chinese")
     top_n = req.get("top_n", 6)
     similarity_threshold = req.get("similarity_threshold", 0.1)
     vector_similarity_weight = req.get("vector_similarity_weight", 0.3)
@@ -80,7 +79,6 @@ def set_dialog():
                 "name": name,
                 "kb_ids": req["kb_ids"],
                 "description": description,
-                "language": language,
                 "llm_id": llm_id,
                 "llm_setting": llm_setting,
                 "prompt_config": prompt_config,

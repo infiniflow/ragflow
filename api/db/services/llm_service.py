@@ -57,7 +57,7 @@ class TenantLLMService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def model_instance(cls, tenant_id, llm_type, llm_name=None):
+    def model_instance(cls, tenant_id, llm_type, llm_name=None, lang="Chinese"):
         e, tenant = TenantService.get_by_id(tenant_id)
         if not e:
             raise LookupError("Tenant not found")
@@ -87,7 +87,7 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in CvModel:
                 return
             return CvModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"])
+                model_config["api_key"], model_config["llm_name"], lang)
 
         if llm_type == LLMType.CHAT.value:
             if model_config["llm_factory"] not in ChatModel:
@@ -120,11 +120,11 @@ class TenantLLMService(CommonService):
 
 
 class LLMBundle(object):
-    def __init__(self, tenant_id, llm_type, llm_name=None):
+    def __init__(self, tenant_id, llm_type, llm_name=None, lang="Chinese"):
         self.tenant_id = tenant_id
         self.llm_type = llm_type
         self.llm_name = llm_name
-        self.mdl = TenantLLMService.model_instance(tenant_id, llm_type, llm_name)
+        self.mdl = TenantLLMService.model_instance(tenant_id, llm_type, llm_name, lang=lang)
         assert self.mdl, "Can't find mole for {}/{}/{}".format(tenant_id, llm_type, llm_name)
 
     def encode(self, texts: list, batch_size=32):
