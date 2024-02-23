@@ -1,8 +1,6 @@
 English | [简体中文](./README_zh.md)
 
-#*Deep*Doc
-
----
+# *Deep*Doc
 
 - [1. Introduction](#1)
 - [2. Vision](#2)
@@ -11,15 +9,12 @@ English | [简体中文](./README_zh.md)
 <a name="1"></a>
 ## 1. Introduction
 
----
 With a bunch of documents from various domains with various formats and along with diverse retrieval requirements, 
 an accurate analysis becomes a very challenge task. *Deep*Doc is born for that purpose.
 There 2 parts in *Deep*Doc so far: vision and parser.
 
 <a name="2"></a>
 ## 2. Vision
-
----
 
 We use vision information to resolve problems as human being.
   - OCR. Since a lot of documents presented as images or at least be able to transform to image, 
@@ -64,17 +59,14 @@ We use vision information to resolve problems as human being.
 <a name="3"></a>
 ## 3. Parser
 
----
-
 Four kinds of document formats as PDF, DOCX, EXCEL and PPT have their corresponding parser. 
 The most complex one is PDF parser since PDF's flexibility. The output of PDF parser includes:
   - Text chunks with their own positions in PDF(page number and rectangular positions).
   - Tables with cropped image from the PDF, and contents which has already translated into natural language sentences.
   - Figures with caption and text in the figures.
   
-###Résumé
+### Résumé
 
----
 The résumé is a very complicated kind of document. A résumé which is composed of unstructured text 
 with various layouts could be resolved into structured data composed of nearly a hundred of fields.
 We haven't opened the parser yet, as we open the processing method after parsing procedure.
