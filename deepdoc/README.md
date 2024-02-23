@@ -1,6 +1,6 @@
 English | [简体中文](./README_zh.md)
 
-#*Deep*Doc
+# *Deep*Doc
 
 - [1. Introduction](#1)
 - [2. Vision](#2)
@@ -65,7 +65,7 @@ The most complex one is PDF parser since PDF's flexibility. The output of PDF pa
   - Tables with cropped image from the PDF, and contents which has already translated into natural language sentences.
   - Figures with caption and text in the figures.
   
-###Résumé
+### Résumé
 
 The résumé is a very complicated kind of document. A résumé which is composed of unstructured text 
 with various layouts could be resolved into structured data composed of nearly a hundred of fields.
