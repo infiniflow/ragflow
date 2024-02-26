@@ -1,3 +1,4 @@
+import { useFetchUserInfo, useSelectUserInfo } from '@/hooks/userSettingHook';
 import authorizationUtil from '@/utils/authorizationUtil';
 import type { MenuProps } from 'antd';
 import { Avatar, Button, Dropdown } from 'antd';
@@ -7,6 +8,7 @@ import { history } from 'umi';
 
 const App: React.FC = () => {
   const { t } = useTranslation();
+  const userInfo = useSelectUserInfo();
 
   const logout = () => {
     authorizationUtil.removeAll();
@@ -36,13 +38,18 @@ const App: React.FC = () => {
         ),
       },
     ];
-  }, []);
+  }, [t]);
+
+  useFetchUserInfo();
 
   return (
     <Dropdown menu={{ items }} placement="bottomLeft" arrow>
       <Avatar
         size={32}
-        src="https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png"
+        src={
+          userInfo.avatar ??
+          'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png'
+        }
       />
     </Dropdown>
   );
