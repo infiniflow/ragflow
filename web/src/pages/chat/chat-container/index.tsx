@@ -1,20 +1,59 @@
-import { Avatar, Button, Flex, Input } from 'antd';
-import { ChangeEventHandler, useState } from 'react';
-
-import { Message } from '@/interfaces/database/chat';
-import classNames from 'classnames';
-import { useFetchConversation, useSendMessage } from '../hooks';
-
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { useSelectUserInfo } from '@/hooks/userSettingHook';
+import { IReference, Message } from '@/interfaces/database/chat';
+import { Avatar, Button, Flex, Input, Popover } from 'antd';
+import classNames from 'classnames';
+import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
+import reactStringReplace from 'react-string-replace';
+import { useFetchConversation, useSendMessage } from '../hooks';
 import { IClientConversation } from '../interface';
 
-import { useSelectUserInfo } from '@/hooks/userSettingHook';
+import { InfoCircleOutlined } from '@ant-design/icons';
+import Markdown from 'react-markdown';
+import { visitParents } from 'unist-util-visit-parents';
 import styles from './index.less';
 
-const MessageItem = ({ item }: { item: Message }) => {
+const rehypeWrapReference = () => {
+  return function wrapTextTransform(tree: any) {
+    visitParents(tree, 'text', (node, ancestors) => {
+      if (ancestors.at(-1).tagName !== 'custom-typography') {
+        node.type = 'element';
+        node.tagName = 'custom-typography';
+        node.properties = {};
+        node.children = [{ type: 'text', value: node.value }];
+      }
+    });
+  };
+};
+
+const MessageItem = ({ item }: { item: Message; references: IReference[] }) => {
   const userInfo = useSelectUserInfo();
+
+  const popoverContent = useMemo(
+    () => (
+      <div>
+        <p>Content</p>
+        <p>Content</p>
+      </div>
+    ),
+    [],
+  );
+
+  const renderReference = useCallback(
+    (text: string) => {
+      return reactStringReplace(text, /#{2}\d{1,}\${2}/g, (match, i) => {
+        return (
+          <Popover content={popoverContent}>
+            <InfoCircleOutlined key={i} className={styles.referenceIcon} />
+          </Popover>
+        );
+      });
+    },
+    [popoverContent],
+  );
+
   return (
     <div
       className={classNames(styles.messageItem, {
@@ -50,7 +89,19 @@ const MessageItem = ({ item }: { item: Message }) => {
             <b>
               {item.role === MessageType.Assistant ? 'Resume Assistant' : 'You'}
             </b>
-            <div className={styles.messageText}>{item.content}</div>
+            <div className={styles.messageText}>
+              <Markdown
+                rehypePlugins={[rehypeWrapReference]}
+                components={
+                  {
+                    'custom-typography': ({ children }: { children: string }) =>
+                      renderReference(children),
+                  } as any
+                }
+              >
+                {item.content}
+              </Markdown>
+            </div>
           </Flex>
         </div>
       </section>
@@ -81,7 +132,11 @@ const ChatContainer = () => {
       <Flex flex={1} vertical className={styles.messageContainer}>
         <div>
           {conversation?.message?.map((message) => (
-            <MessageItem key={message.id} item={message}></MessageItem>
+            <MessageItem
+              key={message.id}
+              item={message}
+              references={conversation.reference}
+            ></MessageItem>
           ))}
         </div>
       </Flex>

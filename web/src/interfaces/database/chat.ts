@@ -54,7 +54,7 @@ export interface IConversation {
   dialog_id: string;
   id: string;
   message: Message[];
-  reference: any[];
+  reference: IReference[];
   name: string;
   update_date: string;
   update_time: number;
@@ -63,4 +63,30 @@ export interface IConversation {
 export interface Message {
   content: string;
   role: MessageType;
+}
+
+export interface IReference {
+  chunks: Chunk[];
+  doc_aggs: Docagg[];
+  total: number;
+}
+
+interface Docagg {
+  count: number;
+  doc_id: string;
+  doc_name: string;
+}
+
+interface Chunk {
+  chunk_id: string;
+  content_ltks: string;
+  content_with_weight: string;
+  doc_id: string;
+  docnm_kwd: string;
+  img_id: string;
+  important_kwd: any[];
+  kb_id: string;
+  similarity: number;
+  term_similarity: number;
+  vector_similarity: number;
 }
