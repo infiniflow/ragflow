@@ -58,7 +58,7 @@ def set_conversation():
         conv = {
             "id": get_uuid(),
             "dialog_id": req["dialog_id"],
-            "name": "New conversation",
+            "name": req.get("name", "New conversation"),
             "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
         }
         ConversationService.save(**conv)
@@ -102,7 +102,7 @@ def rm():
 def list_convsersation():
     dialog_id = request.args["dialog_id"]
     try:
-        convs = ConversationService.query(dialog_id=dialog_id)
+        convs = ConversationService.query(dialog_id=dialog_id, order_by=ConversationService.model.create_time, reverse=True)
         convs = [d.to_dict() for d in convs]
         return get_json_result(data=convs)
     except Exception as e:
