@@ -1,17 +1,26 @@
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
 import os
 import re
 from collections import Counter
 from copy import deepcopy
-
 import numpy as np
-
 from api.utils.file_utils import get_project_base_directory
-from .recognizer import Recognizer
+from deepdoc.vision import Recognizer
 
 
 class LayoutRecognizer(Recognizer):
-    def __init__(self, domain):
-        self.layout_labels = [
+    labels = [
              "_background_",
              "Text",
              "Title",
@@ -24,7 +33,8 @@ class LayoutRecognizer(Recognizer):
              "Reference",
              "Equation",
         ]
-        super().__init__(self.layout_labels, domain,
+    def __init__(self, domain):
+        super().__init__(self.labels, domain,
                          os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
 
     def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.7, batch_size=16):
@@ -37,7 +47,7 @@ class LayoutRecognizer(Recognizer):
             return any([re.search(p, b["text"]) for p in patt])
 
         layouts = super().__call__(image_list, thr, batch_size)
-        # save_results(image_list, layouts, self.layout_labels, output_dir='output/', threshold=0.7)
+        # save_results(image_list, layouts, self.labels, output_dir='output/', threshold=0.7)
         assert len(image_list) == len(ocr_res)
         # Tag layout type
         boxes = []
@@ -116,4 +126,6 @@ class LayoutRecognizer(Recognizer):
 
         ocr_res = [b for b in ocr_res if b["text"].strip() not in garbag_set]
         return ocr_res, page_layout
+
+
 
