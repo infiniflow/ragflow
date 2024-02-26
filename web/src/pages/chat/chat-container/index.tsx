@@ -1,4 +1,4 @@
-import { Button, Flex, Input, Typography } from 'antd';
+import { Button, Flex, Input } from 'antd';
 import { ChangeEventHandler, useState } from 'react';
 
 import { Message } from '@/interfaces/database/chat';
@@ -9,8 +9,6 @@ import { MessageType } from '@/constants/chat';
 import { IClientConversation } from '../interface';
 import styles from './index.less';
 
-const { Paragraph } = Typography;
-
 const MessageItem = ({ item }: { item: Message }) => {
   return (
     <div
@@ -20,9 +18,7 @@ const MessageItem = ({ item }: { item: Message }) => {
       })}
     >
       <span className={styles.messageItemContent}>
-        <Paragraph ellipsis={{ tooltip: item.content, rows: 3 }}>
-          {item.content}
-        </Paragraph>
+        <div>{item.content}</div>
       </span>
     </div>
   );
@@ -44,10 +40,12 @@ const ChatContainer = () => {
 
   return (
     <Flex flex={1} className={styles.chatContainer} vertical>
-      <Flex flex={1} vertical>
-        {conversation?.message?.map((message) => (
-          <MessageItem key={message.id} item={message}></MessageItem>
-        ))}
+      <Flex flex={1} vertical className={styles.messageContainer}>
+        <div>
+          {conversation?.message?.map((message) => (
+            <MessageItem key={message.id} item={message}></MessageItem>
+          ))}
+        </div>
       </Flex>
       <Input
         size="large"

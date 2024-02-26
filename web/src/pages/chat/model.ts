@@ -48,10 +48,11 @@ const model: DvaModel<ChatModelState> = {
       };
     },
     setCurrentConversation(state, { payload }) {
-      const messageList = payload?.message.map((x: Message | IMessage) => ({
-        ...x,
-        id: 'id' in x ? x.id : uuid(),
-      }));
+      const messageList =
+        payload?.message?.map((x: Message | IMessage) => ({
+          ...x,
+          id: 'id' in x ? x.id : uuid(),
+        })) ?? [];
       return {
         ...state,
         currentConversation: { ...payload, message: messageList },

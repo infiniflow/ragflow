@@ -1,8 +1,8 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
 import { MessageType } from '@/constants/chat';
-import { IDialog } from '@/interfaces/database/chat';
+import { IConversation, IDialog } from '@/interfaces/database/chat';
 import omit from 'lodash/omit';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { ChatSearchParams, EmptyConversationId } from './constants';
@@ -11,6 +11,8 @@ import {
   IMessage,
   VariableTableDataType,
 } from './interface';
+import { ChatModelState } from './model';
+import { isConversationIdNotExist } from './utils';
 
 export const useFetchDialogList = () => {
   const dispatch = useDispatch();
@@ -137,24 +139,6 @@ export const useRemoveDialog = () => {
   return { onRemoveDialog };
 };
 
-export const useClickDialogCard = () => {
-  const [currentQueryParameters, setSearchParams] = useSearchParams();
-
-  const newQueryParameters: URLSearchParams = useMemo(() => {
-    return new URLSearchParams(currentQueryParameters.toString());
-  }, [currentQueryParameters]);
-
-  const handleClickDialog = useCallback(
-    (dialogId: string) => {
-      newQueryParameters.set(ChatSearchParams.DialogId, dialogId);
-      setSearchParams(newQueryParameters);
-    },
-    [newQueryParameters, setSearchParams],
-  );
-
-  return { handleClickDialog };
-};
-
 export const useGetChatSearchParams = () => {
   const [currentQueryParameters] = useSearchParams();
 
@@ -163,6 +147,44 @@ export const useGetChatSearchParams = () => {
     conversationId:
       currentQueryParameters.get(ChatSearchParams.ConversationId) || '',
   };
+};
+
+export const useSetCurrentConversation = () => {
+  const dispatch = useDispatch();
+
+  const setCurrentConversation = useCallback(
+    (currentConversation: IClientConversation) => {
+      dispatch({
+        type: 'chatModel/setCurrentConversation',
+        payload: currentConversation,
+      });
+    },
+    [dispatch],
+  );
+
+  return setCurrentConversation;
+};
+
+export const useClickDialogCard = () => {
+  const [currentQueryParameters, setSearchParams] = useSearchParams();
+
+  const newQueryParameters: URLSearchParams = useMemo(() => {
+    return new URLSearchParams();
+  }, []);
+
+  const handleClickDialog = useCallback(
+    (dialogId: string) => {
+      newQueryParameters.set(ChatSearchParams.DialogId, dialogId);
+      // newQueryParameters.set(
+      //   ChatSearchParams.ConversationId,
+      //   EmptyConversationId,
+      // );
+      setSearchParams(newQueryParameters);
+    },
+    [newQueryParameters, setSearchParams],
+  );
+
+  return { handleClickDialog };
 };
 
 export const useSelectFirstDialogOnMount = () => {
@@ -182,13 +204,83 @@ export const useSelectFirstDialogOnMount = () => {
 
 //#region conversation
 
-export const useFetchConversationList = (dialogId?: string) => {
+export const useCreateTemporaryConversation = () => {
+  const dispatch = useDispatch();
+  const { dialogId } = useGetChatSearchParams();
+  const { handleClickConversation } = useClickConversationCard();
+  let chatModel = useSelector((state: any) => state.chatModel);
+
+  const currentConversation: Pick<
+    IClientConversation,
+    'id' | 'message' | 'name' | 'dialog_id'
+  > = chatModel.currentConversation;
+
+  const conversationList: IClientConversation[] = chatModel.conversationList;
+  const currentDialog: IDialog = chatModel.currentDialog;
+
+  const setCurrentConversation = useSetCurrentConversation();
+
+  const createTemporaryConversation = useCallback(() => {
+    const firstConversation = conversationList[0];
+    const messages = [...(firstConversation?.message ?? [])];
+    if (messages.some((x) => x.id === EmptyConversationId)) {
+      return;
+    }
+    messages.push({
+      id: EmptyConversationId,
+      content: currentDialog?.prompt_config?.prologue ?? '',
+      role: MessageType.Assistant,
+    });
+
+    let nextCurrentConversation = currentConversation;
+
+    // It’s the back-end data.
+    if ('id' in currentConversation) {
+      nextCurrentConversation = { ...currentConversation, message: messages };
+    } else {
+      // client data
+      nextCurrentConversation = {
+        id: EmptyConversationId,
+        name: 'New conversation',
+        dialog_id: dialogId,
+        message: messages,
+      };
+    }
+
+    const nextConversationList = [...conversationList];
+
+    nextConversationList.unshift(
+      nextCurrentConversation as IClientConversation,
+    );
+
+    setCurrentConversation(nextCurrentConversation as IClientConversation);
+
+    dispatch({
+      type: 'chatModel/setConversationList',
+      payload: nextConversationList,
+    });
+    handleClickConversation(EmptyConversationId);
+  }, [
+    dispatch,
+    currentConversation,
+    dialogId,
+    setCurrentConversation,
+    handleClickConversation,
+    conversationList,
+    currentDialog,
+  ]);
+
+  return { createTemporaryConversation };
+};
+
+export const useFetchConversationList = () => {
   const dispatch = useDispatch();
   const conversationList: any[] = useSelector(
     (state: any) => state.chatModel.conversationList,
   );
+  const { dialogId } = useGetChatSearchParams();
 
-  const fetchConversationList = useCallback(() => {
+  const fetchConversationList = useCallback(async () => {
     if (dialogId) {
       dispatch({
         type: 'chatModel/listConversation',
@@ -204,72 +296,56 @@ export const useFetchConversationList = (dialogId?: string) => {
   return conversationList;
 };
 
-export const useClickConversationCard = () => {
-  const [currentQueryParameters, setSearchParams] = useSearchParams();
-  const newQueryParameters: URLSearchParams = new URLSearchParams(
-    currentQueryParameters.toString(),
-  );
+export const useSelectConversationList = () => {
+  const [list, setList] = useState<Array<IConversation>>([]);
+  let chatModel: ChatModelState = useSelector((state: any) => state.chatModel);
+  const { conversationList, currentDialog } = chatModel;
+  const { dialogId } = useGetChatSearchParams();
+  const prologue = currentDialog?.prompt_config?.prologue ?? '';
 
-  const handleClickConversation = (conversationId: string) => {
-    newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
-    setSearchParams(newQueryParameters);
-  };
+  const addTemporaryConversation = useCallback(() => {
+    setList(() => {
+      const nextList = [
+        {
+          id: '',
+          name: 'New conversation',
+          dialog_id: dialogId,
+          message: [
+            {
+              content: prologue,
+              role: MessageType.Assistant,
+            },
+          ],
+        } as IConversation,
+        ...conversationList,
+      ];
+      return nextList;
+    });
+  }, [conversationList, dialogId, prologue]);
 
-  return { handleClickConversation };
+  useEffect(() => {
+    addTemporaryConversation();
+  }, [addTemporaryConversation]);
+
+  return { list, addTemporaryConversation };
 };
 
-export const useCreateTemporaryConversation = () => {
-  const dispatch = useDispatch();
-  const { dialogId } = useGetChatSearchParams();
-  const { handleClickConversation } = useClickConversationCard();
-  let chatModel = useSelector((state: any) => state.chatModel);
-  let currentConversation: Pick<
-    IClientConversation,
-    'id' | 'message' | 'name' | 'dialog_id'
-  > = chatModel.currentConversation;
-  let conversationList: IClientConversation[] = chatModel.conversationList;
+export const useClickConversationCard = () => {
+  const [currentQueryParameters, setSearchParams] = useSearchParams();
+  const newQueryParameters: URLSearchParams = useMemo(
+    () => new URLSearchParams(currentQueryParameters.toString()),
+    [currentQueryParameters],
+  );
 
-  const createTemporaryConversation = (message: string) => {
-    const messages = [...(currentConversation?.message ?? [])];
-    if (messages.some((x) => x.id === EmptyConversationId)) {
-      return;
-    }
-    messages.unshift({
-      id: EmptyConversationId,
-      content: message,
-      role: MessageType.Assistant,
-    });
+  const handleClickConversation = useCallback(
+    (conversationId: string) => {
+      newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
+      setSearchParams(newQueryParameters);
+    },
+    [newQueryParameters, setSearchParams],
+  );
 
-    // It’s the back-end data.
-    if ('id' in currentConversation) {
-      currentConversation = { ...currentConversation, message: messages };
-    } else {
-      // client data
-      currentConversation = {
-        id: EmptyConversationId,
-        name: 'New conversation',
-        dialog_id: dialogId,
-        message: messages,
-      };
-    }
-
-    const nextConversationList = [...conversationList];
-
-    nextConversationList.push(currentConversation as IClientConversation);
-
-    dispatch({
-      type: 'chatModel/setCurrentConversation',
-      payload: currentConversation,
-    });
-
-    dispatch({
-      type: 'chatModel/setConversationList',
-      payload: nextConversationList,
-    });
-    handleClickConversation(EmptyConversationId);
-  };
-
-  return { createTemporaryConversation };
+  return { handleClickConversation };
 };
 
 export const useSetConversation = () => {
@@ -302,17 +378,20 @@ export const useFetchConversation = () => {
   const conversation = useSelector(
     (state: any) => state.chatModel.currentConversation,
   );
+  const setCurrentConversation = useSetCurrentConversation();
 
   const fetchConversation = useCallback(() => {
-    if (conversationId !== EmptyConversationId && conversationId !== '') {
-      dispatch({
+    if (isConversationIdNotExist(conversationId)) {
+      dispatch<any>({
         type: 'chatModel/getConversation',
         payload: {
           conversation_id: conversationId,
         },
       });
+    } else {
+      setCurrentConversation({} as IClientConversation);
     }
-  }, [dispatch, conversationId]);
+  }, [dispatch, conversationId, setCurrentConversation]);
 
   useEffect(() => {
     fetchConversation();
