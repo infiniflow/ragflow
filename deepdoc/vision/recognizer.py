@@ -17,7 +17,6 @@ from copy import deepcopy
 import onnxruntime as ort
 from huggingface_hub import snapshot_download
 
-from . import seeit
 from .operators import *
 from rag.settings import cron_logger
 
@@ -36,7 +35,7 @@ class Recognizer(object):
 
         """
         if not model_dir:
-            model_dir = snapshot_download(repo_id="InfiniFlow/ocr")
+            model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
 
         model_file_path = os.path.join(model_dir, task_name + ".onnx")
         if not os.path.exists(model_file_path):
@@ -46,6 +45,9 @@ class Recognizer(object):
             self.ort_sess = ort.InferenceSession(model_file_path, providers=['CUDAExecutionProvider'])
         else:
             self.ort_sess = ort.InferenceSession(model_file_path, providers=['CPUExecutionProvider'])
+        self.input_names = [node.name for node in self.ort_sess.get_inputs()]
+        self.output_names = [node.name for node in self.ort_sess.get_outputs()]
+        self.input_shape = self.ort_sess.get_inputs()[0].shape[2:4]
         self.label_list = label_list
 
     @staticmethod
@@ -275,22 +277,130 @@ class Recognizer(object):
         return max_overlaped_i
 
     def preprocess(self, image_list):
-        preprocess_ops = []
-        for op_info in [
-            {'interp': 2, 'keep_ratio': False, 'target_size': [800, 608], 'type': 'LinearResize'},
-            {'is_scale': True, 'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225], 'type': 'StandardizeImage'},
-            {'type': 'Permute'},
-            {'stride': 32, 'type': 'PadStride'}
-        ]:
-            new_op_info = op_info.copy()
-            op_type = new_op_info.pop('type')
-            preprocess_ops.append(eval(op_type)(**new_op_info))
-
         inputs = []
-        for im_path in image_list:
-            im, im_info = preprocess(im_path, preprocess_ops)
-            inputs.append({"image": np.array((im,)).astype('float32'), "scale_factor": np.array((im_info["scale_factor"],)).astype('float32')})
+        if "scale_factor" in self.input_names:
+            preprocess_ops = []
+            for op_info in [
+                {'interp': 2, 'keep_ratio': False, 'target_size': [800, 608], 'type': 'LinearResize'},
+                {'is_scale': True, 'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225], 'type': 'StandardizeImage'},
+                {'type': 'Permute'},
+                {'stride': 32, 'type': 'PadStride'}
+            ]:
+                new_op_info = op_info.copy()
+                op_type = new_op_info.pop('type')
+                preprocess_ops.append(eval(op_type)(**new_op_info))
+
+            for im_path in image_list:
+                im, im_info = preprocess(im_path, preprocess_ops)
+                inputs.append({"image": np.array((im,)).astype('float32'),
+                               "scale_factor": np.array((im_info["scale_factor"],)).astype('float32')})
+        else:
+            hh, ww = self.input_shape
+            for img in image_list:
+                h, w = img.shape[:2]
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                img = cv2.resize(np.array(img).astype('float32'), (ww, hh))
+                # Scale input pixel values to 0 to 1
+                img /= 255.0
+                img = img.transpose(2, 0, 1)
+                img = img[np.newaxis, :, :, :].astype(np.float32)
+                inputs.append({self.input_names[0]: img, "scale_factor": [w/ww, h/hh]})
         return inputs
+
+    def postprocess(self, boxes, inputs, thr):
+        if "scale_factor" in self.input_names:
+            bb = []
+            for b in boxes:
+                clsid, bbox, score = int(b[0]), b[2:], b[1]
+                if score < thr:
+                    continue
+                if clsid >= len(self.label_list):
+                    cron_logger.warning(f"bad category id")
+                    continue
+                bb.append({
+                    "type": self.label_list[clsid].lower(),
+                    "bbox": [float(t) for t in bbox.tolist()],
+                    "score": float(score)
+                })
+            return bb
+
+        def xywh2xyxy(x):
+            # [x, y, w, h] to [x1, y1, x2, y2]
+            y = np.copy(x)
+            y[:, 0] = x[:, 0] - x[:, 2] / 2
+            y[:, 1] = x[:, 1] - x[:, 3] / 2
+            y[:, 2] = x[:, 0] + x[:, 2] / 2
+            y[:, 3] = x[:, 1] + x[:, 3] / 2
+            return y
+
+        def compute_iou(box, boxes):
+            # Compute xmin, ymin, xmax, ymax for both boxes
+            xmin = np.maximum(box[0], boxes[:, 0])
+            ymin = np.maximum(box[1], boxes[:, 1])
+            xmax = np.minimum(box[2], boxes[:, 2])
+            ymax = np.minimum(box[3], boxes[:, 3])
+
+            # Compute intersection area
+            intersection_area = np.maximum(0, xmax - xmin) * np.maximum(0, ymax - ymin)
+
+            # Compute union area
+            box_area = (box[2] - box[0]) * (box[3] - box[1])
+            boxes_area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+            union_area = box_area + boxes_area - intersection_area
+
+            # Compute IoU
+            iou = intersection_area / union_area
+
+            return iou
+
+        def iou_filter(boxes, scores, iou_threshold):
+            sorted_indices = np.argsort(scores)[::-1]
+
+            keep_boxes = []
+            while sorted_indices.size > 0:
+                # Pick the last box
+                box_id = sorted_indices[0]
+                keep_boxes.append(box_id)
+
+                # Compute IoU of the picked box with the rest
+                ious = compute_iou(boxes[box_id, :], boxes[sorted_indices[1:], :])
+
+                # Remove boxes with IoU over the threshold
+                keep_indices = np.where(ious < iou_threshold)[0]
+
+                # print(keep_indices.shape, sorted_indices.shape)
+                sorted_indices = sorted_indices[keep_indices + 1]
+
+            return keep_boxes
+
+        boxes = np.squeeze(boxes).T
+        # Filter out object confidence scores below threshold
+        scores = np.max(boxes[:, 4:], axis=1)
+        boxes = boxes[scores > thr, :]
+        scores = scores[scores > thr]
+        if len(boxes) == 0: return []
+
+        # Get the class with the highest confidence
+        class_ids = np.argmax(boxes[:, 4:], axis=1)
+        boxes = boxes[:, :4]
+        input_shape = np.array([inputs["scale_factor"][0], inputs["scale_factor"][1], inputs["scale_factor"][0], inputs["scale_factor"][1]])
+        boxes = np.multiply(boxes, input_shape, dtype=np.float32)
+        boxes = xywh2xyxy(boxes)
+
+        unique_class_ids = np.unique(class_ids)
+        indices = []
+        for class_id in unique_class_ids:
+            class_indices = np.where(class_ids == class_id)[0]
+            class_boxes = boxes[class_indices, :]
+            class_scores = scores[class_indices]
+            class_keep_boxes = iou_filter(class_boxes, class_scores, 0.2)
+            indices.extend(class_indices[class_keep_boxes])
+
+        return [{
+            "type": self.label_list[class_ids[i]].lower(),
+            "bbox": [float(t) for t in boxes[i].tolist()],
+            "score": float(scores[i])
+        } for i in indices]
 
     def __call__(self, image_list, thr=0.7, batch_size=16):
         res = []
@@ -306,22 +416,14 @@ class Recognizer(object):
             end_index = min((i + 1) * batch_size, len(imgs))
             batch_image_list = imgs[start_index:end_index]
             inputs = self.preprocess(batch_image_list)
+            print("preprocess")
             for ins in inputs:
-                bb = []
-                for b in self.ort_sess.run(None, ins)[0]:
-                    clsid, bbox, score = int(b[0]), b[2:], b[1]
-                    if score < thr:
-                        continue
-                    if clsid >= len(self.label_list):
-                        cron_logger.warning(f"bad category id")
-                        continue
-                    bb.append({
-                        "type": self.label_list[clsid].lower(),
-                        "bbox": [float(t) for t in bbox.tolist()],
-                        "score": float(score)
-                    })
+                bb = self.postprocess(self.ort_sess.run(None, {k:v for k,v in ins.items() if k in self.input_names})[0], ins, thr)
                 res.append(bb)
 
         #seeit.save_results(image_list, res, self.label_list, threshold=thr)
 
         return res
+
+
+
