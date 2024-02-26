@@ -1,7 +1,7 @@
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { IThirdOAIModelCollection as IThirdAiModelCollection } from '@/interfaces/database/llm';
+import { IUserInfo } from '@/interfaces/database/userSetting';
 import userService from '@/services/userService';
-import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
 import { Nullable } from 'typings';
 import { DvaModel } from 'umi';
@@ -16,6 +16,7 @@ export interface SettingModelState {
   llmInfo: IThirdAiModelCollection;
   myLlm: any[];
   factoriesList: any[];
+  userInfo: IUserInfo;
 }
 
 const model: DvaModel<SettingModelState> = {
@@ -30,6 +31,7 @@ const model: DvaModel<SettingModelState> = {
     llmInfo: {},
     myLlm: [],
     factoriesList: [],
+    userInfo: {} as IUserInfo,
   },
   reducers: {
     updateState(state, { payload }) {
@@ -38,10 +40,11 @@ const model: DvaModel<SettingModelState> = {
         ...payload,
       };
     },
-  },
-  subscriptions: {
-    setup({ dispatch, history }) {
-      history.listen((location) => {});
+    setUserInfo(state, { payload }) {
+      return {
+        ...state,
+        userInfo: payload,
+      };
     },
   },
   effects: {
@@ -63,15 +66,17 @@ const model: DvaModel<SettingModelState> = {
       }
     },
     *getUserInfo({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(userService.user_info, payload);
-      const { retcode, data: res, retmsg } = data;
-      const userInfo = {
-        avatar: res.avatar,
-        name: res.nickname,
-        email: res.email,
-      };
-      authorizationUtil.setUserInfo(userInfo);
+      const { data } = yield call(userService.user_info, payload);
+      const { retcode, data: res } = data;
+
+      // const userInfo = {
+      //   avatar: res.avatar,
+      //   name: res.nickname,
+      //   email: res.email,
+      // };
+      // authorizationUtil.setUserInfo(userInfo);
       if (retcode === 0) {
+        yield put({ type: 'setUserInfo', payload: res });
         // localStorage.setItem('userInfo',res.)
       }
     },

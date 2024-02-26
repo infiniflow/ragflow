@@ -6,9 +6,26 @@
 }
 
 .messageItem {
-  .messageItemContent {
+  padding: 24px 0;
+  .messageItemSection {
     display: inline-block;
-    width: 400px;
+  }
+  .messageItemSectionLeft {
+    width: 80%;
+  }
+  .messageItemSectionRight {
+    width: 20%;
+  }
+  .messageItemContent {
+    display: inline-flex;
+    gap: 20px;
+  }
+  .messageItemContentReverse {
+    flex-direction: row-reverse;
+  }
+  .messageText {
+    padding: 10px 14px;
+    background-color: rgba(249, 250, 251, 1);
   }
 }
 

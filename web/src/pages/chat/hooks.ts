@@ -426,7 +426,7 @@ export const useSendMessage = () => {
   };
 
   const handleSendMessage = async (message: string) => {
-    if (conversationId !== EmptyConversationId) {
+    if (conversationId !== '') {
       sendMessage(message);
     } else {
       const data = await setConversation(message);
