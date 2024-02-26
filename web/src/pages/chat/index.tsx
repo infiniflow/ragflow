@@ -18,11 +18,11 @@ import ChatContainer from './chat-container';
 import {
   useClickConversationCard,
   useClickDialogCard,
-  useCreateTemporaryConversation,
   useFetchConversationList,
   useFetchDialog,
   useGetChatSearchParams,
   useRemoveDialog,
+  useSelectConversationList,
   useSelectFirstDialogOnMount,
   useSetCurrentDialog,
 } from './hooks';
@@ -38,12 +38,10 @@ const Chat = () => {
   const { handleClickDialog } = useClickDialogCard();
   const { handleClickConversation } = useClickConversationCard();
   const { dialogId, conversationId } = useGetChatSearchParams();
-  const list = useFetchConversationList(dialogId);
-  const { createTemporaryConversation } = useCreateTemporaryConversation();
+  const { list: conversationList, addTemporaryConversation } =
+    useSelectConversationList();
 
-  const selectedDialog = useFetchDialog(dialogId, true);
-
-  const prologue = selectedDialog?.prompt_config?.prologue || '';
+  useFetchDialog(dialogId, true);
 
   const handleAppCardEnter = (id: string) => () => {
     setActivated(id);
@@ -69,8 +67,8 @@ const Chat = () => {
   };
 
   const handleCreateTemporaryConversation = useCallback(() => {
-    createTemporaryConversation(prologue);
-  }, [createTemporaryConversation, prologue]);
+    addTemporaryConversation();
+  }, [addTemporaryConversation]);
 
   const items: MenuProps['items'] = [
     {
@@ -111,6 +109,8 @@ const Chat = () => {
 
     return appItems;
   };
+
+  useFetchConversationList();
 
   return (
     <Flex className={styles.chatWrapper}>
@@ -171,7 +171,7 @@ const Chat = () => {
           </Flex>
           <Divider></Divider>
           <Flex vertical gap={10} className={styles.chatTitleContent}>
-            {list.map((x) => (
+            {conversationList.map((x) => (
               <Card
                 key={x.id}
                 hoverable

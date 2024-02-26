@@ -1,11 +1,34 @@
 .chatContainer {
   padding: 0 24px 24px;
+  .messageContainer {
+    overflow-y: auto;
+  }
 }
 
 .messageItem {
-  .messageItemContent {
+  padding: 24px 0;
+  .messageItemSection {
     display: inline-block;
-    width: 300px;
+  }
+  .messageItemSectionLeft {
+    width: 70%;
+  }
+  .messageItemSectionRight {
+    width: 30%;
+  }
+  .messageItemContent {
+    display: inline-flex;
+    gap: 20px;
+  }
+  .messageItemContentReverse {
+    flex-direction: row-reverse;
+  }
+  .messageText {
+    padding: 0 14px;
+    background-color: rgba(249, 250, 251, 1);
+  }
+  .referenceIcon {
+    padding: 0 6px;
   }
 }
 

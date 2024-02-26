@@ -19,17 +19,20 @@ const RagHeader = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  const tagsData = [
-    { path: '/knowledge', name: 'Knowledge Base', icon: KnowledgeBaseIcon },
-    { path: '/chat', name: 'Chat', icon: StarIon },
-    { path: '/file', name: 'File Management', icon: FileIcon },
-  ];
+  const tagsData = useMemo(
+    () => [
+      { path: '/knowledge', name: 'Knowledge Base', icon: KnowledgeBaseIcon },
+      { path: '/chat', name: 'Chat', icon: StarIon },
+      { path: '/file', name: 'File Management', icon: FileIcon },
+    ],
+    [],
+  );
 
   const currentPath = useMemo(() => {
     return (
       tagsData.find((x) => pathname.startsWith(x.path))?.name || 'knowledge'
     );
-  }, [pathname]);
+  }, [pathname, tagsData]);
 
   const handleChange = (path: string) => {
     navigate(path);
@@ -48,7 +51,7 @@ const RagHeader = () => {
     >
       <Space size={12}>
         <Logo className={styles.appIcon}></Logo>
-        <label className={styles.appName}>Infinity flow</label>
+        <label className={styles.appName}>RagFlow</label>
       </Space>
       <Space size={[0, 8]} wrap>
         <Radio.Group
