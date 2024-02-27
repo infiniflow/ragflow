@@ -208,9 +208,9 @@ def user_register(user_id, user):
     for llm in LLMService.query(fid=LLM_FACTORY):
         tenant_llm.append({"tenant_id": user_id, "llm_factory": LLM_FACTORY, "llm_name": llm.llm_name, "model_type":llm.model_type, "api_key": API_KEY})
 
-    if not UserService.save(**user):return
-    TenantService.save(**tenant)
-    UserTenantService.save(**usr_tenant)
+    if not UserService.insert(**user):return
+    TenantService.insert(**tenant)
+    UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
     return UserService.query(email=user["email"])
 
