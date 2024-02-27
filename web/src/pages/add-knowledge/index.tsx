@@ -2,7 +2,7 @@ import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import { useSecondPathName, useThirdPathName } from '@/hooks/routeHook';
 import { Breadcrumb } from 'antd';
 import { ItemType } from 'antd/es/breadcrumb/Breadcrumb';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { Link, Outlet, useDispatch, useLocation, useNavigate } from 'umi';
 import Siderbar from './components/knowledge-sidebar';
 import {
@@ -25,9 +25,9 @@ const KnowledgeAdding = () => {
   const datasetActiveKey: KnowledgeDatasetRouteKey =
     useThirdPathName() as KnowledgeDatasetRouteKey;
 
-  const gotoList = () => {
+  const gotoList = useCallback(() => {
     navigate('/knowledge');
-  };
+  }, [navigate]);
 
   const breadcrumbItems: ItemType[] = useMemo(() => {
     const items: ItemType[] = [
@@ -54,7 +54,7 @@ const KnowledgeAdding = () => {
     }
 
     return items;
-  }, [activeKey, datasetActiveKey]);
+  }, [activeKey, datasetActiveKey, gotoList, knowledgeBaseId]);
 
   useEffect(() => {
     const search: string = location.search.slice(1);
@@ -71,7 +71,7 @@ const KnowledgeAdding = () => {
         ...map,
       },
     });
-  }, [location]);
+  }, [location, dispatch]);
 
   return (
     <>

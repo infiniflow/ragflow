@@ -1,6 +1,5 @@
 import Image from '@/components/image';
 import { IChunk } from '@/interfaces/database/knowledge';
-import { api_host } from '@/utils/api';
 import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
 import { useState } from 'react';
 import styles from './index.less';
@@ -48,11 +47,6 @@ const ChunkCard = ({
                 <Image id={item.img_id} className={styles.imagePreview}></Image>
               }
             >
-              <img
-                src={`${api_host}/document/image/${item.img_id}`}
-                alt=""
-                className={styles.image}
-              />
               <Image id={item.img_id} className={styles.image}></Image>
             </Popover>
           )}
