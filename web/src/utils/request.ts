@@ -107,7 +107,6 @@ request.interceptors.request.use((url: string, options: any) => {
  * */
 
 request.interceptors.response.use(async (response: any, request) => {
-  console.log(response, request);
   const data: ResponseType = await response.clone().json();
   // response 拦截
 

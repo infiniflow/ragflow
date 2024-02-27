@@ -3,17 +3,37 @@ import { MessageType } from '@/constants/chat';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useSelectUserInfo } from '@/hooks/userSettingHook';
 import { IReference, Message } from '@/interfaces/database/chat';
-import { Avatar, Button, Flex, Input, Popover } from 'antd';
+import {
+  Avatar,
+  Button,
+  Flex,
+  Input,
+  List,
+  Popover,
+  Space,
+  Typography,
+} from 'antd';
 import classNames from 'classnames';
 import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
 import reactStringReplace from 'react-string-replace';
-import { useFetchConversation, useSendMessage } from '../hooks';
+import {
+  useFetchConversation,
+  useGetFileIcon,
+  useScrollToBottom,
+  useSendMessage,
+} from '../hooks';
 import { IClientConversation } from '../interface';
 
+import Image from '@/components/image';
+import NewDocumentLink from '@/components/new-document-link';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import Markdown from 'react-markdown';
 import { visitParents } from 'unist-util-visit-parents';
 import styles from './index.less';
+
+const reg = /(#{2}\d+\${2})/g;
+
+const getChunkIndex = (match: string) => Number(match.slice(2, 3));
 
 const rehypeWrapReference = () => {
   return function wrapTextTransform(tree: any) {
@@ -28,31 +48,68 @@ const rehypeWrapReference = () => {
   };
 };
 
-const MessageItem = ({ item }: { item: Message; references: IReference[] }) => {
+const MessageItem = ({
+  item,
+  reference,
+}: {
+  item: Message;
+  reference: IReference;
+}) => {
   const userInfo = useSelectUserInfo();
 
-  const popoverContent = useMemo(
-    () => (
-      <div>
-        <p>Content</p>
-        <p>Content</p>
-      </div>
-    ),
-    [],
+  const isAssistant = item.role === MessageType.Assistant;
+
+  const getFileIcon = useGetFileIcon();
+
+  const getPopoverContent = useCallback(
+    (chunkIndex: number) => {
+      const chunks = reference?.chunks ?? [];
+      const chunkItem = chunks[chunkIndex];
+      const document = reference?.doc_aggs.find(
+        (x) => x?.doc_id === chunkItem?.doc_id,
+      );
+      const documentId = document?.doc_id;
+      return (
+        <Flex
+          key={chunkItem?.chunk_id}
+          gap={10}
+          className={styles.referencePopoverWrapper}
+        >
+          <Image
+            id={chunkItem?.img_id}
+            className={styles.referenceChunkImage}
+          ></Image>
+          <Space direction={'vertical'}>
+            <div>{chunkItem?.content_with_weight}</div>
+            {documentId && (
+              <NewDocumentLink documentId={documentId}>
+                {document?.doc_name}
+              </NewDocumentLink>
+            )}
+          </Space>
+        </Flex>
+      );
+    },
+    [reference],
   );
 
   const renderReference = useCallback(
     (text: string) => {
-      return reactStringReplace(text, /#{2}\d{1,}\${2}/g, (match, i) => {
+      return reactStringReplace(text, reg, (match, i) => {
+        const chunkIndex = getChunkIndex(match);
         return (
-          <Popover content={popoverContent}>
+          <Popover content={getPopoverContent(chunkIndex)}>
             <InfoCircleOutlined key={i} className={styles.referenceIcon} />
           </Popover>
         );
       });
     },
-    [popoverContent],
+    [getPopoverContent],
   );
+
+  const referenceDocumentList = useMemo(() => {
+    return reference?.doc_aggs ?? [];
+  }, [reference?.doc_aggs]);
 
   return (
     <div
@@ -86,9 +143,7 @@ const MessageItem = ({ item }: { item: Message; references: IReference[] }) => {
             <AssistantIcon></AssistantIcon>
           )}
           <Flex vertical gap={8} flex={1}>
-            <b>
-              {item.role === MessageType.Assistant ? 'Resume Assistant' : 'You'}
-            </b>
+            <b>{isAssistant ? 'Resume Assistant' : 'You'}</b>
             <div className={styles.messageText}>
               <Markdown
                 rehypePlugins={[rehypeWrapReference]}
@@ -102,6 +157,22 @@ const MessageItem = ({ item }: { item: Message; references: IReference[] }) => {
                 {item.content}
               </Markdown>
             </div>
+            {isAssistant && referenceDocumentList.length > 0 && (
+              <List
+                bordered
+                dataSource={referenceDocumentList}
+                renderItem={(item) => (
+                  <List.Item>
+                    <Typography.Text mark>
+                      {/* <SvgIcon name={getFileIcon(item.doc_name)}></SvgIcon> */}
+                    </Typography.Text>
+                    <NewDocumentLink documentId={item.doc_id}>
+                      {item.doc_name}
+                    </NewDocumentLink>
+                  </List.Item>
+                )}
+              />
+            )}
           </Flex>
         </div>
       </section>
@@ -117,6 +188,8 @@ const ChatContainer = () => {
     'completeConversation',
     'getConversation',
   ]);
+  const ref = useScrollToBottom();
+  useGetFileIcon();
 
   const handlePressEnter = () => {
     setValue('');
@@ -131,14 +204,24 @@ const ChatContainer = () => {
     <Flex flex={1} className={styles.chatContainer} vertical>
       <Flex flex={1} vertical className={styles.messageContainer}>
         <div>
-          {conversation?.message?.map((message) => (
-            <MessageItem
-              key={message.id}
-              item={message}
-              references={conversation.reference}
-            ></MessageItem>
-          ))}
+          {conversation?.message?.map((message) => {
+            const assistantMessages = conversation?.message
+              ?.filter((x) => x.role === MessageType.Assistant)
+              .slice(1);
+            const referenceIndex = assistantMessages.findIndex(
+              (x) => x.id === message.id,
+            );
+            const reference = conversation.reference[referenceIndex];
+            return (
+              <MessageItem
+                key={message.id}
+                item={message}
+                reference={reference}
+              ></MessageItem>
+            );
+          })}
         </div>
+        <div ref={ref} />
       </Flex>
       <Input
         size="large"

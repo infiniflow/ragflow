@@ -25,3 +25,6 @@ export default {
   getWidth,
   rsaPsw,
 };
+
+export const getFileExtension = (filename: string) =>
+  filename.slice(filename.lastIndexOf('.') + 1).toLowerCase();

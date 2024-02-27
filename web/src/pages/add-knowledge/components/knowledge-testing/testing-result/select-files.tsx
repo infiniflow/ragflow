@@ -1,6 +1,6 @@
 import { ReactComponent as NavigationPointerIcon } from '@/assets/svg/navigation-pointer.svg';
+import NewDocumentLink from '@/components/new-document-link';
 import { ITestingDocument } from '@/interfaces/database/knowledge';
-import { api_host } from '@/utils/api';
 import { Table, TableProps } from 'antd';
 import { useDispatch, useSelector } from 'umi';
 
@@ -34,13 +34,9 @@ const SelectFiles = ({ handleTesting }: IProps) => {
       key: 'view',
       width: 50,
       render: (_, { doc_id }) => (
-        <a
-          href={`${api_host}/document/get/${doc_id}`}
-          target="_blank"
-          rel="noreferrer"
-        >
+        <NewDocumentLink documentId={doc_id}>
           <NavigationPointerIcon />
-        </a>
+        </NewDocumentLink>
       ),
     },
   ];
