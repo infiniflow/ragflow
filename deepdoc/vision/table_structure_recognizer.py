@@ -14,7 +14,6 @@ import logging
 import os
 import re
 from collections import Counter
-from copy import deepcopy
 
 import numpy as np
 
@@ -37,7 +36,7 @@ class TableStructureRecognizer(Recognizer):
         super().__init__(self.labels, "tsr",
                          os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
 
-    def __call__(self, images, thr=0.5):
+    def __call__(self, images, thr=0.2):
         tbls = super().__call__(images, thr)
         res = []
         # align left&right for rows, align top&bottom for columns
@@ -56,8 +55,8 @@ class TableStructureRecognizer(Recognizer):
                 "row") > 0 or b["label"].find("header") > 0]
             if not left:
                 continue
-            left = np.median(left) if len(left) > 4 else np.min(left)
-            right = np.median(right) if len(right) > 4 else np.max(right)
+            left = np.mean(left) if len(left) > 4 else np.min(left)
+            right = np.mean(right) if len(right) > 4 else np.max(right)
             for b in lts:
                 if b["label"].find("row") > 0 or b["label"].find("header") > 0:
                     if b["x0"] > left:
@@ -129,6 +128,7 @@ class TableStructureRecognizer(Recognizer):
         i = 0
         while i < len(boxes):
             if TableStructureRecognizer.is_caption(boxes[i]):
+                if is_english: cap + " "
                 cap += boxes[i]["text"]
                 boxes.pop(i)
                 i -= 1
@@ -398,7 +398,7 @@ class TableStructureRecognizer(Recognizer):
             for i in range(clmno):
                 if not tbl[r][i]:
                     continue
-                txt = "".join([a["text"].strip() for a in tbl[r][i]])
+                txt = " ".join([a["text"].strip() for a in tbl[r][i]])
                 headers[r][i] = txt
                 hdrset.add(txt)
             if all([not t for t in headers[r]]):

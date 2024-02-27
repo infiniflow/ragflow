@@ -21,13 +21,11 @@ from api.db.services.dialog_service import DialogService, ConversationService
 from api.db import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, LLMBundle
-from api.settings import access_logger, stat_logger
+from api.settings import access_logger, stat_logger, retrievaler
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
 from rag.app.resume import forbidden_select_fields4resume
-from rag.llm import ChatModel
-from rag.nlp import retrievaler
 from rag.nlp.search import index_name
 from rag.utils import num_tokens_from_string, encoder, rmSpace
 

@@ -260,6 +260,18 @@ class Recognizer(object):
         return max_overlaped_i
 
     @staticmethod
+    def find_horizontally_tightest_fit(box, boxes):
+        if not boxes:
+            return
+        min_dis, min_i = 1000000, None
+        for i,b in enumerate(boxes):
+            dis = min(abs(box["x0"] - b["x0"]), abs(box["x1"] - b["x1"]), abs(box["x0"]+box["x1"] - b["x1"] - b["x0"])/2)
+            if dis < min_dis:
+                min_i = i
+                min_dis = dis
+        return min_i
+
+    @staticmethod
     def find_overlapped_with_threashold(box, boxes, thr=0.3):
         if not boxes:
             return

@@ -1,7 +1,4 @@
-from . import search
-from rag.utils import ELASTICSEARCH
 
-retrievaler = search.Dealer(ELASTICSEARCH)
 
 from nltk.stem import PorterStemmer
 stemmer = PorterStemmer()
@@ -39,9 +36,11 @@ BULLET_PATTERN = [[
 ]
 ]
 
+
 def random_choices(arr, k):
     k = min(len(arr), k)
     return random.choices(arr, k=k)
+
 
 def bullets_category(sections):
     global BULLET_PATTERN

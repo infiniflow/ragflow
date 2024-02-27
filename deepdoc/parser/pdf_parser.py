@@ -230,7 +230,7 @@ class HuParser:
                 b["H_right"] = headers[ii]["x1"]
                 b["H"] = ii
 
-            ii = Recognizer.find_overlapped_with_threashold(b, clmns, thr=0.3)
+            ii = Recognizer.find_horizontally_tightest_fit(b, clmns)
             if ii is not None:
                 b["C"] = ii
                 b["C_left"] = clmns[ii]["x0"]

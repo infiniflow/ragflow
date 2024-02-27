@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import re
-from elasticsearch_dsl import Q, Search, A
+from elasticsearch_dsl import Q, Search
 from typing import List, Optional, Dict, Union
 from dataclasses import dataclass
 
@@ -183,6 +183,7 @@ class Dealer:
 
     def insert_citations(self, answer, chunks, chunk_v,
                          embd_mdl, tkweight=0.3, vtweight=0.7):
+        assert len(chunks) == len(chunk_v)
         pieces = re.split(r"([；。？!！\n]|[a-z][.?;!][ \n])", answer)
         for i in range(1, len(pieces)):
             if re.match(r"[a-z][.?;!][ \n]", pieces[i]):
@@ -216,7 +217,7 @@ class Dealer:
             if mx < 0.55:
                 continue
             cites[idx[i]] = list(
-                set([str(i) for i in range(len(chunk_v)) if sim[i] > mx]))[:4]
+                set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]
 
         res = ""
         for i, p in enumerate(pieces):
@@ -225,6 +226,7 @@ class Dealer:
                 continue
             if i not in cites:
                 continue
+            assert int(cites[i]) < len(chunk_v)
             res += "##%s$$" % "$".join(cites[i])
 
         return res
