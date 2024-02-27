@@ -1,8 +1,10 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
 import { MessageType } from '@/constants/chat';
+import { fileIconMap } from '@/constants/common';
 import { IConversation, IDialog } from '@/interfaces/database/chat';
+import { getFileExtension } from '@/utils';
 import omit from 'lodash/omit';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { ChatSearchParams, EmptyConversationId } from './constants';
@@ -439,6 +441,40 @@ export const useSendMessage = () => {
   };
 
   return { sendMessage: handleSendMessage };
+};
+
+export const useScrollToBottom = () => {
+  const ref = useRef<HTMLDivElement>(null);
+  let chatModel: ChatModelState = useSelector((state: any) => state.chatModel);
+  const { currentConversation } = chatModel;
+
+  const scrollToBottom = useCallback(() => {
+    if (currentConversation.id) {
+      ref.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, [currentConversation]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  return ref;
+};
+
+export const useGetFileIcon = () => {
+  // const req = require.context('@/assets/svg/file-icon');
+  // const ret = req.keys().map(req);
+  // console.info(ret);
+  // useEffect(() => {}, []);
+
+  const getFileIcon = (filename: string) => {
+    const ext: string = getFileExtension(filename);
+    const iconPath = fileIconMap[ext as keyof typeof fileIconMap];
+    // const x = require(`@/assets/svg/file-icon/${iconPath}`);
+    return `@/assets/svg/file-icon/${iconPath}`;
+  };
+
+  return getFileIcon;
 };
 
 //#endregion

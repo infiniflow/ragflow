@@ -16,7 +16,12 @@ import {
 import classNames from 'classnames';
 import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
 import reactStringReplace from 'react-string-replace';
-import { useFetchConversation, useSendMessage } from '../hooks';
+import {
+  useFetchConversation,
+  useGetFileIcon,
+  useScrollToBottom,
+  useSendMessage,
+} from '../hooks';
 import { IClientConversation } from '../interface';
 
 import Image from '@/components/image';
@@ -54,26 +59,28 @@ const MessageItem = ({
 
   const isAssistant = item.role === MessageType.Assistant;
 
+  const getFileIcon = useGetFileIcon();
+
   const getPopoverContent = useCallback(
     (chunkIndex: number) => {
       const chunks = reference?.chunks ?? [];
       const chunkItem = chunks[chunkIndex];
-      const document = reference.doc_aggs.find(
-        (x) => x.doc_id === chunkItem.doc_id,
+      const document = reference?.doc_aggs.find(
+        (x) => x?.doc_id === chunkItem?.doc_id,
       );
       const documentId = document?.doc_id;
       return (
         <Flex
-          key={chunkItem.chunk_id}
+          key={chunkItem?.chunk_id}
           gap={10}
           className={styles.referencePopoverWrapper}
         >
           <Image
-            id={chunkItem.img_id}
+            id={chunkItem?.img_id}
             className={styles.referenceChunkImage}
           ></Image>
           <Space direction={'vertical'}>
-            <div>{chunkItem.content_with_weight}</div>
+            <div>{chunkItem?.content_with_weight}</div>
             {documentId && (
               <NewDocumentLink documentId={documentId}>
                 {document?.doc_name}
@@ -156,7 +163,9 @@ const MessageItem = ({
                 dataSource={referenceDocumentList}
                 renderItem={(item) => (
                   <List.Item>
-                    <Typography.Text mark>[ITEM]</Typography.Text>
+                    <Typography.Text mark>
+                      {/* <SvgIcon name={getFileIcon(item.doc_name)}></SvgIcon> */}
+                    </Typography.Text>
                     <NewDocumentLink documentId={item.doc_id}>
                       {item.doc_name}
                     </NewDocumentLink>
@@ -179,6 +188,8 @@ const ChatContainer = () => {
     'completeConversation',
     'getConversation',
   ]);
+  const ref = useScrollToBottom();
+  useGetFileIcon();
 
   const handlePressEnter = () => {
     setValue('');
@@ -210,6 +221,7 @@ const ChatContainer = () => {
             );
           })}
         </div>
+        <div ref={ref} />
       </Flex>
       <Input
         size="large"
