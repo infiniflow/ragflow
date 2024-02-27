@@ -18,7 +18,7 @@ from datetime import datetime
 import peewee
 
 from api.db.db_models import DB
-from api.utils import datetime_format
+from api.utils import datetime_format, current_timestamp, get_uuid
 
 
 class CommonService:
@@ -68,25 +68,40 @@ class CommonService:
 
     @classmethod
     @DB.connection_context()
+    def insert(cls, **kwargs):
+        if "id" not in kwargs:
+            kwargs["id"] = get_uuid()
+        kwargs["create_time"] = current_timestamp()
+        kwargs["create_date"] = datetime_format(datetime.now())
+        kwargs["update_time"] = current_timestamp()
+        kwargs["update_date"] = datetime_format(datetime.now())
+        sample_obj = cls.model(**kwargs).save(force_insert=True)
+        return sample_obj
+
+    @classmethod
+    @DB.connection_context()
     def insert_many(cls, data_list, batch_size=100):
         with DB.atomic():
-            for d in data_list: d["create_time"] = datetime_format(datetime.now())
+            for d in data_list:
+                d["create_time"] = current_timestamp()
+                d["create_date"] = datetime_format(datetime.now())
             for i in range(0, len(data_list), batch_size):
                 cls.model.insert_many(data_list[i:i + batch_size]).execute()
 
     @classmethod
     @DB.connection_context()
     def update_many_by_id(cls, data_list):
-        cur = datetime_format(datetime.now())
         with DB.atomic():
             for data in data_list:
-                data["update_time"] = cur
+                data["update_time"] = current_timestamp()
+                data["update_date"] = datetime_format(datetime.now())
                 cls.model.update(data).where(cls.model.id == data["id"]).execute()
 
     @classmethod
     @DB.connection_context()
     def update_by_id(cls, pid, data):
-        data["update_time"] = datetime_format(datetime.now())
+        data["update_time"] = current_timestamp()
+        data["update_date"] = datetime_format(datetime.now())
         num = cls.model.update(data).where(cls.model.id == pid).execute()
         return num
 

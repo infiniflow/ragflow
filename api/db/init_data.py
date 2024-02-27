@@ -58,16 +58,16 @@ def init_superuser():
     if not UserService.save(**user_info):
         print("【ERROR】can't init admin.")
         return
-    TenantService.save(**tenant)
-    UserTenantService.save(**usr_tenant)
+    TenantService.insert(**tenant)
+    UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
-    UserService.save(**user_info)
+    print("【INFO】Super user initialized. user name: admin, password: admin. Changing the password after logining is strongly recomanded.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={})
     if msg.find("ERROR: ") == 0:
         print("【ERROR】: '{}' dosen't work. {}".format(tenant["llm_id"]), msg)
-    embd_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["embd_id"])
+    embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
     v,c = embd_mdl.encode(["Hello!"])
     if c == 0:
         print("【ERROR】: '{}' dosen't work...".format(tenant["embd_id"]))
