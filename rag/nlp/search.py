@@ -226,7 +226,7 @@ class Dealer:
                 continue
             if i not in cites:
                 continue
-            assert int(cites[i]) < len(chunk_v)
+            for c in cites[i]: assert int(c) < len(chunk_v)
             res += "##%s$$" % "$".join(cites[i])
 
         return res
