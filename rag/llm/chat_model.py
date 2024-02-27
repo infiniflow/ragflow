@@ -15,7 +15,7 @@
 #
 from abc import ABC
 from openai import OpenAI
-import os
+import openai
 
 
 class Base(ABC):
@@ -33,11 +33,14 @@ class GptTurbo(Base):
 
     def chat(self, system, history, gen_conf):
         if system: history.insert(0, {"role": "system", "content": system})
-        res = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=history,
-            **gen_conf)
-        return res.choices[0].message.content.strip(), res.usage.completion_tokens
+        try:
+            res = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                **gen_conf)
+            return res.choices[0].message.content.strip(), res.usage.completion_tokens
+        except openai.APIError as e:
+            return "ERROR: "+str(e), 0
 
 
 from dashscope import Generation
@@ -58,7 +61,7 @@ class QWenChat(Base):
         )
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'], response.usage.output_tokens
-        return response.message, 0
+        return "ERROR: " + response.message, 0
 
 
 from zhipuai import ZhipuAI
@@ -77,4 +80,4 @@ class ZhipuChat(Base):
         )
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'], response.usage.completion_tokens
-        return response.message, 0
+        return "ERROR: " + response.message, 0
