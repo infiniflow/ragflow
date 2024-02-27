@@ -21,13 +21,11 @@ from api.db.services.dialog_service import DialogService, ConversationService
 from api.db import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, LLMBundle
-from api.settings import access_logger, stat_logger
+from api.settings import access_logger, stat_logger, retrievaler
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
 from rag.app.resume import forbidden_select_fields4resume
-from rag.llm import ChatModel
-from rag.nlp import retrievaler
 from rag.nlp.search import index_name
 from rag.utils import num_tokens_from_string, encoder, rmSpace
 
@@ -58,7 +56,7 @@ def set_conversation():
         conv = {
             "id": get_uuid(),
             "dialog_id": req["dialog_id"],
-            "name": "New conversation",
+            "name": req.get("name", "New conversation"),
             "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
         }
         ConversationService.save(**conv)
@@ -102,7 +100,7 @@ def rm():
 def list_convsersation():
     dialog_id = request.args["dialog_id"]
     try:
-        convs = ConversationService.query(dialog_id=dialog_id)
+        convs = ConversationService.query(dialog_id=dialog_id, order_by=ConversationService.model.create_time, reverse=True)
         convs = [d.to_dict() for d in convs]
         return get_json_result(data=convs)
     except Exception as e:

@@ -1,8 +1,19 @@
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
 import logging
 import os
 import re
 from collections import Counter
-from copy import deepcopy
 
 import numpy as np
 
@@ -12,19 +23,20 @@ from .recognizer import Recognizer
 
 
 class TableStructureRecognizer(Recognizer):
+    labels = [
+        "table",
+        "table column",
+        "table row",
+        "table column header",
+        "table projected row header",
+        "table spanning cell",
+    ]
+
     def __init__(self):
-        self.labels = [
-            "table",
-            "table column",
-            "table row",
-            "table column header",
-            "table projected row header",
-            "table spanning cell",
-        ]
         super().__init__(self.labels, "tsr",
                          os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
 
-    def __call__(self, images, thr=0.5):
+    def __call__(self, images, thr=0.2):
         tbls = super().__call__(images, thr)
         res = []
         # align left&right for rows, align top&bottom for columns
@@ -43,8 +55,8 @@ class TableStructureRecognizer(Recognizer):
                 "row") > 0 or b["label"].find("header") > 0]
             if not left:
                 continue
-            left = np.median(left) if len(left) > 4 else np.min(left)
-            right = np.median(right) if len(right) > 4 else np.max(right)
+            left = np.mean(left) if len(left) > 4 else np.min(left)
+            right = np.mean(right) if len(right) > 4 else np.max(right)
             for b in lts:
                 if b["label"].find("row") > 0 or b["label"].find("header") > 0:
                     if b["x0"] > left:
@@ -79,7 +91,8 @@ class TableStructureRecognizer(Recognizer):
             return True
         return False
 
-    def __blockType(self, b):
+    @staticmethod
+    def blockType(b):
         patt = [
             ("^(20|19)[0-9]{2}[年/-][0-9]{1,2}[月/-][0-9]{1,2}日*$", "Dt"),
             (r"^(20|19)[0-9]{2}年$", "Dt"),
@@ -109,11 +122,13 @@ class TableStructureRecognizer(Recognizer):
 
         return "Ot"
 
-    def construct_table(self, boxes, is_english=False, html=False):
+    @staticmethod
+    def construct_table(boxes, is_english=False, html=False):
         cap = ""
         i = 0
         while i < len(boxes):
-            if self.is_caption(boxes[i]):
+            if TableStructureRecognizer.is_caption(boxes[i]):
+                if is_english: cap + " "
                 cap += boxes[i]["text"]
                 boxes.pop(i)
                 i -= 1
@@ -122,14 +137,15 @@ class TableStructureRecognizer(Recognizer):
         if not boxes:
             return []
         for b in boxes:
-            b["btype"] = self.__blockType(b)
+            b["btype"] = TableStructureRecognizer.blockType(b)
         max_type = Counter([b["btype"] for b in boxes]).items()
         max_type = max(max_type, key=lambda x: x[1])[0] if max_type else ""
         logging.debug("MAXTYPE: " + max_type)
 
         rowh = [b["R_bott"] - b["R_top"] for b in boxes if "R" in b]
         rowh = np.min(rowh) if rowh else 0
-        boxes = self.sort_R_firstly(boxes, rowh / 2)
+        boxes = Recognizer.sort_R_firstly(boxes, rowh / 2)
+        #for b in boxes:print(b)
         boxes[0]["rn"] = 0
         rows = [[boxes[0]]]
         btm = boxes[0]["bottom"]
@@ -150,9 +166,9 @@ class TableStructureRecognizer(Recognizer):
         colwm = np.min(colwm) if colwm else 0
         crosspage = len(set([b["page_number"] for b in boxes])) > 1
         if crosspage:
-            boxes = self.sort_X_firstly(boxes, colwm / 2, False)
+            boxes = Recognizer.sort_X_firstly(boxes, colwm / 2, False)
         else:
-            boxes = self.sort_C_firstly(boxes, colwm / 2)
+            boxes = Recognizer.sort_C_firstly(boxes, colwm / 2)
         boxes[0]["cn"] = 0
         cols = [[boxes[0]]]
         right = boxes[0]["x1"]
@@ -313,16 +329,18 @@ class TableStructureRecognizer(Recognizer):
                 hdset.add(i)
 
         if html:
-            return [self.__html_table(cap, hdset,
-                                      self.__cal_spans(boxes, rows,
-                                                       cols, tbl, True)
-                                      )]
+            return TableStructureRecognizer.__html_table(cap, hdset,
+                                                         TableStructureRecognizer.__cal_spans(boxes, rows,
+                                                                                              cols, tbl, True)
+                                                         )
 
-        return self.__desc_table(cap, hdset,
-                                 self.__cal_spans(boxes, rows, cols, tbl, False),
-                                 is_english)
+        return TableStructureRecognizer.__desc_table(cap, hdset,
+                                                     TableStructureRecognizer.__cal_spans(boxes, rows, cols, tbl,
+                                                                                          False),
+                                                     is_english)
 
-    def __html_table(self, cap, hdset, tbl):
+    @staticmethod
+    def __html_table(cap, hdset, tbl):
         # constrcut HTML
         html = "<table>"
         if cap:
@@ -339,8 +357,8 @@ class TableStructureRecognizer(Recognizer):
                 txt = ""
                 if arr:
                     h = min(np.min([c["bottom"] - c["top"] for c in arr]) / 2, 10)
-                    txt = "".join([c["text"]
-                                   for c in self.sort_Y_firstly(arr, h)])
+                    txt = " ".join([c["text"]
+                                   for c in Recognizer.sort_Y_firstly(arr, h)])
                 txts.append(txt)
                 sp = ""
                 if arr[0].get("colspan"):
@@ -366,7 +384,8 @@ class TableStructureRecognizer(Recognizer):
         html += "\n</table>"
         return html
 
-    def __desc_table(self, cap, hdr_rowno, tbl, is_english):
+    @staticmethod
+    def __desc_table(cap, hdr_rowno, tbl, is_english):
         # get text of every colomn in header row to become header text
         clmno = len(tbl[0])
         rowno = len(tbl)
@@ -379,7 +398,7 @@ class TableStructureRecognizer(Recognizer):
             for i in range(clmno):
                 if not tbl[r][i]:
                     continue
-                txt = "".join([a["text"].strip() for a in tbl[r][i]])
+                txt = " ".join([a["text"].strip() for a in tbl[r][i]])
                 headers[r][i] = txt
                 hdrset.add(txt)
             if all([not t for t in headers[r]]):
@@ -469,7 +488,8 @@ class TableStructureRecognizer(Recognizer):
             row_txt = [t + f"\t——{from_}“{cap}”" for t in row_txt]
         return row_txt
 
-    def __cal_spans(self, boxes, rows, cols, tbl, html=True):
+    @staticmethod
+    def __cal_spans(boxes, rows, cols, tbl, html=True):
         # caculate span
         clft = [np.mean([c.get("C_left", c["x0"]) for c in cln])
                 for cln in cols]
@@ -553,4 +573,3 @@ class TableStructureRecognizer(Recognizer):
                 tbl[rowspan[0]][colspan[0]] = arr
 
         return tbl
-

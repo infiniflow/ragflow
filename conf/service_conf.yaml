@@ -17,16 +17,16 @@ database:
   name: 'rag_flow'
   user: 'root'
   passwd: 'infini_rag_flow'
-  host: '123.60.95.134'
+  host: '127.0.0.1'
   port: 5455
   max_connections: 100
   stale_timeout: 30
 minio:
   user: 'rag_flow'
   passwd: 'infini_rag_flow'
-  host: '123.60.95.134:9000'
+  host: '127.0.0.1:9000'
 es:
-  hosts: 'http://123.60.95.134:9200'
+  hosts: 'http://127.0.0.1:9200'
 user_default_llm:
   factory: '通义千问'
   chat_model: 'qwen-plus'

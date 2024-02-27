@@ -21,8 +21,10 @@ from api.utils import get_base_config,decrypt_database_config
 from api.utils.file_utils import get_project_base_directory
 from api.utils.log_utils import LoggerFactory, getLogger
 
+from rag.nlp import search
+from rag.utils import ELASTICSEARCH
 
-# Server
+
 API_VERSION = "v1"
 RAG_FLOW_SERVICE_NAME = "ragflow"
 SERVER_MODULE = "rag_flow_server.py"
@@ -115,6 +117,8 @@ USE_DEFAULT_TIMEOUT = False
 AUTHENTICATION_DEFAULT_TIMEOUT = 30 * 24 * 60 * 60 # s
 PRIVILEGE_COMMAND_WHITELIST = []
 CHECK_NODES_IDENTITY = False
+
+retrievaler = search.Dealer(ELASTICSEARCH)
 
 class CustomEnum(Enum):
     @classmethod
