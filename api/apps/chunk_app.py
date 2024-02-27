@@ -20,7 +20,7 @@ from flask_login import login_required, current_user
 from elasticsearch_dsl import Q
 
 from rag.app.qa import rmPrefix, beAdoc
-from rag.nlp import search, huqie, retrievaler
+from rag.nlp import search, huqie
 from rag.utils import ELASTICSEARCH, rmSpace
 from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -28,7 +28,7 @@ from api.db.services.llm_service import TenantLLMService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db.services.document_service import DocumentService
-from api.settings import RetCode
+from api.settings import RetCode, retrievaler
 from api.utils.api_utils import get_json_result
 import hashlib
 import re

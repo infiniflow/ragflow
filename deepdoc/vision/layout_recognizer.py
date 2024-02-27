@@ -37,7 +37,7 @@ class LayoutRecognizer(Recognizer):
         super().__init__(self.labels, domain,
                          os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
 
-    def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.7, batch_size=16):
+    def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16):
         def __is_garbage(b):
             patt = [r"^•+$", r"(版权归©|免责条款|地址[:：])", r"\.{3,}", "^[0-9]{1,2} / ?[0-9]{1,2}$",
                     r"^[0-9]{1,2} of [0-9]{1,2}$", "^http://[^ ]{12,}",

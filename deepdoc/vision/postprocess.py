@@ -2,7 +2,6 @@ import copy
 
 import numpy as np
 import cv2
-import paddle
 from shapely.geometry import Polygon
 import pyclipper
 
@@ -215,7 +214,7 @@ class DBPostProcess(object):
 
     def __call__(self, outs_dict, shape_list):
         pred = outs_dict['maps']
-        if isinstance(pred, paddle.Tensor):
+        if not isinstance(pred, np.ndarray):
             pred = pred.numpy()
         pred = pred[:, 0, :, :]
         segmentation = pred > self.thresh
@@ -339,7 +338,7 @@ class CTCLabelDecode(BaseRecLabelDecode):
     def __call__(self, preds, label=None, *args, **kwargs):
         if isinstance(preds, tuple) or isinstance(preds, list):
             preds = preds[-1]
-        if isinstance(preds, paddle.Tensor):
+        if not isinstance(preds, np.ndarray):
             preds = preds.numpy()
         preds_idx = preds.argmax(axis=2)
         preds_prob = preds.max(axis=2)

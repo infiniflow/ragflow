@@ -74,6 +74,7 @@ def get_table_html(img, tb_cpns, ocr):
     clmns = sorted([r for r in tb_cpns if re.match(
         r"table column$", r["label"])], key=lambda x: x["x0"])
     clmns = Recognizer.layouts_cleanup(boxes, clmns, 5, 0.5)
+
     for b in boxes:
         ii = Recognizer.find_overlapped_with_threashold(b, rows, thr=0.3)
         if ii is not None:
@@ -89,7 +90,7 @@ def get_table_html(img, tb_cpns, ocr):
             b["H_right"] = headers[ii]["x1"]
             b["H"] = ii
 
-        ii = Recognizer.find_overlapped_with_threashold(b, clmns, thr=0.3)
+        ii = Recognizer.find_horizontally_tightest_fit(b, clmns)
         if ii is not None:
             b["C"] = ii
             b["C_left"] = clmns[ii]["x0"]
@@ -102,6 +103,7 @@ def get_table_html(img, tb_cpns, ocr):
             b["H_left"] = spans[ii]["x0"]
             b["H_right"] = spans[ii]["x1"]
             b["SP"] = ii
+
     html = """
     <html>
     <head>
