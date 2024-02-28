@@ -12,7 +12,7 @@ export const excludeUnEnabledVariables = (values: any) => {
   );
 };
 
-export const isConversationIdNotExist = (conversationId: string) => {
+export const isConversationIdExist = (conversationId: string) => {
   return conversationId !== EmptyConversationId && conversationId !== '';
 };
 

@@ -1,6 +1,8 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
 import { MessageType } from '@/constants/chat';
 import { fileIconMap } from '@/constants/common';
+import { useSetModalState } from '@/hooks/commonHooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IConversation, IDialog } from '@/interfaces/database/chat';
 import { getFileExtension } from '@/utils';
 import omit from 'lodash/omit';
@@ -14,7 +16,7 @@ import {
   VariableTableDataType,
 } from './interface';
 import { ChatModelState } from './model';
-import { isConversationIdNotExist } from './utils';
+import { isConversationIdExist } from './utils';
 
 export const useFetchDialogList = () => {
   const dispatch = useDispatch();
@@ -392,30 +394,50 @@ export const useSetConversation = () => {
   return { setConversation };
 };
 
-export const useFetchConversation = () => {
-  const dispatch = useDispatch();
-  const { conversationId } = useGetChatSearchParams();
-  const conversation = useSelector(
+export const useSelectCurrentConversation = () => {
+  const conversation: IClientConversation = useSelector(
     (state: any) => state.chatModel.currentConversation,
   );
-  const setCurrentConversation = useSetCurrentConversation();
 
-  const fetchConversation = useCallback(() => {
-    if (isConversationIdNotExist(conversationId)) {
-      dispatch({
+  return conversation;
+};
+
+export const useFetchConversation = () => {
+  const dispatch = useDispatch();
+
+  const fetchConversation = useCallback(
+    (conversationId: string, needToBeSaved = true) => {
+      return dispatch<any>({
         type: 'chatModel/getConversation',
         payload: {
+          needToBeSaved,
           conversation_id: conversationId,
         },
       });
+    },
+    [dispatch],
+  );
+
+  return fetchConversation;
+};
+
+export const useFetchConversationOnMount = () => {
+  const { conversationId } = useGetChatSearchParams();
+  const conversation = useSelectCurrentConversation();
+  const setCurrentConversation = useSetCurrentConversation();
+  const fetchConversation = useFetchConversation();
+
+  const fetchConversationOnMount = useCallback(() => {
+    if (isConversationIdExist(conversationId)) {
+      fetchConversation(conversationId);
     } else {
       setCurrentConversation({} as IClientConversation);
     }
-  }, [dispatch, conversationId, setCurrentConversation]);
+  }, [fetchConversation, setCurrentConversation, conversationId]);
 
   useEffect(() => {
-    fetchConversation();
-  }, [fetchConversation]);
+    fetchConversationOnMount();
+  }, [fetchConversationOnMount]);
 
   return conversation;
 };
@@ -522,4 +544,56 @@ export const useRemoveConversation = () => {
 
   return { onRemoveConversation };
 };
+
+export const useRenameConversation = () => {
+  const dispatch = useDispatch();
+  const [conversation, setConversation] = useState<IClientConversation>(
+    {} as IClientConversation,
+  );
+  const fetchConversation = useFetchConversation();
+  const {
+    visible: conversationRenameVisible,
+    hideModal: hideConversationRenameModal,
+    showModal: showConversationRenameModal,
+  } = useSetModalState();
+
+  const onConversationRenameOk = useCallback(
+    async (name: string) => {
+      const ret = await dispatch<any>({
+        type: 'chatModel/setConversation',
+        payload: { ...conversation, conversation_id: conversation.id, name },
+      });
+
+      if (ret.retcode === 0) {
+        hideConversationRenameModal();
+      }
+    },
+    [dispatch, conversation, hideConversationRenameModal],
+  );
+
+  const loading = useOneNamespaceEffectsLoading('chatModel', [
+    'setConversation',
+  ]);
+
+  const handleShowConversationRenameModal = useCallback(
+    async (conversationId: string) => {
+      const ret = await fetchConversation(conversationId, false);
+      if (ret.retcode === 0) {
+        setConversation(ret.data);
+      }
+      showConversationRenameModal();
+    },
+    [showConversationRenameModal, fetchConversation],
+  );
+
+  return {
+    conversationRenameLoading: loading,
+    initialConversationName: conversation.name,
+    onConversationRenameOk,
+    conversationRenameVisible,
+    hideConversationRenameModal,
+    showConversationRenameModal: handleShowConversationRenameModal,
+  };
+};
+
 //#endregion

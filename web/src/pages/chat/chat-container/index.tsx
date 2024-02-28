@@ -8,7 +8,7 @@ import classNames from 'classnames';
 import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
 import reactStringReplace from 'react-string-replace';
 import {
-  useFetchConversation,
+  useFetchConversationOnMount,
   useGetFileIcon,
   useScrollToBottom,
   useSendMessage,
@@ -187,7 +187,7 @@ const MessageItem = ({
 
 const ChatContainer = () => {
   const [value, setValue] = useState('');
-  const conversation: IClientConversation = useFetchConversation();
+  const conversation: IClientConversation = useFetchConversationOnMount();
   const { sendMessage } = useSendMessage();
   const loading = useOneNamespaceEffectsLoading('chatModel', [
     'completeConversation',

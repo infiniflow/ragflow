@@ -25,11 +25,13 @@ import {
   useHandleItemHover,
   useRemoveConversation,
   useRemoveDialog,
+  useRenameConversation,
   useSelectConversationList,
   useSelectFirstDialogOnMount,
   useSetCurrentDialog,
 } from './hooks';
 
+import RenameModal from '@/components/rename-modal';
 import styles from './index.less';
 
 const Chat = () => {
@@ -49,6 +51,14 @@ const Chat = () => {
     handleItemEnter: handleConversationItemEnter,
     handleItemLeave: handleConversationItemLeave,
   } = useHandleItemHover();
+  const {
+    conversationRenameLoading,
+    initialConversationName,
+    onConversationRenameOk,
+    conversationRenameVisible,
+    hideConversationRenameModal,
+    showConversationRenameModal,
+  } = useRenameConversation();
 
   useFetchDialog(dialogId, true);
 
@@ -85,6 +95,14 @@ const Chat = () => {
       domEvent.preventDefault();
       domEvent.stopPropagation();
       onRemoveConversation([conversationId]);
+    };
+
+  const handleShowConversationRenameModal =
+    (conversationId: string): MenuItemProps['onClick'] =>
+    ({ domEvent }) => {
+      domEvent.preventDefault();
+      domEvent.stopPropagation();
+      showConversationRenameModal(conversationId);
     };
 
   const handleDialogCardClick = (dialogId: string) => () => {
@@ -143,7 +161,7 @@ const Chat = () => {
     const appItems: MenuProps['items'] = [
       {
         key: '1',
-        onClick: handleShowChatConfigurationModal(conversationId),
+        onClick: handleShowConversationRenameModal(conversationId),
         label: (
           <Space>
             <EditOutlined />
@@ -262,6 +280,13 @@ const Chat = () => {
         hideModal={hideModal}
         id={currentDialog.id}
       ></ChatConfigurationModal>
+      <RenameModal
+        visible={conversationRenameVisible}
+        hideModal={hideConversationRenameModal}
+        onOk={onConversationRenameOk}
+        initialName={initialConversationName}
+        loading={conversationRenameLoading}
+      ></RenameModal>
     </Flex>
   );
 };

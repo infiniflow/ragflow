@@ -110,8 +110,10 @@ const model: DvaModel<ChatModelState> = {
       return data.retcode;
     },
     *getConversation({ payload }, { call, put }) {
-      const { data } = yield call(chatService.getConversation, payload);
-      if (data.retcode === 0) {
+      const { data } = yield call(chatService.getConversation, {
+        conversation_id: payload.conversation_id,
+      });
+      if (data.retcode === 0 && payload.needToBeSaved) {
         yield put({
           type: 'kFModel/fetch_document_thumbnails',
           payload: {
@@ -120,7 +122,7 @@ const model: DvaModel<ChatModelState> = {
         });
         yield put({ type: 'setCurrentConversation', payload: data.data });
       }
-      return data.retcode;
+      return data;
     },
     *setConversation({ payload }, { call, put }) {
       const { data } = yield call(chatService.setConversation, payload);
