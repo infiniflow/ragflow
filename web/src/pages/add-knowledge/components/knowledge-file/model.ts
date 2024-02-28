@@ -16,6 +16,7 @@ export interface KFModelState extends BaseState {
   data: IKnowledgeFile[];
   total: number;
   currentRecord: Nullable<IKnowledgeFile>;
+  fileThumbnails: Record<string, string>;
 }
 
 const model: DvaModel<KFModelState> = {
@@ -34,6 +35,7 @@ const model: DvaModel<KFModelState> = {
       current: 1,
       pageSize: 10,
     },
+    fileThumbnails: {} as Record<string, string>,
   },
   reducers: {
     updateState(state, { payload }) {
@@ -53,6 +55,9 @@ const model: DvaModel<KFModelState> = {
     },
     setPagination(state, { payload }) {
       return { ...state, pagination: { ...state.pagination, ...payload } };
+    },
+    setFileThumbnails(state, { payload }) {
+      return { ...state, fileThumbnails: payload };
     },
   },
   effects: {
@@ -200,6 +205,12 @@ const model: DvaModel<KFModelState> = {
         message.success('修改成功！');
       }
       return retcode;
+    },
+    *fetch_document_thumbnails({ payload = {} }, { call, put }) {
+      const { data } = yield call(kbService.document_thumbnails, payload);
+      if (data.retcode === 0) {
+        yield put({ type: 'setFileThumbnails', payload: data.data });
+      }
     },
   },
 };

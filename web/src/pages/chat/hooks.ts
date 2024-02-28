@@ -384,7 +384,7 @@ export const useFetchConversation = () => {
 
   const fetchConversation = useCallback(() => {
     if (isConversationIdNotExist(conversationId)) {
-      dispatch<any>({
+      dispatch({
         type: 'chatModel/getConversation',
         payload: {
           conversation_id: conversationId,

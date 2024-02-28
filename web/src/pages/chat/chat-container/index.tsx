@@ -3,16 +3,7 @@ import { MessageType } from '@/constants/chat';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useSelectUserInfo } from '@/hooks/userSettingHook';
 import { IReference, Message } from '@/interfaces/database/chat';
-import {
-  Avatar,
-  Button,
-  Flex,
-  Input,
-  List,
-  Popover,
-  Space,
-  Typography,
-} from 'antd';
+import { Avatar, Button, Flex, Input, List, Popover, Space } from 'antd';
 import classNames from 'classnames';
 import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
 import reactStringReplace from 'react-string-replace';
@@ -26,6 +17,7 @@ import { IClientConversation } from '../interface';
 
 import Image from '@/components/image';
 import NewDocumentLink from '@/components/new-document-link';
+import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import Markdown from 'react-markdown';
 import { visitParents } from 'unist-util-visit-parents';
@@ -56,10 +48,9 @@ const MessageItem = ({
   reference: IReference;
 }) => {
   const userInfo = useSelectUserInfo();
+  const fileThumbnails = useSelectFileThumbnails();
 
   const isAssistant = item.role === MessageType.Assistant;
-
-  const getFileIcon = useGetFileIcon();
 
   const getPopoverContent = useCallback(
     (chunkIndex: number) => {
@@ -82,15 +73,18 @@ const MessageItem = ({
           <Space direction={'vertical'}>
             <div>{chunkItem?.content_with_weight}</div>
             {documentId && (
-              <NewDocumentLink documentId={documentId}>
-                {document?.doc_name}
-              </NewDocumentLink>
+              <Flex gap={'middle'}>
+                <img src={fileThumbnails[documentId]} alt="" />
+                <NewDocumentLink documentId={documentId}>
+                  {document?.doc_name}
+                </NewDocumentLink>
+              </Flex>
             )}
           </Space>
         </Flex>
       );
     },
-    [reference],
+    [reference, fileThumbnails],
   );
 
   const renderReference = useCallback(
@@ -163,12 +157,13 @@ const MessageItem = ({
                 dataSource={referenceDocumentList}
                 renderItem={(item) => (
                   <List.Item>
-                    <Typography.Text mark>
-                      {/* <SvgIcon name={getFileIcon(item.doc_name)}></SvgIcon> */}
-                    </Typography.Text>
-                    <NewDocumentLink documentId={item.doc_id}>
-                      {item.doc_name}
-                    </NewDocumentLink>
+                    {/* <SvgIcon name={getFileIcon(item.doc_name)}></SvgIcon> */}
+                    <Flex gap={'middle'}>
+                      <img src={fileThumbnails[item.doc_id]}></img>
+                      <NewDocumentLink documentId={item.doc_id}>
+                        {item.doc_name}
+                      </NewDocumentLink>
+                    </Flex>
                   </List.Item>
                 )}
               />

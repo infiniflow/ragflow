@@ -150,3 +150,34 @@ export const useFetchKnowledgeList = (
 
   return list;
 };
+
+export const useSelectFileThumbnails = () => {
+  const fileThumbnails: Record<string, string> = useSelector(
+    (state: any) => state.kFModel.fileThumbnails,
+  );
+
+  return fileThumbnails;
+};
+
+export const useFetchFileThumbnails = (docIds?: Array<string>) => {
+  const dispatch = useDispatch();
+  const fileThumbnails = useSelectFileThumbnails();
+
+  const fetchFileThumbnails = useCallback(
+    (docIds: Array<string>) => {
+      dispatch({
+        type: 'kFModel/fetch_document_thumbnails',
+        payload: { doc_ids: docIds.join(',') },
+      });
+    },
+    [dispatch],
+  );
+
+  useEffect(() => {
+    if (docIds) {
+      fetchFileThumbnails(docIds);
+    }
+  }, [docIds, fetchFileThumbnails]);
+
+  return { fileThumbnails, fetchFileThumbnails };
+};

@@ -4,6 +4,7 @@ import { message } from 'antd';
 import { DvaModel } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { IClientConversation, IMessage } from './interface';
+import { getDocumentIdsFromConversionReference } from './utils';
 
 export interface ChatModelState {
   name: string;
@@ -111,6 +112,12 @@ const model: DvaModel<ChatModelState> = {
     *getConversation({ payload }, { call, put }) {
       const { data } = yield call(chatService.getConversation, payload);
       if (data.retcode === 0) {
+        yield put({
+          type: 'kFModel/fetch_document_thumbnails',
+          payload: {
+            doc_ids: getDocumentIdsFromConversionReference(data.data),
+          },
+        });
         yield put({ type: 'setCurrentConversation', payload: data.data });
       }
       return data.retcode;

@@ -22,7 +22,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { PaginationProps } from 'antd/lib';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useDispatch, useNavigate, useSelector } from 'umi';
 import CreateEPModal from './createEFileModal';
 import styles from './index.less';
@@ -46,7 +46,7 @@ const KnowledgeFile = () => {
   const [parser_id, setParserId] = useState('0');
   let navigate = useNavigate();
 
-  const getKfList = () => {
+  const getKfList = useCallback(() => {
     const payload = {
       kb_id: knowledgeBaseId,
     };
@@ -55,7 +55,7 @@ const KnowledgeFile = () => {
       type: 'kFModel/getKfList',
       payload,
     });
-  };
+  }, [dispatch, knowledgeBaseId]);
 
   const throttledGetDocumentList = () => {
     dispatch({
@@ -64,23 +64,29 @@ const KnowledgeFile = () => {
     });
   };
 
-  const setPagination = (pageNumber = 1, pageSize?: number) => {
-    const pagination: Pagination = {
-      current: pageNumber,
-    } as Pagination;
-    if (pageSize) {
-      pagination.pageSize = pageSize;
-    }
-    dispatch({
-      type: 'kFModel/setPagination',
-      payload: pagination,
-    });
-  };
+  const setPagination = useCallback(
+    (pageNumber = 1, pageSize?: number) => {
+      const pagination: Pagination = {
+        current: pageNumber,
+      } as Pagination;
+      if (pageSize) {
+        pagination.pageSize = pageSize;
+      }
+      dispatch({
+        type: 'kFModel/setPagination',
+        payload: pagination,
+      });
+    },
+    [dispatch],
+  );
 
-  const onPageChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
-    setPagination(pageNumber, pageSize);
-    getKfList();
-  };
+  const onPageChange: PaginationProps['onChange'] = useCallback(
+    (pageNumber: number, pageSize: number) => {
+      setPagination(pageNumber, pageSize);
+      getKfList();
+    },
+    [getKfList, setPagination],
+  );
 
   const pagination: PaginationProps = useMemo(() => {
     return {
@@ -92,7 +98,7 @@ const KnowledgeFile = () => {
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
     };
-  }, [total, kFModel.pagination]);
+  }, [total, kFModel.pagination, onPageChange]);
 
   useEffect(() => {
     if (knowledgeBaseId) {
@@ -107,7 +113,7 @@ const KnowledgeFile = () => {
         type: 'kFModel/pollGetDocumentList-stop',
       });
     };
-  }, [knowledgeBaseId]);
+  }, [knowledgeBaseId, dispatch, getKfList]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -129,14 +135,14 @@ const KnowledgeFile = () => {
     });
   };
 
-  const showCEFModal = () => {
+  const showCEFModal = useCallback(() => {
     dispatch({
       type: 'kFModel/updateState',
       payload: {
         isShowCEFwModal: true,
       },
     });
-  };
+  }, [dispatch]);
 
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
@@ -169,7 +175,7 @@ const KnowledgeFile = () => {
         // disabled: true,
       },
     ];
-  }, []);
+  }, [knowledgeBaseId, showCEFModal]);
 
   const toChunk = (id: string) => {
     navigate(
@@ -187,13 +193,9 @@ const KnowledgeFile = () => {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
-      render: (text: any, { id }) => (
+      render: (text: any, { id, thumbnail }) => (
         <div className={styles.tochunks} onClick={() => toChunk(id)}>
-          <img
-            className={styles.img}
-            src="https://gw.alipayobjects.com/zos/antfincdn/efFD%24IOql2/weixintupian_20170331104822.jpg"
-            alt=""
-          />
+          <img className={styles.img} src={thumbnail} alt="" />
           {text}
         </div>
       ),
