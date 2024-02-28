@@ -1,6 +1,6 @@
+import { useFetchParserList, useSelectParserList } from '@/hooks/knowledgeHook';
 import { Modal, Space, Tag } from 'antd';
 import React, { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'umi';
 import styles from './index.less';
 const { CheckableTag } = Tag;
@@ -16,17 +16,13 @@ const SegmentSetModal: React.FC<kFProps> = ({
 }) => {
   const dispatch = useDispatch();
   const kFModel = useSelector((state: any) => state.kFModel);
-  const settingModel = useSelector((state: any) => state.settingModel);
   const [selectedTag, setSelectedTag] = useState('');
-  const parser_ids = settingModel?.tenantIfo?.parser_ids ?? '';
   const { isShowSegmentSetModal } = kFModel;
-  const { t } = useTranslation();
+  const parserList = useSelectParserList();
+
+  useFetchParserList();
 
   useEffect(() => {
-    dispatch({
-      type: 'settingModel/getTenantInfo',
-      payload: {},
-    });
     setSelectedTag(parser_id);
   }, [parser_id]);
 
@@ -48,32 +44,34 @@ const SegmentSetModal: React.FC<kFProps> = ({
       },
     });
 
-    retcode === 0 && getKfList && getKfList();
+    if (retcode === 0 && getKfList) {
+      getKfList();
+      handleCancel();
+    }
   };
 
   const handleChange = (tag: string, checked: boolean) => {
     const nextSelectedTag = checked ? tag : selectedTag;
-    console.log('You are interested in: ', nextSelectedTag);
     setSelectedTag(nextSelectedTag);
   };
 
   return (
     <Modal
-      title="Basic Modal"
+      title="Parser Type"
       open={isShowSegmentSetModal}
       onOk={handleOk}
       onCancel={handleCancel}
     >
       <Space size={[0, 8]} wrap>
         <div className={styles.tags}>
-          {parser_ids.split(',').map((tag: string) => {
+          {parserList.map((x) => {
             return (
               <CheckableTag
-                key={tag}
-                checked={selectedTag === tag}
-                onChange={(checked) => handleChange(tag, checked)}
+                key={x.value}
+                checked={selectedTag === x.value}
+                onChange={(checked) => handleChange(x.value, checked)}
               >
-                {tag}
+                {x.label}
               </CheckableTag>
             );
           })}

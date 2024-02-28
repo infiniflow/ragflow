@@ -65,14 +65,14 @@ const model: DvaModel<KFModelState> = {
       const { data } = yield call(kbService.createKb, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('创建成功！');
+        message.success('Created!');
       }
     },
     *updateKf({ payload = {} }, { call }) {
       const { data } = yield call(kbService.updateKb, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('修改成功！');
+        message.success('Modified!');
       }
     },
     *getKfDetail({ payload = {} }, { call }) {
@@ -120,7 +120,7 @@ const model: DvaModel<KFModelState> = {
       );
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('修改成功！');
+        message.success('Modified!');
         put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
@@ -133,7 +133,7 @@ const model: DvaModel<KFModelState> = {
       });
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('删除成功！');
+        message.success('Deleted!');
         yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
@@ -171,7 +171,7 @@ const model: DvaModel<KFModelState> = {
             isShowCEFwModal: false,
           },
         });
-        message.success('创建成功！');
+        message.success('Created!');
       }
       return retcode;
     },
@@ -202,7 +202,7 @@ const model: DvaModel<KFModelState> = {
             isShowSegmentSetModal: false,
           },
         });
-        message.success('修改成功！');
+        message.success('Modified!');
       }
       return retcode;
     },
