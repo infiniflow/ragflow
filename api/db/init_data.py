@@ -56,21 +56,21 @@ def init_superuser():
              "api_key": API_KEY})
 
     if not UserService.save(**user_info):
-        print("【ERROR】can't init admin.")
+        print("\033[93m【ERROR】\033[0mcan't init admin.")
         return
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
-    print("【INFO】Super user initialized. user name: admin, password: admin. Changing the password after logining is strongly recomanded.")
+    print("【INFO】Super user initialized. \033[93muser name: admin, password: admin\033[0m. Changing the password after logining is strongly recomanded.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={})
     if msg.find("ERROR: ") == 0:
-        print("【ERROR】: '{}' dosen't work. {}".format(tenant["llm_id"]), msg)
+        print("\33[91m【ERROR】\33[0m: ", "'{}' dosen't work. {}".format(tenant["llm_id"]), msg)
     embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
-    v,c = embd_mdl.encode(["Hello!"])
+    v, c = embd_mdl.encode(["Hello!"])
     if c == 0:
-        print("【ERROR】: '{}' dosen't work...".format(tenant["embd_id"]))
+        print("\33[91m【ERROR】\33[0m:", " '{}' dosen't work!".format(tenant["embd_id"]))
 
 
 def init_llm_factory():
@@ -89,12 +89,13 @@ def init_llm_factory():
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
-        },{
-            "name": "文心一言",
-            "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-            "status": "1",
         },
+        # {
+        #     "name": "文心一言",
+        #     "logo": "",
+        #     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+        #     "status": "1",
+        # },
     ]
     llm_infos = [
         # ---------------------- OpenAI ------------------------
@@ -198,7 +199,7 @@ def init_llm_factory():
             "llm_name": "embedding-2",
             "tags": "TEXT EMBEDDING",
             "max_tokens": 512,
-            "model_type": LLMType.SPEECH2TEXT.value
+            "model_type": LLMType.EMBEDDING.value
         },
     ]
     for info in factory_infos:

@@ -45,12 +45,36 @@ REQUEST_MAX_WAIT_SEC = 300
 
 USE_REGISTRY = get_base_config("use_registry")
 
+default_llm = {
+    "通义千问": {
+        "chat_model": "qwen-plus",
+        "embedding_model": "text-embedding-v2",
+        "image2text_model": "qwen-vl-max",
+        "asr_model": "paraformer-realtime-8k-v1",
+    },
+    "OpenAI": {
+        "chat_model": "gpt-3.5-turbo",
+        "embedding_model": "text-embedding-ada-002",
+        "image2text_model": "gpt-4-vision-preview",
+        "asr_model": "whisper-1",
+    },
+    "智普AI": {
+        "chat_model": "glm-3-turbo",
+        "embedding_model": "embedding-2",
+        "image2text_model": "glm-4v",
+        "asr_model": "",
+    },
+}
 LLM = get_base_config("user_default_llm", {})
-LLM_FACTORY=LLM.get("factory", "通义千问")
-CHAT_MDL = LLM.get("chat_model", "qwen-plus")
-EMBEDDING_MDL = LLM.get("embedding_model", "text-embedding-v2")
-ASR_MDL = LLM.get("asr_model", "paraformer-realtime-8k-v1")
-IMAGE2TEXT_MDL = LLM.get("image2text_model", "qwen-vl-max")
+LLM_FACTORY = LLM.get("factory", "通义千问")
+if LLM_FACTORY not in default_llm:
+    print("\33[91m【ERROR】\33[0m:", f"LLM factory {LLM_FACTORY} has not supported yet, switch to '通义千问/QWen' automatically, and please check the API_KEY in service_conf.yaml.")
+    LLM_FACTORY = "通义千问"
+CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"]
+EMBEDDING_MDL = default_llm[LLM_FACTORY]["embedding_model"]
+ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
+IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
+
 API_KEY = LLM.get("api_key", "infiniflow API Key")
 PARSERS = LLM.get("parsers", "general:General,qa:Q&A,resume:Resume,naive:Naive,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture")
 
@@ -72,7 +96,7 @@ RANDOM_INSTANCE_ID = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("random_inst
 PROXY = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("proxy")
 PROXY_PROTOCOL = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("protocol")
 
-DATABASE = decrypt_database_config()
+DATABASE = decrypt_database_config(name="mysql")
 
 # Logger
 LoggerFactory.set_directory(os.path.join(get_project_base_directory(), "logs", "api"))
