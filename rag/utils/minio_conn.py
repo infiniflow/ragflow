@@ -23,7 +23,7 @@ class HuMinio(object):
         try:
             self.conn = Minio(settings.MINIO["host"],
                               access_key=settings.MINIO["user"],
-                              secret_key=settings.MINIO["passwd"],
+                              secret_key=settings.MINIO["password"],
                               secure=False
                               )
         except Exception as e:
