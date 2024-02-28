@@ -33,6 +33,15 @@ from api.db.init_data import init_web_data
 from api.versions import get_versions
 
 if __name__ == '__main__':
+    print("""
+    ____                 ______ __               
+   / __ \ ____ _ ____ _ / ____// /____  _      __
+  / /_/ // __ `// __ `// /_   / // __ \| | /| / /
+ / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ / 
+/_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/  
+              /____/                             
+
+    """)
     stat_logger.info(
         f'project base: {utils.file_utils.get_project_base_directory()}'
     )

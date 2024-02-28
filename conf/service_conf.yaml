@@ -1,3 +1,28 @@
+ragflow:
+  host: 0.0.0.0
+  http_port: 9380
+mysql:
+  name: 'rag_flow'
+  user: 'root'
+  password: 'infini_rag_flow'
+  host: '127.0.0.1'
+  port: 5455
+  max_connections: 100
+  stale_timeout: 30
+minio:
+  user: 'rag_flow'
+  password: 'infini_rag_flow'
+  host: '127.0.0.1:9000'
+es:
+  hosts: 'http://127.0.0.1:1200'
+user_default_llm:
+  factory: '通义千问'
+  api_key: 'sk-xxxxxxxxxxxxx'
+oauth:
+  github:
+    client_id: 302129228f0d96055bee
+    secret_key: e518e55ccfcdfcae8996afc40f110e9c95f14fc4
+    url: https://github.com/login/oauth/access_token
 authentication:
   client:
     switch: false
@@ -9,33 +34,3 @@ permission:
   switch: false
   component: false
   dataset: false
-ragflow:
-  # you must set real ip address, 127.0.0.1 and 0.0.0.0 is not supported
-  host: 0.0.0.0
-  http_port: 9380
-database:
-  name: 'rag_flow'
-  user: 'root'
-  passwd: 'infini_rag_flow'
-  host: '127.0.0.1'
-  port: 5455
-  max_connections: 100
-  stale_timeout: 30
-minio:
-  user: 'rag_flow'
-  passwd: 'infini_rag_flow'
-  host: '127.0.0.1:9000'
-es:
-  hosts: 'http://127.0.0.1:9200'
-user_default_llm:
-  factory: '通义千问'
-  chat_model: 'qwen-plus'
-  embedding_model: 'text-embedding-v2'
-  asr_model: 'paraformer-realtime-8k-v1'
-  image2text_model: 'qwen-vl-max'
-  api_key: 'sk-xxxxxxxxxxxxx'
-oauth:
-  github:
-    client_id: 302129228f0d96055bee
-    secret_key: e518e55ccfcdfcae8996afc40f110e9c95f14fc4
-    url: https://github.com/login/oauth/access_token

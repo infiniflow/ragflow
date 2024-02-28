@@ -264,7 +264,7 @@ def decrypt_database_password(password):
     return pwdecrypt_fun(private_key, password)
 
 
-def decrypt_database_config(database=None, passwd_key="passwd", name="database"):
+def decrypt_database_config(database=None, passwd_key="password", name="database"):
     if not database:
         database = get_base_config(name, {})
 
