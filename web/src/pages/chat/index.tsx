@@ -11,8 +11,9 @@ import {
   Space,
   Tag,
 } from 'antd';
+import { MenuItemProps } from 'antd/lib/menu/MenuItem';
 import classNames from 'classnames';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import ChatConfigurationModal from './chat-configuration-modal';
 import ChatContainer from './chat-container';
 import {
@@ -21,6 +22,8 @@ import {
   useFetchConversationList,
   useFetchDialog,
   useGetChatSearchParams,
+  useHandleItemHover,
+  useRemoveConversation,
   useRemoveDialog,
   useSelectConversationList,
   useSelectFirstDialogOnMount,
@@ -31,32 +34,58 @@ import styles from './index.less';
 
 const Chat = () => {
   const dialogList = useSelectFirstDialogOnMount();
-  const [activated, setActivated] = useState<string>('');
   const { visible, hideModal, showModal } = useSetModalState();
   const { setCurrentDialog, currentDialog } = useSetCurrentDialog();
   const { onRemoveDialog } = useRemoveDialog();
+  const { onRemoveConversation } = useRemoveConversation();
   const { handleClickDialog } = useClickDialogCard();
   const { handleClickConversation } = useClickConversationCard();
   const { dialogId, conversationId } = useGetChatSearchParams();
   const { list: conversationList, addTemporaryConversation } =
     useSelectConversationList();
+  const { activated, handleItemEnter, handleItemLeave } = useHandleItemHover();
+  const {
+    activated: conversationActivated,
+    handleItemEnter: handleConversationItemEnter,
+    handleItemLeave: handleConversationItemLeave,
+  } = useHandleItemHover();
 
   useFetchDialog(dialogId, true);
 
   const handleAppCardEnter = (id: string) => () => {
-    setActivated(id);
+    handleItemEnter(id);
   };
 
-  const handleAppCardLeave = () => {
-    setActivated('');
+  const handleConversationCardEnter = (id: string) => () => {
+    handleConversationItemEnter(id);
   };
 
-  const handleShowChatConfigurationModal = (dialogId?: string) => () => {
-    if (dialogId) {
-      setCurrentDialog(dialogId);
-    }
-    showModal();
-  };
+  const handleShowChatConfigurationModal =
+    (dialogId?: string): any =>
+    (info: any) => {
+      info?.domEvent?.preventDefault();
+      info?.domEvent?.stopPropagation();
+      if (dialogId) {
+        setCurrentDialog(dialogId);
+      }
+      showModal();
+    };
+
+  const handleRemoveDialog =
+    (dialogId: string): MenuItemProps['onClick'] =>
+    ({ domEvent }) => {
+      domEvent.preventDefault();
+      domEvent.stopPropagation();
+      onRemoveDialog([dialogId]);
+    };
+
+  const handleRemoveConversation =
+    (conversationId: string): MenuItemProps['onClick'] =>
+    ({ domEvent }) => {
+      domEvent.preventDefault();
+      domEvent.stopPropagation();
+      onRemoveConversation([conversationId]);
+    };
 
   const handleDialogCardClick = (dialogId: string) => () => {
     handleClickDialog(dialogId);
@@ -97,7 +126,35 @@ const Chat = () => {
       { type: 'divider' },
       {
         key: '2',
-        onClick: () => onRemoveDialog([dialogId]),
+        onClick: handleRemoveDialog(dialogId),
+        label: (
+          <Space>
+            <DeleteOutlined />
+            Delete chat
+          </Space>
+        ),
+      },
+    ];
+
+    return appItems;
+  };
+
+  const buildConversationItems = (conversationId: string) => {
+    const appItems: MenuProps['items'] = [
+      {
+        key: '1',
+        onClick: handleShowChatConfigurationModal(conversationId),
+        label: (
+          <Space>
+            <EditOutlined />
+            Edit
+          </Space>
+        ),
+      },
+      { type: 'divider' },
+      {
+        key: '2',
+        onClick: handleRemoveConversation(conversationId),
         label: (
           <Space>
             <DeleteOutlined />
@@ -129,7 +186,7 @@ const Chat = () => {
                   [styles.chatAppCardSelected]: dialogId === x.id,
                 })}
                 onMouseEnter={handleAppCardEnter(x.id)}
-                onMouseLeave={handleAppCardLeave}
+                onMouseLeave={handleItemLeave}
                 onClick={handleDialogCardClick(x.id)}
               >
                 <Flex justify="space-between" align="center">
@@ -176,11 +233,22 @@ const Chat = () => {
                 key={x.id}
                 hoverable
                 onClick={handleConversationCardClick(x.id)}
+                onMouseEnter={handleConversationCardEnter(x.id)}
+                onMouseLeave={handleConversationItemLeave}
                 className={classNames(styles.chatTitleCard, {
                   [styles.chatTitleCardSelected]: x.id === conversationId,
                 })}
               >
-                <div>{x.name}</div>
+                <Flex justify="space-between" align="center">
+                  <div>{x.name}</div>
+                  {conversationActivated === x.id && x.id !== '' && (
+                    <section>
+                      <Dropdown menu={{ items: buildConversationItems(x.id) }}>
+                        <ChatAppCube className={styles.cubeIcon}></ChatAppCube>
+                      </Dropdown>
+                    </section>
+                  )}
+                </Flex>
               </Card>
             ))}
           </Flex>

@@ -11,6 +11,7 @@ const {
   setConversation,
   completeConversation,
   listConversation,
+  removeConversation,
 } = api;
 
 const methods = {
@@ -44,6 +45,10 @@ const methods = {
   },
   completeConversation: {
     url: completeConversation,
+    method: 'post',
+  },
+  removeConversation: {
+    url: removeConversation,
     method: 'post',
   },
 } as const;

@@ -191,7 +191,6 @@ const ChatContainer = () => {
   const { sendMessage } = useSendMessage();
   const loading = useOneNamespaceEffectsLoading('chatModel', [
     'completeConversation',
-    'getConversation',
   ]);
   const ref = useScrollToBottom();
   useGetFileIcon();

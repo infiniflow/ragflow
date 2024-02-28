@@ -204,6 +204,24 @@ export const useSelectFirstDialogOnMount = () => {
   return dialogList;
 };
 
+export const useHandleItemHover = () => {
+  const [activated, setActivated] = useState<string>('');
+
+  const handleItemEnter = (id: string) => {
+    setActivated(id);
+  };
+
+  const handleItemLeave = () => {
+    setActivated('');
+  };
+
+  return {
+    activated,
+    handleItemEnter,
+    handleItemLeave,
+  };
+};
+
 //#region conversation
 
 export const useCreateTemporaryConversation = () => {
@@ -477,4 +495,31 @@ export const useGetFileIcon = () => {
   return getFileIcon;
 };
 
+export const useRemoveConversation = () => {
+  const dispatch = useDispatch();
+  const { dialogId } = useGetChatSearchParams();
+  const { handleClickConversation } = useClickConversationCard();
+
+  const removeConversation = (conversationIds: Array<string>) => async () => {
+    const ret = await dispatch<any>({
+      type: 'chatModel/removeConversation',
+      payload: {
+        dialog_id: dialogId,
+        conversation_ids: conversationIds,
+      },
+    });
+
+    if (ret === 0) {
+      handleClickConversation('');
+    }
+
+    return ret;
+  };
+
+  const onRemoveConversation = (conversationIds: Array<string>) => {
+    showDeleteConfirm({ onOk: removeConversation(conversationIds) });
+  };
+
+  return { onRemoveConversation };
+};
 //#endregion

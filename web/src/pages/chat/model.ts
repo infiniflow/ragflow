@@ -145,6 +145,19 @@ const model: DvaModel<ChatModelState> = {
         });
       }
     },
+    *removeConversation({ payload }, { call, put }) {
+      const { data } = yield call(chatService.removeConversation, {
+        conversation_ids: payload.conversation_ids,
+      });
+      if (data.retcode === 0) {
+        yield put({
+          type: 'listConversation',
+          payload: { dialog_id: payload.dialog_id },
+        });
+        message.success('Deleted successfully !');
+      }
+      return data.retcode;
+    },
   },
 };
 
