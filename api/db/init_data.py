@@ -66,7 +66,7 @@ def init_superuser():
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={})
     if msg.find("ERROR: ") == 0:
-        print("\33[91m【ERROR】\33[0m: ", "'{}' dosen't work. {}".format(tenant["llm_id"]), msg)
+        print("\33[91m【ERROR】\33[0m: ", "'{}' dosen't work. {}".format(tenant["llm_id"], msg))
     embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
     v, c = embd_mdl.encode(["Hello!"])
     if c == 0:
