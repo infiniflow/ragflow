@@ -84,6 +84,24 @@ services:
     restart: always
 
 
+  ragflow:
+    depends_on:
+      - es01
+      - mysql
+      - minio
+    image: infiniflow/ragflow:v1.0
+    container_name: ragflow-server
+    ports:
+      - ${SVR_HTTP_PORT}:9380
+    volumes:
+      - ./service_conf.yaml:/ragflow/conf/service_conf.yaml
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ragflow-logs:/ragflow/logs
+    networks:
+      - ragflow
+    restart: always
+
+
 volumes:
   esdata01:
     driver: local

@@ -146,6 +146,21 @@ def list():
         return server_error_response(e)
 
 
+@manager.route('/thumbnails', methods=['GET'])
+@login_required
+def thumbnails():
+    doc_ids = request.args.get("doc_ids").split(",")
+    if not doc_ids:
+        return get_json_result(
+            data=False, retmsg='Lack of "Document ID"', retcode=RetCode.ARGUMENT_ERROR)
+
+    try:
+        docs = DocumentService.get_thumbnails(doc_ids)
+        return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route('/change_status', methods=['POST'])
 @login_required
 @validate_request("doc_id", "status")
@@ -263,6 +278,7 @@ def rename():
 
 
 @manager.route('/get/<doc_id>', methods=['GET'])
+#@login_required
 def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)

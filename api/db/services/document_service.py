@@ -108,3 +108,10 @@ class DocumentService(CommonService):
         docs = docs.dicts()
         if not docs:return
         return docs[0]["tenant_id"]
+
+
+    @classmethod
+    @DB.connection_context()
+    def get_thumbnails(cls, docids):
+        fields = [cls.model.id, cls.model.thumbnail]
+        return list(cls.model.select(*fields).where(cls.model.id.in_(docids)).dicts())
