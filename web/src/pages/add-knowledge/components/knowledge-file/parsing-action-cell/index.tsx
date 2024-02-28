@@ -56,15 +56,13 @@ const ParsingActionCell = ({
     });
   };
 
-  const onRename = () => {};
-
   const chunkItems: MenuProps['items'] = [
     {
       key: '1',
       label: (
         <div>
           <Button type="link" onClick={showSegmentSetModal}>
-            分段设置
+            Parser type
           </Button>
         </div>
       ),
