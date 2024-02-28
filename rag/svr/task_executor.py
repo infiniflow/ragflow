@@ -48,7 +48,7 @@ from api.utils.file_utils import get_project_base_directory
 BATCH_SIZE = 64
 
 FACTORY = {
-    ParserType.GENERAL.value: manual,
+    ParserType.GENERAL.value: laws,
     ParserType.PAPER.value: paper,
     ParserType.BOOK.value: book,
     ParserType.PRESENTATION.value: presentation,

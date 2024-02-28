@@ -19,13 +19,19 @@ services:
       memlock:
         soft: -1
         hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
     networks:
       - ragflow
     restart: always
 
   kibana:
-    depends_on: 
-      - es01
+    depends_on:
+        es01:
+          condition: service_healthy
     image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
     container_name: ragflow-kibana
     volumes:
@@ -60,10 +66,10 @@ services:
     networks:
       - ragflow
     healthcheck:
-          test: [ "CMD-SHELL", "curl --silent localhost:3306 >/dev/null || exit 1" ]
-          interval: 10s
-          timeout: 10s
-          retries: 3
+      test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
     restart: always
 
 
@@ -86,17 +92,20 @@ services:
 
   ragflow:
     depends_on:
-      - es01
-      - mysql
-      - minio
+      mysql:
+        condition: service_healthy
+      es01:
+        condition: service_healthy
     image: infiniflow/ragflow:v1.0
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
+      - 80:80
+      - 443:443
     volumes:
       - ./service_conf.yaml:/ragflow/conf/service_conf.yaml
-      - ./nginx.conf:/etc/nginx/nginx.conf
       - ./ragflow-logs:/ragflow/logs
+      - ./nginx.conf:/etc/nginx/conf.d/ragflow.conf
     networks:
       - ragflow
     restart: always
