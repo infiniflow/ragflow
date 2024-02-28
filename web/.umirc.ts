@@ -7,7 +7,7 @@ export default defineConfig({
   npmClient: 'npm',
   base: '/',
   routes,
-  publicPath: '/web/dist/',
+  publicPath: '/',
   esbuildMinifyIIFE: true,
   icons: {},
   hash: true,
