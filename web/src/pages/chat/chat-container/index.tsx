@@ -66,10 +66,20 @@ const MessageItem = ({
           gap={10}
           className={styles.referencePopoverWrapper}
         >
-          <Image
-            id={chunkItem?.img_id}
-            className={styles.referenceChunkImage}
-          ></Image>
+          <Popover
+            placement="topRight"
+            content={
+              <Image
+                id={chunkItem?.img_id}
+                className={styles.referenceImagePreview}
+              ></Image>
+            }
+          >
+            <Image
+              id={chunkItem?.img_id}
+              className={styles.referenceChunkImage}
+            ></Image>
+          </Popover>
           <Space direction={'vertical'}>
             <div>{chunkItem?.content_with_weight}</div>
             {documentId && (
