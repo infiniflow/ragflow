@@ -4,6 +4,7 @@ import { message } from 'antd';
 import { DvaModel } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { IClientConversation, IMessage } from './interface';
+import { getDocumentIdsFromConversionReference } from './utils';
 
 export interface ChatModelState {
   name: string;
@@ -109,11 +110,19 @@ const model: DvaModel<ChatModelState> = {
       return data.retcode;
     },
     *getConversation({ payload }, { call, put }) {
-      const { data } = yield call(chatService.getConversation, payload);
-      if (data.retcode === 0) {
+      const { data } = yield call(chatService.getConversation, {
+        conversation_id: payload.conversation_id,
+      });
+      if (data.retcode === 0 && payload.needToBeSaved) {
+        yield put({
+          type: 'kFModel/fetch_document_thumbnails',
+          payload: {
+            doc_ids: getDocumentIdsFromConversionReference(data.data),
+          },
+        });
         yield put({ type: 'setCurrentConversation', payload: data.data });
       }
-      return data.retcode;
+      return data;
     },
     *setConversation({ payload }, { call, put }) {
       const { data } = yield call(chatService.setConversation, payload);
@@ -137,6 +146,19 @@ const model: DvaModel<ChatModelState> = {
           },
         });
       }
+    },
+    *removeConversation({ payload }, { call, put }) {
+      const { data } = yield call(chatService.removeConversation, {
+        conversation_ids: payload.conversation_ids,
+      });
+      if (data.retcode === 0) {
+        yield put({
+          type: 'listConversation',
+          payload: { dialog_id: payload.dialog_id },
+        });
+        message.success('Deleted successfully !');
+      }
+      return data.retcode;
     },
   },
 };

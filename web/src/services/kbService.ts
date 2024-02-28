@@ -13,6 +13,7 @@ const {
   document_rm,
   document_create,
   document_change_parser,
+  document_thumbnails,
   chunk_list,
   create_chunk,
   set_chunk,
@@ -74,6 +75,10 @@ const methods = {
   document_change_parser: {
     url: document_change_parser,
     method: 'post',
+  },
+  document_thumbnails: {
+    url: document_thumbnails,
+    method: 'get',
   },
   // chunk管理
   chunk_list: {

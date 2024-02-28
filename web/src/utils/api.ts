@@ -42,6 +42,7 @@ export default {
   document_create: `${api_host}/document/create`,
   document_run: `${api_host}/document/run`,
   document_change_parser: `${api_host}/document/change_parser`,
+  document_thumbnails: `${api_host}/document/thumbnails`,
 
   setDialog: `${api_host}/dialog/set`,
   getDialog: `${api_host}/dialog/get`,
