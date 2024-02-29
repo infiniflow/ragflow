@@ -34,8 +34,7 @@ class LayoutRecognizer(Recognizer):
              "Equation",
         ]
     def __init__(self, domain):
-        super().__init__(self.labels, domain,
-                         os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        super().__init__(self.labels, domain) #, os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
 
     def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16):
         def __is_garbage(b):

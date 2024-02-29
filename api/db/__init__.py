@@ -69,7 +69,6 @@ class TaskStatus(StrEnum):
 
 
 class ParserType(StrEnum):
-    GENERAL = "general"
     PRESENTATION = "presentation"
     LAWS = "laws"
     MANUAL = "manual"
