@@ -10,10 +10,8 @@ import reactStringReplace from 'react-string-replace';
 import {
   useFetchConversationOnMount,
   useGetFileIcon,
-  useScrollToBottom,
   useSendMessage,
 } from '../hooks';
-import { IClientConversation } from '../interface';
 
 import Image from '@/components/image';
 import NewDocumentLink from '@/components/new-document-link';
@@ -187,17 +185,24 @@ const MessageItem = ({
 
 const ChatContainer = () => {
   const [value, setValue] = useState('');
-  const conversation: IClientConversation = useFetchConversationOnMount();
+  const {
+    ref,
+    currentConversation: conversation,
+    addNewestConversation,
+  } = useFetchConversationOnMount();
   const { sendMessage } = useSendMessage();
+
   const loading = useOneNamespaceEffectsLoading('chatModel', [
     'completeConversation',
   ]);
-  const ref = useScrollToBottom();
   useGetFileIcon();
 
   const handlePressEnter = () => {
-    setValue('');
-    sendMessage(value);
+    if (!loading) {
+      setValue('');
+      addNewestConversation(value);
+      sendMessage(value);
+    }
   };
 
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
