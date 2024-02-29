@@ -30,7 +30,6 @@ class Pdf(PdfParser):
 
         from timeit import default_timer as timer
         start = timer()
-        start = timer()
         self._layouts_rec(zoomin)
         callback(0.5, "Layout analysis finished.")
         print("paddle layouts:", timer() - start)
@@ -102,7 +101,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 128, "delimiter": "\n!?。；！？"})
-    cks = naive_merge(sections, parser_config["chunk_token_num"], parser_config["delimiter"])
+    cks = naive_merge(sections, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?。；！？"))
 
     # wrap up to es documents
     for ck in cks:
