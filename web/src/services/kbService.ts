@@ -1,6 +1,7 @@
 import api from '@/utils/api';
 import registerServer from '@/utils/registerServer';
 import request from '@/utils/request';
+import pureRequest from 'umi-request';
 
 const {
   create_kb,
@@ -23,6 +24,7 @@ const {
   retrieval_test,
   document_rename,
   document_run,
+  get_document_file,
 } = api;
 
 const methods = {
@@ -112,5 +114,40 @@ const methods = {
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
+
+export const getDocumentFile = (documentId: string) => {
+  return pureRequest(get_document_file + '/' + documentId, {
+    responseType: 'blob',
+    method: 'get',
+    parseResponse: false,
+    // getResponse: true,
+  })
+    .then((res) => {
+      const x = res.headers.get('content-disposition');
+      console.info(res);
+      console.info(x);
+      return res.blob();
+    })
+    .then((res) => {
+      // const objectURL = URL.createObjectURL(res);
+
+      // let btn = document.createElement('a');
+
+      // btn.download = '文件名.pdf';
+
+      // btn.href = objectURL;
+
+      // btn.click();
+
+      // URL.revokeObjectURL(objectURL);
+
+      // btn = null;
+
+      return res;
+    })
+    .catch((err) => {
+      console.info(err);
+    });
+};
 
 export default kbService;

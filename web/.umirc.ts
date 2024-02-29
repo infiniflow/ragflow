@@ -1,5 +1,15 @@
+import path from 'path';
 import { defineConfig } from 'umi';
 import routes from './src/routes';
+
+const cMapsDir = path.join(
+  path.dirname(require.resolve('pdfjs-dist/package.json')),
+  'cmaps',
+);
+const standardFontsDir = path.join(
+  path.dirname(require.resolve('pdfjs-dist/package.json')),
+  'standard_fonts',
+);
 
 export default defineConfig({
   outputPath: 'dist',
@@ -27,5 +37,12 @@ export default defineConfig({
       changeOrigin: true,
       // pathRewrite: { '^/v1': '/v1' },
     },
+  },
+  copy: [
+    { from: cMapsDir, to: 'cmaps/' },
+    { from: standardFontsDir, to: 'standard_fonts/' },
+  ],
+  chainWebpack(memo, args) {
+    console.info(memo);
   },
 });

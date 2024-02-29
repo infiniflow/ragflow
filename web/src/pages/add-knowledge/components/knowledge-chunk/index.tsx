@@ -1,6 +1,6 @@
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
-import { Divider, Pagination, Space, Spin, message } from 'antd';
+import { Divider, Flex, Pagination, Space, Spin, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import CreatingModal from './components/chunk-creating-modal';
@@ -8,6 +8,7 @@ import CreatingModal from './components/chunk-creating-modal';
 import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import ChunkCard from './components/chunk-card';
 import ChunkToolBar from './components/chunk-toolbar';
+import DocumentPreview from './components/document-preview';
 import styles from './index.less';
 import { ChunkModelState } from './model';
 
@@ -158,39 +159,48 @@ const Chunk = () => {
           switchChunk={switchChunk}
         ></ChunkToolBar>
         <Divider></Divider>
-        <div className={styles.pageContent}>
-          <Spin spinning={loading} className={styles.spin} size="large">
-            <Space
-              direction="vertical"
-              size={'middle'}
-              className={styles.chunkContainer}
-            >
-              {data.map((item) => (
-                <ChunkCard
-                  item={item}
-                  key={item.chunk_id}
-                  editChunk={handleEditChunk}
-                  checked={selectedChunkIds.some((x) => x === item.chunk_id)}
-                  handleCheckboxClick={handleSingleCheckboxClick}
-                  switchChunk={switchChunk}
-                ></ChunkCard>
-              ))}
-            </Space>
-          </Spin>
-        </div>
-        <div className={styles.pageFooter}>
-          <Pagination
-            responsive
-            showLessItems
-            showQuickJumper
-            showSizeChanger
-            onChange={onPaginationChange}
-            pageSize={pagination.pageSize}
-            pageSizeOptions={[10, 30, 60, 90]}
-            current={pagination.current}
-            total={total}
-          />
-        </div>
+        <Flex flex={1} gap={'middle'}>
+          <Flex flex={1} vertical>
+            <div className={styles.pageContent}>
+              <Spin spinning={loading} className={styles.spin} size="large">
+                <Space
+                  direction="vertical"
+                  size={'middle'}
+                  className={styles.chunkContainer}
+                >
+                  {data.map((item) => (
+                    <ChunkCard
+                      item={item}
+                      key={item.chunk_id}
+                      editChunk={handleEditChunk}
+                      checked={selectedChunkIds.some(
+                        (x) => x === item.chunk_id,
+                      )}
+                      handleCheckboxClick={handleSingleCheckboxClick}
+                      switchChunk={switchChunk}
+                    ></ChunkCard>
+                  ))}
+                </Space>
+              </Spin>
+            </div>
+            <div className={styles.pageFooter}>
+              <Pagination
+                responsive
+                showLessItems
+                showQuickJumper
+                showSizeChanger
+                onChange={onPaginationChange}
+                pageSize={pagination.pageSize}
+                pageSizeOptions={[10, 30, 60, 90]}
+                current={pagination.current}
+                total={total}
+              />
+            </div>
+          </Flex>
+          <section className={styles.documentPreview}>
+            <DocumentPreview></DocumentPreview>
+          </section>
+        </Flex>
       </div>
       <CreatingModal doc_id={documentId} chunkId={chunkId} />
     </>

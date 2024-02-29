@@ -48,3 +48,8 @@ export enum LlmModelType {
   Image2text = 'image2text',
   Speech2text = 'speech2text',
 }
+
+export enum KnowledgeSearchParams {
+  DocumentId = 'doc_id',
+  KnowledgeId = 'id',
+}

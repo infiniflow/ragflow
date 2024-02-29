@@ -1,4 +1,5 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
+import { KnowledgeSearchParams } from '@/constants/knowledge';
 import { IKnowledge, ITenantInfo } from '@/interfaces/database/knowledge';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
@@ -180,4 +181,15 @@ export const useFetchFileThumbnails = (docIds?: Array<string>) => {
   }, [docIds, fetchFileThumbnails]);
 
   return { fileThumbnails, fetchFileThumbnails };
+};
+
+export const useGetKnowledgeSearchParams = () => {
+  const [currentQueryParameters] = useSearchParams();
+
+  return {
+    documentId:
+      currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
+    knowledgeId:
+      currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
+  };
 };
