@@ -58,7 +58,7 @@ default_llm = {
         "image2text_model": "gpt-4-vision-preview",
         "asr_model": "whisper-1",
     },
-    "智普AI": {
+    "智谱AI": {
         "chat_model": "glm-3-turbo",
         "embedding_model": "embedding-2",
         "image2text_model": "glm-4v",

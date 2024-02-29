@@ -85,7 +85,7 @@ def init_llm_factory():
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
         },{
-            "name": "智普AI",
+            "name": "智谱AI",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",

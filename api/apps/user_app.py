@@ -70,11 +70,10 @@ def github_callback():
     }, headers={"Accept": "application/json"})
     res = res.json()
     if "error" in res:
-        return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
-                               retmsg=res["error_description"])
+        return redirect("/?error=%s" % res["error_description"])
 
     if "user:email" not in res["scope"].split(","):
-        return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg='user:email not in scope')
+        return redirect("/?error=user:email not in scope")
 
     session["access_token"] = res["access_token"]
     session["access_token_from"] = "github"
@@ -104,8 +103,9 @@ def github_callback():
         except Exception as e:
             rollback_user_registration(user_id)
             stat_logger.exception(e)
+            return redirect("/?error=%s"%str(e))
 
-    return redirect("/knowledge")
+    return redirect("/?auth=%s"%user_id)
 
 
 def user_info_from_github(access_token):
