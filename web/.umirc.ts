@@ -21,11 +21,11 @@ export default defineConfig({
       hack: `true; @import "~@/less/variable.less";`,
     },
   },
-  // proxy: {
-  //   '/v1': {
-  //     'target': 'http://54.80.112.79:9380/',
-  //     'changeOrigin': true,
-  //     'pathRewrite': { '^/v1': '/v1' },
-  //   },
-  // },
+  proxy: {
+    '/v1': {
+      target: 'http://123.60.95.134:9380/',
+      changeOrigin: true,
+      // pathRewrite: { '^/v1': '/v1' },
+    },
+  },
 });
