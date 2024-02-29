@@ -374,32 +374,64 @@ export const useSetConversation = () => {
   const dispatch = useDispatch();
   const { dialogId } = useGetChatSearchParams();
 
-  const setConversation = (message: string) => {
-    return dispatch<any>({
-      type: 'chatModel/setConversation',
-      payload: {
-        // conversation_id: '',
-        dialog_id: dialogId,
-        name: message,
-        message: [
-          {
-            role: MessageType.Assistant,
-            content: message,
-          },
-        ],
-      },
-    });
-  };
+  const setConversation = useCallback(
+    (message: string) => {
+      return dispatch<any>({
+        type: 'chatModel/setConversation',
+        payload: {
+          // conversation_id: '',
+          dialog_id: dialogId,
+          name: message,
+          message: [
+            {
+              role: MessageType.Assistant,
+              content: message,
+            },
+          ],
+        },
+      });
+    },
+    [dispatch, dialogId],
+  );
 
   return { setConversation };
 };
 
 export const useSelectCurrentConversation = () => {
+  const [currentConversation, setCurrentConversation] =
+    useState<IClientConversation>({} as IClientConversation);
+
   const conversation: IClientConversation = useSelector(
     (state: any) => state.chatModel.currentConversation,
   );
 
-  return conversation;
+  const addNewestConversation = useCallback((message: string) => {
+    setCurrentConversation((pre) => {
+      return {
+        ...pre,
+        message: [
+          ...pre.message,
+          {
+            role: MessageType.User,
+            content: message,
+            id: uuid(),
+          } as IMessage,
+        ],
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    console.info('useSelectCurrentConversation: 1', currentConversation);
+  }, [currentConversation]);
+
+  useEffect(() => {
+    console.info('useSelectCurrentConversation: 2', conversation);
+
+    setCurrentConversation(conversation);
+  }, [conversation]);
+
+  return { currentConversation, addNewestConversation };
 };
 
 export const useFetchConversation = () => {
@@ -421,11 +453,30 @@ export const useFetchConversation = () => {
   return fetchConversation;
 };
 
+export const useScrollToBottom = (currentConversation: IClientConversation) => {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback(() => {
+    console.info('useScrollToBottom');
+    if (currentConversation.id) {
+      ref.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, [currentConversation]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  return ref;
+};
+
 export const useFetchConversationOnMount = () => {
   const { conversationId } = useGetChatSearchParams();
-  const conversation = useSelectCurrentConversation();
   const setCurrentConversation = useSetCurrentConversation();
   const fetchConversation = useFetchConversation();
+  const { currentConversation, addNewestConversation } =
+    useSelectCurrentConversation();
+  const ref = useScrollToBottom(currentConversation);
 
   const fetchConversationOnMount = useCallback(() => {
     if (isConversationIdExist(conversationId)) {
@@ -439,66 +490,57 @@ export const useFetchConversationOnMount = () => {
     fetchConversationOnMount();
   }, [fetchConversationOnMount]);
 
-  return conversation;
+  return { currentConversation, addNewestConversation, ref };
 };
 
 export const useSendMessage = () => {
   const dispatch = useDispatch();
   const { setConversation } = useSetConversation();
   const { conversationId } = useGetChatSearchParams();
-  const conversation = useSelector(
+  const conversation: IClientConversation = useSelector(
     (state: any) => state.chatModel.currentConversation,
   );
+
   const { handleClickConversation } = useClickConversationCard();
 
-  const sendMessage = (message: string, id?: string) => {
-    dispatch({
-      type: 'chatModel/completeConversation',
-      payload: {
-        conversation_id: id ?? conversationId,
-        messages: [
-          ...(conversation?.message ?? []).map((x: IMessage) => omit(x, 'id')),
-          {
-            role: MessageType.User,
-            content: message,
-          },
-        ],
-      },
-    });
-  };
+  const sendMessage = useCallback(
+    (message: string, id?: string) => {
+      dispatch({
+        type: 'chatModel/completeConversation',
+        payload: {
+          conversation_id: id ?? conversationId,
+          messages: [
+            ...(conversation?.message ?? []).map((x: IMessage) =>
+              omit(x, 'id'),
+            ),
+            {
+              role: MessageType.User,
+              content: message,
+            },
+          ],
+        },
+      });
+    },
+    [dispatch, conversation?.message, conversationId],
+  );
 
-  const handleSendMessage = async (message: string) => {
-    if (conversationId !== '') {
-      sendMessage(message);
-    } else {
-      const data = await setConversation(message);
-      if (data.retcode === 0) {
-        const id = data.data.id;
-        handleClickConversation(id);
-        sendMessage(message, id);
+  const handleSendMessage = useCallback(
+    async (message: string) => {
+      if (conversationId !== '') {
+        sendMessage(message);
+      } else {
+        const data = await setConversation(message);
+        if (data.retcode === 0) {
+          const id = data.data.id;
+          handleClickConversation(id);
+          sendMessage(message, id);
+        }
       }
-    }
-  };
+    },
+    [conversationId, handleClickConversation, setConversation, sendMessage],
+  );
 
   return { sendMessage: handleSendMessage };
-};
-
-export const useScrollToBottom = () => {
-  const ref = useRef<HTMLDivElement>(null);
-  let chatModel: ChatModelState = useSelector((state: any) => state.chatModel);
-  const { currentConversation } = chatModel;
-
-  const scrollToBottom = useCallback(() => {
-    if (currentConversation.id) {
-      ref.current?.scrollIntoView({ behavior: 'instant' });
-    }
-  }, [currentConversation]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [scrollToBottom]);
-
-  return ref;
 };
 
 export const useGetFileIcon = () => {
