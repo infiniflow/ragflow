@@ -30,7 +30,7 @@ def init_superuser():
         "password": "admin",
         "nickname": "admin",
         "is_superuser": True,
-        "email": "kai.hu@infiniflow.org",
+        "email": "admin@ragflow.io",
         "creator": "system",
         "status": "1",
     }
@@ -61,7 +61,7 @@ def init_superuser():
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
-    print("【INFO】Super user initialized. \033[93muser name: admin, password: admin\033[0m. Changing the password after logining is strongly recomanded.")
+    print("【INFO】Super user initialized. \033[93memail: admin@ragflow.io, password: admin\033[0m. Changing the password after logining is strongly recomanded.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={})

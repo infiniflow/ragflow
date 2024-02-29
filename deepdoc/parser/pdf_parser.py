@@ -25,7 +25,7 @@ class HuParser:
     def __init__(self):
         self.ocr = OCR()
         if not hasattr(self, "model_speciess"):
-            self.model_speciess = ParserType.GENERAL.value
+            self.model_speciess = ParserType.NAIVE.value
         self.layouter = LayoutRecognizer("layout."+self.model_speciess)
         self.tbl_det = TableStructureRecognizer()
 

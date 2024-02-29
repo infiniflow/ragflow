@@ -1,11 +1,17 @@
 import copy
 import re
+
+from api.db import ParserType
 from rag.nlp import huqie, tokenize
 from deepdoc.parser import PdfParser
 from rag.utils import num_tokens_from_string
 
 
 class Pdf(PdfParser):
+    def __init__(self):
+        self.model_speciess = ParserType.MANUAL.value
+        super().__init__()
+
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         self.__images__(
