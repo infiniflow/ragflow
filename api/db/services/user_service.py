@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from datetime import datetime
+
 import peewee
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -20,7 +22,7 @@ from api.db import UserTenantRole
 from api.db.db_models import DB, UserTenant
 from api.db.db_models import User, Tenant
 from api.db.services.common_service import CommonService
-from api.utils import get_uuid, get_format_time
+from api.utils import get_uuid, get_format_time, current_timestamp, datetime_format
 from api.db import StatusEnum
 
 
@@ -53,6 +55,11 @@ class UserService(CommonService):
             kwargs["id"] = get_uuid()
         if "password" in kwargs:
             kwargs["password"] = generate_password_hash(str(kwargs["password"]))
+
+        kwargs["create_time"] = current_timestamp()
+        kwargs["create_date"] = datetime_format(datetime.now())
+        kwargs["update_time"] = current_timestamp()
+        kwargs["update_date"] = datetime_format(datetime.now())
         obj = cls.model(**kwargs).save(force_insert=True)
         return obj
 
@@ -66,10 +73,10 @@ class UserService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_user(cls, user_id, user_dict):
-        date_time = get_format_time()
         with DB.atomic():
             if user_dict:
-                user_dict["update_time"] = date_time
+                user_dict["update_time"] = current_timestamp()
+                user_dict["update_date"] = datetime_format(datetime.now())
                 cls.model.update(user_dict).where(cls.model.id == user_id).execute()
 
 

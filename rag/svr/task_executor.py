@@ -37,7 +37,7 @@ from rag.nlp import search
 from io import BytesIO
 import pandas as pd
 
-from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture
+from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive
 
 from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
@@ -48,7 +48,7 @@ from api.utils.file_utils import get_project_base_directory
 BATCH_SIZE = 64
 
 FACTORY = {
-    ParserType.GENERAL.value: laws,
+    ParserType.NAIVE.value: naive,
     ParserType.PAPER.value: paper,
     ParserType.BOOK.value: book,
     ParserType.PRESENTATION.value: presentation,

@@ -30,11 +30,21 @@ class Pdf(PdfParser):
 
         from timeit import default_timer as timer
         start = timer()
+        start = timer()
         self._layouts_rec(zoomin)
-        callback(0.77, "Layout analysis finished")
+        callback(0.5, "Layout analysis finished.")
+        print("paddle layouts:", timer() - start)
+        self._table_transformer_job(zoomin)
+        callback(0.7, "Table analysis finished.")
+        self._text_merge()
+        self._concat_downward(concat_between_pages=False)
+        self._filter_forpages()
+        callback(0.77, "Text merging finished")
+        tbls = self._extract_table_figure(True, zoomin, False)
+
         cron_logger.info("paddle layouts:".format((timer() - start) / (self.total_page + 0.1)))
-        self._naive_vertical_merge()
-        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes]
+        #self._naive_vertical_merge()
+        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -44,11 +54,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         Successive text will be sliced into pieces using 'delimiter'.
         Next, these successive pieces are merge into chunks whose token number is no more than 'Max token number'.
     """
+
+    eng = lang.lower() == "english"#is_english(cks)
     doc = {
         "docnm_kwd": filename,
         "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
+    res = []
     pdf_parser = None
     sections = []
     if re.search(r"\.docx?$", filename, re.IGNORECASE):
@@ -58,8 +71,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.8, "Finish parsing.")
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        sections = pdf_parser(filename if not binary else binary,
+        sections, tbls = pdf_parser(filename if not binary else binary,
                               from_page=from_page, to_page=to_page, callback=callback)
+        # add tables
+        for img, rows in tbls:
+            bs = 10
+            de = ";" if eng else "；"
+            for i in range(0, len(rows), bs):
+                d = copy.deepcopy(doc)
+                r = de.join(rows[i:i + bs])
+                r = re.sub(r"\t——(来自| in ).*”%s" % de, "", r)
+                tokenize(d, r, eng)
+                d["image"] = img
+                res.append(d)
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -79,8 +103,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 128, "delimiter": "\n!?。；！？"})
     cks = naive_merge(sections, parser_config["chunk_token_num"], parser_config["delimiter"])
-    eng = lang.lower() == "english"#is_english(cks)
-    res = []
+
     # wrap up to es documents
     for ck in cks:
         print("--", ck)

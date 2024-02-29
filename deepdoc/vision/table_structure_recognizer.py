@@ -33,8 +33,7 @@ class TableStructureRecognizer(Recognizer):
     ]
 
     def __init__(self):
-        super().__init__(self.labels, "tsr",
-                         os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        super().__init__(self.labels, "tsr")#,os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
 
     def __call__(self, images, thr=0.2):
         tbls = super().__call__(images, thr)

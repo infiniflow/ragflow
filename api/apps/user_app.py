@@ -33,49 +33,14 @@ from api.utils.api_utils import get_json_result, cors_reponse
 
 @manager.route('/login', methods=['POST', 'GET'])
 def login():
-    userinfo = None
     login_channel = "password"
-    if session.get("access_token"):
-        login_channel = session["access_token_from"]
-        if session["access_token_from"] == "github":
-            userinfo = user_info_from_github(session["access_token"])
-    elif not request.json:
+    if not request.json:
         return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
                                retmsg='Unautherized!')
 
-    email = request.json.get('email') if not userinfo else userinfo["email"]
+    email = request.json.get('email', "")
     users = UserService.query(email=email)
-    if not users:
-        if request.json is not None:
-            return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg=f'This Email is not registered!')
-        avatar = ""
-        try:
-            avatar = download_img(userinfo["avatar_url"])
-        except Exception as e:
-            stat_logger.exception(e)
-        user_id = get_uuid()
-        try:
-            users = user_register(user_id, {
-                "access_token": session["access_token"],
-                "email": userinfo["email"],
-                "avatar": avatar,
-                "nickname": userinfo["login"],
-                "login_channel": login_channel,
-                "last_login_time": get_format_time(),
-                "is_superuser": False,
-            })
-            if not users: raise Exception('Register user failure.')
-            if len(users) > 1: raise Exception('Same E-mail exist!')
-            user = users[0]
-            login_user(user)
-            return cors_reponse(data=user.to_json(), auth=user.get_id(), retmsg="Welcome back!")
-        except Exception as e:
-            rollback_user_registration(user_id)
-            stat_logger.exception(e)
-            return server_error_response(e)
-    elif not request.json:
-        login_user(users[0])
-        return cors_reponse(data=users[0].to_json(), auth=users[0].get_id(), retmsg="Welcome back!")
+    if not users: return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg=f'This Email is not registered!')
 
     password = request.json.get('password')
     try:
@@ -97,28 +62,50 @@ def login():
 
 @manager.route('/github_callback', methods=['GET'])
 def github_callback():
-    try:
-        import requests
-        res = requests.post(GITHUB_OAUTH.get("url"), data={
-            "client_id": GITHUB_OAUTH.get("client_id"),
-            "client_secret":  GITHUB_OAUTH.get("secret_key"),
-            "code": request.args.get('code')
-        },headers={"Accept": "application/json"})
-        res = res.json()
-        if "error" in res:
-            return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
-                                   retmsg=res["error_description"])
+    import requests
+    res = requests.post(GITHUB_OAUTH.get("url"), data={
+        "client_id": GITHUB_OAUTH.get("client_id"),
+        "client_secret":  GITHUB_OAUTH.get("secret_key"),
+        "code": request.args.get('code')
+    }, headers={"Accept": "application/json"})
+    res = res.json()
+    if "error" in res:
+        return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
+                               retmsg=res["error_description"])
 
-        if "user:email" not in res["scope"].split(","):
-            return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg='user:email not in scope')
+    if "user:email" not in res["scope"].split(","):
+        return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg='user:email not in scope')
 
-        session["access_token"] = res["access_token"]
-        session["access_token_from"] = "github"
-        return redirect(url_for("user.login"),  code=307)
+    session["access_token"] = res["access_token"]
+    session["access_token_from"] = "github"
+    userinfo = user_info_from_github(session["access_token"])
+    users = UserService.query(email=userinfo["email"])
+    user_id = get_uuid()
+    if not users:
+        try:
+            try:
+                avatar = download_img(userinfo["avatar_url"])
+            except Exception as e:
+                stat_logger.exception(e)
+                avatar = ""
+            users = user_register(user_id, {
+                "access_token": session["access_token"],
+                "email": userinfo["email"],
+                "avatar": avatar,
+                "nickname": userinfo["login"],
+                "login_channel": "github",
+                "last_login_time": get_format_time(),
+                "is_superuser": False,
+            })
+            if not users: raise Exception('Register user failure.')
+            if len(users) > 1: raise Exception('Same E-mail exist!')
+            user = users[0]
+            login_user(user)
+        except Exception as e:
+            rollback_user_registration(user_id)
+            stat_logger.exception(e)
 
-    except Exception as e:
-        stat_logger.exception(e)
-        return server_error_response(e)
+    return redirect("/knowledge")
 
 
 def user_info_from_github(access_token):
@@ -208,7 +195,7 @@ def user_register(user_id, user):
     for llm in LLMService.query(fid=LLM_FACTORY):
         tenant_llm.append({"tenant_id": user_id, "llm_factory": LLM_FACTORY, "llm_name": llm.llm_name, "model_type":llm.model_type, "api_key": API_KEY})
 
-    if not UserService.insert(**user):return
+    if not UserService.save(**user):return
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
