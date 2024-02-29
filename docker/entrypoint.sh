@@ -32,3 +32,5 @@ task_bro &
 task_exe &
 
 $PY api/ragflow_server.py
+
+wait;
