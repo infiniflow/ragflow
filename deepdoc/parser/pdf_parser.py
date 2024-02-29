@@ -24,9 +24,10 @@ logging.getLogger("pdfminer").setLevel(logging.WARNING)
 class HuParser:
     def __init__(self):
         self.ocr = OCR()
-        if not hasattr(self, "model_speciess"):
-            self.model_speciess = ParserType.NAIVE.value
-        self.layouter = LayoutRecognizer("layout."+self.model_speciess)
+        if hasattr(self, "model_speciess"):
+            self.layouter = LayoutRecognizer("layout."+self.model_speciess)
+        else:
+            self.layouter = LayoutRecognizer("layout")
         self.tbl_det = TableStructureRecognizer()
 
         self.updown_cnt_mdl = xgb.Booster()
