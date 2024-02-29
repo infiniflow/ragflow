@@ -475,7 +475,7 @@ class Knowledgebase(DataBaseModel):
     similarity_threshold = FloatField(default=0.2)
     vector_similarity_weight = FloatField(default=0.3)
 
-    parser_id = CharField(max_length=32, null=False, help_text="default parser ID", default=ParserType.GENERAL.value)
+    parser_id = CharField(max_length=32, null=False, help_text="default parser ID", default=ParserType.NAIVE.value)
     parser_config = JSONField(null=False, default={"pages":[[0,1000000]]})
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted，1: validate)", default="1")
 
