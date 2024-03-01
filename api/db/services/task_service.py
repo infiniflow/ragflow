@@ -65,7 +65,7 @@ class TaskService(CommonService):
         try:
             task = cls.model.get_by_id(id)
             _, doc = DocumentService.get_by_id(task.doc_id)
-            return doc.run == TaskStatus.CANCEL.value
+            return doc.run == TaskStatus.CANCEL.value or doc.progress < 0
         except Exception as e:
             pass
         return True

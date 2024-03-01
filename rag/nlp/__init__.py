@@ -1,4 +1,4 @@
-
+import copy
 
 from nltk.stem import PorterStemmer
 stemmer = PorterStemmer()
@@ -78,6 +78,20 @@ def tokenize(d, t, eng):
     else:
         d["content_ltks"] = huqie.qie(t)
         d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
+
+
+def tokenize_table(tbls, doc, eng, batch_size=10):
+    res = []
+    # add tables
+    for img, rows in tbls:
+        de = "; " if eng else "； "
+        for i in range(0, len(rows), batch_size):
+            d = copy.deepcopy(doc)
+            r = de.join(rows[i:i + batch_size])
+            tokenize(d, r, eng)
+            d["image"] = img
+            res.append(d)
+    return res
 
 
 def remove_contents_table(sections, eng=False):
@@ -201,10 +215,12 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
         tnum = num_tokens_from_string(t)
         if tnum < 8: pos = ""
         if tk_nums[-1] > chunk_token_num:
-            cks.append(t + pos)
+            if t.find(pos) < 0: t += pos
+            cks.append(t)
             tk_nums.append(tnum)
         else:
-            cks[-1] += t + pos
+            if cks[-1].find(pos) < 0: t += pos
+            cks[-1] += t
             tk_nums[-1] += tnum
 
     for sec, pos in sections:

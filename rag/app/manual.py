@@ -2,7 +2,7 @@ import copy
 import re
 
 from api.db import ParserType
-from rag.nlp import huqie, tokenize
+from rag.nlp import huqie, tokenize, tokenize_table
 from deepdoc.parser import PdfParser
 from rag.utils import num_tokens_from_string
 
@@ -81,18 +81,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     # is it English
     eng = lang.lower() == "english"#pdf_parser.is_english
 
-    res = []
-    # add tables
-    for img, rows in tbls:
-        bs = 10
-        de = ";" if eng else "；"
-        for i in range(0, len(rows), bs):
-            d = copy.deepcopy(doc)
-            r = de.join(rows[i:i + bs])
-            r = re.sub(r"\t——(来自| in ).*”%s" % de, "", r)
-            tokenize(d, r, eng)
-            d["image"] = img
-            res.append(d)
+    res = tokenize_table(tbls, doc, eng)
 
     i = 0
     chunk = []

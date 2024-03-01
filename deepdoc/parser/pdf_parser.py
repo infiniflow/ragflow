@@ -8,7 +8,7 @@ import torch
 import re
 import pdfplumber
 import logging
-from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
 
 from api.db import ParserType
@@ -930,13 +930,25 @@ class HuParser:
 
     def crop(self, text, ZM=3):
         imgs = []
+        poss = []
         for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
             pn, left, right, top, bottom = tag.strip(
                 "#").strip("@").split("\t")
             left, right, top, bottom = float(left), float(
                 right), float(top), float(bottom)
+            poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
+        if not poss: return
+
+        max_width = np.max([right-left for (_, left, right, _, _) in poss])
+        GAP = 6
+        pos = poss[0]
+        poss.insert(0, ([pos[0][0]], pos[1], pos[2], max(0, pos[3]-120), max(pos[3]-GAP, 0)))
+        pos = poss[-1]
+        poss.append(([pos[0][-1]], pos[1], pos[2], min(self.page_images[pos[0][-1]].size[1]/ZM, pos[4]+GAP), min(self.page_images[pos[0][-1]].size[1]/ZM, pos[4]+120)))
+
+        for ii, (pns, left, right, top, bottom) in enumerate(poss):
+            right = left + max_width
             bottom *= ZM
-            pns = [int(p) - 1 for p in pn.split("-")]
             for pn in pns[1:]:
                 bottom += self.page_images[pn - 1].size[1]
             imgs.append(
@@ -959,16 +971,21 @@ class HuParser:
 
         if not imgs:
             return
-        GAP = 2
         height = 0
         for img in imgs:
             height += img.size[1] + GAP
         height = int(height)
+        width = int(np.max([i.size[0] for i in imgs]))
         pic = Image.new("RGB",
-                        (int(np.max([i.size[0] for i in imgs])), height),
+                        (width, height),
                         (245, 245, 245))
         height = 0
-        for img in imgs:
+        for ii, img in enumerate(imgs):
+            if ii == 0 or ii + 1 == len(imgs):
+                img = img.convert('RGBA')
+                overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+                overlay.putalpha(128)
+                img = Image.alpha_composite(img, overlay).convert("RGB")
             pic.paste(img, (0, int(height)))
             height += img.size[1] + GAP
         return pic
