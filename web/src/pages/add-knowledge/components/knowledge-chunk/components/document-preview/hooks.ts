@@ -1,4 +1,5 @@
 import { useSize } from 'ahooks';
+import { CustomTextRenderer } from 'node_modules/react-pdf/dist/esm/shared/types';
 import { useCallback, useEffect, useState } from 'react';
 
 export const useDocumentResizeObserver = () => {
@@ -17,4 +18,28 @@ export const useDocumentResizeObserver = () => {
   }, [size?.width, onResize]);
 
   return { containerWidth, setContainerRef };
+};
+
+function highlightPattern(text: string, pattern: string, pageNumber: number) {
+  const finalText = '';
+  console.info(text);
+  if (pageNumber === 2) {
+    return `<mark>${text}</mark>`;
+  }
+  if (text.trim() !== '' && pattern.match(text)) {
+    // return pattern.replace(text, (value) => `<mark>${value}</mark>`);
+    return `<mark>${text}</mark>`;
+  }
+  return text.replace(pattern, (value) => `<mark>${value}</mark>`);
+}
+
+export const useHighlightText = (searchText: string = '') => {
+  const textRenderer: CustomTextRenderer = useCallback(
+    (textItem) => {
+      return highlightPattern(textItem.str, searchText, textItem.pageNumber);
+    },
+    [searchText],
+  );
+
+  return textRenderer;
 };

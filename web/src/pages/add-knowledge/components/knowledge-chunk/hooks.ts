@@ -1,4 +1,4 @@
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { useCallback, useState } from 'react';
 import { useSelector } from 'umi';
 
@@ -9,6 +9,13 @@ export const useSelectDocumentInfo = () => {
   return documentInfo;
 };
 
+export const useSelectChunkList = () => {
+  const chunkList: IChunk[] = useSelector(
+    (state: any) => state.chunkModel.data,
+  );
+  return chunkList;
+};
+
 export const useHandleChunkCardClick = () => {
   const [selectedChunkId, setSelectedChunkId] = useState<string>('');
 
@@ -17,4 +24,9 @@ export const useHandleChunkCardClick = () => {
   }, []);
 
   return { handleChunkCardClick, selectedChunkId };
+};
+
+export const useGetSelectedChunk = (selectedChunkId: string) => {
+  const chunkList: IChunk[] = useSelectChunkList();
+  return chunkList.find((x) => x.chunk_id === selectedChunkId);
 };

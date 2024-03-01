@@ -205,7 +205,9 @@ const Chunk = () => {
 
           {documentInfo.type === 'pdf' && (
             <section className={styles.documentPreview}>
-              <DocumentPreview></DocumentPreview>
+              <DocumentPreview
+                selectedChunkId={selectedChunkId}
+              ></DocumentPreview>
             </section>
           )}
         </Flex>
