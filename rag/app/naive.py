@@ -13,7 +13,7 @@
 import copy
 import re
 from rag.app import laws
-from rag.nlp import huqie, is_english, tokenize, naive_merge
+from rag.nlp import huqie, is_english, tokenize, naive_merge, tokenize_table
 from deepdoc.parser import PdfParser
 from rag.settings import cron_logger
 
@@ -72,17 +72,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         pdf_parser = Pdf()
         sections, tbls = pdf_parser(filename if not binary else binary,
                               from_page=from_page, to_page=to_page, callback=callback)
-        # add tables
-        for img, rows in tbls:
-            bs = 10
-            de = ";" if eng else "；"
-            for i in range(0, len(rows), bs):
-                d = copy.deepcopy(doc)
-                r = de.join(rows[i:i + bs])
-                r = re.sub(r"\t——(来自| in ).*”%s" % de, "", r)
-                tokenize(d, r, eng)
-                d["image"] = img
-                res.append(d)
+        res = tokenize_table(tbls, doc, eng)
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -106,6 +96,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     # wrap up to es documents
     for ck in cks:
         print("--", ck)
+        if not ck:continue
         d = copy.deepcopy(doc)
         if pdf_parser:
             d["image"] = pdf_parser.crop(ck)

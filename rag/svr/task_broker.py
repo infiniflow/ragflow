@@ -90,7 +90,7 @@ def dispatch():
                     tsks.append(task)
         else:
             tsks.append(new_task())
-        print(tsks)
+
         bulk_insert_into_db(Task, tsks, True)
         set_dispatching(r["id"])
         tmf.write(str(r["update_time"]) + "\n")

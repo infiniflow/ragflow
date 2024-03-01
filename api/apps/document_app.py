@@ -236,13 +236,16 @@ def run():
     try:
         for id in req["doc_ids"]:
             info = {"run": str(req["run"]), "progress": 0}
-            if str(req["run"]) == TaskStatus.RUNNING.value:info["progress_msg"] = ""
+            if str(req["run"]) == TaskStatus.RUNNING.value:
+                info["progress_msg"] = ""
+                info["chunk_num"] = 0
+                info["token_num"] = 0
             DocumentService.update_by_id(id, info)
-            if str(req["run"]) == TaskStatus.CANCEL.value:
-                tenant_id = DocumentService.get_tenant_id(id)
-                if not tenant_id:
-                    return get_data_error_result(retmsg="Tenant not found!")
-                ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+            #if str(req["run"]) == TaskStatus.CANCEL.value:
+            tenant_id = DocumentService.get_tenant_id(id)
+            if not tenant_id:
+                return get_data_error_result(retmsg="Tenant not found!")
+            ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
 
         return get_json_result(data=True)
     except Exception as e:
@@ -311,13 +314,17 @@ def change_parser():
         if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
             return get_data_error_result(retmsg="Not supported yet!")
 
-        e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress":0, "progress_msg": ""})
+        e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress":0, "progress_msg": "", "run": "0"})
         if not e:
             return get_data_error_result(retmsg="Document not found!")
         if doc.token_num>0:
             e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num*-1, doc.chunk_num*-1, doc.process_duation*-1)
             if not e:
                 return get_data_error_result(retmsg="Document not found!")
+            tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+            if not tenant_id:
+                return get_data_error_result(retmsg="Tenant not found!")
+            ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
 
         return get_json_result(data=True)
     except Exception as e:

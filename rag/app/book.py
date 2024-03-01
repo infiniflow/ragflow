@@ -13,7 +13,7 @@
 import copy
 import re
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, \
-    hierarchical_merge, make_colon_as_title, naive_merge, random_choices
+    hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table
 from rag.nlp import huqie
 from deepdoc.parser import PdfParser, DocxParser
 
@@ -90,25 +90,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     make_colon_as_title(sections)
     bull = bullets_category([t for t in random_choices([t for t,_ in sections], k=100)])
     if bull >= 0: cks = hierarchical_merge(bull, sections, 3)
-    else: cks = naive_merge(sections, kwargs.get("chunk_token_num", 256), kwargs.get("delimer", "\n。；！？"))
+    else:
+        sections = [s.split("@") for s in sections]
+        sections = [(pr[0], "@"+pr[1]) for pr in sections if len(pr)==2]
+        cks = naive_merge(sections, kwargs.get("chunk_token_num", 256), kwargs.get("delimer", "\n。；！？"))
 
-    sections = [t for t, _ in sections]
     # is it English
-    eng = lang.lower() == "english"#is_english(random_choices(sections, k=218))
+    eng = lang.lower() == "english"#is_english(random_choices([t for t, _ in sections], k=218))
 
-    res = []
-    # add tables
-    for img, rows in tbls:
-        bs = 10
-        de = ";" if eng else "；"
-        for i in range(0, len(rows), bs):
-            d = copy.deepcopy(doc)
-            r = de.join(rows[i:i + bs])
-            r = re.sub(r"\t——(来自| in ).*”%s" % de, "", r)
-            tokenize(d, r, eng)
-            d["image"] = img
-            res.append(d)
-            print("TABLE", d["content_with_weight"])
+    res = tokenize_table(tbls, doc, eng)
+
     # wrap up to es documents
     for ck in cks:
         d = copy.deepcopy(doc)

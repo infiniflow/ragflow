@@ -79,7 +79,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
     resume = remote_call(filename, binary)
     if len(resume.keys()) < 7:
         callback(-1, "Resume is not successfully parsed.")
-        return []
+        raise Exception("Resume parser remote call fail!")
     callback(0.6, "Done parsing. Chunking...")
     print(json.dumps(resume, ensure_ascii=False, indent=2))
 

@@ -20,7 +20,7 @@ from deepdoc.parser import PdfParser, PptParser
 
 class Ppt(PptParser):
     def __call__(self, fnm, from_page, to_page, callback=None):
-        txts = super.__call__(fnm, from_page, to_page)
+        txts = super().__call__(fnm, from_page, to_page)
 
         callback(0.5, "Text extraction finished.")
         import aspose.slides as slides

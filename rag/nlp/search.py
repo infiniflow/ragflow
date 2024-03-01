@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import json
 import re
+from copy import deepcopy
+
 from elasticsearch_dsl import Q, Search
 from typing import List, Optional, Dict, Union
 from dataclasses import dataclass
@@ -98,7 +100,7 @@ class Dealer:
                 del s["highlight"]
             q_vec = s["knn"]["query_vector"]
         es_logger.info("【Q】: {}".format(json.dumps(s)))
-        res = self.es.search(s, idxnm=idxnm, timeout="600s", src=src)
+        res = self.es.search(deepcopy(s), idxnm=idxnm, timeout="600s", src=src)
         es_logger.info("TOTAL: {}".format(self.es.getTotal(res)))
         if self.es.getTotal(res) == 0 and "knn" in s:
             bqry, _ = self.qryr.question(qst, min_match="10%")
