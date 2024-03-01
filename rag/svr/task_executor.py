@@ -114,7 +114,7 @@ def build(row):
                             kb_id=row["kb_id"], parser_config=row["parser_config"], tenant_id=row["tenant_id"])
     except Exception as e:
         if re.search("(No such file|not found)", str(e)):
-            callback(-1, "Can not find file <%s>" % row["doc_name"])
+            callback(-1, "Can not find file <%s>" % row["name"])
         else:
             callback(-1, f"Internal server error: %s" %
                      str(e).replace("'", ""))
