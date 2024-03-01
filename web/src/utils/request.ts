@@ -106,7 +106,10 @@ request.interceptors.request.use((url: string, options: any) => {
  * 请求response拦截器
  * */
 
-request.interceptors.response.use(async (response: any, request) => {
+request.interceptors.response.use(async (response: any, options) => {
+  if (options.responseType === 'blob') {
+    return response;
+  }
   const data: ResponseType = await response.clone().json();
   // response 拦截
 
