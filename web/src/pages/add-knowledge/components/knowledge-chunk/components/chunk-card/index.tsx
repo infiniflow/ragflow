@@ -10,6 +10,8 @@ interface IProps {
   switchChunk: (available?: number, chunkIds?: string[]) => void;
   editChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
+  selected: boolean;
+  clickChunkCard: (chunkId: string) => void;
 }
 
 const ChunkCard = ({
@@ -18,6 +20,8 @@ const ChunkCard = ({
   handleCheckboxClick,
   editChunk,
   switchChunk,
+  selected,
+  clickChunkCard,
 }: IProps) => {
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(available === 1);
@@ -31,13 +35,17 @@ const ChunkCard = ({
     handleCheckboxClick(item.chunk_id, e.target.checked);
   };
 
-  const handleContentClick = () => {
+  const handleContentDoubleClick = () => {
     editChunk(item.chunk_id);
+  };
+
+  const handleContentClick = () => {
+    clickChunkCard(item.chunk_id);
   };
 
   return (
     <div>
-      <Card>
+      <Card className={selected ? styles.cardSelected : ''}>
         <Flex gap={'middle'} justify={'space-between'}>
           <Checkbox onChange={handleCheck} checked={checked}></Checkbox>
           {item.img_id && (
@@ -52,7 +60,8 @@ const ChunkCard = ({
           )}
 
           <section
-            onDoubleClick={handleContentClick}
+            onDoubleClick={handleContentDoubleClick}
+            onClick={handleContentClick}
             className={styles.content}
             dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
           >

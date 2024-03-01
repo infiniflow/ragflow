@@ -9,56 +9,27 @@ import { useDocumentResizeObserver } from './hooks';
 
 import styles from './index.less';
 
-// type PDFFile = string | File | null;
-
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
   import.meta.url,
 ).toString();
 
-// const options = {
-//   cMapUrl: '/cmaps/',
-//   standardFontDataUrl: '/standard_fonts/',
-// };
-
 const DocumentPreview = () => {
   const [numPages, setNumPages] = useState<number>();
   const { documentId } = useGetKnowledgeSearchParams();
-  //   const [file, setFile] = useState<PDFFile>(null);
   const { containerWidth, setContainerRef } = useDocumentResizeObserver();
 
   function onDocumentLoadSuccess({ numPages }: { numPages: number }): void {
     setNumPages(numPages);
   }
 
-  //   const handleChange = (e: any) => {
-  //     console.info(e.files);
-  //     setFile(e.target.files[0] || null);
-  //   };
-
   const url = useMemo(() => {
     return `${api_host}/document/get/${documentId}`;
   }, [documentId]);
 
-  //   const fetch_document_file = useCallback(async () => {
-  //     const ret: Blob = await getDocumentFile(documentId);
-  //     console.info(ret);
-  //     const f = new File([ret], 'xx.pdf', { type: ret.type });
-  //     setFile(f);
-  //   }, [documentId]);
-
-  //   useEffect(() => {
-  //     // dispatch({ type: 'kFModel/fetch_document_file', payload: documentId });
-  //     fetch_document_file();
-  //   }, [fetch_document_file]);
-
   return (
     <div ref={setContainerRef} className={styles.documentContainer}>
-      <Document
-        file={url}
-        onLoadSuccess={onDocumentLoadSuccess}
-        //   options={options}
-      >
+      <Document file={url} onLoadSuccess={onDocumentLoadSuccess}>
         {Array.from(new Array(numPages), (el, index) => (
           <Page
             key={`page_${index + 1}`}
@@ -67,7 +38,6 @@ const DocumentPreview = () => {
           />
         ))}
       </Document>
-      {/* <input type="file" onChange={handleChange} /> */}
     </div>
   );
 };
