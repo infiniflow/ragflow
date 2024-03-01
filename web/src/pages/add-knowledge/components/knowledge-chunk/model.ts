@@ -1,5 +1,5 @@
 import { BaseState } from '@/interfaces/common';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/kbService';
 import { message } from 'antd';
 import { pick } from 'lodash';
@@ -7,7 +7,7 @@ import { pick } from 'lodash';
 import { DvaModel } from 'umi';
 
 export interface ChunkModelState extends BaseState {
-  data: any[];
+  data: IChunk[];
   total: number;
   isShowCreateModal: boolean;
   chunk_id: string;
