@@ -1,6 +1,8 @@
+import { useGetKnowledgeSearchParams } from '@/hooks/knowledgeHook';
+import { api_host } from '@/utils/api';
 import { useSize } from 'ahooks';
 import { CustomTextRenderer } from 'node_modules/react-pdf/dist/esm/shared/types';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export const useDocumentResizeObserver = () => {
   const [containerWidth, setContainerWidth] = useState<number>();
@@ -21,8 +23,6 @@ export const useDocumentResizeObserver = () => {
 };
 
 function highlightPattern(text: string, pattern: string, pageNumber: number) {
-  const finalText = '';
-  console.info(text);
   if (pageNumber === 2) {
     return `<mark>${text}</mark>`;
   }
@@ -42,4 +42,14 @@ export const useHighlightText = (searchText: string = '') => {
   );
 
   return textRenderer;
+};
+
+export const useGetDocumentUrl = () => {
+  const { documentId } = useGetKnowledgeSearchParams();
+
+  const url = useMemo(() => {
+    return `${api_host}/document/get/${documentId}`;
+  }, [documentId]);
+
+  return url;
 };
