@@ -29,7 +29,7 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
           <span className={styles.similarityCircle}>
             {((item[x.field] as number) * 100).toFixed(2)}%
           </span>
-          <span className={styles.similarityText}>Hybrid Similarity</span>
+          <span className={styles.similarityText}>{x.label}</span>
         </Space>
       ))}
     </Flex>

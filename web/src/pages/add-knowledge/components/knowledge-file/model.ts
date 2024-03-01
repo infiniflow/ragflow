@@ -1,6 +1,6 @@
 import { BaseState } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import kbService from '@/services/kbService';
+import kbService, { getDocumentFile } from '@/services/kbService';
 import { message } from 'antd';
 import omit from 'lodash/omit';
 import pick from 'lodash/pick';
@@ -210,6 +210,16 @@ const model: DvaModel<KFModelState> = {
       const { data } = yield call(kbService.document_thumbnails, payload);
       if (data.retcode === 0) {
         yield put({ type: 'setFileThumbnails', payload: data.data });
+      }
+    },
+    *fetch_document_file({ payload = {} }, { call }) {
+      const documentId = payload;
+      try {
+        const ret = yield call(getDocumentFile, documentId);
+        console.info('fetch_document_file:', ret);
+        return ret;
+      } catch (error) {
+        console.warn(error);
       }
     },
   },

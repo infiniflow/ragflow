@@ -13,7 +13,7 @@ export interface ChunkModelState extends BaseState {
   chunk_id: string;
   doc_id: string;
   chunkInfo: any;
-  documentInfo: Partial<IKnowledgeFile>;
+  documentInfo: IKnowledgeFile;
   available?: number;
 }
 
@@ -26,7 +26,7 @@ const model: DvaModel<ChunkModelState> = {
     chunk_id: '',
     doc_id: '',
     chunkInfo: {},
-    documentInfo: {},
+    documentInfo: {} as IKnowledgeFile,
     pagination: {
       current: 1,
       pageSize: 10,
