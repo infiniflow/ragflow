@@ -9,6 +9,7 @@ import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import ChunkCard from './components/chunk-card';
 import ChunkToolBar from './components/chunk-toolbar';
 import DocumentPreview from './components/document-preview';
+import { useSelectDocumentInfo } from './hooks';
 import styles from './index.less';
 import { ChunkModelState } from './model';
 
@@ -34,6 +35,7 @@ const Chunk = () => {
   const documentId: string = searchParams.get('doc_id') || '';
   const [chunkId, setChunkId] = useState<string | undefined>();
   const { removeChunk } = useDeleteChunkByIds();
+  const documentInfo = useSelectDocumentInfo();
 
   const getChunkList = useCallback(() => {
     const payload: PayloadType = {
@@ -197,9 +199,12 @@ const Chunk = () => {
               />
             </div>
           </Flex>
-          <section className={styles.documentPreview}>
-            <DocumentPreview></DocumentPreview>
-          </section>
+
+          {documentInfo.type === 'pdf' && (
+            <section className={styles.documentPreview}>
+              <DocumentPreview></DocumentPreview>
+            </section>
+          )}
         </Flex>
       </div>
       <CreatingModal doc_id={documentId} chunkId={chunkId} />
