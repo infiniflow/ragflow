@@ -8,8 +8,9 @@ import CreatingModal from './components/chunk-creating-modal';
 import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import ChunkCard from './components/chunk-card';
 import ChunkToolBar from './components/chunk-toolbar';
-import DocumentPreview from './components/document-preview';
-import { useSelectDocumentInfo } from './hooks';
+// import DocumentPreview from './components/document-preview';
+import DocumentPreview from './components/document-preview/preview';
+import { useHandleChunkCardClick, useSelectDocumentInfo } from './hooks';
 import styles from './index.less';
 import { ChunkModelState } from './model';
 
@@ -36,6 +37,7 @@ const Chunk = () => {
   const [chunkId, setChunkId] = useState<string | undefined>();
   const { removeChunk } = useDeleteChunkByIds();
   const documentInfo = useSelectDocumentInfo();
+  const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
 
   const getChunkList = useCallback(() => {
     const payload: PayloadType = {
@@ -180,6 +182,8 @@ const Chunk = () => {
                       )}
                       handleCheckboxClick={handleSingleCheckboxClick}
                       switchChunk={switchChunk}
+                      clickChunkCard={handleChunkCardClick}
+                      selected={item.chunk_id === selectedChunkId}
                     ></ChunkCard>
                   ))}
                 </Space>
@@ -202,7 +206,9 @@ const Chunk = () => {
 
           {documentInfo.type === 'pdf' && (
             <section className={styles.documentPreview}>
-              <DocumentPreview></DocumentPreview>
+              <DocumentPreview
+                selectedChunkId={selectedChunkId}
+              ></DocumentPreview>
             </section>
           )}
         </Flex>
