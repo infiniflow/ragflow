@@ -1,11 +1,11 @@
 import { ReactComponent as RefreshIcon } from '@/assets/svg/refresh.svg';
 import { ReactComponent as RunIcon } from '@/assets/svg/run.svg';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
-import { RunningStatus, RunningStatusMap } from '../constant';
-
 import { CloseCircleOutlined } from '@ant-design/icons';
+import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
+import reactStringReplace from 'react-string-replace';
 import { useDispatch } from 'umi';
+import { RunningStatus, RunningStatusMap } from '../constant';
 import styles from './index.less';
 
 const iconMap = {
@@ -35,17 +35,27 @@ const PopoverContent = ({ record }: IProps) => {
     {
       key: 'progress_msg',
       label: 'Progress Msg',
-      children: record.progress_msg,
+      children: reactStringReplace(
+        record.progress_msg.trim(),
+        /(\[ERROR\].+\s)/g,
+        (match, i) => {
+          return (
+            <span key={i} className={styles.popoverContentErrorLabel}>
+              {match}
+            </span>
+          );
+        },
+      ),
     },
   ];
 
   return (
-    <Flex vertical className={styles['popover-content']}>
-      {items.map((x) => {
+    <Flex vertical className={styles.popoverContent}>
+      {items.map((x, idx) => {
         return (
-          <div key={x.key}>
+          <div key={x.key} className={idx < 2 ? styles.popoverContentItem : ''}>
             <b>{x.label}:</b>
-            <p>{x.children}</p>
+            <div className={styles.popoverContentText}>{x.children}</div>
           </div>
         );
       })}

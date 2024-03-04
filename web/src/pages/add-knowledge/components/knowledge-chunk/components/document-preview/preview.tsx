@@ -1,4 +1,4 @@
-import { Spin } from 'antd';
+import { Skeleton } from 'antd';
 import { useEffect, useRef } from 'react';
 import {
   AreaHighlight,
@@ -43,7 +43,7 @@ const Preview = ({ selectedChunkId }: IProps) => {
 
   return (
     <div className={styles.documentContainer}>
-      <PdfLoader url={url} beforeLoad={<Spin />}>
+      <PdfLoader url={url} beforeLoad={<Skeleton active />}>
         {(pdfDocument) => (
           <PdfHighlighter
             pdfDocument={pdfDocument}
