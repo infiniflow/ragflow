@@ -83,7 +83,7 @@ class Dealer:
             else:
                 s = s.sort(
                     {"page_num_int": {"order": "asc", "unmapped_type": "float"}},
-                    {"top_int": {"order": "asc", "unmapped_type": "float"}},
+                    {"top_int": {"order": "asc", "unmapped_type": "float", "mode" : "avg"}},
                     {"create_time": {"order": "desc", "unmapped_type": "date"}},
                     {"create_timestamp_flt": {"order": "desc", "unmapped_type": "float"}}
                 )

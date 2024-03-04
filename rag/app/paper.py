@@ -48,7 +48,7 @@ class Pdf(PdfParser):
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
         callback(0.75, "Text merging finished.")
-        tbls = self._extract_table_figure(True, zoomin, False, True)
+        tbls = self._extract_table_figure(True, zoomin, True, True)
 
         # clean mess
         if column_width < self.page_images[0].size[0] / zoomin / 2:
