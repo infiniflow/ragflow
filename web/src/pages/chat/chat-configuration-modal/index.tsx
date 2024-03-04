@@ -1,6 +1,6 @@
 import { ReactComponent as ChatConfigurationAtom } from '@/assets/svg/chat-configuration-atom.svg';
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
-import { Divider, Flex, Form, Modal, Segmented } from 'antd';
+import { Divider, Flex, Form, Modal, Segmented, UploadFile } from 'antd';
 import { SegmentedValue } from 'antd/es/segmented';
 import omit from 'lodash/omit';
 import { useEffect, useRef, useState } from 'react';
@@ -67,6 +67,14 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
       ...excludeUnEnabledVariables(values),
     ]);
     const emptyResponse = nextValues.prompt_config?.empty_response ?? '';
+
+    const fileList = values.icon;
+    let icon;
+
+    if (Array.isArray(fileList) && fileList.length > 0) {
+      icon = fileList[0].thumbUrl;
+    }
+
     const finalValues = {
       dialog_id: id,
       ...nextValues,
@@ -75,6 +83,7 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
         parameters: promptEngineRef.current,
         empty_response: emptyResponse,
       },
+      icon,
     };
     console.info(promptEngineRef.current);
     console.info(nextValues);
@@ -112,7 +121,13 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
   );
 
   useEffect(() => {
-    form.setFieldsValue(currentDialog);
+    const icon = currentDialog.icon;
+    let fileList: UploadFile[] = [];
+
+    if (icon) {
+      fileList = [{ uid: '1', name: 'file', thumbUrl: icon, status: 'done' }];
+    }
+    form.setFieldsValue({ ...currentDialog, icon: fileList });
   }, [currentDialog, form]);
 
   return (

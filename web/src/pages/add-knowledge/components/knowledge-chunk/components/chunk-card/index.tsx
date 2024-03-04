@@ -64,9 +64,7 @@ const ChunkCard = ({
             onClick={handleContentClick}
             className={styles.content}
             dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
-          >
-            {/* {item.content_with_weight} */}
-          </section>
+          ></section>
           <div>
             <Switch checked={enabled} onChange={onChange} />
           </div>

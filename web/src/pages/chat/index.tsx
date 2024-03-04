@@ -2,6 +2,7 @@ import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import { useSetModalState } from '@/hooks/commonHooks';
 import { DeleteOutlined, EditOutlined, FormOutlined } from '@ant-design/icons';
 import {
+  Avatar,
   Button,
   Card,
   Divider,
@@ -208,8 +209,8 @@ const Chat = () => {
                 onClick={handleDialogCardClick(x.id)}
               >
                 <Flex justify="space-between" align="center">
-                  <Space>
-                    {x.icon}
+                  <Space size={15}>
+                    <Avatar src={x.icon} shape={'square'} />
                     <section>
                       <b>{x.name}</b>
                       <div>{x.description}</div>

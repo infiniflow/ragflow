@@ -23,7 +23,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { PaginationProps } from 'antd/lib';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useDispatch, useNavigate, useSelector } from 'umi';
+import { useDispatch, useNavigate, useSelector } from 'umi';
 import CreateEPModal from './createEFileModal';
 import styles from './index.less';
 import ParsingActionCell from './parsing-action-cell';
@@ -144,19 +144,22 @@ const KnowledgeFile = () => {
     });
   }, [dispatch]);
 
+  const linkToUploadPage = useCallback(() => {
+    navigate(`/knowledge/dataset/upload?id=${knowledgeBaseId}`);
+  }, [navigate, knowledgeBaseId]);
+
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
       {
         key: '1',
+        onClick: linkToUploadPage,
         label: (
           <div>
             <Button type="link">
-              <Link to={`/knowledge/dataset/upload?id=${knowledgeBaseId}`}>
-                <Space>
-                  <FileTextOutlined />
-                  Local files
-                </Space>
-              </Link>
+              <Space>
+                <FileTextOutlined />
+                Local files
+              </Space>
             </Button>
           </div>
         ),
@@ -164,9 +167,10 @@ const KnowledgeFile = () => {
       { type: 'divider' },
       {
         key: '2',
+        onClick: showCEFModal,
         label: (
           <div>
-            <Button type="link" onClick={showCEFModal}>
+            <Button type="link">
               <FileOutlined />
               Create empty file
             </Button>
@@ -175,7 +179,7 @@ const KnowledgeFile = () => {
         // disabled: true,
       },
     ];
-  }, [knowledgeBaseId, showCEFModal]);
+  }, [linkToUploadPage, showCEFModal]);
 
   const toChunk = (id: string) => {
     navigate(
