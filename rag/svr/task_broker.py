@@ -83,10 +83,10 @@ def dispatch():
             pages = PdfParser.total_page_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
             for s,e in r["parser_config"].get("pages", [(0,100000)]):
                 e = min(e, pages)
-                for p in range(s, e, 10):
+                for p in range(s, e, 5):
                     task = new_task()
                     task["from_page"] = p
-                    task["to_page"] = min(p + 10, e)
+                    task["to_page"] = min(p + 5, e)
                     tsks.append(task)
         else:
             tsks.append(new_task())

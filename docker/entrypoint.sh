@@ -10,7 +10,7 @@ PY=/root/miniconda3/envs/py11/bin/python
 
 function task_exe(){
   sleep 60;
-  while [ 1 -eq 1 ];do mpirun -n 2 --allow-run-as-root $PY rag/svr/task_executor.py ; done
+  while [ 1 -eq 1 ];do mpirun -n 4 --allow-run-as-root $PY rag/svr/task_executor.py ; done
 }
 
 function watch_broker(){

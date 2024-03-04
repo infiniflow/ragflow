@@ -33,7 +33,7 @@ class Pdf(PdfParser):
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
         callback(0.77, "Text merging finished")
-        tbls = self._extract_table_figure(True, zoomin, False, True)
+        tbls = self._extract_table_figure(True, zoomin, True, True)
 
         # clean mess
         for b in self.boxes:
