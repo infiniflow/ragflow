@@ -1,9 +1,10 @@
-import { Form, Input, Select } from 'antd';
+import { Form, Input, Select, Upload } from 'antd';
 
 import classNames from 'classnames';
 import { ISegmentedContentProps } from '../interface';
 
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
+import { PlusOutlined } from '@ant-design/icons';
 import styles from './index.less';
 
 const AssistantSetting = ({ show }: ISegmentedContentProps) => {
@@ -12,6 +13,13 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
     label: x.name,
     value: x.id,
   }));
+
+  const normFile = (e: any) => {
+    if (Array.isArray(e)) {
+      return e;
+    }
+    return e?.fileList;
+  };
 
   return (
     <section
@@ -26,8 +34,22 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
       >
         <Input placeholder="e.g. Resume Jarvis" />
       </Form.Item>
-      <Form.Item name={'icon'} label="Assistant avatar">
-        <Input />
+      <Form.Item
+        name="icon"
+        label="Assistant avatar"
+        valuePropName="fileList"
+        getValueFromEvent={normFile}
+      >
+        <Upload
+          listType="picture-card"
+          maxCount={1}
+          showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
+        >
+          <button style={{ border: 0, background: 'none' }} type="button">
+            <PlusOutlined />
+            <div style={{ marginTop: 8 }}>Upload</div>
+          </button>
+        </Upload>
       </Form.Item>
       <Form.Item name={'language'} label="Language" initialValue={'Chinese'}>
         <Select
