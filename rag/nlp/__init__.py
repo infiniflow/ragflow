@@ -246,7 +246,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
             tk_nums[-1] += tnum
 
     for sec, pos in sections:
-        add_chunk(sec[s: e], pos)
+        add_chunk(sec, pos)
         continue
         s, e = 0, 1
         while e < len(sec):
