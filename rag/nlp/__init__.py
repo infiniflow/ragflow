@@ -83,15 +83,37 @@ def tokenize(d, t, eng):
 def tokenize_table(tbls, doc, eng, batch_size=10):
     res = []
     # add tables
-    for img, rows in tbls:
+    for (img, rows), poss in tbls:
+        if not rows:continue
+        if isinstance(rows, str):
+            d = copy.deepcopy(doc)
+            r = re.sub(r"<[^<>]{,12}>", "", rows)
+            tokenize(d, r, eng)
+            d["content_with_weight"] = rows
+            d["image"] = img
+            add_positions(d, poss)
+            res.append(d)
+            continue
         de = "; " if eng else "； "
         for i in range(0, len(rows), batch_size):
             d = copy.deepcopy(doc)
             r = de.join(rows[i:i + batch_size])
             tokenize(d, r, eng)
             d["image"] = img
+            add_positions(d, poss)
             res.append(d)
     return res
+
+
+def add_positions(d, poss):
+    if not poss:return
+    d["page_num_int"] = []
+    d["position_int"] = []
+    d["top_int"] = []
+    for pn, left, right, top, bottom in poss:
+        d["page_num_int"].append(pn+1)
+        d["top_int"].append(top)
+        d["position_int"].append((pn+1, left, right, top, bottom))
 
 
 def remove_contents_table(sections, eng=False):

@@ -51,7 +51,7 @@ def list():
         if not e:
             return get_data_error_result(retmsg="Document not found!")
         query = {
-            "doc_ids": [doc_id], "page": page, "size": size, "question": question
+            "doc_ids": [doc_id], "page": page, "size": size, "question": question, "sort": True
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
@@ -66,7 +66,12 @@ def list():
                 "important_kwd": sres.field[id].get("important_kwd", []),
                 "img_id": sres.field[id].get("img_id", ""),
                 "available_int": sres.field[id].get("available_int", 1),
+                "positions": sres.field[id].get("position_int", "").split("\t")
             }
+            poss = []
+            for i in range(0, len(d["positions"]), 5):
+                poss.append([float(d["positions"][i]), float(d["positions"][i+1]), float(d["positions"][i+2]), float(d["positions"][i+3]), float(d["positions"][i+4])])
+            d["positions"] = poss
             res["chunks"].append(d)
         return get_json_result(data=res)
     except Exception as e:

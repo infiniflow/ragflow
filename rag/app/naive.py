@@ -13,7 +13,7 @@
 import copy
 import re
 from rag.app import laws
-from rag.nlp import huqie, is_english, tokenize, naive_merge, tokenize_table
+from rag.nlp import huqie, is_english, tokenize, naive_merge, tokenize_table, add_positions
 from deepdoc.parser import PdfParser
 from rag.settings import cron_logger
 
@@ -21,6 +21,7 @@ from rag.settings import cron_logger
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
+        callback(msg="OCR is  running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -39,7 +40,7 @@ class Pdf(PdfParser):
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
         callback(0.77, "Text merging finished")
-        tbls = self._extract_table_figure(True, zoomin, False)
+        tbls = self._extract_table_figure(True, zoomin, False, True)
 
         cron_logger.info("paddle layouts:".format((timer() - start) / (self.total_page + 0.1)))
         #self._naive_vertical_merge()
@@ -95,11 +96,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     # wrap up to es documents
     for ck in cks:
+        if len(ck.strip()) == 0:continue
         print("--", ck)
-        if not ck:continue
         d = copy.deepcopy(doc)
         if pdf_parser:
-            d["image"] = pdf_parser.crop(ck)
+            d["image"], poss = pdf_parser.crop(ck, need_position=True)
+            add_positions(d, poss)
             ck = pdf_parser.remove_tag(ck)
         tokenize(d, ck, eng)
         res.append(d)
