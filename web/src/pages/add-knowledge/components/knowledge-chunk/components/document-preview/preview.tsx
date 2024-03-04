@@ -3,13 +3,12 @@ import { useEffect, useRef } from 'react';
 import {
   AreaHighlight,
   Highlight,
-  NewHighlight,
+  IHighlight,
   PdfHighlighter,
   PdfLoader,
   Popup,
-  Tip,
 } from 'react-pdf-highlighter';
-import { useGetChunkHighlights, useGetSelectedChunk } from '../../hooks';
+import { useGetChunkHighlights } from '../../hooks';
 import { useGetDocumentUrl } from './hooks';
 
 import styles from './index.less';
@@ -17,8 +16,6 @@ import styles from './index.less';
 interface IProps {
   selectedChunkId: string;
 }
-
-const getNextId = () => String(Math.random()).slice(2);
 
 const HighlightPopup = ({
   comment,
@@ -33,70 +30,10 @@ const HighlightPopup = ({
 
 const Preview = ({ selectedChunkId }: IProps) => {
   const url = useGetDocumentUrl();
-  const selectedChunk = useGetSelectedChunk(selectedChunkId);
-
-  // const [state, setState] = useState<any>(testHighlights);
   const state = useGetChunkHighlights(selectedChunkId);
+  const ref = useRef<(highlight: IHighlight) => void>(() => {});
 
-  const ref = useRef((highlight: any) => {});
-
-  const parseIdFromHash = () =>
-    document.location.hash.slice('#highlight-'.length);
-
-  const resetHash = () => {
-    document.location.hash = '';
-  };
-
-  const getHighlightById = (id: string) => {
-    const highlights = state;
-
-    return highlights.find((highlight: any) => highlight.id === id);
-  };
-
-  //   let scrollViewerTo = (highlight: any) => {};
-
-  let scrollToHighlightFromHash = () => {
-    const highlight = getHighlightById(parseIdFromHash());
-
-    if (highlight) {
-      ref.current(highlight);
-    }
-  };
-
-  const addHighlight = (highlight: NewHighlight) => {
-    const highlights = state;
-
-    console.log('Saving highlight', highlight);
-
-    // setState([{ ...highlight, id: getNextId() }, ...highlights]);
-  };
-
-  const updateHighlight = (
-    highlightId: string,
-    position: Object,
-    content: Object,
-  ) => {
-    console.log('Updating highlight', highlightId, position, content);
-
-    // setState(
-    //   state.map((h: any) => {
-    //     const {
-    //       id,
-    //       position: originalPosition,
-    //       content: originalContent,
-    //       ...rest
-    //     } = h;
-    //     return id === highlightId
-    //       ? {
-    //           id,
-    //           position: { ...originalPosition, ...position },
-    //           content: { ...originalContent, ...content },
-    //           ...rest,
-    //         }
-    //       : h;
-    //   }),
-    // );
-  };
+  const resetHash = () => {};
 
   useEffect(() => {
     if (state.length > 0) {
@@ -112,29 +49,10 @@ const Preview = ({ selectedChunkId }: IProps) => {
             pdfDocument={pdfDocument}
             enableAreaSelection={(event) => event.altKey}
             onScrollChange={resetHash}
-            // pdfScaleValue="page-width"
-
             scrollRef={(scrollTo) => {
-              //   scrollViewerTo = scrollTo;
               ref.current = scrollTo;
-
-              scrollToHighlightFromHash();
             }}
-            onSelectionFinished={(
-              position,
-              content,
-              hideTipAndSelection,
-              transformSelection,
-            ) => (
-              <Tip
-                onOpen={transformSelection}
-                onConfirm={(comment) => {
-                  addHighlight({ content, position, comment });
-
-                  hideTipAndSelection();
-                }}
-              />
-            )}
+            onSelectionFinished={() => null}
             highlightTransform={(
               highlight,
               index,
@@ -158,13 +76,7 @@ const Preview = ({ selectedChunkId }: IProps) => {
                 <AreaHighlight
                   isScrolledTo={isScrolledTo}
                   highlight={highlight}
-                  onChange={(boundingRect) => {
-                    updateHighlight(
-                      highlight.id,
-                      { boundingRect: viewportToScaled(boundingRect) },
-                      { image: screenshot(boundingRect) },
-                    );
-                  }}
+                  onChange={() => {}}
                 />
               );
 
@@ -172,7 +84,7 @@ const Preview = ({ selectedChunkId }: IProps) => {
                 <Popup
                   popupContent={<HighlightPopup {...highlight} />}
                   onMouseOver={(popupContent) =>
-                    setTip(highlight, (highlight: any) => popupContent)
+                    setTip(highlight, () => popupContent)
                   }
                   onMouseOut={hideTip}
                   key={index}
