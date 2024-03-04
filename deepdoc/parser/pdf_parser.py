@@ -35,6 +35,7 @@ class HuParser:
             self.updown_cnt_mdl.set_param({"device": "cuda"})
         self.updown_cnt_mdl.load_model(hf_hub_download(repo_id="InfiniFlow/text_concat_xgb_v1.0",
                                                        filename="updown_concat_xgb.model"))
+        self.page_from = 0
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
 
@@ -683,7 +684,7 @@ class HuParser:
                             "layoutno", "")))
 
                 left, top, right, bott = b["x0"], b["top"], b["x1"], b["bottom"]
-                poss.append((pn, left, right, top, bott))
+                poss.append((pn+self.page_from, left, right, top, bott))
                 return self.page_images[pn] \
                     .crop((left * ZM, top * ZM,
                            right * ZM, bott * ZM))
@@ -863,6 +864,7 @@ class HuParser:
         self.garbages = {}
         self.page_cum_height = [0]
         self.page_layout = []
+        self.page_from = page_from
         try:
             self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
             self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
@@ -947,7 +949,9 @@ class HuParser:
             left, right, top, bottom = float(left), float(
                 right), float(top), float(bottom)
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
-        if not poss: return
+        if not poss:
+            if need_position: return None, None
+            return
 
         max_width = np.max([right-left for (_, left, right, _, _) in poss])
         GAP = 6
@@ -969,7 +973,8 @@ class HuParser:
                     bottom, self.page_images[pns[0]].size[1])
                                                ))
             )
-            positions.append((pns[0], left, right, top, min(
+            if 0 < ii < len(poss)-1:
+                positions.append((pns[0]+self.page_from, left, right, top, min(
                     bottom, self.page_images[pns[0]].size[1])/ZM))
             bottom -= self.page_images[pns[0]].size[1]
             for pn in pns[1:]:
@@ -980,8 +985,9 @@ class HuParser:
                                                    self.page_images[pn].size[1])
                                                ))
                 )
-                positions.append((pn, left, right, 0, min(
-                    bottom, self.page_images[pn].size[1]) / ZM))
+                if 0 < ii < len(poss) - 1:
+                    positions.append((pn+self.page_from, left, right, 0, min(
+                        bottom, self.page_images[pn].size[1]) / ZM))
                 bottom -= self.page_images[pn].size[1]
 
         if not imgs:

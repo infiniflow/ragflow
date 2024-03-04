@@ -60,7 +60,8 @@ def list():
         for id in sres.ids:
             d = {
                 "chunk_id": id,
-                "content_with_weight": rmSpace(sres.highlight[id]) if question else sres.field[id].get("content_with_weight", ""),
+                "content_with_weight": rmSpace(sres.highlight[id]) if question else sres.field[id].get(
+                    "content_with_weight", ""),
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_kwd": sres.field[id].get("important_kwd", []),
@@ -68,10 +69,12 @@ def list():
                 "available_int": sres.field[id].get("available_int", 1),
                 "positions": sres.field[id].get("position_int", "").split("\t")
             }
-            poss = []
-            for i in range(0, len(d["positions"]), 5):
-                poss.append([float(d["positions"][i]), float(d["positions"][i+1]), float(d["positions"][i+2]), float(d["positions"][i+3]), float(d["positions"][i+4])])
-            d["positions"] = poss
+            if len(d["positions"]) % 5 == 0:
+                poss = []
+                for i in range(0, len(d["positions"]), 5):
+                    poss.append([float(d["positions"][i]), float(d["positions"][i + 1]), float(d["positions"][i + 2]),
+                                 float(d["positions"][i + 3]), float(d["positions"][i + 4])])
+                d["positions"] = poss
             res["chunks"].append(d)
         return get_json_result(data=res)
     except Exception as e:
@@ -137,10 +140,10 @@ def set():
             return get_data_error_result(retmsg="Document not found!")
 
         if doc.parser_id == ParserType.QA:
-            arr = [t for t in re.split(r"[\n\t]", req["content_with_weight"]) if len(t)>1]
+            arr = [t for t in re.split(r"[\n\t]", req["content_with_weight"]) if len(t) > 1]
             if len(arr) != 2: return get_data_error_result(retmsg="Q&A must be separated by TAB/ENTER key.")
             q, a = rmPrefix(arr[0]), rmPrefix[arr[1]]
-            d = beAdoc(d, arr[0], arr[1], not any([huqie.is_chinese(t) for t in q+a]))
+            d = beAdoc(d, arr[0], arr[1], not any([huqie.is_chinese(t) for t in q + a]))
 
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
@@ -189,7 +192,8 @@ def create():
     md5 = hashlib.md5()
     md5.update((req["content_with_weight"] + req["doc_id"]).encode("utf-8"))
     chunck_id = md5.hexdigest()
-    d = {"id": chunck_id, "content_ltks": huqie.qie(req["content_with_weight"]), "content_with_weight": req["content_with_weight"]}
+    d = {"id": chunck_id, "content_ltks": huqie.qie(req["content_with_weight"]),
+         "content_with_weight": req["content_with_weight"]}
     d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
     d["important_kwd"] = req.get("important_kwd", [])
     d["important_tks"] = huqie.qie(" ".join(req.get("important_kwd", [])))

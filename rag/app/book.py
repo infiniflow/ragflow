@@ -41,7 +41,7 @@ class Pdf(PdfParser):
         self._filter_forpages()
         self._merge_with_same_bullet()
         callback(0.75, "Text merging finished.")
-        tbls = self._extract_table_figure(True, zoomin, False, True)
+        tbls = self._extract_table_figure(True, zoomin, True, True)
 
         callback(0.8, "Text extraction finished")
 

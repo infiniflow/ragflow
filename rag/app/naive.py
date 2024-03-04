@@ -40,7 +40,7 @@ class Pdf(PdfParser):
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
         callback(0.77, "Text merging finished")
-        tbls = self._extract_table_figure(True, zoomin, False, True)
+        tbls = self._extract_table_figure(True, zoomin, True, True)
 
         cron_logger.info("paddle layouts:".format((timer() - start) / (self.total_page + 0.1)))
         #self._naive_vertical_merge()

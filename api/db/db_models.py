@@ -527,7 +527,7 @@ class Dialog(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False)
     name = CharField(max_length=255, null=True, help_text="dialog application name")
     description = TextField(null=True, help_text="Dialog description")
-    icon = CharField(max_length=16, null=False, help_text="dialog icon")
+    icon = TextField(null=True, help_text="icon base64 string")
     language = CharField(max_length=32, null=True, default="Chinese", help_text="English|Chinese")
     llm_id = CharField(max_length=32, null=False, help_text="default llm ID")
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7,
