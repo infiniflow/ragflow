@@ -1,14 +1,14 @@
 // @import '~@/less/variable.less';
 
 .knowledge {
-  padding: 48px 60px;
+  padding: 48px 0;
 }
 
 .topWrapper {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding-bottom: 72px;
+  padding: 0 60px 72px;
 
   .title {
     font-family: Inter;
@@ -40,4 +40,8 @@
     align-items: center;
     .topButton();
   }
+}
+.knowledgeCardContainer {
+  padding: 0 60px;
+  overflow: auto;
 }

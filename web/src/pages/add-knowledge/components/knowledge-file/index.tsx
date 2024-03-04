@@ -288,7 +288,7 @@ const KnowledgeFile = () => {
         dataSource={data}
         loading={loading}
         pagination={pagination}
-        scroll={{ scrollToFirstRowOnChange: true, x: true, y: 'fill' }}
+        scroll={{ scrollToFirstRowOnChange: true, x: 1300, y: 'fill' }}
       />
       <CreateEPModal getKfList={getKfList} kb_id={knowledgeBaseId} />
       <SegmentSetModal
