@@ -13,6 +13,28 @@
     color: red;
     font-style: normal;
   }
+
+  caption {
+    color: @blurBackground;
+    font-size: 20px;
+    height: 50px;
+    line-height: 50px;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  th {
+    color: #fff;
+    background-color: @blurBackground;
+  }
+
+  td:hover {
+    background: @blurBackgroundHover;
+  }
+
+  tr:nth-child(even) {
+    background-color: #f2f2f2;
+  }
 }
 
 .cardSelected {

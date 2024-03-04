@@ -1,16 +1,15 @@
 import { Spin } from 'antd';
-import { useRef, useState } from 'react';
-import type { NewHighlight } from 'react-pdf-highlighter';
+import { useEffect, useRef } from 'react';
 import {
   AreaHighlight,
   Highlight,
+  NewHighlight,
   PdfHighlighter,
   PdfLoader,
   Popup,
   Tip,
 } from 'react-pdf-highlighter';
-import { useGetSelectedChunk } from '../../hooks';
-import { testHighlights } from './hightlights';
+import { useGetChunkHighlights, useGetSelectedChunk } from '../../hooks';
 import { useGetDocumentUrl } from './hooks';
 
 import styles from './index.less';
@@ -36,7 +35,9 @@ const Preview = ({ selectedChunkId }: IProps) => {
   const url = useGetDocumentUrl();
   const selectedChunk = useGetSelectedChunk(selectedChunkId);
 
-  const [state, setState] = useState<any>(testHighlights);
+  // const [state, setState] = useState<any>(testHighlights);
+  const state = useGetChunkHighlights(selectedChunkId);
+
   const ref = useRef((highlight: any) => {});
 
   const parseIdFromHash = () =>
@@ -67,7 +68,7 @@ const Preview = ({ selectedChunkId }: IProps) => {
 
     console.log('Saving highlight', highlight);
 
-    setState([{ ...highlight, id: getNextId() }, ...highlights]);
+    // setState([{ ...highlight, id: getNextId() }, ...highlights]);
   };
 
   const updateHighlight = (
@@ -77,29 +78,31 @@ const Preview = ({ selectedChunkId }: IProps) => {
   ) => {
     console.log('Updating highlight', highlightId, position, content);
 
-    setState(
-      state.map((h: any) => {
-        const {
-          id,
-          position: originalPosition,
-          content: originalContent,
-          ...rest
-        } = h;
-        return id === highlightId
-          ? {
-              id,
-              position: { ...originalPosition, ...position },
-              content: { ...originalContent, ...content },
-              ...rest,
-            }
-          : h;
-      }),
-    );
+    // setState(
+    //   state.map((h: any) => {
+    //     const {
+    //       id,
+    //       position: originalPosition,
+    //       content: originalContent,
+    //       ...rest
+    //     } = h;
+    //     return id === highlightId
+    //       ? {
+    //           id,
+    //           position: { ...originalPosition, ...position },
+    //           content: { ...originalContent, ...content },
+    //           ...rest,
+    //         }
+    //       : h;
+    //   }),
+    // );
   };
 
-  // useEffect(() => {
-  //   ref.current(testHighlights[0]);
-  // }, [selectedChunk]);
+  useEffect(() => {
+    if (state.length > 0) {
+      ref.current(state[0]);
+    }
+  }, [state]);
 
   return (
     <div className={styles.documentContainer}>
