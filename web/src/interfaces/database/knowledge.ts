@@ -74,6 +74,7 @@ export interface IChunk {
   docnm_kwd: string;
   img_id: string;
   important_kwd: any[];
+  positions: number[][];
 }
 
 export interface ITestingChunk {
