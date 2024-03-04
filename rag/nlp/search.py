@@ -68,17 +68,25 @@ class Dealer:
         pg = int(req.get("page", 1)) - 1
         ps = int(req.get("size", 1000))
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id",
-                                 "image_id", "doc_id", "q_512_vec", "q_768_vec",
+                                 "image_id", "doc_id", "q_512_vec", "q_768_vec", "position_int",
                                  "q_1024_vec", "q_1536_vec", "available_int", "content_with_weight"])
 
         s = s.query(bqry)[pg * ps:(pg + 1) * ps]
         s = s.highlight("content_ltks")
         s = s.highlight("title_ltks")
         if not qst:
-            s = s.sort(
-                {"create_time": {"order": "desc", "unmapped_type": "date"}},
-                {"create_timestamp_flt": {"order": "desc", "unmapped_type": "float"}}
-            )
+            if not req.get("sort"):
+                s = s.sort(
+                    {"create_time": {"order": "desc", "unmapped_type": "date"}},
+                    {"create_timestamp_flt": {"order": "desc", "unmapped_type": "float"}}
+                )
+            else:
+                s = s.sort(
+                    {"page_num_int": {"order": "asc", "unmapped_type": "float"}},
+                    {"top_int": {"order": "asc", "unmapped_type": "float"}},
+                    {"create_time": {"order": "desc", "unmapped_type": "date"}},
+                    {"create_timestamp_flt": {"order": "desc", "unmapped_type": "float"}}
+                )
 
         if qst:
             s = s.highlight_options(
@@ -169,7 +177,7 @@ class Dealer:
             m = {n: d.get(n) for n in flds if d.get(n) is not None}
             for n, v in m.items():
                 if isinstance(v, type([])):
-                    m[n] = "\t".join([str(vv) for vv in v])
+                    m[n] = "\t".join([str(vv) if not isinstance(vv, list) else "\t".join([str(vvv) for vvv in vv]) for vv in v])
                     continue
                 if not isinstance(v, type("")):
                     m[n] = str(m[n])

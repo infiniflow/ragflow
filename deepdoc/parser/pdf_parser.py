@@ -545,7 +545,7 @@ class HuParser:
             b_["top"] = b["top"]
             self.boxes.pop(i)
 
-    def _extract_table_figure(self, need_image, ZM, return_html):
+    def _extract_table_figure(self, need_image, ZM, return_html, need_position):
         tables = {}
         figures = {}
         # extract figure and table boxes
@@ -658,8 +658,9 @@ class HuParser:
             self.boxes.pop(i)
 
         res = []
+        positions = []
 
-        def cropout(bxs, ltype):
+        def cropout(bxs, ltype, poss):
             nonlocal ZM
             pn = set([b["page_number"] - 1 for b in bxs])
             if len(pn) < 2:
@@ -682,6 +683,7 @@ class HuParser:
                             "layoutno", "")))
 
                 left, top, right, bott = b["x0"], b["top"], b["x1"], b["bottom"]
+                poss.append((pn, left, right, top, bott))
                 return self.page_images[pn] \
                     .crop((left * ZM, top * ZM,
                            right * ZM, bott * ZM))
@@ -692,7 +694,7 @@ class HuParser:
                     pn[p] = []
                 pn[p].append(b)
             pn = sorted(pn.items(), key=lambda x: x[0])
-            imgs = [cropout(arr, ltype) for p, arr in pn]
+            imgs = [cropout(arr, ltype, poss) for p, arr in pn]
             pic = Image.new("RGB",
                             (int(np.max([i.size[0] for i in imgs])),
                              int(np.sum([m.size[1] for m in imgs]))),
@@ -714,18 +716,26 @@ class HuParser:
             if not txt:
                 continue
 
+            poss = []
             res.append(
                 (cropout(
                     bxs,
-                    "figure"),
+                    "figure", poss),
                  [txt] if not return_html else [f"<p>{txt}</p>"]))
+            positions.append(poss)
 
         for k, bxs in tables.items():
             if not bxs:
                 continue
-            res.append((cropout(bxs, "table"),
+            bxs = Recognizer.sort_Y_firstly(bxs, np.mean([(b["bottom"]-b["top"])/2 for b in bxs]))
+            poss = []
+            res.append((cropout(bxs, "table", poss),
                         self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
+            positions.append(poss)
 
+        assert len(positions) == len(res)
+
+        if need_position: return list(zip(res, positions))
         return res
 
     def proj_match(self, line):
@@ -922,13 +932,13 @@ class HuParser:
         self._text_merge()
         self._concat_downward()
         self._filter_forpages()
-        tbls = self._extract_table_figure(need_image, zoomin, return_html)
+        tbls = self._extract_table_figure(need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
     def remove_tag(self, txt):
         return re.sub(r"@@[\t0-9.-]+?##", "", txt)
 
-    def crop(self, text, ZM=3):
+    def crop(self, text, ZM=3, need_position=False):
         imgs = []
         poss = []
         for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
@@ -946,6 +956,7 @@ class HuParser:
         pos = poss[-1]
         poss.append(([pos[0][-1]], pos[1], pos[2], min(self.page_images[pos[0][-1]].size[1]/ZM, pos[4]+GAP), min(self.page_images[pos[0][-1]].size[1]/ZM, pos[4]+120)))
 
+        positions = []
         for ii, (pns, left, right, top, bottom) in enumerate(poss):
             right = left + max_width
             bottom *= ZM
@@ -958,6 +969,8 @@ class HuParser:
                     bottom, self.page_images[pns[0]].size[1])
                                                ))
             )
+            positions.append((pns[0], left, right, top, min(
+                    bottom, self.page_images[pns[0]].size[1])/ZM))
             bottom -= self.page_images[pns[0]].size[1]
             for pn in pns[1:]:
                 imgs.append(
@@ -967,9 +980,12 @@ class HuParser:
                                                    self.page_images[pn].size[1])
                                                ))
                 )
+                positions.append((pn, left, right, 0, min(
+                    bottom, self.page_images[pn].size[1]) / ZM))
                 bottom -= self.page_images[pn].size[1]
 
         if not imgs:
+            if need_position: return None, None
             return
         height = 0
         for img in imgs:
@@ -988,6 +1004,9 @@ class HuParser:
                 img = Image.alpha_composite(img, overlay).convert("RGB")
             pic.paste(img, (0, int(height)))
             height += img.size[1] + GAP
+
+        if need_position:
+            return pic, positions
         return pic
 
 

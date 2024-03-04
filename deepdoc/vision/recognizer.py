@@ -265,6 +265,7 @@ class Recognizer(object):
             return
         min_dis, min_i = 1000000, None
         for i,b in enumerate(boxes):
+            if box.get("layoutno", "0") != b.get("layoutno", "0"): continue
             dis = min(abs(box["x0"] - b["x0"]), abs(box["x1"] - b["x1"]), abs(box["x0"]+box["x1"] - b["x1"] - b["x0"])/2)
             if dis < min_dis:
                 min_i = i

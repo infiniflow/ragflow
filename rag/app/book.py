@@ -13,7 +13,7 @@
 import copy
 import re
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, \
-    hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table
+    hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, add_positions
 from rag.nlp import huqie
 from deepdoc.parser import PdfParser, DocxParser
 
@@ -21,6 +21,7 @@ from deepdoc.parser import PdfParser, DocxParser
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
+        callback(msg="OCR is  running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -40,11 +41,11 @@ class Pdf(PdfParser):
         self._filter_forpages()
         self._merge_with_same_bullet()
         callback(0.75, "Text merging finished.")
-        tbls = self._extract_table_figure(True, zoomin, False)
+        tbls = self._extract_table_figure(True, zoomin, False, True)
 
         callback(0.8, "Text extraction finished")
 
-        return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno","")) for b in self.boxes], tbls
+        return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno","")) for b in self.boxes], tbls, tbl_poss
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -69,7 +70,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.8, "Finish parsing.")
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        sections,tbls = pdf_parser(filename if not binary else binary,
+        sections, tbls = pdf_parser(filename if not binary else binary,
                          from_page=from_page, to_page=to_page, callback=callback)
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -105,7 +106,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         d = copy.deepcopy(doc)
         ck = "\n".join(ck)
         if pdf_parser:
-            d["image"] = pdf_parser.crop(ck)
+            d["image"], poss = pdf_parser.crop(ck, need_position=True)
+            add_positions(d, poss)
             ck = pdf_parser.remove_tag(ck)
         tokenize(d, ck, eng)
         res.append(d)
