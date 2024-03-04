@@ -15,7 +15,7 @@ import re
 from io import BytesIO
 from docx import Document
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
-    make_colon_as_title
+    make_colon_as_title, add_positions
 from rag.nlp import huqie
 from deepdoc.parser import PdfParser, DocxParser
 from rag.settings import cron_logger
@@ -49,6 +49,7 @@ class Docx(DocxParser):
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
+        callback(msg="OCR is  running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -122,7 +123,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         ck = "\n".join(ck)
         d = copy.deepcopy(doc)
         if pdf_parser:
-            d["image"] = pdf_parser.crop(ck)
+            d["image"], poss = pdf_parser.crop(ck, need_position=True)
+            add_positions(d, poss)
             ck = pdf_parser.remove_tag(ck)
         tokenize(d, ck, eng)
         res.append(d)

@@ -48,6 +48,7 @@ class Pdf(PdfParser):
         return False
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+        callback(msg="OCR is  running...")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page)
         callback(0.8, "Page {}~{}: OCR finished".format(from_page, min(to_page, self.total_page)))
         assert len(self.boxes) == len(self.page_images), "{} vs. {}".format(len(self.boxes), len(self.page_images))
@@ -94,9 +95,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        for txt,img in pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback):
+        for pn, (txt,img) in enumerate(pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)):
             d = copy.deepcopy(doc)
             d["image"] = img
+            d["page_num_obj"] = [pn+1]
             tokenize(d, txt, pdf_parser.is_english)
             res.append(d)
         return res

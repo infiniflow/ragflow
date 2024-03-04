@@ -2,7 +2,7 @@ import copy
 import re
 
 from api.db import ParserType
-from rag.nlp import huqie, tokenize, tokenize_table
+from rag.nlp import huqie, tokenize, tokenize_table, add_positions
 from deepdoc.parser import PdfParser
 from rag.utils import num_tokens_from_string
 
@@ -14,6 +14,7 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
+        callback(msg="OCR is  running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -32,7 +33,7 @@ class Pdf(PdfParser):
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
         callback(0.77, "Text merging finished")
-        tbls = self._extract_table_figure(True, zoomin, False)
+        tbls = self._extract_table_figure(True, zoomin, False, True)
 
         # clean mess
         for b in self.boxes:
@@ -91,7 +92,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         d = copy.deepcopy(doc)
         ck = "\n".join(chunk)
         tokenize(d, pdf_parser.remove_tag(ck), pdf_parser.is_english)
-        d["image"] = pdf_parser.crop(ck)
+        d["image"], poss = pdf_parser.crop(ck, need_position=True)
+        add_positions(d, poss)
         res.append(d)
         chunk = []
         tk_cnt = 0

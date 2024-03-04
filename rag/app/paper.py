@@ -15,7 +15,7 @@ import re
 from collections import Counter
 
 from api.db import ParserType
-from rag.nlp import huqie, tokenize, tokenize_table
+from rag.nlp import huqie, tokenize, tokenize_table, add_positions
 from deepdoc.parser import PdfParser
 import numpy as np
 from rag.utils import num_tokens_from_string
@@ -28,6 +28,7 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
+        callback(msg="OCR is  running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -47,7 +48,7 @@ class Pdf(PdfParser):
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
         callback(0.75, "Text merging finished.")
-        tbls = self._extract_table_figure(True, zoomin, False)
+        tbls = self._extract_table_figure(True, zoomin, False, True)
 
         # clean mess
         if column_width < self.page_images[0].size[0] / zoomin / 2:
@@ -165,7 +166,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         txt = pdf_parser.remove_tag(paper["abstract"])
         d["important_kwd"] = ["abstract", "总结", "概括", "summary", "summarize"]
         d["important_tks"] = " ".join(d["important_kwd"])
-        d["image"] = pdf_parser.crop(paper["abstract"])
+        d["image"], poss = pdf_parser.crop(paper["abstract"], need_position=True)
+        add_positions(d, poss)
         tokenize(d, txt, eng)
         res.append(d)
 
@@ -198,8 +200,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         for p in proj:
             d = copy.deepcopy(doc)
             txt += "\n" + pdf_parser.remove_tag(p)
-            d["image"] = pdf_parser.crop(p)
-            tokenize(d, txt)
+            d["image"], poss = pdf_parser.crop(p, need_position=True)
+            add_positions(d, poss)
+            tokenize(d, txt, eng)
             res.append(d)
 
     i = 0
@@ -210,7 +213,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         d = copy.deepcopy(doc)
         ck = "\n".join(chunk)
         tokenize(d, pdf_parser.remove_tag(ck), pdf_parser.is_english)
-        d["image"] = pdf_parser.crop(ck)
+        d["image"], poss = pdf_parser.crop(ck, need_position=True)
+        add_positions(d, poss)
         res.append(d)
         chunk = []
         tk_cnt = 0

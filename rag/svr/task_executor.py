@@ -48,6 +48,7 @@ from api.utils.file_utils import get_project_base_directory
 BATCH_SIZE = 64
 
 FACTORY = {
+    "general": naive,
     ParserType.NAIVE.value: naive,
     ParserType.PAPER.value: paper,
     ParserType.BOOK.value: book,
@@ -228,6 +229,8 @@ def main(comm, mod):
         es_r = ELASTICSEARCH.bulk(cks, search.index_name(r["tenant_id"]))
         if es_r:
             callback(-1, "Index failure!")
+            ELASTICSEARCH.deleteByQuery(
+                    Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
             cron_logger.error(str(es_r))
         else:
             if TaskService.do_cancel(r["id"]):
