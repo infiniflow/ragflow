@@ -21,9 +21,14 @@ from api.utils import get_base_config,decrypt_database_config
 from api.utils.file_utils import get_project_base_directory
 from api.utils.log_utils import LoggerFactory, getLogger
 
-from rag.nlp import search
-from rag.utils import ELASTICSEARCH
+# Logger
+LoggerFactory.set_directory(os.path.join(get_project_base_directory(), "logs", "api"))
+# {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
+LoggerFactory.LEVEL = 10
 
+stat_logger = getLogger("stat")
+access_logger = getLogger("access")
+database_logger = getLogger("database")
 
 API_VERSION = "v1"
 RAG_FLOW_SERVICE_NAME = "ragflow"
@@ -133,16 +138,10 @@ AUTHENTICATION_DEFAULT_TIMEOUT = 30 * 24 * 60 * 60 # s
 PRIVILEGE_COMMAND_WHITELIST = []
 CHECK_NODES_IDENTITY = False
 
+from rag.nlp import search
+from rag.utils import ELASTICSEARCH
 retrievaler = search.Dealer(ELASTICSEARCH)
 
-# Logger
-LoggerFactory.set_directory(os.path.join(get_project_base_directory(), "logs", "api"))
-# {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
-LoggerFactory.LEVEL = 10
-
-stat_logger = getLogger("stat")
-access_logger = getLogger("access")
-database_logger = getLogger("database")
 
 class CustomEnum(Enum):
     @classmethod
