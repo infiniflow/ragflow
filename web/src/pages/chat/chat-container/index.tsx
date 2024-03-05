@@ -145,7 +145,7 @@ const MessageItem = ({
             <AssistantIcon></AssistantIcon>
           )}
           <Flex vertical gap={8} flex={1}>
-            <b>{isAssistant ? 'Resume Assistant' : 'You'}</b>
+            <b>{isAssistant ? '' : userInfo.nickname}</b>
             <div className={styles.messageText}>
               <Markdown
                 rehypePlugins={[rehypeWrapReference]}

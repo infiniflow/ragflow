@@ -5,20 +5,26 @@ type FieldType = {
   vector_similarity_weight?: number;
 };
 
-const SimilaritySlider = () => {
+interface IProps {
+  isTooltipShown?: boolean;
+}
+
+const SimilaritySlider = ({ isTooltipShown = false }: IProps) => {
   return (
     <>
       <Form.Item<FieldType>
         label="Similarity threshold"
         name={'similarity_threshold'}
-        initialValue={0}
+        tooltip={isTooltipShown && 'xxx'}
+        initialValue={0.2}
       >
         <Slider max={1} step={0.01} />
       </Form.Item>
       <Form.Item<FieldType>
         label="Vector similarity weight"
         name={'vector_similarity_weight'}
-        initialValue={0}
+        initialValue={0.3}
+        tooltip={isTooltipShown && 'xxx'}
       >
         <Slider max={1} step={0.01} />
       </Form.Item>

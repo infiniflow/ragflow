@@ -162,8 +162,13 @@ const PromptEngine = (
         <Input.TextArea autoSize={{ maxRows: 8, minRows: 5 }} />
       </Form.Item>
       <Divider></Divider>
-      <SimilaritySlider></SimilaritySlider>
-      <Form.Item<FieldType> label="Top n" name={'top_n'} initialValue={0}>
+      <SimilaritySlider isTooltipShown></SimilaritySlider>
+      <Form.Item<FieldType>
+        label="Top n"
+        name={'top_n'}
+        initialValue={8}
+        tooltip={'xxx'}
+      >
         <Slider max={30} />
       </Form.Item>
       <section className={classNames(styles.variableContainer)}>

@@ -41,7 +41,8 @@ export const useGetChunkHighlights = (
   const selectedChunk: IChunk = useGetSelectedChunk(selectedChunkId);
 
   const highlights: IHighlight[] = useMemo(() => {
-    return Array.isArray(selectedChunk?.positions)
+    return Array.isArray(selectedChunk?.positions) &&
+      selectedChunk.positions.every((x) => Array.isArray(x))
       ? selectedChunk?.positions?.map((x) => {
           const actualPositions = x.map((y, index) =>
             index !== 0 ? y / 0.7 : y,
