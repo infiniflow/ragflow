@@ -25,6 +25,7 @@ import traceback
 from functools import partial
 from timeit import default_timer as timer
 
+import numpy as np
 from elasticsearch_dsl import Q
 
 from api.db.services.task_service import TaskService
@@ -177,10 +178,11 @@ def embedding(docs, mdl, parser_config={}, callback=None):
         tts, c = mdl.encode(tts)
         tk_count += c
 
-    cnts_ = []
+    cnts_ = np.array([])
     for i in range(0, len(cnts), 32):
         vts, c = mdl.encode(cnts[i: i+32])
-        cnts_.extend(vts)
+        if len(cnts_) == 0: cnts_ = vts
+        else: cnts_ = np.concatenate((cnts_, vts), axis=0)
         tk_count += c
         callback(msg="")
     cnts = cnts_

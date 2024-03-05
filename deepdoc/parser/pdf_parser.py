@@ -725,7 +725,7 @@ class HuParser:
                 (cropout(
                     bxs,
                     "figure", poss),
-                 [txt] if not return_html else [f"<p>{txt}</p>"]))
+                 [txt]))
             positions.append(poss)
 
         for k, bxs in tables.items():

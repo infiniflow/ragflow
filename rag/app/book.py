@@ -28,7 +28,7 @@ class Pdf(PdfParser):
             from_page,
             to_page,
             callback)
-        callback("OCR finished")
+        callback(msg="OCR finished")
 
         from timeit import default_timer as timer
         start = timer()
