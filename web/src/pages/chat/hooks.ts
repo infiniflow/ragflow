@@ -78,12 +78,10 @@ export const useSetCurrentDialog = () => {
 
   const setCurrentDialog = useCallback(
     (dialogId: string) => {
-      if (dialogId) {
-        dispatch({
-          type: 'chatModel/setCurrentDialog',
-          payload: { id: dialogId },
-        });
-      }
+      dispatch({
+        type: 'chatModel/setCurrentDialog',
+        payload: { id: dialogId },
+      });
     },
     [dispatch],
   );
