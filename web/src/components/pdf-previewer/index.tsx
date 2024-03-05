@@ -1,5 +1,10 @@
+import {
+  useGetChunkHighlights,
+  useGetDocumentUrl,
+} from '@/hooks/documentHooks';
+import { IChunk } from '@/interfaces/database/knowledge';
 import { Skeleton } from 'antd';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AreaHighlight,
   Highlight,
@@ -8,14 +13,15 @@ import {
   PdfLoader,
   Popup,
 } from 'react-pdf-highlighter';
-import { useGetChunkHighlights } from '../../hooks';
-import { useGetDocumentUrl } from './hooks';
 
 import styles from './index.less';
 
 interface IProps {
-  selectedChunkId: string;
+  chunk: IChunk;
+  documentId: string;
+  visible: boolean;
 }
+
 const HighlightPopup = ({
   comment,
 }: {
@@ -27,19 +33,24 @@ const HighlightPopup = ({
     </div>
   ) : null;
 
-// TODO: merge with DocumentPreviewer
-const Preview = ({ selectedChunkId }: IProps) => {
-  const url = useGetDocumentUrl();
-  const state = useGetChunkHighlights(selectedChunkId);
+const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
+  const url = useGetDocumentUrl(documentId);
+  const state = useGetChunkHighlights(chunk);
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
+  const [loaded, setLoaded] = useState(false);
 
   const resetHash = () => {};
 
   useEffect(() => {
-    if (state.length > 0) {
+    setLoaded(visible);
+  }, [visible]);
+
+  useEffect(() => {
+    if (state.length > 0 && loaded) {
+      setLoaded(false);
       ref.current(state[0]);
     }
-  }, [state]);
+  }, [state, loaded]);
 
   return (
     <div className={styles.documentContainer}>
@@ -51,6 +62,7 @@ const Preview = ({ selectedChunkId }: IProps) => {
             onScrollChange={resetHash}
             scrollRef={(scrollTo) => {
               ref.current = scrollTo;
+              setLoaded(true);
             }}
             onSelectionFinished={() => null}
             highlightTransform={(
@@ -101,4 +113,4 @@ const Preview = ({ selectedChunkId }: IProps) => {
   );
 };
 
-export default Preview;
+export default DocumentPreviewer;

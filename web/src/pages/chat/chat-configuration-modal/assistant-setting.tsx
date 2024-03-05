@@ -65,7 +65,11 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
       >
         <Input placeholder="" />
       </Form.Item>
-      <Form.Item name={['prompt_config', 'prologue']} label="Set an opener">
+      <Form.Item
+        name={['prompt_config', 'prologue']}
+        label="Set an opener"
+        initialValue={"Hi! I'm your assistant, what can I do for you?"}
+      >
         <Input.TextArea autoSize={{ minRows: 5 }} />
       </Form.Item>
       <Form.Item

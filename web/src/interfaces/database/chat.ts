@@ -1,4 +1,5 @@
 import { MessageType } from '@/constants/chat';
+import { IChunk } from './knowledge';
 
 export interface PromptConfig {
   empty_response: string;
@@ -66,7 +67,7 @@ export interface Message {
 }
 
 export interface IReference {
-  chunks: Chunk[];
+  chunks: IChunk[];
   doc_aggs: Docagg[];
   total: number;
 }
@@ -77,16 +78,16 @@ export interface Docagg {
   doc_name: string;
 }
 
-interface Chunk {
-  chunk_id: string;
-  content_ltks: string;
-  content_with_weight: string;
-  doc_id: string;
-  docnm_kwd: string;
-  img_id: string;
-  important_kwd: any[];
-  kb_id: string;
-  similarity: number;
-  term_similarity: number;
-  vector_similarity: number;
-}
+// interface Chunk {
+//   chunk_id: string;
+//   content_ltks: string;
+//   content_with_weight: string;
+//   doc_id: string;
+//   docnm_kwd: string;
+//   img_id: string;
+//   important_kwd: any[];
+//   kb_id: string;
+//   similarity: number;
+//   term_similarity: number;
+//   vector_similarity: number;
+// }
