@@ -26,24 +26,24 @@ class Pdf(PdfParser):
             filename if not binary else binary,
             zoomin,
             from_page,
-            to_page)
-        callback(0.1, "OCR finished")
+            to_page,
+            callback
+        )
+        callback("OCR finished")
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.5, "Layout analysis finished.")
+        callback(0.63, "Layout analysis finished.")
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
-        callback(0.7, "Table analysis finished.")
+        callback(0.65, "Table analysis finished.")
         self._text_merge()
-        self._concat_downward(concat_between_pages=False)
-        self._filter_forpages()
-        callback(0.77, "Text merging finished")
+        callback(0.67, "Text merging finished")
         tbls = self._extract_table_figure(True, zoomin, True, True)
+        self._naive_vertical_merge()
 
         cron_logger.info("paddle layouts:".format((timer() - start) / (self.total_page + 0.1)))
-        #self._naive_vertical_merge()
         return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
 
 

@@ -54,13 +54,15 @@ class Pdf(PdfParser):
             filename if not binary else binary,
             zoomin,
             from_page,
-            to_page)
-        callback(0.1, "OCR finished")
+            to_page,
+            callback
+        )
+        callback("OCR finished")
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.77, "Layout analysis finished")
+        callback(0.67, "Layout analysis finished")
         cron_logger.info("paddle layouts:".format((timer()-start)/(self.total_page+0.1)))
         self._naive_vertical_merge()
 

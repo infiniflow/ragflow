@@ -141,7 +141,7 @@ def list():
     try:
         docs, tol = DocumentService.get_by_kb_id(
             kb_id, page_number, items_per_page, orderby, desc, keywords)
-        return get_json_result(data={"total":tol, "docs": docs})
+        return get_json_result(data={"total": tol, "docs": docs})
     except Exception as e:
         return server_error_response(e)
 
@@ -217,7 +217,7 @@ def rm():
             return get_data_error_result(retmsg="Tenant not found!")
         ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
 
-        DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num*-1, doc.chunk_num*-1, 0)
+        DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
         if not DocumentService.delete_by_id(req["doc_id"]):
             return get_data_error_result(
                 retmsg="Database error (Document removal)!")
@@ -241,7 +241,7 @@ def run():
                 info["chunk_num"] = 0
                 info["token_num"] = 0
             DocumentService.update_by_id(id, info)
-            #if str(req["run"]) == TaskStatus.CANCEL.value:
+            # if str(req["run"]) == TaskStatus.CANCEL.value:
             tenant_id = DocumentService.get_tenant_id(id)
             if not tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
@@ -281,7 +281,7 @@ def rename():
 
 
 @manager.route('/get/<doc_id>', methods=['GET'])
-#@login_required
+# @login_required
 def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)
@@ -292,8 +292,9 @@ def get(doc_id):
         ext = re.search(r"\.([^.]+)$", doc.name)
         if ext:
             if doc.type == FileType.VISUAL.value:
-                response.headers.set('Content-Type', 'image/%s'%ext.group(1))
-            else: response.headers.set('Content-Type', 'application/%s'%ext.group(1))
+                response.headers.set('Content-Type', 'image/%s' % ext.group(1))
+            else:
+                response.headers.set('Content-Type', 'application/%s' % ext.group(1))
         return response
     except Exception as e:
         return server_error_response(e)
@@ -314,11 +315,14 @@ def change_parser():
         if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
             return get_data_error_result(retmsg="Not supported yet!")
 
-        e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress":0, "progress_msg": "", "run": "0"})
+        e = DocumentService.update_by_id(doc.id,
+                                         {"parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": "0",
+                                          "token_num": 0, "chunk_num": 0, "process_duation": 0})
         if not e:
             return get_data_error_result(retmsg="Document not found!")
-        if doc.token_num>0:
-            e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num*-1, doc.chunk_num*-1, doc.process_duation*-1)
+        if doc.token_num > 0:
+            e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1,
+                                                    doc.process_duation * -1)
             if not e:
                 return get_data_error_result(retmsg="Document not found!")
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
@@ -332,7 +336,7 @@ def change_parser():
 
 
 @manager.route('/image/<image_id>', methods=['GET'])
-#@login_required
+# @login_required
 def get_image(image_id):
     try:
         bkt, nm = image_id.split("-")
@@ -341,4 +345,3 @@ def get_image(image_id):
         return response
     except Exception as e:
         return server_error_response(e)
-

@@ -26,26 +26,27 @@ class Pdf(PdfParser):
             filename if not binary else binary,
             zoomin,
             from_page,
-            to_page)
-        callback(0.1, "OCR finished")
+            to_page,
+            callback)
+        callback("OCR finished")
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.47, "Layout analysis finished")
+        callback(0.67, "Layout analysis finished")
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
         callback(0.68, "Table analysis finished")
         self._text_merge()
-        self._concat_downward(concat_between_pages=False)
+        tbls = self._extract_table_figure(True, zoomin, True, True)
+        self._naive_vertical_merge()
         self._filter_forpages()
         self._merge_with_same_bullet()
         callback(0.75, "Text merging finished.")
-        tbls = self._extract_table_figure(True, zoomin, True, True)
 
         callback(0.8, "Text extraction finished")
 
-        return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno","")) for b in self.boxes], tbls, tbl_poss
+        return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno","")) for b in self.boxes], tbls
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -92,7 +93,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     bull = bullets_category([t for t in random_choices([t for t,_ in sections], k=100)])
     if bull >= 0: cks = hierarchical_merge(bull, sections, 3)
     else:
-        sections = [s.split("@") for s in sections]
+        sections = [s.split("@") for s,_ in sections]
         sections = [(pr[0], "@"+pr[1]) for pr in sections if len(pr)==2]
         cks = naive_merge(sections, kwargs.get("chunk_token_num", 256), kwargs.get("delimer", "\n。；！？"))
 
@@ -116,6 +117,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
 if __name__ == "__main__":
     import sys
-    def dummy(a, b):
+    def dummy(prog=None, msg=""):
         pass
     chunk(sys.argv[1], from_page=1, to_page=10, callback=dummy)

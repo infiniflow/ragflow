@@ -56,6 +56,7 @@ class HuEmbedding(Base):
 
 
     def encode(self, texts: list, batch_size=32):
+        texts = [t[:2000] for t in texts]
         token_count = 0
         for t in texts: token_count += num_tokens_from_string(t)
         res = []
