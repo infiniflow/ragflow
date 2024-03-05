@@ -121,14 +121,16 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
   );
 
   useEffect(() => {
-    const icon = currentDialog.icon;
-    let fileList: UploadFile[] = [];
+    if (visible) {
+      const icon = currentDialog.icon;
+      let fileList: UploadFile[] = [];
 
-    if (icon) {
-      fileList = [{ uid: '1', name: 'file', thumbUrl: icon, status: 'done' }];
+      if (icon) {
+        fileList = [{ uid: '1', name: 'file', thumbUrl: icon, status: 'done' }];
+      }
+      form.setFieldsValue({ ...currentDialog, icon: fileList });
     }
-    form.setFieldsValue({ ...currentDialog, icon: fileList });
-  }, [currentDialog, form]);
+  }, [currentDialog, form, visible]);
 
   return (
     <Modal

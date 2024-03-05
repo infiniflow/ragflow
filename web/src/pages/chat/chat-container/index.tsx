@@ -11,6 +11,7 @@ import {
   Input,
   List,
   Popover,
+  Skeleton,
   Space,
 } from 'antd';
 import classNames from 'classnames';
@@ -100,7 +101,12 @@ const MessageItem = ({
             ></Image>
           </Popover>
           <Space direction={'vertical'}>
-            <div>{chunkItem?.content_with_weight}</div>
+            <div
+              dangerouslySetInnerHTML={{
+                __html: chunkItem?.content_with_weight,
+              }}
+              className={styles.chunkContentText}
+            ></div>
             {documentId && (
               <Flex gap={'middle'}>
                 <img src={fileThumbnails[documentId]} alt="" />
@@ -171,17 +177,24 @@ const MessageItem = ({
           <Flex vertical gap={8} flex={1}>
             <b>{isAssistant ? '' : userInfo.nickname}</b>
             <div className={styles.messageText}>
-              <Markdown
-                rehypePlugins={[rehypeWrapReference]}
-                components={
-                  {
-                    'custom-typography': ({ children }: { children: string }) =>
-                      renderReference(children),
-                  } as any
-                }
-              >
-                {item.content}
-              </Markdown>
+              {item.content ? (
+                <Markdown
+                  rehypePlugins={[rehypeWrapReference]}
+                  components={
+                    {
+                      'custom-typography': ({
+                        children,
+                      }: {
+                        children: string;
+                      }) => renderReference(children),
+                    } as any
+                  }
+                >
+                  {item.content}
+                </Markdown>
+              ) : (
+                <Skeleton active className={styles.messageEmpty} />
+              )}
             </div>
             {isAssistant && referenceDocumentList.length > 0 && (
               <List
