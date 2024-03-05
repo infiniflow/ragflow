@@ -21,6 +21,25 @@ interface IProps {
 }
 
 const PopoverContent = ({ record }: IProps) => {
+  const replaceText = (text: string) => {
+    // Remove duplicate \n
+    const nextText = text.replace(/(\n)\1+/g, '$1');
+
+    const replacedText = reactStringReplace(
+      nextText,
+      /(\[ERROR\].+\s)/g,
+      (match, i) => {
+        return (
+          <span key={i} className={styles.popoverContentErrorLabel}>
+            {match}
+          </span>
+        );
+      },
+    );
+
+    return replacedText;
+  };
+
   const items: DescriptionsProps['items'] = [
     {
       key: 'process_begin_at',
@@ -35,17 +54,7 @@ const PopoverContent = ({ record }: IProps) => {
     {
       key: 'progress_msg',
       label: 'Progress Msg',
-      children: reactStringReplace(
-        record.progress_msg.trim(),
-        /(\[ERROR\].+\s)/g,
-        (match, i) => {
-          return (
-            <span key={i} className={styles.popoverContentErrorLabel}>
-              {match}
-            </span>
-          );
-        },
-      ),
+      children: replaceText(record.progress_msg.trim()),
     },
   ];
 
