@@ -3,11 +3,21 @@ import { MessageType } from '@/constants/chat';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useSelectUserInfo } from '@/hooks/userSettingHook';
 import { IReference, Message } from '@/interfaces/database/chat';
-import { Avatar, Button, Flex, Input, List, Popover, Space } from 'antd';
+import {
+  Avatar,
+  Button,
+  Drawer,
+  Flex,
+  Input,
+  List,
+  Popover,
+  Space,
+} from 'antd';
 import classNames from 'classnames';
 import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
 import reactStringReplace from 'react-string-replace';
 import {
+  useClickDrawer,
   useFetchConversationOnMount,
   useGetFileIcon,
   useSendMessage,
@@ -15,7 +25,9 @@ import {
 
 import Image from '@/components/image';
 import NewDocumentLink from '@/components/new-document-link';
+import DocumentPreviewer from '@/components/pdf-previewer';
 import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
+import { IChunk } from '@/interfaces/database/knowledge';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import Markdown from 'react-markdown';
 import { visitParents } from 'unist-util-visit-parents';
@@ -41,14 +53,23 @@ const rehypeWrapReference = () => {
 const MessageItem = ({
   item,
   reference,
+  clickDocumentButton,
 }: {
   item: Message;
   reference: IReference;
+  clickDocumentButton: (documentId: string, chunk: IChunk) => void;
 }) => {
   const userInfo = useSelectUserInfo();
   const fileThumbnails = useSelectFileThumbnails();
 
   const isAssistant = item.role === MessageType.Assistant;
+
+  const handleDocumentButtonClick = useCallback(
+    (documentId: string, chunk: IChunk) => () => {
+      clickDocumentButton(documentId, chunk);
+    },
+    [clickDocumentButton],
+  );
 
   const getPopoverContent = useCallback(
     (chunkIndex: number) => {
@@ -83,16 +104,19 @@ const MessageItem = ({
             {documentId && (
               <Flex gap={'middle'}>
                 <img src={fileThumbnails[documentId]} alt="" />
-                <NewDocumentLink documentId={documentId}>
+                <Button
+                  type="link"
+                  onClick={handleDocumentButtonClick(documentId, chunkItem)}
+                >
                   {document?.doc_name}
-                </NewDocumentLink>
+                </Button>
               </Flex>
             )}
           </Space>
         </Flex>
       );
     },
-    [reference, fileThumbnails],
+    [reference, fileThumbnails, handleDocumentButtonClick],
   );
 
   const renderReference = useCallback(
@@ -191,6 +215,8 @@ const ChatContainer = () => {
     addNewestConversation,
   } = useFetchConversationOnMount();
   const { sendMessage } = useSendMessage();
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   const loading = useOneNamespaceEffectsLoading('chatModel', [
     'completeConversation',
@@ -210,41 +236,56 @@ const ChatContainer = () => {
   };
 
   return (
-    <Flex flex={1} className={styles.chatContainer} vertical>
-      <Flex flex={1} vertical className={styles.messageContainer}>
-        <div>
-          {conversation?.message?.map((message) => {
-            const assistantMessages = conversation?.message
-              ?.filter((x) => x.role === MessageType.Assistant)
-              .slice(1);
-            const referenceIndex = assistantMessages.findIndex(
-              (x) => x.id === message.id,
-            );
-            const reference = conversation.reference[referenceIndex];
-            return (
-              <MessageItem
-                key={message.id}
-                item={message}
-                reference={reference}
-              ></MessageItem>
-            );
-          })}
-        </div>
-        <div ref={ref} />
+    <>
+      <Flex flex={1} className={styles.chatContainer} vertical>
+        <Flex flex={1} vertical className={styles.messageContainer}>
+          <div>
+            {conversation?.message?.map((message) => {
+              const assistantMessages = conversation?.message
+                ?.filter((x) => x.role === MessageType.Assistant)
+                .slice(1);
+              const referenceIndex = assistantMessages.findIndex(
+                (x) => x.id === message.id,
+              );
+              const reference = conversation.reference[referenceIndex];
+              return (
+                <MessageItem
+                  key={message.id}
+                  item={message}
+                  reference={reference}
+                  clickDocumentButton={clickDocumentButton}
+                ></MessageItem>
+              );
+            })}
+          </div>
+          <div ref={ref} />
+        </Flex>
+        <Input
+          size="large"
+          placeholder="Message Resume Assistant..."
+          value={value}
+          suffix={
+            <Button type="primary" onClick={handlePressEnter} loading={loading}>
+              Send
+            </Button>
+          }
+          onPressEnter={handlePressEnter}
+          onChange={handleInputChange}
+        />
       </Flex>
-      <Input
-        size="large"
-        placeholder="Message Resume Assistant..."
-        value={value}
-        suffix={
-          <Button type="primary" onClick={handlePressEnter} loading={loading}>
-            Send
-          </Button>
-        }
-        onPressEnter={handlePressEnter}
-        onChange={handleInputChange}
-      />
-    </Flex>
+      <Drawer
+        title="Document Previewer"
+        onClose={hideModal}
+        open={visible}
+        width={'50vw'}
+      >
+        <DocumentPreviewer
+          documentId={documentId}
+          chunk={selectedChunk}
+          visible={visible}
+        ></DocumentPreviewer>
+      </Drawer>
+    </>
   );
 };
 

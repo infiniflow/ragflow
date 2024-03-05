@@ -50,13 +50,7 @@ const Knowledge = () => {
           </ModalManager>
         </Space>
       </div>
-      <Flex
-        gap="large"
-        wrap="wrap"
-        flex={1}
-        // justify="center"
-        className={styles.knowledgeCardContainer}
-      >
+      <Flex gap={'large'} wrap="wrap" className={styles.knowledgeCardContainer}>
         {list.length > 0 ? (
           list.map((item: any) => {
             return <KnowledgeCard item={item} key={item.name}></KnowledgeCard>;
