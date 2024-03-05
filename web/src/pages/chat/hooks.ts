@@ -4,6 +4,7 @@ import { fileIconMap } from '@/constants/common';
 import { useSetModalState } from '@/hooks/commonHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IConversation, IDialog } from '@/interfaces/database/chat';
+import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
 import omit from 'lodash/omit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -659,6 +660,30 @@ export const useRenameConversation = () => {
     conversationRenameVisible,
     hideConversationRenameModal,
     showConversationRenameModal: handleShowConversationRenameModal,
+  };
+};
+
+export const useClickDrawer = () => {
+  const { visible, showModal, hideModal } = useSetModalState();
+  const [selectedChunk, setSelectedChunk] = useState<IChunk>({} as IChunk);
+  const [documentId, setDocumentId] = useState<string>('');
+
+  const clickDocumentButton = useCallback(
+    (documentId: string, chunk: IChunk) => {
+      showModal();
+      setSelectedChunk(chunk);
+      setDocumentId(documentId);
+    },
+    [showModal],
+  );
+
+  return {
+    clickDocumentButton,
+    visible,
+    showModal,
+    hideModal,
+    selectedChunk,
+    documentId,
   };
 };
 
