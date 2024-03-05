@@ -72,7 +72,8 @@ def set_progress(task_id, from_page=0, to_page=-1,
         prog = -1
 
     if to_page > 0:
-        msg = f"Page({from_page}~{to_page}): " + msg
+        if msg:
+            msg = f"Page({from_page}~{to_page}): " + msg
     d = {"progress_msg": msg}
     if prog is not None:
         d["progress"] = prog
@@ -168,7 +169,7 @@ def init_kb(row):
         open(os.path.join(get_project_base_directory(), "conf", "mapping.json"), "r")))
 
 
-def embedding(docs, mdl, parser_config={}):
+def embedding(docs, mdl, parser_config={}, callback=None):
     tts, cnts = [rmSpace(d["title_tks"]) for d in docs if d.get("title_tks")], [
         d["content_with_weight"] for d in docs]
     tk_count = 0
@@ -176,8 +177,14 @@ def embedding(docs, mdl, parser_config={}):
         tts, c = mdl.encode(tts)
         tk_count += c
 
-    cnts, c = mdl.encode(cnts)
-    tk_count += c
+    cnts_ = []
+    for i in range(0, len(cnts), 32):
+        vts, c = mdl.encode(cnts[i: i+32])
+        cnts_.extend(vts)
+        tk_count += c
+        callback(msg="")
+    cnts = cnts_
+
     title_w = float(parser_config.get("filename_embd_weight", 0.1))
     vects = (title_w * tts + (1 - title_w) *
              cnts) if len(tts) == len(cnts) else cnts
@@ -218,10 +225,11 @@ def main(comm, mod):
         # TODO: exception handler
         ## set_progress(r["did"], -1, "ERROR: ")
         try:
-            tk_count = embedding(cks, embd_mdl, r["parser_config"])
+            tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
         except Exception as e:
             callback(-1, "Embedding error:{}".format(str(e)))
             cron_logger.error(str(e))
+            tk_count = 0
 
         callback(msg="Finished embedding! Start to build index!")
         init_kb(r)

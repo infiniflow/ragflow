@@ -46,7 +46,7 @@ def collect(tm):
 def set_dispatching(docid):
     try:
         DocumentService.update_by_id(
-            docid, {"progress": random.randint(0, 3) / 100.,
+            docid, {"progress": random.random()*1 / 100.,
                     "progress_msg": "Task dispatched...",
                     "process_begin_at": get_format_time()
                     })

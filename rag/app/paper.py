@@ -33,13 +33,15 @@ class Pdf(PdfParser):
             filename if not binary else binary,
             zoomin,
             from_page,
-            to_page)
-        callback(0.2, "OCR finished.")
+            to_page,
+            callback
+        )
+        callback("OCR finished.")
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.47, "Layout analysis finished")
+        callback(0.63, "Layout analysis finished")
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
         callback(0.68, "Table analysis finished")

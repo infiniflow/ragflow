@@ -14,6 +14,7 @@ services:
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
       - bootstrap.memory_lock=false
       - xpack.security.enabled=false
+      - TZ=${TIMEZONE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
       memlock:
@@ -41,6 +42,7 @@ services:
     environment:
       - SERVERNAME=kibana
       - ELASTICSEARCH_HOSTS=http://es01:9200
+      - TZ=${TIMEZONE}
     mem_limit: ${MEM_LIMIT}
     networks:
       - ragflow
@@ -50,7 +52,7 @@ services:
     container_name: ragflow-mysql
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
-      - TZ="Asia/Shanghai"
+      - TZ=${TIMEZONE}
     command:
       --max_connections=1000
       --character-set-server=utf8mb4
@@ -83,6 +85,7 @@ services:
     environment:
       - MINIO_ROOT_USER=${MINIO_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
+      - TZ=${TIMEZONE}
     volumes:
       - minio_data:/data
     networks:
@@ -108,6 +111,8 @@ services:
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
       - ./nginx/proxy.conf:/etc/nginx/proxy.conf
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    environment:
+      - TZ=${TIMEZONE}
     networks:
       - ragflow
     restart: always

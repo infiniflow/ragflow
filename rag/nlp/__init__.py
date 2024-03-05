@@ -114,6 +114,7 @@ def add_positions(d, poss):
         d["page_num_int"].append(pn+1)
         d["top_int"].append(top)
         d["position_int"].append((pn+1, left, right, top, bottom))
+    d["top_int"] = d["top_int"][:1]
 
 
 def remove_contents_table(sections, eng=False):
@@ -172,7 +173,7 @@ def hierarchical_merge(bull, sections, depth):
 
     def not_title(txt):
         if re.match(r"第[零一二三四五六七八九十百0-9]+条", txt): return False
-        if len(txt) >= 128: return True
+        if len(txt.split(" "))>12 or (txt.find(" ")<0 and len(txt)) >= 32: return True
         return re.search(r"[,;，。；！!]", txt)
 
     for i, (txt, layout) in enumerate(sections):
@@ -181,12 +182,12 @@ def hierarchical_merge(bull, sections, depth):
                 levels[j].append(i)
                 break
         else:
-            if re.search(r"(title|head)", layout):
+            if re.search(r"(title|head)", layout) and not not_title(txt):
                 levels[bullets_size].append(i)
             else:
                 levels[bullets_size + 1].append(i)
     sections = [t for t, _ in sections]
-    for s in sections: print("--", s)
+    #for s in sections: print("--", s)
 
     def binary_search(arr, target):
         if not arr: return -1
@@ -220,11 +221,29 @@ def hierarchical_merge(bull, sections, depth):
                 if jj > cks[-1][-1]: cks[-1].pop(-1)
                 cks[-1].append(levels[ii][jj])
             for ii in cks[-1]: readed[ii] = True
+
+    if not cks:return cks
+
     for i in range(len(cks)):
         cks[i] = [sections[j] for j in cks[i][::-1]]
         print("--------------\n", "\n* ".join(cks[i]))
 
-    return cks
+    res = [[]]
+    num = [0]
+    for ck in cks:
+        if len(ck) == 1:
+            n = num_tokens_from_string(re.sub(r"@@[0-9]+.*", "", ck[0]))
+            if n + num[-1] < 218:
+                res[-1].append(ck[0])
+                num[-1] += n
+                continue
+            res.append(ck)
+            num.append(n)
+            continue
+        res.append(ck)
+        num.append(218)
+
+    return res
 
 
 def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
