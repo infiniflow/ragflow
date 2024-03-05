@@ -124,6 +124,14 @@ export const useSelectPromptConfigParameters = (): VariableTableDataType[] => {
   return finalParameters;
 };
 
+export const useSelectCurrentDialog = () => {
+  const currentDialog: IDialog = useSelector(
+    (state: any) => state.chatModel.currentDialog,
+  );
+
+  return currentDialog;
+};
+
 export const useRemoveDialog = () => {
   const dispatch = useDispatch();
 
@@ -404,6 +412,8 @@ export const useSelectCurrentConversation = () => {
   const conversation: IClientConversation = useSelector(
     (state: any) => state.chatModel.currentConversation,
   );
+  const dialog = useSelectCurrentDialog();
+  const { conversationId } = useGetChatSearchParams();
 
   const addNewestConversation = useCallback((message: string) => {
     setCurrentConversation((pre) => {
@@ -421,13 +431,30 @@ export const useSelectCurrentConversation = () => {
     });
   }, []);
 
-  useEffect(() => {
-    console.info('useSelectCurrentConversation: 1', currentConversation);
-  }, [currentConversation]);
+  const addPrologue = useCallback(() => {
+    if (conversationId === '') {
+      const prologue = dialog.prompt_config?.prologue;
+
+      const nextMessage = {
+        role: MessageType.Assistant,
+        content: prologue,
+        id: uuid(),
+      } as IMessage;
+
+      setCurrentConversation({
+        id: '',
+        dialog_id: dialog.id,
+        reference: [],
+        message: [nextMessage],
+      } as any);
+    }
+  }, [conversationId, dialog]);
 
   useEffect(() => {
-    console.info('useSelectCurrentConversation: 2', conversation);
+    addPrologue();
+  }, [addPrologue]);
 
+  useEffect(() => {
     setCurrentConversation(conversation);
   }, [conversation]);
 
@@ -472,7 +499,6 @@ export const useScrollToBottom = (currentConversation: IClientConversation) => {
 
 export const useFetchConversationOnMount = () => {
   const { conversationId } = useGetChatSearchParams();
-  const setCurrentConversation = useSetCurrentConversation();
   const fetchConversation = useFetchConversation();
   const { currentConversation, addNewestConversation } =
     useSelectCurrentConversation();
@@ -481,10 +507,8 @@ export const useFetchConversationOnMount = () => {
   const fetchConversationOnMount = useCallback(() => {
     if (isConversationIdExist(conversationId)) {
       fetchConversation(conversationId);
-    } else {
-      setCurrentConversation({} as IClientConversation);
     }
-  }, [fetchConversation, setCurrentConversation, conversationId]);
+  }, [fetchConversation, conversationId]);
 
   useEffect(() => {
     fetchConversationOnMount();
