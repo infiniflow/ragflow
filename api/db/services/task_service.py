@@ -73,8 +73,9 @@ class TaskService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_progress(cls, id, info):
-        cls.model.update(progress_msg=cls.model.progress_msg + "\n" + info["progress_msg"]).where(
-            cls.model.id == id).execute()
+        if info["progress_msg"]:
+            cls.model.update(progress_msg=cls.model.progress_msg + "\n" + info["progress_msg"]).where(
+                cls.model.id == id).execute()
         if "progress" in info:
             cls.model.update(progress=info["progress"]).where(
                 cls.model.id == id).execute()

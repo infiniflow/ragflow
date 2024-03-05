@@ -57,7 +57,7 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback("OCR finished")
+        callback(msg="OCR finished")
 
         from timeit import default_timer as timer
         start = timer()
@@ -135,6 +135,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
 if __name__ == "__main__":
     import sys
-    def dummy(a, b):
+    def dummy(prog=None, msg=""):
         pass
     chunk(sys.argv[1], callback=dummy)
