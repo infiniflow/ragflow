@@ -49,7 +49,7 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         callback(msg="OCR is  running...")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page)
+        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
         callback(0.8, "Page {}~{}: OCR finished".format(from_page, min(to_page, self.total_page)))
         assert len(self.boxes) == len(self.page_images), "{} vs. {}".format(len(self.boxes), len(self.page_images))
         res = []

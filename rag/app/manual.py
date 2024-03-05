@@ -19,20 +19,22 @@ class Pdf(PdfParser):
             filename if not binary else binary,
             zoomin,
             from_page,
-            to_page)
-        callback(0.2, "OCR finished.")
+            to_page,
+            callback
+        )
+        callback("OCR finished.")
 
         from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.5, "Layout analysis finished.")
+        callback(0.65, "Layout analysis finished.")
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
-        callback(0.7, "Table analysis finished.")
+        callback(0.67, "Table analysis finished.")
         self._text_merge()
         self._concat_downward(concat_between_pages=False)
         self._filter_forpages()
-        callback(0.77, "Text merging finished")
+        callback(0.68, "Text merging finished")
         tbls = self._extract_table_figure(True, zoomin, True, True)
 
         # clean mess

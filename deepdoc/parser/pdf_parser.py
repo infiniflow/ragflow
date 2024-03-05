@@ -348,6 +348,9 @@ class HuParser:
             if b["page_number"] < b_["page_number"] and re.match(r"[0-9  •一—-]+$", b["text"]):
                 bxs.pop(i)
                 continue
+            if not b["text"].strip():
+                bxs.pop(i)
+                continue
             concatting_feats = [
                 b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
                 len(b["text"].strip()) > 1 and b["text"].strip()[-2] in ",;:'\"，‘“、；：",
@@ -856,7 +859,7 @@ class HuParser:
             pdf = fitz.open(fnm) if not binary else fitz.open(stream=fnm, filetype="pdf")
             return len(pdf)
 
-    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299):
+    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
         self.lefted_chars = []
         self.mean_height = []
         self.mean_width = []
@@ -917,6 +920,7 @@ class HuParser:
             #         self.page_cum_height.append(
             #             np.max([c["bottom"] for c in chars]))
             self.__ocr(i + 1, img, chars, zoomin)
+            if callback: callback(prog=(i+1)*0.6/len(self.page_images), msg="")
 
         if not self.is_english and not any([c for c in self.page_chars]) and self.boxes:
             bxes = [b for bxs in self.boxes for b in bxs]

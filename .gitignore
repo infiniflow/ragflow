@@ -20,5 +20,4 @@ Cargo.lock
 *.trie
 
 .idea/
-.env
 .vscode/
