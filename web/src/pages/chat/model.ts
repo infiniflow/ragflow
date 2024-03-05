@@ -140,14 +140,15 @@ const model: DvaModel<ChatModelState> = {
     },
     *completeConversation({ payload }, { call, put }) {
       const { data } = yield call(chatService.completeConversation, payload);
-      if (data.retcode === 0) {
-        yield put({
-          type: 'getConversation',
-          payload: {
-            conversation_id: payload.conversation_id,
-          },
-        });
-      }
+      // if (data.retcode === 0) {
+      //   yield put({
+      //     type: 'getConversation',
+      //     payload: {
+      //       conversation_id: payload.conversation_id,
+      //     },
+      //   });
+      // }
+      return data.retcode;
     },
     *removeConversation({ payload }, { call, put }) {
       const { data } = yield call(chatService.removeConversation, {

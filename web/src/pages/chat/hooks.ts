@@ -78,12 +78,10 @@ export const useSetCurrentDialog = () => {
 
   const setCurrentDialog = useCallback(
     (dialogId: string) => {
-      if (dialogId) {
-        dispatch({
-          type: 'chatModel/setCurrentDialog',
-          payload: { id: dialogId },
-        });
-      }
+      dispatch({
+        type: 'chatModel/setCurrentDialog',
+        payload: { id: dialogId },
+      });
     },
     [dispatch],
   );
@@ -427,6 +425,12 @@ export const useSelectCurrentConversation = () => {
             content: message,
             id: uuid(),
           } as IMessage,
+          {
+            role: MessageType.Assistant,
+            content: '',
+            id: uuid(),
+            reference: [],
+          } as IMessage,
         ],
       };
     });
@@ -525,12 +529,13 @@ export const useSendMessage = () => {
   const conversation: IClientConversation = useSelector(
     (state: any) => state.chatModel.currentConversation,
   );
+  const fetchConversation = useFetchConversation();
 
   const { handleClickConversation } = useClickConversationCard();
 
   const sendMessage = useCallback(
-    (message: string, id?: string) => {
-      dispatch({
+    async (message: string, id?: string) => {
+      const retcode = await dispatch<any>({
         type: 'chatModel/completeConversation',
         payload: {
           conversation_id: id ?? conversationId,
@@ -545,8 +550,22 @@ export const useSendMessage = () => {
           ],
         },
       });
+
+      if (retcode === 0) {
+        if (id) {
+          handleClickConversation(id);
+        } else {
+          fetchConversation(conversationId);
+        }
+      }
     },
-    [dispatch, conversation?.message, conversationId],
+    [
+      dispatch,
+      conversation?.message,
+      conversationId,
+      fetchConversation,
+      handleClickConversation,
+    ],
   );
 
   const handleSendMessage = useCallback(
@@ -557,12 +576,11 @@ export const useSendMessage = () => {
         const data = await setConversation(message);
         if (data.retcode === 0) {
           const id = data.data.id;
-          handleClickConversation(id);
           sendMessage(message, id);
         }
       }
     },
-    [conversationId, handleClickConversation, setConversation, sendMessage],
+    [conversationId, setConversation, sendMessage],
   );
 
   return { sendMessage: handleSendMessage };

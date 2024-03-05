@@ -18,7 +18,7 @@ export default defineConfig({
   dva: {},
   lessLoader: {
     modifyVars: {
-      hack: `true; @import "~@/less/variable.less";`,
+      hack: `true; @import "~@/less/index.less";`,
     },
   },
   proxy: {

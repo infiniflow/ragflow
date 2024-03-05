@@ -76,9 +76,9 @@ const Chat = () => {
     (info: any) => {
       info?.domEvent?.preventDefault();
       info?.domEvent?.stopPropagation();
-      if (dialogId) {
-        setCurrentDialog(dialogId);
-      }
+      // if (dialogId) {
+      setCurrentDialog(dialogId ?? '');
+      // }
       showModal();
     };
 
