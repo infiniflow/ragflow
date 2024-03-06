@@ -103,7 +103,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                     if not l:break
                     txt += l
         sections = txt.split("\n")
-        sections = txt.split("\n")
         sections = [l for l in sections if l]
         callback(0.8, "Finish parsing.")
     else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
