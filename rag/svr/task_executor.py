@@ -23,13 +23,14 @@ import re
 import sys
 import traceback
 from functools import partial
-from timeit import default_timer as timer
+
+from rag.settings import database_logger
+from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 
 import numpy as np
 from elasticsearch_dsl import Q
 
 from api.db.services.task_service import TaskService
-from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 from rag.utils import ELASTICSEARCH
 from rag.utils import MINIO
 from rag.utils import rmSpace, findMaxTm
@@ -43,7 +44,6 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
 from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
-from api.settings import database_logger
 from api.utils.file_utils import get_project_base_directory
 
 BATCH_SIZE = 64
@@ -267,4 +267,4 @@ if __name__ == "__main__":
     from mpi4py import MPI
 
     comm = MPI.COMM_WORLD
-    main(comm.Get_size(), comm.Get_rank())
+    main(int(sys.argv[2]), int(sys.argv[1]))

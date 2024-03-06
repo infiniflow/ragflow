@@ -15,6 +15,8 @@ import re
 from collections import Counter
 from copy import deepcopy
 import numpy as np
+
+from api.db import ParserType
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import Recognizer
 
@@ -35,6 +37,7 @@ class LayoutRecognizer(Recognizer):
         ]
     def __init__(self, domain):
         super().__init__(self.labels, domain, os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        self.garbage_layouts = ["footer", "header", "reference"]
 
     def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16):
         def __is_garbage(b):
@@ -85,7 +88,7 @@ class LayoutRecognizer(Recognizer):
                         i += 1
                         continue
                     lts_[ii]["visited"] = True
-                    if lts_[ii]["type"] in ["footer", "header", "reference"]:
+                    if lts_[ii]["type"] in self.garbage_layouts:
                         if lts_[ii]["type"] not in garbages:
                             garbages[lts_[ii]["type"]] = []
                         garbages[lts_[ii]["type"]].append(bxs[i]["text"])

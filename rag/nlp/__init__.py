@@ -119,7 +119,6 @@ def add_positions(d, poss):
         d["page_num_int"].append(pn + 1)
         d["top_int"].append(top)
         d["position_int"].append((pn + 1, left, right, top, bottom))
-    d["top_int"] = d["top_int"][:1]
 
 
 def remove_contents_table(sections, eng=False):
