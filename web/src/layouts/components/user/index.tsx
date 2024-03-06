@@ -23,19 +23,13 @@ const App: React.FC = () => {
     return [
       {
         key: '1',
-        label: (
-          <Button type="text" onClick={logout}>
-            {t('header.logout')}
-          </Button>
-        ),
+        onClick: logout,
+        label: <Button type="text">{t('header.logout')}</Button>,
       },
       {
         key: '2',
-        label: (
-          <Button type="text" onClick={toSetting}>
-            {t('header.setting')}
-          </Button>
-        ),
+        onClick: toSetting,
+        label: <Button type="text">{t('header.setting')}</Button>,
       },
     ];
   }, [t]);
