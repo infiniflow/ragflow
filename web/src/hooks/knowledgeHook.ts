@@ -11,6 +11,17 @@ export const useKnowledgeBaseId = (): string => {
   return knowledgeBaseId || '';
 };
 
+export const useGetKnowledgeSearchParams = () => {
+  const [currentQueryParameters] = useSearchParams();
+
+  return {
+    documentId:
+      currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
+    knowledgeId:
+      currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
+  };
+};
+
 export const useDeleteDocumentById = (): {
   removeDocument: (documentId: string) => Promise<number>;
 } => {
@@ -36,12 +47,37 @@ export const useDeleteDocumentById = (): {
   };
 };
 
-export const useGetDocumentDefaultParser = (knowledgeBaseId: string) => {
-  const data: IKnowledge[] = useSelector(
-    (state: any) => state.knowledgeModel.data,
+export const useFetchKnowledgeDetail = () => {
+  const dispatch = useDispatch();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+
+  const fetchKnowledgeDetail = useCallback(
+    (knowledgeId: string) => {
+      dispatch({
+        type: 'knowledgeModel/getKnowledgeDetail',
+        payload: { kb_id: knowledgeId },
+      });
+    },
+    [dispatch],
   );
 
-  const item = data.find((x) => x.id === knowledgeBaseId);
+  useEffect(() => {
+    fetchKnowledgeDetail(knowledgeId);
+  }, [fetchKnowledgeDetail, knowledgeId]);
+
+  return fetchKnowledgeDetail;
+};
+
+export const useSelectKnowledgeDetail = () => {
+  const knowledge: IKnowledge = useSelector(
+    (state: any) => state.knowledgeModel.knowledge,
+  );
+
+  return knowledge;
+};
+
+export const useGetDocumentDefaultParser = () => {
+  const item = useSelectKnowledgeDetail();
 
   return {
     defaultParserId: item?.parser_id ?? '',
@@ -152,15 +188,4 @@ export const useFetchFileThumbnails = (docIds?: Array<string>) => {
   }, [docIds, fetchFileThumbnails]);
 
   return { fileThumbnails, fetchFileThumbnails };
-};
-
-export const useGetKnowledgeSearchParams = () => {
-  const [currentQueryParameters] = useSearchParams();
-
-  return {
-    documentId:
-      currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
-    knowledgeId:
-      currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
-  };
 };
