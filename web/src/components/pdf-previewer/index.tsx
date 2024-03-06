@@ -54,7 +54,11 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
 
   return (
     <div className={styles.documentContainer}>
-      <PdfLoader url={url} beforeLoad={<Skeleton active />}>
+      <PdfLoader
+        url={url}
+        beforeLoad={<Skeleton active />}
+        workerSrc="/pdfjs-dist/pdf.worker.min.js"
+      >
         {(pdfDocument) => (
           <PdfHighlighter
             pdfDocument={pdfDocument}
