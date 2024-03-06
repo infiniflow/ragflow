@@ -6,11 +6,10 @@ export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
 
 PY=/root/miniconda3/envs/py11/bin/python
 
-
-
 function task_exe(){
-  sleep 60;
-  while [ 1 -eq 1 ];do mpirun -n 4 --allow-run-as-root $PY rag/svr/task_executor.py ; done
+    while [ 1 -eq 1 ];do
+      $PY rag/svr/task_executor.py $1 $2;
+    done
 }
 
 function watch_broker(){
@@ -29,7 +28,12 @@ function task_bro(){
 }
 
 task_bro &
-task_exe &
+
+WS=8
+for ((i=0;i<WS;i++))
+do
+  task_exe $i $WS &
+done
 
 $PY api/ragflow_server.py
 
