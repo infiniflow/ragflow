@@ -13,6 +13,7 @@ import { variableEnabledFieldMap } from '../constants';
 import { useFetchDialog, useResetCurrentDialog, useSetDialog } from '../hooks';
 import { IPromptConfigParameters } from '../interface';
 import { excludeUnEnabledVariables } from '../utils';
+import { useFetchModelId } from './hooks';
 import styles from './index.less';
 
 enum ConfigurationSegmented {
@@ -54,6 +55,7 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
   );
   const promptEngineRef = useRef<Array<IPromptConfigParameters>>([]);
   const loading = useOneNamespaceEffectsLoading('chatModel', ['setDialog']);
+  const modelId = useFetchModelId(visible);
 
   const setDialog = useSetDialog();
   const currentDialog = useFetchDialog(id, visible);
@@ -128,9 +130,13 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
       if (icon) {
         fileList = [{ uid: '1', name: 'file', thumbUrl: icon, status: 'done' }];
       }
-      form.setFieldsValue({ ...currentDialog, icon: fileList });
+      form.setFieldsValue({
+        ...currentDialog,
+        icon: fileList,
+        llm_id: currentDialog.llm_id ?? modelId,
+      });
     }
-  }, [currentDialog, form, visible]);
+  }, [currentDialog, form, visible, modelId]);
 
   return (
     <Modal

@@ -2,11 +2,15 @@ import { ReactComponent as SelectFilesEndIcon } from '@/assets/svg/select-files-
 import { ReactComponent as SelectFilesStartIcon } from '@/assets/svg/select-files-start.svg';
 import {
   useDeleteDocumentById,
-  useFetchParserList,
+  useFetchKnowledgeDetail,
   useGetDocumentDefaultParser,
   useKnowledgeBaseId,
-  useSelectParserList,
 } from '@/hooks/knowledgeHook';
+import {
+  useFetchTenantInfo,
+  useSelectParserList,
+} from '@/hooks/userSettingHook';
+
 import uploadService from '@/services/uploadService';
 import {
   ArrowLeftOutlined,
@@ -29,10 +33,18 @@ import {
   UploadProps,
 } from 'antd';
 import classNames from 'classnames';
-import { ReactElement, useEffect, useRef, useState } from 'react';
+import {
+  ReactElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link, useDispatch, useNavigate } from 'umi';
 
 import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { isFileUploadDone } from '@/utils/documentUtils';
 import styles from './index.less';
 
 const { Dragger } = Upload;
@@ -43,18 +55,16 @@ type UploadRequestOption = Parameters<
 
 const UploaderItem = ({
   file,
-  actions,
   isUpload,
+  remove,
 }: {
   isUpload: boolean;
   originNode: ReactElement;
   file: UploadFile;
   fileList: object[];
-  actions: { download: Function; preview: Function; remove: any };
+  remove: (id: string) => void;
 }) => {
-  const { parserConfig, defaultParserId } = useGetDocumentDefaultParser(
-    file?.response?.kb_id,
-  );
+  const { parserConfig, defaultParserId } = useGetDocumentDefaultParser();
   const { removeDocument } = useDeleteDocumentById();
   const [value, setValue] = useState(defaultParserId);
   const dispatch = useDispatch();
@@ -97,9 +107,13 @@ const UploaderItem = ({
   );
 
   const handleRemove = async () => {
-    const ret: any = await removeDocument(documentId);
-    if (ret === 0) {
-      actions?.remove();
+    if (file.status === 'error') {
+      remove(documentId);
+    } else {
+      const ret: any = await removeDocument(documentId);
+      if (ret === 0) {
+        remove(documentId);
+      }
     }
   };
 
@@ -147,40 +161,67 @@ const KnowledgeUploadFile = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const [isUpload, setIsUpload] = useState(true);
   const dispatch = useDispatch();
-
-  const navigate = useNavigate();
+  const [uploadedFileIds, setUploadedFileIds] = useState<string[]>([]);
   const fileListRef = useRef<UploadFile[]>([]);
+  const navigate = useNavigate();
+
+  const enabled = useMemo(() => {
+    if (isUpload) {
+      return (
+        uploadedFileIds.length > 0 &&
+        fileListRef.current.filter((x) => isFileUploadDone(x)).length ===
+          uploadedFileIds.length
+      );
+    }
+    return true;
+  }, [uploadedFileIds, isUpload]);
 
   const createRequest: (props: UploadRequestOption) => void = async function ({
     file,
     onSuccess,
     onError,
-    onProgress,
+    // onProgress,
   }) {
-    const { data } = await uploadService.uploadFile(file, knowledgeBaseId);
-    if (data.retcode === 0) {
+    const ret = await uploadService.uploadFile(file, knowledgeBaseId);
+    const data = ret?.data;
+    if (data?.retcode === 0) {
+      setUploadedFileIds((pre) => {
+        return pre.concat(data.data.id);
+      });
       if (onSuccess) {
         onSuccess(data.data);
       }
     } else {
       if (onError) {
-        onError(data.data);
+        onError(data?.data);
       }
     }
   };
+
+  const removeIdFromUploadedIds = useCallback((id: string) => {
+    setUploadedFileIds((pre) => {
+      return pre.filter((x) => x !== id);
+    });
+  }, []);
 
   const props: UploadProps = {
     name: 'file',
     multiple: true,
     itemRender(originNode, file, fileList, actions) {
       fileListRef.current = fileList;
+      const remove = (id: string) => {
+        if (isFileUploadDone(file)) {
+          removeIdFromUploadedIds(id);
+        }
+        actions.remove();
+      };
       return (
         <UploaderItem
           isUpload={isUpload}
           file={file}
           fileList={fileList}
           originNode={originNode}
-          actions={actions}
+          remove={remove}
         ></UploaderItem>
       );
     },
@@ -207,7 +248,8 @@ const KnowledgeUploadFile = () => {
     }
   };
 
-  useFetchParserList();
+  useFetchTenantInfo();
+  useFetchKnowledgeDetail();
 
   return (
     <div className={styles.uploadWrapper}>
@@ -263,8 +305,9 @@ const KnowledgeUploadFile = () => {
       <section className={styles.footer}>
         <Button
           type="primary"
-          className={styles.nextButton}
+          // className={styles.nextButton}
           onClick={handleNextClick}
+          disabled={!enabled}
         >
           Next
         </Button>

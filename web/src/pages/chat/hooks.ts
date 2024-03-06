@@ -10,7 +10,7 @@ import omit from 'lodash/omit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import { v4 as uuid } from 'uuid';
-import { ChatSearchParams, EmptyConversationId } from './constants';
+import { ChatSearchParams } from './constants';
 import {
   IClientConversation,
   IMessage,
@@ -233,75 +233,6 @@ export const useHandleItemHover = () => {
 
 //#region conversation
 
-export const useCreateTemporaryConversation = () => {
-  const dispatch = useDispatch();
-  const { dialogId } = useGetChatSearchParams();
-  const { handleClickConversation } = useClickConversationCard();
-  let chatModel = useSelector((state: any) => state.chatModel);
-
-  const currentConversation: Pick<
-    IClientConversation,
-    'id' | 'message' | 'name' | 'dialog_id'
-  > = chatModel.currentConversation;
-
-  const conversationList: IClientConversation[] = chatModel.conversationList;
-  const currentDialog: IDialog = chatModel.currentDialog;
-
-  const setCurrentConversation = useSetCurrentConversation();
-
-  const createTemporaryConversation = useCallback(() => {
-    const firstConversation = conversationList[0];
-    const messages = [...(firstConversation?.message ?? [])];
-    if (messages.some((x) => x.id === EmptyConversationId)) {
-      return;
-    }
-    messages.push({
-      id: EmptyConversationId,
-      content: currentDialog?.prompt_config?.prologue ?? '',
-      role: MessageType.Assistant,
-    });
-
-    let nextCurrentConversation = currentConversation;
-
-    // It’s the back-end data.
-    if ('id' in currentConversation) {
-      nextCurrentConversation = { ...currentConversation, message: messages };
-    } else {
-      // client data
-      nextCurrentConversation = {
-        id: EmptyConversationId,
-        name: 'New conversation',
-        dialog_id: dialogId,
-        message: messages,
-      };
-    }
-
-    const nextConversationList = [...conversationList];
-
-    nextConversationList.unshift(
-      nextCurrentConversation as IClientConversation,
-    );
-
-    setCurrentConversation(nextCurrentConversation as IClientConversation);
-
-    dispatch({
-      type: 'chatModel/setConversationList',
-      payload: nextConversationList,
-    });
-    handleClickConversation(EmptyConversationId);
-  }, [
-    dispatch,
-    currentConversation,
-    dialogId,
-    setCurrentConversation,
-    handleClickConversation,
-    conversationList,
-    currentDialog,
-  ]);
-
-  return { createTemporaryConversation };
-};
-
 export const useFetchConversationList = () => {
   const dispatch = useDispatch();
   const conversationList: any[] = useSelector(
@@ -412,7 +343,7 @@ export const useSelectCurrentConversation = () => {
     (state: any) => state.chatModel.currentConversation,
   );
   const dialog = useSelectCurrentDialog();
-  const { conversationId } = useGetChatSearchParams();
+  const { conversationId, dialogId } = useGetChatSearchParams();
 
   const addNewestConversation = useCallback((message: string) => {
     setCurrentConversation((pre) => {
@@ -448,12 +379,12 @@ export const useSelectCurrentConversation = () => {
 
       setCurrentConversation({
         id: '',
-        dialog_id: dialog.id,
+        dialog_id: dialogId,
         reference: [],
         message: [nextMessage],
       } as any);
     }
-  }, [conversationId, dialog]);
+  }, [conversationId, dialog, dialogId]);
 
   useEffect(() => {
     addPrologue();

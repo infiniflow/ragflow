@@ -1,6 +1,6 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
 import { KnowledgeSearchParams } from '@/constants/knowledge';
-import { IKnowledge, ITenantInfo } from '@/interfaces/database/knowledge';
+import { IKnowledge } from '@/interfaces/database/knowledge';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 
@@ -9,6 +9,17 @@ export const useKnowledgeBaseId = (): string => {
   const knowledgeBaseId = searchParams.get('id');
 
   return knowledgeBaseId || '';
+};
+
+export const useGetKnowledgeSearchParams = () => {
+  const [currentQueryParameters] = useSearchParams();
+
+  return {
+    documentId:
+      currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
+    knowledgeId:
+      currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
+  };
 };
 
 export const useDeleteDocumentById = (): {
@@ -36,12 +47,37 @@ export const useDeleteDocumentById = (): {
   };
 };
 
-export const useGetDocumentDefaultParser = (knowledgeBaseId: string) => {
-  const data: IKnowledge[] = useSelector(
-    (state: any) => state.knowledgeModel.data,
+export const useFetchKnowledgeDetail = () => {
+  const dispatch = useDispatch();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+
+  const fetchKnowledgeDetail = useCallback(
+    (knowledgeId: string) => {
+      dispatch({
+        type: 'knowledgeModel/getKnowledgeDetail',
+        payload: { kb_id: knowledgeId },
+      });
+    },
+    [dispatch],
   );
 
-  const item = data.find((x) => x.id === knowledgeBaseId);
+  useEffect(() => {
+    fetchKnowledgeDetail(knowledgeId);
+  }, [fetchKnowledgeDetail, knowledgeId]);
+
+  return fetchKnowledgeDetail;
+};
+
+export const useSelectKnowledgeDetail = () => {
+  const knowledge: IKnowledge = useSelector(
+    (state: any) => state.knowledgeModel.knowledge,
+  );
+
+  return knowledge;
+};
+
+export const useGetDocumentDefaultParser = () => {
+  const item = useSelectKnowledgeDetail();
 
   return {
     defaultParserId: item?.parser_id ?? '',
@@ -77,35 +113,6 @@ export const useDeleteChunkByIds = (): {
   return {
     removeChunk: onRemoveChunk,
   };
-};
-
-export const useSelectParserList = (): Array<{
-  value: string;
-  label: string;
-}> => {
-  const tenantIfo: Nullable<ITenantInfo> = useSelector(
-    (state: any) => state.settingModel.tenantIfo,
-  );
-
-  const parserList = useMemo(() => {
-    const parserArray: Array<string> = tenantIfo?.parser_ids.split(',') ?? [];
-    return parserArray.map((x) => {
-      const arr = x.split(':');
-      return { value: arr[0], label: arr[1] };
-    });
-  }, [tenantIfo]);
-
-  return parserList;
-};
-
-export const useFetchParserList = () => {
-  const dispatch = useDispatch();
-
-  useEffect(() => {
-    dispatch({
-      type: 'settingModel/getTenantInfo',
-    });
-  }, [dispatch]);
 };
 
 export const useFetchKnowledgeBaseConfiguration = () => {
@@ -181,15 +188,4 @@ export const useFetchFileThumbnails = (docIds?: Array<string>) => {
   }, [docIds, fetchFileThumbnails]);
 
   return { fileThumbnails, fetchFileThumbnails };
-};
-
-export const useGetKnowledgeSearchParams = () => {
-  const [currentQueryParameters] = useSearchParams();
-
-  return {
-    documentId:
-      currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
-    knowledgeId:
-      currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
-  };
 };
