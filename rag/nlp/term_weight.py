@@ -152,6 +152,7 @@ class Dealer:
         def ner(t):
             if not self.ne or t not in self.ne:
                 return 1
+            if re.match(r"[0-9,.]+$", t): return 2
             m = {"toxic": 2, "func": 1, "corp": 3, "loca": 3, "sch": 3, "stock": 3,
                  "firstnm": 1}
             return m[self.ne[t]]
