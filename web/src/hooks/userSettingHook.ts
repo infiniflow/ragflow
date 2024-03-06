@@ -1,6 +1,6 @@
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { IUserInfo } from '@/interfaces/database/userSetting';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
 export const useFetchUserInfo = () => {
@@ -46,4 +46,21 @@ export const useFetchTenantInfo = (isOnMountFetching: boolean = true) => {
   }, [fetchTenantInfo, isOnMountFetching]);
 
   return fetchTenantInfo;
+};
+
+export const useSelectParserList = (): Array<{
+  value: string;
+  label: string;
+}> => {
+  const tenantInfo: ITenantInfo = useSelectTenantInfo();
+
+  const parserList = useMemo(() => {
+    const parserArray: Array<string> = tenantInfo?.parser_ids.split(',') ?? [];
+    return parserArray.map((x) => {
+      const arr = x.split(':');
+      return { value: arr[0], label: arr[1] };
+    });
+  }, [tenantInfo]);
+
+  return parserList;
 };

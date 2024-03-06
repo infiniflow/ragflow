@@ -343,7 +343,7 @@ export const useSelectCurrentConversation = () => {
     (state: any) => state.chatModel.currentConversation,
   );
   const dialog = useSelectCurrentDialog();
-  const { conversationId } = useGetChatSearchParams();
+  const { conversationId, dialogId } = useGetChatSearchParams();
 
   const addNewestConversation = useCallback((message: string) => {
     setCurrentConversation((pre) => {
@@ -379,12 +379,12 @@ export const useSelectCurrentConversation = () => {
 
       setCurrentConversation({
         id: '',
-        dialog_id: dialog.id,
+        dialog_id: dialogId,
         reference: [],
         message: [nextMessage],
       } as any);
     }
-  }, [conversationId, dialog]);
+  }, [conversationId, dialog, dialogId]);
 
   useEffect(() => {
     addPrologue();

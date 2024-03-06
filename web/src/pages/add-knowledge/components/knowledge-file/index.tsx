@@ -1,5 +1,9 @@
 import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import {
+  useFetchTenantInfo,
+  useSelectParserList,
+} from '@/hooks/userSettingHook';
 import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
@@ -45,6 +49,7 @@ const KnowledgeFile = () => {
   const [doc_id, setDocId] = useState('0');
   const [parser_id, setParserId] = useState('0');
   let navigate = useNavigate();
+  const parserList = useSelectParserList();
 
   const getKfList = useCallback(() => {
     const payload = {
@@ -215,6 +220,14 @@ const KnowledgeFile = () => {
       key: 'create_date',
     },
     {
+      title: 'Category',
+      dataIndex: 'parser_id',
+      key: 'parser_id',
+      render: (text) => {
+        return parserList.find((x) => x.value === text)?.label;
+      },
+    },
+    {
       title: 'Parsing Status',
       dataIndex: 'run',
       key: 'run',
@@ -254,6 +267,8 @@ const KnowledgeFile = () => {
     ...x,
     className: `${styles.column}`,
   }));
+
+  useFetchTenantInfo();
 
   return (
     <div className={styles.datasetWrapper}>

@@ -62,7 +62,7 @@ const ParsingActionCell = ({
       label: (
         <div>
           <Button type="link" onClick={showSegmentSetModal}>
-            Parser type
+            Category
           </Button>
         </div>
       ),

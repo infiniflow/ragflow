@@ -1,9 +1,11 @@
 import {
   useFetchKnowledgeBaseConfiguration,
   useKnowledgeBaseId,
-  useSelectParserList,
 } from '@/hooks/knowledgeHook';
-import { useFetchTenantInfo } from '@/hooks/userSettingHook';
+import {
+  useFetchTenantInfo,
+  useSelectParserList,
+} from '@/hooks/userSettingHook';
 
 import {
   Button,

@@ -1,6 +1,6 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
 import { KnowledgeSearchParams } from '@/constants/knowledge';
-import { IKnowledge, ITenantInfo } from '@/interfaces/database/knowledge';
+import { IKnowledge } from '@/interfaces/database/knowledge';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 
@@ -77,25 +77,6 @@ export const useDeleteChunkByIds = (): {
   return {
     removeChunk: onRemoveChunk,
   };
-};
-
-export const useSelectParserList = (): Array<{
-  value: string;
-  label: string;
-}> => {
-  const tenantIfo: Nullable<ITenantInfo> = useSelector(
-    (state: any) => state.settingModel.tenantIfo,
-  );
-
-  const parserList = useMemo(() => {
-    const parserArray: Array<string> = tenantIfo?.parser_ids.split(',') ?? [];
-    return parserArray.map((x) => {
-      const arr = x.split(':');
-      return { value: arr[0], label: arr[1] };
-    });
-  }, [tenantIfo]);
-
-  return parserList;
 };
 
 export const useFetchKnowledgeBaseConfiguration = () => {
