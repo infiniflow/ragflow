@@ -1,4 +1,5 @@
-import { useFetchParserList, useSelectParserList } from '@/hooks/knowledgeHook';
+import { useSelectParserList } from '@/hooks/knowledgeHook';
+import { useFetchTenantInfo } from '@/hooks/userSettingHook';
 import { Modal, Space, Tag } from 'antd';
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'umi';
@@ -20,7 +21,7 @@ const SegmentSetModal: React.FC<kFProps> = ({
   const { isShowSegmentSetModal } = kFModel;
   const parserList = useSelectParserList();
 
-  useFetchParserList();
+  useFetchTenantInfo();
 
   useEffect(() => {
     setSelectedTag(parser_id);

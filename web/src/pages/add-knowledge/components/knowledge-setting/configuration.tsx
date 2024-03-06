@@ -1,9 +1,10 @@
 import {
   useFetchKnowledgeBaseConfiguration,
-  useFetchParserList,
   useKnowledgeBaseId,
   useSelectParserList,
 } from '@/hooks/knowledgeHook';
+import { useFetchTenantInfo } from '@/hooks/userSettingHook';
+
 import {
   Button,
   Divider,
@@ -93,7 +94,7 @@ const Configuration = () => {
     });
   }, [form, knowledgeDetails]);
 
-  useFetchParserList();
+  useFetchTenantInfo();
   useFetchKnowledgeBaseConfiguration();
 
   useFetchLlmList(LlmModelType.Embedding);

@@ -2,11 +2,12 @@ import { ReactComponent as SelectFilesEndIcon } from '@/assets/svg/select-files-
 import { ReactComponent as SelectFilesStartIcon } from '@/assets/svg/select-files-start.svg';
 import {
   useDeleteDocumentById,
-  useFetchParserList,
   useGetDocumentDefaultParser,
   useKnowledgeBaseId,
   useSelectParserList,
 } from '@/hooks/knowledgeHook';
+import { useFetchTenantInfo } from '@/hooks/userSettingHook';
+
 import uploadService from '@/services/uploadService';
 import {
   ArrowLeftOutlined,
@@ -207,7 +208,7 @@ const KnowledgeUploadFile = () => {
     }
   };
 
-  useFetchParserList();
+  useFetchTenantInfo();
 
   return (
     <div className={styles.uploadWrapper}>

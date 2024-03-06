@@ -98,16 +98,6 @@ export const useSelectParserList = (): Array<{
   return parserList;
 };
 
-export const useFetchParserList = () => {
-  const dispatch = useDispatch();
-
-  useEffect(() => {
-    dispatch({
-      type: 'settingModel/getTenantInfo',
-    });
-  }, [dispatch]);
-};
-
 export const useFetchKnowledgeBaseConfiguration = () => {
   const dispatch = useDispatch();
   const knowledgeBaseId = useKnowledgeBaseId();
