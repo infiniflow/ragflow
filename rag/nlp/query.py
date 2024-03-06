@@ -157,11 +157,11 @@ class EsQueryer:
         s = 1e-9
         for k, v in qtwt.items():
             if k in dtwt:
-                s += v * dtwt[k]
+                s += v# * dtwt[k]
         q = 1e-9
         for k, v in qtwt.items():
             q += v * v
         d = 1e-9
         for k, v in dtwt.items():
             d += v * v
-        return s / math.sqrt(q) / math.sqrt(d)
+        return s / q#math.sqrt(q) / math.sqrt(d)
