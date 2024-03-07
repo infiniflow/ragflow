@@ -212,14 +212,17 @@ def chat(dialog, messages, **kwargs):
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], llm.max_tokens - used_token_count)
     answer = chat_mdl.chat(prompt_config["system"].format(**kwargs), msg, gen_conf)
+    stat_logger.info("User: {}|Assistant: {}".format(msg[-1]["content"], answer))
 
     if knowledges:
-        answer = retrievaler.insert_citations(answer,
+        answer, idx = retrievaler.insert_citations(answer,
                                           [ck["content_ltks"] for ck in kbinfos["chunks"]],
                                           [ck["vector"] for ck in kbinfos["chunks"]],
                                           embd_mdl,
                                           tkweight=1 - dialog.vector_similarity_weight,
                                           vtweight=dialog.vector_similarity_weight)
+        idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
+        kbinfos["doc_aggs"] = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
     for c in kbinfos["chunks"]:
         if c.get("vector"): del c["vector"]
     return {"answer": answer, "reference": kbinfos}
