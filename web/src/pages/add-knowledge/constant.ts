@@ -4,7 +4,6 @@ export const routeMap = {
   [KnowledgeRouteKey.Dataset]: 'Dataset',
   [KnowledgeRouteKey.Testing]: 'Retrieval testing',
   [KnowledgeRouteKey.Configuration]: 'Configuration',
-  [KnowledgeRouteKey.TempTesting]: 'Testing',
 };
 
 export enum KnowledgeDatasetRouteKey {
