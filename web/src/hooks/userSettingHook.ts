@@ -64,3 +64,13 @@ export const useSelectParserList = (): Array<{
 
   return parserList;
 };
+
+export const useLogout = () => {
+  const dispatch = useDispatch();
+
+  const logout = useCallback((): number => {
+    return dispatch<any>({ type: 'loginModel/logout' });
+  }, [dispatch]);
+
+  return logout;
+};
