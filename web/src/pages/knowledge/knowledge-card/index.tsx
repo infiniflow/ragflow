@@ -64,17 +64,16 @@ const KnowledgeCard = ({ item }: IProps) => {
       <div className={styles.container}>
         <div className={styles.content}>
           <Avatar size={34} icon={<UserOutlined />} src={item.avatar} />
-
-          <span className={styles.delete}>
-            <Dropdown
-              menu={{
-                items,
-                onClick: handleDropdownMenuClick,
-              }}
-            >
+          <Dropdown
+            menu={{
+              items,
+              onClick: handleDropdownMenuClick,
+            }}
+          >
+            <span className={styles.delete}>
               <MoreIcon />
-            </Dropdown>
-          </span>
+            </span>
+          </Dropdown>
         </div>
         <div className={styles.titleWrapper}>
           <span className={styles.title}>{item.name}</span>
