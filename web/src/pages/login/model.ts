@@ -25,18 +25,13 @@ const model: DvaModel<LoginModelState> = {
       };
     },
   },
-  subscriptions: {
-    setup({ dispatch, history }) {
-      history.listen((location) => {});
-    },
-  },
   effects: {
-    *login({ payload = {} }, { call, put }) {
+    *login({ payload = {} }, { call }) {
       const { data, response } = yield call(userService.login, payload);
       const { retcode, data: res } = data;
       const authorization = response.headers.get(Authorization);
       if (retcode === 0) {
-        message.success('登录成功！');
+        message.success('logged!');
         const token = res.access_token;
         const userInfo = {
           avatar: res.avatar,
@@ -51,12 +46,20 @@ const model: DvaModel<LoginModelState> = {
       }
       return retcode;
     },
-    *register({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(userService.register, payload);
+    *register({ payload = {} }, { call }) {
+      const { data } = yield call(userService.register, payload);
       console.log();
-      const { retcode, data: res, retmsg } = data;
+      const { retcode } = data;
       if (retcode === 0) {
         message.success('注册成功！');
+      }
+      return retcode;
+    },
+    *logout({ payload = {} }, { call }) {
+      const { data } = yield call(userService.logout, payload);
+      const { retcode } = data;
+      if (retcode === 0) {
+        message.success('logout');
       }
       return retcode;
     },
