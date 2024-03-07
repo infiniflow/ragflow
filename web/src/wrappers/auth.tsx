@@ -3,9 +3,11 @@ import { Navigate, Outlet } from 'umi';
 
 export default () => {
   const { isLogin } = useAuth();
-  if (isLogin) {
+  if (isLogin === true) {
     return <Outlet />;
-  } else {
+  } else if (isLogin === false) {
     return <Navigate to="/login" />;
   }
+
+  return <></>;
 };
