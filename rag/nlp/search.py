@@ -224,12 +224,13 @@ class Dealer:
                                                             chunks_tks,
                                                             tkweight, vtweight)
             mx = np.max(sim) * 0.99
-            if mx < 0.35:
+            if mx < 0.66:
                 continue
             cites[idx[i]] = list(
                 set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]
 
         res = ""
+        seted = set([])
         for i, p in enumerate(pieces):
             res += p
             if i not in idx:
@@ -237,7 +238,10 @@ class Dealer:
             if i not in cites:
                 continue
             for c in cites[i]: assert int(c) < len(chunk_v)
-            for c in cites[i]: res += f" ##{c}$$"
+            for c in cites[i]:
+                if c in seted:continue
+                res += f" ##{c}$$"
+                seted.add(c)
 
         return res
 
@@ -318,7 +322,7 @@ class Dealer:
             if dnm not in ranks["doc_aggs"]:
                 ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
             ranks["doc_aggs"][dnm]["count"] += 1
-        ranks["doc_aggs"] = [{"doc_name": k, "doc_id": v["doc_id"], "count": v["count"]} for k,v in sorted(ranks["doc_aggs"].items(), key=lambda x:x[1]["count"]*-1)]
+        ranks["doc_aggs"] = []#[{"doc_name": k, "doc_id": v["doc_id"], "count": v["count"]} for k,v in sorted(ranks["doc_aggs"].items(), key=lambda x:x[1]["count"]*-1)]
 
         return ranks
 
