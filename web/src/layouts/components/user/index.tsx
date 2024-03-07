@@ -6,7 +6,7 @@ import {
 import authorizationUtil from '@/utils/authorizationUtil';
 import type { MenuProps } from 'antd';
 import { Avatar, Button, Dropdown } from 'antd';
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { history } from 'umi';
 
@@ -15,13 +15,13 @@ const App: React.FC = () => {
   const userInfo = useSelectUserInfo();
   const logout = useLogout();
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     const retcode = await logout();
     if (retcode === 0) {
       authorizationUtil.removeAll();
       history.push('/login');
     }
-  };
+  }, [logout]);
 
   const toSetting = () => {
     history.push('/setting');
@@ -40,7 +40,7 @@ const App: React.FC = () => {
         label: <Button type="text">{t('header.setting')}</Button>,
       },
     ];
-  }, [t]);
+  }, [t, handleLogout]);
 
   useFetchUserInfo();
 
