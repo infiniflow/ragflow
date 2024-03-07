@@ -73,12 +73,13 @@ class Pdf(PdfParser):
         return res
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
     The supported file formats are pdf, pptx.
     Every page will be treated as a chunk. And the thumbnail of every page will be stored.
     PPT file will be parsed by using this method automatically, setting-up for every PPT file is not necessary.
     """
+    eng = lang.lower() == "english"
     doc = {
         "docnm_kwd": filename,
         "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -98,8 +99,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, callback=None, **k
         for pn, (txt,img) in enumerate(pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)):
             d = copy.deepcopy(doc)
             d["image"] = img
-            d["page_num_obj"] = [pn+1]
-            tokenize(d, txt, pdf_parser.is_english)
+            d["page_num_int"] = [pn+1]
+            d["top_int"] = [0]
+            d["position_int"].append((pn + 1, 0, img.size[0], 0, img.size[1]))
+            tokenize(d, txt, eng)
             res.append(d)
         return res
 

@@ -100,12 +100,14 @@ def github_callback():
             if len(users) > 1: raise Exception('Same E-mail exist!')
             user = users[0]
             login_user(user)
+            return redirect("/?auth=%s"%user.get_id())
         except Exception as e:
             rollback_user_registration(user_id)
             stat_logger.exception(e)
             return redirect("/?error=%s"%str(e))
-
-    return redirect("/?auth=%s"%user_id)
+    user = users[0]
+    login_user(user)
+    return redirect("/?auth=%s" % user.get_id())
 
 
 def user_info_from_github(access_token):
