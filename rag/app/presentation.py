@@ -88,20 +88,25 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
         ppt_parser = Ppt()
-        for txt,img in ppt_parser(filename if not binary else binary, from_page, 1000000, callback):
+        for pn, (txt,img) in enumerate(ppt_parser(filename if not binary else binary, from_page, 1000000, callback)):
             d = copy.deepcopy(doc)
+            pn += from_page
             d["image"] = img
-            tokenize(d, txt, ppt_parser.is_english)
+            d["page_num_int"] = [pn+1]
+            d["top_int"] = [0]
+            d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]
+            tokenize(d, txt, eng)
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
         for pn, (txt,img) in enumerate(pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)):
             d = copy.deepcopy(doc)
+            pn += from_page
             d["image"] = img
             d["page_num_int"] = [pn+1]
             d["top_int"] = [0]
-            d["position_int"].append((pn + 1, 0, img.size[0], 0, img.size[1]))
+            d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]
             tokenize(d, txt, eng)
             res.append(d)
         return res
