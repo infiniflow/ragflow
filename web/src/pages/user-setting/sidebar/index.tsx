@@ -50,6 +50,7 @@ const SideBar = () => {
       mode="inline"
       items={items}
       onClick={handleMenuClick}
+      style={{ width: 312 }}
     />
   );
 };
