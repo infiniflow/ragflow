@@ -24,7 +24,7 @@ const App: React.FC = () => {
   }, [logout]);
 
   const toSetting = () => {
-    history.push('/setting');
+    history.push('/user-setting');
   };
 
   const items: MenuProps['items'] = useMemo(() => {
