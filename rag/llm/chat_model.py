@@ -14,8 +14,12 @@
 #  limitations under the License.
 #
 from abc import ABC
+from copy import deepcopy
+
 from openai import OpenAI
 import openai
+
+from rag.nlp import is_english
 
 
 class Base(ABC):
@@ -34,13 +38,17 @@ class GptTurbo(Base):
     def chat(self, system, history, gen_conf):
         if system: history.insert(0, {"role": "system", "content": system})
         try:
-            res = self.client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=history,
                 **gen_conf)
-            return res.choices[0].message.content.strip(), res.usage.completion_tokens
+            ans = response.output.choices[0]['message']['content'].strip()
+            if response.output.choices[0].get("finish_reason", "") == "length":
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            return ans, response.usage.completion_tokens
         except openai.APIError as e:
-            return "ERROR: "+str(e), 0
+            return "**ERROR**: "+str(e), 0
 
 
 from dashscope import Generation
@@ -59,9 +67,16 @@ class QWenChat(Base):
             result_format='message',
             **gen_conf
         )
+        ans = ""
+        tk_count = 0
         if response.status_code == HTTPStatus.OK:
-            return response.output.choices[0]['message']['content'], response.usage.output_tokens
-        return "ERROR: " + response.message, 0
+            ans += response.output.choices[0]['message']['content']
+            tk_count += response.usage.output_tokens
+            if response.output.choices[0].get("finish_reason", "") == "length":
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            return ans, tk_count
+
+        return "**ERROR**: " + response.message, tk_count
 
 
 from zhipuai import ZhipuAI
@@ -73,11 +88,16 @@ class ZhipuChat(Base):
     def chat(self, system, history, gen_conf):
         from http import HTTPStatus
         if system: history.insert(0, {"role": "system", "content": system})
-        response = self.client.chat.completions.create(
-            self.model_name,
-            messages=history,
-            **gen_conf
-        )
-        if response.status_code == HTTPStatus.OK:
-            return response.output.choices[0]['message']['content'], response.usage.completion_tokens
-        return "ERROR: " + response.message, 0
+        try:
+            response = self.client.chat.completions.create(
+                self.model_name,
+                messages=history,
+                **gen_conf
+            )
+            ans = response.output.choices[0]['message']['content'].strip()
+            if response.output.choices[0].get("finish_reason", "") == "length":
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            return ans, response.usage.completion_tokens
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
