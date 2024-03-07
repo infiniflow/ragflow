@@ -243,7 +243,7 @@ class Dealer:
                 res += f" ##{c}$$"
                 seted.add(c)
 
-        return res
+        return res, seted
 
     def rerank(self, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks"):
@@ -290,7 +290,7 @@ class Dealer:
             start_idx -= 1
             if start_idx >= 0:
                 continue
-            if len(ranks["chunks"]) == page_size:
+            if len(ranks["chunks"]) >= page_size:
                 if aggs:
                     continue
                 break
@@ -322,7 +322,7 @@ class Dealer:
             if dnm not in ranks["doc_aggs"]:
                 ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
             ranks["doc_aggs"][dnm]["count"] += 1
-        ranks["doc_aggs"] = []#[{"doc_name": k, "doc_id": v["doc_id"], "count": v["count"]} for k,v in sorted(ranks["doc_aggs"].items(), key=lambda x:x[1]["count"]*-1)]
+        ranks["doc_aggs"] = [{"doc_name": k, "doc_id": v["doc_id"], "count": v["count"]} for k,v in sorted(ranks["doc_aggs"].items(), key=lambda x:x[1]["count"]*-1)]
 
         return ranks
 
