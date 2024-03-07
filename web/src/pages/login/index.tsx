@@ -152,7 +152,7 @@ const Login = () => {
             </Button>
             {title === 'login' && (
               <>
-                <Button
+                {/* <Button
                   block
                   size="large"
                   onClick={toGoogle}
@@ -165,7 +165,7 @@ const Login = () => {
                     />
                     Sign in with Google
                   </div>
-                </Button>
+                </Button> */}
                 <Button
                   block
                   size="large"
