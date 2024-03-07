@@ -1,7 +1,9 @@
 import Image from '@/components/image';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
+import classNames from 'classnames';
 import { useState } from 'react';
+
 import styles from './index.less';
 
 interface IProps {
@@ -44,33 +46,35 @@ const ChunkCard = ({
   };
 
   return (
-    <div>
-      <Card className={selected ? styles.cardSelected : ''}>
-        <Flex gap={'middle'} justify={'space-between'}>
-          <Checkbox onChange={handleCheck} checked={checked}></Checkbox>
-          {item.img_id && (
-            <Popover
-              placement="topRight"
-              content={
-                <Image id={item.img_id} className={styles.imagePreview}></Image>
-              }
-            >
-              <Image id={item.img_id} className={styles.image}></Image>
-            </Popover>
-          )}
+    <Card
+      className={classNames(styles.chunkCard, {
+        [styles.cardSelected]: selected,
+      })}
+    >
+      <Flex gap={'middle'} justify={'space-between'}>
+        <Checkbox onChange={handleCheck} checked={checked}></Checkbox>
+        {item.img_id && (
+          <Popover
+            placement="topRight"
+            content={
+              <Image id={item.img_id} className={styles.imagePreview}></Image>
+            }
+          >
+            <Image id={item.img_id} className={styles.image}></Image>
+          </Popover>
+        )}
 
-          <section
-            onDoubleClick={handleContentDoubleClick}
-            onClick={handleContentClick}
-            className={styles.content}
-            dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
-          ></section>
-          <div>
-            <Switch checked={enabled} onChange={onChange} />
-          </div>
-        </Flex>
-      </Card>
-    </div>
+        <section
+          onDoubleClick={handleContentDoubleClick}
+          onClick={handleContentClick}
+          className={styles.content}
+          dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
+        ></section>
+        <div>
+          <Switch checked={enabled} onChange={onChange} />
+        </div>
+      </Flex>
+    </Card>
   );
 };
 

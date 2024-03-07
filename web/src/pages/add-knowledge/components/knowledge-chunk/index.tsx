@@ -38,6 +38,7 @@ const Chunk = () => {
   const { removeChunk } = useDeleteChunkByIds();
   const documentInfo = useSelectDocumentInfo();
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
+  const isPdf = documentInfo.type === 'pdf';
 
   const getChunkList = useCallback(() => {
     const payload: PayloadType = {
@@ -164,7 +165,7 @@ const Chunk = () => {
         ></ChunkToolBar>
         <Divider></Divider>
         <Flex flex={1} gap={'middle'}>
-          <Flex flex={1} vertical>
+          <Flex vertical className={isPdf ? styles.pagePdfWrapper : ''}>
             <div className={styles.pageContent}>
               <Spin spinning={loading} className={styles.spin} size="large">
                 <Space
@@ -204,7 +205,7 @@ const Chunk = () => {
             </div>
           </Flex>
 
-          {documentInfo.type === 'pdf' && (
+          {isPdf && (
             <section className={styles.documentPreview}>
               <DocumentPreview
                 selectedChunkId={selectedChunkId}

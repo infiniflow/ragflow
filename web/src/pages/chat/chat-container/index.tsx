@@ -177,7 +177,7 @@ const MessageItem = ({
           <Flex vertical gap={8} flex={1}>
             <b>{isAssistant ? '' : userInfo.nickname}</b>
             <div className={styles.messageText}>
-              {item.content ? (
+              {item.content !== '' ? (
                 <Markdown
                   rehypePlugins={[rehypeWrapReference]}
                   components={

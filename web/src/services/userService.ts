@@ -4,6 +4,7 @@ import request from '@/utils/request';
 
 const {
   login,
+  logout,
   register,
   setting,
   user_info,
@@ -19,6 +20,10 @@ const methods = {
   login: {
     url: login,
     method: 'post',
+  },
+  logout: {
+    url: logout,
+    method: 'get',
   },
   register: {
     url: register,
