@@ -4,7 +4,6 @@ import { Outlet } from 'umi';
 import '../locales/config';
 import Header from './components/header';
 
-import { useLoginWithGithub } from '@/hooks/authHook';
 import styles from './index.less';
 
 const { Content } = Layout;
@@ -13,8 +12,6 @@ const App: React.FC = () => {
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
-
-  useLoginWithGithub();
 
   return (
     <Layout className={styles.layout}>
