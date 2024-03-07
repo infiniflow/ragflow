@@ -1,6 +1,7 @@
 import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { Nullable } from 'typings';
 import { useNavigate, useSearchParams } from 'umi';
 
 export const useLoginWithGithub = () => {
@@ -32,10 +33,10 @@ export const useLoginWithGithub = () => {
 
 export const useAuth = () => {
   const auth = useLoginWithGithub();
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
 
   useEffect(() => {
-    setIsLogin(!!auth || !!authorizationUtil.getAuthorization());
+    setIsLogin(!!authorizationUtil.getAuthorization() || !!auth);
   }, [auth]);
 
   return { isLogin };
