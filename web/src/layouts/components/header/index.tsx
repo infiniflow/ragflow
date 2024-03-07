@@ -6,7 +6,7 @@ import Toolbar from '../right-toolbar';
 
 import styles from './index.less';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'umi';
 
 const { Header } = Layout;
@@ -37,6 +37,10 @@ const RagHeader = () => {
     navigate(path);
   };
 
+  const handleLogoClick = useCallback(() => {
+    navigate('/');
+  }, [navigate]);
+
   return (
     <Header
       style={{
@@ -48,9 +52,9 @@ const RagHeader = () => {
         height: '72px',
       }}
     >
-      <Space size={12}>
+      <Space size={12} onClick={handleLogoClick} className={styles.logoWrapper}>
         <Logo className={styles.appIcon}></Logo>
-        <label className={styles.appName}>RagFlow</label>
+        <span className={styles.appName}>RagFlow</span>
       </Space>
       <Space size={[0, 8]} wrap>
         <Radio.Group

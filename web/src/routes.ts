@@ -57,6 +57,29 @@ const routes = [
         component: '@/pages/setting',
       },
       {
+        path: '/user-setting',
+        component: '@/pages/user-setting',
+        routes: [
+          { path: '/user-setting', redirect: '/user-setting/profile' },
+          {
+            path: '/user-setting/profile',
+            component: '@/pages/user-setting/setting-profile',
+          },
+          {
+            path: '/user-setting/password',
+            component: '@/pages/user-setting/setting-password',
+          },
+          {
+            path: '/user-setting/model',
+            component: '@/pages/user-setting/setting-model',
+          },
+          {
+            path: '/user-setting/team',
+            component: '@/pages/user-setting/setting-team',
+          },
+        ],
+      },
+      {
         path: '/file',
         component: '@/pages/file',
       },
