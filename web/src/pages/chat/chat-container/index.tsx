@@ -36,7 +36,7 @@ import styles from './index.less';
 
 const reg = /(#{2}\d+\${2})/g;
 
-const getChunkIndex = (match: string) => Number(match.slice(2, 3));
+const getChunkIndex = (match: string) => Number(match.slice(2, -2));
 
 const rehypeWrapReference = () => {
   return function wrapTextTransform(tree: any) {
