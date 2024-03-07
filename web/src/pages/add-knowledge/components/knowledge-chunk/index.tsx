@@ -1,19 +1,19 @@
+import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
 import { Divider, Flex, Pagination, Space, Spin, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
-import CreatingModal from './components/chunk-creating-modal';
-
-import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import ChunkCard from './components/chunk-card';
+import CreatingModal from './components/chunk-creating-modal';
 import ChunkToolBar from './components/chunk-toolbar';
 // import DocumentPreview from './components/document-preview';
+import classNames from 'classnames';
 import DocumentPreview from './components/document-preview/preview';
 import { useHandleChunkCardClick, useSelectDocumentInfo } from './hooks';
-import styles from './index.less';
 import { ChunkModelState } from './model';
 
+import styles from './index.less';
 interface PayloadType {
   doc_id: string;
   keywords?: string;
@@ -165,13 +165,18 @@ const Chunk = () => {
         ></ChunkToolBar>
         <Divider></Divider>
         <Flex flex={1} gap={'middle'}>
-          <Flex vertical className={isPdf ? styles.pagePdfWrapper : ''}>
+          <Flex
+            vertical
+            className={isPdf ? styles.pagePdfWrapper : styles.pageWrapper}
+          >
             <div className={styles.pageContent}>
               <Spin spinning={loading} className={styles.spin} size="large">
                 <Space
                   direction="vertical"
                   size={'middle'}
-                  className={styles.chunkContainer}
+                  className={classNames(styles.chunkContainer, {
+                    [styles.chunkOtherContainer]: !isPdf,
+                  })}
                 >
                   {data.map((item) => (
                     <ChunkCard
@@ -200,6 +205,7 @@ const Chunk = () => {
                 pageSize={pagination.pageSize}
                 pageSizeOptions={[10, 30, 60, 90]}
                 current={pagination.current}
+                size={'small'}
                 total={total}
               />
             </div>
