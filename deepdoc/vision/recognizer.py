@@ -276,18 +276,18 @@ class Recognizer(object):
     def find_overlapped_with_threashold(box, boxes, thr=0.3):
         if not boxes:
             return
-        max_overlaped_i, max_overlaped, _max_overlaped = None, thr, 0
+        max_overlapped_i, max_overlapped, _max_overlapped = None, thr, 0
         s, e = 0, len(boxes)
         for i in range(s, e):
             ov = Recognizer.overlapped_area(box, boxes[i])
             _ov = Recognizer.overlapped_area(boxes[i], box)
-            if (ov, _ov) < (max_overlaped, _max_overlaped):
+            if (ov, _ov) < (max_overlapped, _max_overlapped):
                 continue
-            max_overlaped_i = i
-            max_overlaped = ov
-            _max_overlaped = _ov
+            max_overlapped_i = i
+            max_overlapped = ov
+            _max_overlapped = _ov
 
-        return max_overlaped_i
+        return max_overlapped_i
 
     def preprocess(self, image_list):
         inputs = []
