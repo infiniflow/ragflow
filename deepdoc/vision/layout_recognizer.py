@@ -96,7 +96,7 @@ class LayoutRecognizer(Recognizer):
                         continue
 
                     bxs[i]["layoutno"] = f"{ty}-{ii}"
-                    bxs[i]["layout_type"] = lts_[ii]["type"]
+                    bxs[i]["layout_type"] = lts_[ii]["type"] if lts_[ii]["type"]!="equation" else "figure"
                     i += 1
 
             for lt in ["footer", "header", "reference", "figure caption",
@@ -105,7 +105,7 @@ class LayoutRecognizer(Recognizer):
 
             # add box to figure layouts which has not text box
             for i, lt in enumerate(
-                    [lt for lt in lts if lt["type"] == "figure"]):
+                    [lt for lt in lts if lt["type"] in ["figure","equation"]]):
                 if lt.get("visited"):
                     continue
                 lt = deepcopy(lt)
