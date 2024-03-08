@@ -21,7 +21,6 @@ from .operators import *
 import numpy as np
 import onnxruntime as ort
 
-from api.utils.file_utils import get_project_base_directory
 from .postprocess import build_post_process
 from rag.settings import cron_logger
 
