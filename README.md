@@ -18,7 +18,7 @@ If **vm.max_map_count** is not larger  than 65535, please run the following comm
 121:/ragflow# sudo sysctl -w vm.max_map_count=262144
 ```
 However, this change is not persistent and will be reset after a system reboot. 
-To make the change permanent, you need to update the **/etc/sysctl.conf file**.
+To make the change permanent, you need to update the **/etc/sysctl.conf**.
 Add or update the following line in the file:
 ```bash
 vm.max_map_count=262144

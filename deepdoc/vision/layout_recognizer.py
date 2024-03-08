@@ -100,7 +100,7 @@ class LayoutRecognizer(Recognizer):
                     i += 1
 
             for lt in ["footer", "header", "reference", "figure caption",
-                       "table caption", "title", "text", "table", "figure", "equation"]:
+                       "table caption", "title", "table", "text", "figure", "equation"]:
                 findLayout(lt)
 
             # add box to figure layouts which has not text box

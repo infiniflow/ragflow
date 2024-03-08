@@ -82,8 +82,19 @@ def set_api_key():
 @login_required
 def my_llms():
     try:
-        objs = TenantLLMService.get_my_llms(current_user.id)
-        return get_json_result(data=objs)
+        res = {}
+        for o in TenantLLMService.get_my_llms(current_user.id):
+            if o["llm_factory"] not in res:
+                res[o["llm_factory"]] = {
+                    "tags": o["tags"],
+                    "llm": []
+                }
+            res[o["llm_factory"]]["llm"].append({
+                "type": o["model_type"],
+                "name": o["model_name"],
+                "used_token": o["used_tokens"]
+            })
+        return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
 
