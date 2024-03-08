@@ -10,6 +10,8 @@ import {
   UserSettingRouteMap,
 } from '../constants';
 
+import styles from './index.less';
+
 type MenuItem = Required<MenuProps>['items'][number];
 
 function getItem(
@@ -45,12 +47,15 @@ const SideBar = () => {
   }, [pathName]);
 
   return (
-    <Menu
-      selectedKeys={selectedKeys}
-      mode="inline"
-      items={items}
-      onClick={handleMenuClick}
-    />
+    <section className={styles.sideBarWrapper}>
+      <Menu
+        selectedKeys={selectedKeys}
+        mode="inline"
+        items={items}
+        onClick={handleMenuClick}
+        style={{ width: 312 }}
+      />
+    </section>
   );
 };
 
