@@ -264,22 +264,26 @@ export const useSelectConversationList = () => {
   const prologue = currentDialog?.prompt_config?.prologue ?? '';
 
   const addTemporaryConversation = useCallback(() => {
-    setList(() => {
-      const nextList = [
-        {
-          id: '',
-          name: 'New conversation',
-          dialog_id: dialogId,
-          message: [
-            {
-              content: prologue,
-              role: MessageType.Assistant,
-            },
-          ],
-        } as IConversation,
-        ...conversationList,
-      ];
-      return nextList;
+    setList((pre) => {
+      if (dialogId) {
+        const nextList = [
+          {
+            id: '',
+            name: 'New conversation',
+            dialog_id: dialogId,
+            message: [
+              {
+                content: prologue,
+                role: MessageType.Assistant,
+              },
+            ],
+          } as IConversation,
+          ...conversationList,
+        ];
+        return nextList;
+      }
+
+      return pre;
     });
   }, [conversationList, dialogId, prologue]);
 
@@ -368,7 +372,7 @@ export const useSelectCurrentConversation = () => {
   }, []);
 
   const addPrologue = useCallback(() => {
-    if (conversationId === '') {
+    if (dialogId !== '' && conversationId === '') {
       const prologue = dialog.prompt_config?.prologue;
 
       const nextMessage = {
