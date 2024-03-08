@@ -313,9 +313,19 @@ class HuParser:
         while i < len(bxs) - 1:
             b = bxs[i]
             b_ = bxs[i + 1]
-            if b.get("layoutno", "0") != b_.get("layoutno", "1"):
+            if b.get("layoutno", "0") != b_.get("layoutno", "1") or b.get("layout_type", "") in ["table", "figure", "equation"]:
                 i += 1
                 continue
+            if abs(self._y_dis(b, b_)) < self.mean_height[bxs[i]["page_number"] - 1] / 3:
+                # merge
+                bxs[i]["x1"] = b_["x1"]
+                bxs[i]["top"] = (b["top"] + b_["top"]) / 2
+                bxs[i]["bottom"] = (b["bottom"] + b_["bottom"]) / 2
+                bxs[i]["text"] += b_["text"]
+                bxs.pop(i + 1)
+                continue
+            i += 1
+            continue
 
             dis_thr = 1
             dis = b["x1"] - b_["x0"]
@@ -642,9 +652,9 @@ class HuParser:
 
             tk, tv = nearest(tables)
             fk, fv = nearest(figures)
-            if min(tv, fv) > 2000:
-                i += 1
-                continue
+            #if min(tv, fv) > 2000:
+            #    i += 1
+            #    continue
             if tv < fv:
                 tables[tk].insert(0, c)
                 logging.debug(
@@ -711,12 +721,7 @@ class HuParser:
 
         # crop figure out and add caption
         for k, bxs in figures.items():
-            txt = "\n".join(
-                [b["text"] for b in bxs
-                 if not re.match(r"[0-9a-z.\+%-]", b["text"].strip())
-                 and len(b["text"].strip()) >= 4
-                 ]
-            )
+            txt = "\n".join([b["text"] for b in bxs])
             if not txt:
                 continue
 
