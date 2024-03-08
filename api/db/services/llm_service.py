@@ -49,7 +49,9 @@ class TenantLLMService(CommonService):
             LLMFactories.logo,
             LLMFactories.tags,
             cls.model.model_type,
-            cls.model.llm_name]
+            cls.model.llm_name,
+            cls.model.used_tokens
+        ]
         objs = cls.model.select(*fields).join(LLMFactories, on=(cls.model.llm_factory == LLMFactories.name)).where(
             cls.model.tenant_id == tenant_id).dicts()
 
