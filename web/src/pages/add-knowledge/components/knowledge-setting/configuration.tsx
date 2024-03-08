@@ -26,6 +26,11 @@ import { useDispatch, useSelector } from 'umi';
 import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
+import {
+  getBase64FromUploadFileList,
+  getUploadFileListFromBase64,
+  normFile,
+} from '@/utils/fileUtil';
 import { PlusOutlined } from '@ant-design/icons';
 import { LlmModelType } from '../../constant';
 import styles from './index.less';
@@ -43,26 +48,12 @@ const Configuration = () => {
     (state: any) => state.kSModel.knowledgeDetails,
   );
 
-  const normFile = (e: any) => {
-    if (Array.isArray(e)) {
-      return e;
-    }
-    return e?.fileList;
-  };
-
   const parserList = useSelectParserList();
 
   const embeddingModelOptions = useSelectLlmOptions();
 
   const onFinish = async (values: any) => {
-    console.info(values);
-    const fileList = values.avatar;
-    let avatar;
-
-    if (Array.isArray(fileList) && fileList.length > 0) {
-      avatar = fileList[0].thumbUrl;
-    }
-
+    const avatar = getBase64FromUploadFileList(values.avatar);
     dispatch({
       type: 'kSModel/updateKb',
       payload: {
@@ -78,12 +69,10 @@ const Configuration = () => {
   };
 
   useEffect(() => {
-    const avatar = knowledgeDetails.avatar;
-    let fileList: UploadFile[] = [];
+    const fileList: UploadFile[] = getUploadFileListFromBase64(
+      knowledgeDetails.avatar,
+    );
 
-    if (avatar) {
-      fileList = [{ uid: '1', name: 'file', thumbUrl: avatar, status: 'done' }];
-    }
     form.setFieldsValue({
       ...pick(knowledgeDetails, [
         'description',

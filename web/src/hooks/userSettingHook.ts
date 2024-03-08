@@ -74,3 +74,16 @@ export const useLogout = () => {
 
   return logout;
 };
+
+export const useSaveSetting = () => {
+  const dispatch = useDispatch();
+
+  const saveSetting = useCallback(
+    (userInfo: IUserInfo): number => {
+      return dispatch<any>({ type: 'settingModel/setting', payload: userInfo });
+    },
+    [dispatch],
+  );
+
+  return saveSetting;
+};
