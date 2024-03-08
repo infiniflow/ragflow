@@ -66,7 +66,7 @@ export const useSelectParserList = (): Array<{
 };
 
 export const useLogout = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch(); // TODO: clear redux state
 
   const logout = useCallback((): number => {
     return dispatch<any>({ type: 'loginModel/logout' });

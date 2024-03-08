@@ -59,20 +59,6 @@ const model: DvaModel<ChatModelState> = {
         currentConversation: { ...payload, message: messageList },
       };
     },
-    addEmptyConversationToList(state, {}) {
-      const list = [...state.conversationList];
-      // if (list.every((x) => x.id !== 'empty')) {
-      //   list.push({
-      //     id: 'empty',
-      //     name: 'New conversation',
-      //     message: [],
-      //   });
-      // }
-      return {
-        ...state,
-        conversationList: list,
-      };
-    },
   },
 
   effects: {
@@ -100,7 +86,9 @@ const model: DvaModel<ChatModelState> = {
     },
     *listDialog({ payload }, { call, put }) {
       const { data } = yield call(chatService.listDialog, payload);
-      yield put({ type: 'setDialogList', payload: data.data });
+      if (data.retcode === 0) {
+        yield put({ type: 'setDialogList', payload: data.data });
+      }
     },
     *listConversation({ payload }, { call, put }) {
       const { data } = yield call(chatService.listConversation, payload);

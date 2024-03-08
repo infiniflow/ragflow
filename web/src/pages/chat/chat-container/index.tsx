@@ -162,15 +162,13 @@ const MessageItem = ({
           })}
         >
           {item.role === MessageType.User ? (
-            userInfo.avatar ?? (
-              <Avatar
-                size={40}
-                src={
-                  userInfo.avatar ??
-                  'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png'
-                }
-              />
-            )
+            <Avatar
+              size={40}
+              src={
+                userInfo.avatar ??
+                'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png'
+              }
+            />
           ) : (
             <AssistantIcon></AssistantIcon>
           )}
