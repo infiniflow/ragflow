@@ -1,3 +1,5 @@
+import { UploadFile } from 'antd';
+
 export const transformFile2Base64 = (val: any): Promise<any> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -25,4 +27,29 @@ export const transformBase64ToFile = (
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new File([u8arr], filename, { type: mimeType });
+};
+
+export const normFile = (e: any) => {
+  if (Array.isArray(e)) {
+    return e;
+  }
+  return e?.fileList;
+};
+
+export const getUploadFileListFromBase64 = (avatar: string) => {
+  let fileList: UploadFile[] = [];
+
+  if (avatar) {
+    fileList = [{ uid: '1', name: 'file', thumbUrl: avatar, status: 'done' }];
+  }
+
+  return fileList;
+};
+
+export const getBase64FromUploadFileList = (fileList?: UploadFile[]) => {
+  if (Array.isArray(fileList) && fileList.length > 0) {
+    return fileList[0].thumbUrl;
+  }
+
+  return '';
 };

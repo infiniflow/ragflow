@@ -52,7 +52,7 @@ const model: DvaModel<SettingModelState> = {
       const { data } = yield call(userService.setting, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('密码修改成功！');
+        message.success('Modified!');
         yield put({
           type: 'updateState',
           payload: {
@@ -61,7 +61,6 @@ const model: DvaModel<SettingModelState> = {
         });
         yield put({
           type: 'getUserInfo',
-          payload: {},
         });
       }
     },
