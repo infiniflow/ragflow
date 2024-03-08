@@ -79,7 +79,7 @@ export const useSaveSetting = () => {
   const dispatch = useDispatch();
 
   const saveSetting = useCallback(
-    (userInfo: IUserInfo): number => {
+    (userInfo: { new_password: string } | IUserInfo): number => {
       return dispatch<any>({ type: 'settingModel/setting', payload: userInfo });
     },
     [dispatch],

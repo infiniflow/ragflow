@@ -1,4 +1,3 @@
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useSaveSetting, useSelectUserInfo } from '@/hooks/userSettingHook';
 import {
   getBase64FromUploadFileList,
@@ -17,10 +16,12 @@ import {
   Upload,
   UploadFile,
 } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import SettingTitle from '../components/setting-title';
 import { TimezoneList } from '../constants';
+import { useGetUserInfoLoading, useValidateSubmittable } from '../hooks';
 
+import parentStyles from '../index.less';
 import styles from './index.less';
 
 const { Option } = Select;
@@ -39,13 +40,10 @@ const tailLayout = {
 };
 
 const UserSettingProfile = () => {
-  const [form] = Form.useForm();
   const userInfo = useSelectUserInfo();
   const saveSetting = useSaveSetting();
-  const [submittable, setSubmittable] = useState<boolean>(false);
-  // Watch all values
-  const values = Form.useWatch([], form);
-  const loading = useOneNamespaceEffectsLoading('settingModel', ['setting']);
+  const loading = useGetUserInfoLoading();
+  const { form, submittable } = useValidateSubmittable();
 
   const onFinish = (values: any) => {
     const avatar = getBase64FromUploadFileList(values.avatar);
@@ -55,13 +53,6 @@ const UserSettingProfile = () => {
   const onFinishFailed = (errorInfo: any) => {
     console.log('Failed:', errorInfo);
   };
-
-  useEffect(() => {
-    form
-      .validateFields({ validateOnly: true })
-      .then(() => setSubmittable(true))
-      .catch(() => setSubmittable(false));
-  }, [form, values]);
 
   useEffect(() => {
     const fileList: UploadFile[] = getUploadFileListFromBase64(userInfo.avatar);
@@ -172,7 +163,7 @@ const UserSettingProfile = () => {
           <Form.Item<FieldType> name="email" noStyle>
             <Input disabled />
           </Form.Item>
-          <p className={styles.emailDescription}>
+          <p className={parentStyles.itemDescription}>
             Once registered, an account cannot be changed and can only be
             cancelled.
           </p>
