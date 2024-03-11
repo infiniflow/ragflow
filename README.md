@@ -1,9 +1,9 @@
 <div align="center">
 <a href="https://ragflow.io/">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/f034fb27-b3bf-401b-b213-e1dfa7448d2a" width="120" height="120" alt="ragflow logo">
+<img src="https://github.com/infiniflow/ragflow/assets/12318111/f034fb27-b3bf-401b-b213-e1dfa7448d2a" width="220" alt="ragflow logo">
 </a>
 
-#Ragflow
+# Ragflow
 
 </div>
 
@@ -32,7 +32,7 @@ platform to empower your business with AI.
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/b24a7a5f-4d1d-4a30-90b1-7b0ec558b79d" width="1000"/>
 </div>
 
-#Features
+# Features
 - **Custom-build document understanding engine.** Our deep learning engine is made according to the needs of analyzing and searching various type of documents in different domain.
   - For documents from different domain for different purpose, the engine applys different analyzing and search strategy.
   - Easily intervene and manipulate the data proccessing procedure when things goes beyond expectation.
@@ -51,7 +51,7 @@ platform to empower your business with AI.
   - For PDF file, the cited parts in document can be located in the original PDF.  
     
 
-#Release Notification
+# Release Notification
 **Star us on GitHub, and be notified for a new releases instantly!**
 ![star-us](https://github.com/langgenius/dify/assets/100913391/95f37259-7370-4456-a9f0-0bc01ef8642f)
 
@@ -122,12 +122,12 @@ Open your browser, enter the IP address of your server, _**Hallelujah**_ again!
 > The default serving port is 80, if you want to change that, please refer to [docker-compose.yml](./docker-compose.yaml), 
 > and change the left part of *'80:80'*'.
 
-#Configuration
+# Configuration
 If you need to change the default setting of the system when you deploy it. There several ways to configure it. 
 Please refer to [README](./docker/README.md) and manually set the configuration. 
 After changing something, please run *docker-compose up -d* again. 
 
-#RoadMap
+# RoadMap
 
 - [ ] File manager.
 - [ ] Support URLs. Crawl web and extract the main content.

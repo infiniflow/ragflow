@@ -21,7 +21,7 @@ It refers to user password of [Mino](https://github.com/minio/minio). The modifi
 It refers to The API server serving port.
 
 
-#Service Configuration
+# Service Configuration
 [service_conf.yaml](./service_conf.yaml) is used by the *API server* and *task executor*. It's the most important configuration of the system.
 
 ## ragflow
