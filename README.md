@@ -1,10 +1,7 @@
 <div align="center">
 <a href="https://ragflow.io/">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/f034fb27-b3bf-401b-b213-e1dfa7448d2a" width="220" alt="ragflow logo">
+<img src="https://github.com/infiniflow/ragflow/assets/12318111/f034fb27-b3bf-401b-b213-e1dfa7448d2a" width="320" alt="ragflow logo">
 </a>
-
-# Ragflow
-
 </div>
 
 
