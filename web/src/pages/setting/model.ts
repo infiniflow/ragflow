@@ -1,5 +1,9 @@
 import { ITenantInfo } from '@/interfaces/database/knowledge';
-import { IThirdOAIModelCollection as IThirdAiModelCollection } from '@/interfaces/database/llm';
+import {
+  IFactory,
+  IMyLlmValue,
+  IThirdOAIModelCollection as IThirdAiModelCollection,
+} from '@/interfaces/database/llm';
 import { IUserInfo } from '@/interfaces/database/userSetting';
 import userService from '@/services/userService';
 import { message } from 'antd';
@@ -14,8 +18,8 @@ export interface SettingModelState {
   llm_factory: string;
   tenantIfo: Nullable<ITenantInfo>;
   llmInfo: IThirdAiModelCollection;
-  myLlm: any[];
-  factoriesList: any[];
+  myLlmList: Record<string, IMyLlmValue>;
+  factoryList: IFactory[];
   userInfo: IUserInfo;
 }
 
@@ -29,8 +33,8 @@ const model: DvaModel<SettingModelState> = {
     llm_factory: '',
     tenantIfo: null,
     llmInfo: {},
-    myLlm: [],
-    factoriesList: [],
+    myLlmList: {},
+    factoryList: [],
     userInfo: {} as IUserInfo,
   },
   reducers: {
@@ -116,16 +120,13 @@ const model: DvaModel<SettingModelState> = {
     },
 
     *factories_list({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(
-        userService.factories_list,
-        payload,
-      );
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(userService.factories_list);
+      const { retcode, data: res } = data;
       if (retcode === 0) {
         yield put({
           type: 'updateState',
           payload: {
-            factoriesList: res,
+            factoryList: res,
           },
         });
       }
@@ -143,13 +144,13 @@ const model: DvaModel<SettingModelState> = {
       }
     },
     *my_llm({ payload = {} }, { call, put }) {
-      const { data, response } = yield call(userService.my_llm, payload);
-      const { retcode, data: res, retmsg } = data;
+      const { data } = yield call(userService.my_llm, payload);
+      const { retcode, data: res } = data;
       if (retcode === 0) {
         yield put({
           type: 'updateState',
           payload: {
-            myLlm: res,
+            myLlmList: res,
           },
         });
       }
