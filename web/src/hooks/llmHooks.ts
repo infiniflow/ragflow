@@ -30,6 +30,7 @@ export const useSelectLlmOptions = () => {
         options: value.map((x) => ({
           label: x.llm_name,
           value: x.llm_name,
+          disabled: !x.available,
         })),
       };
     });

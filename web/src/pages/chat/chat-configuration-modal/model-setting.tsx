@@ -54,7 +54,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
         name="llm_id"
         rules={[{ required: true, message: 'Please select!' }]}
       >
-        <Select options={modelOptions} />
+        <Select options={modelOptions} showSearch />
       </Form.Item>
       <Divider></Divider>
       <Form.Item
