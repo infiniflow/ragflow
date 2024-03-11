@@ -45,24 +45,42 @@ export const useSetDialog = () => {
   return setDialog;
 };
 
-export const useFetchDialog = (dialogId: string, visible: boolean): IDialog => {
-  const dispatch = useDispatch();
+export const useSelectCurrentDialog = () => {
   const currentDialog: IDialog = useSelector(
     (state: any) => state.chatModel.currentDialog,
   );
 
-  const fetchDialog = useCallback(() => {
-    if (dialogId) {
-      dispatch({
-        type: 'chatModel/getDialog',
-        payload: { dialog_id: dialogId },
-      });
-    }
-  }, [dispatch, dialogId]);
+  return currentDialog;
+};
+
+export const useFetchDialog = () => {
+  const dispatch = useDispatch();
+
+  const fetchDialog = useCallback(
+    (dialogId: string, needToBeSaved = true) => {
+      if (dialogId) {
+        return dispatch<any>({
+          type: 'chatModel/getDialog',
+          payload: { dialog_id: dialogId, needToBeSaved },
+        });
+      }
+    },
+    [dispatch],
+  );
+
+  return fetchDialog;
+};
+
+export const useFetchDialogOnMount = (
+  dialogId: string,
+  visible: boolean,
+): IDialog => {
+  const currentDialog: IDialog = useSelectCurrentDialog();
+  const fetchDialog = useFetchDialog();
 
   useEffect(() => {
     if (dialogId && visible) {
-      fetchDialog();
+      fetchDialog(dialogId);
     }
   }, [dialogId, fetchDialog, visible]);
 
@@ -121,14 +139,6 @@ export const useSelectPromptConfigParameters = (): VariableTableDataType[] => {
   }, [currentDialog]);
 
   return finalParameters;
-};
-
-export const useSelectCurrentDialog = () => {
-  const currentDialog: IDialog = useSelector(
-    (state: any) => state.chatModel.currentDialog,
-  );
-
-  return currentDialog;
 };
 
 export const useRemoveDialog = () => {
@@ -228,6 +238,57 @@ export const useHandleItemHover = () => {
     activated,
     handleItemEnter,
     handleItemLeave,
+  };
+};
+
+export const useEditDialog = () => {
+  const [dialog, setDialog] = useState<IDialog>({} as IDialog);
+  const fetchDialog = useFetchDialog();
+  const submitDialog = useSetDialog();
+  const loading = useOneNamespaceEffectsLoading('chatModel', ['setDialog']);
+
+  const {
+    visible: dialogEditVisible,
+    hideModal: hideDialogEditModal,
+    showModal: showDialogEditModal,
+  } = useSetModalState();
+
+  const onDialogEditOk = useCallback(
+    async (dialog: IDialog) => {
+      const ret = await submitDialog(dialog);
+
+      if (ret === 0) {
+        hideDialogEditModal();
+      }
+    },
+    [submitDialog, hideDialogEditModal],
+  );
+
+  const handleShowDialogEditModal = useCallback(
+    async (dialogId?: string) => {
+      if (dialogId) {
+        const ret = await fetchDialog(dialogId, false);
+        if (ret.retcode === 0) {
+          setDialog(ret.data);
+        }
+      }
+      showDialogEditModal();
+    },
+    [showDialogEditModal, fetchDialog],
+  );
+
+  const clearDialog = useCallback(() => {
+    setDialog({} as IDialog);
+  }, []);
+
+  return {
+    dialogSettingLoading: loading,
+    initialDialog: dialog,
+    onDialogEditOk,
+    dialogEditVisible,
+    hideDialogEditModal,
+    showDialogEditModal: handleShowDialogEditModal,
+    clearDialog,
   };
 };
 

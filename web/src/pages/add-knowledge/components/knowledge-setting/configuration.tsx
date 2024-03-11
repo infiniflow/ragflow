@@ -10,10 +10,13 @@ import {
 import {
   Button,
   Divider,
+  Flex,
   Form,
   Input,
+  InputNumber,
   Radio,
   Select,
+  Slider,
   Space,
   Typography,
   Upload,
@@ -80,6 +83,7 @@ const Configuration = () => {
         'permission',
         'embd_id',
         'parser_id',
+        'parser_config.chunk_token_num',
       ]),
       avatar: fileList,
     });
@@ -144,6 +148,7 @@ const Configuration = () => {
           name="embd_id"
           label="Embedding Model"
           rules={[{ required: true }]}
+          tooltip="xx"
         >
           <Select
             placeholder="Please select a country"
@@ -153,6 +158,7 @@ const Configuration = () => {
         <Form.Item
           name="parser_id"
           label="Knowledge base category"
+          tooltip="xx"
           rules={[{ required: true }]}
         >
           <Select placeholder="Please select a country">
@@ -162,6 +168,48 @@ const Configuration = () => {
               </Option>
             ))}
           </Select>
+        </Form.Item>
+        <Form.Item noStyle dependencies={['parser_id']}>
+          {({ getFieldValue }) => {
+            const parserId = getFieldValue('parser_id');
+
+            if (parserId === 'general') {
+              return (
+                <Form.Item label="Chunk token number" tooltip="xxx">
+                  <Flex gap={20} align="center">
+                    <Flex flex={1}>
+                      <Form.Item
+                        name={['parser_config', 'chunk_token_num']}
+                        noStyle
+                        initialValue={128}
+                        rules={[
+                          { required: true, message: 'Province is required' },
+                        ]}
+                      >
+                        <Slider className={styles.variableSlider} max={2048} />
+                      </Form.Item>
+                    </Flex>
+                    <Form.Item
+                      name={['parser_config', 'chunk_token_num']}
+                      noStyle
+                      initialValue={128}
+                      rules={[
+                        { required: true, message: 'Street is required' },
+                      ]}
+                    >
+                      <InputNumber
+                        className={styles.sliderInputNumber}
+                        max={2048}
+                        min={0}
+                      />
+                    </Form.Item>
+                  </Flex>
+                </Form.Item>
+              );
+            }
+
+            return null;
+          }}
         </Form.Item>
         <Form.Item>
           <div className={styles.buttonWrapper}>
