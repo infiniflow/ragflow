@@ -1,19 +1,18 @@
 import { ReactComponent as ChatConfigurationAtom } from '@/assets/svg/chat-configuration-atom.svg';
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
+import { IDialog } from '@/interfaces/database/chat';
 import { Divider, Flex, Form, Modal, Segmented, UploadFile } from 'antd';
 import { SegmentedValue } from 'antd/es/segmented';
 import omit from 'lodash/omit';
 import { useEffect, useRef, useState } from 'react';
+import { variableEnabledFieldMap } from '../constants';
+import { IPromptConfigParameters } from '../interface';
+import { excludeUnEnabledVariables } from '../utils';
 import AssistantSetting from './assistant-setting';
+import { useFetchModelId } from './hooks';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import { variableEnabledFieldMap } from '../constants';
-import { useFetchDialog, useResetCurrentDialog, useSetDialog } from '../hooks';
-import { IPromptConfigParameters } from '../interface';
-import { excludeUnEnabledVariables } from '../utils';
-import { useFetchModelId } from './hooks';
 import styles from './index.less';
 
 enum ConfigurationSegmented {
@@ -45,21 +44,26 @@ const validateMessages = {
 };
 
 interface IProps extends IModalManagerChildrenProps {
-  id: string;
+  initialDialog: IDialog;
+  loading: boolean;
+  onOk: (dialog: IDialog) => void;
+  clearDialog: () => void;
 }
 
-const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
+const ChatConfigurationModal = ({
+  visible,
+  hideModal,
+  initialDialog,
+  loading,
+  onOk,
+  clearDialog,
+}: IProps) => {
   const [form] = Form.useForm();
   const [value, setValue] = useState<ConfigurationSegmented>(
     ConfigurationSegmented.AssistantSetting,
   );
   const promptEngineRef = useRef<Array<IPromptConfigParameters>>([]);
-  const loading = useOneNamespaceEffectsLoading('chatModel', ['setDialog']);
   const modelId = useFetchModelId(visible);
-
-  const setDialog = useSetDialog();
-  const currentDialog = useFetchDialog(id, visible);
-  const { resetCurrentDialog } = useResetCurrentDialog();
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -78,7 +82,7 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
     }
 
     const finalValues = {
-      dialog_id: id,
+      dialog_id: initialDialog.id,
       ...nextValues,
       prompt_config: {
         ...nextValues.prompt_config,
@@ -87,13 +91,7 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
       },
       icon,
     };
-    console.info(promptEngineRef.current);
-    console.info(nextValues);
-    console.info(finalValues);
-    const retcode: number = await setDialog(finalValues);
-    if (retcode === 0) {
-      hideModal();
-    }
+    onOk(finalValues);
   };
 
   const handleCancel = () => {
@@ -105,7 +103,7 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
   };
 
   const handleModalAfterClose = () => {
-    resetCurrentDialog();
+    clearDialog();
     form.resetFields();
   };
 
@@ -124,19 +122,19 @@ const ChatConfigurationModal = ({ visible, hideModal, id }: IProps) => {
 
   useEffect(() => {
     if (visible) {
-      const icon = currentDialog.icon;
+      const icon = initialDialog.icon;
       let fileList: UploadFile[] = [];
 
       if (icon) {
         fileList = [{ uid: '1', name: 'file', thumbUrl: icon, status: 'done' }];
       }
       form.setFieldsValue({
-        ...currentDialog,
+        ...initialDialog,
         icon: fileList,
-        llm_id: currentDialog.llm_id ?? modelId,
+        llm_id: initialDialog.llm_id ?? modelId,
       });
     }
-  }, [currentDialog, form, visible, modelId]);
+  }, [initialDialog, form, visible, modelId]);
 
   return (
     <Modal

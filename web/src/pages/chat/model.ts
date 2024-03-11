@@ -63,16 +63,21 @@ const model: DvaModel<ChatModelState> = {
 
   effects: {
     *getDialog({ payload }, { call, put }) {
-      const { data } = yield call(chatService.getDialog, payload);
-      if (data.retcode === 0) {
+      const needToBeSaved =
+        payload.needToBeSaved === undefined ? true : payload.needToBeSaved;
+      const { data } = yield call(chatService.getDialog, {
+        dialog_id: payload.dialog_id,
+      });
+      if (data.retcode === 0 && needToBeSaved) {
         yield put({ type: 'setCurrentDialog', payload: data.data });
       }
+      return data;
     },
     *setDialog({ payload }, { call, put }) {
       const { data } = yield call(chatService.setDialog, payload);
       if (data.retcode === 0) {
         yield put({ type: 'listDialog' });
-        message.success('Created successfully !');
+        message.success(payload.dialog_id ? 'Modified!' : 'Created!');
       }
       return data.retcode;
     },
