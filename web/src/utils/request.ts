@@ -1,11 +1,8 @@
-import { message, notification } from 'antd';
-import { RequestMethod, extend } from 'umi-request';
-
 import { Authorization } from '@/constants/authorization';
-import api from '@/utils/api';
 import authorizationUtil from '@/utils/authorizationUtil';
-
-const { login } = api;
+import { message, notification } from 'antd';
+import { history } from 'umi';
+import { RequestMethod, extend } from 'umi-request';
 
 const ABORT_REQUEST_ERR_MESSAGE = 'The user aborted a request.'; // 手动中断请求。errorHandler 抛出的error message
 
@@ -120,7 +117,7 @@ request.interceptors.response.use(async (response: any, options) => {
       duration: 3,
     });
     authorizationUtil.removeAll();
-    // history.push('/login'); // Will not jump to the login page
+    history.push('/login'); // Will not jump to the login page
   } else if (data.retcode !== 0) {
     if (data.retcode === 100) {
       message.error(data.retmsg);

@@ -20,8 +20,9 @@ import ChatContainer from './chat-container';
 import {
   useClickConversationCard,
   useClickDialogCard,
+  useEditDialog,
   useFetchConversationList,
-  useFetchDialog,
+  useFetchDialogOnMount,
   useGetChatSearchParams,
   useHandleItemHover,
   useRemoveConversation,
@@ -60,8 +61,17 @@ const Chat = () => {
     hideConversationRenameModal,
     showConversationRenameModal,
   } = useRenameConversation();
+  const {
+    dialogSettingLoading,
+    initialDialog,
+    onDialogEditOk,
+    dialogEditVisible,
+    clearDialog,
+    hideDialogEditModal,
+    showDialogEditModal,
+  } = useEditDialog();
 
-  useFetchDialog(dialogId, true);
+  useFetchDialogOnMount(dialogId, true);
 
   const handleAppCardEnter = (id: string) => () => {
     handleItemEnter(id);
@@ -76,10 +86,7 @@ const Chat = () => {
     (info: any) => {
       info?.domEvent?.preventDefault();
       info?.domEvent?.stopPropagation();
-      // if (dialogId) {
-      setCurrentDialog(dialogId ?? '');
-      // }
-      showModal();
+      showDialogEditModal(dialogId);
     };
 
   const handleRemoveDialog =
@@ -276,10 +283,13 @@ const Chat = () => {
       <Divider type={'vertical'} className={styles.divider}></Divider>
       <ChatContainer></ChatContainer>
       <ChatConfigurationModal
-        visible={visible}
-        showModal={showModal}
-        hideModal={hideModal}
-        id={currentDialog.id}
+        visible={dialogEditVisible}
+        initialDialog={initialDialog}
+        showModal={showDialogEditModal}
+        hideModal={hideDialogEditModal}
+        loading={dialogSettingLoading}
+        onOk={onDialogEditOk}
+        clearDialog={clearDialog}
       ></ChatConfigurationModal>
       <RenameModal
         visible={conversationRenameVisible}
