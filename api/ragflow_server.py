@@ -40,7 +40,7 @@ if __name__ == '__main__':
 /_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/  
               /____/                             
 
-    """)
+    """, flush=True)
     stat_logger.info(
         f'project base: {utils.file_utils.get_project_base_directory()}'
     )
