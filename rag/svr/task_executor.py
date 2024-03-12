@@ -128,8 +128,6 @@ def build(row):
 
         return
 
-    callback(msg="Finished slicing files(%d). Start to embedding the content."%len(cks))
-
     docs = []
     doc = {
         "doc_id": row["doc_id"],
@@ -179,8 +177,8 @@ def embedding(docs, mdl, parser_config={}, callback=None):
         tk_count += c
 
     cnts_ = np.array([])
-    for i in range(0, len(cnts), 32):
-        vts, c = mdl.encode(cnts[i: i+32])
+    for i in range(0, len(cnts), 8):
+        vts, c = mdl.encode(cnts[i: i+8])
         if len(cnts_) == 0: cnts_ = vts
         else: cnts_ = np.concatenate((cnts_, vts), axis=0)
         tk_count += c
@@ -226,6 +224,7 @@ def main(comm, mod):
             continue
         # TODO: exception handler
         ## set_progress(r["did"], -1, "ERROR: ")
+        callback(msg="Finished slicing files(%d). Start to embedding the content."%len(cks))
         try:
             tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
         except Exception as e:
