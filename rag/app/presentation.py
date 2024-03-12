@@ -13,6 +13,9 @@
 import copy
 import re
 from io import BytesIO
+
+from PIL import Image
+
 from rag.nlp import tokenize, is_english
 from rag.nlp import huqie
 from deepdoc.parser import PdfParser, PptParser
@@ -30,7 +33,7 @@ class Ppt(PptParser):
             for i, slide in enumerate(presentation.slides[from_page: to_page]):
                 buffered = BytesIO()
                 slide.get_thumbnail(0.5, 0.5).save(buffered, drawing.imaging.ImageFormat.jpeg)
-                imgs.append(buffered.getvalue())
+                imgs.append(Image.open(buffered))
         assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
         callback(0.9, "Image extraction finished")
         self.is_english = is_english(txts)

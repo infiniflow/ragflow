@@ -51,6 +51,7 @@ class TaskService(CommonService):
             .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))\
             .where(
                 Document.status == StatusEnum.VALID.value,
+                Document.run == TaskStatus.RUNNING.value,
                 ~(Document.type == FileType.VIRTUAL.value),
                 cls.model.progress == 0,
                 cls.model.update_time >= tm,
