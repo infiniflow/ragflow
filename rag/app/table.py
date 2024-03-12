@@ -58,12 +58,9 @@ class Excel(ExcelParser):
                     continue
                 data.append(row)
                 done += 1
-                if done % 999 == 0:
-                    callback(done * 0.6 / total, ("Extract records: {}".format(len(res)) + (
-                        f"{len(fails)} failure({sheetname}), line: %s..." % (",".join(fails[:3])) if fails else "")))
             res.append(pd.DataFrame(np.array(data), columns=headers))
 
-        callback(0.6, ("Extract records: {}. ".format(done) + (
+        callback(0.3, ("Extract records: {}~{}".format(from_page+1, min(to_page, from_page+rn)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res
 
@@ -151,7 +148,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         headers = lines[0].split(kwargs.get("delimiter", "\t"))
         rows = []
         for i, line in enumerate(lines[1:]):
-            if from_page < from_page:continue
+            if i < from_page:continue
             if i >= to_page: break
             row = [l for l in line.split(kwargs.get("delimiter", "\t"))]
             if len(row) != len(headers):
@@ -191,12 +188,15 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[j] + fieds_map[clmn_tys[j]], clmns[j])
+        clmns_map = [(py_clmns[i] + fieds_map[clmn_tys[i]], clmns[i])
                      for i in range(len(clmns))]
 
         eng = lang.lower() == "english"#is_english(txts)
         for ii, row in df.iterrows():
-            d = {}
+            d = {
+                "docnm_kwd": filename,
+                "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+            }
             row_txt = []
             for j in range(len(clmns)):
                 if row[clmns[j]] is None:
