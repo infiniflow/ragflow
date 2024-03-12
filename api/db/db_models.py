@@ -520,7 +520,7 @@ class Task(DataBaseModel):
     begin_at = DateTimeField(null=True)
     process_duation = FloatField(default=0)
     progress = FloatField(default=0)
-    progress_msg = CharField(max_length=4096, null=True, help_text="process message", default="")
+    progress_msg = TextField(max_length=4096, null=True, help_text="process message", default="")
 
 
 class Dialog(DataBaseModel):
