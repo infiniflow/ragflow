@@ -25,7 +25,7 @@ from deepdoc.parser import ExcelParser
 
 
 class Excel(ExcelParser):
-    def __call__(self, fnm, binary=None, callback=None):
+    def __call__(self, fnm, binary=None, from_page=0, to_page=10000000000, callback=None):
         if not binary:
             wb = load_workbook(fnm)
         else:
@@ -35,6 +35,7 @@ class Excel(ExcelParser):
             total += len(list(wb[sheetname].rows))
 
         res, fails, done = [], [], 0
+        rn = 0
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             rows = list(ws.rows)
@@ -46,6 +47,9 @@ class Excel(ExcelParser):
                     rows[0]) if i not in missed]
             data = []
             for i, r in enumerate(rows[1:]):
+                rn += 1
+                if rn-1 < from_page:continue
+                if rn -1>=to_page: break
                 row = [
                     cell.value for ii,
                     cell in enumerate(r) if ii not in missed]
@@ -111,7 +115,7 @@ def column_data_type(arr):
     return arr, ty
 
 
-def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
         For csv or txt file, the delimiter between columns is TAB.
@@ -147,16 +151,15 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         headers = lines[0].split(kwargs.get("delimiter", "\t"))
         rows = []
         for i, line in enumerate(lines[1:]):
+            if from_page < from_page:continue
+            if i >= to_page: break
             row = [l for l in line.split(kwargs.get("delimiter", "\t"))]
             if len(row) != len(headers):
                 fails.append(str(i))
                 continue
             rows.append(row)
-            if len(rows) % 999 == 0:
-                callback(len(rows) * 0.6 / len(lines), ("Extract records: {}".format(len(rows)) + (
-                    f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
-        callback(0.6, ("Extract records: {}".format(len(rows)) + (
+        callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         dfs = [pd.DataFrame(np.array(rows), columns=headers)]
@@ -209,7 +212,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
 
         KnowledgebaseService.update_parser_config(
             kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
-    callback(0.6, "")
+    callback(0.35, "")
 
     return res
 

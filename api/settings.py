@@ -42,7 +42,7 @@ ERROR_REPORT = True
 ERROR_REPORT_WITH_PATH = False
 
 MAX_TIMESTAMP_INTERVAL = 60
-SESSION_VALID_PERIOD = 7 * 24 * 60 * 60 * 1000
+SESSION_VALID_PERIOD = 7 * 24 * 60 * 60
 
 REQUEST_TRY_TIMES = 3
 REQUEST_WAIT_SEC = 2
@@ -69,6 +69,12 @@ default_llm = {
         "image2text_model": "glm-4v",
         "asr_model": "",
     },
+    "local": {
+        "chat_model": "",
+        "embedding_model": "",
+        "image2text_model": "",
+        "asr_model": "",
+    }
 }
 LLM = get_base_config("user_default_llm", {})
 LLM_FACTORY = LLM.get("factory", "通义千问")
@@ -134,7 +140,7 @@ USE_AUTHENTICATION = False
 USE_DATA_AUTHENTICATION = False
 AUTOMATIC_AUTHORIZATION_OUTPUT_DATA = True
 USE_DEFAULT_TIMEOUT = False
-AUTHENTICATION_DEFAULT_TIMEOUT = 30 * 24 * 60 * 60 # s
+AUTHENTICATION_DEFAULT_TIMEOUT = 7 * 24 * 60 * 60 # s
 PRIVILEGE_COMMAND_WHITELIST = []
 CHECK_NODES_IDENTITY = False
 

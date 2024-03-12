@@ -47,6 +47,7 @@ class KnowledgebaseService(CommonService):
             Tenant.embd_id,
             cls.model.avatar,
             cls.model.name,
+            cls.model.language,
             cls.model.description,
             cls.model.permission,
             cls.model.doc_num,
