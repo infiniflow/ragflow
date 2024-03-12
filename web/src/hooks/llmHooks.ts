@@ -1,5 +1,9 @@
 import { LlmModelType } from '@/constants/knowledge';
-import { IThirdOAIModelCollection } from '@/interfaces/database/llm';
+import {
+  IFactory,
+  IMyLlmValue,
+  IThirdOAIModelCollection,
+} from '@/interfaces/database/llm';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
@@ -37,4 +41,97 @@ export const useSelectLlmOptions = () => {
   }, [llmInfo]);
 
   return embeddingModelOptions;
+};
+
+export const useSelectLlmFactoryList = () => {
+  const factoryList: IFactory[] = useSelector(
+    (state: any) => state.settingModel.factoryList,
+  );
+
+  return factoryList;
+};
+
+export const useSelectMyLlmList = () => {
+  const myLlmList: Record<string, IMyLlmValue> = useSelector(
+    (state: any) => state.settingModel.myLlmList,
+  );
+
+  return myLlmList;
+};
+
+export const useFetchLlmFactoryListOnMount = () => {
+  const dispatch = useDispatch();
+  const factoryList = useSelectLlmFactoryList();
+  const myLlmList = useSelectMyLlmList();
+
+  const list = useMemo(
+    () =>
+      factoryList.filter((x) =>
+        Object.keys(myLlmList).every((y) => y !== x.name),
+      ),
+    [factoryList, myLlmList],
+  );
+
+  const fetchLlmFactoryList = useCallback(() => {
+    dispatch({
+      type: 'settingModel/factories_list',
+    });
+  }, [dispatch]);
+
+  useEffect(() => {
+    fetchLlmFactoryList();
+  }, [fetchLlmFactoryList]);
+
+  return list;
+};
+
+export const useFetchMyLlmListOnMount = () => {
+  const dispatch = useDispatch();
+  const llmList = useSelectMyLlmList();
+  const factoryList = useSelectLlmFactoryList();
+
+  const list: Array<{ name: string; logo: string } & IMyLlmValue> =
+    useMemo(() => {
+      return Object.entries(llmList).map(([key, value]) => ({
+        name: key,
+        logo: factoryList.find((x) => x.name === key)?.logo ?? '',
+        ...value,
+      }));
+    }, [llmList, factoryList]);
+
+  const fetchMyLlmList = useCallback(() => {
+    dispatch({
+      type: 'settingModel/my_llm',
+    });
+  }, [dispatch]);
+
+  useEffect(() => {
+    fetchMyLlmList();
+  }, [fetchMyLlmList]);
+
+  return list;
+};
+
+export interface IApiKeySavingParams {
+  llm_factory: string;
+  api_key: string;
+  llm_name?: string;
+  model_type?: string;
+  api_base?: string;
+}
+
+export const useSaveApiKey = () => {
+  const dispatch = useDispatch();
+
+  const saveApiKey = useCallback(
+    (savingParams: IApiKeySavingParams) => {
+      return dispatch<any>({
+        type: 'settingModel/set_api_key',
+        payload: savingParams,
+      });
+    },
+    [dispatch],
+  );
+
+  return saveApiKey;
 };
