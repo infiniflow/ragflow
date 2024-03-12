@@ -83,6 +83,7 @@ const Configuration = () => {
         'permission',
         'embd_id',
         'parser_id',
+        'language',
         'parser_config.chunk_token_num',
       ]),
       avatar: fileList,
@@ -131,8 +132,19 @@ const Configuration = () => {
             </button>
           </Upload>
         </Form.Item>
-        <Form.Item name="description" label="Knowledge base bio">
+        <Form.Item name="description" label="Description">
           <Input />
+        </Form.Item>
+        <Form.Item
+          label="Language"
+          name="language"
+          initialValue={'Chinese'}
+          rules={[{ required: true, message: 'Please input your language!' }]}
+        >
+          <Select placeholder="select your language">
+            <Option value="English">English</Option>
+            <Option value="Chinese">Chinese</Option>
+          </Select>
         </Form.Item>
         <Form.Item
           name="permission"
