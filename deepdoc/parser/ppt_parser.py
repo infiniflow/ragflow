@@ -42,7 +42,9 @@ class HuPptParser(object):
             BytesIO(fnm))
         txts = []
         self.total_page = len(ppt.slides)
-        for i, slide in enumerate(ppt.slides[from_page: to_page]):
+        for i, slide in enumerate(ppt.slides):
+            if i < from_page: continue
+            if i >= to_page:break
             texts = []
             for shape in slide.shapes:
                 txt = self.__extract(shape)
