@@ -13,7 +13,6 @@ import { DvaModel } from 'umi';
 export interface SettingModelState {
   isShowPSwModal: boolean;
   isShowTntModal: boolean;
-  isShowSAKModal: boolean;
   isShowSSModal: boolean;
   llm_factory: string;
   tenantIfo: Nullable<ITenantInfo>;
@@ -28,7 +27,6 @@ const model: DvaModel<SettingModelState> = {
   state: {
     isShowPSwModal: false,
     isShowTntModal: false,
-    isShowSAKModal: false,
     isShowSSModal: false,
     llm_factory: '',
     tenantIfo: null,
@@ -159,14 +157,12 @@ const model: DvaModel<SettingModelState> = {
       const { data } = yield call(userService.set_api_key, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('设置API KEY成功！');
+        message.success('Modified!');
         yield put({
           type: 'updateState',
-          payload: {
-            isShowSAKModal: false,
-          },
         });
       }
+      return retcode;
     },
   },
 };

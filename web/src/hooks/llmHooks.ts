@@ -111,3 +111,27 @@ export const useFetchMyLlmListOnMount = () => {
 
   return list;
 };
+
+export interface IApiKeySavingParams {
+  llm_factory: string;
+  api_key: string;
+  llm_name?: string;
+  model_type?: string;
+  api_base?: string;
+}
+
+export const useSaveApiKey = () => {
+  const dispatch = useDispatch();
+
+  const saveApiKey = useCallback(
+    (savingParams: IApiKeySavingParams) => {
+      return dispatch<any>({
+        type: 'settingModel/set_api_key',
+        payload: savingParams,
+      });
+    },
+    [dispatch],
+  );
+
+  return saveApiKey;
+};

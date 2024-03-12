@@ -4,28 +4,28 @@ import { useEffect } from 'react';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
-  initialName: string;
+  initialValue: string;
   onOk: (name: string) => void;
   showModal?(): void;
 }
+
+type FieldType = {
+  api_key?: string;
+};
 
 const ApiKeyModal = ({
   visible,
   hideModal,
   loading,
-  initialName,
+  initialValue,
   onOk,
 }: IProps) => {
   const [form] = Form.useForm();
 
-  type FieldType = {
-    name?: string;
-  };
-
   const handleOk = async () => {
     const ret = await form.validateFields();
 
-    return onOk(ret.name);
+    return onOk(ret.api_key);
   };
 
   const handleCancel = () => {
@@ -41,12 +41,12 @@ const ApiKeyModal = ({
   };
 
   useEffect(() => {
-    form.setFieldValue('name', initialName);
-  }, [initialName, form]);
+    form.setFieldValue('api_key', initialValue);
+  }, [initialValue, form]);
 
   return (
     <Modal
-      title="Rename"
+      title="Modify"
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}
@@ -64,9 +64,9 @@ const ApiKeyModal = ({
         form={form}
       >
         <Form.Item<FieldType>
-          label="Name"
-          name="name"
-          rules={[{ required: true, message: 'Please input name!' }]}
+          label="Api key"
+          name="api_key"
+          rules={[{ required: true, message: 'Please input api key!' }]}
         >
           <Input />
         </Form.Item>

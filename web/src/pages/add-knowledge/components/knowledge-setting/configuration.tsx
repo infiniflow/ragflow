@@ -2,11 +2,19 @@ import {
   useFetchKnowledgeBaseConfiguration,
   useKnowledgeBaseId,
 } from '@/hooks/knowledgeHook';
+import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import {
   useFetchTenantInfo,
   useSelectParserList,
 } from '@/hooks/userSettingHook';
-
+import { IKnowledge } from '@/interfaces/database/knowledge';
+import {
+  getBase64FromUploadFileList,
+  getUploadFileListFromBase64,
+  normFile,
+} from '@/utils/fileUtil';
+import { PlusOutlined } from '@ant-design/icons';
 import {
   Button,
   Divider,
@@ -25,17 +33,8 @@ import {
 import pick from 'lodash/pick';
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'umi';
-
-import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import { IKnowledge } from '@/interfaces/database/knowledge';
-import {
-  getBase64FromUploadFileList,
-  getUploadFileListFromBase64,
-  normFile,
-} from '@/utils/fileUtil';
-import { PlusOutlined } from '@ant-design/icons';
 import { LlmModelType } from '../../constant';
+
 import styles from './index.less';
 
 const { Title } = Typography;
@@ -219,7 +218,6 @@ const Configuration = () => {
                 </Form.Item>
               );
             }
-
             return null;
           }}
         </Form.Item>
