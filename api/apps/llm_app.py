@@ -15,18 +15,12 @@
 #
 from flask import request
 from flask_login import login_required, current_user
-
-from api.db.services import duplicate_name
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
-from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from api.utils import get_uuid, get_format_time
-from api.db import StatusEnum, UserTenantRole, LLMType
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.db_models import Knowledgebase, TenantLLM
-from api.settings import stat_logger, RetCode
+from api.db import StatusEnum, LLMType
+from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
-from rag.llm import EmbeddingModel, CvModel, ChatModel
+from rag.llm import EmbeddingModel, ChatModel
 
 
 @manager.route('/factories', methods=['GET'])
@@ -91,7 +85,7 @@ def my_llms():
                 }
             res[o["llm_factory"]]["llm"].append({
                 "type": o["model_type"],
-                "name": o["model_name"],
+                "name": o["llm_name"],
                 "used_token": o["used_tokens"]
             })
         return get_json_result(data=res)
@@ -120,3 +114,4 @@ def list():
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
+

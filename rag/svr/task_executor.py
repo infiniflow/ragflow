@@ -184,7 +184,7 @@ def embedding(docs, mdl, parser_config={}, callback=None):
         if len(cnts_) == 0: cnts_ = vts
         else: cnts_ = np.concatenate((cnts_, vts), axis=0)
         tk_count += c
-        callback(msg="")
+        callback(prog=0.7+0.2*(i+1)/len(cnts), msg="")
     cnts = cnts_
 
     title_w = float(parser_config.get("filename_embd_weight", 0.1))

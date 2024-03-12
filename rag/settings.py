@@ -25,7 +25,7 @@ SUBPROCESS_STD_LOG_NAME = "std.log"
 
 ES = get_base_config("es", {})
 MINIO = decrypt_database_config(name="minio")
-DOC_MAXIMUM_SIZE = 64 * 1024 * 1024
+DOC_MAXIMUM_SIZE = 128 * 1024 * 1024
 
 # Logger
 LoggerFactory.set_directory(os.path.join(get_project_base_directory(), "logs", "rag"))
