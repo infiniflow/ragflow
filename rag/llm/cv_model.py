@@ -138,3 +138,11 @@ class Zhipu4V(Base):
             max_tokens=max_tokens,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
+
+
+class LocalCV(Base):
+    def __init__(self, key, model_name="glm-4v", lang="Chinese"):
+        pass
+
+    def describe(self, image, max_tokens=1024):
+        return "", 0

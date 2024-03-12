@@ -19,22 +19,25 @@ from .cv_model import *
 
 
 EmbeddingModel = {
-    "Infiniflow": HuEmbedding,
+    "local": HuEmbedding,
     "OpenAI": OpenAIEmbed,
     "通义千问": HuEmbedding, #QWenEmbed,
+    "智谱AI": ZhipuEmbed
 }
 
 
 CvModel = {
     "OpenAI": GptV4,
-    "Infiniflow": GptV4,
+    "local": LocalCV,
     "通义千问": QWenCV,
+    "智谱AI": Zhipu4V
 }
 
 
 ChatModel = {
     "OpenAI": GptTurbo,
-    "Infiniflow": GptTurbo,
+    "智谱AI": ZhipuChat,
     "通义千问": QWenChat,
+    "local": LocalLLM
 }
 

@@ -85,7 +85,7 @@ def my_llms():
                 }
             res[o["llm_factory"]]["llm"].append({
                 "type": o["model_type"],
-                "name": o["model_name"],
+                "name": o["llm_name"],
                 "used_token": o["used_tokens"]
             })
         return get_json_result(data=res)

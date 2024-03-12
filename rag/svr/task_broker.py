@@ -22,6 +22,7 @@ from api.db.db_models import Task
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.task_service import TaskService
 from deepdoc.parser import PdfParser
+from deepdoc.parser.excel_parser import HuExcelParser
 from rag.settings import cron_logger
 from rag.utils import MINIO
 from rag.utils import findMaxTm
@@ -87,6 +88,13 @@ def dispatch():
                     task = new_task()
                     task["from_page"] = p
                     task["to_page"] = min(p + 5, e)
+                    tsks.append(task)
+        elif r["parser_id"] == "table":
+                rn = HuExcelParser.row_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
+                for i in range(0, rn, 1000):
+                    task = new_task()
+                    task["from_page"] = i
+                    task["to_page"] = min(i + 1000, rn)
                     tsks.append(task)
         else:
             tsks.append(new_task())

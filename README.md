@@ -21,7 +21,7 @@
   </a>
 </p>
 
-[RAGFLOW](http://ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, 
+[RagFlow](http://ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, 
 with reasoned and well-founded answers to your question. Clone this repository, you can deploy your own knowledge management 
 platform to empower your business with AI.
     
@@ -29,12 +29,12 @@ platform to empower your business with AI.
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/b24a7a5f-4d1d-4a30-90b1-7b0ec558b79d" width="1000"/>
 </div>
 
-# Features
+# Key Features
 - **Custom-build document understanding engine.** Our deep learning engine is made according to the needs of analyzing and searching various type of documents in different domain.
   - For documents from different domain for different purpose, the engine applys different analyzing and search strategy.
   - Easily intervene and manipulate the data proccessing procedure when things goes beyond expectation.
   - Multi-media document understanding is supported using OCR and multi-modal LLM. 
-- **State-of-the-art table structure and layout recognition.** Precisely extract and understand the document including table content. [README](./deepdoc/README.md)
+- **State-of-the-art table structure and layout recognition.** Precisely extract and understand the document including table content. See [README.](./deepdoc/README.md)
   - For PDF files, layout and table structures including row, column and span of them are recognized.
   - Put the table accrossing the pages together.
   - Reconstruct the table structure components into html table.  

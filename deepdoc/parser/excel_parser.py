@@ -20,12 +20,26 @@ class HuExcelParser:
                 for i,c in enumerate(r):
                     if not c.value:continue
                     t = str(ti[i].value) if i < len(ti) else ""
-                    t += ("："  if t else "") + str(c.value)
+                    t += ("：" if t else "") + str(c.value)
                     l.append(t)
                 l = "; ".join(l)
                 if sheetname.lower().find("sheet") <0: l += " ——"+sheetname
                 res.append(l)
         return res
+
+    @staticmethod
+    def row_number(fnm, binary):
+        if fnm.split(".")[-1].lower().find("xls") >= 0:
+            wb = load_workbook(BytesIO(binary))
+            total = 0
+            for sheetname in wb.sheetnames:
+                ws = wb[sheetname]
+                total += len(ws.rows)
+                return total
+
+        if fnm.split(".")[-1].lower() in ["csv", "txt"]:
+            txt = binary.decode("utf-8")
+            return len(txt.split("\n"))
 
 
 if __name__ == "__main__":
