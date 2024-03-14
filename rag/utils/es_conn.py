@@ -249,6 +249,8 @@ class HuEs:
             except ConnectionTimeout as e:
                 es_logger.error("Timeout【Q】：" + sql)
                 continue
+            except Exception as e:
+                raise e
         es_logger.error("ES search timeout for 3 times!")
         raise ConnectionTimeout()
 

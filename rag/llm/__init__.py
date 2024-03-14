@@ -19,18 +19,20 @@ from .cv_model import *
 
 
 EmbeddingModel = {
-    "local": HuEmbedding,
+    "Local": HuEmbedding,
     "OpenAI": OpenAIEmbed,
     "通义千问": HuEmbedding, #QWenEmbed,
-    "智谱AI": ZhipuEmbed
+    "智谱AI": ZhipuEmbed,
+    "Moonshot": HuEmbedding
 }
 
 
 CvModel = {
     "OpenAI": GptV4,
-    "local": LocalCV,
+    "Local": LocalCV,
     "通义千问": QWenCV,
-    "智谱AI": Zhipu4V
+    "智谱AI": Zhipu4V,
+    "Moonshot": LocalCV
 }
 
 
@@ -38,6 +40,7 @@ ChatModel = {
     "OpenAI": GptTurbo,
     "智谱AI": ZhipuChat,
     "通义千问": QWenChat,
-    "local": LocalLLM
+    "Local": LocalLLM,
+    "Moonshot": MoonshotChat
 }
 

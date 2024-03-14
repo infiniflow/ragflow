@@ -4,7 +4,7 @@ import random
 import time
 from multiprocessing.connection import Listener
 from threading import Thread
-import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 class RPCHandler:
@@ -47,14 +47,27 @@ tokenizer = None
 def chat(messages, gen_conf):
     global tokenizer
     model = Model()
-    roles = {"system":"System", "user": "User", "assistant": "Assistant"}
-    line = ["{}: {}".format(roles[m["role"].lower()], m["content"]) for m in messages]
-    line = "\n".join(line) + "\nAssistant: "
-    tokens = tokenizer([line], return_tensors='pt')
-    tokens = {k: tokens[k].to(model.device) if isinstance(tokens[k], torch.Tensor) else tokens[k] for k in
-              tokens.keys()}
-    res = [tokenizer.decode(t) for t in model.generate(**tokens, **gen_conf)][0]
-    return res.split("Assistant: ")[-1]
+    try:
+        conf = {"max_new_tokens": int(gen_conf.get("max_tokens", 256)), "temperature": float(gen_conf.get("temperature", 0.1))}
+        print(messages, conf)
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+
+        generated_ids = model.generate(
+            model_inputs.input_ids,
+            **conf
+        )
+        generated_ids = [
+            output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+        ]
+
+        return tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    except Exception as e:
+        return str(e)
 
 
 def Model():
@@ -71,20 +84,13 @@ if __name__ == "__main__":
     handler = RPCHandler()
     handler.register_function(chat)
 
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    from transformers.generation.utils import GenerationConfig
-
     models = []
-    for _ in range(2):
+    for _ in range(1):
         m = AutoModelForCausalLM.from_pretrained(args.model_name,
                                                  device_map="auto",
-                                                 torch_dtype='auto',
-                                                 trust_remote_code=True)
-        m.generation_config = GenerationConfig.from_pretrained(args.model_name)
-        m.generation_config.pad_token_id = m.generation_config.eos_token_id
+                                                 torch_dtype='auto')
         models.append(m)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=False,
-                                              trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
     # Run the server
     rpc_server(handler, ('0.0.0.0', args.port), authkey=b'infiniflow-token4kevinhu')

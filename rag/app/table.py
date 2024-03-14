@@ -67,7 +67,7 @@ class Excel(ExcelParser):
 
 def trans_datatime(s):
     try:
-        return datetime_parse(s.strip()).strftime("%Y-%m-%dT%H:%M:%S")
+        return datetime_parse(s.strip()).strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
         pass
 
@@ -80,6 +80,7 @@ def trans_bool(s):
 
 
 def column_data_type(arr):
+    arr = list(arr)
     uni = len(set([a for a in arr if a is not None]))
     counts = {"int": 0, "float": 0, "text": 0, "datetime": 0, "bool": 0}
     trans = {t: f for f, t in
@@ -130,7 +131,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        dfs = excel_parser(filename, binary, callback)
+        dfs = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
     elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -188,7 +189,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i] + fieds_map[clmn_tys[i]], clmns[i])
+        clmns_map = [(py_clmns[i] + fieds_map[clmn_tys[i]], clmns[i].replace("_", " "))
                      for i in range(len(clmns))]
 
         eng = lang.lower() == "english"#is_english(txts)
@@ -200,6 +201,8 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             row_txt = []
             for j in range(len(clmns)):
                 if row[clmns[j]] is None:
+                    continue
+                if not str(row[clmns[j]]):
                     continue
                 fld = clmns_map[j][0]
                 d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else huqie.qie(

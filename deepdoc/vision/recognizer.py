@@ -42,7 +42,9 @@ class Recognizer(object):
             raise ValueError("not find model file path {}".format(
                 model_file_path))
         if ort.get_device() == "GPU":
-            self.ort_sess = ort.InferenceSession(model_file_path, providers=['CUDAExecutionProvider'])
+            options = ort.SessionOptions()
+            options.enable_cpu_mem_arena = False
+            self.ort_sess = ort.InferenceSession(model_file_path, options=options, providers=[('CUDAExecutionProvider')])
         else:
             self.ort_sess = ort.InferenceSession(model_file_path, providers=['CPUExecutionProvider'])
         self.input_names = [node.name for node in self.ort_sess.get_inputs()]

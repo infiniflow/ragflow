@@ -655,14 +655,14 @@ class HuParser:
             #if min(tv, fv) > 2000:
             #    i += 1
             #    continue
-            if tv < fv:
+            if tv < fv and tk:
                 tables[tk].insert(0, c)
                 logging.debug(
                     "TABLE:" +
                     self.boxes[i]["text"] +
                     "; Cap: " +
                     tk)
-            else:
+            elif fk:
                 figures[fk].insert(0, c)
                 logging.debug(
                     "FIGURE:" +
