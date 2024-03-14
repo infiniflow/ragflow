@@ -64,10 +64,15 @@ def load_model(model_dir, nm):
         raise ValueError("not find model file path {}".format(
             model_file_path))
 
+    options = ort.SessionOptions()
+    options.enable_cpu_mem_arena = False
+    options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    options.intra_op_num_threads = 2
+    options.inter_op_num_threads = 2
     if ort.get_device() == "GPU":
-        sess = ort.InferenceSession(model_file_path, providers=['CUDAExecutionProvider'])
+        sess = ort.InferenceSession(model_file_path, options=options, providers=['CUDAExecutionProvider'])
     else:
-        sess = ort.InferenceSession(model_file_path, providers=['CPUExecutionProvider'])
+        sess = ort.InferenceSession(model_file_path, options=options, providers=['CPUExecutionProvider'])
     return sess, sess.get_inputs()[0]
 
 
@@ -325,7 +330,13 @@ class TextRecognizer(object):
 
             input_dict = {}
             input_dict[self.input_tensor.name] = norm_img_batch
-            outputs = self.predictor.run(None, input_dict)
+            for i in range(100000):
+                try:
+                    outputs = self.predictor.run(None, input_dict)
+                    break
+                except Exception as e:
+                    if i >= 3: raise e
+                    time.sleep(5)
             preds = outputs[0]
             rec_result = self.postprocess_op(preds)
             for rno in range(len(rec_result)):
@@ -430,7 +441,13 @@ class TextDetector(object):
         img = img.copy()
         input_dict = {}
         input_dict[self.input_tensor.name] = img
-        outputs = self.predictor.run(None, input_dict)
+        for i in range(100000):
+            try:
+                outputs = self.predictor.run(None, input_dict)
+                break
+            except Exception as e:
+                if i >= 3: raise e
+                time.sleep(5)
 
         post_result = self.postprocess_op({"maps": outputs[0]}, shape_list)
         dt_boxes = post_result[0]['points']

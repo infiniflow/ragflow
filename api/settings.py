@@ -29,6 +29,7 @@ LoggerFactory.LEVEL = 10
 stat_logger = getLogger("stat")
 access_logger = getLogger("access")
 database_logger = getLogger("database")
+chat_logger = getLogger("chat")
 
 API_VERSION = "v1"
 RAG_FLOW_SERVICE_NAME = "ragflow"
@@ -69,9 +70,15 @@ default_llm = {
         "image2text_model": "glm-4v",
         "asr_model": "",
     },
-    "local": {
-        "chat_model": "",
-        "embedding_model": "",
+    "Local": {
+        "chat_model": "qwen-14B-chat",
+        "embedding_model": "flag-enbedding",
+        "image2text_model": "",
+        "asr_model": "",
+    },
+    "Moonshot": {
+        "chat_model": "moonshot-v1-8k",
+        "embedding_model": "flag-enbedding",
         "image2text_model": "",
         "asr_model": "",
     }
@@ -86,7 +93,7 @@ EMBEDDING_MDL = default_llm[LLM_FACTORY]["embedding_model"]
 ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
 IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
 
-API_KEY = LLM.get("api_key", "infiniflow API Key")
+API_KEY = LLM.get("api_key", "")
 PARSERS = LLM.get("parsers", "naive:General,qa:Q&A,resume:Resume,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture")
 
 # distribution

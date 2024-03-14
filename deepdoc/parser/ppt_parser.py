@@ -31,7 +31,7 @@ class HuPptParser(object):
 
         if shape.shape_type == 6:
             texts = []
-            for p in shape.shapes:
+            for p in sorted(shape.shapes, key=lambda x: (x.top//10, x.left)):
                 t = self.__extract(p)
                 if t: texts.append(t)
             return "\n".join(texts)
@@ -46,7 +46,7 @@ class HuPptParser(object):
             if i < from_page: continue
             if i >= to_page:break
             texts = []
-            for shape in slide.shapes:
+            for shape in sorted(slide.shapes, key=lambda x: (x.top//10, x.left)):
                 txt = self.__extract(shape)
                 if txt: texts.append(txt)
             txts.append("\n".join(texts))

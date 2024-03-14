@@ -3,6 +3,11 @@ USER  root
 
 WORKDIR /ragflow
 
+## for cuda > 12.0
+RUN /root/miniconda3/envs/py11/bin/pip uninstall -y onnxruntime-gpu
+RUN /root/miniconda3/envs/py11/bin/pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+
+
 ADD ./web ./web
 RUN cd ./web && npm i && npm run build
 

@@ -34,7 +34,7 @@ class HuExcelParser:
             total = 0
             for sheetname in wb.sheetnames:
                 ws = wb[sheetname]
-                total += len(ws.rows)
+                total += len(list(ws.rows))
                 return total
 
         if fnm.split(".")[-1].lower() in ["csv", "txt"]:

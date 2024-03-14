@@ -90,6 +90,17 @@ def init_llm_factory():
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
         },
+         {
+             "name": "Local",
+             "logo": "",
+             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "status": "0",
+        },{
+            "name": "Moonshot",
+             "logo": "",
+             "tags": "LLM,TEXT EMBEDDING",
+             "status": "1",
+        }
         # {
         #     "name": "文心一言",
         #     "logo": "",
@@ -157,6 +168,12 @@ def init_llm_factory():
             "model_type": LLMType.CHAT.value
         },{
             "fid": factory_infos[1]["name"],
+            "llm_name": "qwen-max-1201",
+            "tags": "LLM,CHAT,6K",
+            "max_tokens": 5899,
+            "model_type": LLMType.CHAT.value
+        },{
+            "fid": factory_infos[1]["name"],
             "llm_name": "text-embedding-v2",
             "tags": "TEXT EMBEDDING,2K",
             "max_tokens": 2048,
@@ -200,6 +217,46 @@ def init_llm_factory():
             "tags": "TEXT EMBEDDING",
             "max_tokens": 512,
             "model_type": LLMType.EMBEDDING.value
+        },
+        # ---------------------- 本地 ----------------------
+        {
+            "fid": factory_infos[3]["name"],
+            "llm_name": "qwen-14B-chat",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 8191,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[3]["name"],
+            "llm_name": "flag-enbedding",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 128 * 1000,
+            "model_type": LLMType.EMBEDDING.value
+        },
+        # ------------------------ Moonshot -----------------------
+        {
+            "fid": factory_infos[4]["name"],
+            "llm_name": "moonshot-v1-8k",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 7900,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[4]["name"],
+            "llm_name": "flag-enbedding",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 128 * 1000,
+            "model_type": LLMType.EMBEDDING.value
+        },{
+            "fid": factory_infos[4]["name"],
+            "llm_name": "moonshot-v1-32k",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 32768,
+            "model_type": LLMType.CHAT.value
+        },{
+            "fid": factory_infos[4]["name"],
+            "llm_name": "moonshot-v1-128k",
+            "tags": "LLM,CHAT",
+            "max_tokens": 128 * 1000,
+            "model_type": LLMType.CHAT.value
         },
     ]
     for info in factory_infos:
