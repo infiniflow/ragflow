@@ -14,11 +14,8 @@
 #  limitations under the License.
 #
 from abc import ABC
-from copy import deepcopy
-
 from openai import OpenAI
 import openai
-
 from rag.nlp import is_english
 from rag.utils import num_tokens_from_string
 
@@ -50,6 +47,12 @@ class GptTurbo(Base):
             return ans, response.usage.completion_tokens
         except openai.APIError as e:
             return "**ERROR**: "+str(e), 0
+
+
+class MoonshotChat(GptTurbo):
+    def __init__(self, key, model_name="moonshot-v1-8k"):
+        self.client = OpenAI(api_key=key, base_url="https://api.moonshot.cn/v1",)
+        self.model_name = model_name
 
 
 from dashscope import Generation

@@ -7,6 +7,7 @@ from elasticsearch_dsl import Q, Search
 from typing import List, Optional, Dict, Union
 from dataclasses import dataclass
 
+from api.settings import chat_logger
 from rag.settings import es_logger
 from rag.utils import rmSpace
 from rag.nlp import huqie, query
@@ -333,15 +334,16 @@ class Dealer:
         replaces = []
         for r in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
             fld, v = r.group(1), r.group(3)
-            match = " MATCH({}, '{}', 'operator=OR;fuzziness=AUTO:1,3;minimum_should_match=30%') ".format(fld, huqie.qieqie(huqie.qie(v)))
+            match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(fld, huqie.qieqie(huqie.qie(v)))
             replaces.append(("{}{}'{}'".format(r.group(1), r.group(2), r.group(3)), match))
 
         for p, r in replaces: sql = sql.replace(p, r, 1)
-        es_logger.info(f"To es: {sql}")
+        chat_logger.info(f"To es: {sql}")
 
         try:
             tbl = self.es.sql(sql, fetch_size, format)
             return tbl
         except Exception as e:
-            es_logger.error(f"SQL failure: {sql} =>" + str(e))
+            chat_logger.error(f"SQL failure: {sql} =>" + str(e))
+            return {"error": str(e)}
 
