@@ -45,8 +45,8 @@ const UserSettingProfile = () => {
   const loading = useGetUserInfoLoading();
   const { form, submittable } = useValidateSubmittable();
 
-  const onFinish = (values: any) => {
-    const avatar = getBase64FromUploadFileList(values.avatar);
+  const onFinish = async (values: any) => {
+    const avatar = await getBase64FromUploadFileList(values.avatar);
     saveSetting({ ...values, avatar });
   };
 
@@ -112,6 +112,10 @@ const UserSettingProfile = () => {
           <Upload
             listType="picture-card"
             maxCount={1}
+            accept="image/*"
+            beforeUpload={() => {
+              return false;
+            }}
             showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
           >
             <button style={{ border: 0, background: 'none' }} type="button">

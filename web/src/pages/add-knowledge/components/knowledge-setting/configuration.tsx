@@ -55,7 +55,7 @@ const Configuration = () => {
   const embeddingModelOptions = useSelectLlmOptions();
 
   const onFinish = async (values: any) => {
-    const avatar = getBase64FromUploadFileList(values.avatar);
+    const avatar = await getBase64FromUploadFileList(values.avatar);
     dispatch({
       type: 'kSModel/updateKb',
       payload: {
@@ -123,6 +123,7 @@ const Configuration = () => {
           <Upload
             listType="picture-card"
             maxCount={1}
+            beforeUpload={() => false}
             showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
           >
             <button style={{ border: 0, background: 'none' }} type="button">
@@ -184,7 +185,7 @@ const Configuration = () => {
           {({ getFieldValue }) => {
             const parserId = getFieldValue('parser_id');
 
-            if (parserId === 'general') {
+            if (parserId === 'naive') {
               return (
                 <Form.Item label="Chunk token number" tooltip="xxx">
                   <Flex gap={20} align="center">

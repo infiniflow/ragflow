@@ -18,18 +18,12 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
     value: x,
   }));
 
-  const parameters: ModelVariableType = Form.useWatch('parameters', form);
-
   const modelOptions = useSelectLlmOptions();
 
   const handleParametersChange = (value: ModelVariableType) => {
-    console.info(value);
-  };
-
-  useEffect(() => {
-    const variable = settledModelVariableMap[parameters];
+    const variable = settledModelVariableMap[value];
     form.setFieldsValue({ llm_setting: variable });
-  }, [parameters, form]);
+  };
 
   useEffect(() => {
     const values = Object.keys(variableEnabledFieldMap).reduce<
