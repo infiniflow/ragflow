@@ -228,14 +228,6 @@ const KnowledgeFile = () => {
       },
     },
     {
-      title: 'Parsing Status',
-      dataIndex: 'run',
-      key: 'run',
-      render: (text, record) => {
-        return <ParsingStatusCell record={record}></ParsingStatusCell>;
-      },
-    },
-    {
       title: 'Enabled',
       key: 'status',
       dataIndex: 'status',
@@ -249,6 +241,14 @@ const KnowledgeFile = () => {
           />
         </>
       ),
+    },
+    {
+      title: 'Parsing Status',
+      dataIndex: 'run',
+      key: 'run',
+      render: (text, record) => {
+        return <ParsingStatusCell record={record}></ParsingStatusCell>;
+      },
     },
     {
       title: 'Action',
@@ -301,7 +301,7 @@ const KnowledgeFile = () => {
         rowKey="id"
         columns={finalColumns}
         dataSource={data}
-        loading={loading}
+        // loading={loading}
         pagination={pagination}
         scroll={{ scrollToFirstRowOnChange: true, x: 1300, y: 'fill' }}
       />
