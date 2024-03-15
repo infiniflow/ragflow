@@ -7,7 +7,7 @@ import {
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
-export const useFetchLlmList = (modelType: LlmModelType) => {
+export const useFetchLlmList = (modelType?: LlmModelType) => {
   const dispatch = useDispatch();
 
   const fetchLlmList = useCallback(() => {
@@ -135,4 +135,29 @@ export const useSaveApiKey = () => {
   );
 
   return saveApiKey;
+};
+
+export interface ISystemModelSettingSavingParams {
+  tenant_id: string;
+  name?: string;
+  asr_id: string;
+  embd_id: string;
+  img2txt_id: string;
+  llm_id: string;
+}
+
+export const useSaveTenantInfo = () => {
+  const dispatch = useDispatch();
+
+  const saveTenantInfo = useCallback(
+    (savingParams: ISystemModelSettingSavingParams) => {
+      return dispatch<any>({
+        type: 'settingModel/set_tenant_info',
+        payload: savingParams,
+      });
+    },
+    [dispatch],
+  );
+
+  return saveTenantInfo;
 };

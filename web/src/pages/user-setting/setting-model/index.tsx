@@ -21,7 +21,8 @@ import {
 import { useCallback } from 'react';
 import SettingTitle from '../components/setting-title';
 import ApiKeyModal from './api-key-modal';
-import { useSubmitApiKey } from './hooks';
+import { useSubmitApiKey, useSubmitSystemModelSetting } from './hooks';
+import SystemModelSettingModal from './system-model-setting-modal';
 
 import styles from './index.less';
 
@@ -94,6 +95,13 @@ const UserSettingModel = () => {
     hideApiKeyModal,
     showApiKeyModal,
   } = useSubmitApiKey();
+  const {
+    saveSystemModelSettingLoading,
+    onSystemSettingSavingOk,
+    systemSettingVisible,
+    hideSystemSettingModal,
+    showSystemSettingModal,
+  } = useSubmitSystemModelSetting();
 
   const handleApiKeyClick = useCallback(
     (llmFactory: string) => {
@@ -106,8 +114,6 @@ const UserSettingModel = () => {
     handleApiKeyClick(llmFactory);
   };
 
-  const handleSystemModelSettingClick = () => {};
-
   return (
     <>
       <section className={styles.modelWrapper}>
@@ -115,7 +121,7 @@ const UserSettingModel = () => {
           title="Model Setting"
           description="Manage your account settings and preferences here."
           showRightButton
-          clickButton={handleSystemModelSettingClick}
+          clickButton={showSystemSettingModal}
         ></SettingTitle>
         <Divider></Divider>
         <List
@@ -163,6 +169,12 @@ const UserSettingModel = () => {
         initialValue={initialApiKey}
         onOk={onApiKeySavingOk}
       ></ApiKeyModal>
+      <SystemModelSettingModal
+        visible={systemSettingVisible}
+        onOk={onSystemSettingSavingOk}
+        hideModal={hideSystemSettingModal}
+        loading={saveSystemModelSettingLoading}
+      ></SystemModelSettingModal>
     </>
   );
 };
