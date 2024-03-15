@@ -1,5 +1,9 @@
 import { ReactComponent as ChatConfigurationAtom } from '@/assets/svg/chat-configuration-atom.svg';
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
+import {
+  ModelVariableType,
+  settledModelVariableMap,
+} from '@/constants/knowledge';
 import { IDialog } from '@/interfaces/database/chat';
 import { Divider, Flex, Form, Modal, Segmented, UploadFile } from 'antd';
 import { SegmentedValue } from 'antd/es/segmented';
@@ -130,6 +134,9 @@ const ChatConfigurationModal = ({
       }
       form.setFieldsValue({
         ...initialDialog,
+        llm_setting:
+          initialDialog.llm_setting ??
+          settledModelVariableMap[ModelVariableType.Precise],
         icon: fileList,
         llm_id: initialDialog.llm_id ?? modelId,
       });

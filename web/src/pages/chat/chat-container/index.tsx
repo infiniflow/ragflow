@@ -1,8 +1,14 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
+import Image from '@/components/image';
+import NewDocumentLink from '@/components/new-document-link';
+import DocumentPreviewer from '@/components/pdf-previewer';
 import { MessageType } from '@/constants/chat';
+import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useSelectUserInfo } from '@/hooks/userSettingHook';
 import { IReference, Message } from '@/interfaces/database/chat';
+import { IChunk } from '@/interfaces/database/knowledge';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -16,7 +22,10 @@ import {
 } from 'antd';
 import classNames from 'classnames';
 import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
+import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
+import remarkGfm from 'remark-gfm';
+import { visitParents } from 'unist-util-visit-parents';
 import {
   useClickDrawer,
   useFetchConversationOnMount,
@@ -24,14 +33,6 @@ import {
   useSendMessage,
 } from '../hooks';
 
-import Image from '@/components/image';
-import NewDocumentLink from '@/components/new-document-link';
-import DocumentPreviewer from '@/components/pdf-previewer';
-import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
-import { IChunk } from '@/interfaces/database/knowledge';
-import { InfoCircleOutlined } from '@ant-design/icons';
-import Markdown from 'react-markdown';
-import { visitParents } from 'unist-util-visit-parents';
 import styles from './index.less';
 
 const reg = /(#{2}\d+\${2})/g;
@@ -178,6 +179,7 @@ const MessageItem = ({
               {item.content !== '' ? (
                 <Markdown
                   rehypePlugins={[rehypeWrapReference]}
+                  remarkPlugins={[remarkGfm]}
                   components={
                     {
                       'custom-typography': ({
@@ -243,7 +245,9 @@ const ChatContainer = () => {
   };
 
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
-    setValue(e.target.value);
+    const value = e.target.value.trim();
+    const nextValue = value.replaceAll('\\n', '\n');
+    setValue(nextValue);
   };
 
   return (

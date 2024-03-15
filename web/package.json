@@ -29,6 +29,7 @@
     "react-markdown": "^9.0.1",
     "react-pdf-highlighter": "^6.1.0",
     "react-string-replace": "^1.1.1",
+    "remark-gfm": "^4.0.0",
     "umi": "^4.0.90",
     "umi-request": "^1.4.0",
     "unist-util-visit-parents": "^6.0.1",
