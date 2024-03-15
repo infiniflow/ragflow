@@ -11,7 +11,11 @@ export const useSetModalState = () => {
     setVisible(false);
   };
 
-  return { visible, showModal, hideModal };
+  const switchVisible = () => {
+    setVisible(!visible);
+  };
+
+  return { visible, showModal, hideModal, switchVisible };
 };
 
 export const useDeepCompareEffect = (
