@@ -429,7 +429,7 @@ class LLMFactories(DataBaseModel):
 
 class LLM(DataBaseModel):
     # LLMs dictionary
-    llm_name = CharField(max_length=128, null=False, help_text="LLM name", index=True)
+    llm_name = CharField(max_length=128, null=False, help_text="LLM name", index=True, primary_key=True)
     model_type = CharField(max_length=128, null=False, help_text="LLM, Text Embedding, Image2Text, ASR")
     fid = CharField(max_length=128, null=False, help_text="LLM factory id")
     max_tokens = IntegerField(default=0)

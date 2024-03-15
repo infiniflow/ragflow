@@ -73,41 +73,41 @@ def init_superuser():
         print("\33[91m【ERROR】\33[0m:", " '{}' dosen't work!".format(tenant["embd_id"]))
 
 
+factory_infos = [{
+        "name": "OpenAI",
+        "logo": "",
+        "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+        "status": "1",
+    },{
+        "name": "通义千问",
+        "logo": "",
+        "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+        "status": "1",
+    },{
+        "name": "智谱AI",
+        "logo": "",
+        "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+        "status": "1",
+    },
+     {
+         "name": "Local",
+         "logo": "",
+         "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+        "status": "1",
+    },{
+        "name": "Moonshot",
+         "logo": "",
+         "tags": "LLM,TEXT EMBEDDING",
+         "status": "1",
+    }
+    # {
+    #     "name": "文心一言",
+    #     "logo": "",
+    #     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+    #     "status": "1",
+    # },
+]
 def init_llm_factory():
-    factory_infos = [{
-            "name": "OpenAI",
-            "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-            "status": "1",
-        },{
-            "name": "通义千问",
-            "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-            "status": "1",
-        },{
-            "name": "智谱AI",
-            "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-            "status": "1",
-        },
-         {
-             "name": "Local",
-             "logo": "",
-             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-            "status": "1",
-        },{
-            "name": "Moonshot",
-             "logo": "",
-             "tags": "LLM,TEXT EMBEDDING",
-             "status": "1",
-        }
-        # {
-        #     "name": "文心一言",
-        #     "logo": "",
-        #     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-        #     "status": "1",
-        # },
-    ]
     llm_infos = [
         # ---------------------- OpenAI ------------------------
         {
@@ -260,21 +260,30 @@ def init_llm_factory():
         },
     ]
     for info in factory_infos:
-        LLMFactoriesService.save(**info)
+        try:
+            LLMFactoriesService.save(**info)
+        except Exception as e:
+            pass
     for info in llm_infos:
-        LLMService.save(**info)
+        try:
+            LLMService.save(**info)
+        except Exception as e:
+            pass
 
 
 def init_web_data():
     start_time = time.time()
 
-    if not LLMService.get_all().count():init_llm_factory()
+    if LLMFactoriesService.get_all().count() != len(factory_infos):
+        init_llm_factory()
     if not UserService.get_all().count():
         init_superuser()
 
     print("init web data success:{}".format(time.time() - start_time))
 
 
+
 if __name__ == '__main__':
     init_web_db()
     init_web_data()
+    add_tenant_llm()
