@@ -19,7 +19,6 @@ ADD ./rag ./rag
 ENV PYTHONPATH=/ragflow/
 ENV HF_ENDPOINT=https://hf-mirror.com
 
-/root/miniconda3/envs/py11/bin/pip install peewee==3.17.1
 ADD docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
