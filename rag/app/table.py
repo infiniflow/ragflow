@@ -73,9 +73,9 @@ def trans_datatime(s):
 
 
 def trans_bool(s):
-    if re.match(r"(true|yes|是)$", str(s).strip(), flags=re.IGNORECASE):
+    if re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√)$", str(s).strip(), flags=re.IGNORECASE):
         return ["yes", "是"]
-    if re.match(r"(false|no|否)$", str(s).strip(), flags=re.IGNORECASE):
+    if re.match(r"(false|no|否|⍻|×)$", str(s).strip(), flags=re.IGNORECASE):
         return ["no", "否"]
 
 
@@ -107,9 +107,9 @@ def column_data_type(arr):
             arr[i] = trans[ty](str(arr[i]))
         except Exception as e:
             arr[i] = None
-    if ty == "text":
-        if len(arr) > 128 and uni / len(arr) < 0.1:
-            ty = "keyword"
+    #if ty == "text":
+    #    if len(arr) > 128 and uni / len(arr) < 0.1:
+    #        ty = "keyword"
     return arr, ty
 
 
@@ -170,7 +170,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
     PY = Pinyin()
     fieds_map = {
         "text": "_tks",
-        "int": "_int",
+        "int": "_long",
         "keyword": "_kwd",
         "float": "_flt",
         "datetime": "_dt",
@@ -189,7 +189,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i] + fieds_map[clmn_tys[i]], clmns[i].replace("_", " "))
+        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], clmns[i].replace("_", " "))
                      for i in range(len(clmns))]
 
         eng = lang.lower() == "english"#is_english(txts)
@@ -203,6 +203,8 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 if row[clmns[j]] is None:
                     continue
                 if not str(row[clmns[j]]):
+                    continue
+                if pd.isna(row[clmns[j]]):
                     continue
                 fld = clmns_map[j][0]
                 d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else huqie.qie(
@@ -223,7 +225,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 if __name__ == "__main__":
     import sys
 
-    def dummy(a, b):
+    def dummy(prog=None, msg=""):
         pass
 
     chunk(sys.argv[1], callback=dummy)
