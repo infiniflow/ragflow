@@ -75,7 +75,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'temperature']}
               noStyle
-              rules={[{ required: true, message: 'Province is required' }]}
+              rules={[{ required: true, message: 'Temperature is required' }]}
             >
               <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
@@ -83,7 +83,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'temperature']}
             noStyle
-            rules={[{ required: true, message: 'Street is required' }]}
+            rules={[{ required: true, message: 'Temperature is required' }]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
@@ -103,7 +103,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'top_p']}
               noStyle
-              rules={[{ required: true, message: 'Province is required' }]}
+              rules={[{ required: true, message: 'Top_p is required' }]}
             >
               <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
@@ -111,7 +111,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'top_p']}
             noStyle
-            rules={[{ required: true, message: 'Street is required' }]}
+            rules={[{ required: true, message: 'Top_p is required' }]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
@@ -135,7 +135,9 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'presence_penalty']}
               noStyle
-              rules={[{ required: true, message: 'Province is required' }]}
+              rules={[
+                { required: true, message: 'Presence Penalty is required' },
+              ]}
             >
               <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
@@ -143,7 +145,9 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'presence_penalty']}
             noStyle
-            rules={[{ required: true, message: 'Street is required' }]}
+            rules={[
+              { required: true, message: 'Presence Penalty is required' },
+            ]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
@@ -167,7 +171,9 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'frequency_penalty']}
               noStyle
-              rules={[{ required: true, message: 'Province is required' }]}
+              rules={[
+                { required: true, message: 'Frequency Penalty is required' },
+              ]}
             >
               <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
@@ -175,7 +181,9 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'frequency_penalty']}
             noStyle
-            rules={[{ required: true, message: 'Street is required' }]}
+            rules={[
+              { required: true, message: 'Frequency Penalty is required' },
+            ]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
@@ -195,7 +203,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'max_tokens']}
               noStyle
-              rules={[{ required: true, message: 'Province is required' }]}
+              rules={[{ required: true, message: 'Max Tokens is required' }]}
             >
               <Slider className={styles.variableSlider} max={2048} />
             </Form.Item>
@@ -203,7 +211,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'max_tokens']}
             noStyle
-            rules={[{ required: true, message: 'Street is required' }]}
+            rules={[{ required: true, message: 'Max Tokens is required' }]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
