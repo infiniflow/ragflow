@@ -1,4 +1,7 @@
+import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
+import { useSetModalState } from '@/hooks/commonHooks';
 import {
+  LlmItem,
   useFetchLlmFactoryListOnMount,
   useFetchMyLlmListOnMount,
 } from '@/hooks/llmHooks';
@@ -13,13 +16,72 @@ import {
   List,
   Row,
   Space,
-  Tag,
+  Typography,
 } from 'antd';
+import { useCallback } from 'react';
 import SettingTitle from '../components/setting-title';
 import ApiKeyModal from './api-key-modal';
 import { useSubmitApiKey } from './hooks';
 
 import styles from './index.less';
+
+const { Text } = Typography;
+interface IModelCardProps {
+  item: LlmItem;
+  clickApiKey: (llmFactory: string) => void;
+}
+
+const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
+  const { visible, switchVisible } = useSetModalState();
+
+  const handleApiKeyClick = () => {
+    clickApiKey(item.name);
+  };
+
+  const handleShowMoreClick = () => {
+    switchVisible();
+  };
+
+  return (
+    <List.Item>
+      <Card className={styles.addedCard}>
+        <Row align={'middle'}>
+          <Col span={12}>
+            <Flex gap={'middle'} align="center">
+              <Avatar shape="square" size="large" src={item.logo} />
+              <Flex vertical gap={'small'}>
+                <b>{item.name}</b>
+                <Text>{item.tags}</Text>
+              </Flex>
+            </Flex>
+          </Col>
+          <Col span={12} className={styles.factoryOperationWrapper}>
+            <Space size={'middle'}>
+              <Button onClick={handleApiKeyClick}>
+                API-Key
+                <SettingOutlined />
+              </Button>
+              <Button onClick={handleShowMoreClick}>
+                <Flex gap={'small'}>
+                  Show more models
+                  <MoreModelIcon />
+                </Flex>
+              </Button>
+            </Space>
+          </Col>
+        </Row>
+        {visible && (
+          <List
+            size="small"
+            dataSource={item.llm}
+            className={styles.llmList}
+            renderItem={(item) => <List.Item>{item.name}</List.Item>}
+          />
+        )}
+      </Card>
+    </List.Item>
+  );
+};
 
 const UserSettingModel = () => {
   const factoryList = useFetchLlmFactoryListOnMount();
@@ -33,9 +95,18 @@ const UserSettingModel = () => {
     showApiKeyModal,
   } = useSubmitApiKey();
 
-  const handleApiKeyClick = (llmFactory: string) => () => {
-    showApiKeyModal({ llm_factory: llmFactory });
+  const handleApiKeyClick = useCallback(
+    (llmFactory: string) => {
+      showApiKeyModal({ llm_factory: llmFactory });
+    },
+    [showApiKeyModal],
+  );
+
+  const handleAddModel = (llmFactory: string) => () => {
+    handleApiKeyClick(llmFactory);
   };
+
+  const handleSystemModelSettingClick = () => {};
 
   return (
     <>
@@ -43,48 +114,15 @@ const UserSettingModel = () => {
         <SettingTitle
           title="Model Setting"
           description="Manage your account settings and preferences here."
+          showRightButton
+          clickButton={handleSystemModelSettingClick}
         ></SettingTitle>
         <Divider></Divider>
         <List
           grid={{ gutter: 16, column: 1 }}
           dataSource={llmList}
           renderItem={(item) => (
-            <List.Item>
-              <Card>
-                <Row align={'middle'}>
-                  <Col span={12}>
-                    <Flex gap={'middle'} align="center">
-                      <Avatar shape="square" size="large" src={item.logo} />
-                      <Flex vertical gap={'small'}>
-                        <b>{item.name}</b>
-                        <div>
-                          {item.tags.split(',').map((x) => (
-                            <Tag key={x}>{x}</Tag>
-                          ))}
-                        </div>
-                      </Flex>
-                    </Flex>
-                  </Col>
-                  <Col span={12} className={styles.factoryOperationWrapper}>
-                    <Space size={'middle'}>
-                      <Button onClick={handleApiKeyClick(item.name)}>
-                        API-Key
-                        <SettingOutlined />
-                      </Button>
-                      <Button>
-                        Show more models
-                        <SettingOutlined />
-                      </Button>
-                    </Space>
-                  </Col>
-                </Row>
-                <List
-                  size="small"
-                  dataSource={item.llm}
-                  renderItem={(item) => <List.Item>{item.name}</List.Item>}
-                />
-              </Card>
-            </List.Item>
+            <ModelCard item={item} clickApiKey={handleApiKeyClick}></ModelCard>
           )}
         />
         <p>Models to be added</p>
@@ -101,18 +139,18 @@ const UserSettingModel = () => {
           dataSource={factoryList}
           renderItem={(item) => (
             <List.Item>
-              <Card>
+              <Card className={styles.toBeAddedCard}>
                 <Flex vertical gap={'large'}>
                   <Avatar shape="square" size="large" src={item.logo} />
                   <Flex vertical gap={'middle'}>
                     <b>{item.name}</b>
-                    <Space wrap>
-                      {item.tags.split(',').map((x) => (
-                        <Tag key={x}>{x}</Tag>
-                      ))}
-                    </Space>
+                    <Text>{item.tags}</Text>
                   </Flex>
                 </Flex>
+                <Divider></Divider>
+                <Button type="link" onClick={handleAddModel(item.name)}>
+                  Add the model
+                </Button>
               </Card>
             </List.Item>
           )}

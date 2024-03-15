@@ -85,19 +85,20 @@ export const useFetchLlmFactoryListOnMount = () => {
   return list;
 };
 
+export type LlmItem = { name: string; logo: string } & IMyLlmValue;
+
 export const useFetchMyLlmListOnMount = () => {
   const dispatch = useDispatch();
   const llmList = useSelectMyLlmList();
   const factoryList = useSelectLlmFactoryList();
 
-  const list: Array<{ name: string; logo: string } & IMyLlmValue> =
-    useMemo(() => {
-      return Object.entries(llmList).map(([key, value]) => ({
-        name: key,
-        logo: factoryList.find((x) => x.name === key)?.logo ?? '',
-        ...value,
-      }));
-    }, [llmList, factoryList]);
+  const list: Array<LlmItem> = useMemo(() => {
+    return Object.entries(llmList).map(([key, value]) => ({
+      name: key,
+      logo: factoryList.find((x) => x.name === key)?.logo ?? '',
+      ...value,
+    }));
+  }, [llmList, factoryList]);
 
   const fetchMyLlmList = useCallback(() => {
     dispatch({

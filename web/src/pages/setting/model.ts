@@ -142,7 +142,7 @@ const model: DvaModel<SettingModelState> = {
       }
     },
     *my_llm({ payload = {} }, { call, put }) {
-      const { data } = yield call(userService.my_llm, payload);
+      const { data } = yield call(userService.my_llm);
       const { retcode, data: res } = data;
       if (retcode === 0) {
         yield put({
@@ -158,6 +158,8 @@ const model: DvaModel<SettingModelState> = {
       const { retcode } = data;
       if (retcode === 0) {
         message.success('Modified!');
+        yield put({ type: 'my_llm' });
+        yield put({ type: 'factories_list' });
         yield put({
           type: 'updateState',
         });

@@ -20,7 +20,7 @@ export const useSubmitApiKey = () => {
     async (apiKey: string) => {
       const ret = await saveApiKey({ ...savingParams, api_key: apiKey });
 
-      if (ret.retcode === 0) {
+      if (ret === 0) {
         hideApiKeyModal();
       }
     },
