@@ -53,7 +53,7 @@ class TenantLLMService(CommonService):
             cls.model.used_tokens
         ]
         objs = cls.model.select(*fields).join(LLMFactories, on=(cls.model.llm_factory == LLMFactories.name)).where(
-            cls.model.tenant_id == tenant_id).dicts()
+            cls.model.tenant_id == tenant_id, ~cls.model.api_key.is_null()).dicts()
 
         return list(objs)
 
