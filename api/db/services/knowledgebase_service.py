@@ -78,7 +78,7 @@ class KnowledgebaseService(CommonService):
                 if isinstance(v, dict):
                     assert isinstance(old[k], dict)
                     dfs_update(old[k], v)
-                if isinstance(v, list):
+                elif isinstance(v, list):
                     assert isinstance(old[k], list)
                     old[k] = list(set(old[k]+v))
                 else: old[k] = v

@@ -94,7 +94,7 @@ def init_llm_factory():
              "name": "Local",
              "logo": "",
              "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-            "status": "0",
+            "status": "1",
         },{
             "name": "Moonshot",
              "logo": "",

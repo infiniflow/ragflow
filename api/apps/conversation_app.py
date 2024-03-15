@@ -309,6 +309,7 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
     # compose markdown table
     clmns = "|"+"|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], tbl["columns"][i]["name"])) for i in clmn_idx]) + ("|原文|" if docid_idx and docid_idx else "|")
     line = "|"+"|".join(["------" for _ in range(len(clmn_idx))]) + ("|------|" if docid_idx and docid_idx else "")
+    line = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}\|", "|", line)
     rows = ["|"+"|".join([rmSpace(str(r[i])) for i in clmn_idx]).replace("None", " ") + "|" for r in tbl["rows"]]
     if not docid_idx or not docnm_idx:
         chat_logger.warning("SQL missing field: " + sql)
