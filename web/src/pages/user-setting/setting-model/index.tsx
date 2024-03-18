@@ -11,6 +11,8 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
+  CollapseProps,
   Divider,
   Flex,
   List,
@@ -114,16 +116,11 @@ const UserSettingModel = () => {
     handleApiKeyClick(llmFactory);
   };
 
-  return (
-    <>
-      <section className={styles.modelWrapper}>
-        <SettingTitle
-          title="Model Setting"
-          description="Manage your account settings and preferences here."
-          showRightButton
-          clickButton={showSystemSettingModal}
-        ></SettingTitle>
-        <Divider></Divider>
+  const items: CollapseProps['items'] = [
+    {
+      key: '1',
+      label: 'Added models',
+      children: (
         <List
           grid={{ gutter: 16, column: 1 }}
           dataSource={llmList}
@@ -131,10 +128,15 @@ const UserSettingModel = () => {
             <ModelCard item={item} clickApiKey={handleApiKeyClick}></ModelCard>
           )}
         />
-        <p>Models to be added</p>
+      ),
+    },
+    {
+      key: '2',
+      label: 'Models to be added',
+      children: (
         <List
           grid={{
-            gutter: 16,
+            gutter: 24,
             xs: 1,
             sm: 2,
             md: 3,
@@ -161,6 +163,21 @@ const UserSettingModel = () => {
             </List.Item>
           )}
         />
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <section className={styles.modelWrapper}>
+        <SettingTitle
+          title="Model Setting"
+          description="Manage your account settings and preferences here."
+          showRightButton
+          clickButton={showSystemSettingModal}
+        ></SettingTitle>
+        <Divider></Divider>
+        <Collapse defaultActiveKey={['1']} ghost items={items} />
       </section>
       <ApiKeyModal
         visible={apiKeyVisible}
