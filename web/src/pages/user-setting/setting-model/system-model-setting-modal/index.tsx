@@ -1,4 +1,5 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
+import { LlmModelType } from '@/constants/knowledge';
 import { ISystemModelSettingSavingParams } from '@/hooks/llmHooks';
 import { Form, Modal, Select } from 'antd';
 import { useEffect } from 'react';
@@ -18,7 +19,8 @@ const SystemModelSettingModal = ({
   loading,
 }: IProps) => {
   const [form] = Form.useForm();
-  const initialValues = useFetchSystemModelSettingOnMount();
+  const { systemSetting: initialValues, allOptions } =
+    useFetchSystemModelSettingOnMount(visible);
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -33,7 +35,7 @@ const SystemModelSettingModal = ({
 
   return (
     <Modal
-      title="Basic Modal"
+      title="System Model Settings"
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
@@ -41,17 +43,17 @@ const SystemModelSettingModal = ({
       confirmLoading={loading}
     >
       <Form form={form} onValuesChange={onFormLayoutChange} layout={'vertical'}>
-        <Form.Item label="sequence2txt model" name="asr_id">
-          <Select options={[{ value: 'sample', label: <span>sample</span> }]} />
+        <Form.Item label="Sequence2txt model" name="asr_id">
+          <Select options={allOptions[LlmModelType.Speech2text]} />
         </Form.Item>
         <Form.Item label="Embedding model" name="embd_id">
-          <Select options={[{ value: 'sample', label: <span>sample</span> }]} />
+          <Select options={allOptions[LlmModelType.Embedding]} />
         </Form.Item>
-        <Form.Item label="img2txt_id model" name="img2txt_id">
-          <Select options={[{ value: 'sample', label: <span>sample</span> }]} />
+        <Form.Item label="Img2txt model" name="img2txt_id">
+          <Select options={allOptions[LlmModelType.Image2text]} />
         </Form.Item>
         <Form.Item label="Chat model" name="llm_id">
-          <Select options={[{ value: 'sample', label: <span>sample</span> }]} />
+          <Select options={allOptions[LlmModelType.Chat]} />
         </Form.Item>
       </Form>
     </Modal>

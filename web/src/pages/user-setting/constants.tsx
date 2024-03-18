@@ -1,16 +1,16 @@
+import { ReactComponent as LogoutIcon } from '@/assets/svg/logout.svg';
+import { ReactComponent as ModelIcon } from '@/assets/svg/model-providers.svg';
+import { ReactComponent as PasswordIcon } from '@/assets/svg/password.svg';
+import { ReactComponent as ProfileIcon } from '@/assets/svg/profile.svg';
+import { ReactComponent as TeamIcon } from '@/assets/svg/team.svg';
 import { UserSettingRouteKey } from '@/constants/setting';
-import {
-  ContainerOutlined,
-  DesktopOutlined,
-  PieChartOutlined,
-} from '@ant-design/icons';
 
 export const UserSettingIconMap = {
-  [UserSettingRouteKey.Profile]: <PieChartOutlined />,
-  [UserSettingRouteKey.Password]: <DesktopOutlined />,
-  [UserSettingRouteKey.Model]: <ContainerOutlined />,
-  [UserSettingRouteKey.Team]: <ContainerOutlined />,
-  [UserSettingRouteKey.Logout]: <ContainerOutlined />,
+  [UserSettingRouteKey.Profile]: <ProfileIcon />,
+  [UserSettingRouteKey.Password]: <PasswordIcon />,
+  [UserSettingRouteKey.Model]: <ModelIcon />,
+  [UserSettingRouteKey.Team]: <TeamIcon />,
+  [UserSettingRouteKey.Logout]: <LogoutIcon />,
 };
 
 export * from '@/constants/setting';

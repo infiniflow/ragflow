@@ -7,7 +7,10 @@ import {
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
-export const useFetchLlmList = (modelType?: LlmModelType) => {
+export const useFetchLlmList = (
+  isOnMountFetching: boolean = true,
+  modelType?: LlmModelType,
+) => {
   const dispatch = useDispatch();
 
   const fetchLlmList = useCallback(() => {
@@ -18,14 +21,24 @@ export const useFetchLlmList = (modelType?: LlmModelType) => {
   }, [dispatch, modelType]);
 
   useEffect(() => {
-    fetchLlmList();
-  }, [fetchLlmList]);
+    if (isOnMountFetching) {
+      fetchLlmList();
+    }
+  }, [fetchLlmList, isOnMountFetching]);
+
+  return fetchLlmList;
 };
 
-export const useSelectLlmOptions = () => {
+export const useSelectLlmInfo = () => {
   const llmInfo: IThirdOAIModelCollection = useSelector(
     (state: any) => state.settingModel.llmInfo,
   );
+
+  return llmInfo;
+};
+
+export const useSelectLlmOptions = () => {
+  const llmInfo: IThirdOAIModelCollection = useSelectLlmInfo();
 
   const embeddingModelOptions = useMemo(() => {
     return Object.entries(llmInfo).map(([key, value]) => {
@@ -41,6 +54,38 @@ export const useSelectLlmOptions = () => {
   }, [llmInfo]);
 
   return embeddingModelOptions;
+};
+
+export const useSelectLlmOptionsByModelType = () => {
+  const llmInfo: IThirdOAIModelCollection = useSelectLlmInfo();
+
+  const groupOptionsByModelType = (modelType: LlmModelType) => {
+    return Object.entries(llmInfo)
+      .filter(([, value]) =>
+        modelType ? value.some((x) => x.model_type === modelType) : true,
+      )
+      .map(([key, value]) => {
+        return {
+          label: key,
+          options: value
+            .filter((x) => (modelType ? x.model_type === modelType : true))
+            .map((x) => ({
+              label: x.llm_name,
+              value: x.llm_name,
+              disabled: !x.available,
+            })),
+        };
+      });
+  };
+
+  return {
+    [LlmModelType.Chat]: groupOptionsByModelType(LlmModelType.Chat),
+    [LlmModelType.Embedding]: groupOptionsByModelType(LlmModelType.Embedding),
+    [LlmModelType.Image2text]: groupOptionsByModelType(LlmModelType.Image2text),
+    [LlmModelType.Speech2text]: groupOptionsByModelType(
+      LlmModelType.Speech2text,
+    ),
+  };
 };
 
 export const useSelectLlmFactoryList = () => {
