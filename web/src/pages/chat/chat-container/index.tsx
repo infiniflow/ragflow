@@ -24,6 +24,7 @@ import classNames from 'classnames';
 import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import remarkGfm from 'remark-gfm';
 import { visitParents } from 'unist-util-visit-parents';
 import {
@@ -42,7 +43,11 @@ const getChunkIndex = (match: string) => Number(match.slice(2, -2));
 const rehypeWrapReference = () => {
   return function wrapTextTransform(tree: any) {
     visitParents(tree, 'text', (node, ancestors) => {
-      if (ancestors.at(-1).tagName !== 'custom-typography') {
+      const latestAncestor = ancestors.at(-1);
+      if (
+        latestAncestor.tagName !== 'custom-typography' &&
+        latestAncestor.tagName !== 'code'
+      ) {
         node.type = 'element';
         node.tagName = 'custom-typography';
         node.properties = {};
@@ -187,6 +192,23 @@ const MessageItem = ({
                       }: {
                         children: string;
                       }) => renderReference(children),
+                      code(props: any) {
+                        const { children, className, node, ...rest } = props;
+                        const match = /language-(\w+)/.exec(className || '');
+                        return match ? (
+                          <SyntaxHighlighter
+                            {...rest}
+                            PreTag="div"
+                            language={match[1]}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code {...rest} className={className}>
+                            {children}
+                          </code>
+                        );
+                      },
                     } as any
                   }
                 >
@@ -246,7 +268,7 @@ const ChatContainer = () => {
 
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
     const value = e.target.value.trim();
-    const nextValue = value.replaceAll('\\n', '\n');
+    const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
     setValue(nextValue);
   };
 
