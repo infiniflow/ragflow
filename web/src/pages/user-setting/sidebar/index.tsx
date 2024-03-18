@@ -10,6 +10,7 @@ import {
   UserSettingRouteMap,
 } from '../constants';
 
+import { useLogout } from '@/hooks/userSettingHook';
 import styles from './index.less';
 
 type MenuItem = Required<MenuProps>['items'][number];
@@ -37,9 +38,14 @@ const items: MenuItem[] = Object.values(UserSettingRouteKey).map((value) =>
 const SideBar = () => {
   const navigate = useNavigate();
   const pathName = useSecondPathName();
+  const logout = useLogout();
 
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
-    navigate(`/${UserSettingBaseKey}/${key}`);
+    if (key === UserSettingRouteKey.Logout) {
+      logout();
+    } else {
+      navigate(`/${UserSettingBaseKey}/${key}`);
+    }
   };
 
   const selectedKeys = useMemo(() => {

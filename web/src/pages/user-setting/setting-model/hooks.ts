@@ -5,13 +5,14 @@ import {
   useFetchLlmList,
   useSaveApiKey,
   useSaveTenantInfo,
+  useSelectLlmOptionsByModelType,
 } from '@/hooks/llmHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import {
   useFetchTenantInfo,
   useSelectTenantInfo,
 } from '@/hooks/userSettingHook';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 type SavingParamsState = Omit<IApiKeySavingParams, 'api_key'>;
 
@@ -97,10 +98,18 @@ export const useSubmitSystemModelSetting = () => {
   };
 };
 
-export const useFetchSystemModelSettingOnMount = () => {
+export const useFetchSystemModelSettingOnMount = (visible: boolean) => {
   const systemSetting = useSelectTenantInfo();
-  useFetchLlmList();
-  useFetchTenantInfo();
+  const allOptions = useSelectLlmOptionsByModelType();
+  const fetchLlmList = useFetchLlmList();
+  const fetchTenantInfo = useFetchTenantInfo();
 
-  return systemSetting;
+  useEffect(() => {
+    if (visible) {
+      fetchLlmList();
+      fetchTenantInfo();
+    }
+  }, [fetchLlmList, fetchTenantInfo, visible]);
+
+  return { systemSetting, allOptions };
 };

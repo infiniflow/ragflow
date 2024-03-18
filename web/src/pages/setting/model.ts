@@ -11,9 +11,6 @@ import { Nullable } from 'typings';
 import { DvaModel } from 'umi';
 
 export interface SettingModelState {
-  isShowPSwModal: boolean;
-  isShowTntModal: boolean;
-  isShowSSModal: boolean;
   llm_factory: string;
   tenantIfo: Nullable<ITenantInfo>;
   llmInfo: IThirdAiModelCollection;
@@ -25,9 +22,6 @@ export interface SettingModelState {
 const model: DvaModel<SettingModelState> = {
   namespace: 'settingModel',
   state: {
-    isShowPSwModal: false,
-    isShowTntModal: false,
-    isShowSSModal: false,
     llm_factory: '',
     tenantIfo: null,
     llmInfo: {},
@@ -55,12 +49,6 @@ const model: DvaModel<SettingModelState> = {
       const { retcode } = data;
       if (retcode === 0) {
         message.success('Modified!');
-        yield put({
-          type: 'updateState',
-          payload: {
-            isShowPSwModal: false,
-          },
-        });
         yield put({
           type: 'getUserInfo',
         });
@@ -101,15 +89,8 @@ const model: DvaModel<SettingModelState> = {
     *set_tenant_info({ payload = {} }, { call, put }) {
       const { data } = yield call(userService.set_tenant_info, payload);
       const { retcode } = data;
-      // llm_id 对应chat_id
-      // asr_id 对应speech2txt
       if (retcode === 0) {
-        yield put({
-          type: 'updateState',
-          payload: {
-            isShowSSModal: false,
-          },
-        });
+        message.success('Modified!');
         yield put({
           type: 'getTenantInfo',
         });
