@@ -5,7 +5,12 @@ import {
   useFetchLlmFactoryListOnMount,
   useFetchMyLlmListOnMount,
 } from '@/hooks/llmHooks';
-import { SettingOutlined } from '@ant-design/icons';
+import { ReactComponent as MoonshotIcon } from '@/icons/moonshot.svg';
+import { ReactComponent as OpenAiIcon } from '@/icons/openai.svg';
+import { ReactComponent as TongYiIcon } from '@/icons/tongyi.svg';
+import { ReactComponent as WenXinIcon } from '@/icons/wenxin.svg';
+import { ReactComponent as ZhiPuIcon } from '@/icons/zhipu.svg';
+import { SettingOutlined, UserOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -27,6 +32,23 @@ import { useSubmitApiKey, useSubmitSystemModelSetting } from './hooks';
 import SystemModelSettingModal from './system-model-setting-modal';
 
 import styles from './index.less';
+
+const IconMap = {
+  通义千问: TongYiIcon,
+  Moonshot: MoonshotIcon,
+  OpenAI: OpenAiIcon,
+  智谱AI: ZhiPuIcon,
+  文心一言: WenXinIcon,
+};
+
+const LlmIcon = ({ name }: { name: string }) => {
+  const Icon = IconMap[name as keyof typeof IconMap];
+  return Icon ? (
+    <Icon width={48} height={48}></Icon>
+  ) : (
+    <Avatar shape="square" size="large" icon={<UserOutlined />} />
+  );
+};
 
 const { Text } = Typography;
 interface IModelCardProps {
@@ -51,7 +73,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
         <Row align={'middle'}>
           <Col span={12}>
             <Flex gap={'middle'} align="center">
-              <Avatar shape="square" size="large" src={item.logo} />
+              <LlmIcon name={item.name} />
               <Flex vertical gap={'small'}>
                 <b>{item.name}</b>
                 <Text>{item.tags}</Text>
@@ -149,7 +171,7 @@ const UserSettingModel = () => {
             <List.Item>
               <Card className={styles.toBeAddedCard}>
                 <Flex vertical gap={'large'}>
-                  <Avatar shape="square" size="large" src={item.logo} />
+                  <LlmIcon name={item.name} />
                   <Flex vertical gap={'middle'}>
                     <b>{item.name}</b>
                     <Text>{item.tags}</Text>
