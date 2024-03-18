@@ -1,7 +1,8 @@
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { IUserInfo } from '@/interfaces/database/userSetting';
+import authorizationUtil from '@/utils/authorizationUtil';
 import { useCallback, useEffect, useMemo } from 'react';
-import { useDispatch, useSelector } from 'umi';
+import { history, useDispatch, useSelector } from 'umi';
 
 export const useFetchUserInfo = () => {
   const dispatch = useDispatch();
@@ -68,8 +69,12 @@ export const useSelectParserList = (): Array<{
 export const useLogout = () => {
   const dispatch = useDispatch(); // TODO: clear redux state
 
-  const logout = useCallback((): number => {
-    return dispatch<any>({ type: 'loginModel/logout' });
+  const logout = useCallback(async () => {
+    const retcode = await dispatch<any>({ type: 'loginModel/logout' });
+    if (retcode === 0) {
+      authorizationUtil.removeAll();
+      history.push('/login');
+    }
   }, [dispatch]);
 
   return logout;
