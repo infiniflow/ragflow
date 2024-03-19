@@ -107,7 +107,7 @@ def list():
         llms = LLMService.get_all()
         llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value]
         for m in llms:
-            m["available"] = m["fid"] in facts
+            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding"
 
         res = {}
         for m in llms:
