@@ -106,7 +106,9 @@ def github_callback():
             stat_logger.exception(e)
             return redirect("/?error=%s"%str(e))
     user = users[0]
+    user.access_token = get_uuid()
     login_user(user)
+    user.save()
     return redirect("/?auth=%s" % user.get_id())
 
 

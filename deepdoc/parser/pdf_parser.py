@@ -639,7 +639,7 @@ class HuParser:
                 mink = ""
                 minv = 1000000000
                 for k, bxs in tbls.items():
-                    for b in bxs[:10]:
+                    for b in bxs:
                         if b.get("layout_type", "").find("caption") >= 0:
                             continue
                         y_dis = self._y_dis(c, b)
