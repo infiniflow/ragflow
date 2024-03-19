@@ -767,4 +767,10 @@ export const useClickDrawer = () => {
   };
 };
 
+export const useSelectDialogListLoading = () => {
+  return useOneNamespaceEffectsLoading('chatModel', ['listDialog']);
+};
+export const useSelectConversationListLoading = () => {
+  return useOneNamespaceEffectsLoading('chatModel', ['listConversation']);
+};
 //#endregion

@@ -1,19 +1,4 @@
-import {
-  useFetchKnowledgeBaseConfiguration,
-  useKnowledgeBaseId,
-} from '@/hooks/knowledgeHook';
-import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import {
-  useFetchTenantInfo,
-  useSelectParserList,
-} from '@/hooks/userSettingHook';
-import { IKnowledge } from '@/interfaces/database/knowledge';
-import {
-  getBase64FromUploadFileList,
-  getUploadFileListFromBase64,
-  normFile,
-} from '@/utils/fileUtil';
+import { normFile } from '@/utils/fileUtil';
 import { PlusOutlined } from '@ant-design/icons';
 import {
   Button,
@@ -26,14 +11,14 @@ import {
   Select,
   Slider,
   Space,
+  Spin,
   Typography,
   Upload,
-  UploadFile,
 } from 'antd';
-import pick from 'lodash/pick';
-import { useEffect } from 'react';
-import { useDispatch, useSelector } from 'umi';
-import { LlmModelType } from '../../constant';
+import {
+  useFetchKnowledgeConfigurationOnMount,
+  useSubmitKnowledgeConfiguration,
+} from './hooks';
 
 import styles from './index.less';
 
@@ -41,205 +26,165 @@ const { Title } = Typography;
 const { Option } = Select;
 
 const Configuration = () => {
-  const [form] = Form.useForm();
-  const dispatch = useDispatch();
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const loading = useOneNamespaceEffectsLoading('kSModel', ['updateKb']);
-
-  const knowledgeDetails: IKnowledge = useSelector(
-    (state: any) => state.kSModel.knowledgeDetails,
-  );
-
-  const parserList = useSelectParserList();
-
-  const embeddingModelOptions = useSelectLlmOptions();
-
-  const onFinish = async (values: any) => {
-    const avatar = await getBase64FromUploadFileList(values.avatar);
-    dispatch({
-      type: 'kSModel/updateKb',
-      payload: {
-        ...values,
-        avatar,
-        kb_id: knowledgeBaseId,
-      },
-    });
-  };
+  const { submitKnowledgeConfiguration, submitLoading } =
+    useSubmitKnowledgeConfiguration();
+  const { form, parserList, embeddingModelOptions, loading } =
+    useFetchKnowledgeConfigurationOnMount();
 
   const onFinishFailed = (errorInfo: any) => {
     console.log('Failed:', errorInfo);
   };
-
-  useEffect(() => {
-    const fileList: UploadFile[] = getUploadFileListFromBase64(
-      knowledgeDetails.avatar,
-    );
-
-    form.setFieldsValue({
-      ...pick(knowledgeDetails, [
-        'description',
-        'name',
-        'permission',
-        'embd_id',
-        'parser_id',
-        'language',
-        'parser_config.chunk_token_num',
-      ]),
-      avatar: fileList,
-    });
-  }, [form, knowledgeDetails]);
-
-  useFetchTenantInfo();
-  useFetchKnowledgeBaseConfiguration();
-
-  useFetchLlmList(LlmModelType.Embedding);
 
   return (
     <div className={styles.configurationWrapper}>
       <Title level={5}>Configuration</Title>
       <p>Update your knowledge base details especially parsing method here.</p>
       <Divider></Divider>
-      <Form
-        form={form}
-        name="validateOnly"
-        layout="vertical"
-        autoComplete="off"
-        onFinish={onFinish}
-        onFinishFailed={onFinishFailed}
-      >
-        <Form.Item
-          name="name"
-          label="Knowledge base name"
-          rules={[{ required: true }]}
+      <Spin spinning={loading}>
+        <Form
+          form={form}
+          name="validateOnly"
+          layout="vertical"
+          autoComplete="off"
+          onFinish={submitKnowledgeConfiguration}
+          onFinishFailed={onFinishFailed}
         >
-          <Input />
-        </Form.Item>
-        <Form.Item
-          name="avatar"
-          label="Knowledge base photo"
-          valuePropName="fileList"
-          getValueFromEvent={normFile}
-        >
-          <Upload
-            listType="picture-card"
-            maxCount={1}
-            beforeUpload={() => false}
-            showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
+          <Form.Item
+            name="name"
+            label="Knowledge base name"
+            rules={[{ required: true }]}
           >
-            <button style={{ border: 0, background: 'none' }} type="button">
-              <PlusOutlined />
-              <div style={{ marginTop: 8 }}>Upload</div>
-            </button>
-          </Upload>
-        </Form.Item>
-        <Form.Item name="description" label="Description">
-          <Input />
-        </Form.Item>
-        <Form.Item
-          label="Language"
-          name="language"
-          initialValue={'Chinese'}
-          rules={[{ required: true, message: 'Please input your language!' }]}
-        >
-          <Select placeholder="select your language">
-            <Option value="English">English</Option>
-            <Option value="Chinese">Chinese</Option>
-          </Select>
-        </Form.Item>
-        <Form.Item
-          name="permission"
-          label="Permissions"
-          rules={[{ required: true }]}
-        >
-          <Radio.Group>
-            <Radio value="me">Only me</Radio>
-            <Radio value="team">Team</Radio>
-          </Radio.Group>
-        </Form.Item>
-        <Form.Item
-          name="embd_id"
-          label="Embedding Model"
-          rules={[{ required: true }]}
-          tooltip="xx"
-        >
-          <Select
-            placeholder="Please select a country"
-            options={embeddingModelOptions}
-          ></Select>
-        </Form.Item>
-        <Form.Item
-          name="parser_id"
-          label="Knowledge base category"
-          tooltip="xx"
-          rules={[{ required: true }]}
-        >
-          <Select placeholder="Please select a country">
-            {parserList.map((x) => (
-              <Option value={x.value} key={x.value}>
-                {x.label}
-              </Option>
-            ))}
-          </Select>
-        </Form.Item>
-        <Form.Item noStyle dependencies={['parser_id']}>
-          {({ getFieldValue }) => {
-            const parserId = getFieldValue('parser_id');
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="avatar"
+            label="Knowledge base photo"
+            valuePropName="fileList"
+            getValueFromEvent={normFile}
+          >
+            <Upload
+              listType="picture-card"
+              maxCount={1}
+              beforeUpload={() => false}
+              showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
+            >
+              <button style={{ border: 0, background: 'none' }} type="button">
+                <PlusOutlined />
+                <div style={{ marginTop: 8 }}>Upload</div>
+              </button>
+            </Upload>
+          </Form.Item>
+          <Form.Item name="description" label="Description">
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label="Language"
+            name="language"
+            initialValue={'Chinese'}
+            rules={[{ required: true, message: 'Please input your language!' }]}
+          >
+            <Select placeholder="select your language">
+              <Option value="English">English</Option>
+              <Option value="Chinese">Chinese</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="permission"
+            label="Permissions"
+            rules={[{ required: true }]}
+          >
+            <Radio.Group>
+              <Radio value="me">Only me</Radio>
+              <Radio value="team">Team</Radio>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item
+            name="embd_id"
+            label="Embedding Model"
+            rules={[{ required: true }]}
+            tooltip="xx"
+          >
+            <Select
+              placeholder="Please select a country"
+              options={embeddingModelOptions}
+            ></Select>
+          </Form.Item>
+          <Form.Item
+            name="parser_id"
+            label="Knowledge base category"
+            tooltip="xx"
+            rules={[{ required: true }]}
+          >
+            <Select placeholder="Please select a country">
+              {parserList.map((x) => (
+                <Option value={x.value} key={x.value}>
+                  {x.label}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item noStyle dependencies={['parser_id']}>
+            {({ getFieldValue }) => {
+              const parserId = getFieldValue('parser_id');
 
-            if (parserId === 'naive') {
-              return (
-                <Form.Item label="Chunk token number" tooltip="xxx">
-                  <Flex gap={20} align="center">
-                    <Flex flex={1}>
+              if (parserId === 'naive') {
+                return (
+                  <Form.Item label="Chunk token number" tooltip="xxx">
+                    <Flex gap={20} align="center">
+                      <Flex flex={1}>
+                        <Form.Item
+                          name={['parser_config', 'chunk_token_num']}
+                          noStyle
+                          initialValue={128}
+                          rules={[
+                            { required: true, message: 'Province is required' },
+                          ]}
+                        >
+                          <Slider
+                            className={styles.variableSlider}
+                            max={2048}
+                          />
+                        </Form.Item>
+                      </Flex>
                       <Form.Item
                         name={['parser_config', 'chunk_token_num']}
                         noStyle
-                        initialValue={128}
                         rules={[
-                          { required: true, message: 'Province is required' },
+                          { required: true, message: 'Street is required' },
                         ]}
                       >
-                        <Slider className={styles.variableSlider} max={2048} />
+                        <InputNumber
+                          className={styles.sliderInputNumber}
+                          max={2048}
+                          min={0}
+                        />
                       </Form.Item>
                     </Flex>
-                    <Form.Item
-                      name={['parser_config', 'chunk_token_num']}
-                      noStyle
-                      initialValue={128}
-                      rules={[
-                        { required: true, message: 'Street is required' },
-                      ]}
-                    >
-                      <InputNumber
-                        className={styles.sliderInputNumber}
-                        max={2048}
-                        min={0}
-                      />
-                    </Form.Item>
-                  </Flex>
-                </Form.Item>
-              );
-            }
-            return null;
-          }}
-        </Form.Item>
-        <Form.Item>
-          <div className={styles.buttonWrapper}>
-            <Space>
-              <Button htmlType="reset" size={'middle'}>
-                Cancel
-              </Button>
-              <Button
-                htmlType="submit"
-                type="primary"
-                size={'middle'}
-                loading={loading}
-              >
-                Save
-              </Button>
-            </Space>
-          </div>
-        </Form.Item>
-      </Form>
+                  </Form.Item>
+                );
+              }
+              return null;
+            }}
+          </Form.Item>
+          <Form.Item>
+            <div className={styles.buttonWrapper}>
+              <Space>
+                <Button htmlType="reset" size={'middle'}>
+                  Cancel
+                </Button>
+                <Button
+                  htmlType="submit"
+                  type="primary"
+                  size={'middle'}
+                  loading={submitLoading}
+                >
+                  Save
+                </Button>
+              </Space>
+            </div>
+          </Form.Item>
+        </Form>
+      </Spin>
     </div>
   );
 };

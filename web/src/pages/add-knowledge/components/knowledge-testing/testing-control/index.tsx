@@ -37,9 +37,9 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
 
   return (
     <section className={styles.testingControlWrapper}>
-      <p>
+      <div>
         <b>Retrieval testing</b>
-      </p>
+      </div>
       <p>Final step! After success, leave the rest to Infiniflow AI.</p>
       <Divider></Divider>
       <section>
@@ -48,8 +48,6 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
           layout="vertical"
           form={form}
           initialValues={{
-            similarity_threshold: 0.2,
-            vector_similarity_weight: 0.3,
             top_k: 1024,
           }}
         >
@@ -81,12 +79,12 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
         </Form>
       </section>
       <section>
-        <p className={styles.historyTitle}>
+        <div className={styles.historyTitle}>
           <Space size={'middle'}>
             <HistoryOutlined className={styles.historyIcon} />
             <b>Test history</b>
           </Space>
-        </p>
+        </div>
         <Space
           direction="vertical"
           size={'middle'}

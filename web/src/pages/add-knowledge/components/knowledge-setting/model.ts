@@ -34,7 +34,7 @@ const model: DvaModel<KSModelState> = {
       const { data } = yield call(kbService.createKb, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Created successfully!');
+        message.success('Created!');
       }
       return data;
     },
@@ -43,7 +43,7 @@ const model: DvaModel<KSModelState> = {
       const { retcode } = data;
       if (retcode === 0) {
         yield put({ type: 'getKbDetail', payload: { kb_id: payload.kb_id } });
-        message.success('Updated successfully!');
+        message.success('Updated!');
       }
     },
     *getKbDetail({ payload = {} }, { call, put }) {

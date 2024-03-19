@@ -1,5 +1,4 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
-import { useSetModalState } from '@/hooks/commonHooks';
 import { DeleteOutlined, EditOutlined, FormOutlined } from '@ant-design/icons';
 import {
   Avatar,
@@ -10,6 +9,7 @@ import {
   Flex,
   MenuProps,
   Space,
+  Spin,
   Tag,
 } from 'antd';
 import { MenuItemProps } from 'antd/lib/menu/MenuItem';
@@ -29,8 +29,9 @@ import {
   useRemoveDialog,
   useRenameConversation,
   useSelectConversationList,
+  useSelectConversationListLoading,
+  useSelectDialogListLoading,
   useSelectFirstDialogOnMount,
-  useSetCurrentDialog,
 } from './hooks';
 
 import RenameModal from '@/components/rename-modal';
@@ -38,8 +39,6 @@ import styles from './index.less';
 
 const Chat = () => {
   const dialogList = useSelectFirstDialogOnMount();
-  const { visible, hideModal, showModal } = useSetModalState();
-  const { setCurrentDialog, currentDialog } = useSetCurrentDialog();
   const { onRemoveDialog } = useRemoveDialog();
   const { onRemoveConversation } = useRemoveConversation();
   const { handleClickDialog } = useClickDialogCard();
@@ -70,6 +69,8 @@ const Chat = () => {
     hideDialogEditModal,
     showDialogEditModal,
   } = useEditDialog();
+  const dialogLoading = useSelectDialogListLoading();
+  const conversationLoading = useSelectConversationListLoading();
 
   useFetchDialogOnMount(dialogId, true);
 
@@ -204,35 +205,39 @@ const Chat = () => {
           </Button>
           <Divider></Divider>
           <Flex className={styles.chatAppContent} vertical gap={10}>
-            {dialogList.map((x) => (
-              <Card
-                key={x.id}
-                hoverable
-                className={classNames(styles.chatAppCard, {
-                  [styles.chatAppCardSelected]: dialogId === x.id,
-                })}
-                onMouseEnter={handleAppCardEnter(x.id)}
-                onMouseLeave={handleItemLeave}
-                onClick={handleDialogCardClick(x.id)}
-              >
-                <Flex justify="space-between" align="center">
-                  <Space size={15}>
-                    <Avatar src={x.icon} shape={'square'} />
-                    <section>
-                      <b>{x.name}</b>
-                      <div>{x.description}</div>
-                    </section>
-                  </Space>
-                  {activated === x.id && (
-                    <section>
-                      <Dropdown menu={{ items: buildAppItems(x.id) }}>
-                        <ChatAppCube className={styles.cubeIcon}></ChatAppCube>
-                      </Dropdown>
-                    </section>
-                  )}
-                </Flex>
-              </Card>
-            ))}
+            <Spin spinning={dialogLoading}>
+              {dialogList.map((x) => (
+                <Card
+                  key={x.id}
+                  hoverable
+                  className={classNames(styles.chatAppCard, {
+                    [styles.chatAppCardSelected]: dialogId === x.id,
+                  })}
+                  onMouseEnter={handleAppCardEnter(x.id)}
+                  onMouseLeave={handleItemLeave}
+                  onClick={handleDialogCardClick(x.id)}
+                >
+                  <Flex justify="space-between" align="center">
+                    <Space size={15}>
+                      <Avatar src={x.icon} shape={'square'} />
+                      <section>
+                        <b>{x.name}</b>
+                        <div>{x.description}</div>
+                      </section>
+                    </Space>
+                    {activated === x.id && (
+                      <section>
+                        <Dropdown menu={{ items: buildAppItems(x.id) }}>
+                          <ChatAppCube
+                            className={styles.cubeIcon}
+                          ></ChatAppCube>
+                        </Dropdown>
+                      </section>
+                    )}
+                  </Flex>
+                </Card>
+              ))}
+            </Spin>
           </Flex>
         </Flex>
       </Flex>
@@ -254,29 +259,35 @@ const Chat = () => {
           </Flex>
           <Divider></Divider>
           <Flex vertical gap={10} className={styles.chatTitleContent}>
-            {conversationList.map((x) => (
-              <Card
-                key={x.id}
-                hoverable
-                onClick={handleConversationCardClick(x.id)}
-                onMouseEnter={handleConversationCardEnter(x.id)}
-                onMouseLeave={handleConversationItemLeave}
-                className={classNames(styles.chatTitleCard, {
-                  [styles.chatTitleCardSelected]: x.id === conversationId,
-                })}
-              >
-                <Flex justify="space-between" align="center">
-                  <div>{x.name}</div>
-                  {conversationActivated === x.id && x.id !== '' && (
-                    <section>
-                      <Dropdown menu={{ items: buildConversationItems(x.id) }}>
-                        <ChatAppCube className={styles.cubeIcon}></ChatAppCube>
-                      </Dropdown>
-                    </section>
-                  )}
-                </Flex>
-              </Card>
-            ))}
+            <Spin spinning={conversationLoading}>
+              {conversationList.map((x) => (
+                <Card
+                  key={x.id}
+                  hoverable
+                  onClick={handleConversationCardClick(x.id)}
+                  onMouseEnter={handleConversationCardEnter(x.id)}
+                  onMouseLeave={handleConversationItemLeave}
+                  className={classNames(styles.chatTitleCard, {
+                    [styles.chatTitleCardSelected]: x.id === conversationId,
+                  })}
+                >
+                  <Flex justify="space-between" align="center">
+                    <div>{x.name}</div>
+                    {conversationActivated === x.id && x.id !== '' && (
+                      <section>
+                        <Dropdown
+                          menu={{ items: buildConversationItems(x.id) }}
+                        >
+                          <ChatAppCube
+                            className={styles.cubeIcon}
+                          ></ChatAppCube>
+                        </Dropdown>
+                      </section>
+                    )}
+                  </Flex>
+                </Card>
+              ))}
+            </Spin>
           </Flex>
         </Flex>
       </Flex>

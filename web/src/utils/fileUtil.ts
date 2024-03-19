@@ -48,8 +48,14 @@ export const getUploadFileListFromBase64 = (avatar: string) => {
 
 export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
   if (Array.isArray(fileList) && fileList.length > 0) {
-    const base64 = await transformFile2Base64(fileList[0].originFileObj);
-    return base64;
+    const file = fileList[0];
+    const originFileObj = file.originFileObj;
+    if (originFileObj) {
+      const base64 = await transformFile2Base64(originFileObj);
+      return base64;
+    } else {
+      return file.thumbUrl;
+    }
     // return fileList[0].thumbUrl; TODO: Even JPG files will be converted to base64 parameters in png format
   }
 

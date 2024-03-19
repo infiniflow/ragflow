@@ -248,8 +248,12 @@ const ChatContainer = () => {
     addNewestConversation,
     removeLatestMessage,
   } = useFetchConversationOnMount();
-  const { handleInputChange, handlePressEnter, value, loading } =
-    useSendMessage(conversation, addNewestConversation, removeLatestMessage);
+  const {
+    handleInputChange,
+    handlePressEnter,
+    value,
+    loading: sendLoading,
+  } = useSendMessage(conversation, addNewestConversation, removeLatestMessage);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -285,7 +289,11 @@ const ChatContainer = () => {
           placeholder="Message Resume Assistant..."
           value={value}
           suffix={
-            <Button type="primary" onClick={handlePressEnter} loading={loading}>
+            <Button
+              type="primary"
+              onClick={handlePressEnter}
+              loading={sendLoading}
+            >
               Send
             </Button>
           }

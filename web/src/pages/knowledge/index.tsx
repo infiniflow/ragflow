@@ -1,16 +1,16 @@
 import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
 import ModalManager from '@/components/modal-manager';
+import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
+import { useSelectUserInfo } from '@/hooks/userSettingHook';
 import { PlusOutlined } from '@ant-design/icons';
-import { Button, Empty, Flex, Space } from 'antd';
+import { Button, Empty, Flex, Space, Spin } from 'antd';
 import KnowledgeCard from './knowledge-card';
 import KnowledgeCreatingModal from './knowledge-creating-modal';
 
-import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
-import { useSelectUserInfo } from '@/hooks/userSettingHook';
 import styles from './index.less';
 
 const Knowledge = () => {
-  const list = useFetchKnowledgeList();
+  const { list, loading } = useFetchKnowledgeList();
   const userInfo = useSelectUserInfo();
 
   return (
@@ -50,15 +50,23 @@ const Knowledge = () => {
           </ModalManager>
         </Space>
       </div>
-      <Flex gap={'large'} wrap="wrap" className={styles.knowledgeCardContainer}>
-        {list.length > 0 ? (
-          list.map((item: any) => {
-            return <KnowledgeCard item={item} key={item.name}></KnowledgeCard>;
-          })
-        ) : (
-          <Empty></Empty>
-        )}
-      </Flex>
+      <Spin spinning={loading}>
+        <Flex
+          gap={'large'}
+          wrap="wrap"
+          className={styles.knowledgeCardContainer}
+        >
+          {list.length > 0 ? (
+            list.map((item: any) => {
+              return (
+                <KnowledgeCard item={item} key={item.name}></KnowledgeCard>
+              );
+            })
+          ) : (
+            <Empty></Empty>
+          )}
+        </Flex>
+      </Spin>
     </Flex>
   );
 };
