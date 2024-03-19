@@ -62,9 +62,6 @@ class Pdf(PdfParser):
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
-        # merge chunks with the same bullets
-        self._merge_with_same_bullet()
-
         # set pivot using the most frequent type of title,
         # then merge between 2 pivot
         bull = bullets_category([b["text"] for b in self.boxes])
@@ -79,7 +76,7 @@ class Pdf(PdfParser):
 
         sections = [(b["text"], sec_ids[i], get_position(b)) for i, b in enumerate(self.boxes)]
         for (img, rows), poss in tbls:
-            sections.append((rows[0], -1, [(p[0]+1, p[1], p[2], p[3], p[4]) for p in poss]))
+            sections.append((rows if isinstance(rows, str) else rows[0], -1, [(p[0]+1-from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 
         chunks = []
         last_sid = -2
