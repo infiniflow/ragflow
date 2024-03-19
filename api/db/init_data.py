@@ -227,7 +227,7 @@ def init_llm_factory():
             "model_type": LLMType.CHAT.value
         }, {
             "fid": factory_infos[3]["name"],
-            "llm_name": "flag-enbedding",
+            "llm_name": "flag-embedding",
             "tags": "TEXT EMBEDDING,",
             "max_tokens": 128 * 1000,
             "model_type": LLMType.EMBEDDING.value
@@ -241,7 +241,7 @@ def init_llm_factory():
             "model_type": LLMType.CHAT.value
         }, {
             "fid": factory_infos[4]["name"],
-            "llm_name": "flag-enbedding",
+            "llm_name": "flag-embedding",
             "tags": "TEXT EMBEDDING,",
             "max_tokens": 128 * 1000,
             "model_type": LLMType.EMBEDDING.value

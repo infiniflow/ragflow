@@ -247,7 +247,7 @@ class HuParser:
                 b["SP"] = ii
 
     def __ocr(self, pagenum, img, chars, ZM=3):
-        bxs = self.ocr(np.array(img))
+        bxs = self.ocr.detect(np.array(img))
         if not bxs:
             self.boxes.append([])
             return
@@ -278,8 +278,10 @@ class HuParser:
 
         for b in bxs:
             if not b["text"]:
-                b["text"] = b["txt"]
+                left, right, top, bott = b["x0"]*ZM, b["x1"]*ZM, b["top"]*ZM, b["bottom"]*ZM
+                b["text"] = self.ocr.recognize(np.array(img), np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
             del b["txt"]
+        bxs = [b for b in bxs if b["text"]]
         if self.mean_height[-1] == 0:
             self.mean_height[-1] = np.median([b["bottom"] - b["top"]
                                               for b in bxs])
@@ -637,7 +639,7 @@ class HuParser:
                 mink = ""
                 minv = 1000000000
                 for k, bxs in tbls.items():
-                    for b in bxs[:10]:
+                    for b in bxs:
                         if b.get("layout_type", "").find("caption") >= 0:
                             continue
                         y_dis = self._y_dis(c, b)

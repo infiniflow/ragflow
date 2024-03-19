@@ -29,7 +29,7 @@ class EsQueryer:
         for t in arr:
             if not re.match(r"[a-zA-Z]+$", t):
                 e += 1
-        return e * 1. / len(arr) >= 0.8
+        return e * 1. / len(arr) >= 0.7
 
     @staticmethod
     def rmWWW(txt):
@@ -38,7 +38,7 @@ class EsQueryer:
             "",
             txt)
         return re.sub(
-            r"(what|who|how|which|where|why|(is|are|were|was) there) (is|are|were|was)*", "", txt, re.IGNORECASE)
+            r"(what|who|how|which|where|why|(is|are|were|was) there) (is|are|were|was|to)*", "", txt, re.IGNORECASE)
 
     def question(self, txt, tbl="qa", min_match="60%"):
         txt = re.sub(
@@ -50,16 +50,16 @@ class EsQueryer:
         txt = EsQueryer.rmWWW(txt)
 
         if not self.isChinese(txt):
-            tks = txt.split(" ")
-            q = []
+            tks = [t for t in txt.split(" ") if t.strip()]
+            q = tks
             for i in range(1, len(tks)):
-                q.append("\"%s %s\"~2" % (tks[i - 1], tks[i]))
+                q.append("\"%s %s\"^2" % (tks[i - 1], tks[i]))
             if not q:
                 q.append(txt)
             return Q("bool",
                      must=Q("query_string", fields=self.flds,
                             type="best_fields", query=" OR ".join(q),
-                            boost=1, minimum_should_match="60%")
+                            boost=1, minimum_should_match=min_match)
                      ), txt.split(" ")
 
         def needQieqie(tk):
@@ -147,7 +147,7 @@ class EsQueryer:
         atks = toDict(atks)
         btkss = [toDict(tks) for tks in btkss]
         tksim = [self.similarity(atks, btks) for btks in btkss]
-        return np.array(sims[0]) * vtweight + np.array(tksim) * tkweight, sims[0], tksim
+        return np.array(sims[0]) * vtweight + np.array(tksim) * tkweight, tksim, sims[0]
 
     def similarity(self, qtwt, dtwt):
         if isinstance(dtwt, type("")):

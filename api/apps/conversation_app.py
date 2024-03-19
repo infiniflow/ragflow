@@ -274,6 +274,8 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
         return retrievaler.sql_retrieval(sql, format="json"), sql
 
     tbl, sql = get_table()
+    if tbl is None:
+        return None, None
     if tbl.get("error") and tried_times <= 2:
         user_promt = """
         表名：{}；
