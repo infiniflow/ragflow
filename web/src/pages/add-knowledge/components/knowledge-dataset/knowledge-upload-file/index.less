@@ -8,6 +8,7 @@
   }
   .footer {
     text-align: right;
+    padding-top: 16px;
     .nextButton {
       background-color: @purple;
     }
@@ -17,8 +18,9 @@
     padding-top: 60px;
   }
   .uploader {
-    display: block;
-    height: 200px;
+    :global(.ant-upload) {
+      height: 126px;
+    }
   }
   .hiddenUploader {
     :global(.ant-upload-drag) {
@@ -28,6 +30,17 @@
   .fileIcon {
     font-size: 40px;
     align-items: end;
+  }
+  .uploaderButton {
+    padding: 10px;
+    vertical-align: middle;
+    height: 40px;
+  }
+  .uploaderIcon {
+    svg {
+      width: 20px;
+      height: 20px;
+    }
   }
   .deleteIcon {
     font-size: 20px;

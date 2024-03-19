@@ -51,7 +51,7 @@ const model: DvaModel<LoginModelState> = {
       console.log();
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('注册成功！');
+        message.success('Registered!');
       }
       return retcode;
     },

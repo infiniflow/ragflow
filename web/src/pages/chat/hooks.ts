@@ -7,7 +7,14 @@ import { IConversation, IDialog } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
 import omit from 'lodash/omit';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ChangeEventHandler,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { ChatSearchParams } from './constants';
@@ -432,6 +439,16 @@ export const useSelectCurrentConversation = () => {
     });
   }, []);
 
+  const removeLatestMessage = useCallback(() => {
+    setCurrentConversation((pre) => {
+      const nextMessages = pre.message.slice(0, -2);
+      return {
+        ...pre,
+        message: nextMessages,
+      };
+    });
+  }, []);
+
   const addPrologue = useCallback(() => {
     if (dialogId !== '' && conversationId === '') {
       const prologue = dialog.prompt_config?.prologue;
@@ -459,7 +476,7 @@ export const useSelectCurrentConversation = () => {
     setCurrentConversation(conversation);
   }, [conversation]);
 
-  return { currentConversation, addNewestConversation };
+  return { currentConversation, addNewestConversation, removeLatestMessage };
 };
 
 export const useFetchConversation = () => {
@@ -501,7 +518,7 @@ export const useScrollToBottom = (currentConversation: IClientConversation) => {
 export const useFetchConversationOnMount = () => {
   const { conversationId } = useGetChatSearchParams();
   const fetchConversation = useFetchConversation();
-  const { currentConversation, addNewestConversation } =
+  const { currentConversation, addNewestConversation, removeLatestMessage } =
     useSelectCurrentConversation();
   const ref = useScrollToBottom(currentConversation);
 
@@ -515,16 +532,45 @@ export const useFetchConversationOnMount = () => {
     fetchConversationOnMount();
   }, [fetchConversationOnMount]);
 
-  return { currentConversation, addNewestConversation, ref };
+  return {
+    currentConversation,
+    addNewestConversation,
+    ref,
+    removeLatestMessage,
+  };
 };
 
-export const useSendMessage = () => {
+export const useHandleMessageInputChange = () => {
+  const [value, setValue] = useState('');
+
+  const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const value = e.target.value;
+    const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
+    setValue(nextValue);
+  };
+
+  return {
+    handleInputChange,
+    value,
+    setValue,
+  };
+};
+
+export const useSendMessage = (
+  conversation: IClientConversation,
+  addNewestConversation: (message: string) => void,
+  removeLatestMessage: () => void,
+) => {
+  const loading = useOneNamespaceEffectsLoading('chatModel', [
+    'completeConversation',
+  ]);
   const dispatch = useDispatch();
   const { setConversation } = useSetConversation();
   const { conversationId } = useGetChatSearchParams();
-  const conversation: IClientConversation = useSelector(
-    (state: any) => state.chatModel.currentConversation,
-  );
+  const { handleInputChange, value, setValue } = useHandleMessageInputChange();
+  // const conversation: IClientConversation = useSelector(
+  //   (state: any) => state.chatModel.currentConversation,
+  // );
   const fetchConversation = useFetchConversation();
 
   const { handleClickConversation } = useClickConversationCard();
@@ -549,10 +595,15 @@ export const useSendMessage = () => {
 
       if (retcode === 0) {
         if (id) {
+          // new conversation
           handleClickConversation(id);
         } else {
           fetchConversation(conversationId);
         }
+      } else {
+        // cancel loading
+        setValue(message);
+        removeLatestMessage();
       }
     },
     [
@@ -561,6 +612,8 @@ export const useSendMessage = () => {
       conversationId,
       fetchConversation,
       handleClickConversation,
+      removeLatestMessage,
+      setValue,
     ],
   );
 
@@ -579,7 +632,20 @@ export const useSendMessage = () => {
     [conversationId, setConversation, sendMessage],
   );
 
-  return { sendMessage: handleSendMessage };
+  const handlePressEnter = () => {
+    if (!loading) {
+      setValue('');
+      addNewestConversation(value);
+      handleSendMessage(value.trim());
+    }
+  };
+
+  return {
+    handlePressEnter,
+    handleInputChange,
+    value,
+    loading,
+  };
 };
 
 export const useGetFileIcon = () => {
