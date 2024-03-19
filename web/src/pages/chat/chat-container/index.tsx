@@ -262,12 +262,12 @@ const ChatContainer = () => {
     if (!loading) {
       setValue('');
       addNewestConversation(value);
-      sendMessage(value);
+      sendMessage(value.trim());
     }
   };
 
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
-    const value = e.target.value.trim();
+    const value = e.target.value;
     const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
     setValue(nextValue);
   };

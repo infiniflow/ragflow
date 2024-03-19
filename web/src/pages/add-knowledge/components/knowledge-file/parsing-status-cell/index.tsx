@@ -6,6 +6,7 @@ import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
 import reactStringReplace from 'react-string-replace';
 import { useDispatch } from 'umi';
 import { RunningStatus, RunningStatusMap } from '../constant';
+import { isParserRunning } from '../utils';
 import styles from './index.less';
 
 const iconMap = {
@@ -77,7 +78,7 @@ export const ParsingStatusCell = ({ record }: IProps) => {
   const text = record.run;
   const runningStatus = RunningStatusMap[text];
 
-  const isRunning = text === RunningStatus.RUNNING;
+  const isRunning = isParserRunning(text);
 
   const OperationIcon = iconMap[text];
 

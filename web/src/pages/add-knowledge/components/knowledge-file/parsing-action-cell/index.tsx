@@ -3,6 +3,9 @@ import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { DeleteOutlined, EditOutlined, ToolOutlined } from '@ant-design/icons';
 import { Button, Dropdown, MenuProps, Space, Tooltip } from 'antd';
 import { useDispatch } from 'umi';
+import { isParserRunning } from '../utils';
+
+import styles from './index.less';
 
 interface IProps {
   knowledgeBaseId: string;
@@ -17,6 +20,7 @@ const ParsingActionCell = ({
 }: IProps) => {
   const dispatch = useDispatch();
   const documentId = record.id;
+  const isRunning = isParserRunning(record.run);
 
   const removeDocument = () => {
     dispatch({
@@ -29,7 +33,9 @@ const ParsingActionCell = ({
   };
 
   const onRmDocument = () => {
-    showDeleteConfirm({ onOk: removeDocument });
+    if (!isRunning) {
+      showDeleteConfirm({ onOk: removeDocument });
+    }
   };
 
   const setCurrentRecord = () => {
@@ -49,11 +55,13 @@ const ParsingActionCell = ({
   };
 
   const showRenameModal = () => {
-    setCurrentRecord();
-    dispatch({
-      type: 'kFModel/setIsShowRenameModal',
-      payload: true,
-    });
+    if (!isRunning) {
+      setCurrentRecord();
+      dispatch({
+        type: 'kFModel/setIsShowRenameModal',
+        payload: true,
+      });
+    }
   };
 
   const chunkItems: MenuProps['items'] = [
@@ -70,14 +78,38 @@ const ParsingActionCell = ({
   ];
 
   return (
-    <Space size={'middle'}>
-      <Dropdown menu={{ items: chunkItems }} trigger={['click']}>
-        <ToolOutlined size={20} onClick={setDocumentAndParserId} />
+    <Space size={0}>
+      <Dropdown
+        menu={{ items: chunkItems }}
+        trigger={['click']}
+        disabled={isRunning}
+      >
+        <Button
+          type="text"
+          onClick={setDocumentAndParserId}
+          className={styles.iconButton}
+        >
+          <ToolOutlined size={20} />
+        </Button>
       </Dropdown>
       <Tooltip title="Rename">
-        <EditOutlined size={20} onClick={showRenameModal} />
+        <Button
+          type="text"
+          disabled={isRunning}
+          onClick={showRenameModal}
+          className={styles.iconButton}
+        >
+          <EditOutlined size={20} />
+        </Button>
       </Tooltip>
-      <DeleteOutlined size={20} onClick={onRmDocument} />
+      <Button
+        type="text"
+        disabled={isRunning}
+        onClick={onRmDocument}
+        className={styles.iconButton}
+      >
+        <DeleteOutlined size={20} />
+      </Button>
     </Space>
   );
 };
