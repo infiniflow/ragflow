@@ -69,7 +69,7 @@ def load_model(model_dir, nm):
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     options.intra_op_num_threads = 2
     options.inter_op_num_threads = 2
-    if ort.get_device() == "GPU":
+    if False and ort.get_device() == "GPU":
         sess = ort.InferenceSession(model_file_path, options=options, providers=['CUDAExecutionProvider'])
     else:
         sess = ort.InferenceSession(model_file_path, options=options, providers=['CPUExecutionProvider'])
@@ -366,7 +366,7 @@ class TextDetector(object):
                 'keep_keys': ['image', 'shape']
             }
         }]
-        postprocess_params = {"name": "DBPostProcess", "thresh": 0.3, "box_thresh": 0.6, "max_candidates": 1000,
+        postprocess_params = {"name": "DBPostProcess", "thresh": 0.3, "box_thresh": 0.5, "max_candidates": 1000,
                               "unclip_ratio": 1.5, "use_dilation": False, "score_mode": "fast", "box_type": "quad"}
 
         self.postprocess_op = build_post_process(postprocess_params)
@@ -534,6 +534,34 @@ class OCR(object):
                     break
         return _boxes
 
+    def detect(self, img):
+        time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
+
+        if img is None:
+            return None, None, time_dict
+
+        start = time.time()
+        dt_boxes, elapse = self.text_detector(img)
+        time_dict['det'] = elapse
+
+        if dt_boxes is None:
+            end = time.time()
+            time_dict['all'] = end - start
+            return None, None, time_dict
+        else:
+            cron_logger.debug("dt_boxes num : {}, elapsed : {}".format(
+                len(dt_boxes), elapse))
+
+        return zip(self.sorted_boxes(dt_boxes), [("",0) for _ in range(len(dt_boxes))])
+
+    def recognize(self, ori_im, box):
+        img_crop = self.get_rotate_crop_image(ori_im, box)
+
+        rec_res, elapse = self.text_recognizer([img_crop])
+        text, score = rec_res[0]
+        if score < self.drop_score:return ""
+        return text
+
     def __call__(self, img, cls=True):
         time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
 
@@ -562,6 +590,7 @@ class OCR(object):
             img_crop_list.append(img_crop)
 
         rec_res, elapse = self.text_recognizer(img_crop_list)
+
         time_dict['rec'] = elapse
         cron_logger.debug("rec_res num  : {}, elapsed : {}".format(
             len(rec_res), elapse))
@@ -574,6 +603,7 @@ class OCR(object):
                 filter_rec_res.append(rec_result)
         end = time.time()
         time_dict['all'] = end - start
+
 
         #for bno in range(len(img_crop_list)):
         #    print(f"{bno}, {rec_res[bno]}")

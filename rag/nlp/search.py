@@ -119,6 +119,7 @@ class Dealer:
             s["knn"]["filter"] = bqry.to_dict()
             s["knn"]["similarity"] = 0.17
             res = self.es.search(s, idxnm=idxnm, timeout="600s", src=src)
+            es_logger.info("【Q】: {}".format(json.dumps(s)))
 
         kwds = set([])
         for k in keywords:
