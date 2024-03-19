@@ -1,5 +1,6 @@
 import { ReactComponent as SelectFilesEndIcon } from '@/assets/svg/select-files-end.svg';
 import { ReactComponent as SelectFilesStartIcon } from '@/assets/svg/select-files-start.svg';
+import { KnowledgeRouteKey } from '@/constants/knowledge';
 import {
   useDeleteDocumentById,
   useFetchKnowledgeDetail,
@@ -10,8 +11,6 @@ import {
   useFetchTenantInfo,
   useSelectParserList,
 } from '@/hooks/userSettingHook';
-
-import { KnowledgeRouteKey } from '@/constants/knowledge';
 import uploadService from '@/services/uploadService';
 import { isFileUploadDone } from '@/utils/documentUtils';
 import {
@@ -25,7 +24,6 @@ import {
   Button,
   Card,
   Flex,
-  Layout,
   Popover,
   Progress,
   Radio,
@@ -49,7 +47,6 @@ import { Link, useDispatch, useNavigate } from 'umi';
 import styles from './index.less';
 
 const { Dragger } = Upload;
-const { Header, Footer, Sider, Content } = Layout;
 
 type UploadRequestOption = Parameters<
   NonNullable<UploadProps['customRequest']>
