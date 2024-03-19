@@ -11,18 +11,21 @@ import {
   useSelectParserList,
 } from '@/hooks/userSettingHook';
 
+import { KnowledgeRouteKey } from '@/constants/knowledge';
 import uploadService from '@/services/uploadService';
+import { isFileUploadDone } from '@/utils/documentUtils';
 import {
   ArrowLeftOutlined,
+  CloudUploadOutlined,
   DeleteOutlined,
   EditOutlined,
   FileDoneOutlined,
-  InboxOutlined,
 } from '@ant-design/icons';
 import {
   Button,
   Card,
   Flex,
+  Layout,
   Popover,
   Progress,
   Radio,
@@ -43,11 +46,10 @@ import {
 } from 'react';
 import { Link, useDispatch, useNavigate } from 'umi';
 
-import { KnowledgeRouteKey } from '@/constants/knowledge';
-import { isFileUploadDone } from '@/utils/documentUtils';
 import styles from './index.less';
 
 const { Dragger } = Upload;
+const { Header, Footer, Sider, Content } = Layout;
 
 type UploadRequestOption = Parameters<
   NonNullable<UploadProps['customRequest']>
@@ -290,9 +292,9 @@ const KnowledgeUploadFile = () => {
             [styles.hiddenUploader]: !isUpload,
           })}
         >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
+          <Button className={styles.uploaderButton}>
+            <CloudUploadOutlined className={styles.uploaderIcon} />
+          </Button>
           <p className="ant-upload-text">
             Click or drag file to this area to upload
           </p>
