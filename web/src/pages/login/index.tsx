@@ -115,7 +115,11 @@ const Login = () => {
               label="Password"
               rules={[{ required: true, message: 'Please input value' }]}
             >
-              <Input.Password size="large" placeholder="Please input value" />
+              <Input.Password
+                size="large"
+                placeholder="Please input value"
+                onPressEnter={onCheck}
+              />
             </Form.Item>
             {title === 'login' && (
               <Form.Item name="remember" valuePropName="checked">
