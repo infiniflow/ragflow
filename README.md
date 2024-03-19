@@ -50,7 +50,7 @@ platform to empower your business with AI.
 
 # Release Notification
 **Star us on GitHub, and be notified for a new releases instantly!**
-![star-us](https://github.com/langgenius/dify/assets/100913391/95f37259-7370-4456-a9f0-0bc01ef8642f)
+![star-us](https://github.com/infiniflow/ragflow/assets/12318111/2c2fbb5e-c403-496f-a1fd-64ba0fdbf74f)
 
 # Installation
 ## System Requirements

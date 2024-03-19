@@ -1,4 +1,6 @@
 import random
+from collections import Counter
+
 from rag.utils import num_tokens_from_string
 from . import huqie
 from nltk import word_tokenize
@@ -175,6 +177,36 @@ def make_colon_as_title(sections):
         i += 1
 
 
+def title_frequency(bull, sections):
+    bullets_size = len(BULLET_PATTERN[bull])
+    levels = [bullets_size+1 for _ in range(len(sections))]
+    if not sections or bull < 0:
+        return bullets_size+1, levels
+
+    for i, (txt, layout) in enumerate(sections):
+        for j, p in enumerate(BULLET_PATTERN[bull]):
+            if re.match(p, txt.strip()):
+                levels[i] = j
+                break
+        else:
+            if re.search(r"(title|head)", layout) and not not_title(txt.split("@")[0]):
+                levels[i] = bullets_size
+    most_level = bullets_size+1
+    for l, c in sorted(Counter(levels).items(), key=lambda x:x[1]*-1):
+        if l <= bullets_size:
+            most_level = l
+            break
+    return most_level, levels
+
+
+def not_title(txt):
+    if re.match(r"第[零一二三四五六七八九十百0-9]+条", txt):
+        return False
+    if len(txt.split(" ")) > 12 or (txt.find(" ") < 0 and len(txt) >= 32):
+        return True
+    return re.search(r"[,;，。；！!]", txt)
+
+
 def hierarchical_merge(bull, sections, depth):
     if not sections or bull < 0:
         return []
@@ -185,12 +217,6 @@ def hierarchical_merge(bull, sections, depth):
     bullets_size = len(BULLET_PATTERN[bull])
     levels = [[] for _ in range(bullets_size + 2)]
 
-    def not_title(txt):
-        if re.match(r"第[零一二三四五六七八九十百0-9]+条", txt):
-            return False
-        if len(txt.split(" ")) > 12 or (txt.find(" ") < 0 and len(txt) >= 32):
-            return True
-        return re.search(r"[,;，。；！!]", txt)
 
     for i, (txt, layout) in enumerate(sections):
         for j, p in enumerate(BULLET_PATTERN[bull]):

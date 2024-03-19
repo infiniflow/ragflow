@@ -72,13 +72,13 @@ default_llm = {
     },
     "Local": {
         "chat_model": "qwen-14B-chat",
-        "embedding_model": "flag-enbedding",
+        "embedding_model": "flag-embedding",
         "image2text_model": "",
         "asr_model": "",
     },
     "Moonshot": {
         "chat_model": "moonshot-v1-8k",
-        "embedding_model": "flag-enbedding",
+        "embedding_model": "",
         "image2text_model": "",
         "asr_model": "",
     }

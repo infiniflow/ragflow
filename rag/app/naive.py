@@ -100,7 +100,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         print("--", ck)
         d = copy.deepcopy(doc)
         if pdf_parser:
-            d["image"], poss = pdf_parser.crop(ck, need_position=True)
+            try:
+                d["image"], poss = pdf_parser.crop(ck, need_position=True)
+            except Exception as e:
+                continue
             add_positions(d, poss)
             ck = pdf_parser.remove_tag(ck)
         tokenize(d, ck, eng)
