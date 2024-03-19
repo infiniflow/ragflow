@@ -11,6 +11,7 @@
 #  limitations under the License.
 #
 import re
+from copy import deepcopy
 from io import BytesIO
 from nltk import word_tokenize
 from openpyxl import load_workbook
@@ -93,12 +94,17 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         All the deformed lines will be ignored.
         Every pair of Q&A will be treated as a chunk.
     """
+    eng = lang.lower() == "english"
     res = []
+    doc = {
+        "docnm_kwd": filename,
+        "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+    }
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
         for q, a in excel_parser(filename, binary, callback):
-            res.append(beAdoc({}, q, a, excel_parser.is_english))
+            res.append(beAdoc(deepcopy(doc), q, a, eng))
         return res
     elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -113,14 +119,14 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                         break
                     txt += l
         lines = txt.split("\n")
-        eng = lang.lower() == "english"#is_english([rmPrefix(l) for l in lines[:100]])
+        #is_english([rmPrefix(l) for l in lines[:100]])
         fails = []
         for i, line in enumerate(lines):
             arr = [l for l in line.split("\t") if len(l) > 1]
             if len(arr) != 2:
                 fails.append(str(i))
                 continue
-            res.append(beAdoc({}, arr[0], arr[1], eng))
+            res.append(beAdoc(deepcopy(doc), arr[0], arr[1], eng))
             if len(res) % 999 == 0:
                 callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (
                     f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))

@@ -76,6 +76,7 @@ def is_english(texts):
 
 def tokenize(d, t, eng):
     d["content_with_weight"] = t
+    t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", t)
     if eng:
         t = re.sub(r"([a-z])-([a-z])", r"\1\2", t)
         d["content_ltks"] = " ".join([stemmer.stem(w)

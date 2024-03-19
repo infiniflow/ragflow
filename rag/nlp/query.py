@@ -29,7 +29,7 @@ class EsQueryer:
         for t in arr:
             if not re.match(r"[a-zA-Z]+$", t):
                 e += 1
-        return e * 1. / len(arr) >= 0.8
+        return e * 1. / len(arr) >= 0.7
 
     @staticmethod
     def rmWWW(txt):
