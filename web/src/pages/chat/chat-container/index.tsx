@@ -4,7 +4,6 @@ import NewDocumentLink from '@/components/new-document-link';
 import DocumentPreviewer from '@/components/pdf-previewer';
 import { MessageType } from '@/constants/chat';
 import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useSelectUserInfo } from '@/hooks/userSettingHook';
 import { IReference, Message } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
@@ -21,7 +20,7 @@ import {
   Space,
 } from 'antd';
 import classNames from 'classnames';
-import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -243,34 +242,18 @@ const MessageItem = ({
 };
 
 const ChatContainer = () => {
-  const [value, setValue] = useState('');
   const {
     ref,
     currentConversation: conversation,
     addNewestConversation,
+    removeLatestMessage,
   } = useFetchConversationOnMount();
-  const { sendMessage } = useSendMessage();
+  const { handleInputChange, handlePressEnter, value, loading } =
+    useSendMessage(conversation, addNewestConversation, removeLatestMessage);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
-  const loading = useOneNamespaceEffectsLoading('chatModel', [
-    'completeConversation',
-  ]);
   useGetFileIcon();
-
-  const handlePressEnter = () => {
-    if (!loading) {
-      setValue('');
-      addNewestConversation(value);
-      sendMessage(value.trim());
-    }
-  };
-
-  const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
-    const value = e.target.value;
-    const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
-    setValue(nextValue);
-  };
 
   return (
     <>

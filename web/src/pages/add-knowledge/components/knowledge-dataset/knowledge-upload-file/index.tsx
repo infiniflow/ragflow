@@ -1,5 +1,6 @@
 import { ReactComponent as SelectFilesEndIcon } from '@/assets/svg/select-files-end.svg';
 import { ReactComponent as SelectFilesStartIcon } from '@/assets/svg/select-files-start.svg';
+import { KnowledgeRouteKey } from '@/constants/knowledge';
 import {
   useDeleteDocumentById,
   useFetchKnowledgeDetail,
@@ -10,14 +11,14 @@ import {
   useFetchTenantInfo,
   useSelectParserList,
 } from '@/hooks/userSettingHook';
-
 import uploadService from '@/services/uploadService';
+import { isFileUploadDone } from '@/utils/documentUtils';
 import {
   ArrowLeftOutlined,
+  CloudUploadOutlined,
   DeleteOutlined,
   EditOutlined,
   FileDoneOutlined,
-  InboxOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -43,8 +44,6 @@ import {
 } from 'react';
 import { Link, useDispatch, useNavigate } from 'umi';
 
-import { KnowledgeRouteKey } from '@/constants/knowledge';
-import { isFileUploadDone } from '@/utils/documentUtils';
 import styles from './index.less';
 
 const { Dragger } = Upload;
@@ -290,9 +289,9 @@ const KnowledgeUploadFile = () => {
             [styles.hiddenUploader]: !isUpload,
           })}
         >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
+          <Button className={styles.uploaderButton}>
+            <CloudUploadOutlined className={styles.uploaderIcon} />
+          </Button>
           <p className="ant-upload-text">
             Click or drag file to this area to upload
           </p>

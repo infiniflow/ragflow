@@ -27,7 +27,7 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
       {similarityList.map((x) => (
         <Space key={x.field}>
           <span className={styles.similarityCircle}>
-            {((item[x.field] as number) * 100).toFixed(2)}%
+            {((item[x.field] as number) * 100).toFixed(2)}
           </span>
           <span className={styles.similarityText}>{x.label}</span>
         </Space>
