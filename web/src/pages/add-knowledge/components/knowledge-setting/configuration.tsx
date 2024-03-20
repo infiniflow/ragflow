@@ -91,6 +91,7 @@ const Configuration = () => {
           <Form.Item
             name="permission"
             label="Permissions"
+            tooltip="coming soon"
             rules={[{ required: true }]}
           >
             <Radio.Group>

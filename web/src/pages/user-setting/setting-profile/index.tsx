@@ -110,7 +110,7 @@ const UserSettingProfile = () => {
               <div>
                 <Space>
                   Your photo
-                  <Tooltip title="prompt text">
+                  <Tooltip title="coming soon">
                     <QuestionCircleOutlined />
                   </Tooltip>
                 </Space>
@@ -140,6 +140,7 @@ const UserSettingProfile = () => {
           <Form.Item<FieldType>
             label="Color schema"
             name="color_schema"
+            tooltip="coming soon"
             rules={[
               { required: true, message: 'Please select your color schema!' },
             ]}
@@ -153,6 +154,7 @@ const UserSettingProfile = () => {
           <Form.Item<FieldType>
             label="Language"
             name="language"
+            tooltip="coming soon"
             rules={[{ required: true, message: 'Please input your language!' }]}
           >
             <Select placeholder="select your language">
@@ -164,6 +166,7 @@ const UserSettingProfile = () => {
           <Form.Item<FieldType>
             label="Timezone"
             name="timezone"
+            tooltip="coming soon"
             rules={[{ required: true, message: 'Please input your timezone!' }]}
           >
             <Select placeholder="select your timezone" showSearch>

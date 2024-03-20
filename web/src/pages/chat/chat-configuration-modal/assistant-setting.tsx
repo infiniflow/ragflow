@@ -50,7 +50,12 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
           </button>
         </Upload>
       </Form.Item>
-      <Form.Item name={'language'} label="Language" initialValue={'Chinese'}>
+      <Form.Item
+        name={'language'}
+        label="Language"
+        initialValue={'Chinese'}
+        tooltip="coming soon"
+      >
         <Select
           options={[
             { value: 'Chinese', label: 'Chinese' },
@@ -61,12 +66,14 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
       <Form.Item
         name={['prompt_config', 'empty_response']}
         label="Empty response"
+        tooltip="coming soon"
       >
         <Input placeholder="" />
       </Form.Item>
       <Form.Item
         name={['prompt_config', 'prologue']}
         label="Set an opener"
+        tooltip="coming soon"
         initialValue={"Hi! I'm your assistant, what can I do for you?"}
       >
         <Input.TextArea autoSize={{ minRows: 5 }} />
@@ -74,6 +81,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
       <Form.Item
         label="Select one context"
         name="kb_ids"
+        tooltip="coming soon"
         rules={[
           {
             required: true,

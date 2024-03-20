@@ -1,5 +1,5 @@
 import SimilaritySlider from '@/components/similarity-slider';
-import { DeleteOutlined } from '@ant-design/icons';
+import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import {
   Button,
   Col,
@@ -11,6 +11,7 @@ import {
   Switch,
   Table,
   TableProps,
+  Tooltip,
 } from 'antd';
 import classNames from 'classnames';
 import {
@@ -153,6 +154,7 @@ const PromptEngine = (
       <Form.Item
         label="System"
         rules={[{ required: true, message: 'Please input!' }]}
+        tooltip="coming soon"
         name={['prompt_config', 'system']}
         initialValue={`你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
         以下是知识库：
@@ -173,10 +175,15 @@ const PromptEngine = (
       </Form.Item>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
-          <Col span={6} className={styles.variableAlign}>
-            <label className={styles.variableLabel}>Variables</label>
+          <Col span={7} className={styles.variableAlign}>
+            <label className={styles.variableLabel}>
+              Variables
+              <Tooltip title="coming soon">
+                <QuestionCircleOutlined className={styles.variableIcon} />
+              </Tooltip>
+            </label>
           </Col>
-          <Col span={18} className={styles.variableAlign}>
+          <Col span={17} className={styles.variableAlign}>
             <Button size="small" onClick={handleAdd}>
               Add
             </Button>
@@ -184,8 +191,8 @@ const PromptEngine = (
         </Row>
         {dataSource.length > 0 && (
           <Row>
-            <Col span={6}></Col>
-            <Col span={18}>
+            <Col span={7}> </Col>
+            <Col span={17}>
               <Table
                 dataSource={dataSource}
                 columns={columns}
