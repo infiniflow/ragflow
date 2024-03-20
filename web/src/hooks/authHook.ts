@@ -1,7 +1,6 @@
 import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { Nullable } from 'typings';
 import { useNavigate, useSearchParams } from 'umi';
 
 export const useLoginWithGithub = () => {

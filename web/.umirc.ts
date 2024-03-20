@@ -12,11 +12,13 @@ export default defineConfig({
   icons: {},
   hash: true,
   favicons: ['/logo.svg'],
+  clickToComponent: {},
   history: {
     type: 'browser',
   },
   plugins: ['@react-dev-inspector/umi4-plugin', '@umijs/plugins/dist/dva'],
   dva: {},
+
   lessLoader: {
     modifyVars: {
       hack: `true; @import "~@/less/index.less";`,
