@@ -205,7 +205,7 @@ const Chat = () => {
           </Button>
           <Divider></Divider>
           <Flex className={styles.chatAppContent} vertical gap={10}>
-            <Spin spinning={dialogLoading}>
+            <Spin spinning={dialogLoading} wrapperClassName={styles.chatSpin}>
               {dialogList.map((x) => (
                 <Card
                   key={x.id}
@@ -259,7 +259,10 @@ const Chat = () => {
           </Flex>
           <Divider></Divider>
           <Flex vertical gap={10} className={styles.chatTitleContent}>
-            <Spin spinning={conversationLoading}>
+            <Spin
+              spinning={conversationLoading}
+              wrapperClassName={styles.chatSpin}
+            >
               {conversationList.map((x) => (
                 <Card
                   key={x.id}
