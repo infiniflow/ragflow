@@ -57,7 +57,7 @@ class Pdf(PdfParser):
         sec_ids = []
         sid = 0
         for i, lvl in enumerate(levels):
-            if lvl <= most_level: sid += 1
+            if lvl <= most_level and i > 0 and lvl != levels[i-1]: sid += 1
             sec_ids.append(sid)
             #print(lvl, self.boxes[i]["text"], most_level)
 
@@ -75,7 +75,7 @@ class Pdf(PdfParser):
                     continue
             chunks.append(txt + poss)
             if sec_id >-1: last_sid = sec_id
-        return chunks
+        return chunks, tbls
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -86,7 +86,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        cks = pdf_parser(filename if not binary else binary,
+        cks, tbls = pdf_parser(filename if not binary else binary,
                            from_page=from_page, to_page=to_page, callback=callback)
     else: raise NotImplementedError("file type not supported yet(pdf supported)")
     doc = {
@@ -100,7 +100,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     i = 0
     chunk = []
     tk_cnt = 0
-    res = []
+    res = tokenize_table(tbls, doc, eng)
     def add_chunk():
         nonlocal chunk, res, doc, pdf_parser, tk_cnt
         d = copy.deepcopy(doc)

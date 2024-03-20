@@ -79,3 +79,4 @@ class ParserType(StrEnum):
     TABLE = "table"
     NAIVE = "naive"
     PICTURE = "picture"
+    ONE = "one"

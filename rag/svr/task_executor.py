@@ -39,7 +39,7 @@ from rag.nlp import search
 from io import BytesIO
 import pandas as pd
 
-from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive
+from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one
 
 from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
@@ -60,6 +60,7 @@ FACTORY = {
     ParserType.TABLE.value: table,
     ParserType.RESUME.value: resume,
     ParserType.PICTURE.value: picture,
+    ParserType.ONE.value: one,
 }
 
 
