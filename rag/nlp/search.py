@@ -196,7 +196,24 @@ class Dealer:
     def insert_citations(self, answer, chunks, chunk_v,
                          embd_mdl, tkweight=0.7, vtweight=0.3):
         assert len(chunks) == len(chunk_v)
-        pieces = re.split(r"([；。？!！\n]|[a-z][.?;!][ \n])", answer)
+        pieces = re.split(r"(```)", answer)
+        if len(pieces) >= 3:
+            i = 0
+            pieces_ = []
+            while i < len(pieces):
+                if pieces[i] == "```":
+                    st = i
+                    i += 1
+                    while i<len(pieces) and pieces[i] != "```":
+                        i += 1
+                    if i < len(pieces): i += 1
+                    pieces_.append("".join(pieces[st: i])+"\n")
+                else:
+                    pieces_.extend(re.split(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", pieces[i]))
+                    i += 1
+            pieces = pieces_
+        else:
+            pieces = re.split(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", answer)
         for i in range(1, len(pieces)):
             if re.match(r"[a-z][.?;!][ \n]", pieces[i]):
                 pieces[i - 1] += pieces[i][0]
@@ -226,7 +243,7 @@ class Dealer:
                                                             chunks_tks,
                                                             tkweight, vtweight)
             mx = np.max(sim) * 0.99
-            if mx < 0.66:
+            if mx < 0.7:
                 continue
             cites[idx[i]] = list(
                 set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]
@@ -249,6 +266,7 @@ class Dealer:
 
     def rerank(self, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks"):
+        _, keywords = self.qryr.question(query)
         ins_embd = [
             Dealer.trans2floats(
                 sres.field[i].get("q_%d_vec" % len(sres.query_vector), "\t".join(["0"] * len(sres.query_vector)))) for i in sres.ids]
@@ -258,8 +276,7 @@ class Dealer:
                   for i in sres.ids]
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                                         ins_embd,
-                                                        huqie.qie(
-                                                            query).split(" "),
+                                                        keywords,
                                                         ins_tw, tkweight, vtweight)
         return sim, tksim, vtsim
 
