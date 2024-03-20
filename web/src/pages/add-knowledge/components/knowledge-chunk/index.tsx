@@ -1,23 +1,22 @@
+import { useFetchChunkList } from '@/hooks/chunkHooks';
 import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
-import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import type { PaginationProps } from 'antd';
 import { Divider, Flex, Pagination, Space, Spin, message } from 'antd';
+import classNames from 'classnames';
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
 import ChunkToolBar from './components/chunk-toolbar';
-// import DocumentPreview from './components/document-preview';
-import classNames from 'classnames';
 import DocumentPreview from './components/document-preview/preview';
-import { useHandleChunkCardClick, useSelectDocumentInfo } from './hooks';
+import {
+  useHandleChunkCardClick,
+  useSelectChunkListLoading,
+  useSelectDocumentInfo,
+} from './hooks';
 import { ChunkModelState } from './model';
 
 import styles from './index.less';
-interface PayloadType {
-  doc_id: string;
-  keywords?: string;
-}
 
 const Chunk = () => {
   const dispatch = useDispatch();
@@ -27,12 +26,7 @@ const Chunk = () => {
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const [searchParams] = useSearchParams();
   const { data = [], total, pagination } = chunkModel;
-  const effects = useSelector((state: any) => state.loading.effects);
-  const loading = getOneNamespaceEffectsLoading('chunkModel', effects, [
-    'create_hunk',
-    'chunk_list',
-    'switch_chunk',
-  ]);
+  const loading = useSelectChunkListLoading();
   const documentId: string = searchParams.get('doc_id') || '';
   const [chunkId, setChunkId] = useState<string | undefined>();
   const { removeChunk } = useDeleteChunkByIds();
@@ -40,18 +34,7 @@ const Chunk = () => {
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo.type === 'pdf';
 
-  const getChunkList = useCallback(() => {
-    const payload: PayloadType = {
-      doc_id: documentId,
-    };
-
-    dispatch({
-      type: 'chunkModel/chunk_list',
-      payload: {
-        ...payload,
-      },
-    });
-  }, [dispatch, documentId]);
+  const getChunkList = useFetchChunkList();
 
   const handleEditChunk = useCallback(
     (chunk_id?: string) => {
@@ -169,8 +152,8 @@ const Chunk = () => {
             vertical
             className={isPdf ? styles.pagePdfWrapper : styles.pageWrapper}
           >
-            <div className={styles.pageContent}>
-              <Spin spinning={loading} className={styles.spin} size="large">
+            <Spin spinning={loading} className={styles.spin} size="large">
+              <div className={styles.pageContent}>
                 <Space
                   direction="vertical"
                   size={'middle'}
@@ -193,8 +176,8 @@ const Chunk = () => {
                     ></ChunkCard>
                   ))}
                 </Space>
-              </Spin>
-            </div>
+              </div>
+            </Spin>
             <div className={styles.pageFooter}>
               <Pagination
                 responsive

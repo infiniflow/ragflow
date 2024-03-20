@@ -1,3 +1,4 @@
+import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { buildChunkHighlights } from '@/utils/documentUtils';
 import { useCallback, useMemo, useState } from 'react';
@@ -45,4 +46,12 @@ export const useGetChunkHighlights = (
   }, [selectedChunk]);
 
   return highlights;
+};
+
+export const useSelectChunkListLoading = () => {
+  return useOneNamespaceEffectsLoading('chunkModel', [
+    'create_hunk',
+    'chunk_list',
+    'switch_chunk',
+  ]);
 };

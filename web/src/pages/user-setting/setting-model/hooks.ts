@@ -113,3 +113,12 @@ export const useFetchSystemModelSettingOnMount = (visible: boolean) => {
 
   return { systemSetting, allOptions };
 };
+
+export const useSelectModelProvidersLoading = () => {
+  const loading = useOneNamespaceEffectsLoading('settingModel', [
+    'my_llm',
+    'factories_list',
+  ]);
+
+  return loading;
+};

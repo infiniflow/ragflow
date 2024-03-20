@@ -1,25 +1,15 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
-import { KnowledgeSearchParams } from '@/constants/knowledge';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
+import { useGetKnowledgeSearchParams } from './routeHook';
+import { useOneNamespaceEffectsLoading } from './storeHooks';
 
 export const useKnowledgeBaseId = (): string => {
   const [searchParams] = useSearchParams();
   const knowledgeBaseId = searchParams.get('id');
 
   return knowledgeBaseId || '';
-};
-
-export const useGetKnowledgeSearchParams = () => {
-  const [currentQueryParameters] = useSearchParams();
-
-  return {
-    documentId:
-      currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
-    knowledgeId:
-      currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
-  };
 };
 
 export const useDeleteDocumentById = (): {
@@ -135,8 +125,9 @@ export const useFetchKnowledgeBaseConfiguration = () => {
 
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
-): IKnowledge[] => {
+): { list: IKnowledge[]; loading: boolean } => {
   const dispatch = useDispatch();
+  const loading = useOneNamespaceEffectsLoading('knowledgeModel', ['getList']);
 
   const knowledgeModel = useSelector((state: any) => state.knowledgeModel);
   const { data = [] } = knowledgeModel;
@@ -156,7 +147,7 @@ export const useFetchKnowledgeList = (
     fetchList();
   }, [fetchList]);
 
-  return list;
+  return { list, loading };
 };
 
 export const useSelectFileThumbnails = () => {
@@ -189,3 +180,29 @@ export const useFetchFileThumbnails = (docIds?: Array<string>) => {
 
   return { fileThumbnails, fetchFileThumbnails };
 };
+
+//#region knowledge configuration
+
+export const useUpdateKnowledge = () => {
+  const dispatch = useDispatch();
+
+  const saveKnowledgeConfiguration = useCallback(
+    (payload: any) => {
+      dispatch({
+        type: 'kSModel/updateKb',
+        payload,
+      });
+    },
+    [dispatch],
+  );
+
+  return saveKnowledgeConfiguration;
+};
+
+export const useSelectKnowledgeDetails = () => {
+  const knowledgeDetails: IKnowledge = useSelector(
+    (state: any) => state.kSModel.knowledgeDetails,
+  );
+  return knowledgeDetails;
+};
+//#endregion
