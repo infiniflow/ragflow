@@ -61,3 +61,27 @@ export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
 
   return '';
 };
+
+export const downloadFile = ({
+  url,
+  filename,
+  target,
+}: {
+  url: string;
+  filename?: string;
+  target?: string;
+}) => {
+  const downloadElement = document.createElement('a');
+  downloadElement.style.display = 'none';
+  downloadElement.href = url;
+  if (target) {
+    downloadElement.target = '_blank';
+  }
+  downloadElement.rel = 'noopener noreferrer';
+  if (filename) {
+    downloadElement.download = filename;
+  }
+  document.body.appendChild(downloadElement);
+  downloadElement.click();
+  document.body.removeChild(downloadElement);
+};
