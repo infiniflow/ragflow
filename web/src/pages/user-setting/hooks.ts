@@ -19,5 +19,8 @@ export const useValidateSubmittable = () => {
   return { submittable, form };
 };
 
-export const useGetUserInfoLoading = () =>
+export const useSelectSubmitUserInfoLoading = () =>
   useOneNamespaceEffectsLoading('settingModel', ['setting']);
+
+export const useSelectUserInfoLoading = () =>
+  useOneNamespaceEffectsLoading('settingModel', ['getUserInfo']);

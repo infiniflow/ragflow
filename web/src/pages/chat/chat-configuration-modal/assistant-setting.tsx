@@ -1,14 +1,13 @@
+import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
+import { PlusOutlined } from '@ant-design/icons';
 import { Form, Input, Select, Upload } from 'antd';
-
 import classNames from 'classnames';
 import { ISegmentedContentProps } from '../interface';
 
-import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
-import { PlusOutlined } from '@ant-design/icons';
 import styles from './index.less';
 
 const AssistantSetting = ({ show }: ISegmentedContentProps) => {
-  const knowledgeList = useFetchKnowledgeList(true);
+  const { list: knowledgeList } = useFetchKnowledgeList(true);
   const knowledgeOptions = knowledgeList.map((x) => ({
     label: x.name,
     value: x.id,

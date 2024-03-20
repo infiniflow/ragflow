@@ -1,4 +1,5 @@
-import { useLocation } from 'umi';
+import { KnowledgeSearchParams } from '@/constants/knowledge';
+import { useLocation, useSearchParams } from 'umi';
 
 export enum SegmentIndex {
   Second = '2',
@@ -18,4 +19,15 @@ export const useSecondPathName = () => {
 
 export const useThirdPathName = () => {
   return useSegmentedPathName(SegmentIndex.Third);
+};
+
+export const useGetKnowledgeSearchParams = () => {
+  const [currentQueryParameters] = useSearchParams();
+
+  return {
+    documentId:
+      currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
+    knowledgeId:
+      currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
+  };
 };

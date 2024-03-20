@@ -8,8 +8,8 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
 export const useFetchLlmList = (
-  isOnMountFetching: boolean = true,
   modelType?: LlmModelType,
+  isOnMountFetching: boolean = true,
 ) => {
   const dispatch = useDispatch();
 

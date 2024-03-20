@@ -30,6 +30,7 @@ import {
   useClickDrawer,
   useFetchConversationOnMount,
   useGetFileIcon,
+  useGetSendButtonDisabled,
   useSendMessage,
 } from '../hooks';
 
@@ -248,11 +249,15 @@ const ChatContainer = () => {
     addNewestConversation,
     removeLatestMessage,
   } = useFetchConversationOnMount();
-  const { handleInputChange, handlePressEnter, value, loading } =
-    useSendMessage(conversation, addNewestConversation, removeLatestMessage);
+  const {
+    handleInputChange,
+    handlePressEnter,
+    value,
+    loading: sendLoading,
+  } = useSendMessage(conversation, addNewestConversation, removeLatestMessage);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
-
+  const disabled = useGetSendButtonDisabled();
   useGetFileIcon();
 
   return (
@@ -284,8 +289,14 @@ const ChatContainer = () => {
           size="large"
           placeholder="Message Resume Assistant..."
           value={value}
+          disabled={disabled}
           suffix={
-            <Button type="primary" onClick={handlePressEnter} loading={loading}>
+            <Button
+              type="primary"
+              onClick={handlePressEnter}
+              loading={sendLoading}
+              disabled={disabled}
+            >
               Send
             </Button>
           }

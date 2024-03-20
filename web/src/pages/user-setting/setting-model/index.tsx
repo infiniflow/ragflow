@@ -23,12 +23,17 @@ import {
   List,
   Row,
   Space,
+  Spin,
   Typography,
 } from 'antd';
 import { useCallback } from 'react';
 import SettingTitle from '../components/setting-title';
 import ApiKeyModal from './api-key-modal';
-import { useSubmitApiKey, useSubmitSystemModelSetting } from './hooks';
+import {
+  useSelectModelProvidersLoading,
+  useSubmitApiKey,
+  useSubmitSystemModelSetting,
+} from './hooks';
 import SystemModelSettingModal from './system-model-setting-modal';
 
 import styles from './index.less';
@@ -111,6 +116,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
 const UserSettingModel = () => {
   const factoryList = useFetchLlmFactoryListOnMount();
   const llmList = useFetchMyLlmListOnMount();
+  const loading = useSelectModelProvidersLoading();
   const {
     saveApiKeyLoading,
     initialApiKey,
@@ -191,16 +197,18 @@ const UserSettingModel = () => {
 
   return (
     <>
-      <section className={styles.modelWrapper}>
-        <SettingTitle
-          title="Model Setting"
-          description="Manage your account settings and preferences here."
-          showRightButton
-          clickButton={showSystemSettingModal}
-        ></SettingTitle>
-        <Divider></Divider>
-        <Collapse defaultActiveKey={['1']} ghost items={items} />
-      </section>
+      <Spin spinning={loading}>
+        <section className={styles.modelWrapper}>
+          <SettingTitle
+            title="Model Setting"
+            description="Manage your account settings and preferences here."
+            showRightButton
+            clickButton={showSystemSettingModal}
+          ></SettingTitle>
+          <Divider></Divider>
+          <Collapse defaultActiveKey={['1']} ghost items={items} />
+        </section>
+      </Spin>
       <ApiKeyModal
         visible={apiKeyVisible}
         hideModal={hideApiKeyModal}
