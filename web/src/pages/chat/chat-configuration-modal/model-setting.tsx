@@ -46,6 +46,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
       <Form.Item
         label="Model"
         name="llm_id"
+        tooltip="coming soon"
         rules={[{ required: true, message: 'Please select!' }]}
       >
         <Select options={modelOptions} showSearch />
@@ -54,6 +55,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
       <Form.Item
         label="Parameters"
         name="parameters"
+        tooltip="coming soon"
         initialValue={ModelVariableType.Precise}
         // rules={[{ required: true, message: 'Please input!' }]}
       >

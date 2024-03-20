@@ -1,10 +1,17 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { DeleteOutlined, EditOutlined, ToolOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  EditOutlined,
+  ToolOutlined,
+} from '@ant-design/icons';
 import { Button, Dropdown, MenuProps, Space, Tooltip } from 'antd';
 import { useDispatch } from 'umi';
 import { isParserRunning } from '../utils';
 
+import { api_host } from '@/utils/api';
+import { downloadFile } from '@/utils/fileUtil';
 import styles from './index.less';
 
 interface IProps {
@@ -36,6 +43,13 @@ const ParsingActionCell = ({
     if (!isRunning) {
       showDeleteConfirm({ onOk: removeDocument });
     }
+  };
+
+  const onDownloadDocument = () => {
+    downloadFile({
+      url: `${api_host}/document/get/${documentId}`,
+      filename: record.name,
+    });
   };
 
   const setCurrentRecord = () => {
@@ -109,6 +123,14 @@ const ParsingActionCell = ({
         className={styles.iconButton}
       >
         <DeleteOutlined size={20} />
+      </Button>
+      <Button
+        type="text"
+        disabled={isRunning}
+        onClick={onDownloadDocument}
+        className={styles.iconButton}
+      >
+        <DownloadOutlined size={20} />
       </Button>
     </Space>
   );

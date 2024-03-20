@@ -7,7 +7,6 @@ import {
 import { IUserInfo } from '@/interfaces/database/userSetting';
 import userService from '@/services/userService';
 import { message } from 'antd';
-import { Nullable } from 'typings';
 import { DvaModel } from 'umi';
 
 export interface SettingModelState {

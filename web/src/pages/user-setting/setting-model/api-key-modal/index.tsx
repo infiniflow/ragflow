@@ -66,6 +66,7 @@ const ApiKeyModal = ({
         <Form.Item<FieldType>
           label="Api-Key"
           name="api_key"
+          tooltip="coming soon"
           rules={[{ required: true, message: 'Please input api key!' }]}
         >
           <Input />

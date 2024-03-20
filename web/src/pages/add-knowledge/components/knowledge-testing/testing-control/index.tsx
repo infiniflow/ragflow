@@ -51,8 +51,12 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
             top_k: 1024,
           }}
         >
-          <SimilaritySlider></SimilaritySlider>
-          <Form.Item<FieldType> label="Top k" name={'top_k'}>
+          <SimilaritySlider isTooltipShown></SimilaritySlider>
+          <Form.Item<FieldType>
+            label="Top k"
+            name={'top_k'}
+            tooltip="coming soon"
+          >
             <Slider marks={{ 0: 0, 2048: 2048 }} max={2048} />
           </Form.Item>
           <Card size="small" title="Test text">
