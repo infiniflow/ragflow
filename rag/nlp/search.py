@@ -194,7 +194,7 @@ class Dealer:
         return [float(t) for t in txt.split("\t")]
 
     def insert_citations(self, answer, chunks, chunk_v,
-                         embd_mdl, tkweight=0.7, vtweight=0.3):
+                         embd_mdl, tkweight=0.1, vtweight=0.9):
         assert len(chunks) == len(chunk_v)
         pieces = re.split(r"(```)", answer)
         if len(pieces) >= 3:
@@ -243,7 +243,7 @@ class Dealer:
                                                             chunks_tks,
                                                             tkweight, vtweight)
             mx = np.max(sim) * 0.99
-            if mx < 0.7:
+            if mx < 0.65:
                 continue
             cites[idx[i]] = list(
                 set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]

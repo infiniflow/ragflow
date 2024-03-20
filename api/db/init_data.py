@@ -79,12 +79,12 @@ factory_infos = [{
         "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
         "status": "1",
     },{
-        "name": "通义千问",
+        "name": "Tongyi-Qianwen",
         "logo": "",
         "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
         "status": "1",
     },{
-        "name": "智谱AI",
+        "name": "ZHIPU-AI",
         "logo": "",
         "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
         "status": "1",
@@ -269,6 +269,14 @@ def init_llm_factory():
             LLMService.save(**info)
         except Exception as e:
             pass
+
+    """
+    drop table llm;
+    drop table factories;
+    update tenant_llm set llm_factory='Tongyi-Qianwen' where llm_factory='通义千问';
+    update tenant_llm set llm_factory='ZHIPU-AI' where llm_factory='智谱AI';
+    update tenant set parser_ids='naive:General,one:One,qa:Q&A,resume:Resume,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture';
+    """
 
 
 def init_web_data():

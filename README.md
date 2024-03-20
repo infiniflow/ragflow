@@ -88,8 +88,8 @@ If your machine doesn't have *Docker* installed, please refer to [Install Docker
 > In **user_default_llm** of [service_conf.yaml](./docker/service_conf.yaml), you need to specify LLM factory and your own _API_KEY_.
 > It's O.K if you don't have _API_KEY_ at the moment, you can specify it later at the setting part after starting and logging in the system.
 > - We have supported the flowing LLM factory, and the others is coming soon: 
-> [OpenAI](https://platform.openai.com/login?launch), [通义千问/QWen](https://dashscope.console.aliyun.com/model), 
-> [智谱AI/ZhipuAI](https://open.bigmodel.cn/)
+> [OpenAI](https://platform.openai.com/login?launch), [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model), 
+> [ZHIPU-AI](https://open.bigmodel.cn/), [Moonshot](https://platform.moonshot.cn/docs/docs)
 ```bash
 121:/# git clone https://github.com/infiniflow/ragflow.git
 121:/# cd ragflow/docker
