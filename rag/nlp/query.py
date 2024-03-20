@@ -4,8 +4,8 @@ import json
 import re
 import logging
 import copy
-import math
-from elasticsearch_dsl import Q, Search
+from elasticsearch_dsl import Q
+
 from rag.nlp import huqie, term_weight, synonym
 
 
@@ -33,12 +33,14 @@ class EsQueryer:
 
     @staticmethod
     def rmWWW(txt):
-        txt = re.sub(
-            r"是*(什么样的|哪家|那家|啥样|咋样了|什么时候|何时|何地|何人|是否|是不是|多少|哪里|怎么|哪儿|怎么样|如何|哪些|是啥|啥是|啊|吗|呢|吧|咋|什么|有没有|呀)是*",
-            "",
-            txt)
-        return re.sub(
-            r"(what|who|how|which|where|why|(is|are|were|was) there) (is|are|were|was|to)*", "", txt, re.IGNORECASE)
+        patts = [
+            (r"是*(什么样的|哪家|那家|啥样|咋样了|什么时候|何时|何地|何人|是否|是不是|多少|哪里|怎么|哪儿|怎么样|如何|哪些|是啥|啥是|啊|吗|呢|吧|咋|什么|有没有|呀)是*", ""),
+            (r"(^| )(what|who|how|which|where|why)('re|'s)? ", " "),
+            (r"(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down)", " ")
+        ]
+        for r, p in patts:
+            txt = re.sub(r, p, txt, flags=re.IGNORECASE)
+        return txt
 
     def question(self, txt, tbl="qa", min_match="60%"):
         txt = re.sub(
@@ -50,7 +52,7 @@ class EsQueryer:
         txt = EsQueryer.rmWWW(txt)
 
         if not self.isChinese(txt):
-            tks = [t for t in txt.split(" ") if t.strip()]
+            tks = huqie.qie(txt).split(" ")
             q = tks
             for i in range(1, len(tks)):
                 q.append("\"%s %s\"^2" % (tks[i - 1], tks[i]))
@@ -58,9 +60,9 @@ class EsQueryer:
                 q.append(txt)
             return Q("bool",
                      must=Q("query_string", fields=self.flds,
-                            type="best_fields", query=" OR ".join(q),
+                            type="best_fields", query=" ".join(q),
                             boost=1, minimum_should_match=min_match)
-                     ), txt.split(" ")
+                     ), tks
 
         def needQieqie(tk):
             if len(tk) < 4:
@@ -160,8 +162,8 @@ class EsQueryer:
                 s += v# * dtwt[k]
         q = 1e-9
         for k, v in qtwt.items():
-            q += v * v
-        d = 1e-9
-        for k, v in dtwt.items():
-            d += v * v
-        return s / q#math.sqrt(q) / math.sqrt(d)
+            q += v #* v
+        #d = 1e-9
+        #for k, v in dtwt.items():
+        #    d += v * v
+        return s / q #math.sqrt(q) / math.sqrt(d)

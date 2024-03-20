@@ -8,7 +8,8 @@ import re
 import string
 import sys
 from hanziconv import HanziConv
-
+from nltk import word_tokenize
+from nltk.stem import PorterStemmer, WordNetLemmatizer
 from api.utils.file_utils import get_project_base_directory
 
 
@@ -44,6 +45,9 @@ class Huqie:
         self.DENOMINATOR = 1000000
         self.trie_ = datrie.Trie(string.printable)
         self.DIR_ = os.path.join(get_project_base_directory(), "rag/res", "huqie")
+
+        self.stemmer = PorterStemmer()
+        self.lemmatizer = WordNetLemmatizer()
 
         self.SPLIT_CHAR = r"([ ,\.<>/?;'\[\]\\`!@#$%^&*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-z\.-]+|[0-9,\.-]+)"
         try:
@@ -239,6 +243,10 @@ class Huqie:
     def qie(self, line):
         line = self._strQ2B(line).lower()
         line = self._tradi2simp(line)
+        zh_num = len([1 for c in line if is_chinese(c)])
+        if zh_num < len(line) * 0.2:
+            return " ".join([self.stemmer.stem(self.lemmatizer.lemmatize(t)) for t in word_tokenize(line)])
+
         arr = re.split(self.SPLIT_CHAR, line)
         res = []
         for L in arr:
@@ -290,8 +298,12 @@ class Huqie:
         return self.merge_(res)
 
     def qieqie(self, tks):
+        tks = tks.split(" ")
+        zh_num = len([1 for c in tks if c and is_chinese(c[0])])
+        if zh_num < len(tks) * 0.2:return " ".join(tks)
+
         res = []
-        for tk in tks.split(" "):
+        for tk in tks:
             if len(tk) < 3 or re.match(r"[0-9,\.-]+$", tk):
                 res.append(tk)
                 continue

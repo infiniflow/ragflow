@@ -74,9 +74,9 @@ def trans_datatime(s):
 
 def trans_bool(s):
     if re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√)$", str(s).strip(), flags=re.IGNORECASE):
-        return ["yes", "是"]
+        return "yes"
     if re.match(r"(false|no|否|⍻|×)$", str(s).strip(), flags=re.IGNORECASE):
-        return ["no", "否"]
+        return "no"
 
 
 def column_data_type(arr):
@@ -92,7 +92,7 @@ def column_data_type(arr):
             counts["int"] += 1
         elif re.match(r"[+-]?[0-9.]+$", str(a).replace("%%", "")):
             counts["float"] += 1
-        elif re.match(r"(true|false|yes|no|是|否)$", str(a), flags=re.IGNORECASE):
+        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
             counts["bool"] += 1
         elif trans_datatime(str(a)):
             counts["datetime"] += 1
