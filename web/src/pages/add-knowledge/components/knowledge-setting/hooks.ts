@@ -41,7 +41,6 @@ export const useSubmitKnowledgeConfiguration = () => {
 
 export const useFetchKnowledgeConfigurationOnMount = () => {
   const [form] = Form.useForm();
-  const loading = useOneNamespaceEffectsLoading('kSModel', ['getKbDetail']);
 
   const knowledgeDetails = useSelectKnowledgeDetails();
   const parserList = useSelectParserList();
@@ -69,5 +68,8 @@ export const useFetchKnowledgeConfigurationOnMount = () => {
     });
   }, [form, knowledgeDetails]);
 
-  return { form, parserList, embeddingModelOptions, loading };
+  return { form, parserList, embeddingModelOptions };
 };
+
+export const useSelectKnowledgeDetailsLoading = () =>
+  useOneNamespaceEffectsLoading('kSModel', ['getKbDetail']);
