@@ -1,4 +1,8 @@
 import 'umi/typings';
 declare module 'lodash';
 
-export type Nullable<T> = T | null;
+// declare type Nullable<T> = T | null; invalid
+
+declare global {
+  type Nullable<T> = T | null;
+}

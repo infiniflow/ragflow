@@ -4,7 +4,6 @@ import kbService, { getDocumentFile } from '@/services/kbService';
 import { message } from 'antd';
 import omit from 'lodash/omit';
 import pick from 'lodash/pick';
-import { Nullable } from 'typings';
 import { DvaModel } from 'umi';
 
 export interface KFModelState extends BaseState {

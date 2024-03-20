@@ -15,7 +15,7 @@ const SimilaritySlider = ({ isTooltipShown = false }: IProps) => {
       <Form.Item<FieldType>
         label="Similarity threshold"
         name={'similarity_threshold'}
-        tooltip={isTooltipShown && 'xxx'}
+        tooltip={isTooltipShown && 'coming soon'}
         initialValue={0.2}
       >
         <Slider max={1} step={0.01} />
@@ -24,7 +24,7 @@ const SimilaritySlider = ({ isTooltipShown = false }: IProps) => {
         label="Vector similarity weight"
         name={'vector_similarity_weight'}
         initialValue={0.3}
-        tooltip={isTooltipShown && 'xxx'}
+        tooltip={isTooltipShown && 'coming soon'}
       >
         <Slider max={1} step={0.01} />
       </Form.Item>

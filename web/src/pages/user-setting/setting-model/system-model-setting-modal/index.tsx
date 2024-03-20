@@ -43,16 +43,24 @@ const SystemModelSettingModal = ({
       confirmLoading={loading}
     >
       <Form form={form} onValuesChange={onFormLayoutChange} layout={'vertical'}>
-        <Form.Item label="Sequence2txt model" name="asr_id">
+        <Form.Item
+          label="Sequence2txt model"
+          name="asr_id"
+          tooltip="coming soon"
+        >
           <Select options={allOptions[LlmModelType.Speech2text]} />
         </Form.Item>
-        <Form.Item label="Embedding model" name="embd_id">
+        <Form.Item label="Embedding model" name="embd_id" tooltip="coming soon">
           <Select options={allOptions[LlmModelType.Embedding]} />
         </Form.Item>
-        <Form.Item label="Img2txt model" name="img2txt_id">
+        <Form.Item
+          label="Img2txt model"
+          name="img2txt_id"
+          tooltip="coming soon"
+        >
           <Select options={allOptions[LlmModelType.Image2text]} />
         </Form.Item>
-        <Form.Item label="Chat model" name="llm_id">
+        <Form.Item label="Chat model" name="llm_id" tooltip="coming soon">
           <Select options={allOptions[LlmModelType.Chat]} />
         </Form.Item>
       </Form>
