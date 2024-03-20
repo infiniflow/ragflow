@@ -30,19 +30,6 @@ class Pdf(PdfParser):
         #        print(b)
         print("OCR:", timer()-start)
 
-        def get_position(bx):
-            poss = []
-            pn = bx["page_number"]
-            top = bx["top"] - self.page_cum_height[pn - 1]
-            bott = bx["bottom"] - self.page_cum_height[pn - 1]
-            poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn-1].size[1]/zoomin)))
-            while bott * zoomin > self.page_images[pn - 1].size[1]:
-                bott -= self.page_images[pn- 1].size[1] / zoomin
-                top = 0
-                pn += 1
-                poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn - 1].size[1] / zoomin)))
-            return poss
-
         def tag(pn, left, right, top, bottom):
             return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
                 .format(pn, left, right, top, bottom)
@@ -54,7 +41,7 @@ class Pdf(PdfParser):
         callback(0.67, "Table analysis finished.")
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
-        self._naive_vertical_merge()
+        self._concat_downward()
         self._filter_forpages()
         callback(0.68, "Text merging finished")
 
@@ -74,7 +61,7 @@ class Pdf(PdfParser):
             sec_ids.append(sid)
             #print(lvl, self.boxes[i]["text"], most_level)
 
-        sections = [(b["text"], sec_ids[i], get_position(b)) for i, b in enumerate(self.boxes)]
+        sections = [(b["text"], sec_ids[i], self.get_position(b, zoomin)) for i, b in enumerate(self.boxes)]
         for (img, rows), poss in tbls:
             sections.append((rows if isinstance(rows, str) else rows[0], -1, [(p[0]+1-from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 

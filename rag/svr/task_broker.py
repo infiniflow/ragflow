@@ -82,12 +82,14 @@ def dispatch():
         tsks = []
         if r["type"] == FileType.PDF.value:
             pages = PdfParser.total_page_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
+            page_size = 5
+            if r["parser_id"] == "paper": page_size = 12
             for s,e in r["parser_config"].get("pages", [(0,100000)]):
                 e = min(e, pages)
-                for p in range(s, e, 5):
+                for p in range(s, e, page_size):
                     task = new_task()
                     task["from_page"] = p
-                    task["to_page"] = min(p + 5, e)
+                    task["to_page"] = min(p + page_size, e)
                     tsks.append(task)
         elif r["parser_id"] == "table":
                 rn = HuExcelParser.row_number(r["name"], MINIO.get(r["kb_id"], r["location"]))

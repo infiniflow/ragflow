@@ -16,7 +16,7 @@ from io import BytesIO
 from nltk import word_tokenize
 from openpyxl import load_workbook
 from rag.nlp import is_english, random_choices
-from rag.nlp import huqie, stemmer
+from rag.nlp import huqie
 from deepdoc.parser import ExcelParser
 
 
@@ -73,12 +73,8 @@ def beAdoc(d, q, a, eng):
     aprefix = "Answer: " if eng else "回答："
     d["content_with_weight"] = "\t".join(
         [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
-    if eng:
-        d["content_ltks"] = " ".join([stemmer.stem(w)
-                                     for w in word_tokenize(q)])
-    else:
-        d["content_ltks"] = huqie.qie(q)
-        d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
+    d["content_ltks"] = huqie.qie(q)
+    d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
     return d
 
 

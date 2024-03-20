@@ -15,7 +15,7 @@ import re
 from collections import Counter
 
 from api.db import ParserType
-from rag.nlp import huqie, tokenize, tokenize_table, add_positions
+from rag.nlp import huqie, tokenize, tokenize_table, add_positions, bullets_category, title_frequency
 from deepdoc.parser import PdfParser
 import numpy as np
 from rag.utils import num_tokens_from_string
@@ -46,11 +46,11 @@ class Pdf(PdfParser):
         self._table_transformer_job(zoomin)
         callback(0.68, "Table analysis finished")
         self._text_merge()
+        tbls = self._extract_table_figure(True, zoomin, True, True)
         column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
-        self._concat_downward(concat_between_pages=False)
+        self._concat_downward()
         self._filter_forpages()
         callback(0.75, "Text merging finished.")
-        tbls = self._extract_table_figure(True, zoomin, True, True)
 
         # clean mess
         if column_width < self.page_images[0].size[0] / zoomin / 2:
@@ -59,24 +59,24 @@ class Pdf(PdfParser):
             self.boxes = self.sort_X_by_page(self.boxes, column_width / 2)
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
-        freq = Counter([b["text"] for b in self.boxes])
-        garbage = set([k for k, v in freq.items() if v > self.total_page * 0.6])
-        i = 0
-        while i < len(self.boxes):
-            if self.boxes[i]["text"] in garbage \
-                    or (re.match(r"[a-zA-Z0-9]+$", self.boxes[i]["text"]) and not self.boxes[i].get("layoutno")) \
-                    or (i + 1 < len(self.boxes) and self.boxes[i]["text"] == self.boxes[i + 1]["text"]):
-                self.boxes.pop(i)
-            elif i + 1 < len(self.boxes) and self.boxes[i].get("layoutno", '0') == self.boxes[i + 1].get("layoutno",
-                                                                                                         '1'):
-                # merge within same layouts
-                self.boxes[i + 1]["top"] = self.boxes[i]["top"]
-                self.boxes[i + 1]["x0"] = min(self.boxes[i]["x0"], self.boxes[i + 1]["x0"])
-                self.boxes[i + 1]["x1"] = max(self.boxes[i]["x1"], self.boxes[i + 1]["x1"])
-                self.boxes[i + 1]["text"] = self.boxes[i]["text"] + " " + self.boxes[i + 1]["text"]
-                self.boxes.pop(i)
-            else:
-                i += 1
+        # freq = Counter([b["text"] for b in self.boxes])
+        # garbage = set([k for k, v in freq.items() if v > self.total_page * 0.6])
+        # i = 0
+        # while i < len(self.boxes):
+        #     if self.boxes[i]["text"] in garbage \
+        #             or (re.match(r"[a-zA-Z0-9]+$", self.boxes[i]["text"]) and not self.boxes[i].get("layoutno")) \
+        #             or (i + 1 < len(self.boxes) and self.boxes[i]["text"] == self.boxes[i + 1]["text"]):
+        #         self.boxes.pop(i)
+        #     elif i + 1 < len(self.boxes) and self.boxes[i].get("layoutno", '0') == self.boxes[i + 1].get("layoutno",
+        #                                                                                                  '1'):
+        #         # merge within same layouts
+        #         self.boxes[i + 1]["top"] = self.boxes[i]["top"]
+        #         self.boxes[i + 1]["x0"] = min(self.boxes[i]["x0"], self.boxes[i + 1]["x0"])
+        #         self.boxes[i + 1]["x1"] = max(self.boxes[i]["x1"], self.boxes[i + 1]["x1"])
+        #         self.boxes[i + 1]["text"] = self.boxes[i]["text"] + " " + self.boxes[i + 1]["text"]
+        #         self.boxes.pop(i)
+        #     else:
+        #         i += 1
 
         def _begin(txt):
             return re.match(
@@ -88,7 +88,7 @@ class Pdf(PdfParser):
                 "title":"",
                 "authors": "",
                 "abstract": "",
-                "lines": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes[i:] if
+                "sections": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes if
                           re.match(r"(text|title)", b.get("layoutno", "text"))],
                 "tables": tbls
             }
@@ -119,11 +119,10 @@ class Pdf(PdfParser):
             if re.match("(abstract|摘要)", txt):
                 if len(txt.split(" ")) > 32 or len(txt) > 64:
                     abstr = txt + self._line_tag(b, zoomin)
-                    i += 1
                     break
-                txt = self.boxes[i + 1]["text"].lower().strip()
+                txt = self.boxes[i]["text"].lower().strip()
                 if len(txt.split(" ")) > 32 or len(txt) > 64:
-                    abstr = txt + self._line_tag(self.boxes[i + 1], zoomin)
+                    abstr = txt + self._line_tag(self.boxes[i], zoomin)
                 i += 1
                 break
         if not abstr: i = 0
@@ -136,7 +135,7 @@ class Pdf(PdfParser):
             "title": title if title else filename,
             "authors": " ".join(authors),
             "abstract": abstr,
-            "lines": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes[i:] if
+            "sections": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes[i:] if
                       re.match(r"(text|title)", b.get("layoutno", "text"))],
             "tables": tbls
         }
@@ -153,7 +152,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         paper = pdf_parser(filename if not binary else binary,
                            from_page=from_page, to_page=to_page, callback=callback)
     else: raise NotImplementedError("file type not supported yet(pdf supported)")
-    doc = {"docnm_kwd": filename, "authors_tks": paper["authors"],
+
+    doc = {"docnm_kwd": filename, "authors_tks": huqie.qie(paper["authors"]),
            "title_tks": huqie.qie(paper["title"] if paper["title"] else filename)}
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     doc["authors_sm_tks"] = huqie.qieqie(doc["authors_tks"])
@@ -172,6 +172,38 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         add_positions(d, poss)
         tokenize(d, txt, eng)
         res.append(d)
+
+    sorted_sections = paper["sections"]
+    # set pivot using the most frequent type of title,
+    # then merge between 2 pivot
+    bull = bullets_category([txt for txt, _ in sorted_sections])
+    most_level, levels = title_frequency(bull, sorted_sections)
+    assert len(sorted_sections) == len(levels)
+    sec_ids = []
+    sid = 0
+    for i, lvl in enumerate(levels):
+        if lvl <= most_level and i > 0 and lvl != levels[i-1]: sid += 1
+        sec_ids.append(sid)
+        print(lvl, sorted_sections[i][0], most_level, sid)
+
+    chunks = []
+    last_sid = -2
+    for (txt, _), sec_id in zip(sorted_sections, sec_ids):
+        if sec_id == last_sid:
+            if chunks:
+                chunks[-1] += "\n" + txt
+                continue
+        chunks.append(txt)
+        last_sid = sec_id
+    for txt in chunks:
+        d = copy.deepcopy(doc)
+        d["image"], poss = pdf_parser.crop(txt, need_position=True)
+        add_positions(d, poss)
+        tokenize(d, pdf_parser.remove_tag(txt), eng)
+        res.append(d)
+        print("----------------------\n", pdf_parser.remove_tag(txt))
+
+    return res
 
     readed = [0] * len(paper["lines"])
     # find colon firstly
@@ -252,6 +284,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
 if __name__ == "__main__":
     import sys
-    def dummy(a, b):
+    def dummy(prog=None, msg=""):
         pass
     chunk(sys.argv[1], callback=dummy)

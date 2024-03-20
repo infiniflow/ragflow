@@ -5,6 +5,27 @@ from io import BytesIO
 
 
 class HuExcelParser:
+    def html(self, fnm):
+        if isinstance(fnm, str):
+            wb = load_workbook(fnm)
+        else:
+            wb = load_workbook(BytesIO(fnm))
+        tb = ""
+        for sheetname in wb.sheetnames:
+            ws = wb[sheetname]
+            rows = list(ws.rows)
+            tb += f"<table><caption>{sheetname}</caption><tr>"
+            for t in list(rows[0]): tb += f"<th>{t.value}</th>"
+            tb += "</tr>"
+            for r in list(rows[1:]):
+                tb += "<tr>"
+                for i,c in enumerate(r):
+                    if c.value is None: tb += "<td></td>"
+                    else: tb += f"<td>{c.value}</td>"
+                tb += "</tr>"
+            tb += "</table>\n"
+        return tb
+
     def __call__(self, fnm):
         if isinstance(fnm, str):
             wb = load_workbook(fnm)
