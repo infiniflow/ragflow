@@ -773,4 +773,10 @@ export const useSelectDialogListLoading = () => {
 export const useSelectConversationListLoading = () => {
   return useOneNamespaceEffectsLoading('chatModel', ['listConversation']);
 };
+
+export const useGetSendButtonDisabled = () => {
+  const { dialogId, conversationId } = useGetChatSearchParams();
+
+  return dialogId === '' && conversationId === '';
+};
 //#endregion
