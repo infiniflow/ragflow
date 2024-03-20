@@ -14,7 +14,7 @@ import copy
 import re
 from rag.app import laws
 from rag.nlp import huqie, is_english, tokenize, naive_merge, tokenize_table, add_positions
-from deepdoc.parser import PdfParser
+from deepdoc.parser import PdfParser, ExcelParser
 from rag.settings import cron_logger
 
 
@@ -74,6 +74,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         sections, tbls = pdf_parser(filename if not binary else binary,
                               from_page=from_page, to_page=to_page, callback=callback)
         res = tokenize_table(tbls, doc, eng)
+    elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        excel_parser = ExcelParser()
+        sections = [(excel_parser.html(binary), "")]
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""

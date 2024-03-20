@@ -3,13 +3,8 @@ from collections import Counter
 
 from rag.utils import num_tokens_from_string
 from . import huqie
-from nltk import word_tokenize
 import re
 import copy
-
-from nltk.stem import PorterStemmer
-
-stemmer = PorterStemmer()
 
 
 BULLET_PATTERN = [[
@@ -77,13 +72,8 @@ def is_english(texts):
 def tokenize(d, t, eng):
     d["content_with_weight"] = t
     t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", t)
-    if eng:
-        t = re.sub(r"([a-z])-([a-z])", r"\1\2", t)
-        d["content_ltks"] = " ".join([stemmer.stem(w)
-                                     for w in word_tokenize(t)])
-    else:
-        d["content_ltks"] = huqie.qie(t)
-        d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
+    d["content_ltks"] = huqie.qie(t)
+    d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
 
 
 def tokenize_table(tbls, doc, eng, batch_size=10):
@@ -94,8 +84,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             continue
         if isinstance(rows, str):
             d = copy.deepcopy(doc)
-            r = re.sub(r"<[^<>]{,12}>", "", rows)
-            tokenize(d, r, eng)
+            tokenize(d, rows, eng)
             d["content_with_weight"] = rows
             d["image"] = img
             add_positions(d, poss)
