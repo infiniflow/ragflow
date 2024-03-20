@@ -18,6 +18,7 @@ import {
   Popover,
   Skeleton,
   Space,
+  Spin,
 } from 'antd';
 import classNames from 'classnames';
 import { useCallback, useMemo } from 'react';
@@ -31,6 +32,7 @@ import {
   useFetchConversationOnMount,
   useGetFileIcon,
   useGetSendButtonDisabled,
+  useSelectConversationLoading,
   useSendMessage,
 } from '../hooks';
 
@@ -259,29 +261,32 @@ const ChatContainer = () => {
     useClickDrawer();
   const disabled = useGetSendButtonDisabled();
   useGetFileIcon();
+  const loading = useSelectConversationLoading();
 
   return (
     <>
       <Flex flex={1} className={styles.chatContainer} vertical>
         <Flex flex={1} vertical className={styles.messageContainer}>
           <div>
-            {conversation?.message?.map((message) => {
-              const assistantMessages = conversation?.message
-                ?.filter((x) => x.role === MessageType.Assistant)
-                .slice(1);
-              const referenceIndex = assistantMessages.findIndex(
-                (x) => x.id === message.id,
-              );
-              const reference = conversation.reference[referenceIndex];
-              return (
-                <MessageItem
-                  key={message.id}
-                  item={message}
-                  reference={reference}
-                  clickDocumentButton={clickDocumentButton}
-                ></MessageItem>
-              );
-            })}
+            <Spin spinning={loading}>
+              {conversation?.message?.map((message) => {
+                const assistantMessages = conversation?.message
+                  ?.filter((x) => x.role === MessageType.Assistant)
+                  .slice(1);
+                const referenceIndex = assistantMessages.findIndex(
+                  (x) => x.id === message.id,
+                );
+                const reference = conversation.reference[referenceIndex];
+                return (
+                  <MessageItem
+                    key={message.id}
+                    item={message}
+                    reference={reference}
+                    clickDocumentButton={clickDocumentButton}
+                  ></MessageItem>
+                );
+              })}
+            </Spin>
           </div>
           <div ref={ref} />
         </Flex>
