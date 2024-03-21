@@ -52,7 +52,7 @@ REQUEST_MAX_WAIT_SEC = 300
 USE_REGISTRY = get_base_config("use_registry")
 
 default_llm = {
-    "通义千问": {
+    "Tongyi-Qianwen": {
         "chat_model": "qwen-plus",
         "embedding_model": "text-embedding-v2",
         "image2text_model": "qwen-vl-max",
@@ -64,7 +64,7 @@ default_llm = {
         "image2text_model": "gpt-4-vision-preview",
         "asr_model": "whisper-1",
     },
-    "智谱AI": {
+    "ZHIPU-AI": {
         "chat_model": "glm-3-turbo",
         "embedding_model": "embedding-2",
         "image2text_model": "glm-4v",
@@ -84,17 +84,17 @@ default_llm = {
     }
 }
 LLM = get_base_config("user_default_llm", {})
-LLM_FACTORY = LLM.get("factory", "通义千问")
+LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
 if LLM_FACTORY not in default_llm:
-    print("\33[91m【ERROR】\33[0m:", f"LLM factory {LLM_FACTORY} has not supported yet, switch to '通义千问/QWen' automatically, and please check the API_KEY in service_conf.yaml.")
-    LLM_FACTORY = "通义千问"
+    print("\33[91m【ERROR】\33[0m:", f"LLM factory {LLM_FACTORY} has not supported yet, switch to 'Tongyi-Qianwen/QWen' automatically, and please check the API_KEY in service_conf.yaml.")
+    LLM_FACTORY = "Tongyi-Qianwen"
 CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"]
 EMBEDDING_MDL = default_llm[LLM_FACTORY]["embedding_model"]
 ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
 IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
 
 API_KEY = LLM.get("api_key", "")
-PARSERS = LLM.get("parsers", "naive:General,qa:Q&A,resume:Resume,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture")
+PARSERS = LLM.get("parsers", "naive:General,one:One,qa:Q&A,resume:Resume,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture")
 
 # distribution
 DEPENDENT_DISTRIBUTION = get_base_config("dependent_distribution", False)
