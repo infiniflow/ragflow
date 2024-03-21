@@ -43,6 +43,7 @@
     "@types/react-dom": "^18.0.11",
     "@types/react-syntax-highlighter": "^15.5.11",
     "@types/uuid": "^9.0.8",
+    "@types/webpack-env": "^1.18.4",
     "@umijs/lint": "^4.1.1",
     "@umijs/plugins": "^4.1.0",
     "cross-env": "^7.0.3",
