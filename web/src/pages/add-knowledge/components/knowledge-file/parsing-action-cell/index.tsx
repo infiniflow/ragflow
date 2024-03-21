@@ -18,12 +18,14 @@ interface IProps {
   knowledgeBaseId: string;
   record: IKnowledgeFile;
   setDocumentAndParserId: () => void;
+  showRenameModal: () => void;
 }
 
 const ParsingActionCell = ({
   knowledgeBaseId,
   record,
   setDocumentAndParserId,
+  showRenameModal,
 }: IProps) => {
   const dispatch = useDispatch();
   const documentId = record.id;
@@ -68,23 +70,13 @@ const ParsingActionCell = ({
     });
   };
 
-  const showRenameModal = () => {
-    if (!isRunning) {
-      setCurrentRecord();
-      dispatch({
-        type: 'kFModel/setIsShowRenameModal',
-        payload: true,
-      });
-    }
-  };
-
   const chunkItems: MenuProps['items'] = [
     {
       key: '1',
       label: (
         <div>
           <Button type="link" onClick={showSegmentSetModal}>
-            Category
+            Chunk Method
           </Button>
         </div>
       ),

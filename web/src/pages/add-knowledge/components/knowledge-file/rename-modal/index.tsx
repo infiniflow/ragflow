@@ -1,46 +1,30 @@
-import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
-import { useDispatch, useSelector } from 'umi';
 
-const RenameModal = () => {
+interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
+  loading: boolean;
+  initialName: string;
+  onOk: (name: string) => void;
+  showModal?(): void;
+}
+
+const RenameModal = ({
+  visible,
+  onOk,
+  loading,
+  initialName,
+  hideModal,
+}: IProps) => {
   const [form] = Form.useForm();
-  const dispatch = useDispatch();
-  const kFModel = useSelector((state: any) => state.kFModel);
-  const loading = useSelector(
-    (state: any) => state.loading.effects['kFModel/document_rename'],
-  );
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const isModalOpen = kFModel.isShowRenameModal;
-  const initialName = kFModel.currentRecord?.name;
-  const documentId = kFModel.currentRecord?.id;
 
   type FieldType = {
     name?: string;
   };
 
-  const closeModal = () => {
-    dispatch({
-      type: 'kFModel/setIsShowRenameModal',
-      payload: false,
-    });
-  };
-
   const handleOk = async () => {
     const ret = await form.validateFields();
-
-    dispatch({
-      type: 'kFModel/document_rename',
-      payload: {
-        doc_id: documentId,
-        name: ret.name,
-        kb_id: knowledgeBaseId,
-      },
-    });
-  };
-
-  const handleCancel = () => {
-    closeModal();
+    onOk(ret.name);
   };
 
   const onFinish = (values: any) => {
@@ -52,17 +36,17 @@ const RenameModal = () => {
   };
 
   useEffect(() => {
-    if (isModalOpen) {
+    if (visible) {
       form.setFieldValue('name', initialName);
     }
-  }, [initialName, documentId, form, isModalOpen]);
+  }, [initialName, form, visible]);
 
   return (
     <Modal
       title="Rename"
-      open={isModalOpen}
+      open={visible}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={hideModal}
       okButtonProps={{ loading }}
     >
       <Form

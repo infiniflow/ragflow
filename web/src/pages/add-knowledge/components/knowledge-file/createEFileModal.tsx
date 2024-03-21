@@ -1,31 +1,25 @@
+import { IModalManagerChildrenProps } from '@/components/modal-manager';
+import { useFetchDocumentList } from '@/hooks/documentHooks';
+import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import { Form, Input, Modal } from 'antd';
 import React from 'react';
-import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'umi';
+import { useDispatch } from 'umi';
 
 type FieldType = {
   name?: string;
 };
-interface kFProps {
-  getKfList: () => void;
-  kb_id: string;
+
+interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
+  loading: boolean;
+  onOk: (name: string) => void;
+  showModal?(): void;
 }
 
-const FileCreatingModal: React.FC<kFProps> = ({ getKfList, kb_id }) => {
+const FileCreatingModal: React.FC<IProps> = ({ visible, hideModal }) => {
+  const fetchKfList = useFetchDocumentList();
   const dispatch = useDispatch();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
   const [form] = Form.useForm();
-  const kFModel = useSelector((state: any) => state.kFModel);
-  const { isShowCEFwModal } = kFModel;
-  const { t } = useTranslation();
-
-  const handleCancel = () => {
-    dispatch({
-      type: 'kFModel/updateState',
-      payload: {
-        isShowCEFwModal: false,
-      },
-    });
-  };
 
   const createDocument = async () => {
     try {
@@ -34,11 +28,11 @@ const FileCreatingModal: React.FC<kFProps> = ({ getKfList, kb_id }) => {
         type: 'kFModel/document_create',
         payload: {
           name: values.name,
-          kb_id,
+          kb_id: knowledgeId,
         },
       });
-      if (retcode === 0) {
-        getKfList && getKfList();
+      if (retcode === 0 && fetchKfList) {
+        fetchKfList();
       }
     } catch (errorInfo) {
       console.log('Failed:', errorInfo);
@@ -52,9 +46,9 @@ const FileCreatingModal: React.FC<kFProps> = ({ getKfList, kb_id }) => {
   return (
     <Modal
       title="File Name"
-      open={isShowCEFwModal}
+      open={visible}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={hideModal}
     >
       <Form
         form={form}

@@ -35,7 +35,11 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
           <Title level={5} className={styles.topTitle}>
             {item.title} Category
           </Title>
-          <Text>{item.description}</Text>
+          <p
+            dangerouslySetInnerHTML={{
+              __html: item.description,
+            }}
+          ></p>
           <Title level={5}>{item.title} Image Examples</Title>
           <Text>
             We've prepared detailed visual guides to make understanding easier
