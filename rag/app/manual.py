@@ -51,15 +51,30 @@ class Pdf(PdfParser):
 
         # set pivot using the most frequent type of title,
         # then merge between 2 pivot
-        bull = bullets_category([b["text"] for b in self.boxes])
-        most_level, levels = title_frequency(bull, [(b["text"], b.get("layout_no","")) for b in self.boxes])
+        if len(self.boxes)>0 and len(self.outlines)/len(self.boxes) > 0.1:
+            max_lvl = max([lvl for _, lvl in self.outlines])
+            most_level = max(0, max_lvl-1)
+            levels = []
+            for b in self.boxes:
+                for t,lvl in self.outlines:
+                    tks = set([t[i]+t[i+1] for i in range(len(t)-1)])
+                    tks_ = set([b["text"][i]+b["text"][i+1] for i in range(min(len(t), len(b["text"])-1))])
+                    if len(set(tks & tks_))/max([len(tks), len(tks_), 1]) > 0.8:
+                        levels.append(lvl)
+                        break
+                else:
+                    levels.append(max_lvl + 1)
+        else:
+            bull = bullets_category([b["text"] for b in self.boxes])
+            most_level, levels = title_frequency(bull, [(b["text"], b.get("layout_no","")) for b in self.boxes])
+
         assert len(self.boxes) == len(levels)
         sec_ids = []
         sid = 0
         for i, lvl in enumerate(levels):
             if lvl <= most_level and i > 0 and lvl != levels[i-1]: sid += 1
             sec_ids.append(sid)
-            #print(lvl, self.boxes[i]["text"], most_level)
+            #print(lvl, self.boxes[i]["text"], most_level, sid)
 
         sections = [(b["text"], sec_ids[i], self.get_position(b, zoomin)) for i, b in enumerate(self.boxes)]
         for (img, rows), poss in tbls:
@@ -67,13 +82,16 @@ class Pdf(PdfParser):
 
         chunks = []
         last_sid = -2
+        tk_cnt = 0
         for txt, sec_id, poss in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1])):
             poss = "\t".join([tag(*pos) for pos in poss])
-            if sec_id == last_sid or sec_id == -1:
+            if tk_cnt < 2048 and (sec_id == last_sid or sec_id == -1):
                 if chunks:
                     chunks[-1] += "\n" + txt + poss
+                    tk_cnt += num_tokens_from_string(txt)
                     continue
             chunks.append(txt + poss)
+            tk_cnt = num_tokens_from_string(txt)
             if sec_id >-1: last_sid = sec_id
         return chunks, tbls
 
@@ -97,35 +115,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     # is it English
     eng = lang.lower() == "english"#pdf_parser.is_english
 
-    i = 0
-    chunk = []
-    tk_cnt = 0
     res = tokenize_table(tbls, doc, eng)
-    def add_chunk():
-        nonlocal chunk, res, doc, pdf_parser, tk_cnt
+    for ck in cks:
         d = copy.deepcopy(doc)
-        ck = "\n".join(chunk)
-        tokenize(d, pdf_parser.remove_tag(ck), eng)
         d["image"], poss = pdf_parser.crop(ck, need_position=True)
         add_positions(d, poss)
+        tokenize(d, pdf_parser.remove_tag(ck), eng)
         res.append(d)
-        chunk = []
-        tk_cnt = 0
-
-    while i < len(cks):
-        if tk_cnt > 256: add_chunk()
-        txt = cks[i]
-        txt_ = pdf_parser.remove_tag(txt)
-        i += 1
-        cnt = num_tokens_from_string(txt_)
-        chunk.append(txt)
-        tk_cnt += cnt
-    if chunk: add_chunk()
-
-    for i, d in enumerate(res):
-        print(d)
-        # d["image"].save(f"./logs/{i}.jpg")
     return res
+
 
 
 if __name__ == "__main__":

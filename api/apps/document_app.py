@@ -218,7 +218,7 @@ def rm():
         ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
 
         DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-        if not DocumentService.delete_by_id(req["doc_id"]):
+        if not DocumentService.delete(doc):
             return get_data_error_result(
                 retmsg="Database error (Document removal)!")
 

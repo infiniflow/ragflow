@@ -215,7 +215,7 @@ class Dealer:
         else:
             pieces = re.split(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", answer)
         for i in range(1, len(pieces)):
-            if re.match(r"[a-z][.?;!][ \n]", pieces[i]):
+            if re.match(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", pieces[i]):
                 pieces[i - 1] += pieces[i][0]
                 pieces[i] = pieces[i][1:]
         idx = []
@@ -243,7 +243,8 @@ class Dealer:
                                                             chunks_tks,
                                                             tkweight, vtweight)
             mx = np.max(sim) * 0.99
-            if mx < 0.65:
+            es_logger.info("{} SIM: {}".format(pieces_[i], mx))
+            if mx < 0.63:
                 continue
             cites[idx[i]] = list(
                 set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]

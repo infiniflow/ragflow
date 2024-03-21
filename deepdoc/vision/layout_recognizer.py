@@ -39,7 +39,7 @@ class LayoutRecognizer(Recognizer):
         super().__init__(self.labels, domain, os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
         self.garbage_layouts = ["footer", "header", "reference"]
 
-    def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16):
+    def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16, drop=True):
         def __is_garbage(b):
             patt = [r"^•+$", r"(版权归©|免责条款|地址[:：])", r"\.{3,}", "^[0-9]{1,2} / ?[0-9]{1,2}$",
                     r"^[0-9]{1,2} of [0-9]{1,2}$", "^http://[^ ]{12,}",
@@ -88,7 +88,11 @@ class LayoutRecognizer(Recognizer):
                         i += 1
                         continue
                     lts_[ii]["visited"] = True
-                    if lts_[ii]["type"] in self.garbage_layouts:
+                    keep_feats = [
+                        lts_[ii]["type"] == "footer" and bxs[i]["bottom"] < image_list[pn].size[1]*0.9/scale_factor,
+                        lts_[ii]["type"] == "header" and bxs[i]["top"] > image_list[pn].size[1]*0.1/scale_factor,
+                    ]
+                    if drop and lts_[ii]["type"] in self.garbage_layouts and not any(keep_feats):
                         if lts_[ii]["type"] not in garbages:
                             garbages[lts_[ii]["type"]] = []
                         garbages[lts_[ii]["type"]].append(bxs[i]["text"])

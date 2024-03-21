@@ -11,7 +11,7 @@ import logging
 from PIL import Image, ImageDraw
 import numpy as np
 
-from api.db import ParserType
+from PyPDF2 import PdfReader as pdf2_read
 from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer
 from rag.nlp import huqie
 from copy import deepcopy
@@ -288,9 +288,9 @@ class HuParser:
                                               for b in bxs])
         self.boxes.append(bxs)
 
-    def _layouts_rec(self, ZM):
+    def _layouts_rec(self, ZM, drop=True):
         assert len(self.page_images) == len(self.boxes)
-        self.boxes, self.page_layout = self.layouter(self.page_images, self.boxes, ZM)
+        self.boxes, self.page_layout = self.layouter(self.page_images, self.boxes, ZM, drop=drop)
         # cumlative Y
         for i in range(len(self.boxes)):
             self.boxes[i]["top"] += \
@@ -907,6 +907,23 @@ class HuParser:
                                       pix.samples)
                 self.page_images.append(img)
                 self.page_chars.append([])
+
+        self.outlines = []
+        try:
+            self.pdf = pdf2_read(fnm if isinstance(fnm, str) else BytesIO(fnm))
+            outlines = self.pdf.outline
+
+            def dfs(arr, depth):
+                for a in arr:
+                    if isinstance(a, dict):
+                        self.outlines.append((a["/Title"], depth))
+                        continue
+                    dfs(a, depth+1)
+            dfs(outlines, 0)
+        except Exception as e:
+            logging.warning(f"Outlines exception: {e}")
+        if not self.outlines:
+            logging.warning(f"Miss outlines")
 
         logging.info("Images converted.")
         self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(

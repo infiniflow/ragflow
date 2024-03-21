@@ -10,12 +10,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import copy
 import re
 from rag.app import laws
-from rag.nlp import huqie, is_english, tokenize, naive_merge, tokenize_table, add_positions
+from rag.nlp import huqie, tokenize
 from deepdoc.parser import PdfParser, ExcelParser
-from rag.settings import cron_logger
 
 
 class Pdf(PdfParser):
@@ -33,7 +31,7 @@ class Pdf(PdfParser):
 
         from timeit import default_timer as timer
         start = timer()
-        self._layouts_rec(zoomin)
+        self._layouts_rec(zoomin, drop=False)
         callback(0.63, "Layout analysis finished.")
         print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
