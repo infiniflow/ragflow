@@ -353,7 +353,7 @@ class User(DataBaseModel, UserMixin):
     email = CharField(max_length=255, null=False, help_text="email", index=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
     language = CharField(max_length=32, null=True, help_text="English|Chinese", default="Chinese")
-    color_schema = CharField(max_length=32, null=True, help_text="Bright|Dark", default="Dark")
+    color_schema = CharField(max_length=32, null=True, help_text="Bright|Dark", default="Bright")
     timezone = CharField(max_length=64, null=True, help_text="Timezone", default="UTC+8\tAsia/Shanghai")
     last_login_time = DateTimeField(null=True)
     is_authenticated = CharField(max_length=1, null=False, default="1")

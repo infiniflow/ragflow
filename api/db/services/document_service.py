@@ -62,6 +62,15 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def delete(cls, doc):
+        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+        if not KnowledgebaseService.update_by_id(
+                kb.id, {"doc_num": kb.doc_num - 1}):
+            raise RuntimeError("Database error (Knowledgebase)!")
+        return cls.delete_by_id(doc.id)
+
+    @classmethod
+    @DB.connection_context()
     def get_newly_uploaded(cls, tm, mod=0, comm=1, items_per_page=64):
         fields = [cls.model.id, cls.model.kb_id, cls.model.parser_id, cls.model.parser_config, cls.model.name, cls.model.type, cls.model.location, cls.model.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, Tenant.asr_id, cls.model.update_time]
         docs = cls.model.select(*fields) \

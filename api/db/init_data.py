@@ -223,7 +223,7 @@ def init_llm_factory():
             "fid": factory_infos[3]["name"],
             "llm_name": "qwen-14B-chat",
             "tags": "LLM,CHAT,",
-            "max_tokens": 8191,
+            "max_tokens": 4096,
             "model_type": LLMType.CHAT.value
         }, {
             "fid": factory_infos[3]["name"],
@@ -271,11 +271,15 @@ def init_llm_factory():
             pass
 
     """
+    modify service_config
     drop table llm;
-    drop table factories;
+    drop table llm_factories;
     update tenant_llm set llm_factory='Tongyi-Qianwen' where llm_factory='通义千问';
     update tenant_llm set llm_factory='ZHIPU-AI' where llm_factory='智谱AI';
     update tenant set parser_ids='naive:General,one:One,qa:Q&A,resume:Resume,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture';
+    alter table knowledgebase modify avatar longtext;
+    alter table user modify avatar longtext;
+    alter table dialog modify icon longtext;
     """
 
 
