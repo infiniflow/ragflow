@@ -1,34 +1,37 @@
-import {
-  UseDynamicSVGImportOptions,
-  useDynamicSVGImport,
-} from '@/hooks/commonHooks';
+import Icon from '@ant-design/icons';
+import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
 
-interface IconProps extends React.SVGProps<SVGSVGElement> {
-  name: string;
-  onCompleted?: UseDynamicSVGImportOptions['onCompleted'];
-  onError?: UseDynamicSVGImportOptions['onError'];
+const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
+  const list = requireContext.keys().map((key) => {
+    const name = key.replace(/\.\/(.*)\.\w+$/, '$1');
+    console.log(name, requireContext(key));
+    return { name, value: requireContext(key) };
+  });
+  return list;
+};
+
+let routeList: { name: string; value: string }[] = [];
+
+try {
+  routeList = importAll(require.context('@/assets/svg', true, /\.svg$/));
+} catch (error) {
+  console.warn(error);
+  routeList = [];
 }
 
-const SvgIcon: React.FC<IconProps> = ({
-  name,
-  onCompleted,
-  onError,
-  ...rest
-}): React.ReactNode | null => {
-  const { error, loading, SvgIcon } = useDynamicSVGImport(name, {
-    onCompleted,
-    onError,
-  });
-  if (error) {
-    return error.message;
-  }
-  if (loading) {
-    return 'Loading...';
-  }
-  if (SvgIcon) {
-    return <SvgIcon {...rest} />;
-  }
-  return null;
+interface IProps extends IconComponentProps {
+  name: string;
+  width: string | number;
+}
+
+const SvgIcon = ({ name, width, ...restProps }: IProps) => {
+  const ListItem = routeList.find((item) => item.name === name);
+  return (
+    <Icon
+      component={() => <img src={ListItem?.value} alt="" width={width} />}
+      {...(restProps as any)}
+    />
+  );
 };
 
 export default SvgIcon;

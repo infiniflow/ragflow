@@ -220,7 +220,7 @@ const KnowledgeFile = () => {
       key: 'create_date',
     },
     {
-      title: 'Category',
+      title: 'Chunk Method',
       dataIndex: 'parser_id',
       key: 'parser_id',
       render: (text) => {
