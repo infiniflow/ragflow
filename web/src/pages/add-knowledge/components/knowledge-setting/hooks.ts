@@ -15,6 +15,7 @@ import {
   getUploadFileListFromBase64,
 } from '@/utils/fileUtil';
 import { Form, UploadFile } from 'antd';
+import { FormInstance } from 'antd/lib';
 import pick from 'lodash/pick';
 import { useCallback, useEffect } from 'react';
 import { LlmModelType } from '../../constant';
@@ -39,8 +40,8 @@ export const useSubmitKnowledgeConfiguration = () => {
   return { submitKnowledgeConfiguration, submitLoading };
 };
 
-export const useFetchKnowledgeConfigurationOnMount = () => {
-  const [form] = Form.useForm();
+export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
+  // const [form] = Form.useForm();
 
   const knowledgeDetails = useSelectKnowledgeDetails();
   const parserList = useSelectParserList();
@@ -68,8 +69,15 @@ export const useFetchKnowledgeConfigurationOnMount = () => {
     });
   }, [form, knowledgeDetails]);
 
-  return { form, parserList, embeddingModelOptions };
+  return { parserList, embeddingModelOptions };
 };
 
 export const useSelectKnowledgeDetailsLoading = () =>
   useOneNamespaceEffectsLoading('kSModel', ['getKbDetail']);
+
+export const useHandleChunkMethodChange = () => {
+  const [form] = Form.useForm();
+  const chunkMethod = Form.useWatch('parser_id', form);
+
+  return { form, chunkMethod };
+};

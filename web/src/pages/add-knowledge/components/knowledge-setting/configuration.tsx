@@ -17,15 +17,16 @@ import {
   useSubmitKnowledgeConfiguration,
 } from './hooks';
 
+import { FormInstance } from 'antd/lib';
 import styles from './index.less';
 
 const { Option } = Select;
 
-const ConfigurationForm = () => {
+const ConfigurationForm = ({ form }: { form: FormInstance }) => {
   const { submitKnowledgeConfiguration, submitLoading } =
     useSubmitKnowledgeConfiguration();
-  const { form, parserList, embeddingModelOptions } =
-    useFetchKnowledgeConfigurationOnMount();
+  const { parserList, embeddingModelOptions } =
+    useFetchKnowledgeConfigurationOnMount(form);
 
   const onFinishFailed = (errorInfo: any) => {
     console.log('Failed:', errorInfo);

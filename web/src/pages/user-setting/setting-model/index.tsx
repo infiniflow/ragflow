@@ -39,7 +39,7 @@ import SystemModelSettingModal from './system-model-setting-modal';
 import styles from './index.less';
 
 const IconMap = {
-  通义千问: TongYiIcon,
+  'Tongyi-Qianwen': TongYiIcon,
   Moonshot: MoonshotIcon,
   OpenAI: OpenAiIcon,
   'ZHIPU-AI': ZhiPuIcon,
