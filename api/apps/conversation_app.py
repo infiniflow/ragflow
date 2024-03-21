@@ -118,14 +118,13 @@ def message_fit_in(msg, max_length=4000):
 
     c = count()
     if c < max_length: return c, msg
-    msg = [m for m in msg if m.role in ["system", "user"]]
-    c = count()
-    if c < max_length: return c, msg
+
     msg_ = [m for m in msg[:-1] if m.role == "system"]
     msg_.append(msg[-1])
     msg = msg_
     c = count()
     if c < max_length: return c, msg
+
     ll = num_tokens_from_string(msg_[0].content)
     l = num_tokens_from_string(msg_[-1].content)
     if ll / (ll + l) > 0.8:
