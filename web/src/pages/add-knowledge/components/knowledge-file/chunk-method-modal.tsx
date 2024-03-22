@@ -2,7 +2,11 @@ import MaxTokenNumber from '@/components/max-token-number';
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { IKnowledgeFileParserConfig } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+  MinusCircleOutlined,
+  PlusOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons';
 import {
   Button,
   Divider,
@@ -12,6 +16,7 @@ import {
   Space,
   Switch,
   Tag,
+  Tooltip,
 } from 'antd';
 import omit from 'lodash/omit';
 import React, { useEffect, useMemo } from 'react';
@@ -31,6 +36,7 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   parserId: string;
   parserConfig: IKnowledgeFileParserConfig;
   documentType: string;
+  disabled: boolean;
 }
 
 const hidePagesChunkMethods = ['qa', 'table', 'picture', 'resume', 'one'];
@@ -40,6 +46,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
   onOk,
   hideModal,
   visible,
+  disabled,
   documentType,
   parserConfig,
 }) => {
@@ -89,6 +96,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
       onOk={handleOk}
       onCancel={hideModal}
       afterClose={afterClose}
+      okButtonProps={{ disabled }}
     >
       <Space size={[0, 8]} wrap>
         <div className={styles.tags}>
@@ -97,7 +105,11 @@ const ChunkMethodModal: React.FC<IProps> = ({
               <CheckableTag
                 key={x.value}
                 checked={selectedTag === x.value}
-                onChange={(checked) => handleChange(x.value, checked)}
+                onChange={(checked) => {
+                  if (!disabled) {
+                    handleChange(x.value, checked);
+                  }
+                }}
               >
                 {x.label}
               </CheckableTag>
@@ -108,7 +120,12 @@ const ChunkMethodModal: React.FC<IProps> = ({
       <Divider></Divider>
 
       {
-        <Form name="dynamic_form_nest_item" autoComplete="off" form={form}>
+        <Form
+          name="dynamic_form_nest_item"
+          autoComplete="off"
+          form={form}
+          disabled={disabled}
+        >
           {showOne && (
             <Form.Item
               name={['parser_config', 'layout_recognize']}
@@ -130,6 +147,18 @@ const ChunkMethodModal: React.FC<IProps> = ({
               {({ getFieldValue }) =>
                 getFieldValue(['parser_config', 'layout_recognize']) && (
                   <>
+                    <Space>
+                      <p>Page Ranges:</p>
+                      <Tooltip
+                        title={
+                          'page ranges: Define the page ranges that need to be parsed. The pages that not included in these ranges will be ignored.'
+                        }
+                      >
+                        <QuestionCircleOutlined
+                          className={styles.questionIcon}
+                        ></QuestionCircleOutlined>
+                      </Tooltip>
+                    </Space>
                     <Form.List name="pages">
                       {(fields, { add, remove }) => (
                         <>

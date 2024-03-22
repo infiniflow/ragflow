@@ -231,6 +231,7 @@ const KnowledgeFile = () => {
         onOk={onChangeParserOk}
         visible={changeParserVisible}
         hideModal={hideChangeParserModal}
+        disabled={currentRecord.chunk_num > 0}
         loading={changeParserLoading}
       />
       <RenameModal
