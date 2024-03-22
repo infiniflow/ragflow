@@ -5,7 +5,6 @@ import { DvaModel } from 'umi';
 
 export interface KSModelState {
   isShowPSwModal: boolean;
-  isShowTntModal: boolean;
   tenantIfo: any;
   knowledgeDetails: IKnowledge;
 }
@@ -14,7 +13,6 @@ const model: DvaModel<KSModelState> = {
   namespace: 'kSModel',
   state: {
     isShowPSwModal: false,
-    isShowTntModal: false,
     tenantIfo: {},
     knowledgeDetails: {} as any,
   },

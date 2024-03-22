@@ -28,6 +28,12 @@ export interface Parserconfig {
   to_page: number;
 }
 
+export interface IKnowledgeFileParserConfig {
+  chunk_token_num: number;
+  layout_recognize: boolean;
+  pages: number[][];
+  task_page_size: number;
+}
 export interface IKnowledgeFile {
   chunk_num: number;
   create_date: string;
@@ -51,6 +57,7 @@ export interface IKnowledgeFile {
   type: string;
   update_date: string;
   update_time: number;
+  parser_config: IKnowledgeFileParserConfig;
 }
 
 export interface ITenantInfo {
