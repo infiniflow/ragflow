@@ -83,7 +83,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       <Form.Item
         name="permission"
         label="Permissions"
-        tooltip="coming soon"
+        tooltip="If the permission is 'Team', all the team member can manipulate the knowledgebase."
         rules={[{ required: true }]}
       >
         <Radio.Group>
@@ -93,22 +93,22 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       </Form.Item>
       <Form.Item
         name="embd_id"
-        label="Embedding Model"
+        label="Embedding model"
         rules={[{ required: true }]}
-        tooltip="xx"
+        tooltip="The embedding model used to embedding chunks. It's unchangable once the knowledgebase has chunks. You need to delete all the chunks if you want to change it."
       >
         <Select
-          placeholder="Please select a country"
+          placeholder="Please select a embedding model"
           options={embeddingModelOptions}
         ></Select>
       </Form.Item>
       <Form.Item
         name="parser_id"
         label="Chunk method"
-        tooltip="xx"
+        tooltip="The instruction is at right."
         rules={[{ required: true }]}
       >
-        <Select placeholder="Please select a country">
+        <Select placeholder="Please select a chunk method">
           {parserList.map((x) => (
             <Option value={x.value} key={x.value}>
               {x.label}
@@ -122,7 +122,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
 
           if (parserId === 'naive') {
             return (
-              <Form.Item label="Max token number" tooltip="xxx">
+              <Form.Item label="Token number" tooltip="It determine the token number of a chunk approximately.">
                 <Flex gap={20} align="center">
                   <Flex flex={1}>
                     <Form.Item
