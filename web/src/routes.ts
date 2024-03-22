@@ -53,10 +53,6 @@ const routes = [
         component: '@/pages/chat',
       },
       {
-        path: '/setting',
-        component: '@/pages/setting',
-      },
-      {
         path: '/user-setting',
         component: '@/pages/user-setting',
         routes: [

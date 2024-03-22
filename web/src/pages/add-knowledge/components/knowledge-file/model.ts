@@ -7,10 +7,6 @@ import pick from 'lodash/pick';
 import { DvaModel } from 'umi';
 
 export interface KFModelState extends BaseState {
-  isShowCEFwModal: boolean;
-  isShowTntModal: boolean;
-  isShowSegmentSetModal: boolean;
-  isShowRenameModal: boolean;
   tenantIfo: any;
   data: IKnowledgeFile[];
   total: number;
@@ -21,10 +17,6 @@ export interface KFModelState extends BaseState {
 const model: DvaModel<KFModelState> = {
   namespace: 'kFModel',
   state: {
-    isShowCEFwModal: false,
-    isShowTntModal: false,
-    isShowSegmentSetModal: false,
-    isShowRenameModal: false,
     tenantIfo: {},
     data: [],
     total: 0,
@@ -43,9 +35,7 @@ const model: DvaModel<KFModelState> = {
         ...payload,
       };
     },
-    setIsShowRenameModal(state, { payload }) {
-      return { ...state, isShowRenameModal: payload };
-    },
+
     setCurrentRecord(state, { payload }) {
       return { ...state, currentRecord: payload };
     },
@@ -120,7 +110,7 @@ const model: DvaModel<KFModelState> = {
       const { retcode } = data;
       if (retcode === 0) {
         message.success('Modified!');
-        put({
+        yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
         });
@@ -148,10 +138,7 @@ const model: DvaModel<KFModelState> = {
       const { retcode } = data;
       if (retcode === 0) {
         message.success('rename success！');
-        yield put({
-          type: 'setIsShowRenameModal',
-          payload: false,
-        });
+
         yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
@@ -164,16 +151,11 @@ const model: DvaModel<KFModelState> = {
       const { data } = yield call(kbService.document_create, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        put({
+        yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
         });
-        put({
-          type: 'kFModel/updateState',
-          payload: {
-            isShowCEFwModal: false,
-          },
-        });
+
         message.success('Created!');
       }
       return retcode;
@@ -202,16 +184,11 @@ const model: DvaModel<KFModelState> = {
       );
       const { retcode } = data;
       if (retcode === 0) {
-        put({
+        yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
         });
-        put({
-          type: 'updateState',
-          payload: {
-            isShowSegmentSetModal: false,
-          },
-        });
+
         message.success('Modified!');
       }
       return retcode;

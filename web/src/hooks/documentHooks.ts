@@ -1,4 +1,5 @@
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/documentUtils';
 import { useCallback, useMemo } from 'react';
@@ -117,7 +118,11 @@ export const useSetDocumentParser = () => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const setDocumentParser = useCallback(
-    (parserId: string, documentId: string) => {
+    (
+      parserId: string,
+      documentId: string,
+      parserConfig: IChangeParserConfigRequestBody,
+    ) => {
       try {
         return dispatch<any>({
           type: 'kFModel/document_change_parser',
@@ -125,6 +130,7 @@ export const useSetDocumentParser = () => {
             parser_id: parserId,
             doc_id: documentId,
             kb_id: knowledgeId,
+            parser_config: parserConfig,
           },
         });
       } catch (errorInfo) {

@@ -1,22 +1,12 @@
 import { normFile } from '@/utils/fileUtil';
 import { PlusOutlined } from '@ant-design/icons';
-import {
-  Button,
-  Flex,
-  Form,
-  Input,
-  InputNumber,
-  Radio,
-  Select,
-  Slider,
-  Space,
-  Upload,
-} from 'antd';
+import { Button, Form, Input, Radio, Select, Space, Upload } from 'antd';
 import {
   useFetchKnowledgeConfigurationOnMount,
   useSubmitKnowledgeConfiguration,
 } from './hooks';
 
+import MaxTokenNumber from '@/components/max-token-number';
 import { FormInstance } from 'antd/lib';
 import styles from './index.less';
 
@@ -121,35 +111,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
           const parserId = getFieldValue('parser_id');
 
           if (parserId === 'naive') {
-            return (
-              <Form.Item label="Token number" tooltip="It determine the token number of a chunk approximately.">
-                <Flex gap={20} align="center">
-                  <Flex flex={1}>
-                    <Form.Item
-                      name={['parser_config', 'chunk_token_num']}
-                      noStyle
-                      initialValue={128}
-                      rules={[
-                        { required: true, message: 'Province is required' },
-                      ]}
-                    >
-                      <Slider className={styles.variableSlider} max={2048} />
-                    </Form.Item>
-                  </Flex>
-                  <Form.Item
-                    name={['parser_config', 'chunk_token_num']}
-                    noStyle
-                    rules={[{ required: true, message: 'Street is required' }]}
-                  >
-                    <InputNumber
-                      className={styles.sliderInputNumber}
-                      max={2048}
-                      min={0}
-                    />
-                  </Form.Item>
-                </Flex>
-              </Form.Item>
-            );
+            return <MaxTokenNumber></MaxTokenNumber>;
           }
           return null;
         }}

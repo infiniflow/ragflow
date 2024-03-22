@@ -224,7 +224,9 @@ const KnowledgeFile = () => {
         onOk={onCreateOk}
       />
       <ChunkMethodModal
-        parser_id={currentRecord.parser_id}
+        parserId={currentRecord.parser_id}
+        parserConfig={currentRecord.parser_config}
+        documentType={currentRecord.type}
         onOk={onChangeParserOk}
         visible={changeParserVisible}
         hideModal={hideChangeParserModal}

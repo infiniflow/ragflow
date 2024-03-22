@@ -5,9 +5,9 @@ const getImageName = (prefix: string, length: number) =>
 
 export const ImageMap = {
   book: getImageName('book', 4),
-  laws: getImageName('law', 4),
+  laws: getImageName('law', 2),
   manual: getImageName('manual', 4),
-  picture: getImageName('picture', 2),
+  picture: getImageName('media', 2),
   naive: getImageName('naive', 2),
   paper: getImageName('paper', 2),
   presentation: getImageName('presentation', 2),
@@ -32,10 +32,13 @@ export const TextMap = {
     The chunk granularity is consistent with 'ARTICLE', and all the upper level text will be included in the chunk.
     </p>`,
   },
-  manual: { title: '', description: `<p>Only <b>PDF</b> is supported.</p><p>
+  manual: {
+    title: '',
+    description: `<p>Only <b>PDF</b> is supported.</p><p>
   We assume manual has hierarchical section structure. We use the lowest section titles as pivots to slice documents.
   So, the figures and tables in the same section will not be sliced apart, and chunk size might be large.
-  </p>` },
+  </p>`,
+  },
   naive: {
     title: '',
     description: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT</b>.</p>
@@ -100,19 +103,19 @@ export const TextMap = {
   </li>
   <li>Every row in table will be treated as a chunk.</li>
   </ul>`,
-},
-picture: {
-  title: '',
-  description: `
+  },
+  picture: {
+    title: '',
+    description: `
   <p>Image files are supported. Video is coming soon.</p><p>
   If the picture has text in it, OCR is applied to extract the text as its text description.
   </p><p>
   If the text extracted by OCR is not enough, visual LLM is used to get the descriptions.
   </p>`,
   },
-one: {
-  title: '',
-  description: `
+  one: {
+    title: '',
+    description: `
   <p>Supported file formats are <b>DOCX, EXCEL, PDF, TXT</b>.
   </p><p>
   For a document, it will be treated as an entire chunk, no split at all.
