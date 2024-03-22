@@ -43,25 +43,27 @@ const SystemModelSettingModal = ({
       confirmLoading={loading}
     >
       <Form form={form} onValuesChange={onFormLayoutChange} layout={'vertical'}>
-        <Form.Item
-          label="Sequence2txt model"
-          name="asr_id"
-          tooltip="coming soon"
-        >
-          <Select options={allOptions[LlmModelType.Speech2text]} />
+        
+      <Form.Item label="Chat model" name="llm_id" tooltip="The default chat LLM all the newly created knowledgebase will use.">
+          <Select options={allOptions[LlmModelType.Chat]} />
         </Form.Item>
-        <Form.Item label="Embedding model" name="embd_id" tooltip="coming soon">
+        <Form.Item label="Embedding model" name="embd_id" tooltip="The default embedding model all the newly created knowledgebase will use.">
           <Select options={allOptions[LlmModelType.Embedding]} />
         </Form.Item>
         <Form.Item
           label="Img2txt model"
           name="img2txt_id"
-          tooltip="coming soon"
+          tooltip="The default multi-module model all the newly created knowledgebase will use. It can describe a picture or video."
         >
           <Select options={allOptions[LlmModelType.Image2text]} />
         </Form.Item>
-        <Form.Item label="Chat model" name="llm_id" tooltip="coming soon">
-          <Select options={allOptions[LlmModelType.Chat]} />
+        
+        <Form.Item
+          label="Sequence2txt model"
+          name="asr_id"
+          tooltip="The default ASR model all the newly created knowledgebase will use. Use this model to translate voices to corresponding text."
+        >
+          <Select options={allOptions[LlmModelType.Speech2text]} />
         </Form.Item>
       </Form>
     </Modal>

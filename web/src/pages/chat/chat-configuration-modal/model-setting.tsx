@@ -46,16 +46,16 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
       <Form.Item
         label="Model"
         name="llm_id"
-        tooltip="coming soon"
+        tooltip="Large language chat model"
         rules={[{ required: true, message: 'Please select!' }]}
       >
         <Select options={modelOptions} showSearch />
       </Form.Item>
       <Divider></Divider>
       <Form.Item
-        label="Parameters"
+        label="Freedom"
         name="parameters"
-        tooltip="coming soon"
+        tooltip="'Precise' means the LLM will be conservative and answer your question cautiously. 'Improvise' means the you want LLM talk much and freely. 'Balance' is between cautiously and freely."
         initialValue={ModelVariableType.Precise}
         // rules={[{ required: true, message: 'Please input!' }]}
       >
@@ -64,7 +64,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           onChange={handleParametersChange}
         />
       </Form.Item>
-      <Form.Item label="Temperature" tooltip={'xx'}>
+      <Form.Item label="Temperature" tooltip={'This parameter controls the randomness of predictions by the model. A lower temperature makes the model more confident in its responses, while a higher temperature makes it more creative and diverse.'}>
         <Flex gap={20} align="center">
           <Form.Item
             name={'temperatureEnabled'}
@@ -96,7 +96,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           </Form.Item>
         </Flex>
       </Form.Item>
-      <Form.Item label="Top P" tooltip={'xx'}>
+      <Form.Item label="Top P" tooltip={'Also known as “nucleus sampling,” this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones.'}>
         <Flex gap={20} align="center">
           <Form.Item name={'topPEnabled'} valuePropName="checked" noStyle>
             <Switch size="small" />
@@ -124,7 +124,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           </Form.Item>
         </Flex>
       </Form.Item>
-      <Form.Item label="Presence Penalty" tooltip={'xx'}>
+      <Form.Item label="Presence Penalty" tooltip={'This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation.'}>
         <Flex gap={20} align="center">
           <Form.Item
             name={'presencePenaltyEnabled'}
@@ -160,7 +160,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           </Form.Item>
         </Flex>
       </Form.Item>
-      <Form.Item label="Frequency Penalty" tooltip={'xx'}>
+      <Form.Item label="Frequency Penalty" tooltip={'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.'}>
         <Flex gap={20} align="center">
           <Form.Item
             name={'frequencyPenaltyEnabled'}
@@ -196,7 +196,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           </Form.Item>
         </Flex>
       </Form.Item>
-      <Form.Item label="Max Tokens" tooltip={'xx'}>
+      <Form.Item label="Max Tokens" tooltip={'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).'}>
         <Flex gap={20} align="center">
           <Form.Item name={'maxTokensEnabled'} valuePropName="checked" noStyle>
             <Switch size="small" />

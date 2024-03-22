@@ -33,16 +33,16 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
       {imageList.length > 0 ? (
         <>
           <Title level={5} className={styles.topTitle}>
-            {item.title} Category
+            "{item.title}" Chunking Method Description
           </Title>
           <p
             dangerouslySetInnerHTML={{
               __html: item.description,
             }}
           ></p>
-          <Title level={5}>{item.title} Image Examples</Title>
+          <Title level={5}>"{item.title}" Examples</Title>
           <Text>
-            We've prepared detailed visual guides to make understanding easier
+            This visual guides is in order to make understanding easier
             for you.
           </Text>
           <Row gutter={[10, 10]} className={styles.imageRow}>

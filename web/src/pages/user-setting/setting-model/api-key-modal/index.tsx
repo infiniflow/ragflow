@@ -66,7 +66,7 @@ const ApiKeyModal = ({
         <Form.Item<FieldType>
           label="Api-Key"
           name="api_key"
-          tooltip="coming soon"
+          tooltip="The API key can be obtained by registering the corresponding LLM supplier."
           rules={[{ required: true, message: 'Please input api key!' }]}
         >
           <Input />

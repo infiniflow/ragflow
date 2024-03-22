@@ -15,7 +15,10 @@ const SimilaritySlider = ({ isTooltipShown = false }: IProps) => {
       <Form.Item<FieldType>
         label="Similarity threshold"
         name={'similarity_threshold'}
-        tooltip={isTooltipShown && 'coming soon'}
+        tooltip={isTooltipShown && `We use hybrid similarity score to evaluate distance between two lines of text. 
+        It\'s weighted keywords similarity and vector cosine similarity. 
+        If the similarity between query and chunk is less than this threshold, the chunk will be filtered out.`
+    }
         initialValue={0.2}
       >
         <Slider max={1} step={0.01} />
@@ -24,7 +27,10 @@ const SimilaritySlider = ({ isTooltipShown = false }: IProps) => {
         label="Vector similarity weight"
         name={'vector_similarity_weight'}
         initialValue={0.3}
-        tooltip={isTooltipShown && 'coming soon'}
+        tooltip={isTooltipShown && `We use hybrid similarity score to evaluate distance between two lines of text. 
+        It\'s weighted keywords similarity and vector cosine similarity.
+        The sum of both weights is 1.0.
+        `}
       >
         <Slider max={1} step={0.01} />
       </Form.Item>
