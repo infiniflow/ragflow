@@ -1,4 +1,8 @@
+import MaxTokenNumber from '@/components/max-token-number';
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
+import { IKnowledgeFileParserConfig } from '@/interfaces/database/knowledge';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   Button,
   Divider,
@@ -9,14 +13,8 @@ import {
   Switch,
   Tag,
 } from 'antd';
-import React, { useEffect, useMemo } from 'react';
-
-import MaxTokenNumber from '@/components/max-token-number';
-import { IKnowledgeFileParserConfig } from '@/interfaces/database/knowledge';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import omit from 'lodash/omit';
-import {} from 'module';
+import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
 import styles from './index.less';
@@ -51,12 +49,10 @@ const ChunkMethodModal: React.FC<IProps> = ({
 
   const handleOk = async () => {
     const values = await form.validateFields();
-    console.info(values);
     const parser_config = {
       ...values.parser_config,
       pages: values.pages?.map((x: any) => [x.from, x.to]) ?? [],
     };
-    console.info(parser_config);
     onOk(selectedTag, parser_config);
   };
 
@@ -110,134 +106,156 @@ const ChunkMethodModal: React.FC<IProps> = ({
         </div>
       </Space>
       <Divider></Divider>
+
       {
         <Form name="dynamic_form_nest_item" autoComplete="off" form={form}>
-          {showPages && (
-            <>
-              <Form.List name="pages">
-                {(fields, { add, remove }) => (
-                  <>
-                    {fields.map(({ key, name, ...restField }) => (
-                      <Space
-                        key={key}
-                        style={{
-                          display: 'flex',
-                        }}
-                        align="baseline"
-                      >
-                        <Form.Item
-                          {...restField}
-                          name={[name, 'from']}
-                          dependencies={name > 0 ? [name - 1, 'to'] : []}
-                          rules={[
-                            {
-                              required: true,
-                              message: 'Missing start page number',
-                            },
-                            ({ getFieldValue }) => ({
-                              validator(_, value) {
-                                if (
-                                  name === 0 ||
-                                  !value ||
-                                  getFieldValue(['pages', name - 1, 'to']) <
-                                    value
-                                ) {
-                                  return Promise.resolve();
-                                }
-                                return Promise.reject(
-                                  new Error(
-                                    'The current value must be greater than the previous to!',
-                                  ),
-                                );
-                              },
-                            }),
-                          ]}
-                        >
-                          <InputNumber
-                            placeholder="from"
-                            min={0}
-                            precision={0}
-                            className={styles.pageInputNumber}
-                          />
-                        </Form.Item>
-                        <Form.Item
-                          {...restField}
-                          name={[name, 'to']}
-                          dependencies={[name, 'from']}
-                          rules={[
-                            {
-                              required: true,
-                              message: 'Missing end page number(excluding)',
-                            },
-                            ({ getFieldValue }) => ({
-                              validator(_, value) {
-                                if (
-                                  !value ||
-                                  getFieldValue(['pages', name, 'from']) < value
-                                ) {
-                                  return Promise.resolve();
-                                }
-                                return Promise.reject(
-                                  new Error(
-                                    'The current value must be greater than to!',
-                                  ),
-                                );
-                              },
-                            }),
-                          ]}
-                        >
-                          <InputNumber
-                            placeholder="to"
-                            min={0}
-                            precision={0}
-                            className={styles.pageInputNumber}
-                          />
-                        </Form.Item>
-                        {name > 0 && (
-                          <MinusCircleOutlined onClick={() => remove(name)} />
-                        )}
-                      </Space>
-                    ))}
-                    <Form.Item>
-                      <Button
-                        type="dashed"
-                        onClick={() => add()}
-                        block
-                        icon={<PlusOutlined />}
-                      >
-                        Add page
-                      </Button>
-                    </Form.Item>
-                  </>
-                )}
-              </Form.List>
-              <Form.Item
-                name={['parser_config', 'task_page_size']}
-                label="Task page size"
-                tooltip={'coming soon'}
-                initialValue={2}
-                rules={[
-                  {
-                    required: true,
-                    message: 'Please input your task page size!',
-                  },
-                ]}
-              >
-                <InputNumber min={1} max={128} />
-              </Form.Item>
-            </>
-          )}
           {showOne && (
             <Form.Item
               name={['parser_config', 'layout_recognize']}
               label="Layout recognize"
               initialValue={true}
               valuePropName="checked"
-              tooltip={'coming soon'}
+              tooltip={
+                'Use visual models for layout analysis to better identify document structure, find where the titles, text blocks, images, and tables are. Without this feature, only the plain text of the PDF can be obtained.'
+              }
             >
               <Switch />
             </Form.Item>
           )}
+          {showPages && (
+            <Form.Item
+              noStyle
+              dependencies={[['parser_config', 'layout_recognize']]}
+            >
+              {({ getFieldValue }) =>
+                getFieldValue(['parser_config', 'layout_recognize']) && (
+                  <>
+                    <Form.List name="pages">
+                      {(fields, { add, remove }) => (
+                        <>
+                          {fields.map(({ key, name, ...restField }) => (
+                            <Space
+                              key={key}
+                              style={{
+                                display: 'flex',
+                              }}
+                              align="baseline"
+                            >
+                              <Form.Item
+                                {...restField}
+                                name={[name, 'from']}
+                                dependencies={name > 0 ? [name - 1, 'to'] : []}
+                                rules={[
+                                  {
+                                    required: true,
+                                    message: 'Missing start page number',
+                                  },
+                                  ({ getFieldValue }) => ({
+                                    validator(_, value) {
+                                      if (
+                                        name === 0 ||
+                                        !value ||
+                                        getFieldValue([
+                                          'pages',
+                                          name - 1,
+                                          'to',
+                                        ]) < value
+                                      ) {
+                                        return Promise.resolve();
+                                      }
+                                      return Promise.reject(
+                                        new Error(
+                                          'The current value must be greater than the previous to!',
+                                        ),
+                                      );
+                                    },
+                                  }),
+                                ]}
+                              >
+                                <InputNumber
+                                  placeholder="from"
+                                  min={0}
+                                  precision={0}
+                                  className={styles.pageInputNumber}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
+                                name={[name, 'to']}
+                                dependencies={[name, 'from']}
+                                rules={[
+                                  {
+                                    required: true,
+                                    message:
+                                      'Missing end page number(excluding)',
+                                  },
+                                  ({ getFieldValue }) => ({
+                                    validator(_, value) {
+                                      if (
+                                        !value ||
+                                        getFieldValue(['pages', name, 'from']) <
+                                          value
+                                      ) {
+                                        return Promise.resolve();
+                                      }
+                                      return Promise.reject(
+                                        new Error(
+                                          'The current value must be greater than to!',
+                                        ),
+                                      );
+                                    },
+                                  }),
+                                ]}
+                              >
+                                <InputNumber
+                                  placeholder="to"
+                                  min={0}
+                                  precision={0}
+                                  className={styles.pageInputNumber}
+                                />
+                              </Form.Item>
+                              {name > 0 && (
+                                <MinusCircleOutlined
+                                  onClick={() => remove(name)}
+                                />
+                              )}
+                            </Space>
+                          ))}
+                          <Form.Item>
+                            <Button
+                              type="dashed"
+                              onClick={() => add()}
+                              block
+                              icon={<PlusOutlined />}
+                            >
+                              Add page
+                            </Button>
+                          </Form.Item>
+                        </>
+                      )}
+                    </Form.List>
+
+                    <Form.Item
+                      name={['parser_config', 'task_page_size']}
+                      label="Task page size"
+                      tooltip={`If using layout recognize, the PDF file will be split into groups of successive. Layout analysis will be performed parallelly between groups to increase the processing speed. 
+                    The 'Task page size' determines the size of groups. The larger the page size is, the lower the chance of splitting continuous text between pages into different chunks.`}
+                      initialValue={2}
+                      rules={[
+                        {
+                          required: true,
+                          message: 'Please input your task page size!',
+                        },
+                      ]}
+                    >
+                      <InputNumber min={1} max={128} />
+                    </Form.Item>
+                  </>
+                )
+              }
+            </Form.Item>
+          )}
+
           {selectedTag === 'naive' && <MaxTokenNumber></MaxTokenNumber>}
         </Form>
       }
