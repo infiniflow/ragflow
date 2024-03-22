@@ -119,7 +119,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     chunks = hierarchical_merge(bull, sections, 3)
     if not chunks: callback(0.99, "No chunk parsed out.")
 
-    return tokenize_chunks(chunks, doc, eng, pdf_parser)
+    return tokenize_chunks(["\n".join(ck) for ck in chunks], doc, eng, pdf_parser)
 
 
 if __name__ == "__main__":
