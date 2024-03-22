@@ -7,9 +7,13 @@ import {
 } from '@/hooks/documentHooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import { useFetchTenantInfo } from '@/hooks/userSettingHook';
+import {
+  useFetchTenantInfo,
+  useSelectParserList,
+} from '@/hooks/userSettingHook';
 import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { PaginationProps } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
@@ -222,8 +226,8 @@ export const useChangeDocumentParser = (documentId: string) => {
   ]);
 
   const onChangeParserOk = useCallback(
-    async (parserId: string) => {
-      const ret = await setDocumentParser(parserId, documentId);
+    async (parserId: string, parserConfig: IChangeParserConfigRequestBody) => {
+      const ret = await setDocumentParser(parserId, documentId, parserConfig);
       if (ret === 0) {
         hideChangeParserModal();
       }
@@ -238,4 +242,22 @@ export const useChangeDocumentParser = (documentId: string) => {
     hideChangeParserModal,
     showChangeParserModal,
   };
+};
+
+export const useFetchParserListOnMount = (parserId: string) => {
+  const [selectedTag, setSelectedTag] = useState('');
+  const parserList = useSelectParserList();
+
+  useFetchTenantInfo();
+
+  useEffect(() => {
+    setSelectedTag(parserId);
+  }, [parserId]);
+
+  const handleChange = (tag: string, checked: boolean) => {
+    const nextSelectedTag = checked ? tag : selectedTag;
+    setSelectedTag(nextSelectedTag);
+  };
+
+  return { parserList, handleChange, selectedTag };
 };
