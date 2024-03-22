@@ -15,8 +15,8 @@ import re
 from collections import Counter
 
 from api.db import ParserType
-from rag.nlp import huqie, tokenize, tokenize_table, add_positions, bullets_category, title_frequency
-from deepdoc.parser import PdfParser
+from rag.nlp import huqie, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
+from deepdoc.parser import PdfParser, PlainParser
 import numpy as np
 from rag.utils import num_tokens_from_string
 
@@ -59,24 +59,6 @@ class Pdf(PdfParser):
             self.boxes = self.sort_X_by_page(self.boxes, column_width / 2)
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
-        # freq = Counter([b["text"] for b in self.boxes])
-        # garbage = set([k for k, v in freq.items() if v > self.total_page * 0.6])
-        # i = 0
-        # while i < len(self.boxes):
-        #     if self.boxes[i]["text"] in garbage \
-        #             or (re.match(r"[a-zA-Z0-9]+$", self.boxes[i]["text"]) and not self.boxes[i].get("layoutno")) \
-        #             or (i + 1 < len(self.boxes) and self.boxes[i]["text"] == self.boxes[i + 1]["text"]):
-        #         self.boxes.pop(i)
-        #     elif i + 1 < len(self.boxes) and self.boxes[i].get("layoutno", '0') == self.boxes[i + 1].get("layoutno",
-        #                                                                                                  '1'):
-        #         # merge within same layouts
-        #         self.boxes[i + 1]["top"] = self.boxes[i]["top"]
-        #         self.boxes[i + 1]["x0"] = min(self.boxes[i]["x0"], self.boxes[i + 1]["x0"])
-        #         self.boxes[i + 1]["x1"] = max(self.boxes[i]["x1"], self.boxes[i + 1]["x1"])
-        #         self.boxes[i + 1]["text"] = self.boxes[i]["text"] + " " + self.boxes[i + 1]["text"]
-        #         self.boxes.pop(i)
-        #     else:
-        #         i += 1
 
         def _begin(txt):
             return re.match(
@@ -148,9 +130,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     """
     pdf_parser = None
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        paper = pdf_parser(filename if not binary else binary,
-                           from_page=from_page, to_page=to_page, callback=callback)
+        if not kwargs.get("parser_config",{}).get("layout_recognize", True):
+            pdf_parser = PlainParser()
+            paper = {
+                "title": filename,
+                "authors": " ",
+                "abstract": "",
+                "sections": pdf_parser(filename if not binary else binary),
+                "tables": []
+            }
+        else:
+            pdf_parser = Pdf()
+            paper = pdf_parser(filename if not binary else binary,
+                               from_page=from_page, to_page=to_page, callback=callback)
     else: raise NotImplementedError("file type not supported yet(pdf supported)")
 
     doc = {"docnm_kwd": filename, "authors_tks": huqie.qie(paper["authors"]),
@@ -195,16 +187,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 continue
         chunks.append(txt)
         last_sid = sec_id
-    for txt in chunks:
-        d = copy.deepcopy(doc)
-        d["image"], poss = pdf_parser.crop(txt, need_position=True)
-        add_positions(d, poss)
-        tokenize(d, pdf_parser.remove_tag(txt), eng)
-        res.append(d)
-        print("----------------------\n", pdf_parser.remove_tag(txt))
-
+    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
     return res
 
+"""
     readed = [0] * len(paper["lines"])
     # find colon firstly
     i = 0
@@ -280,7 +266,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         print(d)
         # d["image"].save(f"./logs/{i}.jpg")
     return res
-
+"""
 
 if __name__ == "__main__":
     import sys
