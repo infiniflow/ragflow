@@ -1,5 +1,8 @@
 import showDeleteConfirm from '@/components/deleting-confirm';
+import { useRemoveDocument } from '@/hooks/documentHooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { api_host } from '@/utils/api';
+import { downloadFile } from '@/utils/fileUtil';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -7,39 +10,27 @@ import {
   ToolOutlined,
 } from '@ant-design/icons';
 import { Button, Dropdown, MenuProps, Space, Tooltip } from 'antd';
-import { useDispatch } from 'umi';
 import { isParserRunning } from '../utils';
 
-import { api_host } from '@/utils/api';
-import { downloadFile } from '@/utils/fileUtil';
 import styles from './index.less';
 
 interface IProps {
-  knowledgeBaseId: string;
   record: IKnowledgeFile;
   setDocumentAndParserId: () => void;
   showRenameModal: () => void;
+  showChangeParserModal: () => void;
 }
 
 const ParsingActionCell = ({
-  knowledgeBaseId,
   record,
   setDocumentAndParserId,
   showRenameModal,
+  showChangeParserModal,
 }: IProps) => {
-  const dispatch = useDispatch();
   const documentId = record.id;
   const isRunning = isParserRunning(record.run);
 
-  const removeDocument = () => {
-    dispatch({
-      type: 'kFModel/document_rm',
-      payload: {
-        doc_id: documentId,
-        kb_id: knowledgeBaseId,
-      },
-    });
-  };
+  const removeDocument = useRemoveDocument(documentId);
 
   const onRmDocument = () => {
     if (!isRunning) {
@@ -54,28 +45,12 @@ const ParsingActionCell = ({
     });
   };
 
-  const setCurrentRecord = () => {
-    dispatch({
-      type: 'kFModel/setCurrentRecord',
-      payload: record,
-    });
-  };
-
-  const showSegmentSetModal = () => {
-    dispatch({
-      type: 'kFModel/updateState',
-      payload: {
-        isShowSegmentSetModal: true,
-      },
-    });
-  };
-
   const chunkItems: MenuProps['items'] = [
     {
       key: '1',
       label: (
         <div>
-          <Button type="link" onClick={showSegmentSetModal}>
+          <Button type="link" onClick={showChangeParserModal}>
             Chunk Method
           </Button>
         </div>

@@ -1,30 +1,29 @@
+import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import {
   useFetchTenantInfo,
   useSelectParserList,
 } from '@/hooks/userSettingHook';
 import { Modal, Space, Tag } from 'antd';
 import React, { useEffect, useState } from 'react';
-import { useDispatch, useSelector } from 'umi';
 
 import styles from './index.less';
 
 const { CheckableTag } = Tag;
 
-interface kFProps {
-  getKfList: () => void;
+interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
+  loading: boolean;
+  onOk: (parserId: string) => void;
+  showModal?(): void;
   parser_id: string;
-  doc_id: string;
 }
 
-const ChunkMethodModal: React.FC<kFProps> = ({
-  getKfList,
+const ChunkMethodModal: React.FC<IProps> = ({
   parser_id,
-  doc_id,
+  onOk,
+  hideModal,
+  visible,
 }) => {
-  const dispatch = useDispatch();
-  const kFModel = useSelector((state: any) => state.kFModel);
   const [selectedTag, setSelectedTag] = useState('');
-  const { isShowSegmentSetModal } = kFModel;
   const parserList = useSelectParserList();
 
   useFetchTenantInfo();
@@ -33,28 +32,8 @@ const ChunkMethodModal: React.FC<kFProps> = ({
     setSelectedTag(parser_id);
   }, [parser_id]);
 
-  const handleCancel = () => {
-    dispatch({
-      type: 'kFModel/updateState',
-      payload: {
-        isShowSegmentSetModal: false,
-      },
-    });
-  };
-
   const handleOk = async () => {
-    const retcode = await dispatch<any>({
-      type: 'kFModel/document_change_parser',
-      payload: {
-        parser_id: selectedTag,
-        doc_id,
-      },
-    });
-
-    if (retcode === 0 && getKfList) {
-      getKfList();
-      handleCancel();
-    }
+    onOk(selectedTag);
   };
 
   const handleChange = (tag: string, checked: boolean) => {
@@ -65,9 +44,9 @@ const ChunkMethodModal: React.FC<kFProps> = ({
   return (
     <Modal
       title="Chunk Method"
-      open={isShowSegmentSetModal}
+      open={visible}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={hideModal}
     >
       <Space size={[0, 8]} wrap>
         <div className={styles.tags}>

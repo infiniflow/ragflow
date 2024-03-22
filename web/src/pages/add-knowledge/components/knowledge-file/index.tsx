@@ -2,7 +2,6 @@ import {
   useSelectDocumentList,
   useSetDocumentStatus,
 } from '@/hooks/documentHooks';
-import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import { useSelectParserList } from '@/hooks/userSettingHook';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import {
@@ -24,10 +23,11 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo } from 'react';
-import { useDispatch } from 'umi';
 import ChunkMethodModal from './chunk-method-modal';
-import CreateEPModal from './createEFileModal';
+import CreateFileModal from './create-file-modal';
 import {
+  useChangeDocumentParser,
+  useCreateEmptyDocument,
   useFetchDocumentListOnMount,
   useGetPagination,
   useHandleSearchChange,
@@ -39,13 +39,10 @@ import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
-import { useSetModalState } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const KnowledgeFile = () => {
-  const dispatch = useDispatch();
   const data = useSelectDocumentList();
-  const knowledgeBaseId = useKnowledgeBaseId();
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const parserList = useSelectParserList();
   const { pagination, setPagination, total, searchString } =
@@ -55,7 +52,6 @@ const KnowledgeFile = () => {
 
   const { handleInputChange } = useHandleSearchChange(setPagination);
   const { currentRecord, setRecord } = useSetSelectedRecord();
-  const { visible, showModal, hideModal } = useSetModalState();
   const {
     renameLoading,
     onRenameOk,
@@ -63,6 +59,20 @@ const KnowledgeFile = () => {
     hideRenameModal,
     showRenameModal,
   } = useRenameDocument(currentRecord.id);
+  const {
+    createLoading,
+    onCreateOk,
+    createVisible,
+    hideCreateModal,
+    showCreateModal,
+  } = useCreateEmptyDocument();
+  const {
+    changeParserLoading,
+    onChangeParserOk,
+    changeParserVisible,
+    hideChangeParserModal,
+    showChangeParserModal,
+  } = useChangeDocumentParser(currentRecord.id);
 
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
@@ -83,7 +93,7 @@ const KnowledgeFile = () => {
       { type: 'divider' },
       {
         key: '2',
-        onClick: showModal,
+        onClick: showCreateModal,
         label: (
           <div>
             <Button type="link">
@@ -95,7 +105,7 @@ const KnowledgeFile = () => {
         // disabled: true,
       },
     ];
-  }, [linkToUploadPage, showModal]);
+  }, [linkToUploadPage, showCreateModal]);
 
   const columns: ColumnsType<IKnowledgeFile> = [
     {
@@ -155,12 +165,12 @@ const KnowledgeFile = () => {
       key: 'action',
       render: (_, record) => (
         <ParsingActionCell
-          knowledgeBaseId={knowledgeBaseId}
           setDocumentAndParserId={setRecord(record)}
           showRenameModal={() => {
             setRecord(record)();
             showRenameModal();
           }}
+          showChangeParserModal={showChangeParserModal}
           record={record}
         ></ParsingActionCell>
       ),
@@ -207,16 +217,18 @@ const KnowledgeFile = () => {
         pagination={pagination}
         scroll={{ scrollToFirstRowOnChange: true, x: 1300, y: 'fill' }}
       />
-      <CreateEPModal
-        visible={visible}
-        hideModal={hideModal}
-        loading={false}
-        onOk={() => {}}
+      <CreateFileModal
+        visible={createVisible}
+        hideModal={hideCreateModal}
+        loading={createLoading}
+        onOk={onCreateOk}
       />
       <ChunkMethodModal
-        getKfList={fetchDocumentList}
         parser_id={currentRecord.parser_id}
-        doc_id={currentRecord.id}
+        onOk={onChangeParserOk}
+        visible={changeParserVisible}
+        hideModal={hideChangeParserModal}
+        loading={changeParserLoading}
       />
       <RenameModal
         visible={renameVisible}

@@ -87,3 +87,73 @@ export const useSaveDocumentName = () => {
 
   return saveName;
 };
+
+export const useCreateDocument = () => {
+  const dispatch = useDispatch();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+
+  const createDocument = useCallback(
+    (name: string) => {
+      try {
+        return dispatch<any>({
+          type: 'kFModel/document_create',
+          payload: {
+            name,
+            kb_id: knowledgeId,
+          },
+        });
+      } catch (errorInfo) {
+        console.log('Failed:', errorInfo);
+      }
+    },
+    [dispatch, knowledgeId],
+  );
+
+  return createDocument;
+};
+
+export const useSetDocumentParser = () => {
+  const dispatch = useDispatch();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+
+  const setDocumentParser = useCallback(
+    (parserId: string, documentId: string) => {
+      try {
+        return dispatch<any>({
+          type: 'kFModel/document_change_parser',
+          payload: {
+            parser_id: parserId,
+            doc_id: documentId,
+            kb_id: knowledgeId,
+          },
+        });
+      } catch (errorInfo) {
+        console.log('Failed:', errorInfo);
+      }
+    },
+    [dispatch, knowledgeId],
+  );
+
+  return setDocumentParser;
+};
+
+export const useRemoveDocument = (documentId: string) => {
+  const dispatch = useDispatch();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+
+  const removeDocument = useCallback(() => {
+    try {
+      return dispatch<any>({
+        type: 'kFModel/document_rm',
+        payload: {
+          doc_id: documentId,
+          kb_id: knowledgeId,
+        },
+      });
+    } catch (errorInfo) {
+      console.log('Failed:', errorInfo);
+    }
+  }, [dispatch, knowledgeId, documentId]);
+
+  return removeDocument;
+};

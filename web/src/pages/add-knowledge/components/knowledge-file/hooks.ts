@@ -1,7 +1,9 @@
 import { useSetModalState } from '@/hooks/commonHooks';
 import {
+  useCreateDocument,
   useFetchDocumentList,
   useSaveDocumentName,
+  useSetDocumentParser,
 } from '@/hooks/documentHooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
@@ -175,5 +177,65 @@ export const useRenameDocument = (documentId: string) => {
     renameVisible,
     hideRenameModal,
     showRenameModal,
+  };
+};
+
+export const useCreateEmptyDocument = () => {
+  const createDocument = useCreateDocument();
+
+  const {
+    visible: createVisible,
+    hideModal: hideCreateModal,
+    showModal: showCreateModal,
+  } = useSetModalState();
+  const loading = useOneNamespaceEffectsLoading('kFModel', ['document_create']);
+
+  const onCreateOk = useCallback(
+    async (name: string) => {
+      const ret = await createDocument(name);
+      if (ret === 0) {
+        hideCreateModal();
+      }
+    },
+    [hideCreateModal, createDocument],
+  );
+
+  return {
+    createLoading: loading,
+    onCreateOk,
+    createVisible,
+    hideCreateModal,
+    showCreateModal,
+  };
+};
+
+export const useChangeDocumentParser = (documentId: string) => {
+  const setDocumentParser = useSetDocumentParser();
+
+  const {
+    visible: changeParserVisible,
+    hideModal: hideChangeParserModal,
+    showModal: showChangeParserModal,
+  } = useSetModalState();
+  const loading = useOneNamespaceEffectsLoading('kFModel', [
+    'document_change_parser',
+  ]);
+
+  const onChangeParserOk = useCallback(
+    async (parserId: string) => {
+      const ret = await setDocumentParser(parserId, documentId);
+      if (ret === 0) {
+        hideChangeParserModal();
+      }
+    },
+    [hideChangeParserModal, setDocumentParser, documentId],
+  );
+
+  return {
+    changeParserLoading: loading,
+    onChangeParserOk,
+    changeParserVisible,
+    hideChangeParserModal,
+    showChangeParserModal,
   };
 };
