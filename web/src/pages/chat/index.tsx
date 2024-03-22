@@ -1,4 +1,5 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
+import RenameModal from '@/components/rename-modal';
 import { DeleteOutlined, EditOutlined, FormOutlined } from '@ant-design/icons';
 import {
   Avatar,
@@ -34,7 +35,6 @@ import {
   useSelectFirstDialogOnMount,
 } from './hooks';
 
-import RenameModal from '@/components/rename-modal';
 import styles from './index.less';
 
 const Chat = () => {
