@@ -112,6 +112,7 @@ const KnowledgeFile = () => {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
+      fixed: 'left',
       render: (text: any, { id, thumbnail }) => (
         <div className={styles.tochunks} onClick={() => toChunk(id)}>
           <img className={styles.img} src={thumbnail} alt="" />
