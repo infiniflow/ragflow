@@ -310,7 +310,10 @@ def change_parser():
         if not e:
             return get_data_error_result(retmsg="Document not found!")
         if doc.parser_id.lower() == req["parser_id"].lower():
-            return get_json_result(data=True)
+            if "parser_config" in req:
+                if req["parser_config"] == doc.parser_config:
+                    return get_json_result(data=True)
+            else: return get_json_result(data=True)
 
         if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
             return get_data_error_result(retmsg="Not supported yet!")
@@ -319,6 +322,8 @@ def change_parser():
                                          {"parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": "0"})
         if not e:
             return get_data_error_result(retmsg="Document not found!")
+        if "parser_config" in req:
+            DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1,
                                                     doc.process_duation * -1)

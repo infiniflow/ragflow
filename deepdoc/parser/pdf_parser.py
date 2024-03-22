@@ -1073,5 +1073,37 @@ class HuParser:
         return poss
 
 
+class PlainParser(object):
+    def __call__(self, filename, **kwargs):
+        self.outlines = []
+        lines = []
+        try:
+            self.pdf = pdf2_read(filename if isinstance(filename, str) else BytesIO(filename))
+            outlines = self.pdf.outline
+            for page in self.pdf.pages:
+                lines.extend([t for t in page.extract_text().split("\n")])
+
+            def dfs(arr, depth):
+                for a in arr:
+                    if isinstance(a, dict):
+                        self.outlines.append((a["/Title"], depth))
+                        continue
+                    dfs(a, depth + 1)
+
+            dfs(outlines, 0)
+        except Exception as e:
+            logging.warning(f"Outlines exception: {e}")
+        if not self.outlines:
+            logging.warning(f"Miss outlines")
+
+        return [(l, "") for l in lines], []
+
+    def crop(self, ck, need_position):
+        raise NotImplementedError
+
+    @staticmethod
+    def remove_tag(txt):
+        raise NotImplementedError
+
 if __name__ == "__main__":
     pass

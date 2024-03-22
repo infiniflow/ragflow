@@ -13,7 +13,7 @@
 import re
 from rag.app import laws
 from rag.nlp import huqie, tokenize
-from deepdoc.parser import PdfParser, ExcelParser
+from deepdoc.parser import PdfParser, ExcelParser, PlainParser
 
 
 class Pdf(PdfParser):
@@ -45,7 +45,7 @@ class Pdf(PdfParser):
         for (img, rows), poss in tbls:
             sections.append((rows if isinstance(rows, str) else rows[0],
                              [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
-        return [txt for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))]
+        return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))]
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -59,16 +59,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     sections = []
     if re.search(r"\.docx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        for txt in laws.Docx()(filename, binary):
-            sections.append(txt)
+        sections = [txt for txt in laws.Docx()(filename, binary) if txt]
         callback(0.8, "Finish parsing.")
+
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
+        pdf_parser = Pdf() if kwargs.get("parser_config",{}).get("layout_recognize", True) else PlainParser()
         sections = pdf_parser(filename if not binary else binary, to_page=to_page, callback=callback)
+        sections = [s for s, _ in sections if s]
+
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
         sections = [excel_parser.html(binary)]
+
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -81,8 +84,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                     if not l: break
                     txt += l
         sections = txt.split("\n")
-        sections = [(l, "") for l in sections if l]
+        sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
+
     else:
         raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 

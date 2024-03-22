@@ -118,9 +118,25 @@ class DocumentService(CommonService):
         if not docs:return
         return docs[0]["tenant_id"]
 
-
     @classmethod
     @DB.connection_context()
     def get_thumbnails(cls, docids):
         fields = [cls.model.id, cls.model.thumbnail]
         return list(cls.model.select(*fields).where(cls.model.id.in_(docids)).dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def update_parser_config(cls, id, config):
+        e, d = cls.get_by_id(id)
+        if not e:raise LookupError(f"Document({id}) not found.")
+        def dfs_update(old, new):
+            for k,v in new.items():
+                if k not in old:
+                    old[k] = v
+                    continue
+                if isinstance(v, dict):
+                    assert isinstance(old[k], dict)
+                    dfs_update(old[k], v)
+                else: old[k] = v
+        dfs_update(d.parser_config, config)
+        cls.update_by_id(id, {"parser_config": d.parser_config})

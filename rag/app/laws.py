@@ -15,9 +15,9 @@ import re
 from io import BytesIO
 from docx import Document
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
-    make_colon_as_title, add_positions
+    make_colon_as_title, add_positions, tokenize_chunks
 from rag.nlp import huqie
-from deepdoc.parser import PdfParser, DocxParser
+from deepdoc.parser import PdfParser, DocxParser, PlainParser
 from rag.settings import cron_logger
 
 
@@ -68,7 +68,7 @@ class Pdf(PdfParser):
 
         callback(0.8, "Text extraction finished")
 
-        return [b["text"] + self._line_tag(b, zoomin) for b in self.boxes]
+        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes]
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -87,11 +87,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         for txt in Docx()(filename, binary):
             sections.append(txt)
         callback(0.8, "Finish parsing.")
+
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        for txt in pdf_parser(filename if not binary else binary,
-                         from_page=from_page, to_page=to_page, callback=callback):
-            sections.append(txt)
+            pdf_parser = Pdf() if kwargs.get("parser_config",{}).get("layout_recognize", True) else PlainParser()
+            for txt, poss in pdf_parser(filename if not binary else binary,
+                             from_page=from_page, to_page=to_page, callback=callback):
+                sections.append(txt + poss)
+
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -114,22 +116,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     make_colon_as_title(sections)
     bull = bullets_category(sections)
-    cks = hierarchical_merge(bull, sections, 3)
-    if not cks: callback(0.99, "No chunk parsed out.")
+    chunks = hierarchical_merge(bull, sections, 3)
+    if not chunks: callback(0.99, "No chunk parsed out.")
 
-    res = []
-    # wrap up to es documents
-    for ck in cks:
-        print("\n-".join(ck))
-        ck = "\n".join(ck)
-        d = copy.deepcopy(doc)
-        if pdf_parser:
-            d["image"], poss = pdf_parser.crop(ck, need_position=True)
-            add_positions(d, poss)
-            ck = pdf_parser.remove_tag(ck)
-        tokenize(d, ck, eng)
-        res.append(d)
-    return res
+    return tokenize_chunks(chunks, doc, eng, pdf_parser)
 
 
 if __name__ == "__main__":
