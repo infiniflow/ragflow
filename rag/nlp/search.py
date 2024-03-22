@@ -68,6 +68,7 @@ class Dealer:
         s = Search()
         pg = int(req.get("page", 1)) - 1
         ps = int(req.get("size", 1000))
+        topk = int(req.get("topk", 1024))
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id",
                                  "image_id", "doc_id", "q_512_vec", "q_768_vec", "position_int",
                                  "q_1024_vec", "q_1536_vec", "available_int", "content_with_weight"])
@@ -103,7 +104,7 @@ class Dealer:
             assert emb_mdl, "No embedding model selected"
             s["knn"] = self._vector(
                 qst, emb_mdl, req.get(
-                    "similarity", 0.1), ps)
+                    "similarity", 0.1), topk)
             s["knn"]["filter"] = bqry.to_dict()
             if "highlight" in s:
                 del s["highlight"]
@@ -292,8 +293,8 @@ class Dealer:
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
-        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": top,
-               "question": question, "vector": True,
+        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": page_size,
+               "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold}
         sres = self.search(req, index_name(tenant_id), embd_mdl)
 

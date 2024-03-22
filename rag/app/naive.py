@@ -12,8 +12,9 @@
 #
 import copy
 import re
+from deepdoc.parser.pdf_parser import PlainParser
 from rag.app import laws
-from rag.nlp import huqie, is_english, tokenize, naive_merge, tokenize_table, add_positions
+from rag.nlp import huqie, is_english, tokenize, naive_merge, tokenize_table, add_positions, tokenize_chunks
 from deepdoc.parser import PdfParser, ExcelParser
 from rag.settings import cron_logger
 
@@ -56,6 +57,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     """
 
     eng = lang.lower() == "english"#is_english(cks)
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
     doc = {
         "docnm_kwd": filename,
         "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -69,15 +71,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         for txt in laws.Docx()(filename, binary):
             sections.append((txt, ""))
         callback(0.8, "Finish parsing.")
+
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
+        pdf_parser = Pdf() if parser_config["layout_recognize"] else PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                               from_page=from_page, to_page=to_page, callback=callback)
         res = tokenize_table(tbls, doc, eng)
+
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
         sections = [(excel_parser.html(binary), "")]
+
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -92,26 +97,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         sections = txt.split("\n")
         sections = [(l, "") for l in sections if l]
         callback(0.8, "Finish parsing.")
+
     else:
         raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 128, "delimiter": "\n!?。；！？"})
-    cks = naive_merge(sections, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?。；！？"))
+    chunks = naive_merge(sections, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?。；！？"))
 
-    # wrap up to es documents
-    for ck in cks:
-        if len(ck.strip()) == 0:continue
-        print("--", ck)
-        d = copy.deepcopy(doc)
-        if pdf_parser:
-            try:
-                d["image"], poss = pdf_parser.crop(ck, need_position=True)
-            except Exception as e:
-                continue
-            add_positions(d, poss)
-            ck = pdf_parser.remove_tag(ck)
-        tokenize(d, ck, eng)
-        res.append(d)
+    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
     return res
 
 

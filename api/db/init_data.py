@@ -276,7 +276,7 @@ def init_llm_factory():
     drop table llm_factories;
     update tenant_llm set llm_factory='Tongyi-Qianwen' where llm_factory='通义千问';
     update tenant_llm set llm_factory='ZHIPU-AI' where llm_factory='智谱AI';
-    update tenant set parser_ids='naive:General,one:One,qa:Q&A,resume:Resume,table:Table,laws:Laws,manual:Manual,book:Book,paper:Paper,presentation:Presentation,picture:Picture';
+    update tenant set parser_ids='naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One';
     alter table knowledgebase modify avatar longtext;
     alter table user modify avatar longtext;
     alter table dialog modify icon longtext;
@@ -298,4 +298,3 @@ def init_web_data():
 if __name__ == '__main__':
     init_web_db()
     init_web_data()
-    add_tenant_llm()

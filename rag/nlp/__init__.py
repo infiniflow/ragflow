@@ -76,6 +76,25 @@ def tokenize(d, t, eng):
     d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
 
 
+def tokenize_chunks(chunks, doc, eng, pdf_parser):
+    res = []
+    # wrap up as es documents
+    for ck in chunks:
+        if len(ck.strip()) == 0:continue
+        print("--", ck)
+        d = copy.deepcopy(doc)
+        if pdf_parser:
+            try:
+                d["image"], poss = pdf_parser.crop(ck, need_position=True)
+                add_positions(d, poss)
+                ck = pdf_parser.remove_tag(ck)
+            except NotImplementedError as e:
+                pass
+        tokenize(d, ck, eng)
+        res.append(d)
+    return res
+
+
 def tokenize_table(tbls, doc, eng, batch_size=10):
     res = []
     # add tables

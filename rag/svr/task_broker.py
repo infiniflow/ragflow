@@ -81,11 +81,15 @@ def dispatch():
 
         tsks = []
         if r["type"] == FileType.PDF.value:
+            if not r["parser_config"].get("layout_recognize", True):
+                tsks.append(new_task())
+                continue
             pages = PdfParser.total_page_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
-            page_size = 12
-            if r["parser_id"] == "paper": page_size = 22
+            page_size = r["parser_config"].get("task_page_size", 12)
+            if r["parser_id"] == "paper": page_size = r["parser_config"].get("task_page_size", 22)
             if r["parser_id"] == "one": page_size = 1000000000
-            for s,e in r["parser_config"].get("pages", [(0,100000)]):
+            for s,e in r["parser_config"].get("pages", [(1, 100000)]):
+                s -= 1
                 e = min(e, pages)
                 for p in range(s, e, page_size):
                     task = new_task()

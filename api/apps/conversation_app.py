@@ -196,7 +196,10 @@ def chat(dialog, messages, **kwargs):
 
     for _ in range(len(questions)//2):
         questions.append(questions[-1])
-    kbinfos = retrievaler.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
+    if "knowledge" not in [p["key"] for p in prompt_config["parameters"]]:
+        kbinfos = {"total":0, "chunks":[],"doc_aggs":[]}
+    else:
+        kbinfos = retrievaler.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
                                     dialog.similarity_threshold,
                                     dialog.vector_similarity_weight, top=1024, aggs=False)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]

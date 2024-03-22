@@ -300,7 +300,11 @@ class Huqie:
     def qieqie(self, tks):
         tks = tks.split(" ")
         zh_num = len([1 for c in tks if c and is_chinese(c[0])])
-        if zh_num < len(tks) * 0.2:return " ".join(tks)
+        if zh_num < len(tks) * 0.2:
+            res = []
+            for tk in tks:
+                res.extend(tk.split("/"))
+            return " ".join(res)
 
         res = []
         for tk in tks:

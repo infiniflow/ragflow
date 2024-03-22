@@ -12,10 +12,12 @@
 #
 import copy
 import re
+from io import BytesIO
+
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, \
-    hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, add_positions
+    hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, add_positions, tokenize_chunks
 from rag.nlp import huqie
-from deepdoc.parser import PdfParser, DocxParser
+from deepdoc.parser import PdfParser, DocxParser, PlainParser
 
 
 class Pdf(PdfParser):
@@ -69,10 +71,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         sections, tbls = doc_parser(binary if binary else filename, from_page=from_page, to_page=to_page)
         remove_contents_table(sections, eng=is_english(random_choices([t for t,_ in sections], k=200)))
         callback(0.8, "Finish parsing.")
+
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
+        pdf_parser = Pdf() if kwargs.get("parser_config",{}).get("layout_recognize", True) else PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                          from_page=from_page, to_page=to_page, callback=callback)
+
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -87,31 +91,24 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         sections = [(l,"") for l in sections if l]
         remove_contents_table(sections, eng = is_english(random_choices([t for t,_ in sections], k=200)))
         callback(0.8, "Finish parsing.")
+
     else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
 
     make_colon_as_title(sections)
     bull = bullets_category([t for t in random_choices([t for t,_ in sections], k=100)])
-    if bull >= 0: cks = hierarchical_merge(bull, sections, 3)
+    if bull >= 0:
+        chunks = ["\n".join(ck) for ck in hierarchical_merge(bull, sections, 3)]
     else:
         sections = [s.split("@") for s,_ in sections]
         sections = [(pr[0], "@"+pr[1]) for pr in sections if len(pr)==2]
-        cks = naive_merge(sections, kwargs.get("chunk_token_num", 256), kwargs.get("delimer", "\n。；！？"))
+        chunks = naive_merge(sections, kwargs.get("chunk_token_num", 256), kwargs.get("delimer", "\n。；！？"))
 
     # is it English
     eng = lang.lower() == "english"#is_english(random_choices([t for t, _ in sections], k=218))
 
     res = tokenize_table(tbls, doc, eng)
+    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
 
-    # wrap up to es documents
-    for ck in cks:
-        d = copy.deepcopy(doc)
-        ck = "\n".join(ck)
-        if pdf_parser:
-            d["image"], poss = pdf_parser.crop(ck, need_position=True)
-            add_positions(d, poss)
-            ck = pdf_parser.remove_tag(ck)
-        tokenize(d, ck, eng)
-        res.append(d)
     return res
 
 
