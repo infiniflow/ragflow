@@ -55,6 +55,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         label="Language"
         initialValue={'Chinese'}
         tooltip="coming soon"
+        style={{display:'none'}}
       >
         <Select
           options={[
@@ -66,22 +67,23 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
       <Form.Item
         name={['prompt_config', 'empty_response']}
         label="Empty response"
-        tooltip="coming soon"
+        tooltip="If nothing is retrieved with user's question in the knowledgebase, it will use this as an answer.
+        If you want LLM comes up with its own opinion when nothing is retrieved, leave this blank."
       >
         <Input placeholder="" />
       </Form.Item>
       <Form.Item
         name={['prompt_config', 'prologue']}
         label="Set an opener"
-        tooltip="coming soon"
+        tooltip="How do you want to welcome your clients?"
         initialValue={"Hi! I'm your assistant, what can I do for you?"}
       >
         <Input.TextArea autoSize={{ minRows: 5 }} />
       </Form.Item>
       <Form.Item
-        label="Select one context"
+        label="Knowledgebases"
         name="kb_ids"
-        tooltip="coming soon"
+        tooltip="Select knowledgebases associated."
         rules={[
           {
             required: true,

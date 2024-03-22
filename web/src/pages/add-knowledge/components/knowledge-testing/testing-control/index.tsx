@@ -53,9 +53,10 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
         >
           <SimilaritySlider isTooltipShown></SimilaritySlider>
           <Form.Item<FieldType>
-            label="Top k"
+            label="Top K"
             name={'top_k'}
-            tooltip="coming soon"
+            tooltip="For the computaion cost, not all the retrieved chunk will be computed vector cosine similarity with query. 
+            The bigger the 'Top K' is, the higher the recall rate is, the slower the retrieval speed is."
           >
             <Slider marks={{ 0: 0, 2048: 2048 }} max={2048} />
           </Form.Item>
