@@ -165,6 +165,10 @@ const model: DvaModel<KFModelState> = {
       const { retcode } = data;
       if (retcode === 0) {
         put({
+          type: 'getKfList',
+          payload: { kb_id: payload.kb_id },
+        });
+        put({
           type: 'kFModel/updateState',
           payload: {
             isShowCEFwModal: false,
@@ -192,9 +196,16 @@ const model: DvaModel<KFModelState> = {
       return retcode;
     },
     *document_change_parser({ payload = {} }, { call, put }) {
-      const { data } = yield call(kbService.document_change_parser, payload);
+      const { data } = yield call(
+        kbService.document_change_parser,
+        omit(payload, ['kb_id']),
+      );
       const { retcode } = data;
       if (retcode === 0) {
+        put({
+          type: 'getKfList',
+          payload: { kb_id: payload.kb_id },
+        });
         put({
           type: 'updateState',
           payload: {

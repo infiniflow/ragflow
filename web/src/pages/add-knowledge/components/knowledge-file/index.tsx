@@ -1,12 +1,9 @@
-import { KnowledgeRouteKey } from '@/constants/knowledge';
-import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import {
-  useFetchTenantInfo,
-  useSelectParserList,
-} from '@/hooks/userSettingHook';
-import { Pagination } from '@/interfaces/common';
+  useSelectDocumentList,
+  useSetDocumentStatus,
+} from '@/hooks/documentHooks';
+import { useSelectParserList } from '@/hooks/userSettingHook';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
 import {
   FileOutlined,
   FileTextOutlined,
@@ -25,133 +22,57 @@ import {
   Tag,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { PaginationProps } from 'antd/lib';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useDispatch, useNavigate, useSelector } from 'umi';
-import CreateEPModal from './createEFileModal';
-import styles from './index.less';
+import { useMemo } from 'react';
+import ChunkMethodModal from './chunk-method-modal';
+import CreateFileModal from './create-file-modal';
+import {
+  useChangeDocumentParser,
+  useCreateEmptyDocument,
+  useFetchDocumentListOnMount,
+  useGetPagination,
+  useHandleSearchChange,
+  useNavigateToOtherPage,
+  useRenameDocument,
+  useSetSelectedRecord,
+} from './hooks';
 import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
-import SegmentSetModal from './segmentSetModal';
+
+import styles from './index.less';
 
 const KnowledgeFile = () => {
-  const dispatch = useDispatch();
-  const kFModel = useSelector((state: any) => state.kFModel);
-  const effects = useSelector((state: any) => state.loading.effects);
-  const { data, total } = kFModel;
-  const knowledgeBaseId = useKnowledgeBaseId();
-
-  const loading = getOneNamespaceEffectsLoading('kFModel', effects, [
-    'getKfList',
-    'updateDocumentStatus',
-  ]);
-  const [doc_id, setDocId] = useState('0');
-  const [parser_id, setParserId] = useState('0');
-  let navigate = useNavigate();
+  const data = useSelectDocumentList();
+  const { fetchDocumentList } = useFetchDocumentListOnMount();
   const parserList = useSelectParserList();
+  const { pagination, setPagination, total, searchString } =
+    useGetPagination(fetchDocumentList);
+  const onChangeStatus = useSetDocumentStatus();
+  const { linkToUploadPage, toChunk } = useNavigateToOtherPage();
 
-  const getKfList = useCallback(() => {
-    const payload = {
-      kb_id: knowledgeBaseId,
-    };
-
-    dispatch({
-      type: 'kFModel/getKfList',
-      payload,
-    });
-  }, [dispatch, knowledgeBaseId]);
-
-  const throttledGetDocumentList = () => {
-    dispatch({
-      type: 'kFModel/throttledGetDocumentList',
-      payload: knowledgeBaseId,
-    });
-  };
-
-  const setPagination = useCallback(
-    (pageNumber = 1, pageSize?: number) => {
-      const pagination: Pagination = {
-        current: pageNumber,
-      } as Pagination;
-      if (pageSize) {
-        pagination.pageSize = pageSize;
-      }
-      dispatch({
-        type: 'kFModel/setPagination',
-        payload: pagination,
-      });
-    },
-    [dispatch],
-  );
-
-  const onPageChange: PaginationProps['onChange'] = useCallback(
-    (pageNumber: number, pageSize: number) => {
-      setPagination(pageNumber, pageSize);
-      getKfList();
-    },
-    [getKfList, setPagination],
-  );
-
-  const pagination: PaginationProps = useMemo(() => {
-    return {
-      showQuickJumper: true,
-      total,
-      showSizeChanger: true,
-      current: kFModel.pagination.currentPage,
-      pageSize: kFModel.pagination.pageSize,
-      pageSizeOptions: [1, 2, 10, 20, 50, 100],
-      onChange: onPageChange,
-    };
-  }, [total, kFModel.pagination, onPageChange]);
-
-  useEffect(() => {
-    if (knowledgeBaseId) {
-      getKfList();
-      dispatch({
-        type: 'kFModel/pollGetDocumentList-start',
-        payload: knowledgeBaseId,
-      });
-    }
-    return () => {
-      dispatch({
-        type: 'kFModel/pollGetDocumentList-stop',
-      });
-    };
-  }, [knowledgeBaseId, dispatch, getKfList]);
-
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    const value = e.target.value;
-    dispatch({ type: 'kFModel/setSearchString', payload: value });
-    setPagination();
-    throttledGetDocumentList();
-  };
-
-  const onChangeStatus = (e: boolean, doc_id: string) => {
-    dispatch({
-      type: 'kFModel/updateDocumentStatus',
-      payload: {
-        doc_id,
-        status: Number(e),
-        kb_id: knowledgeBaseId,
-      },
-    });
-  };
-
-  const showCEFModal = useCallback(() => {
-    dispatch({
-      type: 'kFModel/updateState',
-      payload: {
-        isShowCEFwModal: true,
-      },
-    });
-  }, [dispatch]);
-
-  const linkToUploadPage = useCallback(() => {
-    navigate(`/knowledge/dataset/upload?id=${knowledgeBaseId}`);
-  }, [navigate, knowledgeBaseId]);
+  const { handleInputChange } = useHandleSearchChange(setPagination);
+  const { currentRecord, setRecord } = useSetSelectedRecord();
+  const {
+    renameLoading,
+    onRenameOk,
+    renameVisible,
+    hideRenameModal,
+    showRenameModal,
+  } = useRenameDocument(currentRecord.id);
+  const {
+    createLoading,
+    onCreateOk,
+    createVisible,
+    hideCreateModal,
+    showCreateModal,
+  } = useCreateEmptyDocument();
+  const {
+    changeParserLoading,
+    onChangeParserOk,
+    changeParserVisible,
+    hideChangeParserModal,
+    showChangeParserModal,
+  } = useChangeDocumentParser(currentRecord.id);
 
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
@@ -172,7 +93,7 @@ const KnowledgeFile = () => {
       { type: 'divider' },
       {
         key: '2',
-        onClick: showCEFModal,
+        onClick: showCreateModal,
         label: (
           <div>
             <Button type="link">
@@ -184,18 +105,7 @@ const KnowledgeFile = () => {
         // disabled: true,
       },
     ];
-  }, [linkToUploadPage, showCEFModal]);
-
-  const toChunk = (id: string) => {
-    navigate(
-      `/knowledge/${KnowledgeRouteKey.Dataset}/chunk?id=${knowledgeBaseId}&doc_id=${id}`,
-    );
-  };
-
-  const setDocumentAndParserId = (record: IKnowledgeFile) => () => {
-    setDocId(record.id);
-    setParserId(record.parser_id);
-  };
+  }, [linkToUploadPage, showCreateModal]);
 
   const columns: ColumnsType<IKnowledgeFile> = [
     {
@@ -255,8 +165,12 @@ const KnowledgeFile = () => {
       key: 'action',
       render: (_, record) => (
         <ParsingActionCell
-          knowledgeBaseId={knowledgeBaseId}
-          setDocumentAndParserId={setDocumentAndParserId(record)}
+          setDocumentAndParserId={setRecord(record)}
+          showRenameModal={() => {
+            setRecord(record)();
+            showRenameModal();
+          }}
+          showChangeParserModal={showChangeParserModal}
           record={record}
         ></ParsingActionCell>
       ),
@@ -267,8 +181,6 @@ const KnowledgeFile = () => {
     ...x,
     className: `${styles.column}`,
   }));
-
-  useFetchTenantInfo();
 
   return (
     <div className={styles.datasetWrapper}>
@@ -283,7 +195,7 @@ const KnowledgeFile = () => {
         <Space>
           <Input
             placeholder="Seach your files"
-            value={kFModel.searchString}
+            value={searchString}
             style={{ width: 220 }}
             allowClear
             onChange={handleInputChange}
@@ -305,13 +217,26 @@ const KnowledgeFile = () => {
         pagination={pagination}
         scroll={{ scrollToFirstRowOnChange: true, x: 1300, y: 'fill' }}
       />
-      <CreateEPModal getKfList={getKfList} kb_id={knowledgeBaseId} />
-      <SegmentSetModal
-        getKfList={getKfList}
-        parser_id={parser_id}
-        doc_id={doc_id}
+      <CreateFileModal
+        visible={createVisible}
+        hideModal={hideCreateModal}
+        loading={createLoading}
+        onOk={onCreateOk}
       />
-      <RenameModal></RenameModal>
+      <ChunkMethodModal
+        parser_id={currentRecord.parser_id}
+        onOk={onChangeParserOk}
+        visible={changeParserVisible}
+        hideModal={hideChangeParserModal}
+        loading={changeParserLoading}
+      />
+      <RenameModal
+        visible={renameVisible}
+        onOk={onRenameOk}
+        loading={renameLoading}
+        hideModal={hideRenameModal}
+        initialName={currentRecord.name}
+      ></RenameModal>
     </div>
   );
 };

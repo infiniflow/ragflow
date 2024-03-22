@@ -21,10 +21,10 @@ const Configuration = () => {
       <Divider></Divider>
       <Spin spinning={loading}>
         <Row gutter={32}>
-          <Col span={12}>
+          <Col span={8}>
             <ConfigurationForm form={form}></ConfigurationForm>
           </Col>
-          <Col span={12}>
+          <Col span={16}>
             <CategoryPanel chunkMethod={chunkMethod}></CategoryPanel>
           </Col>
         </Row>
