@@ -193,7 +193,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                           rules={[
                             {
                               required: true,
-                              message: 'Missing end page number(excluding)',
+                              message: 'Missing end page number(excluded)',
                             },
                             ({ getFieldValue }) => ({
                               validator(_, value) {
