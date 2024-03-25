@@ -1,16 +1,5 @@
 import SimilaritySlider from '@/components/similarity-slider';
-import { DeleteOutlined, HistoryOutlined } from '@ant-design/icons';
-import {
-  Button,
-  Card,
-  Divider,
-  Flex,
-  Form,
-  Input,
-  Slider,
-  Space,
-  Tag,
-} from 'antd';
+import { Button, Card, Divider, Flex, Form, Input, Slider, Tag } from 'antd';
 import { FormInstance } from 'antd/lib';
 
 import styles from './index.less';
@@ -83,7 +72,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
           </Card>
         </Form>
       </section>
-      <section>
+      {/* <section>
         <div className={styles.historyTitle}>
           <Space size={'middle'}>
             <HistoryOutlined className={styles.historyIcon} />
@@ -111,7 +100,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
             </Card>
           ))}
         </Space>
-      </section>
+      </section> */}
     </section>
   );
 };

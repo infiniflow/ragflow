@@ -1,4 +1,3 @@
-import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
 import ModalManager from '@/components/modal-manager';
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import { useSelectUserInfo } from '@/hooks/userSettingHook';
@@ -25,9 +24,9 @@ const Knowledge = () => {
           </p>
         </div>
         <Space size={'large'}>
-          <Button icon={<FilterIcon />} className={styles.filterButton}>
+          {/* <Button icon={<FilterIcon />} className={styles.filterButton}>
             Filters
-          </Button>
+          </Button> */}
           <ModalManager>
             {({ visible, hideModal, showModal }) => (
               <>
