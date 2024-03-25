@@ -44,6 +44,7 @@ import {
 } from 'react';
 import { Link, useDispatch, useNavigate } from 'umi';
 
+import { useSetDocumentParser } from '@/hooks/documentHooks';
 import styles from './index.less';
 
 const { Dragger } = Upload;
@@ -66,21 +67,14 @@ const UploaderItem = ({
   const { parserConfig, defaultParserId } = useGetDocumentDefaultParser();
   const { removeDocument } = useDeleteDocumentById();
   const [value, setValue] = useState(defaultParserId);
-  const dispatch = useDispatch();
+  const setDocumentParser = useSetDocumentParser();
 
   const documentId = file?.response?.id;
 
   const parserList = useSelectParserList();
 
   const saveParser = (parserId: string) => {
-    dispatch({
-      type: 'kFModel/document_change_parser',
-      payload: {
-        parser_id: parserId,
-        doc_id: documentId,
-        parser_config: parserConfig,
-      },
-    });
+    setDocumentParser(parserId, documentId, parserConfig as any);
   };
 
   const onChange = (e: RadioChangeEvent) => {
