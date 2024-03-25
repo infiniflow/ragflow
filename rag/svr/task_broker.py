@@ -81,21 +81,22 @@ def dispatch():
 
         tsks = []
         if r["type"] == FileType.PDF.value:
-            if not r["parser_config"].get("layout_recognize", True):
-                tsks.append(new_task())
-                continue
+            do_layout = r["parser_config"].get("layout_recognize", True)
             pages = PdfParser.total_page_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
             page_size = r["parser_config"].get("task_page_size", 12)
             if r["parser_id"] == "paper": page_size = r["parser_config"].get("task_page_size", 22)
             if r["parser_id"] == "one": page_size = 1000000000
+            if not do_layout: page_size = 1000000000
             for s,e in r["parser_config"].get("pages", [(1, 100000)]):
                 s -= 1
-                e = min(e, pages)
+                s = max(0, s)
+                e = min(e-1, pages)
                 for p in range(s, e, page_size):
                     task = new_task()
                     task["from_page"] = p
                     task["to_page"] = min(p + page_size, e)
                     tsks.append(task)
+
         elif r["parser_id"] == "table":
                 rn = HuExcelParser.row_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
                 for i in range(0, rn, 3000):

@@ -15,6 +15,7 @@ import re
 from collections import Counter
 from copy import deepcopy
 import numpy as np
+from huggingface_hub import snapshot_download
 
 from api.db import ParserType
 from api.utils.file_utils import get_project_base_directory
@@ -36,7 +37,8 @@ class LayoutRecognizer(Recognizer):
              "Equation",
         ]
     def __init__(self, domain):
-        super().__init__(self.labels, domain, os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
+        super().__init__(self.labels, domain, model_dir)#os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
         self.garbage_layouts = ["footer", "header", "reference"]
 
     def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16, drop=True):

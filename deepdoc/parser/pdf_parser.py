@@ -1074,15 +1074,15 @@ class HuParser:
 
 
 class PlainParser(object):
-    def __call__(self, filename, **kwargs):
+    def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
         self.outlines = []
         lines = []
         try:
             self.pdf = pdf2_read(filename if isinstance(filename, str) else BytesIO(filename))
-            outlines = self.pdf.outline
-            for page in self.pdf.pages:
+            for page in self.pdf.pages[from_page:to_page]:
                 lines.extend([t for t in page.extract_text().split("\n")])
 
+            outlines = self.pdf.outline
             def dfs(arr, depth):
                 for a in arr:
                     if isinstance(a, dict):

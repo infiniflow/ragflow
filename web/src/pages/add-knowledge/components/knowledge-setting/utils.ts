@@ -120,7 +120,7 @@ export const TextMap = {
   </p><p>
   For a document, it will be treated as an entire chunk, no split at all.
   </p><p>
-  If you don't trust any chunk method and the selected LLM's context length covers the document length, you can try this method.
+  If you want to summarize something that needs all the context of an article and the selected LLM's context length covers the document length, you can try this method.
   </p>`,
   },
 };

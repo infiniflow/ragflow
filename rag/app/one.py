@@ -45,7 +45,7 @@ class Pdf(PdfParser):
         for (img, rows), poss in tbls:
             sections.append((rows if isinstance(rows, str) else rows[0],
                              [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
-        return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))]
+        return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))], None
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -56,7 +56,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     eng = lang.lower() == "english"#is_english(cks)
 
-    sections = []
     if re.search(r"\.docx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = [txt for txt in laws.Docx()(filename, binary) if txt]
@@ -64,7 +63,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf() if kwargs.get("parser_config",{}).get("layout_recognize", True) else PlainParser()
-        sections = pdf_parser(filename if not binary else binary, to_page=to_page, callback=callback)
+        sections, _ = pdf_parser(filename if not binary else binary, to_page=to_page, callback=callback)
         sections = [s for s, _ in sections if s]
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
