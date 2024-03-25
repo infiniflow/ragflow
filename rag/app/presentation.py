@@ -65,10 +65,10 @@ class Pdf(PdfParser):
 
 
 class PlainPdf(PlainParser):
-    def __call__(self, filename, binary=None, callback=None, **kwargs):
+    def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
         self.pdf = pdf2_read(filename if not binary else BytesIO(filename))
         page_txt = []
-        for page in self.pdf.pages:
+        for page in self.pdf.pages[from_page: to_page]:
             page_txt.append(page.extract_text())
         callback(0.9, "Parsing finished")
         return [(txt, None) for txt in page_txt]

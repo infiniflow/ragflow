@@ -187,7 +187,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                                   {
                                     required: true,
                                     message:
-                                      'Missing end page number(excluding)',
+                                      'Missing end page number(excluded)',
                                   },
                                   ({ getFieldValue }) => ({
                                     validator(_, value) {
@@ -240,7 +240,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                       label="Task page size"
                       tooltip={`If using layout recognize, the PDF file will be split into groups of successive. Layout analysis will be performed parallelly between groups to increase the processing speed. 
                     The 'Task page size' determines the size of groups. The larger the page size is, the lower the chance of splitting continuous text between pages into different chunks.`}
-                      initialValue={2}
+                      initialValue={12}
                       rules={[
                         {
                           required: true,

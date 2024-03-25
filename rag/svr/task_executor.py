@@ -75,7 +75,7 @@ def set_progress(task_id, from_page=0, to_page=-1,
 
     if to_page > 0:
         if msg:
-            msg = f"Page({from_page}~{to_page}): " + msg
+            msg = f"Page({from_page+1}~{to_page+1}): " + msg
     d = {"progress_msg": msg}
     if prog is not None:
         d["progress"] = prog

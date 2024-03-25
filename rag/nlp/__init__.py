@@ -16,8 +16,8 @@ BULLET_PATTERN = [[
 ], [
     r"第[0-9]+章",
     r"第[0-9]+节",
-    r"[0-9]{,3}[\. 、]",
-    r"[0-9]{,2}\.[0-9]{,2}",
+    r"[0-9]{,2}[\. 、]",
+    r"[0-9]{,2}\.[0-9]{,2}[^a-zA-Z/%~-]",
     r"[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}",
     r"[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}",
 ], [
@@ -40,13 +40,20 @@ def random_choices(arr, k):
     return random.choices(arr, k=k)
 
 
+def not_bullet(line):
+    patt = [
+        r"0", r"[0-9]+ +[0-9~个只-]", r"[0-9]+\.{2,}"
+    ]
+    return any([re.match(r, line) for r in patt])
+
+
 def bullets_category(sections):
     global BULLET_PATTERN
     hits = [0] * len(BULLET_PATTERN)
     for i, pro in enumerate(BULLET_PATTERN):
         for sec in sections:
             for p in pro:
-                if re.match(p, sec):
+                if re.match(p, sec) and not not_bullet(sec):
                     hits[i] += 1
                     break
     maxium = 0
@@ -194,7 +201,7 @@ def title_frequency(bull, sections):
 
     for i, (txt, layout) in enumerate(sections):
         for j, p in enumerate(BULLET_PATTERN[bull]):
-            if re.match(p, txt.strip()):
+            if re.match(p, txt.strip()) and not not_bullet(txt):
                 levels[i] = j
                 break
         else:
