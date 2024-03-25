@@ -36,7 +36,6 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   parserId: string;
   parserConfig: IKnowledgeFileParserConfig;
   documentType: string;
-  disabled: boolean;
 }
 
 const hidePagesChunkMethods = ['qa', 'table', 'picture', 'resume', 'one'];
@@ -46,7 +45,6 @@ const ChunkMethodModal: React.FC<IProps> = ({
   onOk,
   hideModal,
   visible,
-  disabled,
   documentType,
   parserConfig,
 }) => {
@@ -96,7 +94,6 @@ const ChunkMethodModal: React.FC<IProps> = ({
       onOk={handleOk}
       onCancel={hideModal}
       afterClose={afterClose}
-      okButtonProps={{ disabled }}
     >
       <Space size={[0, 8]} wrap>
         <div className={styles.tags}>
@@ -106,9 +103,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                 key={x.value}
                 checked={selectedTag === x.value}
                 onChange={(checked) => {
-                  if (!disabled) {
-                    handleChange(x.value, checked);
-                  }
+                  handleChange(x.value, checked);
                 }}
               >
                 {x.label}
@@ -120,12 +115,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
       <Divider></Divider>
 
       {
-        <Form
-          name="dynamic_form_nest_item"
-          autoComplete="off"
-          form={form}
-          disabled={disabled}
-        >
+        <Form name="dynamic_form_nest_item" autoComplete="off" form={form}>
           {showPages && (
             <>
               <Space>
