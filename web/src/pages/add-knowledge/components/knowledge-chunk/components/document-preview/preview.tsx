@@ -30,7 +30,8 @@ const HighlightPopup = ({
 // TODO: merge with DocumentPreviewer
 const Preview = ({ selectedChunkId }: IProps) => {
   const url = useGetDocumentUrl();
-  const state = useGetChunkHighlights(selectedChunkId);
+  const { highlights: state, setWidthAndHeight } =
+    useGetChunkHighlights(selectedChunkId);
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
 
   const resetHash = () => {};
@@ -48,58 +49,67 @@ const Preview = ({ selectedChunkId }: IProps) => {
         beforeLoad={<Skeleton active />}
         workerSrc="/pdfjs-dist/pdf.worker.min.js"
       >
-        {(pdfDocument) => (
-          <PdfHighlighter
-            pdfDocument={pdfDocument}
-            enableAreaSelection={(event) => event.altKey}
-            onScrollChange={resetHash}
-            scrollRef={(scrollTo) => {
-              ref.current = scrollTo;
-            }}
-            onSelectionFinished={() => null}
-            highlightTransform={(
-              highlight,
-              index,
-              setTip,
-              hideTip,
-              viewportToScaled,
-              screenshot,
-              isScrolledTo,
-            ) => {
-              const isTextHighlight = !Boolean(
-                highlight.content && highlight.content.image,
-              );
+        {(pdfDocument) => {
+          pdfDocument.getPage(1).then((page) => {
+            const viewport = page.getViewport({ scale: 1 });
+            const width = viewport.width;
+            const height = viewport.height;
+            setWidthAndHeight(width, height);
+          });
 
-              const component = isTextHighlight ? (
-                <Highlight
-                  isScrolledTo={isScrolledTo}
-                  position={highlight.position}
-                  comment={highlight.comment}
-                />
-              ) : (
-                <AreaHighlight
-                  isScrolledTo={isScrolledTo}
-                  highlight={highlight}
-                  onChange={() => {}}
-                />
-              );
+          return (
+            <PdfHighlighter
+              pdfDocument={pdfDocument}
+              enableAreaSelection={(event) => event.altKey}
+              onScrollChange={resetHash}
+              scrollRef={(scrollTo) => {
+                ref.current = scrollTo;
+              }}
+              onSelectionFinished={() => null}
+              highlightTransform={(
+                highlight,
+                index,
+                setTip,
+                hideTip,
+                viewportToScaled,
+                screenshot,
+                isScrolledTo,
+              ) => {
+                const isTextHighlight = !Boolean(
+                  highlight.content && highlight.content.image,
+                );
 
-              return (
-                <Popup
-                  popupContent={<HighlightPopup {...highlight} />}
-                  onMouseOver={(popupContent) =>
-                    setTip(highlight, () => popupContent)
-                  }
-                  onMouseOut={hideTip}
-                  key={index}
-                >
-                  {component}
-                </Popup>
-              );
-            }}
-            highlights={state}
-          />
-        )}
+                const component = isTextHighlight ? (
+                  <Highlight
+                    isScrolledTo={isScrolledTo}
+                    position={highlight.position}
+                    comment={highlight.comment}
+                  />
+                ) : (
+                  <AreaHighlight
+                    isScrolledTo={isScrolledTo}
+                    highlight={highlight}
+                    onChange={() => {}}
+                  />
+                );
+
+                return (
+                  <Popup
+                    popupContent={<HighlightPopup {...highlight} />}
+                    onMouseOver={(popupContent) =>
+                      setTip(highlight, () => popupContent)
+                    }
+                    onMouseOut={hideTip}
+                    key={index}
+                  >
+                    {component}
+                  </Popup>
+                );
+              }}
+              highlights={state}
+            />
+          );
+        }}
       </PdfLoader>
     </div>
   );
