@@ -40,7 +40,7 @@ def remote_call(filename, binary):
                 "encrypt_type": "base64",
                 "filename": filename,
                 "langtype": '',
-                "fileori": base64.b64encode(binary.stream.read()).decode('utf-8')
+                "fileori": base64.b64encode(binary).decode('utf-8')
             },
             "c": "resume_parse_module",
             "m": "resume_parse"

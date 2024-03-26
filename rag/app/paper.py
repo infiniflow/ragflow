@@ -136,7 +136,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 "title": filename,
                 "authors": " ",
                 "abstract": "",
-                "sections": pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page),
+                "sections": pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page)[0],
                 "tables": []
             }
         else:

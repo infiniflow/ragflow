@@ -87,7 +87,9 @@ def dispatch():
             if r["parser_id"] == "paper": page_size = r["parser_config"].get("task_page_size", 22)
             if r["parser_id"] == "one": page_size = 1000000000
             if not do_layout: page_size = 1000000000
-            for s,e in r["parser_config"].get("pages", [(1, 100000)]):
+            page_ranges = r["parser_config"].get("pages")
+            if not page_ranges:  page_ranges = [(1, 100000)]
+            for s,e in page_ranges:
                 s -= 1
                 s = max(0, s)
                 e = min(e-1, pages)

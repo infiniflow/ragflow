@@ -16,6 +16,7 @@ import re
 from collections import Counter
 
 import numpy as np
+from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from rag.nlp import huqie
@@ -33,7 +34,8 @@ class TableStructureRecognizer(Recognizer):
     ]
 
     def __init__(self):
-        super().__init__(self.labels, "tsr",os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
+        super().__init__(self.labels, "tsr", model_dir)#os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
 
     def __call__(self, images, thr=0.2):
         tbls = super().__call__(images, thr)
