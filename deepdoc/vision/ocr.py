@@ -14,16 +14,12 @@
 import copy
 import time
 import os
-
-from huggingface_hub import snapshot_download
-
 from .operators import *
 import numpy as np
 import onnxruntime as ort
 
 from .postprocess import build_post_process
 from rag.settings import cron_logger
-
 
 def transform(data, ops=None):
     """ transform """
@@ -82,7 +78,7 @@ class TextRecognizer(object):
         self.rec_batch_num = 16
         postprocess_params = {
             'name': 'CTCLabelDecode',
-            "character_dict_path": os.path.join(os.path.dirname(os.path.realpath(__file__)), "ocr.res"),
+            "character_dict_path": os.path.join(model_dir, "ocr.res"),
             "use_space_char": True
         }
         self.postprocess_op = build_post_process(postprocess_params)

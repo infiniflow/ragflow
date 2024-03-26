@@ -53,7 +53,7 @@ class EsQueryer:
 
         if not self.isChinese(txt):
             tks = huqie.qie(txt).split(" ")
-            q = tks
+            q = copy.deepcopy(tks)
             for i in range(1, len(tks)):
                 q.append("\"%s %s\"^2" % (tks[i - 1], tks[i]))
             if not q:
@@ -138,7 +138,7 @@ class EsQueryer:
 
         def toDict(tks):
             d = {}
-            if isinstance(tks, type("")):
+            if isinstance(tks, str):
                 tks = tks.split(" ")
             for t, c in self.tw.weights(tks):
                 if t not in d:
