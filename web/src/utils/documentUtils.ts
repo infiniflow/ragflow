@@ -9,14 +9,13 @@ export const buildChunkHighlights = (
   return Array.isArray(selectedChunk?.positions) &&
     selectedChunk.positions.every((x) => Array.isArray(x))
     ? selectedChunk?.positions?.map((x) => {
-        const actualPositions = x.map((y, index) => (index !== 0 ? y / 1 : y));
         const boundingRect = {
           width: size.width,
           height: size.height,
-          x1: actualPositions[1],
-          x2: actualPositions[2],
-          y1: actualPositions[3],
-          y2: actualPositions[4],
+          x1: x[1],
+          x2: x[2],
+          y1: x[3],
+          y2: x[4],
         };
         return {
           id: uuid(),
