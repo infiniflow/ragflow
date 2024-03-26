@@ -36,16 +36,24 @@ export const useGetSelectedChunk = (selectedChunkId: string) => {
   );
 };
 
-export const useGetChunkHighlights = (
-  selectedChunkId: string,
-): IHighlight[] => {
+export const useGetChunkHighlights = (selectedChunkId: string) => {
+  const [size, setSize] = useState({ width: 849, height: 1200 });
   const selectedChunk: IChunk = useGetSelectedChunk(selectedChunkId);
 
   const highlights: IHighlight[] = useMemo(() => {
-    return buildChunkHighlights(selectedChunk);
-  }, [selectedChunk]);
+    return buildChunkHighlights(selectedChunk, size);
+  }, [selectedChunk, size]);
 
-  return highlights;
+  const setWidthAndHeight = (width: number, height: number) => {
+    setSize((pre) => {
+      if (pre.height !== height || pre.width !== width) {
+        return { height, width };
+      }
+      return pre;
+    });
+  };
+
+  return { highlights, setWidthAndHeight };
 };
 
 export const useSelectChunkListLoading = () => {

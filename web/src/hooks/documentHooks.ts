@@ -2,7 +2,7 @@ import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/documentUtils';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useDispatch, useSelector } from 'umi';
 import { useGetKnowledgeSearchParams } from './routeHook';
@@ -15,12 +15,23 @@ export const useGetDocumentUrl = (documentId: string) => {
   return url;
 };
 
-export const useGetChunkHighlights = (selectedChunk: IChunk): IHighlight[] => {
-  const highlights: IHighlight[] = useMemo(() => {
-    return buildChunkHighlights(selectedChunk);
-  }, [selectedChunk]);
+export const useGetChunkHighlights = (selectedChunk: IChunk) => {
+  const [size, setSize] = useState({ width: 849, height: 1200 });
 
-  return highlights;
+  const highlights: IHighlight[] = useMemo(() => {
+    return buildChunkHighlights(selectedChunk, size);
+  }, [selectedChunk, size]);
+
+  const setWidthAndHeight = (width: number, height: number) => {
+    setSize((pre) => {
+      if (pre.height !== height || pre.width !== width) {
+        return { height, width };
+      }
+      return pre;
+    });
+  };
+
+  return { highlights, setWidthAndHeight };
 };
 
 export const useFetchDocumentList = () => {
