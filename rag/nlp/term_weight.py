@@ -150,9 +150,10 @@ class Dealer:
             return 6
 
         def ner(t):
+            if re.match(r"[0-9,.]{2,}$", t): return 2
+            if re.match(r"[a-z]{1,2}$", t): return 0.01
             if not self.ne or t not in self.ne:
                 return 1
-            if re.match(r"[0-9,.]+$", t): return 2
             m = {"toxic": 2, "func": 1, "corp": 3, "loca": 3, "sch": 3, "stock": 3,
                  "firstnm": 1}
             return m[self.ne[t]]
@@ -170,11 +171,11 @@ class Dealer:
             return 1
 
         def freq(t):
-            if re.match(r"[0-9\. -]+$", t):
-                return 10000
+            if re.match(r"[0-9. -]{2,}$", t):
+                return 3
             s = huqie.freq(t)
-            if not s and re.match(r"[a-z\. -]+$", t):
-                return 10
+            if not s and re.match(r"[a-z. -]+$", t):
+                return 300
             if not s:
                 s = 0
 
@@ -188,12 +189,12 @@ class Dealer:
             return max(s, 10)
 
         def df(t):
-            if re.match(r"[0-9\. -]+$", t):
-                return 100000
+            if re.match(r"[0-9. -]{2,}$", t):
+                return 5
             if t in self.df:
                 return self.df[t] + 3
-            elif re.match(r"[a-z\. -]+$", t):
-                return 3
+            elif re.match(r"[a-z. -]+$", t):
+                return 300
             elif len(t) >= 4:
                 s = [tt for tt in huqie.qieqie(t).split(" ") if len(tt) > 1]
                 if len(s) > 1:

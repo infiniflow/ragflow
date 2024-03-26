@@ -20,10 +20,10 @@ from openai import OpenAI
 from FlagEmbedding import FlagModel
 import torch
 import numpy as np
-
+from huggingface_hub import snapshot_download
 from rag.utils import num_tokens_from_string
 
-flag_model = FlagModel("BAAI/bge-large-zh-v1.5",
+flag_model = FlagModel(snapshot_download("BAAI/bge-large-zh-v1.5", local_files_only=True),
                        query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
                        use_fp16=torch.cuda.is_available())
 

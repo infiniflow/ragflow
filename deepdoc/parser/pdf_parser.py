@@ -996,7 +996,7 @@ class HuParser:
             if need_position: return None, None
             return
 
-        max_width = np.max([right - left for (_, left, right, _, _) in poss])
+        max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
         GAP = 6
         pos = poss[0]
         poss.insert(0, ([pos[0][0]], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))

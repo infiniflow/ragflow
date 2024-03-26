@@ -234,13 +234,13 @@ class Dealer:
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
             len(ans_v[0]), len(chunk_v[0]))
 
-        chunks_tks = [huqie.qie(ck).split(" ") for ck in chunks]
+        chunks_tks = [huqie.qie(self.qryr.rmWWW(ck)).split(" ") for ck in chunks]
         cites = {}
         for i, a in enumerate(pieces_):
             sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i],
                                                             chunk_v,
                                                             huqie.qie(
-                                                                pieces_[i]).split(" "),
+                                                                self.qryr.rmWWW(pieces_[i])).split(" "),
                                                             chunks_tks,
                                                             tkweight, vtweight)
             mx = np.max(sim) * 0.99

@@ -183,9 +183,7 @@ def chat(dialog, messages, **kwargs):
     ## try to use sql if field mapping is good to go
     if field_map:
         chat_logger.info("Use SQL to retrieval:{}".format(questions[-1]))
-        markdown_tbl, chunks = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl)
-        if markdown_tbl:
-            return {"answer": markdown_tbl, "reference": {"chunks": chunks, "doc_aggs": []}}
+        return use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl)
 
     prompt_config = dialog.prompt_config
     for p in prompt_config["parameters"]:
@@ -311,7 +309,7 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
     clmn_idx = [ii for ii in range(len(tbl["columns"])) if ii not in (docid_idx | docnm_idx)]
 
     # compose markdown table
-    clmns = "|"+"|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], tbl["columns"][i]["name"])) for i in clmn_idx]) + ("|原文|" if docid_idx and docid_idx else "|")
+    clmns = "|"+"|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], tbl["columns"][i]["name"])) for i in clmn_idx]) + ("|Source|" if docid_idx and docid_idx else "|")
     line = "|"+"|".join(["------" for _ in range(len(clmn_idx))]) + ("|------|" if docid_idx and docid_idx else "")
     rows = ["|"+"|".join([rmSpace(str(r[i])) for i in clmn_idx]).replace("None", " ") + "|" for r in tbl["rows"]]
     if not docid_idx or not docnm_idx:
@@ -322,4 +320,8 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
     rows = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|", "|", rows)
     docid_idx = list(docid_idx)[0]
     docnm_idx = list(docnm_idx)[0]
-    return "\n".join([clmns, line, rows]), [{"doc_id": r[docid_idx], "docnm_kwd": r[docnm_idx]} for r in tbl["rows"]]
+    return {
+        "answer": "\n".join([clmns, line, rows]),
+        "reference": {"chunks": [{"doc_id": r[docid_idx], "docnm_kwd": r[docnm_idx]} for r in tbl["rows"]],
+                      "doc_aggs": [{"doc_id": r[docid_idx], "doc_name": r[docnm_idx], "count": 1} for r in tbl["rows"]]}
+    }
