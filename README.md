@@ -79,10 +79,6 @@ vm.max_map_count=262144
 If your machine doesn't have *Docker* installed, please refer to [Install Docker Engine](https://docs.docker.com/engine/install/)
 
 ## Quick Start
-> If you want to change the basic setups, like port, password .etc., please refer to [.env](./docker/.env) before starting the system.
-
-> If you change anything in [.env](./docker/.env), please check [service_conf.yaml](./docker/service_conf.yaml) which is a 
-> configuration of the back-end service and should be consistent with [.env](./docker/.env).
 
 > - In [service_conf.yaml](./docker/service_conf.yaml), configuration of *LLM* in **user_default_llm** is strongly recommended. 
 > In **user_default_llm** of [service_conf.yaml](./docker/service_conf.yaml), you need to specify LLM factory and your own _API_KEY_.
@@ -91,25 +87,25 @@ If your machine doesn't have *Docker* installed, please refer to [Install Docker
 > [OpenAI](https://platform.openai.com/login?launch), [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model), 
 > [ZHIPU-AI](https://open.bigmodel.cn/), [Moonshot](https://platform.moonshot.cn/docs/docs)
 ```bash
-121:/# git clone https://github.com/infiniflow/ragflow.git
-121:/# cd ragflow/docker
-121:/ragflow/docker# docker compose up -d
+$ git clone https://github.com/infiniflow/ragflow.git
+$ cd ragflow/docker
+$ docker compose up -d
 ```
 ### OR
 
 ```bash
-121:/# git clone https://github.com/infiniflow/ragflow.git
-121:/# cd ragflow/
-121:/# docker build  -t infiniflow/ragflow:v1.0 .
-121:/# cd ragflow/docker
-121:/ragflow/docker# docker compose up -d
+$ git clone https://github.com/infiniflow/ragflow.git
+$ cd ragflow/
+$ docker build  -t infiniflow/ragflow:v1.0 .
+$ cd ragflow/docker
+$ docker compose up -d
 ```
 > The core image is about 15GB, please be patient for the first time
 
 After pulling all the images and running up, use the following command to check the server status. If you can have the following outputs, 
 _**Hallelujah!**_ You have successfully launched the system.
 ```bash
-121:/ragflow# docker logs -f  ragflow-server
+$ docker logs -f  ragflow-server
 
     ____                 ______ __               
    / __ \ ____ _ ____ _ / ____// /____  _      __
@@ -138,6 +134,11 @@ Open your browser, enter the IP address of your server, _**Hallelujah**_ again!
 If you need to change the default setting of the system when you deploy it. There several ways to configure it. 
 Please refer to [README](./docker/README.md) and manually set the configuration. 
 After changing something, please run *docker-compose up -d* again. 
+
+> If you want to change the basic setups, like port, password .etc., please refer to [.env](./docker/.env) before starting the system.
+
+> If you change anything in [.env](./docker/.env), please check [service_conf.yaml](./docker/service_conf.yaml) which is a 
+> configuration of the back-end service and should be consistent with [.env](./docker/.env).
 
 # RoadMap
 

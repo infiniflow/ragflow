@@ -42,7 +42,9 @@ class Pdf(PdfParser):
         self._text_merge()
         callback(0.67, "Text merging finished")
         tbls = self._extract_table_figure(True, zoomin, True, True)
-        self._naive_vertical_merge()
+        #self._naive_vertical_merge()
+        self._concat_downward()
+        #self._filter_forpages()
 
         cron_logger.info("paddle layouts:".format(
             (timer() - start) / (self.total_page + 0.1)))
@@ -79,7 +81,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf(
-        ) if parser_config["layout_recognize"] else PlainParser()
+        ) if parser_config.get("layout_recognize", True) else PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         res = tokenize_table(tbls, doc, eng)
