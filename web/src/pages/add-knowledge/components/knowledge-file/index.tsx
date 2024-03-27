@@ -39,6 +39,7 @@ import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
+import { getExtension } from '@/utils/documentUtils';
 import styles from './index.less';
 
 const KnowledgeFile = () => {
@@ -227,7 +228,7 @@ const KnowledgeFile = () => {
       <ChunkMethodModal
         parserId={currentRecord.parser_id}
         parserConfig={currentRecord.parser_config}
-        documentType={currentRecord.type}
+        documentExtension={getExtension(currentRecord.name)}
         onOk={onChangeParserOk}
         visible={changeParserVisible}
         hideModal={hideChangeParserModal}
