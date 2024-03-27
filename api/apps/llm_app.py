@@ -51,7 +51,7 @@ def set_api_key():
                 if len(arr[0]) == 0 or tc == 0:
                     raise Exception("Fail")
             except Exception as e:
-                msg += f"\nFail to access embedding model({llm.llm_name}) using this api key."
+                msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
             mdl = ChatModel[factory](
                 req["api_key"], llm.llm_name)
