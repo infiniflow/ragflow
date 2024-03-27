@@ -7,10 +7,7 @@ import {
 } from '@/hooks/documentHooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import {
-  useFetchTenantInfo,
-  useSelectParserList,
-} from '@/hooks/userSettingHook';
+import { useFetchTenantInfo } from '@/hooks/userSettingHook';
 import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
@@ -242,22 +239,4 @@ export const useChangeDocumentParser = (documentId: string) => {
     hideChangeParserModal,
     showChangeParserModal,
   };
-};
-
-export const useFetchParserListOnMount = (parserId: string) => {
-  const [selectedTag, setSelectedTag] = useState('');
-  const parserList = useSelectParserList();
-
-  useFetchTenantInfo();
-
-  useEffect(() => {
-    setSelectedTag(parserId);
-  }, [parserId]);
-
-  const handleChange = (tag: string, checked: boolean) => {
-    const nextSelectedTag = checked ? tag : selectedTag;
-    setSelectedTag(nextSelectedTag);
-  };
-
-  return { parserList, handleChange, selectedTag };
 };

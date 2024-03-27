@@ -1,18 +1,24 @@
 import { ReactComponent as SelectFilesEndIcon } from '@/assets/svg/select-files-end.svg';
 import { ReactComponent as SelectFilesStartIcon } from '@/assets/svg/select-files-start.svg';
+import ChunkMethodModal from '@/components/chunk-method-modal';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
+import {
+  useRunDocument,
+  useSelectDocumentList,
+  useUploadDocument,
+} from '@/hooks/documentHooks';
 import {
   useDeleteDocumentById,
   useFetchKnowledgeDetail,
-  useGetDocumentDefaultParser,
   useKnowledgeBaseId,
 } from '@/hooks/knowledgeHook';
 import {
-  useFetchTenantInfo,
-  useSelectParserList,
-} from '@/hooks/userSettingHook';
-import uploadService from '@/services/uploadService';
-import { isFileUploadDone } from '@/utils/documentUtils';
+  useChangeDocumentParser,
+  useSetSelectedRecord,
+} from '@/hooks/logicHooks';
+import { useFetchTenantInfo } from '@/hooks/userSettingHook';
+import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { getExtension, isFileUploadDone } from '@/utils/documentUtils';
 import {
   ArrowLeftOutlined,
   CloudUploadOutlined,
@@ -24,27 +30,16 @@ import {
   Button,
   Card,
   Flex,
-  Popover,
   Progress,
-  Radio,
-  RadioChangeEvent,
   Space,
   Upload,
   UploadFile,
   UploadProps,
 } from 'antd';
 import classNames from 'classnames';
-import {
-  ReactElement,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { Link, useDispatch, useNavigate } from 'umi';
+import { ReactElement, useCallback, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'umi';
 
-import { useSetDocumentParser } from '@/hooks/documentHooks';
 import styles from './index.less';
 
 const { Dragger } = Upload;
@@ -57,47 +52,20 @@ const UploaderItem = ({
   file,
   isUpload,
   remove,
+  handleEdit,
 }: {
   isUpload: boolean;
   originNode: ReactElement;
   file: UploadFile;
   fileList: object[];
+  showModal: () => void;
   remove: (id: string) => void;
+  setRecord: (record: IKnowledgeFile) => void;
+  handleEdit: (id: string) => void;
 }) => {
-  const { parserConfig, defaultParserId } = useGetDocumentDefaultParser();
   const { removeDocument } = useDeleteDocumentById();
-  const [value, setValue] = useState(defaultParserId);
-  const setDocumentParser = useSetDocumentParser();
 
   const documentId = file?.response?.id;
-
-  const parserList = useSelectParserList();
-
-  const saveParser = (parserId: string) => {
-    setDocumentParser(parserId, documentId, parserConfig as any);
-  };
-
-  const onChange = (e: RadioChangeEvent) => {
-    const val = e.target.value;
-    setValue(val);
-    saveParser(val);
-  };
-
-  const content = (
-    <Radio.Group onChange={onChange} value={value}>
-      <Space direction="vertical">
-        {parserList.map(
-          (
-            x, // value is lowercase, key is uppercase
-          ) => (
-            <Radio value={x.value} key={x.value}>
-              {x.label}
-            </Radio>
-          ),
-        )}
-      </Space>
-    </Radio.Group>
-  );
 
   const handleRemove = async () => {
     if (file.status === 'error') {
@@ -110,9 +78,11 @@ const UploaderItem = ({
     }
   };
 
-  useEffect(() => {
-    setValue(defaultParserId);
-  }, [defaultParserId]);
+  const handleEditClick = () => {
+    if (file.status === 'done') {
+      handleEdit(documentId);
+    }
+  };
 
   return (
     <Card className={styles.uploaderItem}>
@@ -130,9 +100,7 @@ const UploaderItem = ({
             onClick={handleRemove}
           />
         ) : (
-          <Popover content={content} placement="bottom">
-            <EditOutlined />
-          </Popover>
+          <EditOutlined onClick={handleEditClick} />
         )}
       </Flex>
       <Flex>
@@ -153,10 +121,20 @@ const UploaderItem = ({
 const KnowledgeUploadFile = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const [isUpload, setIsUpload] = useState(true);
-  const dispatch = useDispatch();
   const [uploadedFileIds, setUploadedFileIds] = useState<string[]>([]);
   const fileListRef = useRef<UploadFile[]>([]);
   const navigate = useNavigate();
+  const { currentRecord, setRecord } = useSetSelectedRecord();
+  const {
+    changeParserLoading,
+    onChangeParserOk,
+    changeParserVisible,
+    hideChangeParserModal,
+    showChangeParserModal,
+  } = useChangeDocumentParser(currentRecord.id);
+  const documentList = useSelectDocumentList();
+  const runDocumentByIds = useRunDocument();
+  const uploadDocument = useUploadDocument();
 
   const enabled = useMemo(() => {
     if (isUpload) {
@@ -175,8 +153,7 @@ const KnowledgeUploadFile = () => {
     onError,
     // onProgress,
   }) {
-    const ret = await uploadService.uploadFile(file, knowledgeBaseId);
-    const data = ret?.data;
+    const data = await uploadDocument(file as UploadFile);
     if (data?.retcode === 0) {
       setUploadedFileIds((pre) => {
         return pre.concat(data.data.id);
@@ -197,6 +174,17 @@ const KnowledgeUploadFile = () => {
     });
   }, []);
 
+  const handleItemEdit = useCallback(
+    (id: string) => {
+      const document = documentList.find((x) => x.id === id);
+      if (document) {
+        setRecord(document);
+      }
+      showChangeParserModal();
+    },
+    [documentList, showChangeParserModal, setRecord],
+  );
+
   const props: UploadProps = {
     name: 'file',
     multiple: true,
@@ -215,6 +203,9 @@ const KnowledgeUploadFile = () => {
           fileList={fileList}
           originNode={originNode}
           remove={remove}
+          showModal={showChangeParserModal}
+          setRecord={setRecord}
+          handleEdit={handleItemEdit}
         ></UploaderItem>
       );
     },
@@ -226,10 +217,7 @@ const KnowledgeUploadFile = () => {
 
   const runSelectedDocument = () => {
     const ids = fileListRef.current.map((x) => x.response.id);
-    dispatch({
-      type: 'kFModel/document_run',
-      payload: { doc_ids: ids, run: 1 },
-    });
+    runDocumentByIds(ids);
   };
 
   const handleNextClick = () => {
@@ -245,67 +233,78 @@ const KnowledgeUploadFile = () => {
   useFetchKnowledgeDetail();
 
   return (
-    <div className={styles.uploadWrapper}>
-      <section>
-        <Space className={styles.backToList}>
-          <ArrowLeftOutlined />
-          <Link to={`/knowledge/dataset?id=${knowledgeBaseId}`}>
-            Back to select files
-          </Link>
-        </Space>
-        <div className={styles.progressWrapper}>
-          <Flex align="center" justify="center">
-            <SelectFilesStartIcon></SelectFilesStartIcon>
-            <Progress
-              percent={100}
-              showInfo={false}
-              className={styles.progress}
-              strokeColor="
-               rgba(127, 86, 217, 1)
-              "
-            />
-            <SelectFilesEndIcon></SelectFilesEndIcon>
-          </Flex>
-          <Flex justify="space-around">
-            <p className={styles.selectFilesText}>
-              <b>Select files</b>
+    <>
+      <div className={styles.uploadWrapper}>
+        <section>
+          <Space className={styles.backToList}>
+            <ArrowLeftOutlined />
+            <Link to={`/knowledge/dataset?id=${knowledgeBaseId}`}>
+              Back to select files
+            </Link>
+          </Space>
+          <div className={styles.progressWrapper}>
+            <Flex align="center" justify="center">
+              <SelectFilesStartIcon></SelectFilesStartIcon>
+              <Progress
+                percent={100}
+                showInfo={false}
+                className={styles.progress}
+                strokeColor="
+                 rgba(127, 86, 217, 1)
+                "
+              />
+              <SelectFilesEndIcon></SelectFilesEndIcon>
+            </Flex>
+            <Flex justify="space-around">
+              <p className={styles.selectFilesText}>
+                <b>Select files</b>
+              </p>
+              <p className={styles.changeSpecificCategoryText}>
+                <b>Change specific category</b>
+              </p>
+            </Flex>
+          </div>
+        </section>
+        <section className={styles.uploadContent}>
+          <Dragger
+            {...props}
+            className={classNames(styles.uploader, {
+              [styles.hiddenUploader]: !isUpload,
+            })}
+          >
+            <Button className={styles.uploaderButton}>
+              <CloudUploadOutlined className={styles.uploaderIcon} />
+            </Button>
+            <p className="ant-upload-text">
+              Click or drag file to this area to upload
             </p>
-            <p className={styles.changeSpecificCategoryText}>
-              <b>Change specific category</b>
+            <p className="ant-upload-hint">
+              Support for a single or bulk upload. Strictly prohibited from
+              uploading company data or other banned files.
             </p>
-          </Flex>
-        </div>
-      </section>
-      <section className={styles.uploadContent}>
-        <Dragger
-          {...props}
-          className={classNames(styles.uploader, {
-            [styles.hiddenUploader]: !isUpload,
-          })}
-        >
-          <Button className={styles.uploaderButton}>
-            <CloudUploadOutlined className={styles.uploaderIcon} />
+          </Dragger>
+        </section>
+        <section className={styles.footer}>
+          <Button
+            type="primary"
+            // className={styles.nextButton}
+            onClick={handleNextClick}
+            disabled={!enabled}
+          >
+            Next
           </Button>
-          <p className="ant-upload-text">
-            Click or drag file to this area to upload
-          </p>
-          <p className="ant-upload-hint">
-            Support for a single or bulk upload. Strictly prohibited from
-            uploading company data or other banned files.
-          </p>
-        </Dragger>
-      </section>
-      <section className={styles.footer}>
-        <Button
-          type="primary"
-          // className={styles.nextButton}
-          onClick={handleNextClick}
-          disabled={!enabled}
-        >
-          Next
-        </Button>
-      </section>
-    </div>
+        </section>
+      </div>
+      <ChunkMethodModal
+        parserId={currentRecord.parser_id}
+        parserConfig={currentRecord.parser_config}
+        documentExtension={getExtension(currentRecord.name)}
+        onOk={onChangeParserOk}
+        visible={changeParserVisible}
+        hideModal={hideChangeParserModal}
+        loading={changeParserLoading}
+      />
+    </>
   );
 };
 

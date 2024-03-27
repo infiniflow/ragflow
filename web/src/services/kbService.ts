@@ -25,6 +25,7 @@ const {
   document_rename,
   document_run,
   get_document_file,
+  document_upload,
 } = api;
 
 const methods = {
@@ -81,6 +82,10 @@ const methods = {
   document_thumbnails: {
     url: document_thumbnails,
     method: 'get',
+  },
+  document_upload: {
+    url: document_upload,
+    method: 'post',
   },
   // chunk管理
   chunk_list: {

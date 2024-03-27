@@ -35,3 +35,6 @@ export const buildChunkHighlights = (
 };
 
 export const isFileUploadDone = (file: UploadFile) => file.status === 'done';
+
+export const getExtension = (name: string) =>
+  name?.slice(name.lastIndexOf('.') + 1).toLowerCase() ?? '';
