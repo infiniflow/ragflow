@@ -11,24 +11,35 @@
 #  limitations under the License.
 #
 
-import os, sys
+from deepdoc.vision.seeit import draw_box
+from deepdoc.vision import Recognizer, LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
+from api.utils.file_utils import get_project_base_directory
+import argparse
+import os
+import sys
 import re
 
 import numpy as np
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../')))
-
-import argparse
-from api.utils.file_utils import get_project_base_directory
-from deepdoc.vision import Recognizer, LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
-from deepdoc.vision.seeit import draw_box
+sys.path.insert(
+    0,
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(
+                os.path.abspath(__file__)),
+            '../../')))
 
 
 def main(args):
     images, outputs = init_in_out(args)
     if args.mode.lower() == "layout":
         labels = LayoutRecognizer.labels
-        detr = Recognizer(labels, "layout", os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        detr = Recognizer(
+            labels,
+            "layout",
+            os.path.join(
+                get_project_base_directory(),
+                "rag/res/deepdoc/"))
     if args.mode.lower() == "tsr":
         labels = TableStructureRecognizer.labels
         detr = TableStructureRecognizer()
@@ -39,7 +50,8 @@ def main(args):
         if args.mode.lower() == "tsr":
             #lyt = [t for t in lyt if t["type"] == "table column"]
             html = get_table_html(images[i], lyt, ocr)
-            with open(outputs[i]+".html", "w+") as f: f.write(html)
+            with open(outputs[i] + ".html", "w+") as f:
+                f.write(html)
             lyt = [{
                 "type": t["label"],
                 "bbox": [t["x0"], t["top"], t["x1"], t["bottom"]],
@@ -58,7 +70,7 @@ def get_table_html(img, tb_cpns, ocr):
           "bottom": b[-1][1],
           "layout_type": "table",
           "page_number": 0} for b, t in boxes if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
-        np.mean([b[-1][1]-b[0][1] for b,_ in boxes]) / 3
+        np.mean([b[-1][1] - b[0][1] for b, _ in boxes]) / 3
     )
 
     def gather(kwd, fzy=10, ption=0.6):
@@ -117,7 +129,7 @@ def get_table_html(img, tb_cpns, ocr):
       margin-bottom: 50px;
       border: 1px solid #e1e1e1;
     }
-    
+
     caption {
       color: #6ac1ca;
       font-size: 20px;
@@ -126,25 +138,25 @@ def get_table_html(img, tb_cpns, ocr):
       font-weight: 600;
       margin-bottom: 10px;
     }
-    
+
     ._table_1nkzy_11 table {
       width: 100%%;
       border-collapse: collapse;
     }
-    
+
     th {
       color: #fff;
       background-color: #6ac1ca;
     }
-    
+
     td:hover {
       background: #c1e8e8;
     }
-    
+
     tr:nth-child(even) {
       background-color: #f2f2f2;
     }
-    
+
     ._table_1nkzy_11 th,
     ._table_1nkzy_11 td {
       text-align: center;
@@ -157,7 +169,7 @@ def get_table_html(img, tb_cpns, ocr):
     %s
     </body>
     </html>
-"""% TableStructureRecognizer.construct_table(boxes, html=True)
+""" % TableStructureRecognizer.construct_table(boxes, html=True)
     return html
 
 
@@ -168,7 +180,10 @@ if __name__ == "__main__":
                         required=True)
     parser.add_argument('--output_dir', help="Directory where to store the output images. Default: './layouts_outputs'",
                         default="./layouts_outputs")
-    parser.add_argument('--threshold', help="A threshold to filter out detections. Default: 0.5", default=0.5)
+    parser.add_argument(
+        '--threshold',
+        help="A threshold to filter out detections. Default: 0.5",
+        default=0.5)
     parser.add_argument('--mode', help="Task mode: layout recognition or table structure recognition", choices=["layout", "tsr"],
                         default="layout")
     args = parser.parse_args()

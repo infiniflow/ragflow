@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from zhipuai import ZhipuAI
 import io
 from abc import ABC
 
@@ -57,8 +58,8 @@ class Base(ABC):
                         },
                     },
                     {
-                        "text": "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。" if self.lang.lower() == "chinese" else \
-                            "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out.",
+                        "text": "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。" if self.lang.lower() == "chinese" else
+                        "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out.",
                     },
                 ],
             }
@@ -92,8 +93,9 @@ class QWenCV(Base):
     def prompt(self, binary):
         # stupid as hell
         tmp_dir = get_project_base_directory("tmp")
-        if not os.path.exists(tmp_dir): os.mkdir(tmp_dir)
-        path = os.path.join(tmp_dir, "%s.jpg"%get_uuid())
+        if not os.path.exists(tmp_dir):
+            os.mkdir(tmp_dir)
+        path = os.path.join(tmp_dir, "%s.jpg" % get_uuid())
         Image.open(io.BytesIO(binary)).save(path)
         return [
             {
@@ -103,8 +105,8 @@ class QWenCV(Base):
                         "image": f"file://{path}"
                     },
                     {
-                        "text": "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。" if self.lang.lower() == "chinese" else \
-                            "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out.",
+                        "text": "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。" if self.lang.lower() == "chinese" else
+                        "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out.",
                     },
                 ],
             }
@@ -118,9 +120,6 @@ class QWenCV(Base):
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'][0]["text"], response.usage.output_tokens
         return response.message, 0
-
-
-from zhipuai import ZhipuAI
 
 
 class Zhipu4V(Base):

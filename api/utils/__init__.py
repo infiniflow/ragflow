@@ -34,9 +34,11 @@ from . import file_utils
 
 SERVICE_CONF = "service_conf.yaml"
 
+
 def conf_realpath(conf_name):
     conf_path = f"conf/{conf_name}"
     return os.path.join(file_utils.get_project_base_directory(), conf_path)
+
 
 def get_base_config(key, default=None, conf_name=SERVICE_CONF) -> dict:
     local_config = {}
@@ -62,7 +64,8 @@ def get_base_config(key, default=None, conf_name=SERVICE_CONF) -> dict:
     return config.get(key, default) if key is not None else config
 
 
-use_deserialize_safe_module = get_base_config('use_deserialize_safe_module', False)
+use_deserialize_safe_module = get_base_config(
+    'use_deserialize_safe_module', False)
 
 
 class CoordinationCommunicationProtocol(object):
@@ -93,7 +96,8 @@ class BaseType:
                     data[_k] = _dict(vv)
             else:
                 data = obj
-            return {"type": obj.__class__.__name__, "data": data, "module": module}
+            return {"type": obj.__class__.__name__,
+                    "data": data, "module": module}
         return _dict(self)
 
 
@@ -129,7 +133,8 @@ def rag_uuid():
 
 
 def string_to_bytes(string):
-    return string if isinstance(string, bytes) else string.encode(encoding="utf-8")
+    return string if isinstance(
+        string, bytes) else string.encode(encoding="utf-8")
 
 
 def bytes_to_string(byte):
@@ -137,7 +142,11 @@ def bytes_to_string(byte):
 
 
 def json_dumps(src, byte=False, indent=None, with_type=False):
-    dest = json.dumps(src, indent=indent, cls=CustomJSONEncoder, with_type=with_type)
+    dest = json.dumps(
+        src,
+        indent=indent,
+        cls=CustomJSONEncoder,
+        with_type=with_type)
     if byte:
         dest = string_to_bytes(dest)
     return dest
@@ -146,7 +155,8 @@ def json_dumps(src, byte=False, indent=None, with_type=False):
 def json_loads(src, object_hook=None, object_pairs_hook=None):
     if isinstance(src, bytes):
         src = bytes_to_string(src)
-    return json.loads(src, object_hook=object_hook, object_pairs_hook=object_pairs_hook)
+    return json.loads(src, object_hook=object_hook,
+                      object_pairs_hook=object_pairs_hook)
 
 
 def current_timestamp():
@@ -177,7 +187,9 @@ def serialize_b64(src, to_str=False):
 
 
 def deserialize_b64(src):
-    src = base64.b64decode(string_to_bytes(src) if isinstance(src, str) else src)
+    src = base64.b64decode(
+        string_to_bytes(src) if isinstance(
+            src, str) else src)
     if use_deserialize_safe_module:
         return restricted_loads(src)
     return pickle.loads(src)
@@ -237,12 +249,14 @@ def get_lan_ip():
                 pass
     return ip or ''
 
+
 def from_dict_hook(in_dict: dict):
     if "type" in in_dict and "data" in in_dict:
         if in_dict["module"] is None:
             return in_dict["data"]
         else:
-            return getattr(importlib.import_module(in_dict["module"]), in_dict["type"])(**in_dict["data"])
+            return getattr(importlib.import_module(
+                in_dict["module"]), in_dict["type"])(**in_dict["data"])
     else:
         return in_dict
 
@@ -259,12 +273,16 @@ def decrypt_database_password(password):
         raise ValueError("No private key")
 
     module_fun = encrypt_module.split("#")
-    pwdecrypt_fun = getattr(importlib.import_module(module_fun[0]), module_fun[1])
+    pwdecrypt_fun = getattr(
+        importlib.import_module(
+            module_fun[0]),
+        module_fun[1])
 
     return pwdecrypt_fun(private_key, password)
 
 
-def decrypt_database_config(database=None, passwd_key="password", name="database"):
+def decrypt_database_config(
+        database=None, passwd_key="password", name="database"):
     if not database:
         database = get_base_config(name, {})
 
@@ -275,7 +293,8 @@ def decrypt_database_config(database=None, passwd_key="password", name="database
 def update_config(key, value, conf_name=SERVICE_CONF):
     conf_path = conf_realpath(conf_name=conf_name)
     if not os.path.isabs(conf_path):
-        conf_path = os.path.join(file_utils.get_project_base_directory(), conf_path)
+        conf_path = os.path.join(
+            file_utils.get_project_base_directory(), conf_path)
 
     with FileLock(os.path.join(os.path.dirname(conf_path), ".lock")):
         config = file_utils.load_yaml_conf(conf_path=conf_path) or {}
@@ -288,7 +307,8 @@ def get_uuid():
 
 
 def datetime_format(date_time: datetime.datetime) -> datetime.datetime:
-    return datetime.datetime(date_time.year, date_time.month, date_time.day, date_time.hour, date_time.minute, date_time.second)
+    return datetime.datetime(date_time.year, date_time.month, date_time.day,
+                             date_time.hour, date_time.minute, date_time.second)
 
 
 def get_format_time() -> datetime.datetime:
@@ -307,14 +327,19 @@ def elapsed2time(elapsed):
 
 
 def decrypt(line):
-    file_path = os.path.join(file_utils.get_project_base_directory(), "conf", "private.pem")
+    file_path = os.path.join(
+        file_utils.get_project_base_directory(),
+        "conf",
+        "private.pem")
     rsa_key = RSA.importKey(open(file_path).read(), "Welcome")
     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    return cipher.decrypt(base64.b64decode(line), "Fail to decrypt password!").decode('utf-8')
+    return cipher.decrypt(base64.b64decode(
+        line), "Fail to decrypt password!").decode('utf-8')
 
 
 def download_img(url):
-    if not url: return ""
+    if not url:
+        return ""
     response = requests.get(url)
     return "data:" + \
            response.headers.get('Content-Type', 'image/jpg') + ";" + \

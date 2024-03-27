@@ -149,7 +149,8 @@ class EsQueryer:
         atks = toDict(atks)
         btkss = [toDict(tks) for tks in btkss]
         tksim = [self.similarity(atks, btks) for btks in btkss]
-        return np.array(sims[0]) * vtweight + np.array(tksim) * tkweight, tksim, sims[0]
+        return np.array(sims[0]) * vtweight + \
+            np.array(tksim) * tkweight, tksim, sims[0]
 
     def similarity(self, qtwt, dtwt):
         if isinstance(dtwt, type("")):
@@ -159,11 +160,11 @@ class EsQueryer:
         s = 1e-9
         for k, v in qtwt.items():
             if k in dtwt:
-                s += v# * dtwt[k]
+                s += v  # * dtwt[k]
         q = 1e-9
         for k, v in qtwt.items():
-            q += v #* v
+            q += v  # * v
         #d = 1e-9
-        #for k, v in dtwt.items():
+        # for k, v in dtwt.items():
         #    d += v * v
-        return s / q #math.sqrt(q) / math.sqrt(d)
+        return s / q  # math.sqrt(q) / math.sqrt(d)

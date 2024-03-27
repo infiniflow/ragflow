@@ -54,7 +54,8 @@ class UserService(CommonService):
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
         if "password" in kwargs:
-            kwargs["password"] = generate_password_hash(str(kwargs["password"]))
+            kwargs["password"] = generate_password_hash(
+                str(kwargs["password"]))
 
         kwargs["create_time"] = current_timestamp()
         kwargs["create_date"] = datetime_format(datetime.now())
@@ -63,12 +64,12 @@ class UserService(CommonService):
         obj = cls.model(**kwargs).save(force_insert=True)
         return obj
 
-
     @classmethod
     @DB.connection_context()
     def delete_user(cls, user_ids, update_user_dict):
         with DB.atomic():
-            cls.model.update({"status": 0}).where(cls.model.id.in_(user_ids)).execute()
+            cls.model.update({"status": 0}).where(
+                cls.model.id.in_(user_ids)).execute()
 
     @classmethod
     @DB.connection_context()
@@ -77,7 +78,8 @@ class UserService(CommonService):
             if user_dict:
                 user_dict["update_time"] = current_timestamp()
                 user_dict["update_date"] = datetime_format(datetime.now())
-                cls.model.update(user_dict).where(cls.model.id == user_id).execute()
+                cls.model.update(user_dict).where(
+                    cls.model.id == user_id).execute()
 
 
 class TenantService(CommonService):
@@ -86,25 +88,42 @@ class TenantService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_user_id(cls, user_id):
-        fields = [cls.model.id.alias("tenant_id"), cls.model.name, cls.model.llm_id, cls.model.embd_id, cls.model.asr_id, cls.model.img2txt_id, cls.model.parser_ids, UserTenant.role]
-        return list(cls.model.select(*fields)\
-            .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id==user_id) & (UserTenant.status == StatusEnum.VALID.value)))\
-            .where(cls.model.status == StatusEnum.VALID.value).dicts())
+        fields = [
+            cls.model.id.alias("tenant_id"),
+            cls.model.name,
+            cls.model.llm_id,
+            cls.model.embd_id,
+            cls.model.asr_id,
+            cls.model.img2txt_id,
+            cls.model.parser_ids,
+            UserTenant.role]
+        return list(cls.model.select(*fields)
+                    .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value)))
+                    .where(cls.model.status == StatusEnum.VALID.value).dicts())
 
     @classmethod
     @DB.connection_context()
     def get_joined_tenants_by_user_id(cls, user_id):
-        fields = [cls.model.id.alias("tenant_id"), cls.model.name, cls.model.llm_id, cls.model.embd_id, cls.model.asr_id, cls.model.img2txt_id, UserTenant.role]
-        return list(cls.model.select(*fields)\
-            .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id==user_id) & (UserTenant.status == StatusEnum.VALID.value) & (UserTenant.role==UserTenantRole.NORMAL.value)))\
-            .where(cls.model.status == StatusEnum.VALID.value).dicts())
+        fields = [
+            cls.model.id.alias("tenant_id"),
+            cls.model.name,
+            cls.model.llm_id,
+            cls.model.embd_id,
+            cls.model.asr_id,
+            cls.model.img2txt_id,
+            UserTenant.role]
+        return list(cls.model.select(*fields)
+                    .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value) & (UserTenant.role == UserTenantRole.NORMAL.value)))
+                    .where(cls.model.status == StatusEnum.VALID.value).dicts())
 
     @classmethod
     @DB.connection_context()
     def decrease(cls, user_id, num):
         num = cls.model.update(credit=cls.model.credit - num).where(
             cls.model.id == user_id).execute()
-        if num == 0: raise LookupError("Tenant not found which is supposed to be there")
+        if num == 0:
+            raise LookupError("Tenant not found which is supposed to be there")
+
 
 class UserTenantService(CommonService):
     model = UserTenant

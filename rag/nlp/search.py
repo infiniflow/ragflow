@@ -80,14 +80,18 @@ class Dealer:
             if not req.get("sort"):
                 s = s.sort(
                     {"create_time": {"order": "desc", "unmapped_type": "date"}},
-                    {"create_timestamp_flt": {"order": "desc", "unmapped_type": "float"}}
+                    {"create_timestamp_flt": {
+                        "order": "desc", "unmapped_type": "float"}}
                 )
             else:
                 s = s.sort(
-                    {"page_num_int": {"order": "asc", "unmapped_type": "float", "mode": "avg", "numeric_type": "double"}},
-                    {"top_int": {"order": "asc", "unmapped_type": "float", "mode": "avg", "numeric_type": "double"}},
+                    {"page_num_int": {"order": "asc", "unmapped_type": "float",
+                                      "mode": "avg", "numeric_type": "double"}},
+                    {"top_int": {"order": "asc", "unmapped_type": "float",
+                                 "mode": "avg", "numeric_type": "double"}},
                     {"create_time": {"order": "desc", "unmapped_type": "date"}},
-                    {"create_timestamp_flt": {"order": "desc", "unmapped_type": "float"}}
+                    {"create_timestamp_flt": {
+                        "order": "desc", "unmapped_type": "float"}}
                 )
 
         if qst:
@@ -180,11 +184,13 @@ class Dealer:
             m = {n: d.get(n) for n in flds if d.get(n) is not None}
             for n, v in m.items():
                 if isinstance(v, type([])):
-                    m[n] = "\t".join([str(vv) if not isinstance(vv, list) else "\t".join([str(vvv) for vvv in vv]) for vv in v])
+                    m[n] = "\t".join([str(vv) if not isinstance(
+                        vv, list) else "\t".join([str(vvv) for vvv in vv]) for vv in v])
                     continue
                 if not isinstance(v, type("")):
                     m[n] = str(m[n])
-                if n.find("tks")>0: m[n] = rmSpace(m[n])
+                if n.find("tks") > 0:
+                    m[n] = rmSpace(m[n])
 
             if m:
                 res[d["id"]] = m
@@ -205,12 +211,16 @@ class Dealer:
                 if pieces[i] == "```":
                     st = i
                     i += 1
-                    while i<len(pieces) and pieces[i] != "```":
+                    while i < len(pieces) and pieces[i] != "```":
                         i += 1
-                    if i < len(pieces): i += 1
-                    pieces_.append("".join(pieces[st: i])+"\n")
+                    if i < len(pieces):
+                        i += 1
+                    pieces_.append("".join(pieces[st: i]) + "\n")
                 else:
-                    pieces_.extend(re.split(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", pieces[i]))
+                    pieces_.extend(
+                        re.split(
+                            r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])",
+                            pieces[i]))
                     i += 1
             pieces = pieces_
         else:
@@ -234,7 +244,8 @@ class Dealer:
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
             len(ans_v[0]), len(chunk_v[0]))
 
-        chunks_tks = [huqie.qie(self.qryr.rmWWW(ck)).split(" ") for ck in chunks]
+        chunks_tks = [huqie.qie(self.qryr.rmWWW(ck)).split(" ")
+                      for ck in chunks]
         cites = {}
         for i, a in enumerate(pieces_):
             sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i],
@@ -258,9 +269,11 @@ class Dealer:
                 continue
             if i not in cites:
                 continue
-            for c in cites[i]: assert int(c) < len(chunk_v)
             for c in cites[i]:
-                if c in seted:continue
+                assert int(c) < len(chunk_v)
+            for c in cites[i]:
+                if c in seted:
+                    continue
                 res += f" ##{c}$$"
                 seted.add(c)
 
@@ -343,7 +356,11 @@ class Dealer:
             if dnm not in ranks["doc_aggs"]:
                 ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
             ranks["doc_aggs"][dnm]["count"] += 1
-        ranks["doc_aggs"] = [{"doc_name": k, "doc_id": v["doc_id"], "count": v["count"]} for k,v in sorted(ranks["doc_aggs"].items(), key=lambda x:x[1]["count"]*-1)]
+        ranks["doc_aggs"] = [{"doc_name": k,
+                              "doc_id": v["doc_id"],
+                              "count": v["count"]} for k,
+                             v in sorted(ranks["doc_aggs"].items(),
+                                         key=lambda x:x[1]["count"] * -1)]
 
         return ranks
 
@@ -354,10 +371,17 @@ class Dealer:
         replaces = []
         for r in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
             fld, v = r.group(1), r.group(3)
-            match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(fld, huqie.qieqie(huqie.qie(v)))
-            replaces.append(("{}{}'{}'".format(r.group(1), r.group(2), r.group(3)), match))
+            match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(
+                fld, huqie.qieqie(huqie.qie(v)))
+            replaces.append(
+                ("{}{}'{}'".format(
+                    r.group(1),
+                    r.group(2),
+                    r.group(3)),
+                    match))
 
-        for p, r in replaces: sql = sql.replace(p, r, 1)
+        for p, r in replaces:
+            sql = sql.replace(p, r, 1)
         chat_logger.info(f"To es: {sql}")
 
         try:
@@ -366,4 +390,3 @@ class Dealer:
         except Exception as e:
             chat_logger.error(f"SQL failure: {sql} =>" + str(e))
             return {"error": str(e)}
-

@@ -27,6 +27,8 @@ from rag.utils import rmSpace
 forbidden_select_fields4resume = [
     "name_pinyin_kwd", "edu_first_fea_kwd", "degree_kwd", "sch_rank_kwd", "edu_fea_kwd"
 ]
+
+
 def remote_call(filename, binary):
     q = {
         "header": {
@@ -48,18 +50,22 @@ def remote_call(filename, binary):
     }
     for _ in range(3):
         try:
-            resume = requests.post("http://127.0.0.1:61670/tog", data=json.dumps(q))
+            resume = requests.post(
+                "http://127.0.0.1:61670/tog",
+                data=json.dumps(q))
             resume = resume.json()["response"]["results"]
             resume = refactor(resume)
-            for k in ["education", "work", "project", "training", "skill", "certificate", "language"]:
-                if not resume.get(k) and k in resume: del resume[k]
+            for k in ["education", "work", "project",
+                      "training", "skill", "certificate", "language"]:
+                if not resume.get(k) and k in resume:
+                    del resume[k]
 
             resume = step_one.refactor(pd.DataFrame([{"resume_content": json.dumps(resume), "tob_resume_id": "x",
-                                                "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]))
+                                                      "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]))
             resume = step_two.parse(resume)
             return resume
         except Exception as e:
-            cron_logger.error("Resume parser error: "+str(e))
+            cron_logger.error("Resume parser error: " + str(e))
     return {}
 
 
@@ -144,10 +150,13 @@ def chunk(filename, binary=None, callback=None, **kwargs):
     doc["content_ltks"] = huqie.qie(doc["content_with_weight"])
     doc["content_sm_ltks"] = huqie.qieqie(doc["content_ltks"])
     for n, _ in field_map.items():
-        if n not in resume:continue
-        if isinstance(resume[n], list) and (len(resume[n]) == 1 or n not in forbidden_select_fields4resume):
+        if n not in resume:
+            continue
+        if isinstance(resume[n], list) and (
+                len(resume[n]) == 1 or n not in forbidden_select_fields4resume):
             resume[n] = resume[n][0]
-        if n.find("_tks")>0: resume[n] = huqie.qieqie(resume[n])
+        if n.find("_tks") > 0:
+            resume[n] = huqie.qieqie(resume[n])
         doc[n] = resume[n]
 
     print(doc)

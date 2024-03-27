@@ -15,13 +15,16 @@ class HuExcelParser:
             ws = wb[sheetname]
             rows = list(ws.rows)
             tb += f"<table><caption>{sheetname}</caption><tr>"
-            for t in list(rows[0]): tb += f"<th>{t.value}</th>"
+            for t in list(rows[0]):
+                tb += f"<th>{t.value}</th>"
             tb += "</tr>"
             for r in list(rows[1:]):
                 tb += "<tr>"
-                for i,c in enumerate(r):
-                    if c.value is None: tb += "<td></td>"
-                    else: tb += f"<td>{c.value}</td>"
+                for i, c in enumerate(r):
+                    if c.value is None:
+                        tb += "<td></td>"
+                    else:
+                        tb += f"<td>{c.value}</td>"
                 tb += "</tr>"
             tb += "</table>\n"
         return tb
@@ -38,13 +41,15 @@ class HuExcelParser:
             ti = list(rows[0])
             for r in list(rows[1:]):
                 l = []
-                for i,c in enumerate(r):
-                    if not c.value:continue
+                for i, c in enumerate(r):
+                    if not c.value:
+                        continue
                     t = str(ti[i].value) if i < len(ti) else ""
                     t += ("：" if t else "") + str(c.value)
                     l.append(t)
                 l = "; ".join(l)
-                if sheetname.lower().find("sheet") <0: l += " ——"+sheetname
+                if sheetname.lower().find("sheet") < 0:
+                    l += " ——" + sheetname
                 res.append(l)
         return res
 

@@ -44,11 +44,14 @@ class Pdf(PdfParser):
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._naive_vertical_merge()
 
-        cron_logger.info("paddle layouts:".format((timer() - start) / (self.total_page + 0.1)))
-        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
+        cron_logger.info("paddle layouts:".format(
+            (timer() - start) / (self.total_page + 0.1)))
+        return [(b["text"], self._line_tag(b, zoomin))
+                for b in self.boxes], tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000,
+          lang="Chinese", callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, excel, txt.
         This method apply the naive ways to chunk files.
@@ -56,8 +59,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         Next, these successive pieces are merge into chunks whose token number is no more than 'Max token number'.
     """
 
-    eng = lang.lower() == "english"#is_english(cks)
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
+    eng = lang.lower() == "english"  # is_english(cks)
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
     doc = {
         "docnm_kwd": filename,
         "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -73,9 +78,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if parser_config["layout_recognize"] else PlainParser()
+        pdf_parser = Pdf(
+        ) if parser_config["layout_recognize"] else PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
-                              from_page=from_page, to_page=to_page, callback=callback)
+                                    from_page=from_page, to_page=to_page, callback=callback)
         res = tokenize_table(tbls, doc, eng)
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
@@ -92,16 +98,21 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             with open(filename, "r") as f:
                 while True:
                     l = f.readline()
-                    if not l: break
+                    if not l:
+                        break
                     txt += l
         sections = txt.split("\n")
         sections = [(l, "") for l in sections if l]
         callback(0.8, "Finish parsing.")
 
     else:
-        raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
+        raise NotImplementedError(
+            "file type not supported yet(docx, pdf, txt supported)")
 
-    chunks = naive_merge(sections, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?。；！？"))
+    chunks = naive_merge(
+        sections, parser_config.get(
+            "chunk_token_num", 128), parser_config.get(
+            "delimiter", "\n!?。；！？"))
 
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
     return res
@@ -110,9 +121,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 if __name__ == "__main__":
     import sys
 
-
     def dummy(prog=None, msg=""):
         pass
-
 
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)

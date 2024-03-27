@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from zhipuai import ZhipuAI
+from dashscope import Generation
 from abc import ABC
 from openai import OpenAI
 import openai
@@ -34,7 +36,8 @@ class GptTurbo(Base):
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
-        if system: history.insert(0, {"role": "system", "content": system})
+        if system:
+            history.insert(0, {"role": "system", "content": system})
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -46,16 +49,18 @@ class GptTurbo(Base):
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return ans, response.usage.completion_tokens
         except openai.APIError as e:
-            return "**ERROR**: "+str(e), 0
+            return "**ERROR**: " + str(e), 0
 
 
 class MoonshotChat(GptTurbo):
     def __init__(self, key, model_name="moonshot-v1-8k"):
-        self.client = OpenAI(api_key=key, base_url="https://api.moonshot.cn/v1",)
+        self.client = OpenAI(
+            api_key=key, base_url="https://api.moonshot.cn/v1",)
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
-        if system: history.insert(0, {"role": "system", "content": system})
+        if system:
+            history.insert(0, {"role": "system", "content": system})
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -67,10 +72,9 @@ class MoonshotChat(GptTurbo):
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return ans, response.usage.completion_tokens
         except openai.APIError as e:
-            return "**ERROR**: "+str(e), 0
+            return "**ERROR**: " + str(e), 0
 
 
-from dashscope import Generation
 class QWenChat(Base):
     def __init__(self, key, model_name=Generation.Models.qwen_turbo):
         import dashscope
@@ -79,7 +83,8 @@ class QWenChat(Base):
 
     def chat(self, system, history, gen_conf):
         from http import HTTPStatus
-        if system: history.insert(0, {"role": "system", "content": system})
+        if system:
+            history.insert(0, {"role": "system", "content": system})
         response = Generation.call(
             self.model_name,
             messages=history,
@@ -92,20 +97,21 @@ class QWenChat(Base):
             ans += response.output.choices[0]['message']['content']
             tk_count += response.usage.output_tokens
             if response.output.choices[0].get("finish_reason", "") == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return ans, tk_count
 
         return "**ERROR**: " + response.message, tk_count
 
 
-from zhipuai import ZhipuAI
 class ZhipuChat(Base):
     def __init__(self, key, model_name="glm-3-turbo"):
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
-        if system: history.insert(0, {"role": "system", "content": system})
+        if system:
+            history.insert(0, {"role": "system", "content": system})
         try:
             response = self.client.chat.completions.create(
                 self.model_name,
@@ -120,6 +126,7 @@ class ZhipuChat(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
+
 class LocalLLM(Base):
     class RPCProxy:
         def __init__(self, host, port):
@@ -129,14 +136,17 @@ class LocalLLM(Base):
 
         def __conn(self):
             from multiprocessing.connection import Client
-            self._connection = Client((self.host, self.port), authkey=b'infiniflow-token4kevinhu')
+            self._connection = Client(
+                (self.host, self.port), authkey=b'infiniflow-token4kevinhu')
 
         def __getattr__(self, name):
             import pickle
+
             def do_rpc(*args, **kwargs):
                 for _ in range(3):
                     try:
-                        self._connection.send(pickle.dumps((name, args, kwargs)))
+                        self._connection.send(
+                            pickle.dumps((name, args, kwargs)))
                         return pickle.loads(self._connection.recv())
                     except Exception as e:
                         self.__conn()
@@ -148,7 +158,8 @@ class LocalLLM(Base):
         self.client = LocalLLM.RPCProxy("127.0.0.1", 7860)
 
     def chat(self, system, history, gen_conf):
-        if system: history.insert(0, {"role": "system", "content": system})
+        if system:
+            history.insert(0, {"role": "system", "content": system})
         try:
             ans = self.client.chat(
                 history,

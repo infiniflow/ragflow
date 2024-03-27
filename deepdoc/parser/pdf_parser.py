@@ -43,9 +43,11 @@ class HuParser:
                     "rag/res/deepdoc"),
                 local_files_only=True)
         except Exception as e:
-            model_dir = snapshot_download(repo_id="InfiniFlow/text_concat_xgb_v1.0")
+            model_dir = snapshot_download(
+                repo_id="InfiniFlow/text_concat_xgb_v1.0")
 
-        self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+        self.updown_cnt_mdl.load_model(os.path.join(
+            model_dir, "updown_concat_xgb.model"))
         self.page_from = 0
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
@@ -72,7 +74,7 @@ class HuParser:
     def _y_dis(
             self, a, b):
         return (
-                       b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
+            b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
 
     def _match_proj(self, b):
         proj_patt = [
@@ -95,9 +97,9 @@ class HuParser:
         tks_down = huqie.qie(down["text"][:LEN]).split(" ")
         tks_up = huqie.qie(up["text"][-LEN:]).split(" ")
         tks_all = up["text"][-LEN:].strip() \
-                  + (" " if re.match(r"[a-zA-Z0-9]+",
-                                     up["text"][-1] + down["text"][0]) else "") \
-                  + down["text"][:LEN].strip()
+            + (" " if re.match(r"[a-zA-Z0-9]+",
+                               up["text"][-1] + down["text"][0]) else "") \
+            + down["text"][:LEN].strip()
         tks_all = huqie.qie(tks_all).split(" ")
         fea = [
             up.get("R", -1) == down.get("R", -1),
@@ -119,7 +121,7 @@ class HuParser:
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[\(（][^\)）]+$", up["text"])
-                    and re.search(r"[\)）]", down["text"]) else False,
+            and re.search(r"[\)）]", down["text"]) else False,
             self._match_proj(down),
             True if re.match(r"[A-Z]", down["text"]) else False,
             True if re.match(r"[A-Z]", up["text"][-1]) else False,
@@ -181,7 +183,7 @@ class HuParser:
                 continue
             for tb in tbls:  # for table
                 left, top, right, bott = tb["x0"] - MARGIN, tb["top"] - MARGIN, \
-                                         tb["x1"] + MARGIN, tb["bottom"] + MARGIN
+                    tb["x1"] + MARGIN, tb["bottom"] + MARGIN
                 left *= ZM
                 top *= ZM
                 right *= ZM
@@ -235,7 +237,8 @@ class HuParser:
                 b["R_top"] = rows[ii]["top"]
                 b["R_bott"] = rows[ii]["bottom"]
 
-            ii = Recognizer.find_overlapped_with_threashold(b, headers, thr=0.3)
+            ii = Recognizer.find_overlapped_with_threashold(
+                b, headers, thr=0.3)
             if ii is not None:
                 b["H_top"] = headers[ii]["top"]
                 b["H_bott"] = headers[ii]["bottom"]
@@ -272,7 +275,8 @@ class HuParser:
         )
 
         # merge chars in the same rect
-        for c in Recognizer.sort_X_firstly(chars, self.mean_width[pagenum - 1] // 4):
+        for c in Recognizer.sort_X_firstly(
+                chars, self.mean_width[pagenum - 1] // 4):
             ii = Recognizer.find_overlapped(c, bxs)
             if ii is None:
                 self.lefted_chars.append(c)
@@ -283,13 +287,15 @@ class HuParser:
                 self.lefted_chars.append(c)
                 continue
             if c["text"] == " " and bxs[ii]["text"]:
-                if re.match(r"[0-9a-zA-Z,.?;:!%%]", bxs[ii]["text"][-1]): bxs[ii]["text"] += " "
+                if re.match(r"[0-9a-zA-Z,.?;:!%%]", bxs[ii]["text"][-1]):
+                    bxs[ii]["text"] += " "
             else:
                 bxs[ii]["text"] += c["text"]
 
         for b in bxs:
             if not b["text"]:
-                left, right, top, bott = b["x0"] * ZM, b["x1"] * ZM, b["top"] * ZM, b["bottom"] * ZM
+                left, right, top, bott = b["x0"] * ZM, b["x1"] * \
+                    ZM, b["top"] * ZM, b["bottom"] * ZM
                 b["text"] = self.ocr.recognize(np.array(img),
                                                np.array([[left, top], [right, top], [right, bott], [left, bott]],
                                                         dtype=np.float32))
@@ -302,7 +308,8 @@ class HuParser:
 
     def _layouts_rec(self, ZM, drop=True):
         assert len(self.page_images) == len(self.boxes)
-        self.boxes, self.page_layout = self.layouter(self.page_images, self.boxes, ZM, drop=drop)
+        self.boxes, self.page_layout = self.layouter(
+            self.page_images, self.boxes, ZM, drop=drop)
         # cumlative Y
         for i in range(len(self.boxes)):
             self.boxes[i]["top"] += \
@@ -332,7 +339,8 @@ class HuParser:
                                                                                                  "equation"]:
                 i += 1
                 continue
-            if abs(self._y_dis(b, b_)) < self.mean_height[bxs[i]["page_number"] - 1] / 3:
+            if abs(self._y_dis(b, b_)
+                   ) < self.mean_height[bxs[i]["page_number"] - 1] / 3:
                 # merge
                 bxs[i]["x1"] = b_["x1"]
                 bxs[i]["top"] = (b["top"] + b_["top"]) / 2
@@ -366,12 +374,15 @@ class HuParser:
         self.boxes = bxs
 
     def _naive_vertical_merge(self):
-        bxs = Recognizer.sort_Y_firstly(self.boxes, np.median(self.mean_height) / 3)
+        bxs = Recognizer.sort_Y_firstly(
+            self.boxes, np.median(
+                self.mean_height) / 3)
         i = 0
         while i + 1 < len(bxs):
             b = bxs[i]
             b_ = bxs[i + 1]
-            if b["page_number"] < b_["page_number"] and re.match(r"[0-9  •一—-]+$", b["text"]):
+            if b["page_number"] < b_["page_number"] and re.match(
+                    r"[0-9  •一—-]+$", b["text"]):
                 bxs.pop(i)
                 continue
             if not b["text"].strip():
@@ -379,7 +390,8 @@ class HuParser:
                 continue
             concatting_feats = [
                 b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
-                len(b["text"].strip()) > 1 and b["text"].strip()[-2] in ",;:'\"，‘“、；：",
+                len(b["text"].strip()) > 1 and b["text"].strip(
+                )[-2] in ",;:'\"，‘“、；：",
                 b["text"].strip()[0] in "。；？！?”）),，、：",
             ]
             # features for not concating
@@ -387,7 +399,7 @@ class HuParser:
                 b.get("layoutno", 0) != b.get("layoutno", 0),
                 b["text"].strip()[-1] in "。？！?",
                 self.is_english and b["text"].strip()[-1] in ".!?",
-                b["page_number"] == b_["page_number"] and b_["top"] - \
+                b["page_number"] == b_["page_number"] and b_["top"] -
                 b["bottom"] > self.mean_height[b["page_number"] - 1] * 1.5,
                 b["page_number"] < b_["page_number"] and abs(
                     b["x0"] - b_["x0"]) > self.mean_width[b["page_number"] - 1] * 4,
@@ -396,7 +408,12 @@ class HuParser:
             detach_feats = [b["x1"] < b_["x0"],
                             b["x0"] > b_["x1"]]
             if (any(feats) and not any(concatting_feats)) or any(detach_feats):
-                print(b["text"], b_["text"], any(feats), any(concatting_feats), any(detach_feats))
+                print(
+                    b["text"],
+                    b_["text"],
+                    any(feats),
+                    any(concatting_feats),
+                    any(detach_feats))
                 i += 1
                 continue
             # merge up and down
@@ -526,31 +543,39 @@ class HuParser:
                 i += 1
                 continue
             findit = True
-            eng = re.match(r"[0-9a-zA-Z :'.-]{5,}", self.boxes[i]["text"].strip())
+            eng = re.match(
+                r"[0-9a-zA-Z :'.-]{5,}",
+                self.boxes[i]["text"].strip())
             self.boxes.pop(i)
-            if i >= len(self.boxes): break
+            if i >= len(self.boxes):
+                break
             prefix = self.boxes[i]["text"].strip()[:3] if not eng else " ".join(
                 self.boxes[i]["text"].strip().split(" ")[:2])
             while not prefix:
                 self.boxes.pop(i)
-                if i >= len(self.boxes): break
+                if i >= len(self.boxes):
+                    break
                 prefix = self.boxes[i]["text"].strip()[:3] if not eng else " ".join(
                     self.boxes[i]["text"].strip().split(" ")[:2])
             self.boxes.pop(i)
-            if i >= len(self.boxes) or not prefix: break
+            if i >= len(self.boxes) or not prefix:
+                break
             for j in range(i, min(i + 128, len(self.boxes))):
                 if not re.match(prefix, self.boxes[j]["text"]):
                     continue
-                for k in range(i, j): self.boxes.pop(i)
+                for k in range(i, j):
+                    self.boxes.pop(i)
                 break
-        if findit: return
+        if findit:
+            return
 
         page_dirty = [0] * len(self.page_images)
         for b in self.boxes:
             if re.search(r"(··|··|··)", b["text"]):
                 page_dirty[b["page_number"] - 1] += 1
         page_dirty = set([i + 1 for i, t in enumerate(page_dirty) if t > 3])
-        if not page_dirty: return
+        if not page_dirty:
+            return
         i = 0
         while i < len(self.boxes):
             if self.boxes[i]["page_number"] in page_dirty:
@@ -582,7 +607,8 @@ class HuParser:
             b_["top"] = b["top"]
             self.boxes.pop(i)
 
-    def _extract_table_figure(self, need_image, ZM, return_html, need_position):
+    def _extract_table_figure(self, need_image, ZM,
+                              return_html, need_position):
         tables = {}
         figures = {}
         # extract figure and table boxes
@@ -594,7 +620,7 @@ class HuParser:
                 i += 1
                 continue
             lout_no = str(self.boxes[i]["page_number"]) + \
-                      "-" + str(self.boxes[i]["layoutno"])
+                "-" + str(self.boxes[i]["layoutno"])
             if TableStructureRecognizer.is_caption(self.boxes[i]) or self.boxes[i]["layout_type"] in ["table caption",
                                                                                                       "title",
                                                                                                       "figure caption",
@@ -761,7 +787,8 @@ class HuParser:
         for k, bxs in tables.items():
             if not bxs:
                 continue
-            bxs = Recognizer.sort_Y_firstly(bxs, np.mean([(b["bottom"] - b["top"]) / 2 for b in bxs]))
+            bxs = Recognizer.sort_Y_firstly(bxs, np.mean(
+                [(b["bottom"] - b["top"]) / 2 for b in bxs]))
             poss = []
             res.append((cropout(bxs, "table", poss),
                         self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
@@ -769,7 +796,8 @@ class HuParser:
 
         assert len(positions) == len(res)
 
-        if need_position: return list(zip(res, positions))
+        if need_position:
+            return list(zip(res, positions))
         return res
 
     def proj_match(self, line):
@@ -873,7 +901,8 @@ class HuParser:
             boxes.pop(0)
             mw = np.mean(widths)
             if mj or mw / pw >= 0.35 or mw > 200:
-                res.append("\n".join([c["text"] + self._line_tag(c, ZM) for c in lines]))
+                res.append(
+                    "\n".join([c["text"] + self._line_tag(c, ZM) for c in lines]))
             else:
                 logging.debug("REMOVED: " +
                               "<<".join([c["text"] for c in lines]))
@@ -883,13 +912,16 @@ class HuParser:
     @staticmethod
     def total_page_number(fnm, binary=None):
         try:
-            pdf = pdfplumber.open(fnm) if not binary else pdfplumber.open(BytesIO(binary))
+            pdf = pdfplumber.open(
+                fnm) if not binary else pdfplumber.open(BytesIO(binary))
             return len(pdf.pages)
         except Exception as e:
-            pdf = fitz.open(fnm) if not binary else fitz.open(stream=fnm, filetype="pdf")
+            pdf = fitz.open(fnm) if not binary else fitz.open(
+                stream=fnm, filetype="pdf")
             return len(pdf)
 
-    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
+    def __images__(self, fnm, zoomin=3, page_from=0,
+                   page_to=299, callback=None):
         self.lefted_chars = []
         self.mean_height = []
         self.mean_width = []
@@ -899,21 +931,26 @@ class HuParser:
         self.page_layout = []
         self.page_from = page_from
         try:
-            self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
+            self.pdf = pdfplumber.open(fnm) if isinstance(
+                fnm, str) else pdfplumber.open(BytesIO(fnm))
             self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
                                 enumerate(self.pdf.pages[page_from:page_to])]
             self.page_chars = [[c for c in page.chars if self._has_color(c)] for page in
                                self.pdf.pages[page_from:page_to]]
             self.total_page = len(self.pdf.pages)
         except Exception as e:
-            self.pdf = fitz.open(fnm) if isinstance(fnm, str) else fitz.open(stream=fnm, filetype="pdf")
+            self.pdf = fitz.open(fnm) if isinstance(
+                fnm, str) else fitz.open(
+                stream=fnm, filetype="pdf")
             self.page_images = []
             self.page_chars = []
             mat = fitz.Matrix(zoomin, zoomin)
             self.total_page = len(self.pdf)
             for i, page in enumerate(self.pdf):
-                if i < page_from: continue
-                if i >= page_to: break
+                if i < page_from:
+                    continue
+                if i >= page_to:
+                    break
                 pix = page.get_pixmap(matrix=mat)
                 img = Image.frombytes("RGB", [pix.width, pix.height],
                                       pix.samples)
@@ -930,7 +967,7 @@ class HuParser:
                     if isinstance(a, dict):
                         self.outlines.append((a["/Title"], depth))
                         continue
-                    dfs(a, depth+1)
+                    dfs(a, depth + 1)
             dfs(outlines, 0)
         except Exception as e:
             logging.warning(f"Outlines exception: {e}")
@@ -940,8 +977,9 @@ class HuParser:
         logging.info("Images converted.")
         self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(
             random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i]))))) for i in
-                           range(len(self.page_chars))]
-        if sum([1 if e else 0 for e in self.is_english]) > len(self.page_images) / 2:
+            range(len(self.page_chars))]
+        if sum([1 if e else 0 for e in self.is_english]) > len(
+                self.page_images) / 2:
             self.is_english = True
         else:
             self.is_english = False
@@ -970,9 +1008,11 @@ class HuParser:
             #         self.page_cum_height.append(
             #             np.max([c["bottom"] for c in chars]))
             self.__ocr(i + 1, img, chars, zoomin)
-            if callback: callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+            if callback:
+                callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
 
-        if not self.is_english and not any([c for c in self.page_chars]) and self.boxes:
+        if not self.is_english and not any(
+                [c for c in self.page_chars]) and self.boxes:
             bxes = [b for bxs in self.boxes for b in bxs]
             self.is_english = re.search(r"[\na-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}",
                                         "".join([b["text"] for b in random.choices(bxes, k=min(30, len(bxes)))]))
@@ -989,7 +1029,8 @@ class HuParser:
         self._text_merge()
         self._concat_downward()
         self._filter_forpages()
-        tbls = self._extract_table_figure(need_image, zoomin, return_html, False)
+        tbls = self._extract_table_figure(
+            need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
     def remove_tag(self, txt):
@@ -1003,15 +1044,19 @@ class HuParser:
                 "#").strip("@").split("\t")
             left, right, top, bottom = float(left), float(
                 right), float(top), float(bottom)
-            poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
+            poss.append(([int(p) - 1 for p in pn.split("-")],
+                        left, right, top, bottom))
         if not poss:
-            if need_position: return None, None
+            if need_position:
+                return None, None
             return
 
-        max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
+        max_width = max(
+            np.max([right - left for (_, left, right, _, _) in poss]), 6)
         GAP = 6
         pos = poss[0]
-        poss.insert(0, ([pos[0][0]], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
+        poss.insert(0, ([pos[0][0]], pos[1], pos[2], max(
+            0, pos[3] - 120), max(pos[3] - GAP, 0)))
         pos = poss[-1]
         poss.append(([pos[0][-1]], pos[1], pos[2], min(self.page_images[pos[0][-1]].size[1] / ZM, pos[4] + GAP),
                      min(self.page_images[pos[0][-1]].size[1] / ZM, pos[4] + 120)))
@@ -1026,7 +1071,7 @@ class HuParser:
                 self.page_images[pns[0]].crop((left * ZM, top * ZM,
                                                right *
                                                ZM, min(
-                    bottom, self.page_images[pns[0]].size[1])
+                                                   bottom, self.page_images[pns[0]].size[1])
                                                ))
             )
             if 0 < ii < len(poss) - 1:
@@ -1047,7 +1092,8 @@ class HuParser:
                 bottom -= self.page_images[pn].size[1]
 
         if not imgs:
-            if need_position: return None, None
+            if need_position:
+                return None, None
             return
         height = 0
         for img in imgs:
@@ -1076,12 +1122,14 @@ class HuParser:
         pn = bx["page_number"]
         top = bx["top"] - self.page_cum_height[pn - 1]
         bott = bx["bottom"] - self.page_cum_height[pn - 1]
-        poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn - 1].size[1] / ZM)))
+        poss.append((pn, bx["x0"], bx["x1"], top, min(
+            bott, self.page_images[pn - 1].size[1] / ZM)))
         while bott * ZM > self.page_images[pn - 1].size[1]:
             bott -= self.page_images[pn - 1].size[1] / ZM
             top = 0
             pn += 1
-            poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn - 1].size[1] / ZM)))
+            poss.append((pn, bx["x0"], bx["x1"], top, min(
+                bott, self.page_images[pn - 1].size[1] / ZM)))
         return poss
 
 
@@ -1090,11 +1138,14 @@ class PlainParser(object):
         self.outlines = []
         lines = []
         try:
-            self.pdf = pdf2_read(filename if isinstance(filename, str) else BytesIO(filename))
+            self.pdf = pdf2_read(
+                filename if isinstance(
+                    filename, str) else BytesIO(filename))
             for page in self.pdf.pages[from_page:to_page]:
                 lines.extend([t for t in page.extract_text().split("\n")])
 
             outlines = self.pdf.outline
+
             def dfs(arr, depth):
                 for a in arr:
                     if isinstance(a, dict):
@@ -1116,6 +1167,7 @@ class PlainParser(object):
     @staticmethod
     def remove_tag(txt):
         raise NotImplementedError
+
 
 if __name__ == "__main__":
     pass
