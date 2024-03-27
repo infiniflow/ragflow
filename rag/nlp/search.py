@@ -7,7 +7,6 @@ from elasticsearch_dsl import Q, Search
 from typing import List, Optional, Dict, Union
 from dataclasses import dataclass
 
-from api.settings import chat_logger
 from rag.settings import es_logger
 from rag.utils import rmSpace
 from rag.nlp import huqie, query
@@ -365,6 +364,7 @@ class Dealer:
         return ranks
 
     def sql_retrieval(self, sql, fetch_size=128, format="json"):
+        from api.settings import chat_logger
         sql = re.sub(r"[ ]+", " ", sql)
         sql = sql.replace("%", "")
         es_logger.info(f"Get es sql: {sql}")
