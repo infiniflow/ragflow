@@ -1,5 +1,5 @@
 <div align="center">
-<a href="https://ragflow.io/">
+<a href="https://demo.ragflow.io/">
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/f034fb27-b3bf-401b-b213-e1dfa7448d2a" width="320" alt="ragflow logo">
 </a>
 </div>
@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-    <a href="https://ragflow.io" target="_blank">
+    <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v1.0-brightgreen"
@@ -21,7 +21,7 @@
   </a>
 </p>
 
-[RagFlow](http://ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, 
+[RagFlow](http://demo.ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, 
 with reasoned and well-founded answers to your question. Clone this repository, you can deploy your own knowledge management 
 platform to empower your business with AI.
     
@@ -118,6 +118,12 @@ INFO:werkzeug:Press CTRL+C to quit
 Open your browser, enter the IP address of your server, _**Hallelujah**_ again!
 > The default serving port is 80, if you want to change that, please refer to [docker-compose.yml](./docker-compose.yaml), 
 > and change the left part of *'80:80'*'.
+
+# System Architecture Diagram
+
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/infiniflow/ragflow/assets/12318111/39c8e546-51ca-4b50-a1da-83731b540cd0" width="1000"/>
+</div>
 
 # Configuration
 If you need to change the default setting of the system when you deploy it. There several ways to configure it. 

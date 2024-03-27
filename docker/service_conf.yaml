@@ -16,7 +16,7 @@ minio:
 es:
   hosts: 'http://es01:9200'
 user_default_llm:
-  factory: '通义千问'
+  factory: 'Tongyi-Qianwen'
   api_key: 'sk-xxxxxxxxxxxxx'
 oauth:
   github:
