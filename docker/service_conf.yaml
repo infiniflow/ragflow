@@ -20,8 +20,8 @@ user_default_llm:
   api_key: 'sk-xxxxxxxxxxxxx'
 oauth:
   github:
-    client_id: 302129228f0d96055bee
-    secret_key: e518e55ccfcdfcae8996afc40f110e9c95f14fc4
+    client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
+    secret_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
     url: https://github.com/login/oauth/access_token
 authentication:
   client:
