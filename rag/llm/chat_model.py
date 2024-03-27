@@ -43,8 +43,8 @@ class GptTurbo(Base):
                 model=self.model_name,
                 messages=history,
                 **gen_conf)
-            ans = response.output.choices[0]['message']['content'].strip()
-            if response.output.choices[0].get("finish_reason", "") == "length":
+            ans = response.choices[0].message.content.strip()
+            if response.choices[0].finish_reason == "length":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return ans, response.usage.completion_tokens
@@ -114,12 +114,12 @@ class ZhipuChat(Base):
             history.insert(0, {"role": "system", "content": system})
         try:
             response = self.client.chat.completions.create(
-                self.model_name,
+                model=self.model_name,
                 messages=history,
                 **gen_conf
             )
-            ans = response.output.choices[0]['message']['content'].strip()
-            if response.output.choices[0].get("finish_reason", "") == "length":
+            ans = response.choices[0].message.content.strip()
+            if response.choices[0].finish_reason == "length":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return ans, response.usage.completion_tokens
