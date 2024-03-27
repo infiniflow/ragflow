@@ -6,6 +6,19 @@ import { useEffect, useMemo, useState } from 'react';
 
 const ParserListMap = new Map([
   [
+    ['pdf'],
+    [
+      'naive',
+      'resume',
+      'manual',
+      'paper',
+      'book',
+      'laws',
+      'presentation',
+      'one',
+    ],
+  ],
+  [
     ['doc', 'docx'],
     ['naive', 'resume', 'book', 'laws', 'one'],
   ],
@@ -40,9 +53,6 @@ export const useFetchParserListOnMount = (
   const parserList = useSelectParserList();
 
   const nextParserList = useMemo(() => {
-    if (documentExtension === 'pdf') {
-      return parserList;
-    }
     const key = [...ParserListMap.keys()].find((x) =>
       x.some((y) => y === documentExtension),
     );
