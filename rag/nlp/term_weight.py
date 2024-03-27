@@ -150,8 +150,10 @@ class Dealer:
             return 6
 
         def ner(t):
-            if re.match(r"[0-9,.]{2,}$", t): return 2
-            if re.match(r"[a-z]{1,2}$", t): return 0.01
+            if re.match(r"[0-9,.]{2,}$", t):
+                return 2
+            if re.match(r"[a-z]{1,2}$", t):
+                return 0.01
             if not self.ne or t not in self.ne:
                 return 1
             m = {"toxic": 2, "func": 1, "corp": 3, "loca": 3, "sch": 3, "stock": 3,

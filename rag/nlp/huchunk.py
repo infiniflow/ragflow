@@ -372,7 +372,8 @@ class PptChunker(HuChunker):
             tb = shape.table
             rows = []
             for i in range(1, len(tb.rows)):
-                rows.append("; ".join([tb.cell(0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
+                rows.append("; ".join([tb.cell(
+                    0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
             return "\n".join(rows)
 
         if shape.has_text_frame:
@@ -382,7 +383,8 @@ class PptChunker(HuChunker):
             texts = []
             for p in shape.shapes:
                 t = self.__extract(p)
-                if t: texts.append(t)
+                if t:
+                    texts.append(t)
             return "\n".join(texts)
 
     def __call__(self, fnm):
@@ -395,7 +397,8 @@ class PptChunker(HuChunker):
             texts = []
             for shape in slide.shapes:
                 txt = self.__extract(shape)
-                if txt: texts.append(txt)
+                if txt:
+                    texts.append(txt)
             txts.append("\n".join(texts))
 
         import aspose.slides as slides
@@ -404,9 +407,12 @@ class PptChunker(HuChunker):
         with slides.Presentation(BytesIO(fnm)) as presentation:
             for slide in presentation.slides:
                 buffered = BytesIO()
-                slide.get_thumbnail(0.5, 0.5).save(buffered, drawing.imaging.ImageFormat.jpeg)
+                slide.get_thumbnail(
+                    0.5, 0.5).save(
+                    buffered, drawing.imaging.ImageFormat.jpeg)
                 imgs.append(buffered.getvalue())
-        assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
+        assert len(imgs) == len(
+            txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
 
         flds = self.Fields()
         flds.text_chunks = [(txts[i], imgs[i]) for i in range(len(txts))]
@@ -445,7 +451,8 @@ class TextChunker(HuChunker):
         if isinstance(fnm, str):
             with open(fnm, "r") as f:
                 txt = f.read()
-        else: txt = fnm.decode("utf-8")
+        else:
+            txt = fnm.decode("utf-8")
         flds.text_chunks = [(c, None) for c in self.naive_text_chunk(txt)]
         flds.table_chunks = []
         return flds

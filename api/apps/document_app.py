@@ -57,6 +57,9 @@ def upload():
         if not e:
             return get_data_error_result(
                 retmsg="Can't find this knowledgebase!")
+        if DocumentService.get_doc_count(kb.tenant_id) >= 128:
+            return get_data_error_result(
+                retmsg="Exceed the maximum file number of a free user!")
 
         filename = duplicate_name(
             DocumentService.query,
@@ -215,9 +218,11 @@ def rm():
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
         if not tenant_id:
             return get_data_error_result(retmsg="Tenant not found!")
-        ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+        ELASTICSEARCH.deleteByQuery(
+            Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
 
-        DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
+        DocumentService.increment_chunk_num(
+            doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
         if not DocumentService.delete(doc):
             return get_data_error_result(
                 retmsg="Database error (Document removal)!")
@@ -245,7 +250,8 @@ def run():
             tenant_id = DocumentService.get_tenant_id(id)
             if not tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
-            ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+            ELASTICSEARCH.deleteByQuery(
+                Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
 
         return get_json_result(data=True)
     except Exception as e:
@@ -261,7 +267,8 @@ def rename():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
-        if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
+        if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
+                doc.name.lower()).suffix:
             return get_json_result(
                 data=False,
                 retmsg="The extension of file can't be changed",
@@ -294,7 +301,10 @@ def get(doc_id):
             if doc.type == FileType.VISUAL.value:
                 response.headers.set('Content-Type', 'image/%s' % ext.group(1))
             else:
-                response.headers.set('Content-Type', 'application/%s' % ext.group(1))
+                response.headers.set(
+                    'Content-Type',
+                    'application/%s' %
+                    ext.group(1))
         return response
     except Exception as e:
         return server_error_response(e)
@@ -313,9 +323,11 @@ def change_parser():
             if "parser_config" in req:
                 if req["parser_config"] == doc.parser_config:
                     return get_json_result(data=True)
-            else: return get_json_result(data=True)
+            else:
+                return get_json_result(data=True)
 
-        if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
+        if doc.type == FileType.VISUAL or re.search(
+                r"\.(ppt|pptx|pages)$", doc.name):
             return get_data_error_result(retmsg="Not supported yet!")
 
         e = DocumentService.update_by_id(doc.id,
@@ -332,7 +344,8 @@ def change_parser():
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
-            ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+            ELASTICSEARCH.deleteByQuery(
+                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
 
         return get_json_result(data=True)
     except Exception as e:

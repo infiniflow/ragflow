@@ -61,45 +61,54 @@ def init_superuser():
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
-    print("【INFO】Super user initialized. \033[93memail: admin@ragflow.io, password: admin\033[0m. Changing the password after logining is strongly recomanded.")
+    print(
+        "【INFO】Super user initialized. \033[93memail: admin@ragflow.io, password: admin\033[0m. Changing the password after logining is strongly recomanded.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
-    msg = chat_mdl.chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={})
+    msg = chat_mdl.chat(system="", history=[
+                        {"role": "user", "content": "Hello!"}], gen_conf={})
     if msg.find("ERROR: ") == 0:
-        print("\33[91m【ERROR】\33[0m: ", "'{}' dosen't work. {}".format(tenant["llm_id"], msg))
+        print(
+            "\33[91m【ERROR】\33[0m: ",
+            "'{}' dosen't work. {}".format(
+                tenant["llm_id"],
+                msg))
     embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
     v, c = embd_mdl.encode(["Hello!"])
     if c == 0:
-        print("\33[91m【ERROR】\33[0m:", " '{}' dosen't work!".format(tenant["embd_id"]))
+        print(
+            "\33[91m【ERROR】\33[0m:",
+            " '{}' dosen't work!".format(
+                tenant["embd_id"]))
 
 
 factory_infos = [{
-        "name": "OpenAI",
-        "logo": "",
-        "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+    "name": "OpenAI",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+    "status": "1",
+}, {
+    "name": "Tongyi-Qianwen",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+    "status": "1",
+}, {
+    "name": "ZHIPU-AI",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+    "status": "1",
+},
+    {
+    "name": "Local",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
         "status": "1",
-    },{
-        "name": "Tongyi-Qianwen",
-        "logo": "",
-        "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-        "status": "1",
-    },{
-        "name": "ZHIPU-AI",
-        "logo": "",
-        "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-        "status": "1",
-    },
-     {
-         "name": "Local",
-         "logo": "",
-         "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-        "status": "1",
-    },{
+}, {
         "name": "Moonshot",
-         "logo": "",
-         "tags": "LLM,TEXT EMBEDDING",
-         "status": "1",
-    }
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING",
+    "status": "1",
+}
     # {
     #     "name": "文心一言",
     #     "logo": "",
@@ -107,6 +116,8 @@ factory_infos = [{
     #     "status": "1",
     # },
 ]
+
+
 def init_llm_factory():
     llm_infos = [
         # ---------------------- OpenAI ------------------------
@@ -116,37 +127,37 @@ def init_llm_factory():
             "tags": "LLM,CHAT,4K",
             "max_tokens": 4096,
             "model_type": LLMType.CHAT.value
-        },{
+        }, {
             "fid": factory_infos[0]["name"],
             "llm_name": "gpt-3.5-turbo-16k-0613",
             "tags": "LLM,CHAT,16k",
             "max_tokens": 16385,
             "model_type": LLMType.CHAT.value
-        },{
+        }, {
             "fid": factory_infos[0]["name"],
             "llm_name": "text-embedding-ada-002",
             "tags": "TEXT EMBEDDING,8K",
             "max_tokens": 8191,
             "model_type": LLMType.EMBEDDING.value
-        },{
+        }, {
             "fid": factory_infos[0]["name"],
             "llm_name": "whisper-1",
             "tags": "SPEECH2TEXT",
-            "max_tokens": 25*1024*1024,
+            "max_tokens": 25 * 1024 * 1024,
             "model_type": LLMType.SPEECH2TEXT.value
-        },{
+        }, {
             "fid": factory_infos[0]["name"],
             "llm_name": "gpt-4",
             "tags": "LLM,CHAT,8K",
             "max_tokens": 8191,
             "model_type": LLMType.CHAT.value
-        },{
+        }, {
             "fid": factory_infos[0]["name"],
             "llm_name": "gpt-4-32k",
             "tags": "LLM,CHAT,32K",
             "max_tokens": 32768,
             "model_type": LLMType.CHAT.value
-        },{
+        }, {
             "fid": factory_infos[0]["name"],
             "llm_name": "gpt-4-vision-preview",
             "tags": "LLM,CHAT,IMAGE2TEXT",
@@ -160,31 +171,31 @@ def init_llm_factory():
             "tags": "LLM,CHAT,8K",
             "max_tokens": 8191,
             "model_type": LLMType.CHAT.value
-        },{
+        }, {
             "fid": factory_infos[1]["name"],
             "llm_name": "qwen-plus",
             "tags": "LLM,CHAT,32K",
             "max_tokens": 32768,
             "model_type": LLMType.CHAT.value
-        },{
+        }, {
             "fid": factory_infos[1]["name"],
             "llm_name": "qwen-max-1201",
             "tags": "LLM,CHAT,6K",
             "max_tokens": 5899,
             "model_type": LLMType.CHAT.value
-        },{
+        }, {
             "fid": factory_infos[1]["name"],
             "llm_name": "text-embedding-v2",
             "tags": "TEXT EMBEDDING,2K",
             "max_tokens": 2048,
             "model_type": LLMType.EMBEDDING.value
-        },{
+        }, {
             "fid": factory_infos[1]["name"],
             "llm_name": "paraformer-realtime-8k-v1",
             "tags": "SPEECH2TEXT",
-            "max_tokens": 25*1024*1024,
+            "max_tokens": 25 * 1024 * 1024,
             "model_type": LLMType.SPEECH2TEXT.value
-        },{
+        }, {
             "fid": factory_infos[1]["name"],
             "llm_name": "qwen-vl-max",
             "tags": "LLM,CHAT,IMAGE2TEXT",
@@ -245,13 +256,13 @@ def init_llm_factory():
             "tags": "TEXT EMBEDDING,",
             "max_tokens": 128 * 1000,
             "model_type": LLMType.EMBEDDING.value
-        },{
+        }, {
             "fid": factory_infos[4]["name"],
             "llm_name": "moonshot-v1-32k",
             "tags": "LLM,CHAT,",
             "max_tokens": 32768,
             "model_type": LLMType.CHAT.value
-        },{
+        }, {
             "fid": factory_infos[4]["name"],
             "llm_name": "moonshot-v1-128k",
             "tags": "LLM,CHAT",
@@ -292,7 +303,6 @@ def init_web_data():
         init_superuser()
 
     print("init web data success:{}".format(time.time() - start_time))
-
 
 
 if __name__ == '__main__':

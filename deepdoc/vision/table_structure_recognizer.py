@@ -44,7 +44,8 @@ class TableStructureRecognizer(Recognizer):
         except Exception as e:
             model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
 
-        super().__init__(self.labels, "tsr", model_dir)#os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        # os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        super().__init__(self.labels, "tsr", model_dir)
 
     def __call__(self, images, thr=0.2):
         tbls = super().__call__(images, thr)
@@ -138,7 +139,8 @@ class TableStructureRecognizer(Recognizer):
         i = 0
         while i < len(boxes):
             if TableStructureRecognizer.is_caption(boxes[i]):
-                if is_english: cap + " "
+                if is_english:
+                    cap + " "
                 cap += boxes[i]["text"]
                 boxes.pop(i)
                 i -= 1
@@ -164,7 +166,7 @@ class TableStructureRecognizer(Recognizer):
             lst_r = rows[-1]
             if lst_r[-1].get("R", "") != b.get("R", "") \
                     or (b["top"] >= btm - 3 and lst_r[-1].get("R", "-1") != b.get("R", "-2")
-            ):  # new row
+                        ):  # new row
                 btm = b["bottom"]
                 b["rn"] += 1
                 rows.append([b])
@@ -214,9 +216,9 @@ class TableStructureRecognizer(Recognizer):
                     j += 1
                     continue
                 f = (j > 0 and tbl[ii][j - 1] and tbl[ii]
-                [j - 1][0].get("text")) or j == 0
+                     [j - 1][0].get("text")) or j == 0
                 ff = (j + 1 < len(tbl[ii]) and tbl[ii][j + 1] and tbl[ii]
-                [j + 1][0].get("text")) or j + 1 >= len(tbl[ii])
+                      [j + 1][0].get("text")) or j + 1 >= len(tbl[ii])
                 if f and ff:
                     j += 1
                     continue
@@ -277,9 +279,9 @@ class TableStructureRecognizer(Recognizer):
                     i += 1
                     continue
                 f = (i > 0 and tbl[i - 1][jj] and tbl[i - 1]
-                [jj][0].get("text")) or i == 0
+                     [jj][0].get("text")) or i == 0
                 ff = (i + 1 < len(tbl) and tbl[i + 1][jj] and tbl[i + 1]
-                [jj][0].get("text")) or i + 1 >= len(tbl)
+                      [jj][0].get("text")) or i + 1 >= len(tbl)
                 if f and ff:
                     i += 1
                     continue
@@ -366,7 +368,8 @@ class TableStructureRecognizer(Recognizer):
                     continue
                 txt = ""
                 if arr:
-                    h = min(np.min([c["bottom"] - c["top"] for c in arr]) / 2, 10)
+                    h = min(np.min([c["bottom"] - c["top"]
+                            for c in arr]) / 2, 10)
                     txt = " ".join([c["text"]
                                    for c in Recognizer.sort_Y_firstly(arr, h)])
                 txts.append(txt)
@@ -438,8 +441,8 @@ class TableStructureRecognizer(Recognizer):
                                           else "") + headers[j - 1][k]
                     else:
                         headers[j][k] = headers[j - 1][k] \
-                                        + (de if headers[j - 1][k] else "") \
-                                        + headers[j][k]
+                            + (de if headers[j - 1][k] else "") \
+                            + headers[j][k]
 
         logging.debug(
             f">>>>>>>>>>>>>>>>>{cap}：SIZE:{rowno}X{clmno} Header: {hdr_rowno}")

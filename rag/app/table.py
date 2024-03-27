@@ -25,7 +25,8 @@ from deepdoc.parser import ExcelParser
 
 
 class Excel(ExcelParser):
-    def __call__(self, fnm, binary=None, from_page=0, to_page=10000000000, callback=None):
+    def __call__(self, fnm, binary=None, from_page=0,
+                 to_page=10000000000, callback=None):
         if not binary:
             wb = load_workbook(fnm)
         else:
@@ -48,8 +49,10 @@ class Excel(ExcelParser):
             data = []
             for i, r in enumerate(rows[1:]):
                 rn += 1
-                if rn-1 < from_page:continue
-                if rn -1>=to_page: break
+                if rn - 1 < from_page:
+                    continue
+                if rn - 1 >= to_page:
+                    break
                 row = [
                     cell.value for ii,
                     cell in enumerate(r) if ii not in missed]
@@ -60,7 +63,7 @@ class Excel(ExcelParser):
                 done += 1
             res.append(pd.DataFrame(np.array(data), columns=headers))
 
-        callback(0.3, ("Extract records: {}~{}".format(from_page+1, min(to_page, from_page+rn)) + (
+        callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res
 
@@ -73,7 +76,8 @@ def trans_datatime(s):
 
 
 def trans_bool(s):
-    if re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√)$", str(s).strip(), flags=re.IGNORECASE):
+    if re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√)$",
+                str(s).strip(), flags=re.IGNORECASE):
         return "yes"
     if re.match(r"(false|no|否|⍻|×)$", str(s).strip(), flags=re.IGNORECASE):
         return "no"
@@ -107,13 +111,14 @@ def column_data_type(arr):
             arr[i] = trans[ty](str(arr[i]))
         except Exception as e:
             arr[i] = None
-    #if ty == "text":
+    # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
     return arr, ty
 
 
-def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=10000000000,
+          lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
         For csv or txt file, the delimiter between columns is TAB.
@@ -131,7 +136,12 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        dfs = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
+        dfs = excel_parser(
+            filename,
+            binary,
+            from_page=from_page,
+            to_page=to_page,
+            callback=callback)
     elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
@@ -149,8 +159,10 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         headers = lines[0].split(kwargs.get("delimiter", "\t"))
         rows = []
         for i, line in enumerate(lines[1:]):
-            if i < from_page:continue
-            if i >= to_page: break
+            if i < from_page:
+                continue
+            if i >= to_page:
+                break
             row = [l for l in line.split(kwargs.get("delimiter", "\t"))]
             if len(row) != len(headers):
                 fails.append(str(i))
@@ -181,7 +193,13 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 del df[n]
         clmns = df.columns.values
         txts = list(copy.deepcopy(clmns))
-        py_clmns = [PY.get_pinyins(re.sub(r"(/.*|（[^（）]+?）|\([^()]+?\))", "", n), '_')[0] for n in clmns]
+        py_clmns = [
+            PY.get_pinyins(
+                re.sub(
+                    r"(/.*|（[^（）]+?）|\([^()]+?\))",
+                    "",
+                    n),
+                '_')[0] for n in clmns]
         clmn_tys = []
         for j in range(len(clmns)):
             cln, ty = column_data_type(df[clmns[j]])
@@ -192,7 +210,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], clmns[i].replace("_", " "))
                      for i in range(len(clmns))]
 
-        eng = lang.lower() == "english"#is_english(txts)
+        eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
             d = {
                 "docnm_kwd": filename,

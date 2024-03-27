@@ -19,7 +19,7 @@ import time
 from functools import wraps
 from io import BytesIO
 from flask import (
-    Response, jsonify, send_file,make_response,
+    Response, jsonify, send_file, make_response,
     request as flask_request,
 )
 from werkzeug.http import HTTP_STATUS_CODES
@@ -29,7 +29,7 @@ from api.versions import get_rag_version
 from api.settings import RetCode
 from api.settings import (
     REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC,
-    stat_logger,CLIENT_AUTHENTICATION, HTTP_APP_KEY, SECRET_KEY
+    stat_logger, CLIENT_AUTHENTICATION, HTTP_APP_KEY, SECRET_KEY
 )
 import requests
 import functools
@@ -40,14 +40,21 @@ from hmac import HMAC
 from urllib.parse import quote, urlencode
 
 
-requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
+requests.models.complexjson.dumps = functools.partial(
+    json.dumps, cls=CustomJSONEncoder)
 
 
 def request(**kwargs):
     sess = requests.Session()
     stream = kwargs.pop('stream', sess.stream)
     timeout = kwargs.pop('timeout', None)
-    kwargs['headers'] = {k.replace('_', '-').upper(): v for k, v in kwargs.get('headers', {}).items()}
+    kwargs['headers'] = {
+        k.replace(
+            '_',
+            '-').upper(): v for k,
+        v in kwargs.get(
+            'headers',
+            {}).items()}
     prepped = requests.Request(**kwargs).prepare()
 
     if CLIENT_AUTHENTICATION and HTTP_APP_KEY and SECRET_KEY:
@@ -59,7 +66,11 @@ def request(**kwargs):
             HTTP_APP_KEY.encode('ascii'),
             prepped.path_url.encode('ascii'),
             prepped.body if kwargs.get('json') else b'',
-            urlencode(sorted(kwargs['data'].items()), quote_via=quote, safe='-._~').encode('ascii')
+            urlencode(
+                sorted(
+                    kwargs['data'].items()),
+                quote_via=quote,
+                safe='-._~').encode('ascii')
             if kwargs.get('data') and isinstance(kwargs['data'], dict) else b'',
         ]), 'sha1').digest()).decode('ascii')
 
@@ -88,11 +99,12 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
     return max(0, countdown)
 
 
-def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None, job_id=None, meta=None):
+def get_json_result(retcode=RetCode.SUCCESS, retmsg='success',
+                    data=None, job_id=None, meta=None):
     import re
     result_dict = {
         "retcode": retcode,
-        "retmsg":retmsg,
+        "retmsg": retmsg,
         # "retmsg": re.sub(r"rag", "seceum", retmsg, flags=re.IGNORECASE),
         "data": data,
         "jobId": job_id,
@@ -107,9 +119,17 @@ def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None, job_id
             response[key] = value
     return jsonify(response)
 
-def get_data_error_result(retcode=RetCode.DATA_ERROR, retmsg='Sorry! Data missing!'):
+
+def get_data_error_result(retcode=RetCode.DATA_ERROR,
+                          retmsg='Sorry! Data missing!'):
     import re
-    result_dict = {"retcode": retcode, "retmsg": re.sub(r"rag", "seceum", retmsg, flags=re.IGNORECASE)}
+    result_dict = {
+        "retcode": retcode,
+        "retmsg": re.sub(
+            r"rag",
+            "seceum",
+            retmsg,
+            flags=re.IGNORECASE)}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "retcode":
@@ -118,15 +138,17 @@ def get_data_error_result(retcode=RetCode.DATA_ERROR, retmsg='Sorry! Data missin
             response[key] = value
     return jsonify(response)
 
+
 def server_error_response(e):
     stat_logger.exception(e)
     try:
-        if e.code==401:
+        if e.code == 401:
             return get_json_result(retcode=401, retmsg=repr(e))
-    except:
+    except BaseException:
         pass
     if len(e.args) > 1:
-        return get_json_result(retcode=RetCode.EXCEPTION_ERROR, retmsg=repr(e.args[0]), data=e.args[1])
+        return get_json_result(
+            retcode=RetCode.EXCEPTION_ERROR, retmsg=repr(e.args[0]), data=e.args[1])
     return get_json_result(retcode=RetCode.EXCEPTION_ERROR, retmsg=repr(e))
 
 
@@ -162,10 +184,13 @@ def validate_request(*args, **kwargs):
             if no_arguments or error_arguments:
                 error_string = ""
                 if no_arguments:
-                    error_string += "required argument are missing: {}; ".format(",".join(no_arguments))
+                    error_string += "required argument are missing: {}; ".format(
+                        ",".join(no_arguments))
                 if error_arguments:
-                    error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
-                return get_json_result(retcode=RetCode.ARGUMENT_ERROR, retmsg=error_string)
+                    error_string += "required argument values: {}".format(
+                        ",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
+                return get_json_result(
+                    retcode=RetCode.ARGUMENT_ERROR, retmsg=error_string)
             return func(*_args, **_kwargs)
         return decorated_function
     return wrapper
@@ -193,7 +218,8 @@ def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None):
     return jsonify(response)
 
 
-def cors_reponse(retcode=RetCode.SUCCESS, retmsg='success', data=None, auth=None):
+def cors_reponse(retcode=RetCode.SUCCESS,
+                 retmsg='success', data=None, auth=None):
     result_dict = {"retcode": retcode, "retmsg": retmsg, "data": data}
     response_dict = {}
     for key, value in result_dict.items():

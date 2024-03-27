@@ -67,11 +67,11 @@ class Pdf(PdfParser):
 
         if from_page > 0:
             return {
-                "title":"",
+                "title": "",
                 "authors": "",
                 "abstract": "",
                 "sections": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes if
-                          re.match(r"(text|title)", b.get("layoutno", "text"))],
+                             re.match(r"(text|title)", b.get("layoutno", "text"))],
                 "tables": tbls
             }
         # get title and authors
@@ -87,7 +87,8 @@ class Pdf(PdfParser):
                     title = ""
                     break
                 for j in range(3):
-                    if _begin(self.boxes[i + j]["text"]): break
+                    if _begin(self.boxes[i + j]["text"]):
+                        break
                     authors.append(self.boxes[i + j]["text"])
                     break
                 break
@@ -107,10 +108,15 @@ class Pdf(PdfParser):
                     abstr = txt + self._line_tag(self.boxes[i], zoomin)
                 i += 1
                 break
-        if not abstr: i = 0
+        if not abstr:
+            i = 0
 
-        callback(0.8, "Page {}~{}: Text merging finished".format(from_page, min(to_page, self.total_page)))
-        for b in self.boxes: print(b["text"], b.get("layoutno"))
+        callback(
+            0.8, "Page {}~{}: Text merging finished".format(
+                from_page, min(
+                    to_page, self.total_page)))
+        for b in self.boxes:
+            print(b["text"], b.get("layoutno"))
         print(tbls)
 
         return {
@@ -118,19 +124,20 @@ class Pdf(PdfParser):
             "authors": " ".join(authors),
             "abstract": abstr,
             "sections": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes[i:] if
-                      re.match(r"(text|title)", b.get("layoutno", "text"))],
+                         re.match(r"(text|title)", b.get("layoutno", "text"))],
             "tables": tbls
         }
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000,
+          lang="Chinese", callback=None, **kwargs):
     """
         Only pdf is supported.
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
     pdf_parser = None
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        if not kwargs.get("parser_config",{}).get("layout_recognize", True):
+        if not kwargs.get("parser_config", {}).get("layout_recognize", True):
             pdf_parser = PlainParser()
             paper = {
                 "title": filename,
@@ -143,14 +150,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             pdf_parser = Pdf()
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
-    else: raise NotImplementedError("file type not supported yet(pdf supported)")
+    else:
+        raise NotImplementedError("file type not supported yet(pdf supported)")
 
     doc = {"docnm_kwd": filename, "authors_tks": huqie.qie(paper["authors"]),
            "title_tks": huqie.qie(paper["title"] if paper["title"] else filename)}
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     doc["authors_sm_tks"] = huqie.qieqie(doc["authors_tks"])
     # is it English
-    eng = lang.lower() == "english"#pdf_parser.is_english
+    eng = lang.lower() == "english"  # pdf_parser.is_english
     print("It's English.....", eng)
 
     res = tokenize_table(paper["tables"], doc, eng)
@@ -160,7 +168,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         txt = pdf_parser.remove_tag(paper["abstract"])
         d["important_kwd"] = ["abstract", "总结", "概括", "summary", "summarize"]
         d["important_tks"] = " ".join(d["important_kwd"])
-        d["image"], poss = pdf_parser.crop(paper["abstract"], need_position=True)
+        d["image"], poss = pdf_parser.crop(
+            paper["abstract"], need_position=True)
         add_positions(d, poss)
         tokenize(d, txt, eng)
         res.append(d)
@@ -174,7 +183,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     sec_ids = []
     sid = 0
     for i, lvl in enumerate(levels):
-        if lvl <= most_level and i > 0 and lvl != levels[i-1]: sid += 1
+        if lvl <= most_level and i > 0 and lvl != levels[i - 1]:
+            sid += 1
         sec_ids.append(sid)
         print(lvl, sorted_sections[i][0], most_level, sid)
 
@@ -189,6 +199,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         last_sid = sec_id
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
     return res
+
 
 """
     readed = [0] * len(paper["lines"])
@@ -212,7 +223,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         for k in range(j, i): readed[k] = True
         txt = txt[::-1]
         if eng:
-            r = re.search(r"(.*?) ([\.;?!]|$)", txt)
+            r = re.search(r"(.*?) ([\\.;?!]|$)", txt)
             txt = r.group(1)[::-1] if r else txt[::-1]
         else:
             r = re.search(r"(.*?) ([。？；！]|$)", txt)
@@ -270,6 +281,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
 if __name__ == "__main__":
     import sys
+
     def dummy(prog=None, msg=""):
         pass
     chunk(sys.argv[1], callback=dummy)

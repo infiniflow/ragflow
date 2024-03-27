@@ -67,7 +67,7 @@ FACTORY = {
 def set_progress(task_id, from_page=0, to_page=-1,
                  prog=None, msg="Processing..."):
     if prog is not None and prog < 0:
-        msg = "[ERROR]"+msg
+        msg = "[ERROR]" + msg
     cancel = TaskService.do_cancel(task_id)
     if cancel:
         msg += " [Canceled]"
@@ -188,11 +188,13 @@ def embedding(docs, mdl, parser_config={}, callback=None):
 
     cnts_ = np.array([])
     for i in range(0, len(cnts), batch_size):
-        vts, c = mdl.encode(cnts[i: i+batch_size])
-        if len(cnts_) == 0: cnts_ = vts
-        else: cnts_ = np.concatenate((cnts_, vts), axis=0)
+        vts, c = mdl.encode(cnts[i: i + batch_size])
+        if len(cnts_) == 0:
+            cnts_ = vts
+        else:
+            cnts_ = np.concatenate((cnts_, vts), axis=0)
         tk_count += c
-        callback(prog=0.7+0.2*(i+1)/len(cnts), msg="")
+        callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
     cnts = cnts_
 
     title_w = float(parser_config.get("filename_embd_weight", 0.1))
@@ -234,7 +236,9 @@ def main(comm, mod):
             continue
         # TODO: exception handler
         ## set_progress(r["did"], -1, "ERROR: ")
-        callback(msg="Finished slicing files(%d). Start to embedding the content."%len(cks))
+        callback(
+            msg="Finished slicing files(%d). Start to embedding the content." %
+            len(cks))
         try:
             tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
         except Exception as e:
@@ -249,7 +253,7 @@ def main(comm, mod):
         if es_r:
             callback(-1, "Index failure!")
             ELASTICSEARCH.deleteByQuery(
-                    Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
+                Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
             cron_logger.error(str(es_r))
         else:
             if TaskService.do_cancel(r["id"]):

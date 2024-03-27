@@ -27,7 +27,8 @@ class CommonService:
     @classmethod
     @DB.connection_context()
     def query(cls, cols=None, reverse=None, order_by=None, **kwargs):
-        return cls.model.query(cols=cols, reverse=reverse, order_by=order_by, **kwargs)
+        return cls.model.query(cols=cols, reverse=reverse,
+                               order_by=order_by, **kwargs)
 
     @classmethod
     @DB.connection_context()
@@ -40,9 +41,11 @@ class CommonService:
             if not order_by or not hasattr(cls, order_by):
                 order_by = "create_time"
             if reverse is True:
-                query_records = query_records.order_by(cls.model.getter_by(order_by).desc())
+                query_records = query_records.order_by(
+                    cls.model.getter_by(order_by).desc())
             elif reverse is False:
-                query_records = query_records.order_by(cls.model.getter_by(order_by).asc())
+                query_records = query_records.order_by(
+                    cls.model.getter_by(order_by).asc())
         return query_records
 
     @classmethod
@@ -61,7 +64,7 @@ class CommonService:
     @classmethod
     @DB.connection_context()
     def save(cls, **kwargs):
-        #if "id" not in kwargs:
+        # if "id" not in kwargs:
         #    kwargs["id"] = get_uuid()
         sample_obj = cls.model(**kwargs).save(force_insert=True)
         return sample_obj
@@ -95,7 +98,8 @@ class CommonService:
             for data in data_list:
                 data["update_time"] = current_timestamp()
                 data["update_date"] = datetime_format(datetime.now())
-                cls.model.update(data).where(cls.model.id == data["id"]).execute()
+                cls.model.update(data).where(
+                    cls.model.id == data["id"]).execute()
 
     @classmethod
     @DB.connection_context()
@@ -128,7 +132,6 @@ class CommonService:
     def delete_by_id(cls, pid):
         return cls.model.delete().where(cls.model.id == pid).execute()
 
-
     @classmethod
     @DB.connection_context()
     def filter_delete(cls, filters):
@@ -151,19 +154,30 @@ class CommonService:
 
     @classmethod
     @DB.connection_context()
-    def filter_scope_list(cls, in_key, in_filters_list, filters=None, cols=None):
+    def filter_scope_list(cls, in_key, in_filters_list,
+                          filters=None, cols=None):
         in_filters_tuple_list = cls.cut_list(in_filters_list, 20)
         if not filters:
             filters = []
         res_list = []
         if cols:
             for i in in_filters_tuple_list:
-                query_records = cls.model.select(*cols).where(getattr(cls.model, in_key).in_(i), *filters)
+                query_records = cls.model.select(
+                    *
+                    cols).where(
+                    getattr(
+                        cls.model,
+                        in_key).in_(i),
+                    *
+                    filters)
                 if query_records:
-                    res_list.extend([query_record for query_record in query_records])
+                    res_list.extend(
+                        [query_record for query_record in query_records])
         else:
             for i in in_filters_tuple_list:
-                query_records = cls.model.select().where(getattr(cls.model, in_key).in_(i), *filters)
+                query_records = cls.model.select().where(
+                    getattr(cls.model, in_key).in_(i), *filters)
                 if query_records:
-                    res_list.extend([query_record for query_record in query_records])
+                    res_list.extend(
+                        [query_record for query_record in query_records])
         return res_list

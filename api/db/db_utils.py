@@ -32,8 +32,7 @@ LOGGER = getLogger()
 def bulk_insert_into_db(model, data_source, replace_on_conflict=False):
     DB.create_tables([model])
 
-
-    for i,data in enumerate(data_source):
+    for i, data in enumerate(data_source):
         current_time = current_timestamp() + i
         current_date = timestamp_to_date(current_time)
         if 'create_time' not in data:
@@ -55,7 +54,8 @@ def bulk_insert_into_db(model, data_source, replace_on_conflict=False):
 
 
 def get_dynamic_db_model(base, job_id):
-    return type(base.model(table_index=get_dynamic_tracking_table_index(job_id=job_id)))
+    return type(base.model(
+        table_index=get_dynamic_tracking_table_index(job_id=job_id)))
 
 
 def get_dynamic_tracking_table_index(job_id):
@@ -86,7 +86,9 @@ supported_operators = {
     '~': operator.inv,
 }
 
-def query_dict2expression(model: Type[DataBaseModel], query: Dict[str, Union[bool, int, str, list, tuple]]):
+
+def query_dict2expression(
+        model: Type[DataBaseModel], query: Dict[str, Union[bool, int, str, list, tuple]]):
     expression = []
 
     for field, value in query.items():
@@ -95,7 +97,10 @@ def query_dict2expression(model: Type[DataBaseModel], query: Dict[str, Union[boo
         op, *val = value
 
         field = getattr(model, f'f_{field}')
-        value = supported_operators[op](field, val[0]) if op in supported_operators else getattr(field, op)(*val)
+        value = supported_operators[op](
+            field, val[0]) if op in supported_operators else getattr(
+            field, op)(
+            *val)
         expression.append(value)
 
     return reduce(operator.iand, expression)

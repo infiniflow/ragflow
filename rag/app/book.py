@@ -48,10 +48,12 @@ class Pdf(PdfParser):
 
         callback(0.8, "Text extraction finished")
 
-        return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno","")) for b in self.boxes], tbls
+        return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", ""))
+                for b in self.boxes], tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000,
+          lang="Chinese", callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, txt.
         Since a book is long and not all the parts are useful, if it's a PDF,
@@ -63,48 +65,63 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     }
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     pdf_parser = None
-    sections,tbls = [], []
+    sections, tbls = [], []
     if re.search(r"\.docx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         doc_parser = DocxParser()
         # TODO: table of contents need to be removed
-        sections, tbls = doc_parser(binary if binary else filename, from_page=from_page, to_page=to_page)
-        remove_contents_table(sections, eng=is_english(random_choices([t for t,_ in sections], k=200)))
+        sections, tbls = doc_parser(
+            binary if binary else filename, from_page=from_page, to_page=to_page)
+        remove_contents_table(sections, eng=is_english(
+            random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get("parser_config",{}).get("layout_recognize", True) else PlainParser()
+        pdf_parser = Pdf() if kwargs.get(
+            "parser_config", {}).get(
+            "layout_recognize", True) else PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
-                         from_page=from_page, to_page=to_page, callback=callback)
+                                    from_page=from_page, to_page=to_page, callback=callback)
 
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
-        if binary:txt = binary.decode("utf-8")
+        if binary:
+            txt = binary.decode("utf-8")
         else:
             with open(filename, "r") as f:
                 while True:
                     l = f.readline()
-                    if not l:break
+                    if not l:
+                        break
                     txt += l
         sections = txt.split("\n")
-        sections = [(l,"") for l in sections if l]
-        remove_contents_table(sections, eng = is_english(random_choices([t for t,_ in sections], k=200)))
+        sections = [(l, "") for l in sections if l]
+        remove_contents_table(sections, eng=is_english(
+            random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")
 
-    else: raise NotImplementedError("file type not supported yet(docx, pdf, txt supported)")
+    else:
+        raise NotImplementedError(
+            "file type not supported yet(docx, pdf, txt supported)")
 
     make_colon_as_title(sections)
-    bull = bullets_category([t for t in random_choices([t for t,_ in sections], k=100)])
+    bull = bullets_category(
+        [t for t in random_choices([t for t, _ in sections], k=100)])
     if bull >= 0:
-        chunks = ["\n".join(ck) for ck in hierarchical_merge(bull, sections, 3)]
+        chunks = ["\n".join(ck)
+                  for ck in hierarchical_merge(bull, sections, 3)]
     else:
-        sections = [s.split("@") for s,_ in sections]
-        sections = [(pr[0], "@"+pr[1]) for pr in sections if len(pr)==2]
-        chunks = naive_merge(sections, kwargs.get("chunk_token_num", 256), kwargs.get("delimer", "\n。；！？"))
+        sections = [s.split("@") for s, _ in sections]
+        sections = [(pr[0], "@" + pr[1]) for pr in sections if len(pr) == 2]
+        chunks = naive_merge(
+            sections, kwargs.get(
+                "chunk_token_num", 256), kwargs.get(
+                "delimer", "\n。；！？"))
 
     # is it English
-    eng = lang.lower() == "english"#is_english(random_choices([t for t, _ in sections], k=218))
+    # is_english(random_choices([t for t, _ in sections], k=218))
+    eng = lang.lower() == "english"
 
     res = tokenize_table(tbls, doc, eng)
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
@@ -114,6 +131,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
 if __name__ == "__main__":
     import sys
+
     def dummy(prog=None, msg=""):
         pass
     chunk(sys.argv[1], from_page=1, to_page=10, callback=dummy)

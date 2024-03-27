@@ -23,7 +23,8 @@ class HuPptParser(object):
             tb = shape.table
             rows = []
             for i in range(1, len(tb.rows)):
-                rows.append("; ".join([tb.cell(0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
+                rows.append("; ".join([tb.cell(
+                    0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
             return "\n".join(rows)
 
         if shape.has_text_frame:
@@ -31,9 +32,10 @@ class HuPptParser(object):
 
         if shape.shape_type == 6:
             texts = []
-            for p in sorted(shape.shapes, key=lambda x: (x.top//10, x.left)):
+            for p in sorted(shape.shapes, key=lambda x: (x.top // 10, x.left)):
                 t = self.__extract(p)
-                if t: texts.append(t)
+                if t:
+                    texts.append(t)
             return "\n".join(texts)
 
     def __call__(self, fnm, from_page, to_page, callback=None):
@@ -43,12 +45,16 @@ class HuPptParser(object):
         txts = []
         self.total_page = len(ppt.slides)
         for i, slide in enumerate(ppt.slides):
-            if i < from_page: continue
-            if i >= to_page:break
+            if i < from_page:
+                continue
+            if i >= to_page:
+                break
             texts = []
-            for shape in sorted(slide.shapes, key=lambda x: (x.top//10, x.left)):
+            for shape in sorted(
+                    slide.shapes, key=lambda x: (x.top // 10, x.left)):
                 txt = self.__extract(shape)
-                if txt: texts.append(txt)
+                if txt:
+                    texts.append(txt)
             txts.append("\n".join(texts))
 
         return txts
