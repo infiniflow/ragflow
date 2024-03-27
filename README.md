@@ -95,6 +95,15 @@ If your machine doesn't have *Docker* installed, please refer to [Install Docker
 121:/# cd ragflow/docker
 121:/ragflow/docker# docker compose up -d
 ```
+### OR
+
+```bash
+121:/# git clone https://github.com/infiniflow/ragflow.git
+121:/# cd ragflow/
+121:/# docker build  -t infiniflow/ragflow:v1.0 .
+121:/# cd ragflow/docker
+121:/ragflow/docker# docker compose up -d
+```
 > The core image is about 15GB, please be patient for the first time
 
 After pulling all the images and running up, use the following command to check the server status. If you can have the following outputs, 
