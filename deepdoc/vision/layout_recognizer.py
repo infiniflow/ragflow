@@ -37,7 +37,16 @@ class LayoutRecognizer(Recognizer):
              "Equation",
         ]
     def __init__(self, domain):
-        model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
+        try:
+            model_dir = snapshot_download(
+                repo_id="InfiniFlow/deepdoc",
+                local_dir=os.path.join(
+                    get_project_base_directory(),
+                    "rag/res/deepdoc"),
+                local_files_only=True)
+        except Exception as e:
+            model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
+
         super().__init__(self.labels, domain, model_dir)#os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
         self.garbage_layouts = ["footer", "header", "reference"]
 

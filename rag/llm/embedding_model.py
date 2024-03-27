@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 from abc import ABC
 
 import dashscope
@@ -21,9 +22,21 @@ from FlagEmbedding import FlagModel
 import torch
 import numpy as np
 from huggingface_hub import snapshot_download
+
+from api.utils.file_utils import get_project_base_directory
 from rag.utils import num_tokens_from_string
 
-flag_model = FlagModel(snapshot_download("BAAI/bge-large-zh-v1.5", local_files_only=True),
+try:
+    model_dir = snapshot_download(
+        repo_id="BAAI/bge-large-zh-v1.5",
+        local_dir=os.path.join(
+            get_project_base_directory(),
+            "rag/res/bge-large-zh-v1.5"),
+        local_files_only=True)
+except Exception as e:
+    model_dir = snapshot_download(repo_id="BAAI/bge-large-zh-v1.5")
+
+flag_model = FlagModel(model_dir,
                        query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
                        use_fp16=torch.cuda.is_available())
 

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import random
 
 import fitz
@@ -12,10 +13,12 @@ from PIL import Image, ImageDraw
 import numpy as np
 
 from PyPDF2 import PdfReader as pdf2_read
+
+from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer
 from rag.nlp import huqie
 from copy import deepcopy
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, snapshot_download
 
 logging.getLogger("pdfminer").setLevel(logging.WARNING)
 
@@ -32,8 +35,17 @@ class HuParser:
         self.updown_cnt_mdl = xgb.Booster()
         if torch.cuda.is_available():
             self.updown_cnt_mdl.set_param({"device": "cuda"})
-        self.updown_cnt_mdl.load_model(hf_hub_download(repo_id="InfiniFlow/text_concat_xgb_v1.0",
-                                                       filename="updown_concat_xgb.model"))
+        try:
+            model_dir = snapshot_download(
+                repo_id="InfiniFlow/text_concat_xgb_v1.0",
+                local_dir=os.path.join(
+                    get_project_base_directory(),
+                    "rag/res/deepdoc"),
+                local_files_only=True)
+        except Exception as e:
+            model_dir = snapshot_download(repo_id="InfiniFlow/text_concat_xgb_v1.0")
+
+        self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
         self.page_from = 0
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!

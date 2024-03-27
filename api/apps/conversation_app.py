@@ -320,8 +320,13 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
     rows = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|", "|", rows)
     docid_idx = list(docid_idx)[0]
     docnm_idx = list(docnm_idx)[0]
+    doc_aggs = {}
+    for r in tbl["rows"]:
+        if r[docid_idx] not in doc_aggs:
+            doc_aggs[r[docid_idx]] = {"doc_name": r[docnm_idx], "count": 0}
+        doc_aggs[r[docid_idx]]["count"] += 1
     return {
         "answer": "\n".join([clmns, line, rows]),
         "reference": {"chunks": [{"doc_id": r[docid_idx], "docnm_kwd": r[docnm_idx]} for r in tbl["rows"]],
-                      "doc_aggs": [{"doc_id": r[docid_idx], "doc_name": r[docnm_idx], "count": 1} for r in tbl["rows"]]}
+                      "doc_aggs":[{"doc_id": did, "doc_name": d["doc_name"], "count": d["count"]} for did, d in doc_aggs.items()]}
     }
