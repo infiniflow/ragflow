@@ -127,7 +127,7 @@ Open your browser, enter the IP address of your server, _**Hallelujah**_ again!
 # System Architecture Diagram
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/39c8e546-51ca-4b50-a1da-83731b540cd0" width="1000"/>
+<img src="https://github.com/infiniflow/ragflow/assets/12318111/d6ac5664-c237-4200-a7c2-a4a00691b485" width="1000"/>
 </div>
 
 # Configuration

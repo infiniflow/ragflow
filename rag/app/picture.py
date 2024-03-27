@@ -29,7 +29,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
     except Exception as e:
         callback(prog=-1, msg=str(e))
         return []
-    img = Image.open(io.BytesIO(binary))
+    img = Image.open(io.BytesIO(binary)).convert('RGB')
     doc = {
         "docnm_kwd": filename,
         "image": img

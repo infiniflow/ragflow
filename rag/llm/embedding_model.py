@@ -139,12 +139,16 @@ class ZhipuEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=32):
-        res = self.client.embeddings.create(input=texts,
+        arr = []
+        tks_num = 0
+        for txt in texts:
+            res = self.client.embeddings.create(input=txt,
                                             model=self.model_name)
-        return np.array([d.embedding for d in res.data]
-                        ), res.usage.total_tokens
+            arr.append(res.data[0].embedding)
+            tks_num += res.usage.total_tokens
+        return np.array(arr), tks_num
 
     def encode_queries(self, text):
         res = self.client.embeddings.create(input=text,
                                             model=self.model_name)
-        return np.array(res["data"][0]["embedding"]), res.usage.total_tokens
+        return np.array(res.data[0].embedding), res.usage.total_tokens
