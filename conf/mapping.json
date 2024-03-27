@@ -1,4 +1,4 @@
-{
+ {
   "settings": {
     "index": {
       "number_of_shards": 4,
@@ -25,6 +25,33 @@
             "match": "*_int",
             "mapping": {
               "type": "integer",
+              "store": "true"
+            }
+          }
+        },
+        {
+          "ulong": {
+            "match": "*_ulong",
+            "mapping": {
+              "type": "unsigned_long",
+              "store": "true"
+            }
+          }
+        },
+        {
+          "long": {
+            "match": "*_long",
+            "mapping": {
+              "type": "long",
+              "store": "true"
+            }
+          }
+        },
+        {
+          "short": {
+            "match": "*_short",
+            "mapping": {
+              "type": "short",
               "store": "true"
             }
           }
