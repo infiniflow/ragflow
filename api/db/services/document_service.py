@@ -72,7 +72,20 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_newly_uploaded(cls, tm, mod=0, comm=1, items_per_page=64):
-        fields = [cls.model.id, cls.model.kb_id, cls.model.parser_id, cls.model.parser_config, cls.model.name, cls.model.type, cls.model.location, cls.model.size, Knowledgebase.tenant_id, Tenant.embd_id, Tenant.img2txt_id, Tenant.asr_id, cls.model.update_time]
+        fields = [
+            cls.model.id,
+            cls.model.kb_id,
+            cls.model.parser_id,
+            cls.model.parser_config,
+            cls.model.name,
+            cls.model.type,
+            cls.model.location,
+            cls.model.size,
+            Knowledgebase.tenant_id,
+            Tenant.embd_id,
+            Tenant.img2txt_id,
+            Tenant.asr_id,
+            cls.model.update_time]
         docs = cls.model.select(*fields) \
             .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id)) \
             .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))\
@@ -103,40 +116,64 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
         num = cls.model.update(token_num=cls.model.token_num + token_num,
-                                   chunk_num=cls.model.chunk_num + chunk_num,
-                                   process_duation=cls.model.process_duation+duation).where(
+                               chunk_num=cls.model.chunk_num + chunk_num,
+                               process_duation=cls.model.process_duation + duation).where(
             cls.model.id == doc_id).execute()
-        if num == 0:raise LookupError("Document not found which is supposed to be there")
-        num = Knowledgebase.update(token_num=Knowledgebase.token_num+token_num, chunk_num=Knowledgebase.chunk_num+chunk_num).where(Knowledgebase.id==kb_id).execute()
+        if num == 0:
+            raise LookupError(
+                "Document not found which is supposed to be there")
+        num = Knowledgebase.update(
+            token_num=Knowledgebase.token_num +
+            token_num,
+            chunk_num=Knowledgebase.chunk_num +
+            chunk_num).where(
+            Knowledgebase.id == kb_id).execute()
         return num
 
     @classmethod
     @DB.connection_context()
     def get_tenant_id(cls, doc_id):
-        docs = cls.model.select(Knowledgebase.tenant_id).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.id == doc_id, Knowledgebase.status==StatusEnum.VALID.value)
+        docs = cls.model.select(
+            Knowledgebase.tenant_id).join(
+            Knowledgebase, on=(
+                Knowledgebase.id == cls.model.kb_id)).where(
+                cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
-        if not docs:return
+        if not docs:
+            return
         return docs[0]["tenant_id"]
 
     @classmethod
     @DB.connection_context()
     def get_thumbnails(cls, docids):
         fields = [cls.model.id, cls.model.thumbnail]
-        return list(cls.model.select(*fields).where(cls.model.id.in_(docids)).dicts())
+        return list(cls.model.select(
+            *fields).where(cls.model.id.in_(docids)).dicts())
 
     @classmethod
     @DB.connection_context()
     def update_parser_config(cls, id, config):
         e, d = cls.get_by_id(id)
-        if not e:raise LookupError(f"Document({id}) not found.")
+        if not e:
+            raise LookupError(f"Document({id}) not found.")
+
         def dfs_update(old, new):
-            for k,v in new.items():
+            for k, v in new.items():
                 if k not in old:
                     old[k] = v
                     continue
                 if isinstance(v, dict):
                     assert isinstance(old[k], dict)
                     dfs_update(old[k], v)
-                else: old[k] = v
+                else:
+                    old[k] = v
         dfs_update(d.parser_config, config)
         cls.update_by_id(id, {"parser_config": d.parser_config})
+
+    @classmethod
+    @DB.connection_context()
+    def get_doc_count(cls, tenant_id):
+        docs = cls.model.select(cls.model.id).join(Knowledgebase,
+                                                   on=(Knowledgebase.id == cls.model.kb_id)).where(
+            Knowledgebase.tenant_id == tenant_id)
+        return len(docs)

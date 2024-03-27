@@ -47,7 +47,7 @@ def collect(tm):
 def set_dispatching(docid):
     try:
         DocumentService.update_by_id(
-            docid, {"progress": random.random()*1 / 100.,
+            docid, {"progress": random.random() * 1 / 100.,
                     "progress_msg": "Task dispatched...",
                     "process_begin_at": get_format_time()
                     })
@@ -56,7 +56,10 @@ def set_dispatching(docid):
 
 
 def dispatch():
-    tm_fnm = os.path.join(get_project_base_directory(), "rag/res", f"broker.tm")
+    tm_fnm = os.path.join(
+        get_project_base_directory(),
+        "rag/res",
+        f"broker.tm")
     tm = findMaxTm(tm_fnm)
     rows = collect(tm)
     if len(rows) == 0:
@@ -82,17 +85,22 @@ def dispatch():
         tsks = []
         if r["type"] == FileType.PDF.value:
             do_layout = r["parser_config"].get("layout_recognize", True)
-            pages = PdfParser.total_page_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
+            pages = PdfParser.total_page_number(
+                r["name"], MINIO.get(r["kb_id"], r["location"]))
             page_size = r["parser_config"].get("task_page_size", 12)
-            if r["parser_id"] == "paper": page_size = r["parser_config"].get("task_page_size", 22)
-            if r["parser_id"] == "one": page_size = 1000000000
-            if not do_layout: page_size = 1000000000
+            if r["parser_id"] == "paper":
+                page_size = r["parser_config"].get("task_page_size", 22)
+            if r["parser_id"] == "one":
+                page_size = 1000000000
+            if not do_layout:
+                page_size = 1000000000
             page_ranges = r["parser_config"].get("pages")
-            if not page_ranges:  page_ranges = [(1, 100000)]
-            for s,e in page_ranges:
+            if not page_ranges:
+                page_ranges = [(1, 100000)]
+            for s, e in page_ranges:
                 s -= 1
                 s = max(0, s)
-                e = min(e-1, pages)
+                e = min(e - 1, pages)
                 for p in range(s, e, page_size):
                     task = new_task()
                     task["from_page"] = p
@@ -100,12 +108,14 @@ def dispatch():
                     tsks.append(task)
 
         elif r["parser_id"] == "table":
-                rn = HuExcelParser.row_number(r["name"], MINIO.get(r["kb_id"], r["location"]))
-                for i in range(0, rn, 3000):
-                    task = new_task()
-                    task["from_page"] = i
-                    task["to_page"] = min(i + 3000, rn)
-                    tsks.append(task)
+            rn = HuExcelParser.row_number(
+                r["name"], MINIO.get(
+                    r["kb_id"], r["location"]))
+            for i in range(0, rn, 3000):
+                task = new_task()
+                task["from_page"] = i
+                task["to_page"] = min(i + 3000, rn)
+                tsks.append(task)
         else:
             tsks.append(new_task())
 
@@ -120,27 +130,37 @@ def update_progress():
     for d in docs:
         try:
             tsks = TaskService.query(doc_id=d["id"], order_by=Task.create_time)
-            if not tsks:continue
+            if not tsks:
+                continue
             msg = []
             prg = 0
             finished = True
             bad = 0
             status = TaskStatus.RUNNING.value
             for t in tsks:
-                if 0 <= t.progress < 1: finished = False
+                if 0 <= t.progress < 1:
+                    finished = False
                 prg += t.progress if t.progress >= 0 else 0
                 msg.append(t.progress_msg)
-                if t.progress == -1: bad += 1
+                if t.progress == -1:
+                    bad += 1
             prg /= len(tsks)
             if finished and bad:
                 prg = -1
                 status = TaskStatus.FAIL.value
-            elif finished: status = TaskStatus.DONE.value
+            elif finished:
+                status = TaskStatus.DONE.value
 
             msg = "\n".join(msg)
-            info = {"process_duation": datetime.timestamp(datetime.now())-d["process_begin_at"].timestamp(), "run": status}
-            if prg !=0 : info["progress"] = prg
-            if msg: info["progress_msg"] = msg
+            info = {
+                "process_duation": datetime.timestamp(
+                    datetime.now()) -
+                d["process_begin_at"].timestamp(),
+                "run": status}
+            if prg != 0:
+                info["progress"] = prg
+            if msg:
+                info["progress_msg"] = msg
             DocumentService.update_by_id(d["id"], info)
         except Exception as e:
             cron_logger.error("fetch task exception:" + str(e))

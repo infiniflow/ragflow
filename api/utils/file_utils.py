@@ -29,6 +29,7 @@ from api.db import FileType
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
 RAG_BASE = os.getenv("RAG_BASE")
 
+
 def get_project_base_directory(*args):
     global PROJECT_BASE
     if PROJECT_BASE is None:
@@ -63,7 +64,6 @@ def get_rag_directory(*args):
 
 def get_rag_python_directory(*args):
     return get_rag_directory("python", *args)
-
 
 
 @cached(cache=LRUCache(maxsize=10))
@@ -146,10 +146,12 @@ def filename_type(filename):
     if re.match(r".*\.pdf$", filename):
         return FileType.PDF.value
 
-    if re.match(r".*\.(docx|doc|ppt|pptx|yml|xml|htm|json|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md)$", filename):
+    if re.match(
+            r".*\.(docx|doc|ppt|pptx|yml|xml|htm|json|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md)$", filename):
         return FileType.DOC.value
 
-    if re.match(r".*\.(wav|flac|ape|alac|wavpack|wv|mp3|aac|ogg|vorbis|opus|mp3)$", filename):
+    if re.match(
+            r".*\.(wav|flac|ape|alac|wavpack|wv|mp3|aac|ogg|vorbis|opus|mp3)$", filename):
         return FileType.AURAL.value
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4)$", filename):
@@ -164,14 +166,16 @@ def thumbnail(filename, blob):
         buffered = BytesIO()
         Image.frombytes("RGB", [pix.width, pix.height],
                         pix.samples).save(buffered, format="png")
-        return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return "data:image/png;base64," + \
+            base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
         image = Image.open(BytesIO(blob))
         image.thumbnail((30, 30))
         buffered = BytesIO()
         image.save(buffered, format="png")
-        return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return "data:image/png;base64," + \
+            base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     if re.match(r".*\.(ppt|pptx)$", filename):
         import aspose.slides as slides
@@ -179,8 +183,10 @@ def thumbnail(filename, blob):
         try:
             with slides.Presentation(BytesIO(blob)) as presentation:
                 buffered = BytesIO()
-                presentation.slides[0].get_thumbnail(0.03, 0.03).save(buffered, drawing.imaging.ImageFormat.png)
-                return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
+                presentation.slides[0].get_thumbnail(0.03, 0.03).save(
+                    buffered, drawing.imaging.ImageFormat.png)
+                return "data:image/png;base64," + \
+                    base64.b64encode(buffered.getvalue()).decode("utf-8")
         except Exception as e:
             pass
 
@@ -190,6 +196,3 @@ def traversal_files(base):
         for f in fs:
             fullname = os.path.join(root, f)
             yield fullname
-
-
-

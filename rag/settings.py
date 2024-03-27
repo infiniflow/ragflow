@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import os
-from api.utils import get_base_config,decrypt_database_config
+from api.utils import get_base_config, decrypt_database_config
 from api.utils.file_utils import get_project_base_directory
 from api.utils.log_utils import LoggerFactory, getLogger
 
@@ -28,7 +28,11 @@ MINIO = decrypt_database_config(name="minio")
 DOC_MAXIMUM_SIZE = 128 * 1024 * 1024
 
 # Logger
-LoggerFactory.set_directory(os.path.join(get_project_base_directory(), "logs", "rag"))
+LoggerFactory.set_directory(
+    os.path.join(
+        get_project_base_directory(),
+        "logs",
+        "rag"))
 # {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
 LoggerFactory.LEVEL = 10
 
@@ -37,4 +41,3 @@ minio_logger = getLogger("minio")
 cron_logger = getLogger("cron_logger")
 chunk_logger = getLogger("chunk_logger")
 database_logger = getLogger("database")
-

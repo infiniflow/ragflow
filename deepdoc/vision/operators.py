@@ -63,6 +63,7 @@ class DecodeImage(object):
         data['image'] = img
         return data
 
+
 class StandardizeImage(object):
     """normalize image
     Args:

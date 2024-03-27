@@ -33,15 +33,21 @@ from api.utils.api_utils import get_json_result
 def create():
     req = request.json
     req["name"] = req["name"].strip()
-    req["name"] = duplicate_name(KnowledgebaseService.query, name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)
+    req["name"] = duplicate_name(
+        KnowledgebaseService.query,
+        name=req["name"],
+        tenant_id=current_user.id,
+        status=StatusEnum.VALID.value)
     try:
         req["id"] = get_uuid()
         req["tenant_id"] = current_user.id
         req["created_by"] = current_user.id
         e, t = TenantService.get_by_id(current_user.id)
-        if not e: return get_data_error_result(retmsg="Tenant not found.")
+        if not e:
+            return get_data_error_result(retmsg="Tenant not found.")
         req["embd_id"] = t.embd_id
-        if not KnowledgebaseService.save(**req): return get_data_error_result()
+        if not KnowledgebaseService.save(**req):
+            return get_data_error_result()
         return get_json_result(data={"kb_id": req["id"]})
     except Exception as e:
         return server_error_response(e)
@@ -54,21 +60,29 @@ def update():
     req = request.json
     req["name"] = req["name"].strip()
     try:
-        if not KnowledgebaseService.query(created_by=current_user.id, id=req["kb_id"]):
-            return get_json_result(data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
+        if not KnowledgebaseService.query(
+                created_by=current_user.id, id=req["kb_id"]):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
-        if not e: return get_data_error_result(retmsg="Can't find this knowledgebase!")
+        if not e:
+            return get_data_error_result(
+                retmsg="Can't find this knowledgebase!")
 
         if req["name"].lower() != kb.name.lower() \
-            and len(KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value))>1:
-            return get_data_error_result(retmsg="Duplicated knowledgebase name.")
+                and len(KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) > 1:
+            return get_data_error_result(
+                retmsg="Duplicated knowledgebase name.")
 
         del req["kb_id"]
-        if not KnowledgebaseService.update_by_id(kb.id, req): return get_data_error_result()
+        if not KnowledgebaseService.update_by_id(kb.id, req):
+            return get_data_error_result()
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)
-        if not e: return get_data_error_result(retmsg="Database error (Knowledgebase rename)!")
+        if not e:
+            return get_data_error_result(
+                retmsg="Database error (Knowledgebase rename)!")
 
         return get_json_result(data=kb.to_json())
     except Exception as e:
@@ -81,7 +95,9 @@ def detail():
     kb_id = request.args["kb_id"]
     try:
         kb = KnowledgebaseService.get_detail(kb_id)
-        if not kb: return get_data_error_result(retmsg="Can't find this knowledgebase!")
+        if not kb:
+            return get_data_error_result(
+                retmsg="Can't find this knowledgebase!")
         return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
@@ -96,7 +112,8 @@ def list():
     desc = request.args.get("desc", True)
     try:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        kbs = KnowledgebaseService.get_by_tenant_ids([m["tenant_id"] for m in tenants], current_user.id, page_number, items_per_page, orderby, desc)
+        kbs = KnowledgebaseService.get_by_tenant_ids(
+            [m["tenant_id"] for m in tenants], current_user.id, page_number, items_per_page, orderby, desc)
         return get_json_result(data=kbs)
     except Exception as e:
         return server_error_response(e)
@@ -108,10 +125,15 @@ def list():
 def rm():
     req = request.json
     try:
-        if not KnowledgebaseService.query(created_by=current_user.id, id=req["kb_id"]):
-            return get_json_result(data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
+        if not KnowledgebaseService.query(
+                created_by=current_user.id, id=req["kb_id"]):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
 
-        if not KnowledgebaseService.update_by_id(req["kb_id"], {"status": StatusEnum.INVALID.value}): return get_data_error_result(retmsg="Database error (Knowledgebase removal)!")
+        if not KnowledgebaseService.update_by_id(
+                req["kb_id"], {"status": StatusEnum.INVALID.value}):
+            return get_data_error_result(
+                retmsg="Database error (Knowledgebase removal)!")
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

@@ -48,30 +48,42 @@ def set_api_key():
                 req["api_key"], llm.llm_name)
             try:
                 arr, tc = mdl.encode(["Test if the api key is available"])
-                if len(arr[0]) == 0 or tc ==0: raise Exception("Fail")
+                if len(arr[0]) == 0 or tc == 0:
+                    raise Exception("Fail")
             except Exception as e:
                 msg += f"\nFail to access embedding model({llm.llm_name}) using this api key."
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
             mdl = ChatModel[factory](
                 req["api_key"], llm.llm_name)
             try:
-                m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {"temperature": 0.9})
-                if not tc: raise Exception(m)
+                m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
+                                 "temperature": 0.9})
+                if not tc:
+                    raise Exception(m)
                 chat_passed = True
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(e)
+                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                    e)
 
-    if msg: return get_data_error_result(retmsg=msg)
+    if msg:
+        return get_data_error_result(retmsg=msg)
 
     llm = {
         "api_key": req["api_key"]
     }
     for n in ["model_type", "llm_name"]:
-        if n in req: llm[n] = req[n]
+        if n in req:
+            llm[n] = req[n]
 
-    if not TenantLLMService.filter_update([TenantLLM.tenant_id==current_user.id, TenantLLM.llm_factory==factory], llm):
+    if not TenantLLMService.filter_update(
+            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory], llm):
         for llm in LLMService.query(fid=factory):
-            TenantLLMService.save(tenant_id=current_user.id, llm_factory=factory, llm_name=llm.llm_name, model_type=llm.model_type, api_key=req["api_key"])
+            TenantLLMService.save(
+                tenant_id=current_user.id,
+                llm_factory=factory,
+                llm_name=llm.llm_name,
+                model_type=llm.model_type,
+                api_key=req["api_key"])
 
     return get_json_result(data=True)
 
@@ -105,17 +117,19 @@ def list():
         objs = TenantLLMService.query(tenant_id=current_user.id)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
         llms = LLMService.get_all()
-        llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value]
+        llms = [m.to_dict()
+                for m in llms if m.status == StatusEnum.VALID.value]
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding"
 
         res = {}
         for m in llms:
-            if model_type and m["model_type"] != model_type: continue
-            if m["fid"] not in res: res[m["fid"]] = []
+            if model_type and m["model_type"] != model_type:
+                continue
+            if m["fid"] not in res:
+                res[m["fid"]] = []
             res[m["fid"]].append(m)
 
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
-

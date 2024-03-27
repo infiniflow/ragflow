@@ -24,18 +24,19 @@ from deepdoc.vision import Recognizer
 
 class LayoutRecognizer(Recognizer):
     labels = [
-             "_background_",
-             "Text",
-             "Title",
-             "Figure",
-             "Figure caption",
-             "Table",
-             "Table caption",
-             "Header",
-             "Footer",
-             "Reference",
-             "Equation",
-        ]
+        "_background_",
+        "Text",
+        "Title",
+        "Figure",
+        "Figure caption",
+        "Table",
+        "Table caption",
+        "Header",
+        "Footer",
+        "Reference",
+        "Equation",
+    ]
+
     def __init__(self, domain):
         try:
             model_dir = snapshot_download(
@@ -47,10 +48,12 @@ class LayoutRecognizer(Recognizer):
         except Exception as e:
             model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
 
-        super().__init__(self.labels, domain, model_dir)#os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        # os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
+        super().__init__(self.labels, domain, model_dir)
         self.garbage_layouts = ["footer", "header", "reference"]
 
-    def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16, drop=True):
+    def __call__(self, image_list, ocr_res, scale_factor=3,
+                 thr=0.2, batch_size=16, drop=True):
         def __is_garbage(b):
             patt = [r"^•+$", r"(版权归©|免责条款|地址[:：])", r"\.{3,}", "^[0-9]{1,2} / ?[0-9]{1,2}$",
                     r"^[0-9]{1,2} of [0-9]{1,2}$", "^http://[^ ]{12,}",
@@ -75,7 +78,8 @@ class LayoutRecognizer(Recognizer):
                     "top": b["bbox"][1] / scale_factor, "bottom": b["bbox"][-1] / scale_factor,
                     "page_number": pn,
                     } for b in lts]
-            lts = self.sort_Y_firstly(lts, np.mean([l["bottom"]-l["top"] for l in lts]) / 2)
+            lts = self.sort_Y_firstly(lts, np.mean(
+                [l["bottom"] - l["top"] for l in lts]) / 2)
             lts = self.layouts_cleanup(bxs, lts)
             page_layout.append(lts)
 
@@ -93,17 +97,20 @@ class LayoutRecognizer(Recognizer):
                         continue
 
                     ii = self.find_overlapped_with_threashold(bxs[i], lts_,
-                                                                thr=0.4)
+                                                              thr=0.4)
                     if ii is None:  # belong to nothing
                         bxs[i]["layout_type"] = ""
                         i += 1
                         continue
                     lts_[ii]["visited"] = True
                     keep_feats = [
-                        lts_[ii]["type"] == "footer" and bxs[i]["bottom"] < image_list[pn].size[1]*0.9/scale_factor,
-                        lts_[ii]["type"] == "header" and bxs[i]["top"] > image_list[pn].size[1]*0.1/scale_factor,
+                        lts_[
+                            ii]["type"] == "footer" and bxs[i]["bottom"] < image_list[pn].size[1] * 0.9 / scale_factor,
+                        lts_[
+                            ii]["type"] == "header" and bxs[i]["top"] > image_list[pn].size[1] * 0.1 / scale_factor,
                     ]
-                    if drop and lts_[ii]["type"] in self.garbage_layouts and not any(keep_feats):
+                    if drop and lts_[
+                            ii]["type"] in self.garbage_layouts and not any(keep_feats):
                         if lts_[ii]["type"] not in garbages:
                             garbages[lts_[ii]["type"]] = []
                         garbages[lts_[ii]["type"]].append(bxs[i]["text"])
@@ -111,7 +118,8 @@ class LayoutRecognizer(Recognizer):
                         continue
 
                     bxs[i]["layoutno"] = f"{ty}-{ii}"
-                    bxs[i]["layout_type"] = lts_[ii]["type"] if lts_[ii]["type"]!="equation" else "figure"
+                    bxs[i]["layout_type"] = lts_[ii]["type"] if lts_[
+                        ii]["type"] != "equation" else "figure"
                     i += 1
 
             for lt in ["footer", "header", "reference", "figure caption",
@@ -120,7 +128,7 @@ class LayoutRecognizer(Recognizer):
 
             # add box to figure layouts which has not text box
             for i, lt in enumerate(
-                    [lt for lt in lts if lt["type"] in ["figure","equation"]]):
+                    [lt for lt in lts if lt["type"] in ["figure", "equation"]]):
                 if lt.get("visited"):
                     continue
                 lt = deepcopy(lt)
@@ -143,6 +151,3 @@ class LayoutRecognizer(Recognizer):
 
         ocr_res = [b for b in ocr_res if b["text"].strip() not in garbag_set]
         return ocr_res, page_layout
-
-
-

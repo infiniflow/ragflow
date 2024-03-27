@@ -55,7 +55,7 @@ class KnowledgebaseService(CommonService):
             cls.model.chunk_num,
             cls.model.parser_id,
             cls.model.parser_config]
-        kbs = cls.model.select(*fields).join(Tenant, on=((Tenant.id == cls.model.tenant_id)&(Tenant.status== StatusEnum.VALID.value))).where(
+        kbs = cls.model.select(*fields).join(Tenant, on=((Tenant.id == cls.model.tenant_id) & (Tenant.status == StatusEnum.VALID.value))).where(
             (cls.model.id == kb_id),
             (cls.model.status == StatusEnum.VALID.value)
         )
@@ -69,9 +69,11 @@ class KnowledgebaseService(CommonService):
     @DB.connection_context()
     def update_parser_config(cls, id, config):
         e, m = cls.get_by_id(id)
-        if not e:raise LookupError(f"knowledgebase({id}) not found.")
+        if not e:
+            raise LookupError(f"knowledgebase({id}) not found.")
+
         def dfs_update(old, new):
-            for k,v in new.items():
+            for k, v in new.items():
                 if k not in old:
                     old[k] = v
                     continue
@@ -80,11 +82,11 @@ class KnowledgebaseService(CommonService):
                     dfs_update(old[k], v)
                 elif isinstance(v, list):
                     assert isinstance(old[k], list)
-                    old[k] = list(set(old[k]+v))
-                else: old[k] = v
+                    old[k] = list(set(old[k] + v))
+                else:
+                    old[k] = v
         dfs_update(m.parser_config, config)
         cls.update_by_id(id, {"parser_config": m.parser_config})
-
 
     @classmethod
     @DB.connection_context()
@@ -94,4 +96,3 @@ class KnowledgebaseService(CommonService):
             if k.parser_config and "field_map" in k.parser_config:
                 conf.update(k.parser_config["field_map"])
         return conf
-

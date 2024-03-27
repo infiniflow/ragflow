@@ -59,7 +59,8 @@ class TenantLLMService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def model_instance(cls, tenant_id, llm_type, llm_name=None, lang="Chinese"):
+    def model_instance(cls, tenant_id, llm_type,
+                       llm_name=None, lang="Chinese"):
         e, tenant = TenantService.get_by_id(tenant_id)
         if not e:
             raise LookupError("Tenant not found")
@@ -126,29 +127,39 @@ class LLMBundle(object):
         self.tenant_id = tenant_id
         self.llm_type = llm_type
         self.llm_name = llm_name
-        self.mdl = TenantLLMService.model_instance(tenant_id, llm_type, llm_name, lang=lang)
-        assert self.mdl, "Can't find mole for {}/{}/{}".format(tenant_id, llm_type, llm_name)
+        self.mdl = TenantLLMService.model_instance(
+            tenant_id, llm_type, llm_name, lang=lang)
+        assert self.mdl, "Can't find mole for {}/{}/{}".format(
+            tenant_id, llm_type, llm_name)
 
     def encode(self, texts: list, batch_size=32):
         emd, used_tokens = self.mdl.encode(texts, batch_size)
-        if TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
-            database_logger.error("Can't update token usage for {}/EMBEDDING".format(self.tenant_id))
+        if TenantLLMService.increase_usage(
+                self.tenant_id, self.llm_type, used_tokens):
+            database_logger.error(
+                "Can't update token usage for {}/EMBEDDING".format(self.tenant_id))
         return emd, used_tokens
 
     def encode_queries(self, query: str):
         emd, used_tokens = self.mdl.encode_queries(query)
-        if TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
-            database_logger.error("Can't update token usage for {}/EMBEDDING".format(self.tenant_id))
+        if TenantLLMService.increase_usage(
+                self.tenant_id, self.llm_type, used_tokens):
+            database_logger.error(
+                "Can't update token usage for {}/EMBEDDING".format(self.tenant_id))
         return emd, used_tokens
 
     def describe(self, image, max_tokens=300):
         txt, used_tokens = self.mdl.describe(image, max_tokens)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
-            database_logger.error("Can't update token usage for {}/IMAGE2TEXT".format(self.tenant_id))
+        if not TenantLLMService.increase_usage(
+                self.tenant_id, self.llm_type, used_tokens):
+            database_logger.error(
+                "Can't update token usage for {}/IMAGE2TEXT".format(self.tenant_id))
         return txt
 
     def chat(self, system, history, gen_conf):
         txt, used_tokens = self.mdl.chat(system, history, gen_conf)
-        if TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, self.llm_name):
-            database_logger.error("Can't update token usage for {}/CHAT".format(self.tenant_id))
+        if TenantLLMService.increase_usage(
+                self.tenant_id, self.llm_type, used_tokens, self.llm_name):
+            database_logger.error(
+                "Can't update token usage for {}/CHAT".format(self.tenant_id))
         return txt

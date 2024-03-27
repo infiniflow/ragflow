@@ -55,7 +55,8 @@ def set_dialog():
     }
     prompt_config = req.get("prompt_config", default_prompt)
 
-    if not prompt_config["system"]: prompt_config["system"] = default_prompt["system"]
+    if not prompt_config["system"]:
+        prompt_config["system"] = default_prompt["system"]
     # if len(prompt_config["parameters"]) < 1:
     #     prompt_config["parameters"] = default_prompt["parameters"]
     # for p in prompt_config["parameters"]:
@@ -63,16 +64,21 @@ def set_dialog():
     # else: prompt_config["parameters"].append(default_prompt["parameters"][0])
 
     for p in prompt_config["parameters"]:
-        if p["optional"]: continue
+        if p["optional"]:
+            continue
         if prompt_config["system"].find("{%s}" % p["key"]) < 0:
-            return get_data_error_result(retmsg="Parameter '{}' is not used".format(p["key"]))
+            return get_data_error_result(
+                retmsg="Parameter '{}' is not used".format(p["key"]))
 
     try:
         e, tenant = TenantService.get_by_id(current_user.id)
-        if not e: return get_data_error_result(retmsg="Tenant not found!")
+        if not e:
+            return get_data_error_result(retmsg="Tenant not found!")
         llm_id = req.get("llm_id", tenant.llm_id)
         if not dialog_id:
-            if not req.get("kb_ids"):return get_data_error_result(retmsg="Fail! Please select knowledgebase!")
+            if not req.get("kb_ids"):
+                return get_data_error_result(
+                    retmsg="Fail! Please select knowledgebase!")
             dia = {
                 "id": get_uuid(),
                 "tenant_id": current_user.id,
@@ -86,17 +92,21 @@ def set_dialog():
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight
             }
-            if not DialogService.save(**dia): return get_data_error_result(retmsg="Fail to new a dialog!")
+            if not DialogService.save(**dia):
+                return get_data_error_result(retmsg="Fail to new a dialog!")
             e, dia = DialogService.get_by_id(dia["id"])
-            if not e: return get_data_error_result(retmsg="Fail to new a dialog!")
+            if not e:
+                return get_data_error_result(retmsg="Fail to new a dialog!")
             return get_json_result(data=dia.to_json())
         else:
             del req["dialog_id"]
-            if "kb_names" in req: del req["kb_names"]
+            if "kb_names" in req:
+                del req["kb_names"]
             if not DialogService.update_by_id(dialog_id, req):
                 return get_data_error_result(retmsg="Dialog not found!")
             e, dia = DialogService.get_by_id(dialog_id)
-            if not e: return get_data_error_result(retmsg="Fail to update a dialog!")
+            if not e:
+                return get_data_error_result(retmsg="Fail to update a dialog!")
             dia = dia.to_dict()
             dia["kb_ids"], dia["kb_names"] = get_kb_names(dia["kb_ids"])
             return get_json_result(data=dia)
@@ -110,7 +120,8 @@ def get():
     dialog_id = request.args["dialog_id"]
     try:
         e, dia = DialogService.get_by_id(dialog_id)
-        if not e: return get_data_error_result(retmsg="Dialog not found!")
+        if not e:
+            return get_data_error_result(retmsg="Dialog not found!")
         dia = dia.to_dict()
         dia["kb_ids"], dia["kb_names"] = get_kb_names(dia["kb_ids"])
         return get_json_result(data=dia)
@@ -122,7 +133,8 @@ def get_kb_names(kb_ids):
     ids, nms = [], []
     for kid in kb_ids:
         e, kb = KnowledgebaseService.get_by_id(kid)
-        if not e or kb.status != StatusEnum.VALID.value: continue
+        if not e or kb.status != StatusEnum.VALID.value:
+            continue
         ids.append(kid)
         nms.append(kb.name)
     return ids, nms
@@ -132,7 +144,11 @@ def get_kb_names(kb_ids):
 @login_required
 def list():
     try:
-        diags = DialogService.query(tenant_id=current_user.id, status=StatusEnum.VALID.value, reverse=True, order_by=DialogService.model.create_time)
+        diags = DialogService.query(
+            tenant_id=current_user.id,
+            status=StatusEnum.VALID.value,
+            reverse=True,
+            order_by=DialogService.model.create_time)
         diags = [d.to_dict() for d in diags]
         for d in diags:
             d["kb_ids"], d["kb_names"] = get_kb_names(d["kb_ids"])
@@ -147,7 +163,8 @@ def list():
 def rm():
     req = request.json
     try:
-        DialogService.update_many_by_id([{"id": id, "status": StatusEnum.INVALID.value} for id in req["dialog_ids"]])
+        DialogService.update_many_by_id(
+            [{"id": id, "status": StatusEnum.INVALID.value} for id in req["dialog_ids"]])
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

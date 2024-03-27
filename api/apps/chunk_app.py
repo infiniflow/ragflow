@@ -121,7 +121,9 @@ def get():
                   "important_kwd")
 def set():
     req = request.json
-    d = {"id": req["chunk_id"], "content_with_weight": req["content_with_weight"]}
+    d = {
+        "id": req["chunk_id"],
+        "content_with_weight": req["content_with_weight"]}
     d["content_ltks"] = huqie.qie(req["content_with_weight"])
     d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
     d["important_kwd"] = req["important_kwd"]
@@ -140,10 +142,16 @@ def set():
             return get_data_error_result(retmsg="Document not found!")
 
         if doc.parser_id == ParserType.QA:
-            arr = [t for t in re.split(r"[\n\t]", req["content_with_weight"]) if len(t) > 1]
-            if len(arr) != 2: return get_data_error_result(retmsg="Q&A must be separated by TAB/ENTER key.")
+            arr = [
+                t for t in re.split(
+                    r"[\n\t]",
+                    req["content_with_weight"]) if len(t) > 1]
+            if len(arr) != 2:
+                return get_data_error_result(
+                    retmsg="Q&A must be separated by TAB/ENTER key.")
             q, a = rmPrefix(arr[0]), rmPrefix[arr[1]]
-            d = beAdoc(d, arr[0], arr[1], not any([huqie.is_chinese(t) for t in q + a]))
+            d = beAdoc(d, arr[0], arr[1], not any(
+                [huqie.is_chinese(t) for t in q + a]))
 
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
@@ -177,7 +185,8 @@ def switch():
 def rm():
     req = request.json
     try:
-        if not ELASTICSEARCH.deleteByQuery(Q("ids", values=req["chunk_ids"]), search.index_name(current_user.id)):
+        if not ELASTICSEARCH.deleteByQuery(
+                Q("ids", values=req["chunk_ids"]), search.index_name(current_user.id)):
             return get_data_error_result(retmsg="Index updating failure")
         return get_json_result(data=True)
     except Exception as e:
