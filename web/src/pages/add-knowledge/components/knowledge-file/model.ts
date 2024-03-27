@@ -209,6 +209,19 @@ const model: DvaModel<KFModelState> = {
         console.warn(error);
       }
     },
+    *upload_document({ payload = {} }, { call, put }) {
+      const formData = new FormData();
+      formData.append('file', payload.file);
+      formData.append('kb_id', payload.kb_id);
+      const { data } = yield call(kbService.document_upload, formData);
+      if (data.retcode === 0) {
+        yield put({
+          type: 'getKfList',
+          payload: { kb_id: payload.kb_id },
+        });
+      }
+      return data;
+    },
   },
 };
 export default model;

@@ -45,6 +45,7 @@ export default {
   document_change_parser: `${api_host}/document/change_parser`,
   document_thumbnails: `${api_host}/document/thumbnails`,
   get_document_file: `${api_host}/document/get`,
+  document_upload: `${api_host}/document/upload`,
 
   setDialog: `${api_host}/dialog/set`,
   getDialog: `${api_host}/dialog/get`,

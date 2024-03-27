@@ -35,7 +35,7 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   showModal?(): void;
   parserId: string;
   parserConfig: IKnowledgeFileParserConfig;
-  documentType: string;
+  documentExtension: string;
 }
 
 const hidePagesChunkMethods = ['qa', 'table', 'picture', 'resume', 'one'];
@@ -45,11 +45,13 @@ const ChunkMethodModal: React.FC<IProps> = ({
   onOk,
   hideModal,
   visible,
-  documentType,
+  documentExtension,
   parserConfig,
 }) => {
-  const { parserList, handleChange, selectedTag } =
-    useFetchParserListOnMount(parserId);
+  const { parserList, handleChange, selectedTag } = useFetchParserListOnMount(
+    parserId,
+    documentExtension,
+  );
   const [form] = Form.useForm();
 
   const handleOk = async () => {
@@ -62,11 +64,8 @@ const ChunkMethodModal: React.FC<IProps> = ({
   };
 
   const showPages = useMemo(() => {
-    return (
-      documentType === 'pdf' &&
-      hidePagesChunkMethods.every((x) => x !== selectedTag)
-    );
-  }, [documentType, selectedTag]);
+    return hidePagesChunkMethods.every((x) => x !== selectedTag);
+  }, [selectedTag]);
 
   const showOne = useMemo(() => {
     return showPages || selectedTag === 'one';
@@ -114,7 +113,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
       </Space>
       <Divider></Divider>
 
-      {
+      {documentExtension === 'pdf' && (
         <Form name="dynamic_form_nest_item" autoComplete="off" form={form}>
           {showPages && (
             <>
@@ -271,7 +270,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
 
           {selectedTag === 'naive' && <MaxTokenNumber></MaxTokenNumber>}
         </Form>
-      }
+      )}
     </Modal>
   );
 };

@@ -23,7 +23,6 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo } from 'react';
-import ChunkMethodModal from './chunk-method-modal';
 import CreateFileModal from './create-file-modal';
 import {
   useChangeDocumentParser,
@@ -39,6 +38,8 @@ import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
+import ChunkMethodModal from '@/components/chunk-method-modal';
+import { getExtension } from '@/utils/documentUtils';
 import styles from './index.less';
 
 const KnowledgeFile = () => {
@@ -227,7 +228,7 @@ const KnowledgeFile = () => {
       <ChunkMethodModal
         parserId={currentRecord.parser_id}
         parserConfig={currentRecord.parser_config}
-        documentType={currentRecord.type}
+        documentExtension={getExtension(currentRecord.name)}
         onOk={onChangeParserOk}
         visible={changeParserVisible}
         hideModal={hideChangeParserModal}
