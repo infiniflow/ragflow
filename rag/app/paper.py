@@ -120,7 +120,7 @@ class Pdf(PdfParser):
         print(tbls)
 
         return {
-            "title": title if title else filename,
+            "title": title,
             "authors": " ".join(authors),
             "abstract": abstr,
             "sections": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes[i:] if

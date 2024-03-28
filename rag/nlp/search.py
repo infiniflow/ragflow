@@ -246,19 +246,22 @@ class Dealer:
         chunks_tks = [huqie.qie(self.qryr.rmWWW(ck)).split(" ")
                       for ck in chunks]
         cites = {}
-        for i, a in enumerate(pieces_):
-            sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i],
-                                                            chunk_v,
-                                                            huqie.qie(
-                                                                self.qryr.rmWWW(pieces_[i])).split(" "),
-                                                            chunks_tks,
-                                                            tkweight, vtweight)
-            mx = np.max(sim) * 0.99
-            es_logger.info("{} SIM: {}".format(pieces_[i], mx))
-            if mx < 0.63:
-                continue
-            cites[idx[i]] = list(
-                set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]
+        thr = 0.63
+        while len(cites.keys()) == 0 and pieces_ and chunks_tks:
+            for i, a in enumerate(pieces_):
+                sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i],
+                                                                chunk_v,
+                                                                huqie.qie(
+                                                                    self.qryr.rmWWW(pieces_[i])).split(" "),
+                                                                chunks_tks,
+                                                                tkweight, vtweight)
+                mx = np.max(sim) * 0.99
+                es_logger.info("{} SIM: {}".format(pieces_[i], mx))
+                if mx < thr:
+                    continue
+                cites[idx[i]] = list(
+                    set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]
+            thr *= 0.8
 
         res = ""
         seted = set([])
