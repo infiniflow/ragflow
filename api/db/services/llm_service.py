@@ -84,19 +84,21 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in EmbeddingModel:
                 return
             return EmbeddingModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"])
+                model_config["api_key"], model_config["llm_name"], model_config["api_base"])
 
         if llm_type == LLMType.IMAGE2TEXT.value:
             if model_config["llm_factory"] not in CvModel:
                 return
             return CvModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"], lang)
+                model_config["api_key"], model_config["llm_name"], lang,
+                base_url=model_config["api_base"]
+            )
 
         if llm_type == LLMType.CHAT.value:
             if model_config["llm_factory"] not in ChatModel:
                 return
             return ChatModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"])
+                model_config["api_key"], model_config["llm_name"], model_config["api_base"])
 
     @classmethod
     @DB.connection_context()
