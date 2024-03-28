@@ -206,3 +206,26 @@ export const useSelectKnowledgeDetails = () => {
   return knowledgeDetails;
 };
 //#endregion
+
+//#region Retrieval testing
+
+export const useTestChunkRetrieval = () => {
+  const dispatch = useDispatch();
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const testChunk = useCallback(
+    (values: any) => {
+      dispatch({
+        type: 'testingModel/testDocumentChunk',
+        payload: {
+          ...values,
+          kb_id: knowledgeBaseId,
+        },
+      });
+    },
+    [dispatch, knowledgeBaseId],
+  );
+
+  return testChunk;
+};
+//#endregion

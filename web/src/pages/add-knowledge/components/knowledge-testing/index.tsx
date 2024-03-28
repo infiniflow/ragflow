@@ -1,28 +1,21 @@
+import { useTestChunkRetrieval } from '@/hooks/knowledgeHook';
 import { Flex, Form } from 'antd';
+import { useEffect } from 'react';
+import { useDispatch } from 'umi';
 import TestingControl from './testing-control';
 import TestingResult from './testing-result';
 
-import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
-import { useEffect } from 'react';
-import { useDispatch } from 'umi';
 import styles from './index.less';
 
 const KnowledgeTesting = () => {
   const [form] = Form.useForm();
+  const testChunk = useTestChunkRetrieval();
 
   const dispatch = useDispatch();
-  const knowledgeBaseId = useKnowledgeBaseId();
 
   const handleTesting = async () => {
     const values = await form.validateFields();
-    console.info(values);
-    dispatch({
-      type: 'testingModel/testDocumentChunk',
-      payload: {
-        ...values,
-        kb_id: knowledgeBaseId,
-      },
-    });
+    testChunk(values);
   };
 
   useEffect(() => {

@@ -1,9 +1,12 @@
+import ChunkMethodModal from '@/components/chunk-method-modal';
+import SvgIcon from '@/components/svg-icon';
 import {
   useSelectDocumentList,
   useSetDocumentStatus,
 } from '@/hooks/documentHooks';
 import { useSelectParserList } from '@/hooks/userSettingHook';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { getExtension } from '@/utils/documentUtils';
 import {
   FileOutlined,
   FileTextOutlined,
@@ -15,6 +18,7 @@ import {
   Button,
   Divider,
   Dropdown,
+  Flex,
   Input,
   Space,
   Switch,
@@ -38,8 +42,6 @@ import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
-import ChunkMethodModal from '@/components/chunk-method-modal';
-import { getExtension } from '@/utils/documentUtils';
 import styles from './index.less';
 
 const KnowledgeFile = () => {
@@ -114,10 +116,19 @@ const KnowledgeFile = () => {
       dataIndex: 'name',
       key: 'name',
       fixed: 'left',
-      render: (text: any, { id, thumbnail }) => (
+      render: (text: any, { id, thumbnail, name }) => (
         <div className={styles.tochunks} onClick={() => toChunk(id)}>
-          <img className={styles.img} src={thumbnail} alt="" />
-          {text}
+          <Flex gap={10} align="center">
+            {thumbnail ? (
+              <img className={styles.img} src={thumbnail} alt="" />
+            ) : (
+              <SvgIcon
+                name={`file-icon/${getExtension(name)}`}
+                width={24}
+              ></SvgIcon>
+            )}
+            {text}
+          </Flex>
         </div>
       ),
     },

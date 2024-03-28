@@ -104,7 +104,7 @@ const TestingResult = ({ handleTesting }: IProps) => {
             <Flex gap={'middle'}>
               {x.img_id && (
                 <Popover
-                  placement="topRight"
+                  placement="left"
                   content={
                     <Image
                       id={x.img_id}

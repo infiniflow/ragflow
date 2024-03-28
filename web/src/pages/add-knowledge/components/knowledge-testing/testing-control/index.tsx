@@ -2,9 +2,8 @@ import SimilaritySlider from '@/components/similarity-slider';
 import { Button, Card, Divider, Flex, Form, Input, Slider, Tag } from 'antd';
 import { FormInstance } from 'antd/lib';
 
+import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import styles from './index.less';
-
-const list = [1, 2, 3];
 
 type FieldType = {
   similarity_threshold?: number;
@@ -20,6 +19,9 @@ interface IProps {
 
 const TestingControl = ({ form, handleTesting }: IProps) => {
   const question = Form.useWatch('question', { form, preserve: true });
+  const loading = useOneNamespaceEffectsLoading('testingModel', [
+    'testDocumentChunk',
+  ]);
 
   const buttonDisabled =
     !question || (typeof question === 'string' && question.trim() === '');
@@ -65,6 +67,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
                 size="small"
                 onClick={handleTesting}
                 disabled={buttonDisabled}
+                loading={loading}
               >
                 Testing
               </Button>
