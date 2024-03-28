@@ -41,8 +41,6 @@ export const useSubmitKnowledgeConfiguration = () => {
 };
 
 export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
-  // const [form] = Form.useForm();
-
   const knowledgeDetails = useSelectKnowledgeDetails();
   const parserList = useSelectParserList();
   const embeddingModelOptions = useSelectLlmOptions();
@@ -69,7 +67,11 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
     });
   }, [form, knowledgeDetails]);
 
-  return { parserList, embeddingModelOptions };
+  return {
+    parserList,
+    embeddingModelOptions,
+    disabled: knowledgeDetails.chunk_num > 0,
+  };
 };
 
 export const useSelectKnowledgeDetailsLoading = () =>
