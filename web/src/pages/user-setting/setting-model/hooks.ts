@@ -28,8 +28,12 @@ export const useSubmitApiKey = () => {
   } = useSetModalState();
 
   const onApiKeySavingOk = useCallback(
-    async (apiKey: string) => {
-      const ret = await saveApiKey({ ...savingParams, api_key: apiKey });
+    async (apiKey: string, baseUrl: string) => {
+      const ret = await saveApiKey({
+        ...savingParams,
+        api_key: apiKey,
+        base_url: baseUrl,
+      });
 
       if (ret === 0) {
         hideApiKeyModal();
@@ -53,6 +57,7 @@ export const useSubmitApiKey = () => {
   return {
     saveApiKeyLoading: loading,
     initialApiKey: '',
+    llmFactory: savingParams.llm_factory,
     onApiKeySavingOk,
     apiKeyVisible,
     hideApiKeyModal,

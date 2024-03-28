@@ -163,7 +163,7 @@ export interface IApiKeySavingParams {
   api_key: string;
   llm_name?: string;
   model_type?: string;
-  api_base?: string;
+  base_url?: string;
 }
 
 export const useSaveApiKey = () => {
