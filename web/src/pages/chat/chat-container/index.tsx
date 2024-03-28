@@ -95,7 +95,7 @@ const MessageItem = ({
           className={styles.referencePopoverWrapper}
         >
           <Popover
-            placement="topRight"
+            placement="left"
             content={
               <Image
                 id={chunkItem?.img_id}

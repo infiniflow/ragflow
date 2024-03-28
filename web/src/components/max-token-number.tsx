@@ -3,7 +3,7 @@ import { Flex, Form, InputNumber, Slider } from 'antd';
 const MaxTokenNumber = () => {
   return (
     <Form.Item
-      label="Token number"
+      label="Chunk token number"
       tooltip="It determine the token number of a chunk approximately."
     >
       <Flex gap={20} align="center">

@@ -15,7 +15,7 @@ const { Option } = Select;
 const ConfigurationForm = ({ form }: { form: FormInstance }) => {
   const { submitKnowledgeConfiguration, submitLoading } =
     useSubmitKnowledgeConfiguration();
-  const { parserList, embeddingModelOptions } =
+  const { parserList, embeddingModelOptions, disabled } =
     useFetchKnowledgeConfigurationOnMount(form);
 
   const onFinishFailed = (errorInfo: any) => {
@@ -90,6 +90,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
         <Select
           placeholder="Please select a embedding model"
           options={embeddingModelOptions}
+          disabled={disabled}
         ></Select>
       </Form.Item>
       <Form.Item
@@ -98,7 +99,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
         tooltip="The instruction is at right."
         rules={[{ required: true }]}
       >
-        <Select placeholder="Please select a chunk method">
+        <Select placeholder="Please select a chunk method" disabled={disabled}>
           {parserList.map((x) => (
             <Option value={x.value} key={x.value}>
               {x.label}
