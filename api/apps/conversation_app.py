@@ -194,7 +194,8 @@ def chat(dialog, messages, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         chat_logger.info("Use SQL to retrieval:{}".format(questions[-1]))
-        return use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl)
+        ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl)
+        if ans: return ans
 
     prompt_config = dialog.prompt_config
     for p in prompt_config["parameters"]:
@@ -305,7 +306,7 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
 
     tbl, sql = get_table()
     if tbl is None:
-        return None, None
+        return None
     if tbl.get("error") and tried_times <= 2:
         user_promt = """
         表名：{}；
@@ -333,7 +334,7 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
     chat_logger.info("GET table: {}".format(tbl))
     print(tbl)
     if tbl.get("error") or len(tbl["rows"]) == 0:
-        return None, None
+        return None
 
     docid_idx = set([ii for ii, c in enumerate(
         tbl["columns"]) if c["name"] == "doc_id"])
