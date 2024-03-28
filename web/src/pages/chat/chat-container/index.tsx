@@ -36,6 +36,8 @@ import {
   useSendMessage,
 } from '../hooks';
 
+import SvgIcon from '@/components/svg-icon';
+import { getExtension, isPdf } from '@/utils/documentUtils';
 import styles from './index.less';
 
 const reg = /(#{2}\d+\${2})/g;
@@ -74,7 +76,10 @@ const MessageItem = ({
   const isAssistant = item.role === MessageType.Assistant;
 
   const handleDocumentButtonClick = useCallback(
-    (documentId: string, chunk: IChunk) => () => {
+    (documentId: string, chunk: IChunk, isPdf: boolean) => () => {
+      if (!isPdf) {
+        return;
+      }
       clickDocumentButton(documentId, chunk);
     },
     [clickDocumentButton],
@@ -88,26 +93,31 @@ const MessageItem = ({
         (x) => x?.doc_id === chunkItem?.doc_id,
       );
       const documentId = document?.doc_id;
+      const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
+      const fileExtension = documentId ? getExtension(document?.doc_name) : '';
+      const imageId = chunkItem?.img_id;
       return (
         <Flex
           key={chunkItem?.chunk_id}
           gap={10}
           className={styles.referencePopoverWrapper}
         >
-          <Popover
-            placement="left"
-            content={
+          {imageId && (
+            <Popover
+              placement="left"
+              content={
+                <Image
+                  id={imageId}
+                  className={styles.referenceImagePreview}
+                ></Image>
+              }
+            >
               <Image
-                id={chunkItem?.img_id}
-                className={styles.referenceImagePreview}
+                id={imageId}
+                className={styles.referenceChunkImage}
               ></Image>
-            }
-          >
-            <Image
-              id={chunkItem?.img_id}
-              className={styles.referenceChunkImage}
-            ></Image>
-          </Popover>
+            </Popover>
+          )}
           <Space direction={'vertical'}>
             <div
               dangerouslySetInnerHTML={{
@@ -116,11 +126,23 @@ const MessageItem = ({
               className={styles.chunkContentText}
             ></div>
             {documentId && (
-              <Flex gap={'middle'}>
-                <img src={fileThumbnails[documentId]} alt="" />
+              <Flex gap={'small'}>
+                {fileThumbnail ? (
+                  <img src={fileThumbnail} alt="" />
+                ) : (
+                  <SvgIcon
+                    name={`file-icon/${fileExtension}`}
+                    width={24}
+                  ></SvgIcon>
+                )}
                 <Button
                   type="link"
-                  onClick={handleDocumentButtonClick(documentId, chunkItem)}
+                  className={styles.documentLink}
+                  onClick={handleDocumentButtonClick(
+                    documentId,
+                    chunkItem,
+                    fileExtension === 'pdf',
+                  )}
                 >
                   {document?.doc_name}
                 </Button>
@@ -224,17 +246,31 @@ const MessageItem = ({
               <List
                 bordered
                 dataSource={referenceDocumentList}
-                renderItem={(item) => (
-                  <List.Item>
-                    {/* <SvgIcon name={getFileIcon(item.doc_name)}></SvgIcon> */}
-                    <Flex gap={'middle'}>
-                      <img src={fileThumbnails[item.doc_id]}></img>
-                      <NewDocumentLink documentId={item.doc_id}>
-                        {item.doc_name}
-                      </NewDocumentLink>
-                    </Flex>
-                  </List.Item>
-                )}
+                renderItem={(item) => {
+                  const fileThumbnail = fileThumbnails[item.doc_id];
+                  const fileExtension = getExtension(item.doc_name);
+                  return (
+                    <List.Item>
+                      <Flex gap={'small'} align="center">
+                        {fileThumbnail ? (
+                          <img src={fileThumbnail}></img>
+                        ) : (
+                          <SvgIcon
+                            name={`file-icon/${fileExtension}`}
+                            width={24}
+                          ></SvgIcon>
+                        )}
+
+                        <NewDocumentLink
+                          documentId={item.doc_id}
+                          preventDefault={!isPdf(item.doc_name)}
+                        >
+                          {item.doc_name}
+                        </NewDocumentLink>
+                      </Flex>
+                    </List.Item>
+                  );
+                }}
               />
             )}
           </Flex>

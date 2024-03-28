@@ -1,6 +1,7 @@
 import { ReactComponent as NavigationPointerIcon } from '@/assets/svg/navigation-pointer.svg';
 import NewDocumentLink from '@/components/new-document-link';
 import { ITestingDocument } from '@/interfaces/database/knowledge';
+import { isPdf } from '@/utils/documentUtils';
 import { Table, TableProps } from 'antd';
 import { useDispatch, useSelector } from 'umi';
 
@@ -33,8 +34,8 @@ const SelectFiles = ({ handleTesting }: IProps) => {
       title: 'View',
       key: 'view',
       width: 50,
-      render: (_, { doc_id }) => (
-        <NewDocumentLink documentId={doc_id}>
+      render: (_, { doc_id, doc_name }) => (
+        <NewDocumentLink documentId={doc_id} preventDefault={!isPdf(doc_name)}>
           <NavigationPointerIcon />
         </NewDocumentLink>
       ),
