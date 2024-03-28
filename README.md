@@ -28,7 +28,7 @@
 </div>
 
 ## 🌟Key Features
-- :candy: **Custom-build document understanding engine.** Our deep learning engine is made according to the needs of analyzing and searching various type of documents in different domain.
+- 🍭**Custom-build document understanding engine.** Our deep learning engine is made according to the needs of analyzing and searching various type of documents in different domain.
   - For documents from different domain for different purpose, the engine applys different analyzing and search strategy.
   - Easily intervene and manipulate the data proccessing procedure when things goes beyond expectation.
   - Multi-media document understanding is supported using OCR and multi-modal LLM. 
@@ -37,11 +37,10 @@
   - Put the table accrossing the pages together.
   - Reconstruct the table structure components into html table.  
 - **Querying database dumped data are supported.** After uploading tables from any database, you can search any data records just by asking.
-  - Instead of using SQL to query a database, every one cat get the wanted data just by asking using natrual language.
-  - The record number uploaded is not limited.
-  - Some extra description of column headers should be provided.  
+  - You can now query a database using natural language instead of using SQL.
+  - The record number uploaded is not limited. 
 - **Reasoned and well-founded answers.** The cited document part in LLM's answer is provided and pointed out in the original document.
-  - The answers are based on retrieved result for which we apply vector-keyword hybrids search and rerank.
+  - The answers are based on retrieved result for which we apply vector-keyword hybrids search and re-rank.
   - The part of document cited in the answer is presented in the most expressive way.
   - For PDF file, the cited parts in document can be located in the original PDF.  
 
@@ -50,21 +49,21 @@
 
 
 ## 🎬 Get Started
+
 ### 📝Prerequisites
 - CPU >= 2 cores
-- RAM >= 8GB
+- RAM >= 8 GB
 
 Then, you need to check the following command:
 ```bash
 121:/ragflow# sysctl vm.max_map_count
 vm.max_map_count = 262144
 ```
-If **vm.max_map_count** is not larger  than 65535:
+If **vm.max_map_count** is not greater  than 65535:
 ```bash
 121:/ragflow# sudo sysctl -w vm.max_map_count=262144
 ```
-However, this change is not persistent and will be reset after a system reboot. 
-To make the change permanent, you need to update **/etc/sysctl.conf**, adding or updating the following line:
+Note that this change is reset after a system reboot. To render your change permanent, add or update the following line in **/etc/sysctl.conf**:
 
 ```bash
 vm.max_map_count=262144
@@ -72,13 +71,14 @@ vm.max_map_count=262144
 
 ### Install docker
 
-If your machine doesn't have *Docker* installed, see [Install Docker Engine](https://docs.docker.com/engine/install/)
+If you have not installed *Docker* on your local machine, see [Install Docker Engine](https://docs.docker.com/engine/install/)
 
 ### Quick Start
 
 > - In [service_conf.yaml](./docker/service_conf.yaml), configuration of *LLM* in **user_default_llm** is strongly recommended. 
 > In **user_default_llm** of [service_conf.yaml](./docker/service_conf.yaml), you need to specify LLM factory and your own _API_KEY_.
-> It's OK if you don't have _API_KEY_ at the moment, you can specify it later at the setting part after starting and logging in to the system.
+> If you do not have _API_KEY_ at the moment, you can specify it in 
+Settings the next time you log in to the system.
 > - RagFlow supports the flowing LLM factory, with more coming in the pipeline: 
 > [OpenAI](https://platform.openai.com/login?launch), [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model), 
 > [ZHIPU-AI](https://open.bigmodel.cn/), [Moonshot](https://platform.moonshot.cn/docs/docs)
@@ -96,14 +96,15 @@ $ docker build  -t infiniflow/ragflow:v1.0 .
 $ cd ragflow/docker
 $ docker compose up -d
 ```
-> The core image is about 15 GB in size, please be patient for the first time
+> The core image is about 15 GB in size and may take a while to load.
 
-After pulling all the images and running up, use the following command to check the server status. If you can have the following outputs, 
-_**Hallelujah!**_ You have successfully launched the system.
-
+Check the server status after pulling all images and running up:
 ```bash
 $ docker logs -f  ragflow-server
+```
+*Hallelujah! The following outputs indicates that you have successfully launched the system:*
 
+```bash
     ____                 ______ __               
    / __ \ ____ _ ____ _ / ____// /____  _      __
   / /_/ // __ `// __ `// /_   / // __ \| | /| / /
@@ -128,10 +129,10 @@ Open your browser, enter the IP address of your server, _**Hallelujah**_ again!
 ## 🔧 Configurations
 
 If you need to change the default setting of the system when you deploy it. There several ways to configure it. 
-Please refer to [README](./docker/README.md) and manually set the configuration. 
+Please refer to this [README](./docker/README.md) to manually update the configuration. 
 After changing something, please run *docker-compose up -d* again. 
 
-> If you want to change the basic setups, like port, password .etc., please refer to [.env](./docker/.env) before starting the system.
+> If you want to change the basic setups, like port, password .etc., please refer to [.env](./docker/.env) before starting up the system.
 
 > If you change anything in [.env](./docker/.env), please check [service_conf.yaml](./docker/service_conf.yaml) which is a configuration of the back-end service and should be consistent with [.env](./docker/.env).
 
@@ -141,9 +142,9 @@ See the [RagFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🏄Community
 
-- Discord
+- [Discord](https://discord.gg/uqQ4YMDf)
 - X
-- GitHub Discussions
+- [GitHub Discussions]()
 - YouTube
 - WeChat
 
