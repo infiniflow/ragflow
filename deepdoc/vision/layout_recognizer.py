@@ -17,7 +17,6 @@ from copy import deepcopy
 import numpy as np
 from huggingface_hub import snapshot_download
 
-from api.db import ParserType
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import Recognizer
 
@@ -39,17 +38,14 @@ class LayoutRecognizer(Recognizer):
 
     def __init__(self, domain):
         try:
-            model_dir = snapshot_download(
-                repo_id="InfiniFlow/deepdoc",
-                local_dir=os.path.join(
+            model_dir = os.path.join(
                     get_project_base_directory(),
-                    "rag/res/deepdoc"),
-                local_files_only=True)
+                    "rag/res/deepdoc")
+            super().__init__(self.labels, domain, model_dir)
         except Exception as e:
             model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
+            super().__init__(self.labels, domain, model_dir)
 
-        # os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
-        super().__init__(self.labels, domain, model_dir)
         self.garbage_layouts = ["footer", "header", "reference"]
 
     def __call__(self, image_list, ocr_res, scale_factor=3,

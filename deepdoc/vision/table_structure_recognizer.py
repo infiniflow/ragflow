@@ -35,17 +35,11 @@ class TableStructureRecognizer(Recognizer):
 
     def __init__(self):
         try:
-            model_dir = snapshot_download(
-                repo_id="InfiniFlow/deepdoc",
-                local_dir=os.path.join(
+            super().__init__(self.labels, "tsr", os.path.join(
                     get_project_base_directory(),
-                    "rag/res/deepdoc"),
-                local_files_only=True)
+                    "rag/res/deepdoc"))
         except Exception as e:
-            model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
-
-        # os.path.join(get_project_base_directory(), "rag/res/deepdoc/"))
-        super().__init__(self.labels, "tsr", model_dir)
+            super().__init__(self.labels, "tsr", snapshot_download(repo_id="InfiniFlow/deepdoc"))
 
     def __call__(self, images, thr=0.2):
         tbls = super().__call__(images, thr)
