@@ -247,7 +247,7 @@ class Dealer:
                       for ck in chunks]
         cites = {}
         thr = 0.63
-        while len(cites.keys()) == 0 and pieces_ and chunks_tks:
+        while thr>0.3 and len(cites.keys()) == 0 and pieces_ and chunks_tks:
             for i, a in enumerate(pieces_):
                 sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i],
                                                                 chunk_v,

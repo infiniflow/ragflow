@@ -480,17 +480,16 @@ class OCR(object):
         """
         if not model_dir:
             try:
-                model_dir = snapshot_download(
-                    repo_id="InfiniFlow/deepdoc",
-                    local_dir=os.path.join(
+                model_dir = os.path.join(
                         get_project_base_directory(),
-                        "rag/res/deepdoc"),
-                    local_files_only=True)
+                        "rag/res/deepdoc")
+                self.text_detector = TextDetector(model_dir)
+                self.text_recognizer = TextRecognizer(model_dir)
             except Exception as e:
                 model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
+                self.text_detector = TextDetector(model_dir)
+                self.text_recognizer = TextRecognizer(model_dir)
 
-        self.text_detector = TextDetector(model_dir)
-        self.text_recognizer = TextRecognizer(model_dir)
         self.drop_score = 0.5
         self.crop_image_res_index = 0
 
