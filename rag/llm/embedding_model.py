@@ -51,7 +51,7 @@ class Base(ABC):
 
 
 class HuEmbedding(Base):
-    def __init__(self, key="", model_name=""):
+    def __init__(self, **kwargs):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
 
@@ -81,8 +81,9 @@ class HuEmbedding(Base):
 
 
 class OpenAIEmbed(Base):
-    def __init__(self, key, model_name="text-embedding-ada-002"):
-        self.client = OpenAI(api_key=key)
+    def __init__(self, key, model_name="text-embedding-ada-002", base_url="https://api.openai.com/v1"):
+        if not base_url: base_url="https://api.openai.com/v1"
+        self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=32):
@@ -98,7 +99,7 @@ class OpenAIEmbed(Base):
 
 
 class QWenEmbed(Base):
-    def __init__(self, key, model_name="text_embedding_v2"):
+    def __init__(self, key, model_name="text_embedding_v2", **kwargs):
         dashscope.api_key = key
         self.model_name = model_name
 
@@ -131,7 +132,7 @@ class QWenEmbed(Base):
 
 
 class ZhipuEmbed(Base):
-    def __init__(self, key, model_name="embedding-2"):
+    def __init__(self, key, model_name="embedding-2", **kwargs):
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
 

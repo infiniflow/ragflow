@@ -31,8 +31,9 @@ class Base(ABC):
 
 
 class GptTurbo(Base):
-    def __init__(self, key, model_name="gpt-3.5-turbo"):
-        self.client = OpenAI(api_key=key)
+    def __init__(self, key, model_name="gpt-3.5-turbo", base_url="https://api.openai.com/v1"):
+        if not base_url: base_url="https://api.openai.com/v1"
+        self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
@@ -53,9 +54,10 @@ class GptTurbo(Base):
 
 
 class MoonshotChat(GptTurbo):
-    def __init__(self, key, model_name="moonshot-v1-8k"):
+    def __init__(self, key, model_name="moonshot-v1-8k", base_url="https://api.moonshot.cn/v1"):
+        if not base_url: base_url="https://api.moonshot.cn/v1"
         self.client = OpenAI(
-            api_key=key, base_url="https://api.moonshot.cn/v1",)
+            api_key=key, base_url=base_url)
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
@@ -76,7 +78,7 @@ class MoonshotChat(GptTurbo):
 
 
 class QWenChat(Base):
-    def __init__(self, key, model_name=Generation.Models.qwen_turbo):
+    def __init__(self, key, model_name=Generation.Models.qwen_turbo, **kwargs):
         import dashscope
         dashscope.api_key = key
         self.model_name = model_name
@@ -105,7 +107,7 @@ class QWenChat(Base):
 
 
 class ZhipuChat(Base):
-    def __init__(self, key, model_name="glm-3-turbo"):
+    def __init__(self, key, model_name="glm-3-turbo", **kwargs):
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
 
@@ -154,7 +156,7 @@ class LocalLLM(Base):
 
             return do_rpc
 
-    def __init__(self, key, model_name="glm-3-turbo"):
+    def __init__(self, **kwargs):
         self.client = LocalLLM.RPCProxy("127.0.0.1", 7860)
 
     def chat(self, system, history, gen_conf):

@@ -20,7 +20,7 @@
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
 </p>
-[RagFlow](http://demo.ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, with reasoned and well-founded answers to your question. Clone this repository, you can deploy your own knowledge management platform to empower your business with AI.
+[RagFlow](https://demo.ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, with reasoned and well-founded answers to your question. Clone this repository, you can deploy your own knowledge management platform to empower your business with AI.
     
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -56,12 +56,12 @@
 
 Then, you need to check the following command:
 ```bash
-121:/ragflow# sysctl vm.max_map_count
+$ sysctl vm.max_map_count
 vm.max_map_count = 262144
 ```
 If **vm.max_map_count** is not greater  than 65535:
 ```bash
-121:/ragflow# sudo sysctl -w vm.max_map_count=262144
+$ sudo sysctl -w vm.max_map_count=262144
 ```
 Note that this change is reset after a system reboot. To render your change permanent, add or update the following line in **/etc/sysctl.conf**:
 
@@ -126,6 +126,7 @@ Open your browser, enter the IP address of your server, _**Hallelujah**_ again!
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/d6ac5664-c237-4200-a7c2-a4a00691b485" width="1000"/>
 </div>
+
 ## 🔧 Configurations
 
 If you need to change the default setting of the system when you deploy it. There several ways to configure it. 
