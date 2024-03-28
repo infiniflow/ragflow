@@ -280,4 +280,5 @@ if __name__ == "__main__":
     from mpi4py import MPI
 
     comm = MPI.COMM_WORLD
-    main(int(sys.argv[2]), int(sys.argv[1]))
+    while True:
+        main(int(sys.argv[2]), int(sys.argv[1]))

@@ -43,6 +43,8 @@ class Recognizer(object):
             if not os.path.exists(model_file_path):
                 model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
                 model_file_path = os.path.join(model_dir, task_name + ".onnx")
+        else:
+            model_file_path = os.path.join(model_dir, task_name + ".onnx")
 
         if not os.path.exists(model_file_path):
             raise ValueError("not find model file path {}".format(

@@ -67,8 +67,9 @@ class Base(ABC):
 
 
 class GptV4(Base):
-    def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese"):
-        self.client = OpenAI(api_key=key)
+    def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1"):
+        if not base_url: base_url="https://api.openai.com/v1"
+        self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
 
@@ -84,7 +85,7 @@ class GptV4(Base):
 
 
 class QWenCV(Base):
-    def __init__(self, key, model_name="qwen-vl-chat-v1", lang="Chinese"):
+    def __init__(self, key, model_name="qwen-vl-chat-v1", lang="Chinese", **kwargs):
         import dashscope
         dashscope.api_key = key
         self.model_name = model_name
@@ -123,7 +124,7 @@ class QWenCV(Base):
 
 
 class Zhipu4V(Base):
-    def __init__(self, key, model_name="glm-4v", lang="Chinese"):
+    def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
         self.lang = lang
@@ -140,7 +141,7 @@ class Zhipu4V(Base):
 
 
 class LocalCV(Base):
-    def __init__(self, key, model_name="glm-4v", lang="Chinese"):
+    def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         pass
 
     def describe(self, image, max_tokens=1024):
