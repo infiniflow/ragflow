@@ -2,6 +2,8 @@ import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
 import { useEffect, useState } from 'react';
 import { Icon, useDispatch, useNavigate, useSelector } from 'umi';
+import RightPanel from './right-panel';
+
 import styles from './index.less';
 
 const Login = () => {
@@ -73,7 +75,7 @@ const Login = () => {
   return (
     <div className={styles.loginPage}>
       <div className={styles.loginLeft}>
-        <div className={styles.modal}>
+        <div className={styles.leftContainer}>
           <div className={styles.loginTitle}>
             <div>{title === 'login' ? 'Sign in' : 'Create an account'}</div>
             <span>
@@ -189,7 +191,9 @@ const Login = () => {
           </Form>
         </div>
       </div>
-      <div className={styles.loginRight}></div>
+      <div className={styles.loginRight}>
+        <RightPanel></RightPanel>
+      </div>
     </div>
   );
 };

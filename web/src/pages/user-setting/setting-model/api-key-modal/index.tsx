@@ -80,7 +80,7 @@ const ApiKeyModal = ({
             name="base_url"
             tooltip="If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key."
           >
-            <Input />
+            <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
         )}
       </Form>
