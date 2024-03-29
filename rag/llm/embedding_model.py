@@ -51,7 +51,7 @@ class Base(ABC):
 
 
 class HuEmbedding(Base):
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
 

@@ -69,7 +69,8 @@ def set_api_key():
         return get_data_error_result(retmsg=msg)
 
     llm = {
-        "api_key": req["api_key"]
+        "api_key": req["api_key"],
+        "api_base": req.get("base_url", "")
     }
     for n in ["model_type", "llm_name"]:
         if n in req:
