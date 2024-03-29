@@ -1,32 +1,77 @@
 @import '../../theme/vars';
 
 .loginPage {
-  // width: 100%;
   display: flex;
-
   .loginLeft {
     // width: 610px;
     width: 40%;
     background-color: #fff;
     height: 100vh;
+    display: flex;
+    align-items: center;
   }
 
-  @media screen and (max-width: 957px) {
-    .loginLeft {
-      // width: 610px;
-      width: 100%;
-      background-color: #fff;
-      height: 100vh;
-    }
-
-    .modal {
-      width: 80%;
-    }
+  .leftContainer {
+    width: 60%;
+    padding: 5px, 0px, 5px, 0px;
+    margin: 0 auto;
   }
 
   .loginRight {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex: 1;
-    background-color: #f2f4f7;
+    position: relative;
+    &::before {
+      content: ' ';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: rgba(24, 73, 169, 0.6);
+      background-image: url('@/assets/svg/login-background.svg');
+      background-size: cover;
+      background-blend-mode: multiply;
+      filter: blur(3px);
+      background-position: center;
+      z-index: -1;
+    }
+    .white {
+      color: #fff;
+    }
+    .pink {
+      color: #e9d7fe;
+    }
+    .rightPanel {
+      max-width: 640px;
+      .loginTitle {
+        font-size: 72px;
+        font-style: normal;
+        font-weight: 600;
+        line-height: 90px;
+        letter-spacing: -1.44px;
+      }
+      .loginDescription {
+        font-size: 20px;
+        font-style: normal;
+        font-weight: 500;
+        line-height: 30px;
+      }
+      .loginRateNumber {
+        font-size: 16px;
+        font-style: normal;
+        font-weight: 600;
+        line-height: 24px;
+      }
+      .loginRateReviews {
+        font-size: 16px;
+        font-style: normal;
+        font-weight: 500;
+        line-height: 24px;
+      }
+    }
   }
 
   .loginTitle {
@@ -46,12 +91,16 @@
       color: #000000a6;
     }
   }
-}
 
-.modal {
-  // width: 360px;
-  width: 60%;
-  height: 724px;
-  padding: 5px, 0px, 5px, 0px;
-  margin: 80px auto;
+  @media screen and (max-width: 957px) {
+    .loginLeft {
+      width: 100%;
+      background-color: #fff;
+      height: 100%;
+    }
+
+    .modal {
+      width: 80%;
+    }
+  }
 }

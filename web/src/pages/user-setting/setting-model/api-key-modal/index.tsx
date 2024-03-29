@@ -78,10 +78,9 @@ const ApiKeyModal = ({
           <Form.Item<FieldType>
             label="Base-Url"
             name="base_url"
-            tooltip="The API key can be obtained by registering the corresponding LLM supplier."
-            rules={[{ required: true, message: 'Please input base url!' }]}
+            tooltip="If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key."
           >
-            <Input />
+            <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
         )}
       </Form>
