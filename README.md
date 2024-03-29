@@ -48,11 +48,11 @@
 ## 🤺RagFlow vs. other RAG applications
 
 | Feature | RagFlow | Langchain-Chatchat | Assistants API | QAnythig | LangChain |
-|---------|:---------:|:----------------:|:-----------:|:-----------:|:-----------:|
+|---------|:---------:|:-----------:|:-----------:|:-----------:|:-----------:|
 | **Well-Founded Answer** | :white_check_mark: | :x: | :x: | :x: | :x: |
 | **Trackable Chunking** | :white_check_mark: | :x: | :x: | :x: | :x: |
-| **Chunking Method** | Rich Variety | Naive | Naive | | Naive | Naive |
-| **Table Structure Recognition** | :white_check_mark: | :x: | | :x: | :x: | :x: |
+| **Chunking Method** | Rich Variety | Naive | Naive | Naive | Naive |
+| **Table Structure Recognition** | :white_check_mark: | :x: | :x: | :x: | :x: |
 | **Structured Data Lookup** | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
 | **Programming Approach** | API-oriented | API-oriented | API-oriented | API-oriented | Python Code-oriented |
 | **RAG Engine** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
