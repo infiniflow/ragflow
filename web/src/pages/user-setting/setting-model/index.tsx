@@ -120,6 +120,7 @@ const UserSettingModel = () => {
   const {
     saveApiKeyLoading,
     initialApiKey,
+    llmFactory,
     onApiKeySavingOk,
     apiKeyVisible,
     hideApiKeyModal,
@@ -215,6 +216,7 @@ const UserSettingModel = () => {
         loading={saveApiKeyLoading}
         initialValue={initialApiKey}
         onOk={onApiKeySavingOk}
+        llmFactory={llmFactory}
       ></ApiKeyModal>
       <SystemModelSettingModal
         visible={systemSettingVisible}

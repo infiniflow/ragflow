@@ -5,17 +5,20 @@ import { useEffect } from 'react';
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
   initialValue: string;
-  onOk: (name: string) => void;
+  llmFactory: string;
+  onOk: (name: string, baseUrl: string) => void;
   showModal?(): void;
 }
 
 type FieldType = {
   api_key?: string;
+  base_url?: string;
 };
 
 const ApiKeyModal = ({
   visible,
   hideModal,
+  llmFactory,
   loading,
   initialValue,
   onOk,
@@ -25,7 +28,7 @@ const ApiKeyModal = ({
   const handleOk = async () => {
     const ret = await form.validateFields();
 
-    return onOk(ret.api_key);
+    return onOk(ret.api_key, ret.base_url);
   };
 
   const handleCancel = () => {
@@ -55,8 +58,8 @@ const ApiKeyModal = ({
     >
       <Form
         name="basic"
-        labelCol={{ span: 4 }}
-        wrapperCol={{ span: 20 }}
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
         style={{ maxWidth: 600 }}
         onFinish={onFinish}
         onFinishFailed={onFinishFailed}
@@ -71,6 +74,16 @@ const ApiKeyModal = ({
         >
           <Input />
         </Form.Item>
+        {llmFactory === 'OpenAI' && (
+          <Form.Item<FieldType>
+            label="Base-Url"
+            name="base_url"
+            tooltip="The API key can be obtained by registering the corresponding LLM supplier."
+            rules={[{ required: true, message: 'Please input base url!' }]}
+          >
+            <Input />
+          </Form.Item>
+        )}
       </Form>
     </Modal>
   );
