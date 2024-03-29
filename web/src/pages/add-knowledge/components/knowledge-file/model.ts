@@ -225,11 +225,14 @@ const model: DvaModel<KFModelState> = {
   },
   subscriptions: {
     setup({ dispatch, history }) {
-      history.listen((location) => {
-        const state: { from: string } = (location.location.state ?? {
+      history.listen(({ location }) => {
+        const state: { from: string } = (location.state ?? {
           from: '',
         }) as { from: string };
-        if (state.from === '/knowledge') {
+        if (
+          state.from === '/knowledge' || // TODO: Just directly determine whether the current page is on the knowledge list page.
+          location.pathname === '/knowledge/dataset/upload'
+        ) {
           dispatch({
             type: 'kFModel/setPagination',
             payload: { current: 1, pageSize: 10 },
