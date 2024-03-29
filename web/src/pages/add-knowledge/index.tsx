@@ -1,9 +1,13 @@
 import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
-import { useSecondPathName, useThirdPathName } from '@/hooks/routeHook';
+import {
+  useNavigateWithFromState,
+  useSecondPathName,
+  useThirdPathName,
+} from '@/hooks/routeHook';
 import { Breadcrumb } from 'antd';
 import { ItemType } from 'antd/es/breadcrumb/Breadcrumb';
-import { useCallback, useEffect, useMemo } from 'react';
-import { Link, Outlet, useDispatch, useLocation, useNavigate } from 'umi';
+import { useEffect, useMemo } from 'react';
+import { Link, Outlet, useDispatch, useLocation } from 'umi';
 import Siderbar from './components/knowledge-sidebar';
 import {
   KnowledgeDatasetRouteKey,
@@ -15,7 +19,6 @@ import styles from './index.less';
 
 const KnowledgeAdding = () => {
   const dispatch = useDispatch();
-  const navigate = useNavigate();
   const knowledgeBaseId = useKnowledgeBaseId();
 
   const location = useLocation();
@@ -25,14 +28,12 @@ const KnowledgeAdding = () => {
   const datasetActiveKey: KnowledgeDatasetRouteKey =
     useThirdPathName() as KnowledgeDatasetRouteKey;
 
-  const gotoList = useCallback(() => {
-    navigate('/knowledge');
-  }, [navigate]);
+  const gotoList = useNavigateWithFromState();
 
   const breadcrumbItems: ItemType[] = useMemo(() => {
     const items: ItemType[] = [
       {
-        title: <a onClick={gotoList}>Knowledge Base</a>,
+        title: <a onClick={() => gotoList('/knowledge')}>Knowledge Base</a>,
       },
       {
         title: datasetActiveKey ? (

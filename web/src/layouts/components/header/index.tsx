@@ -6,8 +6,9 @@ import Toolbar from '../right-toolbar';
 
 import styles from './index.less';
 
+import { useNavigateWithFromState } from '@/hooks/routeHook';
 import { useCallback, useMemo } from 'react';
-import { useLocation, useNavigate } from 'umi';
+import { useLocation } from 'umi';
 
 const { Header } = Layout;
 
@@ -15,7 +16,7 @@ const RagHeader = () => {
   const {
     token: { colorBgContainer },
   } = theme.useToken();
-  const navigate = useNavigate();
+  const navigate = useNavigateWithFromState();
   const { pathname } = useLocation();
 
   const tagsData = useMemo(

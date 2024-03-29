@@ -56,7 +56,9 @@ const KnowledgeCard = ({ item }: IProps) => {
   };
 
   const handleCardClick = () => {
-    navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${item.id}`);
+    navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${item.id}`, {
+      state: { from: 'list' },
+    });
   };
 
   return (

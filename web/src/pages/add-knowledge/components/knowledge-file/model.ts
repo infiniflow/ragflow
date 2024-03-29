@@ -223,5 +223,21 @@ const model: DvaModel<KFModelState> = {
       return data;
     },
   },
+  subscriptions: {
+    setup({ dispatch, history }) {
+      history.listen((location) => {
+        const state: { from: string } = (location.location.state ?? {
+          from: '',
+        }) as { from: string };
+        if (state.from === '/knowledge') {
+          dispatch({
+            type: 'kFModel/setPagination',
+            payload: { current: 1, pageSize: 10 },
+          });
+        }
+        console.info(location);
+      });
+    },
+  },
 };
 export default model;
