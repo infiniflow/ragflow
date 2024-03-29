@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import json
+import math
 import re
 import logging
 import copy
@@ -167,4 +168,4 @@ class EsQueryer:
         #d = 1e-9
         # for k, v in dtwt.items():
         #    d += v * v
-        return s / q  # math.sqrt(q) / math.sqrt(d)
+        return s / q / max(1, math.sqrt(math.log10(max(len(qtwt.keys()), len(dtwt.keys())))))# math.sqrt(q) / math.sqrt(d)
