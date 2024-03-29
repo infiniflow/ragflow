@@ -143,7 +143,7 @@ class CommonService:
     @DB.connection_context()
     def filter_update(cls, filters, update_data):
         with DB.atomic():
-            cls.model.update(update_data).where(*filters).execute()
+            return cls.model.update(update_data).where(*filters).execute()
 
     @staticmethod
     def cut_list(tar_list, n):
