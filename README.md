@@ -47,19 +47,19 @@
 
 ## 🤺RagFlow vs. other RAG applications
 
-| Feature | RagFlow | Langchain-Chatchat | Dify.AI | Assistants API | QAnythig | LangChain |
-|---------|:---------:|:----------------:|:-----------:|:-----------:|:-----------:|:-----------:|
-| **Well-Founded Answer** | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
-| **Trackable Chunking** | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
-| **Chunking Method** | Rich Variety | Naive | Naive | Naive | Naive | Naive |
-| **Table Structure Recognition** | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
+| Feature | RagFlow | Langchain-Chatchat | Assistants API | QAnythig | LangChain |
+|---------|:---------:|:----------------:|:-----------:|:-----------:|:-----------:|
+| **Well-Founded Answer** | :white_check_mark: | :x: | :x: | :x: | :x: |
+| **Trackable Chunking** | :white_check_mark: | :x: | :x: | :x: | :x: |
+| **Chunking Method** | Rich Variety | Naive | Naive | | Naive | Naive |
+| **Table Structure Recognition** | :white_check_mark: | :x: | | :x: | :x: | :x: |
 | **Structured Data Lookup** | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
-| **Programming Approach** | API-oriented | API-oriented | API-oriented | API-oriented | API-oriented | Python Code-oriented |
-| **RAG Engine** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
-| **Prompt IDE** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
-| **Supported LLMs** | Rich Variety | Rich Variety | Rich Variety | OpenAI-only | QwenLLM | Rich Variety |
-| **Local Deployment** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: | :x: |
-| **Ecosystem Strategy** | Open Source | Open Source | Open Source | Close Source | Open Source | Open Source |
+| **Programming Approach** | API-oriented | API-oriented | API-oriented | API-oriented | Python Code-oriented |
+| **RAG Engine** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
+| **Prompt IDE** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
+| **Supported LLMs** | Rich Variety | Rich Variety | OpenAI-only | QwenLLM | Rich Variety |
+| **Local Deployment** | :white_check_mark: | :white_check_mark: | :x: | :x: | :x: |
+| **Ecosystem Strategy** | Open Source | Open Source | Close Source | Open Source | Open Source |
 
 ## 🔎 System Architecture
 
