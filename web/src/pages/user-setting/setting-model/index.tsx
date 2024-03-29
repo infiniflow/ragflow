@@ -24,6 +24,7 @@ import {
   Row,
   Space,
   Spin,
+  Tag,
   Typography,
 } from 'antd';
 import { useCallback } from 'react';
@@ -105,7 +106,13 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
             size="small"
             dataSource={item.llm}
             className={styles.llmList}
-            renderItem={(item) => <List.Item>{item.name}</List.Item>}
+            renderItem={(item) => (
+              <List.Item>
+                <Space>
+                  {item.name} <Tag color="#b8b8b8">{item.type}</Tag>
+                </Space>
+              </List.Item>
+            )}
           />
         )}
       </Card>
