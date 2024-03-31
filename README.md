@@ -55,7 +55,8 @@
 
 - CPU >= 2 cores
 - RAM >= 8 GB
-- Docker: If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
+- Docker
+  > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 ### Start up the server
 
@@ -102,35 +103,45 @@
    ```
    *The following output confirms a successful launch of the system:*
 
-```bash
-    ____                 ______ __               
-   / __ \ ____ _ ____ _ / ____// /____  _      __
-  / /_/ // __ `// __ `// /_   / // __ \| | /| / /
- / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ / 
-/_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/  
-              /____/                             
-
- * Running on all addresses (0.0.0.0)
- * Running on http://127.0.0.1:9380
- * Running on http://172.22.0.5:9380
-INFO:werkzeug:Press CTRL+C to quit
-```
+   ```bash
+       ____                 ______ __               
+      / __ \ ____ _ ____ _ / ____// /____  _      __
+     / /_/ // __ `// __ `// /_   / // __ \| | /| / /
+    / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ / 
+   /_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/  
+                 /____/                             
+     
+    * Running on all addresses (0.0.0.0)
+    * Running on http://127.0.0.1:9380
+    * Running on http://172.22.0.5:9380
+    INFO:werkzeug:Press CTRL+C to quit
+    ```
 
 5. In your web browser, enter the IP address of your server as prompted.
+   
    *The show is on!*
 
 
 ## 🔧 Configurations
 
-> The default serving port is 80, if you want to change that, refer to the [docker-compose.yml](./docker-compose.yaml) and change the left part of `80:80`, say `66:80`.
+When it comes to system configurations, you will need to manage the following files:
 
-If you need to change the default setting of the system when you deploy it. There several ways to configure it. 
-Please refer to this [README](./docker/README.md) to manually update the configuration. 
-Updates to system configurations require a system reboot to take effect *docker-compose up -d* again. 
+- [.env](./docker/.env): Keeps the fundamental setups for the system, such as `SVR_HTTP_PORT`, `MYSQL_PASSWORD`, and `MINIO_PASSWORD`.
+- [service_conf.yaml](./docker/service_conf.yaml): Configures the back-end services.
+- [docker-compose.yml](./docker-compose.yaml): The system relies on [docker-compose.yml](./docker-compose.yaml) to start up.
 
-> If you want to change the basic setups, like port, password .etc., please refer to [.env](./docker/.env) before starting up the system.
 
-> If you change anything in [.env](./docker/.env), please check [service_conf.yaml](./docker/service_conf.yaml) which is a configuration of the back-end service and should be consistent with [.env](./docker/.env).
+You must ensure that changes in [.env](./docker/.env) are in line with what are in [service_conf.yaml](./docker/service_conf.yaml). 
+
+> The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service configurations, and it is IMPORTANT to ensure that all environment settings listed in the [./docker/README](./docker/README.md) file should be aligned with the corresponding settings in the [service_conf.yaml](./docker/service_conf.yaml) file.
+
+To change the default serving port (80), go to [docker-compose.yml](./docker-compose.yaml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
+
+> Updates to all system configurations require a system reboot to take effect:
+> 
+> ```bash
+> $ docker-compose up -d
+> ```
 
 ## 🛠️ Build from source
 
