@@ -26,22 +26,23 @@
 [RAGFlow](http://demo.ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, with reasoned and well-founded answers to your question. Clone this repository, you can deploy your own knowledge management platform to empower your business with AI.
 
 ## 🌟 Key Features
-
-- 🍭**Custom-build document understanding engine.** Our deep learning engine is made according to the needs of analyzing and searching various type of documents in different domain.
-  - For documents from different domain for different purpose, the engine applies different analyzing and search strategy.
-  - Easily intervene and manipulate the data proccessing procedure when things goes beyond expectation.
-  - Multi-media document understanding is supported using OCR and multi-modal LLM. 
-- 🍭**State-of-the-art table structure and layout recognition.** Precisely extract and understand the document including table content. See [README.](./deepdoc/README.md)
-  - For PDF files, layout and table structures including row, column and span of them are recognized.
-  - Put the table accrossing the pages together.
-  - Reconstruct the table structure components into html table.  
-- **Querying database dumped data are supported.** After uploading tables from any database, you can search any data records just by asking.
-  - You can now query a database using natural language instead of using SQL.
-  - The record number uploaded is not limited. 
-- **Reasoned and well-founded answers.** The cited document part in LLM's answer is provided and pointed out in the original document.
-  - The answers are based on retrieved result for which we apply vector-keyword hybrids search and re-rank.
-  - The part of document cited in the answer is presented in the most expressive way.
-  - For PDF file, the cited parts in document can be located in the original PDF.  
+ 
+- 🍭 **"Quality in, quality out"**
+  - Deep document understanding-based knowledge extraction from unstructured data with complicated formats.
+  - Finds "needle in a data haystack" of literally unlimited tokens.
+- 🍱 **Template-based chunking**
+  - Intelligent and explainable.
+  - Plenty of template options to choose from.
+- 🌱 **Grounded citations with reduced hallucinations**
+  - Visualization of text chunking to allow human intervention.
+  - Quick view of the key references and traceable citations to support grounded answers.
+- 🍔 **Compatibility with heterogeneous data sources**
+  - Supports Word, slides, excel, txt, images, scanned copies, structured data, web pages, and more.
+- 🛀 **Automated and effortless RAG workflow**
+  - Streamlined RAG orchestration catered to both personal and large businesses.
+  - Configurable LLMs as well as embedding models.
+  - Multiple recall paired with fused re-ranking.
+  - Intuitive APIs for seamless integration with business.
 
 ## 🔎 System Architecture
 
@@ -97,7 +98,7 @@
 
    > The core image is about 15 GB in size and may take a while to load.
 
-4. Check the server status after pulling all images and having Docker up and running:
+4. Check the server status after having the server up and running:
    ```bash
    $ docker logs -f ragflow-server
    ```
@@ -117,9 +118,9 @@
     INFO:werkzeug:Press CTRL+C to quit
     ```
 
-5. In your web browser, enter the IP address of your server as prompted.
+5. In your web browser, enter the IP address of your server as prompted and log in to RAGFlow.
    
-   *The show is on!*
+   *The show is now on!*
 
 
 ## 🔧 Configurations
@@ -128,14 +129,14 @@ When it comes to system configurations, you will need to manage the following fi
 
 - [.env](./docker/.env): Keeps the fundamental setups for the system, such as `SVR_HTTP_PORT`, `MYSQL_PASSWORD`, and `MINIO_PASSWORD`.
 - [service_conf.yaml](./docker/service_conf.yaml): Configures the back-end services.
-- [docker-compose.yml](./docker-compose.yaml): The system relies on [docker-compose.yml](./docker-compose.yaml) to start up.
+- [docker-compose.yml](./docker/docker-compose.yml): The system relies on [docker-compose.yml](./docker/docker-compose.yml) to start up.
 
 
-You must ensure that changes in [.env](./docker/.env) are in line with what are in the [service_conf.yaml](./docker/service_conf.yaml) file. 
+You must ensure that changes to the [.env](./docker/.env) file are in line with what are in the [service_conf.yaml](./docker/service_conf.yaml) file. 
 
-> The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service configurations, and it is IMPORTANT to ensure that all environment settings listed in the [./docker/README](./docker/README.md) file should be aligned with the corresponding settings in the [service_conf.yaml](./docker/service_conf.yaml) file.
+> The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service configurations, and it is IMPORTANT to ensure that all environment settings listed in the [./docker/README](./docker/README.md) file are aligned with the corresponding configurations in the [service_conf.yaml](./docker/service_conf.yaml) file.
 
-To change the default serving port (80), go to [docker-compose.yml](./docker-compose.yaml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
+To change the default serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
 
 > Updates to all system configurations require a system reboot to take effect:
 > 
