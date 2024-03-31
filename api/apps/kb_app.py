@@ -13,10 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
 from api.db.services import duplicate_name
+from api.db.services.document_service import DocumentService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid, get_format_time
@@ -25,6 +27,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import Knowledgebase
 from api.settings import stat_logger, RetCode
 from api.utils.api_utils import get_json_result
+from rag.nlp import search
+from rag.utils import ELASTICSEARCH
 
 
 @manager.route('/create', methods=['post'])
@@ -125,10 +129,21 @@ def list():
 def rm():
     req = request.json
     try:
-        if not KnowledgebaseService.query(
-                created_by=current_user.id, id=req["kb_id"]):
+        kbs = KnowledgebaseService.query(
+                created_by=current_user.id, id=req["kb_id"])
+        if not kbs:
             return get_json_result(
                 data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
+
+        for doc in DocumentService.query(kb_id=req["kb_id"]):
+            ELASTICSEARCH.deleteByQuery(
+                Q("match", doc_id=doc.id), idxnm=search.index_name(kbs[0].tenant_id))
+
+            DocumentService.increment_chunk_num(
+                doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
+            if not DocumentService.delete(doc):
+                return get_data_error_result(
+                    retmsg="Database error (Document removal)!")
 
         if not KnowledgebaseService.update_by_id(
                 req["kb_id"], {"status": StatusEnum.INVALID.value}):

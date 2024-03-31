@@ -156,7 +156,7 @@ class LocalLLM(Base):
 
             return do_rpc
 
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         self.client = LocalLLM.RPCProxy("127.0.0.1", 7860)
 
     def chat(self, system, history, gen_conf):
