@@ -7,6 +7,23 @@ from threading import Thread
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
+def torch_gc():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            # with torch.cuda.device(DEVICE):
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        elif torch.backends.mps.is_available():
+            try:
+                from torch.mps import empty_cache
+                empty_cache()
+            except Exception as e:
+                pass
+    except Exception:
+        pass
+
+
 class RPCHandler:
     def __init__(self):
         self._functions = {}
@@ -49,6 +66,7 @@ def chat(messages, gen_conf):
     global tokenizer
     model = Model()
     try:
+        torch_gc()
         conf = {
             "max_new_tokens": int(
                 gen_conf.get(

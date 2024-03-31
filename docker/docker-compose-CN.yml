@@ -1,0 +1,133 @@
+version: '2.2'
+services:
+  es01:
+    container_name: ragflow-es-01
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - esdata01:/usr/share/elasticsearch/data
+    ports:
+      - ${ES_PORT}:9200
+    environment:
+      - node.name=es01
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=es01
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=false
+      - xpack.security.enabled=false
+      - TZ=${TIMEZONE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow
+    restart: always
+
+  kibana:
+    depends_on:
+        es01:
+          condition: service_healthy
+    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+    container_name: ragflow-kibana
+    volumes:
+      - kibanadata:/usr/share/kibana/data
+    ports:
+      - ${KIBANA_PORT}:5601
+    environment:
+      - SERVERNAME=kibana
+      - ELASTICSEARCH_HOSTS=http://es01:9200
+      - TZ=${TIMEZONE}
+    mem_limit: ${MEM_LIMIT}
+    networks:
+      - ragflow
+
+  mysql:
+    image: mysql:5.7.18
+    container_name: ragflow-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
+      - TZ=${TIMEZONE}
+    command:
+      --max_connections=1000
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+      --default-authentication-plugin=mysql_native_password
+      --tls_version="TLSv1.2,TLSv1.3"
+      --init-file /data/application/init.sql
+    ports:
+      - ${MYSQL_PORT}:3306
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/data/application/init.sql
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    restart: always
+
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
+    container_name: ragflow-minio
+    command: server --console-address ":9001" /data
+    ports:
+      - 9000:9000
+      - 9001:9001
+    environment:
+      - MINIO_ROOT_USER=${MINIO_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
+      - TZ=${TIMEZONE}
+    volumes:
+      - minio_data:/data
+    networks:
+      - ragflow
+    restart: always
+
+
+  ragflow:
+    depends_on:
+      mysql:
+        condition: service_healthy
+      es01:
+        condition: service_healthy
+    image: swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0
+    container_name: ragflow-server
+    ports:
+      - ${SVR_HTTP_PORT}:9380
+      - 80:80
+      - 443:443
+    volumes:
+      - ./service_conf.yaml:/ragflow/conf/service_conf.yaml
+      - ./ragflow-logs:/ragflow/logs
+      - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+      - ./nginx/proxy.conf:/etc/nginx/proxy.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    environment:
+      - TZ=${TIMEZONE}
+    networks:
+      - ragflow
+    restart: always
+
+
+volumes:
+  esdata01:
+    driver: local
+  kibanadata:
+    driver: local
+  mysql_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  ragflow:
+    driver: bridge
