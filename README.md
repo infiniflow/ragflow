@@ -72,7 +72,7 @@
 > $ sudo sysctl -w vm.max_map_count=262144
 > ```
 >
-> This change will be reset after a system reboot. To ensure your change remains permanent, add or update the following line in **/etc/sysctl.conf** accordingly:
+> This change will be reset after a system reboot. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
 >
 > ```bash
 > vm.max_map_count=262144
@@ -90,7 +90,7 @@
 
    
 
-2. Recommended: In **docker/service_conf.yaml**, select the desired LLM factory in `user_default_llm` and update  the `API_KEY` field with your own.
+2. **Recommended**: In **docker/service_conf.yaml**, select the desired LLM factory in `user_default_llm` and update  the `API_KEY` field with your own.
 
 > - You can still continue with the default settings, but it is highly recommended that you use your own API key the next time you log into the system. 
 > - RagFlow now supports the flowing LLM factories: OpenAI, Tongyi-Qianwen, ZHIPU-AI, and Moonshot.
