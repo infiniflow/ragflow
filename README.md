@@ -30,14 +30,18 @@
 ### 🍭 **"Quality in, quality out"**
   - Deep document understanding-based knowledge extraction from unstructured data with complicated formats.
   - Finds "needle in a data haystack" of literally unlimited tokens.
+
 ### 🍱 **Template-based chunking**
   - Intelligent and explainable.
   - Plenty of template options to choose from.
+
 ### 🌱 **Grounded citations with reduced hallucinations**
   - Visualization of text chunking to allow human intervention.
   - Quick view of the key references and traceable citations to support grounded answers.
+
 ### 🍔 **Compatibility with heterogeneous data sources**
   - Supports Word, slides, excel, txt, images, scanned copies, structured data, web pages, and more.
+
 ### 🛀 **Automated and effortless RAG workflow**
   - Streamlined RAG orchestration catered to both personal and large businesses.
   - Configurable LLMs as well as embedding models.
@@ -59,7 +63,7 @@
 - Docker
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
-### Start up the server
+### 🚀 Start up the server
 
 1. Ensure `vm.max_map_count` > 65535: 
 
@@ -87,7 +91,6 @@
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    ```
-
 
 3. Build the pre-built Docker images and start up the server: 
 
@@ -118,7 +121,9 @@
     INFO:werkzeug:Press CTRL+C to quit
     ```
 
-5. In your web browser, enter the IP address and port of your server as prompted and log in to RAGFlow.
+5. In your web browser, enter the IP address of your server as prompted and log in to RAGFlow.
+6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
+   > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
    
    *The show is now on!*
 
@@ -131,12 +136,11 @@ When it comes to system configurations, you will need to manage the following fi
 - [service_conf.yaml](./docker/service_conf.yaml): Configures the back-end services.
 - [docker-compose.yml](./docker/docker-compose.yml): The system relies on [docker-compose.yml](./docker/docker-compose.yml) to start up.
 
-
 You must ensure that changes to the [.env](./docker/.env) file are in line with what are in the [service_conf.yaml](./docker/service_conf.yaml) file. 
 
-> The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service configurations, and it is IMPORTANT to ensure that all environment settings listed in the [./docker/README](./docker/README.md) file are aligned with the corresponding configurations in the [service_conf.yaml](./docker/service_conf.yaml) file.
+> The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service configurations, and you are REQUIRED to ensure that all environment settings listed in the [./docker/README](./docker/README.md) file are aligned with the corresponding configurations in the [service_conf.yaml](./docker/service_conf.yaml) file.
 
-To change the default serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
+To update the default serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
 
 > Updates to all system configurations require a system reboot to take effect:
 > 
