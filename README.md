@@ -27,18 +27,22 @@
 
 ## 🌟 Key Features
  
-- 🍭 **"Quality in, quality out"**
+### 🍭 **"Quality in, quality out"**
   - Deep document understanding-based knowledge extraction from unstructured data with complicated formats.
   - Finds "needle in a data haystack" of literally unlimited tokens.
-- 🍱 **Template-based chunking**
+
+### 🍱 **Template-based chunking**
   - Intelligent and explainable.
   - Plenty of template options to choose from.
-- 🌱 **Grounded citations with reduced hallucinations**
+
+### 🌱 **Grounded citations with reduced hallucinations**
   - Visualization of text chunking to allow human intervention.
   - Quick view of the key references and traceable citations to support grounded answers.
-- 🍔 **Compatibility with heterogeneous data sources**
+
+### 🍔 **Compatibility with heterogeneous data sources**
   - Supports Word, slides, excel, txt, images, scanned copies, structured data, web pages, and more.
-- 🛀 **Automated and effortless RAG workflow**
+
+### 🛀 **Automated and effortless RAG workflow**
   - Streamlined RAG orchestration catered to both personal and large businesses.
   - Configurable LLMs as well as embedding models.
   - Multiple recall paired with fused re-ranking.
