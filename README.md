@@ -96,10 +96,10 @@
 > - You can still continue with the default settings, but it is highly recommended that you use your own API key the next time you log into the system. 
 > - RagFlow now supports the flowing LLM factories: OpenAI, Tongyi-Qianwen, ZHIPU-AI, and Moonshot.
 
-3. You now given two options for building the system: Using the images that we've built for you or building the images from source 
+3. You now presented with two options for building the system: Using the pre-built images or building the images from source: 
 
    ```bash
-   # To use the images that we've built for you:
+   # To use the pre-built images:
    $ cd ragflow/docker
    $ docker compose up -d
    ```
