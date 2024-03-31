@@ -23,7 +23,7 @@
 
 ## 💡 What is RAGFlow?
 
-[RAGFlow](http://demo.ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, with reasoned and well-founded answers to your question. Clone this repository, you can deploy your own knowledge management platform to empower your business with AI.
+[RAGFlow](http://demo.ragflow.io) is an open-source, Retrieval-Augmented Generation engine built on large language models (LLM), deep document understanding, and related multiple recall. It offers a streamlined RAG workflow for businesses of any scale, providing truthful responses with solid citations through a generative AI knowledge management platform.
 
 ## 🌟 Key Features
  
