@@ -253,6 +253,8 @@ def chat(dialog, messages, **kwargs):
     for c in kbinfos["chunks"]:
         if c.get("vector"):
             del c["vector"]
+    if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api")>=0:
+        answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
     return {"answer": answer, "reference": kbinfos}
 
 

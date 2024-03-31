@@ -62,7 +62,7 @@ class KnowledgebaseService(CommonService):
         if not kbs:
             return
         d = kbs[0].to_dict()
-        d["embd_id"] = kbs[0].tenant.embd_id
+        #d["embd_id"] = kbs[0].tenant.embd_id
         return d
 
     @classmethod
