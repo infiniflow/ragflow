@@ -20,15 +20,13 @@
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
 </p>
-## 💡 What is RagFlow?
 
-[RagFlow](http://demo.ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, with reasoned and well-founded answers to your question. Clone this repository, you can deploy your own knowledge management platform to empower your business with AI.
+## 💡 What is RAGFlow?
 
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/b24a7a5f-4d1d-4a30-90b1-7b0ec558b79d" width="1000"/>
-</div>
+[RAGFlow](http://demo.ragflow.io) is a knowledge management platform built on custom-build document understanding engine and LLM, with reasoned and well-founded answers to your question. Clone this repository, you can deploy your own knowledge management platform to empower your business with AI.
 
 ## 🌟 Key Features
+
 - 🍭**Custom-build document understanding engine.** Our deep learning engine is made according to the needs of analyzing and searching various type of documents in different domain.
   - For documents from different domain for different purpose, the engine applies different analyzing and search strategy.
   - Easily intervene and manipulate the data proccessing procedure when things goes beyond expectation.
@@ -57,9 +55,9 @@
 
 - CPU >= 2 cores
 - RAM >= 8 GB
-- Docker
+- Docker: If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
-### Start up the RagFlow server
+### Start up the server
 
 1. Ensure `vm.max_map_count` > 65535: 
 
@@ -88,31 +86,17 @@
    $ git clone https://github.com/infiniflow/ragflow.git
    ```
 
-   
 
-3. **Recommended**: In **docker/service_conf.yaml**, select the desired LLM factory in `user_default_llm` and update  the `API_KEY` field with your own.
-
-> - You can still continue with the default settings, but it is highly recommended that you use your own API key the next time you log into the system. 
-> - RagFlow now supports the flowing LLM factories: OpenAI, Tongyi-Qianwen, ZHIPU-AI, and Moonshot.
-
-4. You now presented with two options for building the system: Using the pre-built images or building the images from source: 
+3. Build the pre-built Docker images and start up the server: 
 
    ```bash
-   # To use the pre-built images:
-   $ cd ragflow/docker
-   $ docker compose up -d
-   ```
-   ```bash
-   # To build the images from source:
-   $ cd ragflow/
-   $ docker build -t infiniflow/ragflow:v1.0 .
    $ cd ragflow/docker
    $ docker compose up -d
    ```
 
    > The core image is about 15 GB in size and may take a while to load.
 
-5. Check the server status after pulling all images and having Docker up and running:
+4. Check the server status after pulling all images and having Docker up and running:
    ```bash
    $ docker logs -f ragflow-server
    ```
@@ -132,7 +116,8 @@
 INFO:werkzeug:Press CTRL+C to quit
 ```
 
-6. In your browser, enter the IP address of your server and now you can try it out.
+5. In your web browser, enter the IP address of your server as prompted.
+   *The show is on!*
 
 
 ## 🔧 Configurations
@@ -147,9 +132,21 @@ Updates to system configurations require a system reboot to take effect *docker-
 
 > If you change anything in [.env](./docker/.env), please check [service_conf.yaml](./docker/service_conf.yaml) which is a configuration of the back-end service and should be consistent with [.env](./docker/.env).
 
+## 🛠️ Build from source
+
+To build the Docker images from source:
+
+```bash
+$ git clone https://github.com/infiniflow/ragflow.git
+$ cd ragflow/
+$ docker build -t infiniflow/ragflow:v1.0 .
+$ cd ragflow/docker
+$ docker compose up -d
+```
+
 ## 📜 Roadmap
 
-See the [RagFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
+See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🏄 Community
 
@@ -158,4 +155,4 @@ See the [RagFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🙌 Contributing
 
-RagFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/CONTRIBUTING.md) first. 
+RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/CONTRIBUTING.md) first. 
