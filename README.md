@@ -66,9 +66,10 @@
 > $ sysctl vm.max_map_count
 > ```
 >
-> Reset `vm.max_map_count` to a value greater than 65535 if it is not. In this case, we set it to 262144:
+> Reset `vm.max_map_count` to a value greater than 65535 if it is not.
 >
 > ```bash
+> # In this case, we set it to 262144:
 > $ sudo sysctl -w vm.max_map_count=262144
 > ```
 >
