@@ -58,32 +58,31 @@
 - CPU >= 2 cores
 - RAM >= 8 GB
 - Docker
-- `vm.max_map_count` > 65535
-
-> To check the value of `vm.max_map_count`:
->
-> ```bash 
-> $ sysctl vm.max_map_count
-> ```
->
-> Reset `vm.max_map_count` to a value greater than 65535 if it is not.
->
-> ```bash
-> # In this case, we set it to 262144:
-> $ sudo sysctl -w vm.max_map_count=262144
-> ```
->
-> This change will be reset after a system reboot. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
->
-> ```bash
-> vm.max_map_count=262144
-> ```
-
-
 
 ### Start up the RagFlow server
 
-1. Clone the repo:
+1. Ensure `vm.max_map_count` > 65535: 
+
+   > To check the value of `vm.max_map_count`:
+   >
+   > ```bash 
+   > $ sysctl vm.max_map_count
+   > ```
+   >
+   > Reset `vm.max_map_count` to a value greater than 65535 if it is not.
+   >
+   > ```bash
+   > # In this case, we set it to 262144:
+   > $ sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
+   >
+   > ```bash
+   > vm.max_map_count=262144
+   > ```
+
+2. Clone the repo:
 
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
@@ -91,12 +90,12 @@
 
    
 
-2. **Recommended**: In **docker/service_conf.yaml**, select the desired LLM factory in `user_default_llm` and update  the `API_KEY` field with your own.
+3. **Recommended**: In **docker/service_conf.yaml**, select the desired LLM factory in `user_default_llm` and update  the `API_KEY` field with your own.
 
 > - You can still continue with the default settings, but it is highly recommended that you use your own API key the next time you log into the system. 
 > - RagFlow now supports the flowing LLM factories: OpenAI, Tongyi-Qianwen, ZHIPU-AI, and Moonshot.
 
-3. You now presented with two options for building the system: Using the pre-built images or building the images from source: 
+4. You now presented with two options for building the system: Using the pre-built images or building the images from source: 
 
    ```bash
    # To use the pre-built images:
@@ -106,16 +105,16 @@
    ```bash
    # To build the images from source:
    $ cd ragflow/
-   $ docker build  -t infiniflow/ragflow:v1.0 .
+   $ docker build -t infiniflow/ragflow:v1.0 .
    $ cd ragflow/docker
    $ docker compose up -d
    ```
 
    > The core image is about 15 GB in size and may take a while to load.
 
-4. Check the server status after pulling all images and having Docker up and running:
+5. Check the server status after pulling all images and having Docker up and running:
    ```bash
-   $ docker logs -f  ragflow-server
+   $ docker logs -f ragflow-server
    ```
    *The following output confirms a successful launch of the system:*
 
@@ -133,7 +132,7 @@
 INFO:werkzeug:Press CTRL+C to quit
 ```
 
-5. In your browser, enter the IP address of your server and now you can try it out.
+6. In your browser, enter the IP address of your server and now you can try it out.
 
 
 ## 🔧 Configurations
@@ -156,7 +155,6 @@ See the [RagFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 - [Discord](https://discord.gg/uqQ4YMDf)
 - [Twitter](https://twitter.com/infiniflowai)
-- GitHub Discussions
 
 ## 🙌 Contributing
 
