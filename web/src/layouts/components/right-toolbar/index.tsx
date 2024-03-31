@@ -11,7 +11,7 @@ const Circle = ({ children }: React.PropsWithChildren) => {
 };
 
 const handleGithubCLick = () => {
-  window.open('https://github.com/infiniflow/infinity', 'target');
+  window.open('https://github.com/infiniflow/ragflow', 'target');
 };
 
 const RightToolBar = () => {

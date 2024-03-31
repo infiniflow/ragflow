@@ -223,5 +223,24 @@ const model: DvaModel<KFModelState> = {
       return data;
     },
   },
+  subscriptions: {
+    setup({ dispatch, history }) {
+      history.listen(({ location }) => {
+        const state: { from: string } = (location.state ?? {
+          from: '',
+        }) as { from: string };
+        if (
+          state.from === '/knowledge' || // TODO: Just directly determine whether the current page is on the knowledge list page.
+          location.pathname === '/knowledge/dataset/upload'
+        ) {
+          dispatch({
+            type: 'kFModel/setPagination',
+            payload: { current: 1, pageSize: 10 },
+          });
+        }
+        console.info(location);
+      });
+    },
+  },
 };
 export default model;

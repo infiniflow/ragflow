@@ -74,7 +74,7 @@ export const useGetPagination = (fetchDocumentList: () => void) => {
       showQuickJumper: true,
       total: kFModel.total,
       showSizeChanger: true,
-      current: kFModel.pagination.currentPage,
+      current: kFModel.pagination.current,
       pageSize: kFModel.pagination.pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,

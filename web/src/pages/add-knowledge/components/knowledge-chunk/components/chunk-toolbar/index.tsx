@@ -80,12 +80,13 @@ const ChunkToolBar = ({
     removeChunk();
   }, [removeChunk]);
 
-  const handleEnabledClick = () => {
+  const handleEnabledClick = useCallback(() => {
     switchChunk(1);
-  };
-  const handleDisabledClick = () => {
+  }, [switchChunk]);
+
+  const handleDisabledClick = useCallback(() => {
     switchChunk(0);
-  };
+  }, [switchChunk]);
 
   const items: MenuProps['items'] = useMemo(() => {
     return [
@@ -129,7 +130,13 @@ const ChunkToolBar = ({
         ),
       },
     ];
-  }, [checked, handleSelectAllCheck, handleDelete]);
+  }, [
+    checked,
+    handleSelectAllCheck,
+    handleDelete,
+    handleEnabledClick,
+    handleDisabledClick,
+  ]);
 
   const content = (
     <Menu style={{ width: 200 }} items={items} selectable={false} />
