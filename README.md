@@ -45,22 +45,6 @@
   - The part of document cited in the answer is presented in the most expressive way.
   - For PDF file, the cited parts in document can be located in the original PDF.  
 
-## 🤺RagFlow vs. other RAG applications
-
-| Feature | RagFlow | Langchain-Chatchat | Assistants API | QAnythig | LangChain |
-|---------|:---------:|:-----------:|:-----------:|:-----------:|:-----------:|
-| **Well-Founded Answer** | :white_check_mark: | :x: | :x: | :x: | :x: |
-| **Trackable Chunking** | :white_check_mark: | :x: | :x: | :x: | :x: |
-| **Chunking Method** | Rich Variety | Naive | Naive | Naive | Naive |
-| **Table Structure Recognition** | :white_check_mark: | :x: | :x: | :x: | :x: |
-| **Structured Data Lookup** | :white_check_mark: | :x: | :x: | :x: | :x: | :x: |
-| **Programming Approach** | API-oriented | API-oriented | API-oriented | API-oriented | Python Code-oriented |
-| **RAG Engine** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
-| **Prompt IDE** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: | :x: |
-| **Supported LLMs** | Rich Variety | Rich Variety | OpenAI-only | QwenLLM | Rich Variety |
-| **Local Deployment** | :white_check_mark: | :white_check_mark: | :x: | :x: | :x: |
-| **Ecosystem Strategy** | Open Source | Open Source | Close Source | Open Source | Open Source |
-
 ## 🔎 System Architecture
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -82,13 +66,14 @@
 > $ sysctl vm.max_map_count
 > ```
 >
-> Reset `vm.max_map_count` to a value greater than 65535 if it is not. In this case, we set it to 262144:
+> Reset `vm.max_map_count` to a value greater than 65535 if it is not.
 >
 > ```bash
+> # In this case, we set it to 262144:
 > $ sudo sysctl -w vm.max_map_count=262144
 > ```
 >
-> This change will be reset after a system reboot. To ensure your change remains permanent, add or update the following line in **/etc/sysctl.conf** accordingly:
+> This change will be reset after a system reboot. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
 >
 > ```bash
 > vm.max_map_count=262144
@@ -98,7 +83,7 @@
 
 ### Start up the RagFlow server
 
-1. Clone the repo
+1. Clone the repo:
 
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
@@ -106,36 +91,33 @@
 
    
 
-2. 
+2. **Recommended**: In **docker/service_conf.yaml**, select the desired LLM factory in `user_default_llm` and update  the `API_KEY` field with your own.
 
-> - In [service_conf.yaml](./docker/service_conf.yaml), configuration of *LLM* in **user_default_llm** is strongly recommended. 
-> In **user_default_llm** of [service_conf.yaml](./docker/service_conf.yaml), you need to specify LLM factory and your own _API_KEY_.
-> If you do not have _API_KEY_ at the moment, you can specify it in 
-Settings the next time you log in to the system.
-> - RagFlow supports the flowing LLM factory, with more coming in the pipeline: 
-> [OpenAI](https://platform.openai.com/login?launch), [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model), 
-> [ZHIPU-AI](https://open.bigmodel.cn/), [Moonshot](https://platform.moonshot.cn/docs/docs)
-```bash
+> - You can still continue with the default settings, but it is highly recommended that you use your own API key the next time you log into the system. 
+> - RagFlow now supports the flowing LLM factories: OpenAI, Tongyi-Qianwen, ZHIPU-AI, and Moonshot.
 
-$ cd ragflow/docker
-$ docker compose up -d
-```
-### OR
+3. You now presented with two options for building the system: Using the pre-built images or building the images from source: 
 
-```bash
-$ git clone https://github.com/infiniflow/ragflow.git
-$ cd ragflow/
-$ docker build  -t infiniflow/ragflow:v1.0 .
-$ cd ragflow/docker
-$ docker compose up -d
-```
-> The core image is about 15 GB in size and may take a while to load.
+   ```bash
+   # To use the pre-built images:
+   $ cd ragflow/docker
+   $ docker compose up -d
+   ```
+   ```bash
+   # To build the images from source:
+   $ cd ragflow/
+   $ docker build  -t infiniflow/ragflow:v1.0 .
+   $ cd ragflow/docker
+   $ docker compose up -d
+   ```
 
-Check the server status after pulling all images and having Docker up and running:
-```bash
-$ docker logs -f  ragflow-server
-```
-*The following output confirms the successful launch of the system:*
+   > The core image is about 15 GB in size and may take a while to load.
+
+4. Check the server status after pulling all images and having Docker up and running:
+   ```bash
+   $ docker logs -f  ragflow-server
+   ```
+   *The following output confirms a successful launch of the system:*
 
 ```bash
     ____                 ______ __               
@@ -149,10 +131,9 @@ $ docker logs -f  ragflow-server
  * Running on http://127.0.0.1:9380
  * Running on http://172.22.0.5:9380
 INFO:werkzeug:Press CTRL+C to quit
-
 ```
-In your browser, enter the IP address of your server.
 
+5. In your browser, enter the IP address of your server and now you can try it out.
 
 
 ## 🔧 Configurations
