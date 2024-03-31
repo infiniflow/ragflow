@@ -1,5 +1,6 @@
 import { KnowledgeSearchParams } from '@/constants/knowledge';
-import { useLocation, useSearchParams } from 'umi';
+import { useCallback } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'umi';
 
 export enum SegmentIndex {
   Second = '2',
@@ -30,4 +31,14 @@ export const useGetKnowledgeSearchParams = () => {
     knowledgeId:
       currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
   };
+};
+
+export const useNavigateWithFromState = () => {
+  const navigate = useNavigate();
+  return useCallback(
+    (path: string) => {
+      navigate(path, { state: { from: path } });
+    },
+    [navigate],
+  );
 };
