@@ -1,8 +1,8 @@
 <div align="center">
-<a href="https://demo.ragflow.io/" style="display:flex;align-items:center;justify-content: center;gap:20px;
-">
+<a href="https://demo.ragflow.io/"
+class="logo-wrapper">
 <img src="web/src/assets/svg/logo.svg" width="100" alt="ragflow logo">
-<span style="font-size:60px;font-weight:700;color:black">RAGFlow</span> 
+<span  class="logo-text">RAGFlow</span> 
 </a>
 </div>
 
@@ -180,3 +180,17 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 ## 🙌 Contributing
 
 RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/CONTRIBUTING.md) first.
+
+<style type="text/css" rel="stylesheet">
+.logo-wrapper { 
+   display:flex;
+   align-items:center;
+   justify-content: center;
+   gap:20px;
+   text-decoration: none;
+ }
+ .logo-text {
+   font-size:60px;
+   font-weight:700;
+ }
+</style>
