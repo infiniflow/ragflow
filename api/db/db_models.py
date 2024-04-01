@@ -578,7 +578,7 @@ class Knowledgebase(DataBaseModel):
     language = CharField(
         max_length=32,
         null=True,
-        default="Chinese",
+        default="English",
         help_text="English|Chinese")
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(
