@@ -9,10 +9,9 @@ import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useFetchTenantInfo } from '@/hooks/userSettingHook';
 import { Pagination } from '@/interfaces/common';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { PaginationProps } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import { KnowledgeRouteKey } from './constant';
 
@@ -138,18 +137,6 @@ export const useHandleSearchChange = (setPagination: () => void) => {
   );
 
   return { handleInputChange };
-};
-
-export const useSetSelectedRecord = () => {
-  const [currentRecord, setCurrentRecord] = useState<IKnowledgeFile>(
-    {} as IKnowledgeFile,
-  );
-
-  const setRecord = (record: IKnowledgeFile) => () => {
-    setCurrentRecord(record);
-  };
-
-  return { currentRecord, setRecord };
 };
 
 export const useRenameDocument = (documentId: string) => {

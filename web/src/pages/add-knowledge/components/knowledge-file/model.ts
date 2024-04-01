@@ -234,7 +234,7 @@ const model: DvaModel<KFModelState> = {
           location.pathname === '/knowledge/dataset/upload'
         ) {
           dispatch({
-            type: 'kFModel/setPagination',
+            type: 'setPagination',
             payload: { current: 1, pageSize: 10 },
           });
         }
