@@ -1,8 +1,6 @@
 <div align="center">
-<a href="https://demo.ragflow.io/" style="display:flex;align-items:center;justify-content: center;gap:20px;
-">
-<img src="web/src/assets/svg/logo.svg" width="100" alt="ragflow logo">
-<span style="font-size:60px;font-weight:700;color:black">RAGFlow</span> 
+<a href="https://demo.ragflow.io/">
+<img src="web/src/assets/logo-with-text.png" width="350" alt="ragflow logo">
 </a>
 </div>
 
