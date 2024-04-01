@@ -1,0 +1,15 @@
+name: Question
+description: Ask questions on infinity
+title: "[Question]: "
+labels: [question]
+body:
+- type: markdown
+  attributes:
+    value: |
+      If the previous templates don't fit with what you'd like to report or ask, please use this general question template to file issue.
+- type: textarea
+  attributes:
+    label: Describe your problem
+    description: A clear and concise description of your problem.
+  validations:
+    required: true
