@@ -16,14 +16,14 @@ import styles from './index.less';
 
 interface IProps {
   record: IKnowledgeFile;
-  setDocumentAndParserId: () => void;
+  setCurrentRecord: (record: IKnowledgeFile) => void;
   showRenameModal: () => void;
   showChangeParserModal: () => void;
 }
 
 const ParsingActionCell = ({
   record,
-  setDocumentAndParserId,
+  setCurrentRecord,
   showRenameModal,
   showChangeParserModal,
 }: IProps) => {
@@ -45,12 +45,25 @@ const ParsingActionCell = ({
     });
   };
 
+  const setRecord = () => {
+    setCurrentRecord(record);
+  };
+
+  const onShowRenameModal = () => {
+    setRecord();
+    showRenameModal();
+  };
+  const onShowChangeParserModal = () => {
+    setRecord();
+    showChangeParserModal();
+  };
+
   const chunkItems: MenuProps['items'] = [
     {
       key: '1',
       label: (
         <div>
-          <Button type="link" onClick={showChangeParserModal}>
+          <Button type="link" onClick={onShowChangeParserModal}>
             Chunk Method
           </Button>
         </div>
@@ -65,11 +78,7 @@ const ParsingActionCell = ({
         trigger={['click']}
         disabled={isRunning}
       >
-        <Button
-          type="text"
-          onClick={setDocumentAndParserId}
-          className={styles.iconButton}
-        >
+        <Button type="text" className={styles.iconButton}>
           <ToolOutlined size={20} />
         </Button>
       </Dropdown>
@@ -77,7 +86,7 @@ const ParsingActionCell = ({
         <Button
           type="text"
           disabled={isRunning}
-          onClick={showRenameModal}
+          onClick={onShowRenameModal}
           className={styles.iconButton}
         >
           <EditOutlined size={20} />

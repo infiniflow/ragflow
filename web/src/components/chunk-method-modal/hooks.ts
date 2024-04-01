@@ -46,6 +46,7 @@ const getParserList = (
 };
 
 export const useFetchParserListOnMount = (
+  documentId: string,
   parserId: string,
   documentExtension: string,
 ) => {
@@ -71,7 +72,7 @@ export const useFetchParserListOnMount = (
 
   useEffect(() => {
     setSelectedTag(parserId);
-  }, [parserId]);
+  }, [parserId, documentId]);
 
   const handleChange = (tag: string, checked: boolean) => {
     const nextSelectedTag = checked ? tag : selectedTag;
