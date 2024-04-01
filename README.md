@@ -22,7 +22,7 @@
 
 ## 💡 What is RAGFlow?
 
-[RAGFlow](http://demo.ragflow.io) is an open-source, Retrieval-Augmented Generation engine built on large language models (LLM) and deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, providing truthful responses with solid citations through a generative AI knowledge management platform.
+[RAGFlow](https://demo.ragflow.io) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering with well-founded citations for various complex fomatted data.
 
 ## 🌟 Key Features
 
