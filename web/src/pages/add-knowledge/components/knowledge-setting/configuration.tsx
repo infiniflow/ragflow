@@ -62,7 +62,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       <Form.Item
         label="Language"
         name="language"
-        initialValue={'Chinese'}
+        initialValue={'English'}
         rules={[{ required: true, message: 'Please input your language!' }]}
       >
         <Select placeholder="select your language">

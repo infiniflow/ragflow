@@ -1,6 +1,4 @@
-import { ReactComponent as MoonIcon } from '@/assets/svg/moon.svg';
-import { ReactComponent as TranslationIcon } from '@/assets/svg/translation.svg';
-import { BellOutlined, GithubOutlined } from '@ant-design/icons';
+import { GithubOutlined } from '@ant-design/icons';
 import { Space } from 'antd';
 import React from 'react';
 import User from '../user';
@@ -21,15 +19,12 @@ const RightToolBar = () => {
         <Circle>
           <GithubOutlined onClick={handleGithubCLick} />
         </Circle>
-        <Circle>
+        {/* <Circle>
           <TranslationIcon />
         </Circle>
         <Circle>
-          <BellOutlined />
-        </Circle>
-        <Circle>
           <MoonIcon />
-        </Circle>
+        </Circle> */}
         <User></User>
       </Space>
     </div>

@@ -1,9 +1,8 @@
 <div align="center">
 <a href="https://demo.ragflow.io/">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/f034fb27-b3bf-401b-b213-e1dfa7448d2a" width="320" alt="ragflow logo">
+<img src="web/src/assets/logo-with-text.png" width="350" alt="ragflow logo">
 </a>
 </div>
-
 
 <p align="center">
   <a href="./README.md">English</a> |
@@ -26,27 +25,32 @@
 [RAGFlow](http://demo.ragflow.io) is an open-source, Retrieval-Augmented Generation engine built on large language models (LLM), deep document understanding, and multiple recall. It offers a streamlined RAG workflow for businesses of any scale, providing truthful responses with solid citations through a generative AI knowledge management platform.
 
 ## 🌟 Key Features
- 
+
 ### 🍭 **"Quality in, quality out"**
-  - Deep document understanding-based knowledge extraction from unstructured data with complicated formats.
-  - Finds "needle in a data haystack" of literally unlimited tokens.
+
+- Deep document understanding-based knowledge extraction from unstructured data with complicated formats.
+- Finds "needle in a data haystack" of literally unlimited tokens.
 
 ### 🍱 **Template-based chunking**
-  - Intelligent and explainable.
-  - Plenty of template options to choose from.
+
+- Intelligent and explainable.
+- Plenty of template options to choose from.
 
 ### 🌱 **Grounded citations with reduced hallucinations**
-  - Visualization of text chunking to allow human intervention.
-  - Quick view of the key references and traceable citations to support grounded answers.
+
+- Visualization of text chunking to allow human intervention.
+- Quick view of the key references and traceable citations to support grounded answers.
 
 ### 🍔 **Compatibility with heterogeneous data sources**
-  - Supports Word, slides, excel, txt, images, scanned copies, structured data, web pages, and more.
+
+- Supports Word, slides, excel, txt, images, scanned copies, structured data, web pages, and more.
 
 ### 🛀 **Automated and effortless RAG workflow**
-  - Streamlined RAG orchestration catered to both personal and large businesses.
-  - Configurable LLMs as well as embedding models.
-  - Multiple recall paired with fused re-ranking.
-  - Intuitive APIs for seamless integration with business.
+
+- Streamlined RAG orchestration catered to both personal and large businesses.
+- Configurable LLMs as well as embedding models.
+- Multiple recall paired with fused re-ranking.
+- Intuitive APIs for seamless integration with business.
 
 ## 🔎 System Architecture
 
@@ -65,11 +69,11 @@
 
 ### 🚀 Start up the server
 
-1. Ensure `vm.max_map_count` > 65535: 
+1. Ensure `vm.max_map_count` > 65535:
 
    > To check the value of `vm.max_map_count`:
    >
-   > ```bash 
+   > ```bash
    > $ sysctl vm.max_map_count
    > ```
    >
@@ -92,7 +96,7 @@
    $ git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. Build the pre-built Docker images and start up the server: 
+3. Build the pre-built Docker images and start up the server:
 
    ```bash
    $ cd ragflow/docker
@@ -102,31 +106,33 @@
    > The core image is about 15 GB in size and may take a while to load.
 
 4. Check the server status after having the server up and running:
+
    ```bash
    $ docker logs -f ragflow-server
    ```
-   *The following output confirms a successful launch of the system:*
+
+   _The following output confirms a successful launch of the system:_
 
    ```bash
-       ____                 ______ __               
+       ____                 ______ __
       / __ \ ____ _ ____ _ / ____// /____  _      __
      / /_/ // __ `// __ `// /_   / // __ \| | /| / /
-    / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ / 
-   /_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/  
-                 /____/                             
-     
+    / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ /
+   /_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/
+                 /____/
+
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
     * Running on http://172.22.0.5:9380
     INFO:werkzeug:Press CTRL+C to quit
-    ```
+   ```
 
 5. In your web browser, enter the IP address of your server as prompted and log in to RAGFlow.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
-   > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
-   
-   *The show is now on!*
 
+   > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
+
+   _The show is now on!_
 
 ## 🔧 Configurations
 
@@ -136,14 +142,14 @@ When it comes to system configurations, you will need to manage the following fi
 - [service_conf.yaml](./docker/service_conf.yaml): Configures the back-end services.
 - [docker-compose.yml](./docker/docker-compose.yml): The system relies on [docker-compose.yml](./docker/docker-compose.yml) to start up.
 
-You must ensure that changes to the [.env](./docker/.env) file are in line with what are in the [service_conf.yaml](./docker/service_conf.yaml) file. 
+You must ensure that changes to the [.env](./docker/.env) file are in line with what are in the [service_conf.yaml](./docker/service_conf.yaml) file.
 
 > The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service configurations, and you are REQUIRED to ensure that all environment settings listed in the [./docker/README](./docker/README.md) file are aligned with the corresponding configurations in the [service_conf.yaml](./docker/service_conf.yaml) file.
 
 To update the default serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
 
 > Updates to all system configurations require a system reboot to take effect:
-> 
+>
 > ```bash
 > $ docker-compose up -d
 > ```
@@ -171,4 +177,4 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🙌 Contributing
 
-RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/CONTRIBUTING.md) first. 
+RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/CONTRIBUTING.md) first.
