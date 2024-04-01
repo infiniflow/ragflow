@@ -28,7 +28,7 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- Deep document understanding-based knowledge extraction from unstructured data with complicated formats.
+- [Deep document understanding](./deepdoc/README.md)-based knowledge extraction from unstructured data with complicated formats.
 - Finds "needle in a data haystack" of literally unlimited tokens.
 
 ### 🍱 **Template-based chunking**
