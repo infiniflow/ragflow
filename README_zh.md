@@ -149,7 +149,7 @@
 > $ docker compose up -f docker-compose-CN.yml -d
 > ```
 
-## 🛠️ Build from source
+## 🛠️ 源码编译、安装 Docker 镜像
 
 如需从源码安装 Docker 镜像：
 
