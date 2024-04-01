@@ -96,7 +96,7 @@
 
    ```bash
    $ cd ragflow/docker
-   $ docker compose up -d
+   $ docker compose up -f docker-compose-CN.yml -d
    ```
 
    > 核心镜像文件大约 15 GB，可能需要一定时间拉取。请耐心等待。
@@ -145,7 +145,7 @@
 > 所有系统配置都需要通过系统重启生效：
 > 
 > ```bash
-> $ docker-compose-CN up -d
+> $ docker compose up -f docker-compose-CN.yml -d
 > ```
 
 ## 🛠️ Build from source
