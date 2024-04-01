@@ -22,7 +22,7 @@
 
 ## 💡 What is RAGFlow?
 
-[RAGFlow](http://demo.ragflow.io) is an open-source, Retrieval-Augmented Generation engine built on large language models (LLM), deep document understanding, and multiple recall. It offers a streamlined RAG workflow for businesses of any scale, providing truthful responses with solid citations through a generative AI knowledge management platform.
+[RAGFlow](http://demo.ragflow.io) is an open-source, Retrieval-Augmented Generation engine built on large language models (LLM) and deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, providing truthful responses with solid citations through a generative AI knowledge management platform.
 
 ## 🌟 Key Features
 
@@ -128,6 +128,7 @@
    ```
 
 5. In your web browser, enter the IP address of your server as prompted and log in to RAGFlow.
+   > In the given scenario, you only need to enter `http://172.22.0.5` as the port `9380` has been mapped to the default HTTP serving port `80` through Docker port mapping.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
    > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
@@ -146,7 +147,7 @@ You must ensure that changes to the [.env](./docker/.env) file are in line with 
 
 > The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service configurations, and you are REQUIRED to ensure that all environment settings listed in the [./docker/README](./docker/README.md) file are aligned with the corresponding configurations in the [service_conf.yaml](./docker/service_conf.yaml) file.
 
-To update the default serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
+To update the default HTTP serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
 
 > Updates to all system configurations require a system reboot to take effect:
 >
