@@ -178,4 +178,4 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🙌 Contributing
 
-RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/CONTRIBUTING.md) first.
+RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/docs/CONTRIBUTING.md) first.
