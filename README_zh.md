@@ -22,7 +22,7 @@
 
 ## 💡 RAGFlow 是什么？
 
-[RAGFlow](http://demo.ragflow.io) 是一款基于大型语言模型（LLM）、深度文档理解和多路找回（multiple recall）构建的开源检索增强型生成引擎（Retrieval-Augmented Generation Engine）。RAGFlow 可以为各种规模的企业提供一套精简的 RAG 工作流程,通过生成式 AI （Generative AI）知识管理平台提供可靠的问答以及有理有据的引用。
+[RAGFlow](http://demo.ragflow.io) 是一款基于大型语言模型（LLM）、深度文档理解和多路召回（multiple recall）构建的开源检索增强型生成引擎（Retrieval-Augmented Generation Engine）。RAGFlow 可以为各种规模的企业提供一套精简的 RAG 工作流程,通过生成式 AI （Generative AI）知识管理平台提供可靠的问答以及有理有据的引用。
 
 ## 🌟 主要功能
 
@@ -49,7 +49,7 @@
 
 - 全面优化的 RAG 工作流可以支持从个人应用乃至超大型企业的各类生态系统。
 - 大语言模型 LLM 以及向量模型均支持配置。
-- 基于多路找回、融合重排序。
+- 基于多路召回、融合重排序。
 - 提供易用的 API，可以轻松集成到各类企业系统。
 
 ## 🔎 系统架构
@@ -128,7 +128,12 @@
    ```
 
 5. 根据刚才的界面提示在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
+   > 上面这个例子中，您只需输入 http://172.22.0.5 即可：端口 9380 已通过 Docker 端口映射被设置成 80（默认的 HTTP 服务端口）。
 6. 在 [service_conf.yaml](./docker/service_conf.yaml) 文件的 `user_default_llm` 栏配置 LLM factory，并在 `API_KEY` 栏填写和你选择的大模型相对应的 API key。
+
+   > 详见 [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md)。
+
+   _好戏开始，接着奏乐接着舞！_
 
    > 详见 [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md)。
 
@@ -146,7 +151,7 @@
 
 > [./docker/README](./docker/README.md) 文件提供了环境变量设置和服务配置的详细信息。请**一定要**确保 [./docker/README](./docker/README.md) 文件当中列出来的环境变量的值与 [service_conf.yaml](./docker/service_conf.yaml) 文件当中的系统配置保持一致。
 
-如需更新默认的 serving port (80), 可以在 [docker-compose-CN.yml](./docker/docker-compose-CN.yml) 文件中将配置 `80:80` 改为 `<YOUR_SERVING_PORT>:80`。
+如需更新默认的 HTTP 服务端口(80), 可以在 [docker-compose-CN.yml](./docker/docker-compose-CN.yml) 文件中将配置 `80:80` 改为 `<YOUR_SERVING_PORT>:80`。
 
 > 所有系统配置都需要通过系统重启生效：
 >
@@ -154,7 +159,7 @@
 > $ docker compose up -f docker-compose-CN.yml -d
 > ```
 
-## 🛠️ Build from source
+## 🛠️ 源码编译、安装 Docker 镜像
 
 如需从源码安装 Docker 镜像：
 
