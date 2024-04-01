@@ -1,0 +1,67 @@
+name: Bug Report
+description: Create a bug issue for infinity
+title: "[Bug]: "
+labels: [bug]
+body:
+- type: checkboxes
+  attributes:
+    label: Is there an existing issue for the same bug?
+    description: Please check if an issue already exists for the bug you encountered.
+    options:
+    - label: I have checked the existing issues.
+      required: true
+- type: markdown
+  attributes:
+    value: "Please provide the following information to help us understand the issue."
+- type: input
+  attributes:
+    label: Branch name
+    description: Enter the name of the branch where you encountered the issue.
+    placeholder: e.g., main
+  validations:
+    required: true
+- type: input
+  attributes:
+    label: Commit ID
+    description: Enter the commit ID associated with the issue.
+    placeholder: e.g., c3b2a1
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: Other environment information
+    description: |
+      Enter the environment details:
+      value: |
+      - Hardware parameters:
+      - OS type:
+      - Others:
+    render: Markdown
+  validations:
+    required: false
+- type: textarea
+  attributes:
+    label: Actual behavior
+    description: Describe what you encountered.
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: Expected behavior
+    description: Describe what you expected.
+  validations:
+    required: false
+- type: textarea
+  attributes:
+    label: Steps to reproduce
+    description: Steps to reproduce what you encountered.
+    render: Markdown
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: Additional information
+    description: |
+      Log, error message, or any other information can help find the root cause.
+  validations:
+    required: false
