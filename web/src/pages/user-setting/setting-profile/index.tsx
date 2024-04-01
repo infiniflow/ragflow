@@ -8,7 +8,7 @@ import {
   getUploadFileListFromBase64,
   normFile,
 } from '@/utils/fileUtil';
-import { PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined } from '@ant-design/icons';
 import {
   Button,
   Divider,
@@ -17,7 +17,6 @@ import {
   Select,
   Space,
   Spin,
-  Tooltip,
   Upload,
   UploadFile,
 } from 'antd';
@@ -108,9 +107,7 @@ const UserSettingProfile = () => {
           <Form.Item<FieldType>
             label={
               <div>
-                <Space>
-                  Your photo
-                </Space>
+                <Space>Your photo</Space>
                 <div>This will be displayed on your profile.</div>
               </div>
             }
@@ -177,8 +174,7 @@ const UserSettingProfile = () => {
               <Input disabled />
             </Form.Item>
             <p className={parentStyles.itemDescription}>
-              Once registered, an account cannot be changed and can only be
-              cancelled.
+              Once registered, E-mail cannot be changed.
             </p>
           </Form.Item>
           <Form.Item

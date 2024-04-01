@@ -81,7 +81,7 @@ export const TextMap = {
     The résumé comes in a variety of formats, just like a person’s personality, but we often have to organize them into structured data that makes it easy to search.
     </p><p>
     Instead of chunking the résumé, we parse the résumé into structured data. As a HR, you can dump all the résumé you have, 
-    the you can list all the candidates that match the qualifications just by talk with <i>'RagFlow'</i>.
+    the you can list all the candidates that match the qualifications just by talk with <i>'RAGFlow'</i>.
     </p>
     `,
   },
