@@ -36,11 +36,13 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   parserId: string;
   parserConfig: IKnowledgeFileParserConfig;
   documentExtension: string;
+  documentId: string;
 }
 
 const hidePagesChunkMethods = ['qa', 'table', 'picture', 'resume', 'one'];
 
 const ChunkMethodModal: React.FC<IProps> = ({
+  documentId,
   parserId,
   onOk,
   hideModal,
@@ -49,6 +51,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
   parserConfig,
 }) => {
   const { parserList, handleChange, selectedTag } = useFetchParserListOnMount(
+    documentId,
     parserId,
     documentExtension,
   );

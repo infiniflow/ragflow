@@ -36,12 +36,12 @@ import {
   useHandleSearchChange,
   useNavigateToOtherPage,
   useRenameDocument,
-  useSetSelectedRecord,
 } from './hooks';
 import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
+import { useSetSelectedRecord } from '@/hooks/logicHooks';
 import styles from './index.less';
 
 const KnowledgeFile = () => {
@@ -178,11 +178,8 @@ const KnowledgeFile = () => {
       key: 'action',
       render: (_, record) => (
         <ParsingActionCell
-          setDocumentAndParserId={setRecord(record)}
-          showRenameModal={() => {
-            setRecord(record)();
-            showRenameModal();
-          }}
+          setCurrentRecord={setRecord}
+          showRenameModal={showRenameModal}
           showChangeParserModal={showChangeParserModal}
           record={record}
         ></ParsingActionCell>
@@ -237,6 +234,7 @@ const KnowledgeFile = () => {
         onOk={onCreateOk}
       />
       <ChunkMethodModal
+        documentId={currentRecord.id}
         parserId={currentRecord.parser_id}
         parserConfig={currentRecord.parser_config}
         documentExtension={getExtension(currentRecord.name)}

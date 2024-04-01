@@ -296,6 +296,7 @@ const KnowledgeUploadFile = () => {
         </section>
       </div>
       <ChunkMethodModal
+        documentId={currentRecord.id}
         parserId={currentRecord.parser_id}
         parserConfig={currentRecord.parser_config}
         documentExtension={getExtension(currentRecord.name)}
