@@ -24,7 +24,7 @@ def duplicate_name(query_func, **kwargs):
     if not objs: return fnm
     ext = pathlib.Path(fnm).suffix #.jpg
     nm = re.sub(r"%s$"%ext, "", fnm)
-    r = re.search(r"\([0-9]+\)$", nm)
+    r = re.search(r"\(([0-9]+)\)$", nm)
     c = 0
     if r:
         c = int(r.group(1))
