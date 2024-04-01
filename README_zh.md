@@ -122,7 +122,7 @@
     ```
 
 5. 根据刚才的界面提示在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
-   > 上面这个例子中，您只需要输入 http://172.22.0.5 即可：端口 9380 已通过 Docker 的端口映射被设置成 80（默认的 HTTP 服务端口）。
+   > 上面这个例子中，您只需输入 http://172.22.0.5 即可：端口 9380 已通过 Docker 端口映射被设置成 80（默认的 HTTP 服务端口）。
 7. 在 [service_conf.yaml](./docker/service_conf.yaml) 文件的 `user_default_llm` 栏配置 LLM factory，并在 `API_KEY` 栏填写和你选择的大模型相对应的 API key。
    > 详见 [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md)。
    
