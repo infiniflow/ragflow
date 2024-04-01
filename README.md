@@ -128,7 +128,7 @@
    ```
 
 5. In your web browser, enter the IP address of your server as prompted and log in to RAGFlow.
-   > In the given scenario, you only need to enter `http://172.22.0.5` (sans port number) as the default HTTP serving port `80` is omitted when using the default configurations.
+   > In the given scenario, you only need to enter `http://172.22.0.5` (sans port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
    > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
