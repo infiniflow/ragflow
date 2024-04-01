@@ -23,7 +23,7 @@
 
 ## 💡 RAGFlow 是什么？
 
-[RAGFlow](http://demo.ragflow.io) 是一款基于大型语言模型（LLM）、深度文档理解和多路召回（multiple recall）构建的开源检索增强型生成引擎（Retrieval-Augmented Generation Engine）。RAGFlow 可以为各种规模的企业提供一套精简的 RAG 工作流程,通过生成式 AI （Generative AI）知识管理平台提供可靠的问答以及有理有据的引用。
+[RAGFlow](http://demo.ragflow.io) 是一款基于大型语言模型（LLM）以及深度文档理解构建的开源检索增强型生成引擎（Retrieval-Augmented Generation Engine）。RAGFlow 可以为各种规模的企业提供一套精简的 RAG 工作流程,通过生成式 AI （Generative AI）知识管理平台提供可靠的问答以及有理有据的引用。
 
 ## 🌟 主要功能
  
