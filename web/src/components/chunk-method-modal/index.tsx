@@ -22,6 +22,7 @@ import omit from 'lodash/omit';
 import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const { CheckableTag } = Tag;
@@ -56,6 +57,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
     documentExtension,
   );
   const [form] = Form.useForm();
+  const { t } = useTranslate('knowledgeDetails');
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -91,7 +93,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
 
   return (
     <Modal
-      title="Chunk Method"
+      title={t('chunkMethod')}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}

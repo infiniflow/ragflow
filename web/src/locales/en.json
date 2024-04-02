@@ -4,7 +4,11 @@
       "delete": "Delete",
       "deleteModalTitle": "Are you sure delete this item?",
       "ok": "Yes",
-      "cancel": "No"
+      "cancel": "No",
+      "total": "Total",
+      "rename": "Rename",
+      "name": "Name",
+      "namePlaceholder": "Please input name"
     },
     "login": {
       "login": "Sign in",
@@ -39,6 +43,28 @@
       "name": "Name",
       "namePlaceholder": "Please input name!",
       "doc": "Docs"
+    },
+    "knowledgeDetails": {
+      "dataset": "Dataset",
+      "testing": "Retrieval testing",
+      "configuration": "Configuration",
+      "name": "Name",
+      "namePlaceholder": "Please input name!",
+      "doc": "Docs",
+      "datasetDescription": "Hey, don't forget to adjust the chunk after adding the dataset! 😉",
+      "addFile": "Add file",
+      "searchFiles": "Search your files",
+      "localFiles": "Local files",
+      "emptyFiles": "Create empty file",
+      "chunkNumber": "Chunk Number",
+      "uploadDate": "Upload Date",
+      "chunkMethod": "Chunk Method",
+      "enabled": "Enabled",
+      "action": "Action",
+      "parsingStatus": "Parsing Status",
+      "processBeginAt": "Process Begin At",
+      "processDuration": "Process Duration",
+      "progressMsg": "Progress Msg"
     },
     "footer": {
       "detail": "All rights reserved @ React"

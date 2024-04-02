@@ -94,7 +94,7 @@ export const useShowDeleteConfirm = () => {
           // content: 'Some descriptions',
           okText: t('common.ok'),
           okType: 'danger',
-          cancelText: t('common.ok'),
+          cancelText: t('common.cancel'),
           async onOk() {
             try {
               const ret = await onOk?.();
@@ -114,4 +114,8 @@ export const useShowDeleteConfirm = () => {
   );
 
   return showDeleteConfirm;
+};
+
+export const useTranslate = (keyPrefix: string) => {
+  return useTranslation('translation', { keyPrefix });
 };
