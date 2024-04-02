@@ -4,7 +4,6 @@ import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
 const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
   const list = requireContext.keys().map((key) => {
     const name = key.replace(/\.\/(.*)\.\w+$/, '$1');
-    console.log(name, requireContext(key));
     return { name, value: requireContext(key) };
   });
   return list;

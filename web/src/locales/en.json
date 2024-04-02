@@ -1,5 +1,21 @@
 {
-  "login": { "login": "Sign in" },
+  "login": {
+    "login": "Sign in",
+    "signUp": "Sign up",
+    "loginDescription": "We’re so excited to see you again!",
+    "registerDescription": "Glad to have you on board!",
+    "emailLabel": "Email",
+    "emailPlaceholder": "Please input email",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Please input password",
+    "rememberMe": "Remember me",
+    "signInTip": "Don’t have an account?",
+    "signUpTip": "Already have an account?",
+    "nicknameLabel": "Nickname",
+    "nicknamePlaceholder": "Please input nickname",
+    "register": "Create an account",
+    "continue": "Continue"
+  },
   "header": {
     "register": "Register",
     "signin": "Sign in",

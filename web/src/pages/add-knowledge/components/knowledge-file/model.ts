@@ -203,7 +203,6 @@ const model: DvaModel<KFModelState> = {
       const documentId = payload;
       try {
         const ret = yield call(getDocumentFile, documentId);
-        console.info('fetch_document_file:', ret);
         return ret;
       } catch (error) {
         console.warn(error);
@@ -238,7 +237,6 @@ const model: DvaModel<KFModelState> = {
             payload: { current: 1, pageSize: 10 },
           });
         }
-        console.info(location);
       });
     },
   },
