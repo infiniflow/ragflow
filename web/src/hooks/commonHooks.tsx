@@ -92,9 +92,9 @@ export const useShowDeleteConfirm = () => {
           title: t('common.deleteModalTitle'),
           icon: <ExclamationCircleFilled />,
           // content: 'Some descriptions',
-          okText: 'Yes',
+          okText: t('common.ok'),
           okType: 'danger',
-          cancelText: 'No',
+          cancelText: t('common.ok'),
           async onOk() {
             try {
               const ret = await onOk?.();

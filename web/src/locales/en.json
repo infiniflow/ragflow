@@ -1,50 +1,55 @@
 {
-  "common": {
-    "delete": "Delete",
-    "deleteModalTitle": "Are you sure delete this item?"
-  },
-  "login": {
-    "login": "Sign in",
-    "signUp": "Sign up",
-    "loginDescription": "We’re so excited to see you again!",
-    "registerDescription": "Glad to have you on board!",
-    "emailLabel": "Email",
-    "emailPlaceholder": "Please input email",
-    "passwordLabel": "Password",
-    "passwordPlaceholder": "Please input password",
-    "rememberMe": "Remember me",
-    "signInTip": "Don’t have an account?",
-    "signUpTip": "Already have an account?",
-    "nicknameLabel": "Nickname",
-    "nicknamePlaceholder": "Please input nickname",
-    "register": "Create an account",
-    "continue": "Continue"
-  },
-  "header": {
-    "knowledgeBase": "Knowledge Base",
-    "chat": "Chat",
-    "register": "Register",
-    "signin": "Sign in",
-    "home": "Home",
-    "setting": "用户设置",
-    "logout": "登出"
-  },
-  "knowledgeList": {
-    "welcome": "Welcome back",
-    "description": "Which database are we going to use today?",
-    "createKnowledgeBase": "Create knowledge base",
-    "name": "Name",
-    "namePlaceholder": "Please input name!"
-  },
-  "footer": {
-    "detail": "All rights reserved @ React"
-  },
-  "layout": {
-    "file": "file",
-    "knowledge": "knowledge",
-    "chat": "chat"
-  },
-  "setting": {
-    "btn": "en"
+  "translation": {
+    "common": {
+      "delete": "Delete",
+      "deleteModalTitle": "Are you sure delete this item?",
+      "ok": "Yes",
+      "cancel": "No"
+    },
+    "login": {
+      "login": "Sign in",
+      "signUp": "Sign up",
+      "loginDescription": "We’re so excited to see you again!",
+      "registerDescription": "Glad to have you on board!",
+      "emailLabel": "Email",
+      "emailPlaceholder": "Please input email",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Please input password",
+      "rememberMe": "Remember me",
+      "signInTip": "Don’t have an account?",
+      "signUpTip": "Already have an account?",
+      "nicknameLabel": "Nickname",
+      "nicknamePlaceholder": "Please input nickname",
+      "register": "Create an account",
+      "continue": "Continue"
+    },
+    "header": {
+      "knowledgeBase": "Knowledge Base",
+      "chat": "Chat",
+      "register": "Register",
+      "signin": "Sign in",
+      "home": "Home",
+      "setting": "用户设置",
+      "logout": "登出"
+    },
+    "knowledgeList": {
+      "welcome": "Welcome back",
+      "description": "Which database are we going to use today?",
+      "createKnowledgeBase": "Create knowledge base",
+      "name": "Name",
+      "namePlaceholder": "Please input name!",
+      "doc": "Docs"
+    },
+    "footer": {
+      "detail": "All rights reserved @ React"
+    },
+    "layout": {
+      "file": "file",
+      "knowledge": "knowledge",
+      "chat": "chat"
+    },
+    "setting": {
+      "btn": "en"
+    }
   }
 }
