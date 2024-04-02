@@ -62,7 +62,7 @@ const Knowledge = () => {
               );
             })
           ) : (
-            <Empty></Empty>
+            <Empty className={styles.knowledgeEmpty}></Empty>
           )}
         </Flex>
       </Spin>
