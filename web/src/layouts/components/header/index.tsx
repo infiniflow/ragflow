@@ -8,6 +8,7 @@ import styles from './index.less';
 
 import { useNavigateWithFromState } from '@/hooks/routeHook';
 import { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation } from 'umi';
 
 const { Header } = Layout;
@@ -18,14 +19,15 @@ const RagHeader = () => {
   } = theme.useToken();
   const navigate = useNavigateWithFromState();
   const { pathname } = useLocation();
+  const { t } = useTranslation('translation', { keyPrefix: 'header' });
 
   const tagsData = useMemo(
     () => [
-      { path: '/knowledge', name: 'Knowledge Base', icon: KnowledgeBaseIcon },
-      { path: '/chat', name: 'Chat', icon: StarIon },
+      { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
+      { path: '/chat', name: t('chat'), icon: StarIon },
       // { path: '/file', name: 'File Management', icon: FileIcon },
     ],
-    [],
+    [t],
   );
 
   const currentPath = useMemo(() => {

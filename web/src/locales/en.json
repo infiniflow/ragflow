@@ -1,4 +1,8 @@
 {
+  "common": {
+    "delete": "Delete",
+    "deleteModalTitle": "Are you sure delete this item?"
+  },
   "login": {
     "login": "Sign in",
     "signUp": "Sign up",
@@ -17,11 +21,20 @@
     "continue": "Continue"
   },
   "header": {
+    "knowledgeBase": "Knowledge Base",
+    "chat": "Chat",
     "register": "Register",
     "signin": "Sign in",
     "home": "Home",
     "setting": "用户设置",
     "logout": "登出"
+  },
+  "knowledgeList": {
+    "welcome": "Welcome back",
+    "description": "Which database are we going to use today?",
+    "createKnowledgeBase": "Create knowledge base",
+    "name": "Name",
+    "namePlaceholder": "Please input name!"
   },
   "footer": {
     "detail": "All rights reserved @ React"

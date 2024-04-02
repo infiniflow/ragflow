@@ -1,6 +1,7 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { Form, Input, Modal } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 
 type FieldType = {
@@ -17,6 +18,7 @@ const KnowledgeCreatingModal = ({
     (state: any) => state.loading.effects['kSModel/createKb'],
   );
   const navigate = useNavigate();
+  const { t } = useTranslation('translation', { keyPrefix: 'knowledgeList' });
 
   const handleOk = async () => {
     const ret = await form.validateFields();
@@ -50,7 +52,7 @@ const KnowledgeCreatingModal = ({
 
   return (
     <Modal
-      title="Create knowledge base"
+      title={t('createKnowledgeBase')}
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}
@@ -67,11 +69,11 @@ const KnowledgeCreatingModal = ({
         form={form}
       >
         <Form.Item<FieldType>
-          label="Name"
+          label={t('name')}
           name="name"
-          rules={[{ required: true, message: 'Please input name!' }]}
+          rules={[{ required: true, message: t('namePlaceholder') }]}
         >
-          <Input />
+          <Input placeholder={t('namePlaceholder')} />
         </Form.Item>
       </Form>
     </Modal>

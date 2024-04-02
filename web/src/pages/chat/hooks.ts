@@ -1,7 +1,6 @@
-import showDeleteConfirm from '@/components/deleting-confirm';
 import { MessageType } from '@/constants/chat';
 import { fileIconMap } from '@/constants/common';
-import { useSetModalState } from '@/hooks/commonHooks';
+import { useSetModalState, useShowDeleteConfirm } from '@/hooks/commonHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IConversation, IDialog } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
@@ -150,6 +149,7 @@ export const useSelectPromptConfigParameters = (): VariableTableDataType[] => {
 
 export const useRemoveDialog = () => {
   const dispatch = useDispatch();
+  const showDeleteConfirm = useShowDeleteConfirm();
 
   const removeDocument = (dialogIds: Array<string>) => () => {
     return dispatch({
@@ -668,6 +668,7 @@ export const useRemoveConversation = () => {
   const dispatch = useDispatch();
   const { dialogId } = useGetChatSearchParams();
   const { handleClickConversation } = useClickConversationCard();
+  const showDeleteConfirm = useShowDeleteConfirm();
 
   const removeConversation = (conversationIds: Array<string>) => async () => {
     const ret = await dispatch<any>({

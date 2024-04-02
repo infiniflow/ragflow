@@ -1,4 +1,4 @@
-import showDeleteConfirm from '@/components/deleting-confirm';
+import { useShowDeleteConfirm } from '@/hooks/commonHooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
@@ -17,6 +17,7 @@ export const useDeleteDocumentById = (): {
 } => {
   const dispatch = useDispatch();
   const knowledgeBaseId = useKnowledgeBaseId();
+  const showDeleteConfirm = useShowDeleteConfirm();
 
   const removeDocument = (documentId: string) => () => {
     return dispatch({
@@ -79,6 +80,7 @@ export const useDeleteChunkByIds = (): {
   removeChunk: (chunkIds: string[], documentId: string) => Promise<number>;
 } => {
   const dispatch = useDispatch();
+  const showDeleteConfirm = useShowDeleteConfirm();
 
   const removeChunk = useCallback(
     (chunkIds: string[], documentId: string) => () => {
@@ -97,7 +99,7 @@ export const useDeleteChunkByIds = (): {
     (chunkIds: string[], documentId: string): Promise<number> => {
       return showDeleteConfirm({ onOk: removeChunk(chunkIds, documentId) });
     },
-    [removeChunk],
+    [removeChunk, showDeleteConfirm],
   );
 
   return {
