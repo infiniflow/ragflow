@@ -73,7 +73,7 @@ def dispatch():
                 for t in tsks:
                     TaskService.delete_by_id(t.id)
         except Exception as e:
-            cron_logger.error("delete task exception:" + str(e))
+            cron_logger.exception(e)
 
         def new_task():
             nonlocal r
@@ -83,44 +83,48 @@ def dispatch():
             }
 
         tsks = []
-        if r["type"] == FileType.PDF.value:
-            do_layout = r["parser_config"].get("layout_recognize", True)
-            pages = PdfParser.total_page_number(
-                r["name"], MINIO.get(r["kb_id"], r["location"]))
-            page_size = r["parser_config"].get("task_page_size", 12)
-            if r["parser_id"] == "paper":
-                page_size = r["parser_config"].get("task_page_size", 22)
-            if r["parser_id"] == "one":
-                page_size = 1000000000
-            if not do_layout:
-                page_size = 1000000000
-            page_ranges = r["parser_config"].get("pages")
-            if not page_ranges:
-                page_ranges = [(1, 100000)]
-            for s, e in page_ranges:
-                s -= 1
-                s = max(0, s)
-                e = min(e - 1, pages)
-                for p in range(s, e, page_size):
+        try:
+            if r["type"] == FileType.PDF.value:
+                do_layout = r["parser_config"].get("layout_recognize", True)
+                pages = PdfParser.total_page_number(
+                        r["name"], MINIO.get(r["kb_id"], r["location"]))
+                page_size = r["parser_config"].get("task_page_size", 12)
+                if r["parser_id"] == "paper":
+                    page_size = r["parser_config"].get("task_page_size", 22)
+                if r["parser_id"] == "one":
+                    page_size = 1000000000
+                if not do_layout:
+                    page_size = 1000000000
+                page_ranges = r["parser_config"].get("pages")
+                if not page_ranges:
+                    page_ranges = [(1, 100000)]
+                for s, e in page_ranges:
+                    s -= 1
+                    s = max(0, s)
+                    e = min(e - 1, pages)
+                    for p in range(s, e, page_size):
+                        task = new_task()
+                        task["from_page"] = p
+                        task["to_page"] = min(p + page_size, e)
+                        tsks.append(task)
+
+            elif r["parser_id"] == "table":
+                rn = HuExcelParser.row_number(
+                    r["name"], MINIO.get(
+                        r["kb_id"], r["location"]))
+                for i in range(0, rn, 3000):
                     task = new_task()
-                    task["from_page"] = p
-                    task["to_page"] = min(p + page_size, e)
+                    task["from_page"] = i
+                    task["to_page"] = min(i + 3000, rn)
                     tsks.append(task)
+            else:
+                tsks.append(new_task())
 
-        elif r["parser_id"] == "table":
-            rn = HuExcelParser.row_number(
-                r["name"], MINIO.get(
-                    r["kb_id"], r["location"]))
-            for i in range(0, rn, 3000):
-                task = new_task()
-                task["from_page"] = i
-                task["to_page"] = min(i + 3000, rn)
-                tsks.append(task)
-        else:
-            tsks.append(new_task())
+            bulk_insert_into_db(Task, tsks, True)
+            set_dispatching(r["id"])
+        except Exception as e:
+            cron_logger.exception(e)
 
-        bulk_insert_into_db(Task, tsks, True)
-        set_dispatching(r["id"])
         tmf.write(str(r["update_time"]) + "\n")
     tmf.close()
 
