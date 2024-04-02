@@ -1,16 +1,16 @@
-import { ConfigProvider } from 'antd';
-import React, { ReactNode } from 'react';
+import { App, ConfigProvider } from 'antd';
+import { ReactNode } from 'react';
 
 export function rootContainer(container: ReactNode) {
-  return React.createElement(
-    ConfigProvider,
-    {
-      theme: {
+  return (
+    <ConfigProvider
+      theme={{
         token: {
           fontFamily: 'Inter',
         },
-      },
-    },
-    container,
+      }}
+    >
+      <App> {container}</App>
+    </ConfigProvider>
   );
 }

@@ -6,22 +6,22 @@ import { Button, Empty, Flex, Space, Spin } from 'antd';
 import KnowledgeCard from './knowledge-card';
 import KnowledgeCreatingModal from './knowledge-creating-modal';
 
+import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
 const Knowledge = () => {
   const { list, loading } = useFetchKnowledgeList();
   const userInfo = useSelectUserInfo();
+  const { t } = useTranslation('translation', { keyPrefix: 'knowledgeList' });
 
   return (
     <Flex className={styles.knowledge} vertical flex={1}>
       <div className={styles.topWrapper}>
         <div>
           <span className={styles.title}>
-            Welcome back, {userInfo.nickname}
+            {t('welcome')}, {userInfo.nickname}
           </span>
-          <p className={styles.description}>
-            Which database are we going to use today?
-          </p>
+          <p className={styles.description}>{t('description')}</p>
         </div>
         <Space size={'large'}>
           {/* <Button icon={<FilterIcon />} className={styles.filterButton}>
@@ -38,7 +38,7 @@ const Knowledge = () => {
                   }}
                   className={styles.topButton}
                 >
-                  Create knowledge base
+                  {t('createKnowledgeBase')}
                 </Button>
                 <KnowledgeCreatingModal
                   visible={visible}
@@ -62,7 +62,7 @@ const Knowledge = () => {
               );
             })
           ) : (
-            <Empty></Empty>
+            <Empty className={styles.knowledgeEmpty}></Empty>
           )}
         </Flex>
       </Spin>
