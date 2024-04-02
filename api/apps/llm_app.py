@@ -45,7 +45,7 @@ def set_api_key():
     for llm in LLMService.query(fid=factory):
         if llm.model_type == LLMType.EMBEDDING.value:
             mdl = EmbeddingModel[factory](
-                req["api_key"], llm.llm_name, req.get("base_url"))
+                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
                 arr, tc = mdl.encode(["Test if the api key is available"])
                 if len(arr[0]) == 0 or tc == 0:
@@ -54,7 +54,7 @@ def set_api_key():
                 msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
             mdl = ChatModel[factory](
-                req["api_key"], llm.llm_name, req.get("base_url"))
+                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
                 m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
                                  "temperature": 0.9})

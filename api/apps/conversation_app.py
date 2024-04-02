@@ -248,8 +248,10 @@ def chat(dialog, messages, **kwargs):
                                                    tkweight=1 - dialog.vector_similarity_weight,
                                                    vtweight=dialog.vector_similarity_weight)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
-        kbinfos["doc_aggs"] = [
+        recall_docs = [
             d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
+        if not recall_docs: recall_docs = kbinfos["doc_aggs"]
+        kbinfos["doc_aggs"] = recall_docs
     for c in kbinfos["chunks"]:
         if c.get("vector"):
             del c["vector"]
