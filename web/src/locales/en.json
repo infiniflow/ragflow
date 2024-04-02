@@ -82,6 +82,31 @@
       "view": "View",
       "filesSelected": "Files Selected"
     },
+    "knowledgeConfiguration": {
+      "titleDescription": "Update your knowledge base details especially parsing method here.",
+      "name": "Knowledge base name",
+      "photo": "Knowledge base photo",
+      "description": "Description",
+      "language": "Language",
+      "languageMessage": "Please input your language!",
+      "languagePlaceholder": "Please input your language!",
+      "permissions": "Permissions",
+      "embeddingModel": "Embedding model",
+      "chunkTokenNumber": "Chunk token number",
+      "embeddingModelTip": "The embedding model used to embedding chunks. It's unchangable once the knowledgebase has chunks. You need to delete all the chunks if you want to change it.",
+      "permissionsTip": "If the permission is 'Team', all the team member can manipulate the knowledgebase.",
+      "chunkTokenNumberTip": "It determine the token number of a chunk approximately.",
+      "chunkMethodTip": "The instruction is at right.",
+      "upload": "Upload",
+      "english": "English",
+      "chinese": "Chinese",
+      "embeddingModelPlaceholder": "Please select a embedding model",
+      "chunkMethodPlaceholder": "Please select a chunk method",
+      "save": "Save",
+      "me": "Only me",
+      "team": "Team",
+      "cancel": "Cancel"
+    },
     "footer": {
       "detail": "All rights reserved @ React"
     },
