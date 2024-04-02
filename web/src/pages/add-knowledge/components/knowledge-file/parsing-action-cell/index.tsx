@@ -1,4 +1,4 @@
-import showDeleteConfirm from '@/components/deleting-confirm';
+import { useShowDeleteConfirm } from '@/hooks/commonHooks';
 import { useRemoveDocument } from '@/hooks/documentHooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { api_host } from '@/utils/api';
@@ -31,6 +31,7 @@ const ParsingActionCell = ({
   const isRunning = isParserRunning(record.run);
 
   const removeDocument = useRemoveDocument(documentId);
+  const showDeleteConfirm = useShowDeleteConfirm();
 
   const onRmDocument = () => {
     if (!isRunning) {

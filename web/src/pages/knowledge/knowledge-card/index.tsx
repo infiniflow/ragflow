@@ -1,5 +1,6 @@
 import { ReactComponent as MoreIcon } from '@/assets/svg/more.svg';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { useShowDeleteConfirm } from '@/hooks/commonHooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { formatDate } from '@/utils/date';
 import {
@@ -11,7 +12,6 @@ import {
 import { Avatar, Card, Dropdown, MenuProps, Space } from 'antd';
 import { useDispatch, useNavigate } from 'umi';
 
-import showDeleteConfirm from '@/components/deleting-confirm';
 import styles from './index.less';
 
 interface IProps {
@@ -21,6 +21,7 @@ interface IProps {
 const KnowledgeCard = ({ item }: IProps) => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const showDeleteConfirm = useShowDeleteConfirm();
 
   const removeKnowledge = () => {
     return dispatch({

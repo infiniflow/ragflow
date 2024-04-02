@@ -1,3 +1,4 @@
+import { useLogin, useRegister } from '@/hooks/loginHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
@@ -6,7 +7,6 @@ import { useTranslation } from 'react-i18next';
 import { Icon, useNavigate } from 'umi';
 import RightPanel from './right-panel';
 
-import { useLogin, useRegister } from '@/hooks/loginHooks';
 import styles from './index.less';
 
 const Login = () => {
@@ -14,7 +14,7 @@ const Login = () => {
   const navigate = useNavigate();
   const login = useLogin();
   const register = useRegister();
-  const { t } = useTranslation();
+  const { t } = useTranslation('translation', { keyPrefix: 'login' });
 
   // TODO: When the server address request is not accessible, the value of dva-loading always remains true.
 
@@ -75,13 +75,11 @@ const Login = () => {
       <div className={styles.loginLeft}>
         <div className={styles.leftContainer}>
           <div className={styles.loginTitle}>
-            <div>
-              {title === 'login' ? t('login.login') : 'Create an account'}
-            </div>
+            <div>{title === 'login' ? t('login') : 'Create an account'}</div>
             <span>
               {title === 'login'
-                ? 'We’re so excited to see you again!'
-                : 'Glad to have you on board!'}
+                ? t('loginDescription')
+                : t('registerDescription')}
             </span>
           </div>
 
@@ -94,55 +92,52 @@ const Login = () => {
             <Form.Item
               {...formItemLayout}
               name="email"
-              label="Email"
-              rules={[{ required: true, message: 'Please input value' }]}
+              label={t('emailLabel')}
+              rules={[{ required: true, message: t('emailPlaceholder') }]}
             >
-              <Input size="large" placeholder="Please input value" />
+              <Input size="large" placeholder={t('emailPlaceholder')} />
             </Form.Item>
             {title === 'register' && (
               <Form.Item
                 {...formItemLayout}
                 name="nickname"
-                label="Nickname"
-                rules={[
-                  { required: true, message: 'Please input your nickname' },
-                ]}
+                label={t('nicknameLabel')}
+                rules={[{ required: true, message: t('nicknamePlaceholder') }]}
               >
-                <Input size="large" placeholder="Please input your nickname" />
+                <Input size="large" placeholder={t('nicknamePlaceholder')} />
               </Form.Item>
             )}
             <Form.Item
               {...formItemLayout}
               name="password"
-              label="Password"
-              rules={[{ required: true, message: 'Please input value' }]}
+              label={t('passwordLabel')}
+              rules={[{ required: true, message: t('passwordPlaceholder') }]}
             >
               <Input.Password
                 size="large"
-                placeholder="Please input value"
+                placeholder={t('passwordPlaceholder')}
                 onPressEnter={onCheck}
               />
             </Form.Item>
             {title === 'login' && (
               <Form.Item name="remember" valuePropName="checked">
-                <Checkbox> Remember me</Checkbox>
+                <Checkbox> {t('rememberMe')}</Checkbox>
               </Form.Item>
             )}
             <div>
-              {' '}
               {title === 'login' && (
                 <div>
-                  Don’t have an account?
+                  {t('signInTip')}
                   <Button type="link" onClick={changeTitle}>
-                    Sign up
+                    {t('signUp')}
                   </Button>
                 </div>
               )}
               {title === 'register' && (
                 <div>
-                  Already have an account?
+                  {t('signUpTip')}
                   <Button type="link" onClick={changeTitle}>
-                    Sign in
+                    {t('login')}
                   </Button>
                 </div>
               )}
@@ -154,7 +149,7 @@ const Login = () => {
               onClick={onCheck}
               loading={signLoading}
             >
-              {title === 'login' ? 'Sign in' : 'Continue'}
+              {title === 'login' ? t('login') : t('continue')}
             </Button>
             {title === 'login' && (
               <>

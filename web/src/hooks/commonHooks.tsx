@@ -1,5 +1,8 @@
+import { ExclamationCircleFilled } from '@ant-design/icons';
+import { App } from 'antd';
 import isEqual from 'lodash/isEqual';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export const useSetModalState = () => {
   const [visible, setVisible] = useState(false);
@@ -72,3 +75,43 @@ export function useDynamicSVGImport(
 
   return { error, loading, SvgIcon: ImportedIconRef.current };
 }
+
+interface IProps {
+  onOk?: (...args: any[]) => any;
+  onCancel?: (...args: any[]) => any;
+}
+
+export const useShowDeleteConfirm = () => {
+  const { modal } = App.useApp();
+  const { t } = useTranslation();
+
+  const showDeleteConfirm = useCallback(
+    ({ onOk, onCancel }: IProps): Promise<number> => {
+      return new Promise((resolve, reject) => {
+        modal.confirm({
+          title: t('common.deleteModalTitle'),
+          icon: <ExclamationCircleFilled />,
+          // content: 'Some descriptions',
+          okText: 'Yes',
+          okType: 'danger',
+          cancelText: 'No',
+          async onOk() {
+            try {
+              const ret = await onOk?.();
+              resolve(ret);
+              console.info(ret);
+            } catch (error) {
+              reject(error);
+            }
+          },
+          onCancel() {
+            onCancel?.();
+          },
+        });
+      });
+    },
+    [t, modal],
+  );
+
+  return showDeleteConfirm;
+};
