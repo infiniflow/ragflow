@@ -1,16 +1,24 @@
 .uploadWrapper {
   display: flex;
   flex-direction: column;
-  padding: 32px;
+  padding: 64px 32px 32px;
   height: 100%;
   .backToList {
+    display: none;
     padding-bottom: 60px;
   }
   .footer {
-    text-align: right;
+    text-align: center;
     padding-top: 16px;
     .nextButton {
-      background-color: @purple;
+      // background-color: @purple;
+      font-weight: 700;
+      font-size: 24px;
+      display: inline-flex;
+      align-items: center;
+      padding: 26px 40px;
+      justify-content: center;
+      width: 10%;
     }
   }
   .uploadContent {

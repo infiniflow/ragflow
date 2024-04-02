@@ -287,9 +287,10 @@ const KnowledgeUploadFile = () => {
         <section className={styles.footer}>
           <Button
             type="primary"
-            // className={styles.nextButton}
+            className={styles.nextButton}
             onClick={handleNextClick}
             disabled={!enabled}
+            size="large"
           >
             Next
           </Button>
