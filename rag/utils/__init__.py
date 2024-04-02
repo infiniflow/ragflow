@@ -37,7 +37,7 @@ def findMaxDt(fnm):
                 if l > m:
                     m = l
     except Exception as e:
-        print("WARNING: can't find " + fnm)
+        pass
     return m
 
   
@@ -55,7 +55,7 @@ def findMaxTm(fnm):
                 if int(l) > m:
                     m = int(l)
     except Exception as e:
-        print("WARNING: can't find " + fnm)
+        pass
     return m
 
 
