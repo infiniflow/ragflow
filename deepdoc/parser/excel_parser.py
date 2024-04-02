@@ -14,6 +14,7 @@ class HuExcelParser:
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             rows = list(ws.rows)
+            if not rows:continue
             tb += f"<table><caption>{sheetname}</caption><tr>"
             for t in list(rows[0]):
                 tb += f"<th>{t.value}</th>"
@@ -38,6 +39,7 @@ class HuExcelParser:
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             rows = list(ws.rows)
+            if not rows:continue
             ti = list(rows[0])
             for r in list(rows[1:]):
                 l = []

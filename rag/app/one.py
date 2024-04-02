@@ -44,6 +44,7 @@ class Pdf(PdfParser):
         sections = [(b["text"], self.get_position(b, zoomin))
                     for i, b in enumerate(self.boxes)]
         for (img, rows), poss in tbls:
+            if not rows:continue
             sections.append((rows if isinstance(rows, str) else rows[0],
                              [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
         return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (
