@@ -40,6 +40,7 @@ class Excel(ExcelParser):
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             rows = list(ws.rows)
+            if not rows:continue
             headers = [cell.value for cell in rows[0]]
             missed = set([i for i, h in enumerate(headers) if h is None])
             headers = [
