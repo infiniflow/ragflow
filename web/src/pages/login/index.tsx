@@ -1,59 +1,56 @@
+import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
 import { useEffect, useState } from 'react';
-import { Icon, useDispatch, useNavigate, useSelector } from 'umi';
+import { useTranslation } from 'react-i18next';
+import { Icon, useNavigate } from 'umi';
 import RightPanel from './right-panel';
 
+import { useLogin, useRegister } from '@/hooks/loginHooks';
 import styles from './index.less';
 
 const Login = () => {
   const [title, setTitle] = useState('login');
-  let navigate = useNavigate();
-  const dispatch = useDispatch();
-  const effectsLoading: any = useSelector<any>( // TODO: Type needs to be improved
-    (state) => state.loading.effects,
-  );
+  const navigate = useNavigate();
+  const login = useLogin();
+  const register = useRegister();
+  const { t } = useTranslation();
 
   // TODO: When the server address request is not accessible, the value of dva-loading always remains true.
 
-  const signLoading =
-    effectsLoading['loginModel/login'] || effectsLoading['loginModel/register'];
+  const signLoading = useOneNamespaceEffectsLoading('loginModel', [
+    'login',
+    'register',
+  ]);
 
   const changeTitle = () => {
     setTitle((title) => (title === 'login' ? 'register' : 'login'));
   };
   const [form] = Form.useForm();
-  const [checkNick, setCheckNick] = useState(false);
 
   useEffect(() => {
     form.validateFields(['nickname']);
-  }, [checkNick, form]);
+  }, [form]);
 
   const onCheck = async () => {
     try {
       const params = await form.validateFields();
 
-      var rsaPassWord = rsaPsw(params.password);
+      const rsaPassWord = rsaPsw(params.password) as string;
+
       if (title === 'login') {
-        const retcode = await dispatch<any>({
-          type: 'loginModel/login',
-          payload: {
-            email: params.email,
-            password: rsaPassWord,
-          },
+        const retcode = await login({
+          email: params.email,
+          password: rsaPassWord,
         });
         if (retcode === 0) {
           navigate('/knowledge');
         }
       } else {
-        // TODO: Type needs to be improved
-        const retcode = await dispatch<any>({
-          type: 'loginModel/register',
-          payload: {
-            nickname: params.nickname,
-            email: params.email,
-            password: rsaPassWord,
-          },
+        const retcode = await register({
+          nickname: params.nickname,
+          email: params.email,
+          password: rsaPassWord,
         });
         if (retcode === 0) {
           setTitle('login');
@@ -72,12 +69,15 @@ const Login = () => {
     window.location.href =
       'https://github.com/login/oauth/authorize?scope=user:email&client_id=302129228f0d96055bee';
   };
+
   return (
     <div className={styles.loginPage}>
       <div className={styles.loginLeft}>
         <div className={styles.leftContainer}>
           <div className={styles.loginTitle}>
-            <div>{title === 'login' ? 'Sign in' : 'Create an account'}</div>
+            <div>
+              {title === 'login' ? t('login.login') : 'Create an account'}
+            </div>
             <span>
               {title === 'login'
                 ? 'We’re so excited to see you again!'

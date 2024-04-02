@@ -1,20 +1,21 @@
 {
-    "header": {
-        "register": "注册",
-        "signin": "登陆",
-        "home": "首页",
-        "setting": "user setting",
-        "logout": "logout"
-    },
-    "footer": {
-        "detail": "版权所有 @ React"
-    },
-    "layout": {
-        "file": "文件",
-        "knowledge": "知识库",
-        "chat": "聊天"
-    },
-    "setting": {
-        "btn": "中文"
-    }
+  "login": { "login": "登录" },
+  "header": {
+    "register": "注册",
+    "signin": "登陆",
+    "home": "首页",
+    "setting": "user setting",
+    "logout": "logout"
+  },
+  "footer": {
+    "detail": "版权所有 @ React"
+  },
+  "layout": {
+    "file": "文件",
+    "knowledge": "知识库",
+    "chat": "聊天"
+  },
+  "setting": {
+    "btn": "中文"
+  }
 }
