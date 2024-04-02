@@ -64,7 +64,23 @@
       "parsingStatus": "Parsing Status",
       "processBeginAt": "Process Begin At",
       "processDuration": "Process Duration",
-      "progressMsg": "Progress Msg"
+      "progressMsg": "Progress Msg",
+      "testingDescription": "Final step! After success, leave the rest to Infiniflow AI.",
+      "topK": "Top K",
+      "topKTip": "For the computaion cost, not all the retrieved chunk will be computed vector cosine similarity with query. The bigger the 'Top K' is, the higher the recall rate is, the slower the retrieval speed is.",
+      "similarityThreshold": "Similarity threshold",
+      "similarityThresholdTip": "We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out.",
+      "vectorSimilarityWeight": "Vector similarity weight",
+      "vectorSimilarityWeightTip": "We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. The sum of both weights is 1.0.",
+      "testText": "Test text",
+      "testTextPlaceholder": "Please input your question!",
+      "testingLabel": "Testing",
+      "similarity": "Hybrid Similarity",
+      "termSimilarity": "Term Similarity",
+      "vectorSimilarity": "Vector Similarity",
+      "hits": "Hits",
+      "view": "View",
+      "filesSelected": "Files Selected"
     },
     "footer": {
       "detail": "All rights reserved @ React"
