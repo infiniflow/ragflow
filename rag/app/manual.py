@@ -85,7 +85,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             for t, lvl in pdf_parser.outlines:
                 tks = set([t[i] + t[i + 1] for i in range(len(t) - 1)])
                 tks_ = set([txt[i] + txt[i + 1]
-                           for i in range(min(len(t), len(txt) - 1))])
+                            for i in range(min(len(t), len(txt) - 1))])
                 if len(set(tks & tks_)) / max([len(tks), len(tks_), 1]) > 0.8:
                     levels.append(lvl)
                     break
@@ -109,7 +109,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     sections = [(txt, sec_ids[i], poss)
                 for i, (txt, _, poss) in enumerate(sections)]
     for (img, rows), poss in tbls:
-        if not rows:continue
+        if not rows: continue
         sections.append((rows if isinstance(rows, str) else rows[0], -1,
                          [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 
@@ -125,7 +125,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     for txt, sec_id, poss in sorted(sections, key=lambda x: (
             x[-1][0][0], x[-1][0][3], x[-1][0][1])):
         poss = "\t".join([tag(*pos) for pos in poss])
-        if tk_cnt < 2048 and (sec_id == last_sid or sec_id == -1):
+        if tk_cnt < 32 or (tk_cnt < 1024 and (sec_id == last_sid or sec_id == -1)):
             if chunks:
                 chunks[-1] += "\n" + txt + poss
                 tk_cnt += num_tokens_from_string(txt)
@@ -143,6 +143,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
+
     chunk(sys.argv[1], callback=dummy)
