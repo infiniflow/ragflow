@@ -45,7 +45,7 @@ class KnowledgebaseService(CommonService):
         fields = [
             cls.model.id,
             #Tenant.embd_id,
-            cls.embd_id,
+            cls.model.embd_id,
             cls.model.avatar,
             cls.model.name,
             cls.model.language,
