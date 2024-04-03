@@ -133,7 +133,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         return res
 
     raise NotImplementedError(
-        "file type not supported yet(pptx, pdf supported)")
+        "Excel and csv(txt) format files are supported.")
 
 
 if __name__ == "__main__":

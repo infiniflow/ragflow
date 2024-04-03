@@ -73,7 +73,7 @@ class EsQueryer:
             return True
 
         qs, keywords = [], []
-        for tt in self.tw.split(txt):  # .split(" "):
+        for tt in self.tw.split(txt)[:256]:  # .split(" "):
             if not tt:
                 continue
             twts = self.tw.weights([tt])
