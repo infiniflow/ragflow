@@ -105,7 +105,12 @@
       "save": "Save",
       "me": "Only me",
       "team": "Team",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "methodTitle": "Chunking Method Description",
+      "methodExamples": "Examples",
+      "methodExamplesDescription": "This visual guides is in order to make understanding easier for you.",
+      "dialogueExamplesTitle": "Dialogue Examples",
+      "methodEmpty": "This will display a visual explanation of the knowledge base categories"
     },
     "footer": {
       "detail": "All rights reserved @ React"

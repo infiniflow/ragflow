@@ -175,9 +175,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                                 return Promise.resolve();
                               }
                               return Promise.reject(
-                                new Error(
-                                  'The current value must be greater than the previous to!',
-                                ),
+                                new Error(t('greaterThanPrevious')),
                               );
                             },
                           }),
@@ -208,9 +206,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                                 return Promise.resolve();
                               }
                               return Promise.reject(
-                                new Error(
-                                  'The current value must be greater than to!',
-                                ),
+                                new Error(t('greaterThan')),
                               );
                             },
                           }),

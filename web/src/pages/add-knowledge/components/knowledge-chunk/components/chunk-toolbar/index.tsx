@@ -1,5 +1,6 @@
 import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { useTranslate } from '@/hooks/commonHooks';
 import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
 import {
   ArrowLeftOutlined,
@@ -49,6 +50,7 @@ const ChunkToolBar = ({
   const dispatch = useDispatch();
   const knowledgeBaseId = useKnowledgeBaseId();
   const [isShowSearchBox, setIsShowSearchBox] = useState(false);
+  const { t } = useTranslate('chunk');
 
   const handleSelectAllCheck = useCallback(
     (e: any) => {
@@ -95,7 +97,7 @@ const ChunkToolBar = ({
         label: (
           <>
             <Checkbox onChange={handleSelectAllCheck} checked={checked}>
-              <b>Select All</b>
+              <b>{t('selectAll')}</b>
             </Checkbox>
           </>
         ),
@@ -106,7 +108,7 @@ const ChunkToolBar = ({
         label: (
           <Space onClick={handleEnabledClick}>
             <CheckCircleOutlined />
-            <b>Enabled Selected</b>
+            <b>{t('enabledSelected')}</b>
           </Space>
         ),
       },
@@ -115,7 +117,7 @@ const ChunkToolBar = ({
         label: (
           <Space onClick={handleDisabledClick}>
             <CloseCircleOutlined />
-            <b>Disabled Selected</b>
+            <b>{t('disabledSelected')}</b>
           </Space>
         ),
       },
@@ -125,7 +127,7 @@ const ChunkToolBar = ({
         label: (
           <Space onClick={handleDelete}>
             <DeleteOutlined />
-            <b>Delete Selected</b>
+            <b>{t('deleteSelected')}</b>
           </Space>
         ),
       },
@@ -136,6 +138,7 @@ const ChunkToolBar = ({
     handleDelete,
     handleEnabledClick,
     handleDisabledClick,
+    t,
   ]);
 
   const content = (
@@ -151,9 +154,9 @@ const ChunkToolBar = ({
   const filterContent = (
     <Radio.Group onChange={handleFilterChange} value={available}>
       <Space direction="vertical">
-        <Radio value={undefined}>All</Radio>
-        <Radio value={1}>Enabled</Radio>
-        <Radio value={0}>Disabled</Radio>
+        <Radio value={undefined}>{t('all')}</Radio>
+        <Radio value={1}>{t('enabled')}</Radio>
+        <Radio value={0}>{t('disabled')}</Radio>
       </Space>
     </Radio.Group>
   );
@@ -172,14 +175,14 @@ const ChunkToolBar = ({
       <Space>
         <Popover content={content} placement="bottom" arrow={false}>
           <Button>
-            Bulk
+            {t('bulk')}
             <DownOutlined />
           </Button>
         </Popover>
         {isShowSearchBox ? (
           <Input
             size="middle"
-            placeholder="Search"
+            placeholder={t('search')}
             prefix={<SearchOutlined />}
             allowClear
             onChange={handleSearchChange}
