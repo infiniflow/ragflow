@@ -1,4 +1,5 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
+import { useTranslate } from '@/hooks/commonHooks';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
 
@@ -24,6 +25,7 @@ const ApiKeyModal = ({
   onOk,
 }: IProps) => {
   const [form] = Form.useForm();
+  const { t } = useTranslate('setting');
 
   const handleOk = async () => {
     const ret = await form.validateFields();
@@ -49,7 +51,7 @@ const ApiKeyModal = ({
 
   return (
     <Modal
-      title="Modify"
+      title={t('modify')}
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}
@@ -67,18 +69,18 @@ const ApiKeyModal = ({
         form={form}
       >
         <Form.Item<FieldType>
-          label="Api-Key"
+          label={t('apiKey')}
           name="api_key"
-          tooltip="The API key can be obtained by registering the corresponding LLM supplier."
-          rules={[{ required: true, message: 'Please input api key!' }]}
+          tooltip={t('apiKeyTip')}
+          rules={[{ required: true, message: t('apiKeyMessage') }]}
         >
           <Input />
         </Form.Item>
         {llmFactory === 'OpenAI' && (
           <Form.Item<FieldType>
-            label="Base-Url"
+            label={t('baseUrl')}
             name="base_url"
-            tooltip="If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key."
+            tooltip={t('baseUrlTip')}
           >
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
