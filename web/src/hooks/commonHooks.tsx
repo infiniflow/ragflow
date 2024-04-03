@@ -119,3 +119,7 @@ export const useShowDeleteConfirm = () => {
 export const useTranslate = (keyPrefix: string) => {
   return useTranslation('translation', { keyPrefix });
 };
+
+export const useCommonTranslation = () => {
+  return useTranslation('translation', { keyPrefix: 'common' });
+};

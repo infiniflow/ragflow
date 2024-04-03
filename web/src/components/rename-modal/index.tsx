@@ -1,3 +1,4 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
 import { IModalManagerChildrenProps } from '../modal-manager';
@@ -17,6 +18,7 @@ const RenameModal = ({
   onOk,
 }: IProps) => {
   const [form] = Form.useForm();
+  const { t } = useTranslate('common');
 
   type FieldType = {
     name?: string;
@@ -48,7 +50,7 @@ const RenameModal = ({
 
   return (
     <Modal
-      title="Rename"
+      title={t('rename')}
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}
@@ -66,9 +68,9 @@ const RenameModal = ({
         form={form}
       >
         <Form.Item<FieldType>
-          label="Name"
+          label={t('name')}
           name="name"
-          rules={[{ required: true, message: 'Please input name!' }]}
+          rules={[{ required: true, message: t('namePlaceholder') }]}
         >
           <Input />
         </Form.Item>

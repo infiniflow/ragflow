@@ -17,6 +17,7 @@ import { useFetchModelId } from './hooks';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 enum ConfigurationSegmented {
@@ -68,6 +69,7 @@ const ChatConfigurationModal = ({
   );
   const promptEngineRef = useRef<Array<IPromptConfigParameters>>([]);
   const modelId = useFetchModelId(visible);
+  const { t } = useTranslate('chat');
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -115,10 +117,9 @@ const ChatConfigurationModal = ({
     <Flex gap={16}>
       <ChatConfigurationAtom></ChatConfigurationAtom>
       <div>
-        <b>Chat Configuration</b>
+        <b>{t('chatConfiguration')}</b>
         <div className={styles.chatConfigurationDescription}>
-          Here, dress up a dedicated assistant for your special knowledge bases!
-          💕
+          {t('chatConfigurationDescription')}
         </div>
       </div>
     </Flex>

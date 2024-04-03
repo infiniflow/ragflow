@@ -12,6 +12,9 @@ export default {
       next: 'Next',
       create: 'Create',
       edit: 'Edit',
+      upload: 'Upload',
+      english: 'English',
+      chinese: 'Chinese',
     },
     login: {
       login: 'Sign in',
@@ -241,6 +244,71 @@ export default {
       keyword: 'Keyword',
       function: 'Function',
       chunkMessage: 'Please input value!',
+    },
+    chat: {
+      chat: 'Chat',
+      newChat: 'New chat',
+      send: 'Send',
+      sendPlaceholder: 'Message Resume Assistant...',
+      chatConfiguration: 'Chat Configuration',
+      chatConfigurationDescription:
+        ' Here, dress up a dedicated assistant for your special knowledge bases! 💕',
+      assistantName: 'Assistant name',
+      namePlaceholder: 'e.g. Resume Jarvis',
+      assistantAvatar: 'Assistant avatar',
+      language: 'Language',
+      emptyResponse: 'Empty response',
+      emptyResponseTip: `If nothing is retrieved with user's question in the knowledgebase, it will use this as an answer. If you want LLM comes up with its own opinion when nothing is retrieved, leave this blank.`,
+      setAnOpener: 'Set an opener',
+      setAnOpenerInitial: `Hi! I'm your assistant, what can I do for you?`,
+      setAnOpenerTip: 'How do you want to welcome your clients?',
+      knowledgeBases: 'Knowledgebases',
+      knowledgeBasesMessage: 'Please select',
+      knowledgeBasesTip: 'Select knowledgebases associated.',
+      system: 'System',
+      systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
+      以下是知识库：
+      {knowledge}
+      以上是知识库。`,
+      systemMessage: 'Please input!',
+      systemTip:
+        'Instructions you need LLM to follow when LLM answers questions, like charactor design, answer length and answer language etc.',
+      topN: 'Top N',
+      topNTip: `Not all the chunks whose similarity score is above the 'simialrity threashold' will be feed to LLMs. LLM can only see these 'Top N' chunks.`,
+      variable: 'Variable',
+      variableTip: `If you use dialog APIs, the varialbes might help you chat with your clients with different strategies. 
+      The variables are used to fill-in the 'System' part in prompt in order to give LLM a hint.
+      The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks.
+      All the variables in 'System' should be curly bracketed.`,
+      add: 'Add',
+      key: 'key',
+      optional: 'Optional',
+      operation: 'operation',
+      model: 'Model',
+      modelTip: 'Large language chat model',
+      modelMessage: 'Please select!',
+      freedom: 'Freedom',
+      freedomTip: `'Precise' means the LLM will be conservative and answer your question cautiously. 'Improvise' means the you want LLM talk much and freely. 'Balance' is between cautiously and freely.`,
+      temperature: 'Temperature',
+      temperatureMessage: 'Temperature is required',
+      temperatureTip:
+        'This parameter controls the randomness of predictions by the model. A lower temperature makes the model more confident in its responses, while a higher temperature makes it more creative and diverse.',
+      topP: 'Top P',
+      topPMessage: 'Top P is required',
+      topPTip:
+        'This parameter controls the randomness of predictions by the model. A lower temperature makes the model more confident in its responses, while a higher temperature makes it more creative and diverse.',
+      presencePenalty: 'Presence Penalty',
+      presencePenaltyMessage: 'Presence Penalty is required',
+      presencePenaltyTip:
+        'This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation.',
+      frequencyPenalty: 'Frequency Penalty',
+      frequencyPenaltyMessage: 'Frequency Penalty is required',
+      frequencyPenaltyTip:
+        'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.',
+      maxTokens: 'Max Tokens',
+      maxTokensMessage: 'Max Tokens is required',
+      maxTokensTip:
+        'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).',
     },
     footer: {
       detail: 'All rights reserved @ React',

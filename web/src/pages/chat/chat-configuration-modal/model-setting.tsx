@@ -8,6 +8,7 @@ import classNames from 'classnames';
 import { useEffect } from 'react';
 import { ISegmentedContentProps } from '../interface';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
 import { variableEnabledFieldMap } from '../constants';
 import styles from './index.less';
@@ -17,6 +18,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
     label: x,
     value: x,
   }));
+  const { t } = useTranslate('chat');
 
   const modelOptions = useSelectLlmOptions();
 
@@ -44,18 +46,18 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
       })}
     >
       <Form.Item
-        label="Model"
+        label={t('model')}
         name="llm_id"
-        tooltip="Large language chat model"
-        rules={[{ required: true, message: 'Please select!' }]}
+        tooltip={t('modelTip')}
+        rules={[{ required: true, message: t('modelMessage') }]}
       >
         <Select options={modelOptions} showSearch />
       </Form.Item>
       <Divider></Divider>
       <Form.Item
-        label="Freedom"
+        label={t('freedom')}
         name="parameters"
-        tooltip="'Precise' means the LLM will be conservative and answer your question cautiously. 'Improvise' means the you want LLM talk much and freely. 'Balance' is between cautiously and freely."
+        tooltip={t('freedomTip')}
         initialValue={ModelVariableType.Precise}
         // rules={[{ required: true, message: 'Please input!' }]}
       >
@@ -64,7 +66,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           onChange={handleParametersChange}
         />
       </Form.Item>
-      <Form.Item label="Temperature" tooltip={'This parameter controls the randomness of predictions by the model. A lower temperature makes the model more confident in its responses, while a higher temperature makes it more creative and diverse.'}>
+      <Form.Item label={t('temperature')} tooltip={t('temperatureTip')}>
         <Flex gap={20} align="center">
           <Form.Item
             name={'temperatureEnabled'}
@@ -77,7 +79,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'temperature']}
               noStyle
-              rules={[{ required: true, message: 'Temperature is required' }]}
+              rules={[{ required: true, message: t('temperatureMessage') }]}
             >
               <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
@@ -85,7 +87,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'temperature']}
             noStyle
-            rules={[{ required: true, message: 'Temperature is required' }]}
+            rules={[{ required: true, message: t('temperatureMessage') }]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
@@ -96,7 +98,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           </Form.Item>
         </Flex>
       </Form.Item>
-      <Form.Item label="Top P" tooltip={'Also known as “nucleus sampling,” this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones.'}>
+      <Form.Item label={t('topP')} tooltip={t('topPTip')}>
         <Flex gap={20} align="center">
           <Form.Item name={'topPEnabled'} valuePropName="checked" noStyle>
             <Switch size="small" />
@@ -105,7 +107,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'top_p']}
               noStyle
-              rules={[{ required: true, message: 'Top_p is required' }]}
+              rules={[{ required: true, message: t('topPMessage') }]}
             >
               <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
@@ -113,7 +115,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'top_p']}
             noStyle
-            rules={[{ required: true, message: 'Top_p is required' }]}
+            rules={[{ required: true, message: t('topPMessage') }]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
@@ -124,7 +126,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           </Form.Item>
         </Flex>
       </Form.Item>
-      <Form.Item label="Presence Penalty" tooltip={'This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation.'}>
+      <Form.Item label={t('presencePenalty')} tooltip={t('presencePenaltyTip')}>
         <Flex gap={20} align="center">
           <Form.Item
             name={'presencePenaltyEnabled'}
@@ -137,9 +139,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'presence_penalty']}
               noStyle
-              rules={[
-                { required: true, message: 'Presence Penalty is required' },
-              ]}
+              rules={[{ required: true, message: t('presencePenaltyMessage') }]}
             >
               <Slider className={styles.variableSlider} max={1} step={0.01} />
             </Form.Item>
@@ -147,9 +147,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'presence_penalty']}
             noStyle
-            rules={[
-              { required: true, message: 'Presence Penalty is required' },
-            ]}
+            rules={[{ required: true, message: t('presencePenaltyMessage') }]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
@@ -160,7 +158,10 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           </Form.Item>
         </Flex>
       </Form.Item>
-      <Form.Item label="Frequency Penalty" tooltip={'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.'}>
+      <Form.Item
+        label={t('frequencyPenalty')}
+        tooltip={t('frequencyPenaltyTip')}
+      >
         <Flex gap={20} align="center">
           <Form.Item
             name={'frequencyPenaltyEnabled'}
@@ -174,7 +175,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
               name={['llm_setting', 'frequency_penalty']}
               noStyle
               rules={[
-                { required: true, message: 'Frequency Penalty is required' },
+                { required: true, message: t('frequencyPenaltyMessage') },
               ]}
             >
               <Slider className={styles.variableSlider} max={1} step={0.01} />
@@ -183,9 +184,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'frequency_penalty']}
             noStyle
-            rules={[
-              { required: true, message: 'Frequency Penalty is required' },
-            ]}
+            rules={[{ required: true, message: t('frequencyPenaltyMessage') }]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
@@ -196,7 +195,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           </Form.Item>
         </Flex>
       </Form.Item>
-      <Form.Item label="Max Tokens" tooltip={'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).'}>
+      <Form.Item label={t('maxTokens')} tooltip={t('maxTokensTip')}>
         <Flex gap={20} align="center">
           <Form.Item name={'maxTokensEnabled'} valuePropName="checked" noStyle>
             <Switch size="small" />
@@ -205,7 +204,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
             <Form.Item
               name={['llm_setting', 'max_tokens']}
               noStyle
-              rules={[{ required: true, message: 'Max Tokens is required' }]}
+              rules={[{ required: true, message: t('maxTokensMessage') }]}
             >
               <Slider className={styles.variableSlider} max={2048} />
             </Form.Item>
@@ -213,7 +212,7 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item
             name={['llm_setting', 'max_tokens']}
             noStyle
-            rules={[{ required: true, message: 'Max Tokens is required' }]}
+            rules={[{ required: true, message: t('maxTokensMessage') }]}
           >
             <InputNumber
               className={styles.sliderInputNumber}
