@@ -7,6 +7,7 @@ import {
 import { Breadcrumb } from 'antd';
 import { ItemType } from 'antd/es/breadcrumb/Breadcrumb';
 import { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, Outlet, useDispatch, useLocation } from 'umi';
 import Siderbar from './components/knowledge-sidebar';
 import {
@@ -21,6 +22,7 @@ const KnowledgeAdding = () => {
   const dispatch = useDispatch();
   const knowledgeBaseId = useKnowledgeBaseId();
 
+  const { t } = useTranslation();
   const location = useLocation();
   const activeKey: KnowledgeRouteKey =
     (useSecondPathName() as KnowledgeRouteKey) || KnowledgeRouteKey.Dataset;
@@ -33,14 +35,18 @@ const KnowledgeAdding = () => {
   const breadcrumbItems: ItemType[] = useMemo(() => {
     const items: ItemType[] = [
       {
-        title: <a onClick={() => gotoList('/knowledge')}>Knowledge Base</a>,
+        title: (
+          <a onClick={() => gotoList('/knowledge')}>
+            {t('header.knowledgeBase')}
+          </a>
+        ),
       },
       {
         title: datasetActiveKey ? (
           <Link
             to={`/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeBaseId}`}
           >
-            {routeMap[activeKey]}
+            {t(`knowledgeDetails.${activeKey}`)}
           </Link>
         ) : (
           routeMap[activeKey]
@@ -55,7 +61,7 @@ const KnowledgeAdding = () => {
     }
 
     return items;
-  }, [activeKey, datasetActiveKey, gotoList, knowledgeBaseId]);
+  }, [activeKey, datasetActiveKey, gotoList, knowledgeBaseId, t]);
 
   useEffect(() => {
     const search: string = location.search.slice(1);

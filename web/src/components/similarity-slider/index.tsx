@@ -1,3 +1,4 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { Form, Slider } from 'antd';
 
 type FieldType = {
@@ -10,27 +11,23 @@ interface IProps {
 }
 
 const SimilaritySlider = ({ isTooltipShown = false }: IProps) => {
+  const { t } = useTranslate('knowledgeDetails');
+
   return (
     <>
       <Form.Item<FieldType>
-        label="Similarity threshold"
+        label={t('similarityThreshold')}
         name={'similarity_threshold'}
-        tooltip={isTooltipShown && `We use hybrid similarity score to evaluate distance between two lines of text. 
-        It\'s weighted keywords similarity and vector cosine similarity. 
-        If the similarity between query and chunk is less than this threshold, the chunk will be filtered out.`
-    }
+        tooltip={isTooltipShown && t('similarityThresholdTip')}
         initialValue={0.2}
       >
         <Slider max={1} step={0.01} />
       </Form.Item>
       <Form.Item<FieldType>
-        label="Vector similarity weight"
+        label={t('vectorSimilarityWeight')}
         name={'vector_similarity_weight'}
         initialValue={0.3}
-        tooltip={isTooltipShown && `We use hybrid similarity score to evaluate distance between two lines of text. 
-        It\'s weighted keywords similarity and vector cosine similarity.
-        The sum of both weights is 1.0.
-        `}
+        tooltip={isTooltipShown && t('vectorSimilarityWeightTip')}
       >
         <Slider max={1} step={0.01} />
       </Form.Item>

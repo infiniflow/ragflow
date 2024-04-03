@@ -1,7 +1,8 @@
 import SimilaritySlider from '@/components/similarity-slider';
-import { Button, Card, Divider, Flex, Form, Input, Slider, Tag } from 'antd';
+import { Button, Card, Divider, Flex, Form, Input, Slider } from 'antd';
 import { FormInstance } from 'antd/lib';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import styles from './index.less';
 
@@ -22,6 +23,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
   const loading = useOneNamespaceEffectsLoading('testingModel', [
     'testDocumentChunk',
   ]);
+  const { t } = useTranslate('knowledgeDetails');
 
   const buttonDisabled =
     !question || (typeof question === 'string' && question.trim() === '');
@@ -29,9 +31,9 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
   return (
     <section className={styles.testingControlWrapper}>
       <div>
-        <b>Retrieval testing</b>
+        <b>{t('testing')}</b>
       </div>
-      <p>Final step! After success, leave the rest to Infiniflow AI.</p>
+      <p>{t('testingDescription')}</p>
       <Divider></Divider>
       <section>
         <Form
@@ -46,22 +48,18 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
           <Form.Item<FieldType>
             label="Top K"
             name={'top_k'}
-            tooltip="For the computaion cost, not all the retrieved chunk will be computed vector cosine similarity with query. 
-            The bigger the 'Top K' is, the higher the recall rate is, the slower the retrieval speed is."
+            tooltip={t('topKTip')}
           >
             <Slider marks={{ 0: 0, 2048: 2048 }} max={2048} />
           </Form.Item>
-          <Card size="small" title="Test text">
+          <Card size="small" title={t('testText')}>
             <Form.Item<FieldType>
               name={'question'}
-              rules={[
-                { required: true, message: 'Please input your question!' },
-              ]}
+              rules={[{ required: true, message: t('testTextPlaceholder') }]}
             >
               <Input.TextArea autoSize={{ minRows: 8 }}></Input.TextArea>
             </Form.Item>
-            <Flex justify={'space-between'}>
-              <Tag>10/200</Tag>
+            <Flex justify={'end'}>
               <Button
                 type="primary"
                 size="small"
@@ -69,7 +67,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
                 disabled={buttonDisabled}
                 loading={loading}
               >
-                Testing
+                {t('testingLabel')}
               </Button>
             </Flex>
           </Card>

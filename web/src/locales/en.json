@@ -1,50 +1,122 @@
 {
-  "common": {
-    "delete": "Delete",
-    "deleteModalTitle": "Are you sure delete this item?"
-  },
-  "login": {
-    "login": "Sign in",
-    "signUp": "Sign up",
-    "loginDescription": "We’re so excited to see you again!",
-    "registerDescription": "Glad to have you on board!",
-    "emailLabel": "Email",
-    "emailPlaceholder": "Please input email",
-    "passwordLabel": "Password",
-    "passwordPlaceholder": "Please input password",
-    "rememberMe": "Remember me",
-    "signInTip": "Don’t have an account?",
-    "signUpTip": "Already have an account?",
-    "nicknameLabel": "Nickname",
-    "nicknamePlaceholder": "Please input nickname",
-    "register": "Create an account",
-    "continue": "Continue"
-  },
-  "header": {
-    "knowledgeBase": "Knowledge Base",
-    "chat": "Chat",
-    "register": "Register",
-    "signin": "Sign in",
-    "home": "Home",
-    "setting": "用户设置",
-    "logout": "登出"
-  },
-  "knowledgeList": {
-    "welcome": "Welcome back",
-    "description": "Which database are we going to use today?",
-    "createKnowledgeBase": "Create knowledge base",
-    "name": "Name",
-    "namePlaceholder": "Please input name!"
-  },
-  "footer": {
-    "detail": "All rights reserved @ React"
-  },
-  "layout": {
-    "file": "file",
-    "knowledge": "knowledge",
-    "chat": "chat"
-  },
-  "setting": {
-    "btn": "en"
+  "translation": {
+    "common": {
+      "delete": "Delete",
+      "deleteModalTitle": "Are you sure delete this item?",
+      "ok": "Yes",
+      "cancel": "No",
+      "total": "Total",
+      "rename": "Rename",
+      "name": "Name",
+      "namePlaceholder": "Please input name"
+    },
+    "login": {
+      "login": "Sign in",
+      "signUp": "Sign up",
+      "loginDescription": "We’re so excited to see you again!",
+      "registerDescription": "Glad to have you on board!",
+      "emailLabel": "Email",
+      "emailPlaceholder": "Please input email",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Please input password",
+      "rememberMe": "Remember me",
+      "signInTip": "Don’t have an account?",
+      "signUpTip": "Already have an account?",
+      "nicknameLabel": "Nickname",
+      "nicknamePlaceholder": "Please input nickname",
+      "register": "Create an account",
+      "continue": "Continue"
+    },
+    "header": {
+      "knowledgeBase": "Knowledge Base",
+      "chat": "Chat",
+      "register": "Register",
+      "signin": "Sign in",
+      "home": "Home",
+      "setting": "用户设置",
+      "logout": "登出"
+    },
+    "knowledgeList": {
+      "welcome": "Welcome back",
+      "description": "Which database are we going to use today?",
+      "createKnowledgeBase": "Create knowledge base",
+      "name": "Name",
+      "namePlaceholder": "Please input name!",
+      "doc": "Docs"
+    },
+    "knowledgeDetails": {
+      "dataset": "Dataset",
+      "testing": "Retrieval testing",
+      "configuration": "Configuration",
+      "name": "Name",
+      "namePlaceholder": "Please input name!",
+      "doc": "Docs",
+      "datasetDescription": "Hey, don't forget to adjust the chunk after adding the dataset! 😉",
+      "addFile": "Add file",
+      "searchFiles": "Search your files",
+      "localFiles": "Local files",
+      "emptyFiles": "Create empty file",
+      "chunkNumber": "Chunk Number",
+      "uploadDate": "Upload Date",
+      "chunkMethod": "Chunk Method",
+      "enabled": "Enabled",
+      "action": "Action",
+      "parsingStatus": "Parsing Status",
+      "processBeginAt": "Process Begin At",
+      "processDuration": "Process Duration",
+      "progressMsg": "Progress Msg",
+      "testingDescription": "Final step! After success, leave the rest to Infiniflow AI.",
+      "topK": "Top K",
+      "topKTip": "For the computaion cost, not all the retrieved chunk will be computed vector cosine similarity with query. The bigger the 'Top K' is, the higher the recall rate is, the slower the retrieval speed is.",
+      "similarityThreshold": "Similarity threshold",
+      "similarityThresholdTip": "We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out.",
+      "vectorSimilarityWeight": "Vector similarity weight",
+      "vectorSimilarityWeightTip": "We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. The sum of both weights is 1.0.",
+      "testText": "Test text",
+      "testTextPlaceholder": "Please input your question!",
+      "testingLabel": "Testing",
+      "similarity": "Hybrid Similarity",
+      "termSimilarity": "Term Similarity",
+      "vectorSimilarity": "Vector Similarity",
+      "hits": "Hits",
+      "view": "View",
+      "filesSelected": "Files Selected"
+    },
+    "knowledgeConfiguration": {
+      "titleDescription": "Update your knowledge base details especially parsing method here.",
+      "name": "Knowledge base name",
+      "photo": "Knowledge base photo",
+      "description": "Description",
+      "language": "Language",
+      "languageMessage": "Please input your language!",
+      "languagePlaceholder": "Please input your language!",
+      "permissions": "Permissions",
+      "embeddingModel": "Embedding model",
+      "chunkTokenNumber": "Chunk token number",
+      "embeddingModelTip": "The embedding model used to embedding chunks. It's unchangable once the knowledgebase has chunks. You need to delete all the chunks if you want to change it.",
+      "permissionsTip": "If the permission is 'Team', all the team member can manipulate the knowledgebase.",
+      "chunkTokenNumberTip": "It determine the token number of a chunk approximately.",
+      "chunkMethodTip": "The instruction is at right.",
+      "upload": "Upload",
+      "english": "English",
+      "chinese": "Chinese",
+      "embeddingModelPlaceholder": "Please select a embedding model",
+      "chunkMethodPlaceholder": "Please select a chunk method",
+      "save": "Save",
+      "me": "Only me",
+      "team": "Team",
+      "cancel": "Cancel"
+    },
+    "footer": {
+      "detail": "All rights reserved @ React"
+    },
+    "layout": {
+      "file": "file",
+      "knowledge": "knowledge",
+      "chat": "chat"
+    },
+    "setting": {
+      "btn": "en"
+    }
   }
 }

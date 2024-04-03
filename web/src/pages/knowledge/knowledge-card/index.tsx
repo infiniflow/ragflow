@@ -10,6 +10,7 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Card, Dropdown, MenuProps, Space } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useNavigate } from 'umi';
 
 import styles from './index.less';
@@ -22,6 +23,7 @@ const KnowledgeCard = ({ item }: IProps) => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const showDeleteConfirm = useShowDeleteConfirm();
+  const { t } = useTranslation();
 
   const removeKnowledge = () => {
     return dispatch({
@@ -41,7 +43,7 @@ const KnowledgeCard = ({ item }: IProps) => {
       key: '1',
       label: (
         <Space>
-          Delete
+          {t('common.delete')}
           <DeleteOutlined />
         </Space>
       ),
@@ -87,7 +89,10 @@ const KnowledgeCard = ({ item }: IProps) => {
             <div className={styles.bottomLeft}>
               <FileTextOutlined className={styles.leftIcon} />
               <span className={styles.rightText}>
-                <Space>{item.doc_num}Docs</Space>
+                <Space>
+                  {item.doc_num}
+                  {t('knowledgeList.doc')}
+                </Space>
               </span>
             </div>
           </div>

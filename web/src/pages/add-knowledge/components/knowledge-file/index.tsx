@@ -42,6 +42,7 @@ import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
 import { useSetSelectedRecord } from '@/hooks/logicHooks';
+import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
 const KnowledgeFile = () => {
@@ -76,6 +77,9 @@ const KnowledgeFile = () => {
     hideChangeParserModal,
     showChangeParserModal,
   } = useChangeDocumentParser(currentRecord.id);
+  const { t } = useTranslation('translation', {
+    keyPrefix: 'knowledgeDetails',
+  });
 
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
@@ -87,7 +91,7 @@ const KnowledgeFile = () => {
             <Button type="link">
               <Space>
                 <FileTextOutlined />
-                Local files
+                {t('localFiles')}
               </Space>
             </Button>
           </div>
@@ -101,18 +105,18 @@ const KnowledgeFile = () => {
           <div>
             <Button type="link">
               <FileOutlined />
-              Create empty file
+              {t('emptyFiles')}
             </Button>
           </div>
         ),
         // disabled: true,
       },
     ];
-  }, [linkToUploadPage, showCreateModal]);
+  }, [linkToUploadPage, showCreateModal, t]);
 
   const columns: ColumnsType<IKnowledgeFile> = [
     {
-      title: 'Name',
+      title: t('name'),
       dataIndex: 'name',
       key: 'name',
       fixed: 'left',
@@ -133,17 +137,17 @@ const KnowledgeFile = () => {
       ),
     },
     {
-      title: 'Chunk Number',
+      title: t('chunkNumber'),
       dataIndex: 'chunk_num',
       key: 'chunk_num',
     },
     {
-      title: 'Upload Date',
+      title: t('uploadDate'),
       dataIndex: 'create_date',
       key: 'create_date',
     },
     {
-      title: 'Chunk Method',
+      title: t('chunkMethod'),
       dataIndex: 'parser_id',
       key: 'parser_id',
       render: (text) => {
@@ -151,7 +155,7 @@ const KnowledgeFile = () => {
       },
     },
     {
-      title: 'Enabled',
+      title: t('enabled'),
       key: 'status',
       dataIndex: 'status',
       render: (_, { status, id }) => (
@@ -166,7 +170,7 @@ const KnowledgeFile = () => {
       ),
     },
     {
-      title: 'Parsing Status',
+      title: t('parsingStatus'),
       dataIndex: 'run',
       key: 'run',
       render: (text, record) => {
@@ -174,7 +178,7 @@ const KnowledgeFile = () => {
       },
     },
     {
-      title: 'Action',
+      title: t('action'),
       key: 'action',
       render: (_, record) => (
         <ParsingActionCell
@@ -194,17 +198,17 @@ const KnowledgeFile = () => {
 
   return (
     <div className={styles.datasetWrapper}>
-      <h3>Dataset</h3>
-      <p>Hey, don't forget to adjust the chunk after adding the dataset! 😉</p>
+      <h3>{t('dataset')}</h3>
+      <p>{t('datasetDescription')}</p>
       <Divider></Divider>
       <div className={styles.filter}>
         <Space>
-          <h3>Total</h3>
+          <h3>{t('total', { keyPrefix: 'common' })}</h3>
           <Tag color="purple">{total} files</Tag>
         </Space>
         <Space>
           <Input
-            placeholder="Seach your files"
+            placeholder={t('searchFiles')}
             value={searchString}
             style={{ width: 220 }}
             allowClear
@@ -214,7 +218,7 @@ const KnowledgeFile = () => {
 
           <Dropdown menu={{ items: actionItems }} trigger={['click']}>
             <Button type="primary" icon={<PlusOutlined />}>
-              Add file
+              {t('addFile')}
             </Button>
           </Dropdown>
         </Space>

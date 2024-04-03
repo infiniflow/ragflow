@@ -6,6 +6,7 @@ import {
   useSelectKnowledgeDetailsLoading,
 } from './hooks';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const { Title } = Typography;
@@ -13,11 +14,14 @@ const { Title } = Typography;
 const Configuration = () => {
   const loading = useSelectKnowledgeDetailsLoading();
   const { form, chunkMethod } = useHandleChunkMethodChange();
+  const { t } = useTranslate('knowledgeConfiguration');
 
   return (
     <div className={styles.configurationWrapper}>
-      <Title level={5}>Configuration</Title>
-      <p>Update your knowledge base details especially parsing method here.</p>
+      <Title level={5}>
+        {t('configuration', { keyPrefix: 'knowledgeDetails' })}
+      </Title>
+      <p>{t('titleDescription')}</p>
       <Divider></Divider>
       <Spin spinning={loading}>
         <Row gutter={32}>
