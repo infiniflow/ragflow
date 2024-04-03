@@ -44,7 +44,8 @@ class KnowledgebaseService(CommonService):
     def get_detail(cls, kb_id):
         fields = [
             cls.model.id,
-            Tenant.embd_id,
+            #Tenant.embd_id,
+            cls.embd_id,
             cls.model.avatar,
             cls.model.name,
             cls.model.language,
