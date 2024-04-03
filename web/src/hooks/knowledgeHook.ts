@@ -135,7 +135,7 @@ export const useFetchKnowledgeList = (
   const { data = [] } = knowledgeModel;
   const list = useMemo(() => {
     return shouldFilterListWithoutDocument
-      ? data.filter((x: IKnowledge) => x.doc_num > 0)
+      ? data.filter((x: IKnowledge) => x.chunk_num > 0)
       : data;
   }, [data, shouldFilterListWithoutDocument]);
 
