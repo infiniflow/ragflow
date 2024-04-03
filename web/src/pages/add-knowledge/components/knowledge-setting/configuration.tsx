@@ -14,24 +14,14 @@ import styles from './index.less';
 const { Option } = Select;
 
 const ConfigurationForm = ({ form }: { form: FormInstance }) => {
-  const { submitKnowledgeConfiguration, submitLoading } =
-    useSubmitKnowledgeConfiguration();
+  const { submitKnowledgeConfiguration, submitLoading, navigateToDataset } =
+    useSubmitKnowledgeConfiguration(form);
   const { parserList, embeddingModelOptions, disabled } =
     useFetchKnowledgeConfigurationOnMount(form);
   const { t } = useTranslate('knowledgeConfiguration');
-  const onFinishFailed = (errorInfo: any) => {
-    console.log('Failed:', errorInfo);
-  };
 
   return (
-    <Form
-      form={form}
-      name="validateOnly"
-      layout="vertical"
-      autoComplete="off"
-      onFinish={submitKnowledgeConfiguration}
-      onFinishFailed={onFinishFailed}
-    >
+    <Form form={form} name="validateOnly" layout="vertical" autoComplete="off">
       <Form.Item name="name" label={t('name')} rules={[{ required: true }]}>
         <Input />
       </Form.Item>
@@ -117,14 +107,14 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       <Form.Item>
         <div className={styles.buttonWrapper}>
           <Space>
-            <Button htmlType="reset" size={'middle'}>
+            <Button size={'middle'} onClick={navigateToDataset}>
               {t('cancel')}
             </Button>
             <Button
-              htmlType="submit"
               type="primary"
               size={'middle'}
               loading={submitLoading}
+              onClick={submitKnowledgeConfiguration}
             >
               {t('save')}
             </Button>

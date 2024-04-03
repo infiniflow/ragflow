@@ -5,6 +5,7 @@ import {
   useUpdateKnowledge,
 } from '@/hooks/knowledgeHook';
 import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
+import { useNavigateToDataset } from '@/hooks/routeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import {
   useFetchTenantInfo,
@@ -20,24 +21,24 @@ import pick from 'lodash/pick';
 import { useCallback, useEffect } from 'react';
 import { LlmModelType } from '../../constant';
 
-export const useSubmitKnowledgeConfiguration = () => {
+export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
   const save = useUpdateKnowledge();
   const knowledgeBaseId = useKnowledgeBaseId();
   const submitLoading = useOneNamespaceEffectsLoading('kSModel', ['updateKb']);
+  const navigateToDataset = useNavigateToDataset();
 
-  const submitKnowledgeConfiguration = useCallback(
-    async (values: any) => {
-      const avatar = await getBase64FromUploadFileList(values.avatar);
-      save({
-        ...values,
-        avatar,
-        kb_id: knowledgeBaseId,
-      });
-    },
-    [save, knowledgeBaseId],
-  );
+  const submitKnowledgeConfiguration = useCallback(async () => {
+    const values = await form.validateFields();
+    const avatar = await getBase64FromUploadFileList(values.avatar);
+    save({
+      ...values,
+      avatar,
+      kb_id: knowledgeBaseId,
+    });
+    navigateToDataset();
+  }, [save, knowledgeBaseId, form, navigateToDataset]);
 
-  return { submitKnowledgeConfiguration, submitLoading };
+  return { submitKnowledgeConfiguration, submitLoading, navigateToDataset };
 };
 
 export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
