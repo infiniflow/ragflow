@@ -79,7 +79,7 @@ def list():
         return get_json_result(data=res)
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return get_json_result(data=False, retmsg=f'Index not found!',
+            return get_json_result(data=False, retmsg=f'No chunk found!',
                                    retcode=RetCode.DATA_ERROR)
         return server_error_response(e)
 
@@ -262,6 +262,6 @@ def retrieval_test():
         return get_json_result(data=ranks)
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return get_json_result(data=False, retmsg=f'Index not found!',
+            return get_json_result(data=False, retmsg=f'No chunk found! Check the chunk status please!',
                                    retcode=RetCode.DATA_ERROR)
         return server_error_response(e)
