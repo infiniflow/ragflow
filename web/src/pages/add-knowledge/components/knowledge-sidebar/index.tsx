@@ -8,8 +8,9 @@ import { getWidth } from '@/utils';
 import { Avatar, Menu, MenuProps, Space } from 'antd';
 import classNames from 'classnames';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSelector } from 'umi';
-import { KnowledgeRouteKey, routeMap } from '../../constant';
+import { KnowledgeRouteKey } from '../../constant';
 import styles from './index.less';
 
 const KnowledgeSidebar = () => {
@@ -23,6 +24,7 @@ const KnowledgeSidebar = () => {
 
   const [windowWidth, setWindowWidth] = useState(getWidth());
   const [collapsed, setCollapsed] = useState(false);
+  const { t } = useTranslation();
 
   const handleSelect: MenuProps['onSelect'] = (e) => {
     navigate(`/knowledge/${e.key}?id=${id}`);
@@ -32,7 +34,7 @@ const KnowledgeSidebar = () => {
 
   const getItem = useCallback(
     (
-      label: React.ReactNode,
+      label: string,
       key: React.Key,
       icon?: React.ReactNode,
       disabled?: boolean,
@@ -43,28 +45,28 @@ const KnowledgeSidebar = () => {
         key,
         icon,
         children,
-        label,
+        label: t(`knowledgeDetails.${label}`),
         type,
         disabled,
       } as MenuItem;
     },
-    [],
+    [t],
   );
 
   const items: MenuItem[] = useMemo(() => {
     return [
       getItem(
-        routeMap[KnowledgeRouteKey.Dataset], // TODO: Change icon color when selected
+        KnowledgeRouteKey.Dataset, // TODO: Change icon color when selected
         KnowledgeRouteKey.Dataset,
         <DatasetIcon />,
       ),
       getItem(
-        routeMap[KnowledgeRouteKey.Testing],
+        KnowledgeRouteKey.Testing,
         KnowledgeRouteKey.Testing,
         <TestingIcon />,
       ),
       getItem(
-        routeMap[KnowledgeRouteKey.Configuration],
+        KnowledgeRouteKey.Configuration,
         KnowledgeRouteKey.Configuration,
         <ConfigurationIcon />,
       ),

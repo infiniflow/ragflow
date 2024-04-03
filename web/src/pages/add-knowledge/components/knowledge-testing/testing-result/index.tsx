@@ -1,5 +1,6 @@
 import { ReactComponent as SelectedFilesCollapseIcon } from '@/assets/svg/selected-files-collapse.svg';
 import Image from '@/components/image';
+import { useTranslate } from '@/hooks/commonHooks';
 import { ITestingChunk } from '@/interfaces/database/knowledge';
 import {
   Card,
@@ -10,10 +11,12 @@ import {
   Popover,
   Space,
 } from 'antd';
+import camelCase from 'lodash/camelCase';
 import { useDispatch, useSelector } from 'umi';
 import { TestingModelState } from '../model';
-import styles from './index.less';
 import SelectFiles from './select-files';
+
+import styles from './index.less';
 
 const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
   { field: 'similarity', label: 'Hybrid Similarity' },
@@ -22,6 +25,7 @@ const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
 ];
 
 const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
+  const { t } = useTranslate('knowledgeDetails');
   return (
     <Flex gap={10}>
       {similarityList.map((x) => (
@@ -29,7 +33,7 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
           <span className={styles.similarityCircle}>
             {((item[x.field] as number) * 100).toFixed(2)}
           </span>
-          <span className={styles.similarityText}>{x.label}</span>
+          <span className={styles.similarityText}>{t(camelCase(x.field))}</span>
         </Space>
       ))}
     </Flex>
@@ -49,6 +53,7 @@ const TestingResult = ({ handleTesting }: IProps) => {
     selectedDocumentIds,
   }: TestingModelState = useSelector((state: any) => state.testingModel);
   const dispatch = useDispatch();
+  const { t } = useTranslate('knowledgeDetails');
 
   const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
     console.log('Page: ', pageNumber, pageSize);
@@ -75,13 +80,15 @@ const TestingResult = ({ handleTesting }: IProps) => {
                 align="center"
                 className={styles.selectFilesTitle}
               >
-                <span>
-                  {selectedDocumentIds?.length ?? 0}/{documents.length} Files
-                  Selected
-                </span>
+                <Space>
+                  <span>
+                    {selectedDocumentIds?.length ?? 0}/{documents.length}
+                  </span>
+                  {t('filesSelected')}
+                </Space>
                 <Space size={52}>
-                  <b>Hits</b>
-                  <b>View</b>
+                  <b>{t('hits')}</b>
+                  <b>{t('view')}</b>
                 </Space>
               </Flex>
             ),

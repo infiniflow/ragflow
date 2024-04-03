@@ -1,4 +1,7 @@
-import { KnowledgeSearchParams } from '@/constants/knowledge';
+import {
+  KnowledgeRouteKey,
+  KnowledgeSearchParams,
+} from '@/constants/knowledge';
 import { useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'umi';
 
@@ -41,4 +44,13 @@ export const useNavigateWithFromState = () => {
     },
     [navigate],
   );
+};
+
+export const useNavigateToDataset = () => {
+  const navigate = useNavigate();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+
+  return useCallback(() => {
+    navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeId}`);
+  }, [knowledgeId, navigate]);
 };

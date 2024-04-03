@@ -1,4 +1,4 @@
-import { useShowDeleteConfirm } from '@/hooks/commonHooks';
+import { useShowDeleteConfirm, useTranslate } from '@/hooks/commonHooks';
 import { useRemoveDocument } from '@/hooks/documentHooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { api_host } from '@/utils/api';
@@ -29,7 +29,7 @@ const ParsingActionCell = ({
 }: IProps) => {
   const documentId = record.id;
   const isRunning = isParserRunning(record.run);
-
+  const { t } = useTranslate('knowledgeDetails');
   const removeDocument = useRemoveDocument(documentId);
   const showDeleteConfirm = useShowDeleteConfirm();
 
@@ -65,7 +65,7 @@ const ParsingActionCell = ({
       label: (
         <div>
           <Button type="link" onClick={onShowChangeParserModal}>
-            Chunk Method
+            {t('chunkMethod')}
           </Button>
         </div>
       ),
@@ -83,7 +83,7 @@ const ParsingActionCell = ({
           <ToolOutlined size={20} />
         </Button>
       </Dropdown>
-      <Tooltip title="Rename">
+      <Tooltip title={t('rename', { keyPrefix: 'common' })}>
         <Button
           type="text"
           disabled={isRunning}

@@ -1,5 +1,6 @@
 import { ReactComponent as RefreshIcon } from '@/assets/svg/refresh.svg';
 import { ReactComponent as RunIcon } from '@/assets/svg/run.svg';
+import { useTranslate } from '@/hooks/commonHooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { CloseCircleOutlined } from '@ant-design/icons';
 import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
@@ -22,6 +23,8 @@ interface IProps {
 }
 
 const PopoverContent = ({ record }: IProps) => {
+  const { t } = useTranslate('knowledgeDetails');
+
   const replaceText = (text: string) => {
     // Remove duplicate \n
     const nextText = text.replace(/(\n)\1+/g, '$1');
@@ -44,17 +47,17 @@ const PopoverContent = ({ record }: IProps) => {
   const items: DescriptionsProps['items'] = [
     {
       key: 'process_begin_at',
-      label: 'Process Begin At',
+      label: t('processBeginAt'),
       children: record.process_begin_at,
     },
     {
       key: 'process_duation',
-      label: 'Process Duration',
+      label: t('processDuration'),
       children: record.process_duation,
     },
     {
       key: 'progress_msg',
-      label: 'Progress Msg',
+      label: t('progressMsg'),
       children: replaceText(record.progress_msg.trim()),
     },
   ];

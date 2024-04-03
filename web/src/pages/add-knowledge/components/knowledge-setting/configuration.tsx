@@ -7,40 +7,27 @@ import {
 } from './hooks';
 
 import MaxTokenNumber from '@/components/max-token-number';
+import { useTranslate } from '@/hooks/commonHooks';
 import { FormInstance } from 'antd/lib';
 import styles from './index.less';
 
 const { Option } = Select;
 
 const ConfigurationForm = ({ form }: { form: FormInstance }) => {
-  const { submitKnowledgeConfiguration, submitLoading } =
-    useSubmitKnowledgeConfiguration();
+  const { submitKnowledgeConfiguration, submitLoading, navigateToDataset } =
+    useSubmitKnowledgeConfiguration(form);
   const { parserList, embeddingModelOptions, disabled } =
     useFetchKnowledgeConfigurationOnMount(form);
-
-  const onFinishFailed = (errorInfo: any) => {
-    console.log('Failed:', errorInfo);
-  };
+  const { t } = useTranslate('knowledgeConfiguration');
 
   return (
-    <Form
-      form={form}
-      name="validateOnly"
-      layout="vertical"
-      autoComplete="off"
-      onFinish={submitKnowledgeConfiguration}
-      onFinishFailed={onFinishFailed}
-    >
-      <Form.Item
-        name="name"
-        label="Knowledge base name"
-        rules={[{ required: true }]}
-      >
+    <Form form={form} name="validateOnly" layout="vertical" autoComplete="off">
+      <Form.Item name="name" label={t('name')} rules={[{ required: true }]}>
         <Input />
       </Form.Item>
       <Form.Item
         name="avatar"
-        label="Knowledge base photo"
+        label={t('photo')}
         valuePropName="fileList"
         getValueFromEvent={normFile}
       >
@@ -52,43 +39,43 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
         >
           <button style={{ border: 0, background: 'none' }} type="button">
             <PlusOutlined />
-            <div style={{ marginTop: 8 }}>Upload</div>
+            <div style={{ marginTop: 8 }}>{t('upload')}</div>
           </button>
         </Upload>
       </Form.Item>
-      <Form.Item name="description" label="Description">
+      <Form.Item name="description" label={t('description')}>
         <Input />
       </Form.Item>
       <Form.Item
-        label="Language"
+        label={t('language')}
         name="language"
         initialValue={'English'}
-        rules={[{ required: true, message: 'Please input your language!' }]}
+        rules={[{ required: true, message: t('languageMessage') }]}
       >
-        <Select placeholder="select your language">
-          <Option value="English">English</Option>
-          <Option value="Chinese">Chinese</Option>
+        <Select placeholder={t('languagePlaceholder')}>
+          <Option value="English">{t('english')}</Option>
+          <Option value="Chinese">{t('chinese')}</Option>
         </Select>
       </Form.Item>
       <Form.Item
         name="permission"
         label="Permissions"
-        tooltip="If the permission is 'Team', all the team member can manipulate the knowledgebase."
+        tooltip={t('permissionsTip')}
         rules={[{ required: true }]}
       >
         <Radio.Group>
-          <Radio value="me">Only me</Radio>
-          <Radio value="team">Team</Radio>
+          <Radio value="me">{t('me')}</Radio>
+          <Radio value="team">{t('team')}</Radio>
         </Radio.Group>
       </Form.Item>
       <Form.Item
         name="embd_id"
         label="Embedding model"
         rules={[{ required: true }]}
-        tooltip="The embedding model used to embedding chunks. It's unchangable once the knowledgebase has chunks. You need to delete all the chunks if you want to change it."
+        tooltip={t('embeddingModelTip')}
       >
         <Select
-          placeholder="Please select a embedding model"
+          placeholder={t('embeddingModelPlaceholder')}
           options={embeddingModelOptions}
           disabled={disabled}
         ></Select>
@@ -96,10 +83,10 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       <Form.Item
         name="parser_id"
         label="Chunk method"
-        tooltip="The instruction is at right."
+        tooltip={t('chunkMethodTip')}
         rules={[{ required: true }]}
       >
-        <Select placeholder="Please select a chunk method" disabled={disabled}>
+        <Select placeholder={t('chunkMethodPlaceholder')} disabled={disabled}>
           {parserList.map((x) => (
             <Option value={x.value} key={x.value}>
               {x.label}
@@ -120,16 +107,16 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       <Form.Item>
         <div className={styles.buttonWrapper}>
           <Space>
-            <Button htmlType="reset" size={'middle'}>
-              Cancel
+            <Button size={'middle'} onClick={navigateToDataset}>
+              {t('cancel')}
             </Button>
             <Button
-              htmlType="submit"
               type="primary"
               size={'middle'}
               loading={submitLoading}
+              onClick={submitKnowledgeConfiguration}
             >
-              Save
+              {t('save')}
             </Button>
           </Space>
         </div>
