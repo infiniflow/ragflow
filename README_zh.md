@@ -174,7 +174,7 @@ $ docker compose up -d
 
 ## 🏄 开源社区
 
-- [Discord](https://discord.gg/uqQ4YMDf)
+- [Discord](https://discord.gg/trjjfJ9y)
 - [Twitter](https://twitter.com/infiniflowai)
 
 ## 🙌 贡献指南
