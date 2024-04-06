@@ -153,7 +153,7 @@
 > 所有系统配置都需要通过系统重启生效：
 >
 > ```bash
-> $ docker compose up -f docker-compose-CN.yml -d
+> $ docker compose -f docker-compose-CN.yml up -d
 > ```
 
 ## 🛠️ 源码编译、安装 Docker 镜像
