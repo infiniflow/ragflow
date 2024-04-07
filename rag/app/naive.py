@@ -60,7 +60,7 @@ class Docx(DocxParser):
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
             html += "</table>"
-        tbls.append(((None, html), ""))
+            tbls.append(((None, html), ""))
         return [(l, "") for l in lines if l], tbls
 
 
