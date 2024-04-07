@@ -30,6 +30,7 @@ import {
 } from '../hooks';
 
 import { useTranslate } from '@/hooks/commonHooks';
+import { useChangeLanguage } from '@/hooks/logicHooks';
 import parentStyles from '../index.less';
 import styles from './index.less';
 
@@ -56,6 +57,7 @@ const UserSettingProfile = () => {
   const loading = useSelectUserInfoLoading();
   useFetchUserInfo();
   const { t } = useTranslate('setting');
+  const changeLanguage = useChangeLanguage();
 
   const onFinish = async (values: any) => {
     const avatar = await getBase64FromUploadFileList(values.avatar);
@@ -158,6 +160,7 @@ const UserSettingProfile = () => {
           >
             <Select
               placeholder={t('languagePlaceholder', { keyPrefix: 'common' })}
+              onChange={changeLanguage}
             >
               <Option value="English">
                 {t('english', { keyPrefix: 'common' })}

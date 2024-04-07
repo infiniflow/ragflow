@@ -5,6 +5,7 @@ import {
 } from '@/constants/knowledge';
 import { Divider, Flex, Form, InputNumber, Select, Slider, Switch } from 'antd';
 import classNames from 'classnames';
+import camelCase from 'lodash/camelCase';
 import { useEffect } from 'react';
 import { ISegmentedContentProps } from '../interface';
 
@@ -14,11 +15,11 @@ import { variableEnabledFieldMap } from '../constants';
 import styles from './index.less';
 
 const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
+  const { t } = useTranslate('chat');
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
-    label: x,
+    label: t(camelCase(x)),
     value: x,
   }));
-  const { t } = useTranslate('chat');
 
   const modelOptions = useSelectLlmOptions();
 

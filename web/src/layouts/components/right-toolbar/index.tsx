@@ -5,10 +5,15 @@ import { Dropdown, MenuProps, Space } from 'antd';
 import React from 'react';
 import User from '../user';
 
+import { useChangeLanguage } from '@/hooks/logicHooks';
 import styled from './index.less';
 
-const Circle = ({ children }: React.PropsWithChildren) => {
-  return <div className={styled.circle}>{children}</div>;
+const Circle = ({ children, ...restProps }: React.PropsWithChildren) => {
+  return (
+    <div {...restProps} className={styled.circle}>
+      {children}
+    </div>
+  );
 };
 
 const handleGithubCLick = () => {
@@ -16,20 +21,21 @@ const handleGithubCLick = () => {
 };
 
 const RightToolBar = () => {
-  const { t, i18n } = useTranslate('common');
+  const { t } = useTranslate('common');
+  const changeLanguage = useChangeLanguage();
 
   const handleItemClick: MenuProps['onClick'] = ({ key }) => {
-    i18n.changeLanguage(key);
+    changeLanguage(key);
   };
 
   const items: MenuProps['items'] = [
     {
-      key: 'en',
+      key: 'English',
       label: <span>{t('english')}</span>,
     },
     { type: 'divider' },
     {
-      key: 'zh',
+      key: 'Chinese',
       label: <span>{t('chinese')}</span>,
     },
   ];
@@ -40,16 +46,13 @@ const RightToolBar = () => {
         <Circle>
           <GithubOutlined onClick={handleGithubCLick} />
         </Circle>
-        <Circle>
-          <Dropdown
-            menu={{ items, onClick: handleItemClick }}
-            placement="bottom"
-          >
+        <Dropdown menu={{ items, onClick: handleItemClick }} placement="bottom">
+          <Circle>
             <TranslationIcon />
-          </Dropdown>
-        </Circle>
+          </Circle>
+        </Dropdown>
         {/* <Circle>
-          <MoonIcon />
+          <MonIcon />
         </Circle> */}
         <User></User>
       </Space>

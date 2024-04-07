@@ -3,11 +3,13 @@ import SvgIcon from '@/components/svg-icon';
 import { Flex, Rate, Space, Typography } from 'antd';
 import classNames from 'classnames';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const { Title, Text } = Typography;
 
 const LoginRightPanel = () => {
+  const { t } = useTranslate('login');
   return (
     <section className={styles.rightPanel}>
       <SvgIcon name="login-star" width={80}></SvgIcon>
@@ -16,11 +18,10 @@ const LoginRightPanel = () => {
           level={1}
           className={classNames(styles.white, styles.loginTitle)}
         >
-          Start building your smart assisstants.
+          {t('title')}
         </Title>
         <Text className={classNames(styles.pink, styles.loginDescription)}>
-          Sign up for free to explore top RAG technology. Create knowledge bases
-          and AIs to empower your business.
+          {t('description')}
         </Text>
         <Flex align="center" gap={16}>
           <Avatars></Avatars>
@@ -34,7 +35,7 @@ const LoginRightPanel = () => {
               </span>
             </Space>
             <span className={classNames(styles.pink, styles.loginRateReviews)}>
-              from 500+ reviews
+              {t('review')}
             </span>
           </Flex>
         </Flex>
