@@ -10,13 +10,58 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import copy
+from io import BytesIO
+from docx import Document
 import re
 from deepdoc.parser.pdf_parser import PlainParser
 from rag.app import laws
 from rag.nlp import huqie, is_english, tokenize, naive_merge, tokenize_table, add_positions, tokenize_chunks
-from deepdoc.parser import PdfParser, ExcelParser
+from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from rag.settings import cron_logger
+
+class Docx(DocxParser):
+    def __init__(self):
+        pass
+
+    def __clean(self, line):
+        line = re.sub(r"\u3000", " ", line).strip()
+        return line
+
+    def __call__(self, filename, binary=None, from_page=0, to_page=100000):
+        self.doc = Document(
+            filename) if not binary else Document(BytesIO(binary))
+        pn = 0
+        lines = []
+        for p in self.doc.paragraphs:
+            if pn > to_page:
+                break
+            if from_page <= pn < to_page and p.text.strip():
+                lines.append(self.__clean(p.text))
+            for run in p.runs:
+                if 'lastRenderedPageBreak' in run._element.xml:
+                    pn += 1
+                    continue
+                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
+                    pn += 1
+        tbls = []
+        for tb in self.doc.tables:
+            html= "<table>"
+            for r in tb.rows:
+                html += "<tr>"
+                i = 0
+                while i < len(r.cells):
+                    span = 1
+                    c = r.cells[i]
+                    for j in range(i+1, len(r.cells)):
+                        if c.text == r.cells[j].text:
+                            span += 1
+                            i = j
+                    i += 1
+                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                html += "</tr>"
+            html += "</table>"
+        tbls.append(((None, html), ""))
+        return [(l, "") for l in lines if l], tbls
 
 
 class Pdf(PdfParser):
@@ -75,8 +120,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     sections = []
     if re.search(r"\.docx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        for txt in laws.Docx()(filename, binary):
-            sections.append((txt, ""))
+        sections, tbls = Docx()(filename, binary)
+        res = tokenize_table(tbls, doc, eng)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
