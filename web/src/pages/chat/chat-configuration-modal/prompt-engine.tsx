@@ -29,6 +29,7 @@ import {
 } from '../interface';
 import { EditableCell, EditableRow } from './editable-cell';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import { useSelectPromptConfigParameters } from '../hooks';
 import styles from './index.less';
 
@@ -44,6 +45,7 @@ const PromptEngine = (
 ) => {
   const [dataSource, setDataSource] = useState<DataType[]>([]);
   const parameters = useSelectPromptConfigParameters();
+  const { t } = useTranslate('chat');
 
   const components = {
     body: {
@@ -102,7 +104,7 @@ const PromptEngine = (
 
   const columns: TableProps<DataType>['columns'] = [
     {
-      title: 'key',
+      title: t('key'),
       dataIndex: 'variable',
       key: 'variable',
       onCell: (record: DataType) => ({
@@ -114,7 +116,7 @@ const PromptEngine = (
       }),
     },
     {
-      title: 'optional',
+      title: t('optional'),
       dataIndex: 'optional',
       key: 'optional',
       width: 40,
@@ -130,7 +132,7 @@ const PromptEngine = (
       },
     },
     {
-      title: 'operation',
+      title: t('operation'),
       dataIndex: 'operation',
       width: 30,
       key: 'operation',
@@ -152,24 +154,21 @@ const PromptEngine = (
       })}
     >
       <Form.Item
-        label="System"
-        rules={[{ required: true, message: 'Please input!' }]}
-        tooltip="Instructions you need LLM to follow when LLM answers questions, like charactor design, answer length and answer language etc."
+        label={t('system')}
+        rules={[{ required: true, message: t('systemMessage') }]}
+        tooltip={t('systemTip')}
         name={['prompt_config', 'system']}
-        initialValue={`你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
-        以下是知识库：
-        {knowledge}
-        以上是知识库。`}
+        initialValue={t('systemInitialValue')}
       >
         <Input.TextArea autoSize={{ maxRows: 8, minRows: 5 }} />
       </Form.Item>
       <Divider></Divider>
       <SimilaritySlider isTooltipShown></SimilaritySlider>
       <Form.Item<FieldType>
-        label="Top N"
+        label={t('topN')}
         name={'top_n'}
         initialValue={8}
-        tooltip={`Not all the chunks whose similarity score is above the 'simialrity threashold' will be feed to LLMs. LLM can only see these 'Top N' chunks.`}
+        tooltip={t('topNTip')}
       >
         <Slider max={30} />
       </Form.Item>
@@ -177,18 +176,15 @@ const PromptEngine = (
         <Row align={'middle'} justify="end">
           <Col span={7} className={styles.variableAlign}>
             <label className={styles.variableLabel}>
-              Variables
-              <Tooltip title="If you use dialog APIs, the varialbes might help you chat with your clients with different strategies. 
-              The variables are used to fill-in the 'System' part in prompt in order to give LLM a hint.
-              The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks.
-              All the variables in 'System' should be curly bracketed.">
+              {t('variable')}
+              <Tooltip title={t('variableTip')}>
                 <QuestionCircleOutlined className={styles.variableIcon} />
               </Tooltip>
             </label>
           </Col>
           <Col span={17} className={styles.variableAlign}>
             <Button size="small" onClick={handleAdd}>
-              Add
+              {t('add')}
             </Button>
           </Col>
         </Row>

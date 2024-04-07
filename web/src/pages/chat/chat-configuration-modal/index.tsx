@@ -7,6 +7,7 @@ import {
 import { IDialog } from '@/interfaces/database/chat';
 import { Divider, Flex, Form, Modal, Segmented, UploadFile } from 'antd';
 import { SegmentedValue } from 'antd/es/segmented';
+import camelCase from 'lodash/camelCase';
 import omit from 'lodash/omit';
 import { useEffect, useRef, useState } from 'react';
 import { variableEnabledFieldMap } from '../constants';
@@ -17,19 +18,8 @@ import { useFetchModelId } from './hooks';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
-
-enum ConfigurationSegmented {
-  AssistantSetting = 'Assistant Setting',
-  PromptEngine = 'Prompt Engine',
-  ModelSetting = 'Model Setting',
-}
-
-const segmentedMap = {
-  [ConfigurationSegmented.AssistantSetting]: AssistantSetting,
-  [ConfigurationSegmented.ModelSetting]: ModelSetting,
-  [ConfigurationSegmented.PromptEngine]: PromptEngine,
-};
 
 const layout = {
   labelCol: { span: 7 },
@@ -45,6 +35,18 @@ const validateMessages = {
   number: {
     range: '${label} must be between ${min} and ${max}',
   },
+};
+
+enum ConfigurationSegmented {
+  AssistantSetting = 'Assistant Setting',
+  PromptEngine = 'Prompt Engine',
+  ModelSetting = 'Model Setting',
+}
+
+const segmentedMap = {
+  [ConfigurationSegmented.AssistantSetting]: AssistantSetting,
+  [ConfigurationSegmented.ModelSetting]: ModelSetting,
+  [ConfigurationSegmented.PromptEngine]: PromptEngine,
 };
 
 interface IProps extends IModalManagerChildrenProps {
@@ -63,11 +65,13 @@ const ChatConfigurationModal = ({
   clearDialog,
 }: IProps) => {
   const [form] = Form.useForm();
+
   const [value, setValue] = useState<ConfigurationSegmented>(
     ConfigurationSegmented.AssistantSetting,
   );
   const promptEngineRef = useRef<Array<IPromptConfigParameters>>([]);
   const modelId = useFetchModelId(visible);
+  const { t } = useTranslate('chat');
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -115,10 +119,9 @@ const ChatConfigurationModal = ({
     <Flex gap={16}>
       <ChatConfigurationAtom></ChatConfigurationAtom>
       <div>
-        <b>Chat Configuration</b>
+        <b>{t('chatConfiguration')}</b>
         <div className={styles.chatConfigurationDescription}>
-          Here, dress up a dedicated assistant for your special knowledge bases!
-          💕
+          {t('chatConfigurationDescription')}
         </div>
       </div>
     </Flex>
@@ -158,7 +161,10 @@ const ChatConfigurationModal = ({
         size={'large'}
         value={value}
         onChange={handleSegmentedChange}
-        options={Object.values(ConfigurationSegmented)}
+        options={Object.values(ConfigurationSegmented).map((x) => ({
+          label: t(camelCase(x)),
+          value: x,
+        }))}
         block
       />
       <Divider></Divider>

@@ -1,4 +1,5 @@
 import { IConversation, IDialog, Message } from '@/interfaces/database/chat';
+import i18n from '@/locales/config';
 import chatService from '@/services/chatService';
 import { message } from 'antd';
 import { DvaModel } from 'umi';
@@ -77,7 +78,9 @@ const model: DvaModel<ChatModelState> = {
       const { data } = yield call(chatService.setDialog, payload);
       if (data.retcode === 0) {
         yield put({ type: 'listDialog' });
-        message.success(payload.dialog_id ? 'Modified!' : 'Created!');
+        message.success(
+          i18n.t(`message.${payload.dialog_id ? 'modified' : 'created'}`),
+        );
       }
       return data.retcode;
     },
@@ -85,7 +88,7 @@ const model: DvaModel<ChatModelState> = {
       const { data } = yield call(chatService.removeDialog, payload);
       if (data.retcode === 0) {
         yield put({ type: 'listDialog' });
-        message.success('Deleted successfully !');
+        message.success(i18n.t('message.deleted'));
       }
       return data.retcode;
     },
@@ -152,7 +155,7 @@ const model: DvaModel<ChatModelState> = {
           type: 'listConversation',
           payload: { dialog_id: payload.dialog_id },
         });
-        message.success('Deleted successfully !');
+        message.success(i18n.t('message.deleted'));
       }
       return data.retcode;
     },

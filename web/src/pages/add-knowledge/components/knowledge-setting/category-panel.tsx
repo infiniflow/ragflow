@@ -1,25 +1,27 @@
 import SvgIcon from '@/components/svg-icon';
+import { useTranslate } from '@/hooks/commonHooks';
 import { useSelectParserList } from '@/hooks/userSettingHook';
 import { Col, Divider, Empty, Row, Typography } from 'antd';
 import { useMemo } from 'react';
 import styles from './index.less';
-import { ImageMap, TextMap } from './utils';
+import { ImageMap } from './utils';
 
 const { Title, Text } = Typography;
 
 const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const parserList = useSelectParserList();
+  const { t } = useTranslate('knowledgeConfiguration');
 
   const item = useMemo(() => {
     const item = parserList.find((x) => x.value === chunkMethod);
     if (item) {
       return {
         title: item.label,
-        description: TextMap[item.value as keyof typeof TextMap]?.description,
+        description: t(item.value),
       };
     }
     return { title: '', description: '' };
-  }, [parserList, chunkMethod]);
+  }, [parserList, chunkMethod, t]);
 
   const imageList = useMemo(() => {
     if (chunkMethod in ImageMap) {
@@ -33,18 +35,17 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
       {imageList.length > 0 ? (
         <>
           <Title level={5} className={styles.topTitle}>
-            "{item.title}" Chunking Method Description
+            "{item.title}" {t('methodTitle')}
           </Title>
           <p
             dangerouslySetInnerHTML={{
               __html: item.description,
             }}
           ></p>
-          <Title level={5}>"{item.title}" Examples</Title>
-          <Text>
-            This visual guides is in order to make understanding easier
-            for you.
-          </Text>
+          <Title level={5}>
+            "{item.title}" {t('methodExamples')}
+          </Title>
+          <Text>{t('methodExamplesDescription')}</Text>
           <Row gutter={[10, 10]} className={styles.imageRow}>
             {imageList.map((x) => (
               <Col span={12} key={x}>
@@ -56,15 +57,14 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
               </Col>
             ))}
           </Row>
-          <Title level={5}>{item.title} Dialogue Examples</Title>
+          <Title level={5}>
+            {item.title} {t('dialogueExamplesTitle')}
+          </Title>
           <Divider></Divider>
         </>
       ) : (
         <Empty description={''} image={null}>
-          <p>
-            This will display a visual explanation of the knowledge base
-            categories
-          </p>
+          <p>{t('methodEmpty')}</p>
           <SvgIcon name={'chunk-method/chunk-empty'} width={'100%'}></SvgIcon>
         </Empty>
       )}

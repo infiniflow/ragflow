@@ -38,6 +38,12 @@ const storage = {
       localStorage.removeItem(x);
     });
   },
+  setLanguage: (lng: string) => {
+    localStorage.setItem('lng', lng);
+  },
+  getLanguage: (): string => {
+    return localStorage.getItem('lng') as string;
+  },
 };
 
 export default storage;

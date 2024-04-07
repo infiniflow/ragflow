@@ -4,6 +4,7 @@ import { Form, Input, Select, Upload } from 'antd';
 import classNames from 'classnames';
 import { ISegmentedContentProps } from '../interface';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const AssistantSetting = ({ show }: ISegmentedContentProps) => {
@@ -12,6 +13,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
     label: x.name,
     value: x.id,
   }));
+  const { t } = useTranslate('chat');
 
   const normFile = (e: any) => {
     if (Array.isArray(e)) {
@@ -28,14 +30,14 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
     >
       <Form.Item
         name={'name'}
-        label="Assistant name"
+        label={t('assistantName')}
         rules={[{ required: true }]}
       >
         <Input placeholder="e.g. Resume Jarvis" />
       </Form.Item>
       <Form.Item
         name="icon"
-        label="Assistant avatar"
+        label={t('assistantAvatar')}
         valuePropName="fileList"
         getValueFromEvent={normFile}
       >
@@ -46,44 +48,45 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         >
           <button style={{ border: 0, background: 'none' }} type="button">
             <PlusOutlined />
-            <div style={{ marginTop: 8 }}>Upload</div>
+            <div style={{ marginTop: 8 }}>
+              {t('upload', { keyPrefix: 'common' })}
+            </div>
           </button>
         </Upload>
       </Form.Item>
       <Form.Item
         name={'language'}
-        label="Language"
+        label={t('language')}
         initialValue={'Chinese'}
         tooltip="coming soon"
-        style={{display:'none'}}
+        style={{ display: 'none' }}
       >
         <Select
           options={[
-            { value: 'Chinese', label: 'Chinese' },
-            { value: 'English', label: 'English' },
+            { value: 'Chinese', label: t('chinese', { keyPrefix: 'common' }) },
+            { value: 'English', label: t('english', { keyPrefix: 'common' }) },
           ]}
         />
       </Form.Item>
       <Form.Item
         name={['prompt_config', 'empty_response']}
-        label="Empty response"
-        tooltip="If nothing is retrieved with user's question in the knowledgebase, it will use this as an answer.
-        If you want LLM comes up with its own opinion when nothing is retrieved, leave this blank."
+        label={t('emptyResponse')}
+        tooltip={t('emptyResponseTip')}
       >
         <Input placeholder="" />
       </Form.Item>
       <Form.Item
         name={['prompt_config', 'prologue']}
-        label="Set an opener"
-        tooltip="How do you want to welcome your clients?"
-        initialValue={"Hi! I'm your assistant, what can I do for you?"}
+        label={t('setAnOpener')}
+        tooltip={t('setAnOpenerTip')}
+        initialValue={t('setAnOpenerInitial')}
       >
         <Input.TextArea autoSize={{ minRows: 5 }} />
       </Form.Item>
       <Form.Item
-        label="Knowledgebases"
+        label={t('knowledgeBases')}
         name="kb_ids"
-        tooltip="Select knowledgebases associated."
+        tooltip={t('knowledgeBasesTip')}
         rules={[
           {
             required: true,
@@ -95,7 +98,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         <Select
           mode="multiple"
           options={knowledgeOptions}
-          placeholder="Please select"
+          placeholder={t('knowledgeBasesMessage')}
         ></Select>
       </Form.Item>
     </section>

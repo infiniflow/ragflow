@@ -4,6 +4,7 @@ import { useTranslate } from '@/hooks/commonHooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { CloseCircleOutlined } from '@ant-design/icons';
 import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
+import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { useDispatch } from 'umi';
 import { RunningStatus, RunningStatusMap } from '../constant';
@@ -80,10 +81,13 @@ export const ParsingStatusCell = ({ record }: IProps) => {
   const dispatch = useDispatch();
   const text = record.run;
   const runningStatus = RunningStatusMap[text];
+  const { t } = useTranslation();
 
   const isRunning = isParserRunning(text);
 
   const OperationIcon = iconMap[text];
+
+  const label = t(`knowledgeDetails.runningStatus${text}`);
 
   const handleOperationIconClick = () => {
     dispatch({
@@ -103,11 +107,11 @@ export const ParsingStatusCell = ({ record }: IProps) => {
           {isRunning ? (
             <Space>
               <Badge color={runningStatus.color} />
-              {runningStatus.label}
+              {label}
               <span>{(record.progress * 100).toFixed(2)}%</span>
             </Space>
           ) : (
-            runningStatus.label
+            label
           )}
         </Tag>
       </Popover>

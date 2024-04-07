@@ -1,4 +1,5 @@
 import { IKnowledge } from '@/interfaces/database/knowledge';
+import i18n from '@/locales/config';
 import kbService from '@/services/kbService';
 import { message } from 'antd';
 import { DvaModel } from 'umi';
@@ -32,7 +33,7 @@ const model: DvaModel<KSModelState> = {
       const { data } = yield call(kbService.createKb, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Created!');
+        message.success(i18n.t('message.created'));
       }
       return data;
     },
@@ -41,7 +42,7 @@ const model: DvaModel<KSModelState> = {
       const { retcode } = data;
       if (retcode === 0) {
         yield put({ type: 'getKbDetail', payload: { kb_id: payload.kb_id } });
-        message.success('Updated!');
+        message.success(i18n.t('message.updated'));
       }
     },
     *getKbDetail({ payload = {} }, { call, put }) {

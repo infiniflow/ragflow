@@ -75,7 +75,7 @@ const Login = () => {
       <div className={styles.loginLeft}>
         <div className={styles.leftContainer}>
           <div className={styles.loginTitle}>
-            <div>{title === 'login' ? t('login') : 'Create an account'}</div>
+            <div>{title === 'login' ? t('login') : t('register')}</div>
             <span>
               {title === 'login'
                 ? t('loginDescription')

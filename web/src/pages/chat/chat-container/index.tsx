@@ -37,6 +37,7 @@ import {
 } from '../hooks';
 
 import SvgIcon from '@/components/svg-icon';
+import { useTranslate } from '@/hooks/commonHooks';
 import { getExtension, isPdf } from '@/utils/documentUtils';
 import styles from './index.less';
 
@@ -298,6 +299,7 @@ const ChatContainer = () => {
   const disabled = useGetSendButtonDisabled();
   useGetFileIcon();
   const loading = useSelectConversationLoading();
+  const { t } = useTranslate('chat');
 
   return (
     <>
@@ -328,7 +330,7 @@ const ChatContainer = () => {
         </Flex>
         <Input
           size="large"
-          placeholder="Message Resume Assistant..."
+          placeholder={t('sendPlaceholder')}
           value={value}
           disabled={disabled}
           suffix={
@@ -338,7 +340,7 @@ const ChatContainer = () => {
               loading={sendLoading}
               disabled={disabled}
             >
-              Send
+              {t('send')}
             </Button>
           }
           onPressEnter={handlePressEnter}
