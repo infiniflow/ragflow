@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 import time
 import uuid
 
@@ -21,7 +22,7 @@ from api.db.db_models import init_database_tables as init_web_db
 from api.db.services import UserService
 from api.db.services.llm_service import LLMFactoriesService, LLMService, TenantLLMService, LLMBundle
 from api.db.services.user_service import TenantService, UserTenantService
-from api.settings import CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, LLM_FACTORY, API_KEY
+from api.settings import CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, LLM_FACTORY, API_KEY, LLM_BASE_URL
 
 
 def init_superuser():
@@ -53,7 +54,7 @@ def init_superuser():
     for llm in LLMService.query(fid=LLM_FACTORY):
         tenant_llm.append(
             {"tenant_id": user_info["id"], "llm_factory": LLM_FACTORY, "llm_name": llm.llm_name, "model_type": llm.model_type,
-             "api_key": API_KEY})
+             "api_key": API_KEY, "api_base": LLM_BASE_URL})
 
     if not UserService.save(**user_info):
         print("\033[93m【ERROR】\033[0mcan't init admin.")
@@ -282,11 +283,8 @@ def init_llm_factory():
             pass
 
     """
-    modify service_config
     drop table llm;
     drop table llm_factories;
-    update tenant_llm set llm_factory='Tongyi-Qianwen' where llm_factory='通义千问';
-    update tenant_llm set llm_factory='ZHIPU-AI' where llm_factory='智谱AI';
     update tenant set parser_ids='naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One';
     alter table knowledgebase modify avatar longtext;
     alter table user modify avatar longtext;

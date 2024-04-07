@@ -6,7 +6,8 @@
 
 <p align="center">
   <a href="./README.md">English</a> |
-  <a href="./README_zh.md">简体中文</a> 
+  <a href="./README_zh.md">简体中文</a> |
+  <a href="./README_ja.md">日本語</a>
 </p>
 
 <p align="center">
@@ -69,7 +70,7 @@
 
 ### 🚀 启动服务器
 
-1. 确保 `vm.max_map_count` 大于 65535：
+1. 确保 `vm.max_map_count` 不小于 262144 【[更多](./docs/max_map_count.md)】：
 
    > 如需确认 `vm.max_map_count` 的大小：
    >
@@ -77,7 +78,7 @@
    > $ sysctl vm.max_map_count
    > ```
    >
-   > 如果 `vm.max_map_count` 的值不大于 65535，可以进行重置：
+   > 如果 `vm.max_map_count` 的值小于 262144，可以进行重置：
    >
    > ```bash
    > # 这里我们设为 262144:
@@ -152,7 +153,7 @@
 > 所有系统配置都需要通过系统重启生效：
 >
 > ```bash
-> $ docker compose up -f docker-compose-CN.yml -d
+> $ docker compose -f docker-compose-CN.yml up -d
 > ```
 
 ## 🛠️ 源码编译、安装 Docker 镜像
@@ -173,7 +174,7 @@ $ docker compose up -d
 
 ## 🏄 开源社区
 
-- [Discord](https://discord.gg/uqQ4YMDf)
+- [Discord](https://discord.gg/trjjfJ9y)
 - [Twitter](https://twitter.com/infiniflowai)
 
 ## 🙌 贡献指南

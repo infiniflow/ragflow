@@ -5,7 +5,7 @@ In **user_default_llm** of [service_conf.yaml](./docker/service_conf.yaml), you 
 RagFlow supports the flowing LLM factory, and with more coming in the pipeline:
 
 > [OpenAI](https://platform.openai.com/login?launch), [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model), 
-> [ZHIPU-AI](https://open.bigmodel.cn/), [Moonshot](https://platform.moonshot.cn/docs/docs)
+> [ZHIPU-AI](https://open.bigmodel.cn/), [Moonshot](https://platform.moonshot.cn/docs)
 
 After sign in these LLM suppliers, create your own API-Key, they all have a certain amount of free quota.
 

@@ -170,3 +170,4 @@ class LocalLLM(Base):
             return ans, num_tokens_from_string(ans)
         except Exception as e:
             return "**ERROR**: " + str(e), 0
+
