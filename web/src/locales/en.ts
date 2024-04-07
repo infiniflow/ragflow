@@ -48,7 +48,7 @@ export default {
     },
     knowledgeList: {
       welcome: 'Welcome back',
-      description: 'Which database are we going to use today?',
+      description: 'Which knowledge base are we going to use today?',
       createKnowledgeBase: 'Create knowledge base',
       name: 'Name',
       namePlaceholder: 'Please input name!',
@@ -144,6 +144,7 @@ export default {
         "If the permission is 'Team', all the team member can manipulate the knowledgebase.",
       chunkTokenNumberTip:
         'It determine the token number of a chunk approximately.',
+      chunkMethod: 'Chunk method',
       chunkMethodTip: 'The instruction is at right.',
       upload: 'Upload',
       english: 'English',
@@ -238,8 +239,8 @@ export default {
       chunk: 'Chunk',
       bulk: 'Bulk',
       selectAll: 'Select All',
-      enabledSelected: 'Enabled Selected',
-      disabledSelected: 'Disabled Selected',
+      enabledSelected: 'Enable Selected',
+      disabledSelected: 'Disable Selected',
       deleteSelected: 'Delete Selected',
       search: 'Search',
       all: 'All',
@@ -250,6 +251,9 @@ export default {
       chunkMessage: 'Please input value!',
     },
     chat: {
+      assistantSetting: 'Assistant Setting',
+      promptEngine: 'Prompt Engine',
+      modelSetting: 'Model Setting',
       chat: 'Chat',
       newChat: 'New chat',
       send: 'Send',
@@ -270,10 +274,10 @@ export default {
       knowledgeBasesMessage: 'Please select',
       knowledgeBasesTip: 'Select knowledgebases associated.',
       system: 'System',
-      systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
-      以下是知识库：
+      systemInitialValue: `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
+      Here is the knowledge base:
       {knowledge}
-      以上是知识库。`,
+      The above is the knowledge base.`,
       systemMessage: 'Please input!',
       systemTip:
         'Instructions you need LLM to follow when LLM answers questions, like charactor design, answer length and answer language etc.',
@@ -300,7 +304,7 @@ export default {
       topP: 'Top P',
       topPMessage: 'Top P is required',
       topPTip:
-        'This parameter controls the randomness of predictions by the model. A lower temperature makes the model more confident in its responses, while a higher temperature makes it more creative and diverse.',
+        'Also known as “nucleus sampling,” this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones.',
       presencePenalty: 'Presence Penalty',
       presencePenaltyMessage: 'Presence Penalty is required',
       presencePenaltyTip:
@@ -328,7 +332,7 @@ export default {
       usernameMessage: 'Please input your username!',
       photo: 'Your photo',
       photoDescription: 'This will be displayed on your profile.',
-      colorSchema: 'This will be displayed on your profile.',
+      colorSchema: 'Color schema',
       colorSchemaMessage: 'Please select your color schema!',
       colorSchemaPlaceholder: 'select your color schema',
       bright: 'Bright',
@@ -361,7 +365,23 @@ export default {
       baseUrlTip:
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
       modify: 'Modify',
+      systemModelSettings: 'System Model Settings',
+      chatModel: 'Chat model',
+      chatModelTip:
+        'The default chat LLM all the newly created knowledgebase will use.',
+      embeddingModel: 'Embedding model',
+      embeddingModelTip:
+        'The default embedding model all the newly created knowledgebase will use.',
+      img2txtModel: 'Img2txt model',
+      img2txtModelTip:
+        'The default multi-module model all the newly created knowledgebase will use. It can describe a picture or video.',
+      sequence2txtModel: 'Img2txt model',
+      sequence2txtModelTip:
+        'The default ASR model all the newly created knowledgebase will use. Use this model to translate voices to corresponding text.',
+      workspace: 'Workspace',
+      upgrade: 'Upgrade',
     },
+    message: {},
     footer: {
       profile: 'All rights reserved @ React',
     },

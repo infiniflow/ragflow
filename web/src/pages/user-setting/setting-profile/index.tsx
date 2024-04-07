@@ -136,7 +136,7 @@ const UserSettingProfile = () => {
           </Form.Item>
           <Divider />
           <Form.Item<FieldType>
-            label="Color schema"
+            label={t('colorSchema')}
             name="color_schema"
             rules={[{ required: true, message: t('colorSchemaMessage') }]}
           >
