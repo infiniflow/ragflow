@@ -25,7 +25,7 @@ from api.utils.api_utils import server_error_response, validate_request
 from api.utils import get_uuid, get_format_time, decrypt, download_img
 from api.db import UserTenantRole, LLMType
 from api.settings import RetCode, GITHUB_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, API_KEY, \
-    LLM_FACTORY
+    LLM_FACTORY, LLM_BASE_URL
 from api.db.services.user_service import UserService, TenantService, UserTenantService
 from api.settings import stat_logger
 from api.utils.api_utils import get_json_result, cors_reponse
@@ -220,7 +220,9 @@ def user_register(user_id, user):
                            "llm_factory": LLM_FACTORY,
                            "llm_name": llm.llm_name,
                            "model_type": llm.model_type,
-                           "api_key": API_KEY})
+                           "api_key": API_KEY,
+                           "base_url": LLM_BASE_URL
+                           })
 
     if not UserService.save(**user):
         return

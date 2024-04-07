@@ -65,6 +65,11 @@ def upload():
             DocumentService.query,
             name=file.filename,
             kb_id=kb.id)
+        filetype = filename_type(filename)
+        if not filetype:
+            return get_data_error_result(
+                retmsg="This type of file has not been supported yet!")
+
         location = filename
         while MINIO.obj_exist(kb_id, location):
             location += "_"

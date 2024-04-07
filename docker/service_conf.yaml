@@ -18,6 +18,7 @@ es:
 user_default_llm:
   factory: 'Tongyi-Qianwen'
   api_key: 'sk-xxxxxxxxxxxxx'
+  base_url: ''
 oauth:
   github:
     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
