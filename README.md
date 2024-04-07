@@ -70,7 +70,7 @@
 
 ### 🚀 Start up the server
 
-1. Ensure `vm.max_map_count` > 65535:
+1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/max_map_count.md)):
 
    > To check the value of `vm.max_map_count`:
    >
@@ -78,7 +78,7 @@
    > $ sysctl vm.max_map_count
    > ```
    >
-   > Reset `vm.max_map_count` to a value greater than 65535 if it is not.
+   > Reset `vm.max_map_count` to a value at least 262144 if it is not.
    >
    > ```bash
    > # In this case, we set it to 262144:
@@ -104,7 +104,7 @@
    $ docker compose up -d
    ```
 
-   > The core image is about 15 GB in size and may take a while to load.
+   > The core image is about 9 GB in size and may take a while to load.
 
 4. Check the server status after having the server up and running:
 
@@ -129,7 +129,7 @@
    ```
 
 5. In your web browser, enter the IP address of your server as prompted and log in to RAGFlow.
-   > In the given scenario, you only need to enter `http://172.22.0.5` (sans port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+   > In the given scenario, you only need to enter `http://IP_of_RAGFlow ` (sans port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
    > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
