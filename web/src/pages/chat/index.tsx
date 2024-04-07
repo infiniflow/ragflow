@@ -35,6 +35,7 @@ import {
   useSelectFirstDialogOnMount,
 } from './hooks';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const Chat = () => {
@@ -71,6 +72,7 @@ const Chat = () => {
   } = useEditDialog();
   const dialogLoading = useSelectDialogListLoading();
   const conversationLoading = useSelectConversationListLoading();
+  const { t } = useTranslate('chat');
 
   useFetchDialogOnMount(dialogId, true);
 
@@ -132,7 +134,8 @@ const Chat = () => {
       onClick: handleCreateTemporaryConversation,
       label: (
         <Space>
-          <EditOutlined /> New chat
+          <EditOutlined />
+          {t('newChat')}
         </Space>
       ),
     },
@@ -146,7 +149,7 @@ const Chat = () => {
         label: (
           <Space>
             <EditOutlined />
-            Edit
+            {t('edit', { keyPrefix: 'common' })}
           </Space>
         ),
       },
@@ -157,7 +160,7 @@ const Chat = () => {
         label: (
           <Space>
             <DeleteOutlined />
-            Delete chat
+            {t('delete', { keyPrefix: 'common' })}
           </Space>
         ),
       },
@@ -250,7 +253,7 @@ const Chat = () => {
             className={styles.chatTitle}
           >
             <Space>
-              <b>Chat</b>
+              <b>{t('chat')}</b>
               <Tag>{conversationList.length}</Tag>
             </Space>
             <Dropdown menu={{ items }}>

@@ -1,5 +1,6 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { LlmModelType } from '@/constants/knowledge';
+import { useTranslate } from '@/hooks/commonHooks';
 import { ISystemModelSettingSavingParams } from '@/hooks/llmHooks';
 import { Form, Modal, Select } from 'antd';
 import { useEffect } from 'react';
@@ -21,6 +22,7 @@ const SystemModelSettingModal = ({
   const [form] = Form.useForm();
   const { systemSetting: initialValues, allOptions } =
     useFetchSystemModelSettingOnMount(visible);
+  const { t } = useTranslate('setting');
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -35,7 +37,7 @@ const SystemModelSettingModal = ({
 
   return (
     <Modal
-      title="System Model Settings"
+      title={t('systemModelSettings')}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
@@ -43,25 +45,32 @@ const SystemModelSettingModal = ({
       confirmLoading={loading}
     >
       <Form form={form} onValuesChange={onFormLayoutChange} layout={'vertical'}>
-        
-      <Form.Item label="Chat model" name="llm_id" tooltip="The default chat LLM all the newly created knowledgebase will use.">
+        <Form.Item
+          label={t('chatModel')}
+          name="llm_id"
+          tooltip={t('chatModelTip')}
+        >
           <Select options={allOptions[LlmModelType.Chat]} />
         </Form.Item>
-        <Form.Item label="Embedding model" name="embd_id" tooltip="The default embedding model all the newly created knowledgebase will use.">
+        <Form.Item
+          label={t('embeddingModel')}
+          name="embd_id"
+          tooltip={t('embeddingModelTip')}
+        >
           <Select options={allOptions[LlmModelType.Embedding]} />
         </Form.Item>
         <Form.Item
-          label="Img2txt model"
+          label={t('img2txtModel')}
           name="img2txt_id"
-          tooltip="The default multi-module model all the newly created knowledgebase will use. It can describe a picture or video."
+          tooltip={t('img2txtModelTip')}
         >
           <Select options={allOptions[LlmModelType.Image2text]} />
         </Form.Item>
-        
+
         <Form.Item
-          label="Sequence2txt model"
+          label={t('sequence2txtModel')}
           name="asr_id"
-          tooltip="The default ASR model all the newly created knowledgebase will use. Use this model to translate voices to corresponding text."
+          tooltip={t('sequence2txtModelTip')}
         >
           <Select options={allOptions[LlmModelType.Speech2text]} />
         </Form.Item>

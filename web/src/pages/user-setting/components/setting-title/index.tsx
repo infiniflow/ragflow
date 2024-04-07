@@ -1,3 +1,4 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { SettingOutlined } from '@ant-design/icons';
 import { Button, Flex, Typography } from 'antd';
 
@@ -16,6 +17,8 @@ const SettingTitle = ({
   clickButton,
   showRightButton = false,
 }: IProps) => {
+  const { t } = useTranslate('setting');
+
   return (
     <Flex align="center" justify={'space-between'}>
       <div>
@@ -24,7 +27,7 @@ const SettingTitle = ({
       </div>
       {showRightButton && (
         <Button type={'primary'} onClick={clickButton}>
-          <SettingOutlined></SettingOutlined> System Model Settings
+          <SettingOutlined></SettingOutlined> {t('systemModelSettings')}
         </Button>
       )}
     </Flex>

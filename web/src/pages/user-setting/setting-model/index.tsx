@@ -1,5 +1,5 @@
 import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
-import { useSetModalState } from '@/hooks/commonHooks';
+import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import {
   LlmItem,
   useFetchLlmFactoryListOnMount,
@@ -64,6 +64,7 @@ interface IModelCardProps {
 
 const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
   const { visible, switchVisible } = useSetModalState();
+  const { t } = useTranslate('setting');
 
   const handleApiKeyClick = () => {
     clickApiKey(item.name);
@@ -94,7 +95,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
               </Button>
               <Button onClick={handleShowMoreClick}>
                 <Flex gap={'small'}>
-                  Show more models
+                  {t('showMoreModels')}
                   <MoreModelIcon />
                 </Flex>
               </Button>
@@ -140,6 +141,7 @@ const UserSettingModel = () => {
     hideSystemSettingModal,
     showSystemSettingModal,
   } = useSubmitSystemModelSetting();
+  const { t } = useTranslate('setting');
 
   const handleApiKeyClick = useCallback(
     (llmFactory: string) => {
@@ -155,7 +157,7 @@ const UserSettingModel = () => {
   const items: CollapseProps['items'] = [
     {
       key: '1',
-      label: 'Added models',
+      label: t('addedModels'),
       children: (
         <List
           grid={{ gutter: 16, column: 1 }}
@@ -168,7 +170,7 @@ const UserSettingModel = () => {
     },
     {
       key: '2',
-      label: 'Models to be added',
+      label: t('modelsToBeAdded'),
       children: (
         <List
           grid={{
@@ -193,7 +195,7 @@ const UserSettingModel = () => {
                 </Flex>
                 <Divider></Divider>
                 <Button type="link" onClick={handleAddModel(item.name)}>
-                  Add the model
+                  {t('addTheModel')}
                 </Button>
               </Card>
             </List.Item>
@@ -208,8 +210,8 @@ const UserSettingModel = () => {
       <Spin spinning={loading}>
         <section className={styles.modelWrapper}>
           <SettingTitle
-            title="Model Setting"
-            description="Manage your account settings and preferences here."
+            title={t('model')}
+            description={t('profileDescription')}
             showRightButton
             clickButton={showSystemSettingModal}
           ></SettingTitle>

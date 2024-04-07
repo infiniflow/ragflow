@@ -1,4 +1,5 @@
 import { Authorization } from '@/constants/authorization';
+import i18n from '@/locales/config';
 import userService from '@/services/userService';
 import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
@@ -31,7 +32,7 @@ const model: DvaModel<LoginModelState> = {
       const { retcode, data: res } = data;
       const authorization = response.headers.get(Authorization);
       if (retcode === 0) {
-        message.success('logged!');
+        message.success(i18n.t('message.logged'));
         const token = res.access_token;
         const userInfo = {
           avatar: res.avatar,
@@ -51,7 +52,7 @@ const model: DvaModel<LoginModelState> = {
       console.log();
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Registered!');
+        message.success(i18n.t('message.registered'));
       }
       return retcode;
     },
@@ -59,7 +60,7 @@ const model: DvaModel<LoginModelState> = {
       const { data } = yield call(userService.logout, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('logout');
+        message.success(i18n.t('message.logout'));
       }
       return retcode;
     },

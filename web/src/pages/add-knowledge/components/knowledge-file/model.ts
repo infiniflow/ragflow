@@ -1,5 +1,6 @@
 import { BaseState } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import i18n from '@/locales/config';
 import kbService, { getDocumentFile } from '@/services/kbService';
 import { message } from 'antd';
 import omit from 'lodash/omit';
@@ -54,14 +55,14 @@ const model: DvaModel<KFModelState> = {
       const { data } = yield call(kbService.createKb, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Created!');
+        message.success(i18n.t('message.created'));
       }
     },
     *updateKf({ payload = {} }, { call }) {
       const { data } = yield call(kbService.updateKb, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Modified!');
+        message.success(i18n.t('message.modified'));
       }
     },
     *getKfDetail({ payload = {} }, { call }) {
@@ -109,7 +110,7 @@ const model: DvaModel<KFModelState> = {
       );
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Modified!');
+        message.success(i18n.t('message.modified'));
         yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
@@ -122,7 +123,7 @@ const model: DvaModel<KFModelState> = {
       });
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Deleted!');
+        message.success(i18n.t('message.deleted'));
         yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
@@ -137,7 +138,7 @@ const model: DvaModel<KFModelState> = {
       );
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('rename success！');
+        message.success(i18n.t('message.renamed'));
 
         yield put({
           type: 'getKfList',
@@ -156,7 +157,7 @@ const model: DvaModel<KFModelState> = {
           payload: { kb_id: payload.kb_id },
         });
 
-        message.success('Created!');
+        message.success(i18n.t('message.created'));
       }
       return retcode;
     },
@@ -173,7 +174,7 @@ const model: DvaModel<KFModelState> = {
             payload: { kb_id: payload.knowledgeBaseId },
           });
         }
-        message.success('Operation successfully ！');
+        message.success(i18n.t('message.operated'));
       }
       return retcode;
     },
@@ -189,7 +190,7 @@ const model: DvaModel<KFModelState> = {
           payload: { kb_id: payload.kb_id },
         });
 
-        message.success('Modified!');
+        message.success(i18n.t('message.modified'));
       }
       return retcode;
     },

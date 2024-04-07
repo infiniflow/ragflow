@@ -40,6 +40,7 @@ import classNames from 'classnames';
 import { ReactElement, useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'umi';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const { Dragger } = Upload;
@@ -135,6 +136,7 @@ const KnowledgeUploadFile = () => {
   const documentList = useSelectDocumentList();
   const runDocumentByIds = useRunDocument();
   const uploadDocument = useUploadDocument();
+  const { t } = useTranslate('knowledgeDetails');
 
   const enabled = useMemo(() => {
     if (isUpload) {
@@ -257,10 +259,10 @@ const KnowledgeUploadFile = () => {
             </Flex>
             <Flex justify="space-around">
               <p className={styles.selectFilesText}>
-                <b>Select files</b>
+                <b>{t('selectFiles')}</b>
               </p>
               <p className={styles.changeSpecificCategoryText}>
-                <b>Change specific category</b>
+                <b>{t('changeSpecificCategory')}</b>
               </p>
             </Flex>
           </div>
@@ -275,13 +277,8 @@ const KnowledgeUploadFile = () => {
             <Button className={styles.uploaderButton}>
               <CloudUploadOutlined className={styles.uploaderIcon} />
             </Button>
-            <p className="ant-upload-text">
-              Click or drag file to this area to upload
-            </p>
-            <p className="ant-upload-hint">
-              Support for a single or bulk upload. Strictly prohibited from
-              uploading company data or other banned files.
-            </p>
+            <p className="ant-upload-text">{t('uploadTitle')}</p>
+            <p className="ant-upload-hint">{t('uploadDescription')}</p>
           </Dragger>
         </section>
         <section className={styles.footer}>
@@ -292,7 +289,7 @@ const KnowledgeUploadFile = () => {
             disabled={!enabled}
             size="large"
           >
-            Next
+            {t('next', { keyPrefix: 'common' })}
           </Button>
         </section>
       </div>

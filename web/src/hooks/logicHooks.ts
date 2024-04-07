@@ -1,9 +1,11 @@
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSetModalState } from './commonHooks';
 import { useSetDocumentParser } from './documentHooks';
 import { useOneNamespaceEffectsLoading } from './storeHooks';
+import { useSaveSetting } from './userSettingHook';
 
 export const useChangeDocumentParser = (documentId: string) => {
   const setDocumentParser = useSetDocumentParser();
@@ -44,4 +46,16 @@ export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
   };
 
   return { currentRecord, setRecord };
+};
+
+export const useChangeLanguage = () => {
+  const { i18n } = useTranslation();
+  const saveSetting = useSaveSetting();
+
+  const changeLanguage = (lng: string) => {
+    i18n.changeLanguage(lng === 'Chinese' ? 'zh' : 'en');
+    saveSetting({ language: lng });
+  };
+
+  return changeLanguage;
 };

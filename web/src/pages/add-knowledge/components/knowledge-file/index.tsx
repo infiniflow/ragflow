@@ -204,7 +204,9 @@ const KnowledgeFile = () => {
       <div className={styles.filter}>
         <Space>
           <h3>{t('total', { keyPrefix: 'common' })}</h3>
-          <Tag color="purple">{total} files</Tag>
+          <Tag color="purple">
+            {total} {t('files')}
+          </Tag>
         </Space>
         <Space>
           <Input

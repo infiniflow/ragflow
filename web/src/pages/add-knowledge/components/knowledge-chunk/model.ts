@@ -4,6 +4,7 @@ import kbService from '@/services/kbService';
 import { message } from 'antd';
 import { pick } from 'lodash';
 // import { delay } from '@/utils/storeUtil';
+import i18n from '@/locales/config';
 import { DvaModel } from 'umi';
 
 export interface ChunkModelState extends BaseState {
@@ -102,7 +103,7 @@ const model: DvaModel<ChunkModelState> = {
       const { data } = yield call(kbService.switch_chunk, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Modified successfully ！');
+        message.success(i18n.t('message.modified'));
       }
       return retcode;
     },

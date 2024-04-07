@@ -59,7 +59,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       </Form.Item>
       <Form.Item
         name="permission"
-        label="Permissions"
+        label={t('permissions')}
         tooltip={t('permissionsTip')}
         rules={[{ required: true }]}
       >
@@ -70,7 +70,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       </Form.Item>
       <Form.Item
         name="embd_id"
-        label="Embedding model"
+        label={t('embeddingModel')}
         rules={[{ required: true }]}
         tooltip={t('embeddingModelTip')}
       >
@@ -82,7 +82,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       </Form.Item>
       <Form.Item
         name="parser_id"
-        label="Chunk method"
+        label={t('chunkMethod')}
         tooltip={t('chunkMethodTip')}
         rules={[{ required: true }]}
       >

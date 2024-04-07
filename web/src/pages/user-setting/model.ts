@@ -5,6 +5,7 @@ import {
   IThirdOAIModelCollection as IThirdAiModelCollection,
 } from '@/interfaces/database/llm';
 import { IUserInfo } from '@/interfaces/database/userSetting';
+import i18n from '@/locales/config';
 import userService from '@/services/userService';
 import { message } from 'antd';
 import { DvaModel } from 'umi';
@@ -47,7 +48,8 @@ const model: DvaModel<SettingModelState> = {
       const { data } = yield call(userService.setting, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Modified!');
+        message.success(i18n.t('message.modified'));
+
         yield put({
           type: 'getUserInfo',
         });
@@ -89,7 +91,8 @@ const model: DvaModel<SettingModelState> = {
       const { data } = yield call(userService.set_tenant_info, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Modified!');
+        message.success(i18n.t('message.modified'));
+
         yield put({
           type: 'getTenantInfo',
         });
@@ -137,7 +140,8 @@ const model: DvaModel<SettingModelState> = {
       const { data } = yield call(userService.set_api_key, payload);
       const { retcode } = data;
       if (retcode === 0) {
-        message.success('Modified!');
+        message.success(i18n.t('message.modified'));
+
         yield put({ type: 'my_llm' });
         yield put({ type: 'factories_list' });
         yield put({

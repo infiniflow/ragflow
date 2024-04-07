@@ -14,7 +14,6 @@ import {
   KnowledgeDatasetRouteKey,
   KnowledgeRouteKey,
   datasetRouteMap,
-  routeMap,
 } from './constant';
 import styles from './index.less';
 
@@ -49,7 +48,7 @@ const KnowledgeAdding = () => {
             {t(`knowledgeDetails.${activeKey}`)}
           </Link>
         ) : (
-          routeMap[activeKey]
+          t(`knowledgeDetails.${activeKey}`)
         ),
       },
     ];

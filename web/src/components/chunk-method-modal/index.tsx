@@ -134,12 +134,8 @@ const ChunkMethodModal: React.FC<IProps> = ({
         {showPages && (
           <>
             <Space>
-              <p>Page Ranges:</p>
-              <Tooltip
-                title={
-                  'page ranges: Define the page ranges that need to be parsed. The pages that not included in these ranges will be ignored.'
-                }
-              >
+              <p>{t('pageRanges')}:</p>
+              <Tooltip title={t('pageRangesTip')}>
                 <QuestionCircleOutlined
                   className={styles.questionIcon}
                 ></QuestionCircleOutlined>
@@ -163,7 +159,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                         rules={[
                           {
                             required: true,
-                            message: 'Missing start page number',
+                            message: t('fromMessage'),
                           },
                           ({ getFieldValue }) => ({
                             validator(_, value) {
@@ -175,16 +171,14 @@ const ChunkMethodModal: React.FC<IProps> = ({
                                 return Promise.resolve();
                               }
                               return Promise.reject(
-                                new Error(
-                                  'The current value must be greater than the previous to!',
-                                ),
+                                new Error(t('greaterThanPrevious')),
                               );
                             },
                           }),
                         ]}
                       >
                         <InputNumber
-                          placeholder="from"
+                          placeholder={t('fromPlaceholder')}
                           min={0}
                           precision={0}
                           className={styles.pageInputNumber}
@@ -197,7 +191,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                         rules={[
                           {
                             required: true,
-                            message: 'Missing end page number(excluded)',
+                            message: t('toMessage'),
                           },
                           ({ getFieldValue }) => ({
                             validator(_, value) {
@@ -208,16 +202,14 @@ const ChunkMethodModal: React.FC<IProps> = ({
                                 return Promise.resolve();
                               }
                               return Promise.reject(
-                                new Error(
-                                  'The current value must be greater than to!',
-                                ),
+                                new Error(t('greaterThan')),
                               );
                             },
                           }),
                         ]}
                       >
                         <InputNumber
-                          placeholder="to"
+                          placeholder={t('toPlaceholder')}
                           min={0}
                           precision={0}
                           className={styles.pageInputNumber}
@@ -235,7 +227,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
                       block
                       icon={<PlusOutlined />}
                     >
-                      Add page
+                      {t('addPage')}
                     </Button>
                   </Form.Item>
                 </>
@@ -246,12 +238,10 @@ const ChunkMethodModal: React.FC<IProps> = ({
         {showOne && (
           <Form.Item
             name={['parser_config', 'layout_recognize']}
-            label="Layout recognize"
+            label={t('layoutRecognize')}
             initialValue={true}
             valuePropName="checked"
-            tooltip={
-              'Use visual models for layout analysis to better identify document structure, find where the titles, text blocks, images, and tables are. Without this feature, only the plain text of the PDF can be obtained.'
-            }
+            tooltip={t('layoutRecognizeTip')}
           >
             <Switch />
           </Form.Item>
@@ -265,14 +255,13 @@ const ChunkMethodModal: React.FC<IProps> = ({
               getFieldValue(['parser_config', 'layout_recognize']) && (
                 <Form.Item
                   name={['parser_config', 'task_page_size']}
-                  label="Task page size"
-                  tooltip={`If using layout recognize, the PDF file will be split into groups of successive. Layout analysis will be performed parallelly between groups to increase the processing speed. 
-                    The 'Task page size' determines the size of groups. The larger the page size is, the lower the chance of splitting continuous text between pages into different chunks.`}
+                  label={t('taskPageSize')}
+                  tooltip={t('taskPageSizeTip')}
                   initialValue={12}
                   rules={[
                     {
                       required: true,
-                      message: 'Please input your task page size!',
+                      message: t('taskPageSizeMessage'),
                     },
                   ]}
                 >

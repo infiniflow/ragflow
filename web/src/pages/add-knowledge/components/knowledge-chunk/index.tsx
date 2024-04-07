@@ -16,6 +16,7 @@ import {
 } from './hooks';
 import { ChunkModelState } from './model';
 
+import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
 const Chunk = () => {
@@ -33,6 +34,7 @@ const Chunk = () => {
   const documentInfo = useSelectDocumentInfo();
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo.type === 'pdf';
+  const { t } = useTranslation();
 
   const getChunkList = useFetchChunkList();
 
@@ -86,7 +88,7 @@ const Chunk = () => {
     [],
   );
   const showSelectedChunkWarning = () => {
-    message.warning('Please select chunk!');
+    message.warning(t('message.pleaseSelectChunk'));
   };
 
   const handleRemoveChunk = useCallback(async () => {
