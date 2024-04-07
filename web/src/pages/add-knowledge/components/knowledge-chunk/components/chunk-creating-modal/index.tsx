@@ -1,7 +1,7 @@
 import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { DeleteOutlined } from '@ant-design/icons';
-import { Checkbox, Form, Input, Modal, Space } from 'antd';
+import { Checkbox, Divider, Form, Input, Modal, Space } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'umi';
@@ -115,7 +115,7 @@ const ChunkCreatingModal: React.FC<kFProps> = ({ doc_id, chunkId }) => {
       </section>
       {chunkId && (
         <section>
-          <p>{t('chunk.function')} *</p>
+          <Divider></Divider>
           <Space size={'large'}>
             <Checkbox onChange={handleCheck} checked={checked}>
               {t('chunk.enabled')}

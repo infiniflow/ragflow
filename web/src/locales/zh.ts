@@ -71,7 +71,7 @@ export default {
       searchFiles: '搜索文件',
       localFiles: '本地文件',
       emptyFiles: '新建空文件',
-      chunkNumber: '模块数',
+      chunkNumber: '分块数',
       uploadDate: '上传日期',
       chunkMethod: '解析方法',
       enabled: '启用',
@@ -94,7 +94,7 @@ export default {
       testTextPlaceholder: '请输入您的问题！',
       testingLabel: '测试',
       similarity: '混合相似度',
-      termSimilarity: '术语相似度',
+      termSimilarity: '关键词相似度',
       vectorSimilarity: '向量相似度',
       hits: '命中数',
       view: '看法',
@@ -126,6 +126,7 @@ export default {
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
         '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
+      chunk: '解析块',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
@@ -248,6 +249,7 @@ export default {
       chunkMessage: '请输入值！',
     },
     chat: {
+      createAssistant: '新建助理',
       assistantSetting: '助理设置',
       promptEngine: '提示引擎',
       modelSetting: '模型设置',
