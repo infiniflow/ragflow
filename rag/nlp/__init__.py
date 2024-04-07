@@ -68,6 +68,7 @@ def bullets_category(sections):
 
 def is_english(texts):
     eng = 0
+    if not texts: return False
     for t in texts:
         if re.match(r"[a-zA-Z]{2,}", t.strip()):
             eng += 1
@@ -112,8 +113,8 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             d = copy.deepcopy(doc)
             tokenize(d, rows, eng)
             d["content_with_weight"] = rows
-            d["image"] = img
-            add_positions(d, poss)
+            if img: d["image"] = img
+            if poss: add_positions(d, poss)
             res.append(d)
             continue
         de = "; " if eng else "； "
