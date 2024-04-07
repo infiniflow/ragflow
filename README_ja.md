@@ -66,11 +66,11 @@
 - CPU >= 2 cores
 - RAM >= 8 GB
 - Docker
-  > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/)を参照してください。
+  > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
 
 ### 🚀 サーバーを起動
 
-1. `vm.max_map_count` > 65535 であることを確認する:
+1. `vm.max_map_count` >= 262144 であることを確認する【[もっと](./docs/max_map_count.md)】:
 
    > `vm.max_map_count` の値をチェックするには:
    >
@@ -78,7 +78,7 @@
    > $ sysctl vm.max_map_count
    > ```
    >
-   > `vm.max_map_count` が 65535 より大きい値でなければリセットする。
+   > `vm.max_map_count` が 262144 より大きい値でなければリセットする。
    >
    > ```bash
    > # In this case, we set it to 262144:
