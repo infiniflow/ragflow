@@ -54,7 +54,7 @@ def init_superuser():
     for llm in LLMService.query(fid=LLM_FACTORY):
         tenant_llm.append(
             {"tenant_id": user_info["id"], "llm_factory": LLM_FACTORY, "llm_name": llm.llm_name, "model_type": llm.model_type,
-             "api_key": API_KEY, "base_url": LLM_BASE_URL})
+             "api_key": API_KEY, "api_base": LLM_BASE_URL})
 
     if not UserService.save(**user_info):
         print("\033[93m【ERROR】\033[0mcan't init admin.")
