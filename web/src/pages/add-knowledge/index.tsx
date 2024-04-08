@@ -10,11 +10,7 @@ import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Outlet, useDispatch, useLocation } from 'umi';
 import Siderbar from './components/knowledge-sidebar';
-import {
-  KnowledgeDatasetRouteKey,
-  KnowledgeRouteKey,
-  datasetRouteMap,
-} from './constant';
+import { KnowledgeDatasetRouteKey, KnowledgeRouteKey } from './constant';
 import styles from './index.less';
 
 const KnowledgeAdding = () => {
@@ -55,7 +51,7 @@ const KnowledgeAdding = () => {
 
     if (datasetActiveKey) {
       items.push({
-        title: datasetRouteMap[datasetActiveKey],
+        title: t(`knowledgeDetails.${datasetActiveKey}`),
       });
     }
 

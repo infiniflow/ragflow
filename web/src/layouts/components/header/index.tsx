@@ -1,15 +1,14 @@
 import { ReactComponent as StarIon } from '@/assets/svg/chat-star.svg';
 import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base.svg';
 import { ReactComponent as Logo } from '@/assets/svg/logo.svg';
+import { useTranslate } from '@/hooks/commonHooks';
+import { useNavigateWithFromState } from '@/hooks/routeHook';
 import { Layout, Radio, Space, theme } from 'antd';
+import { useCallback, useMemo } from 'react';
+import { useLocation } from 'umi';
 import Toolbar from '../right-toolbar';
 
 import styles from './index.less';
-
-import { useNavigateWithFromState } from '@/hooks/routeHook';
-import { useCallback, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useLocation } from 'umi';
 
 const { Header } = Layout;
 
@@ -19,7 +18,7 @@ const RagHeader = () => {
   } = theme.useToken();
   const navigate = useNavigateWithFromState();
   const { pathname } = useLocation();
-  const { t } = useTranslation('translation', { keyPrefix: 'header' });
+  const { t } = useTranslate('header');
 
   const tagsData = useMemo(
     () => [
