@@ -91,6 +91,57 @@ def set_api_key():
     return get_json_result(data=True)
 
 
+@manager.route('/add_llm', methods=['POST'])
+@login_required
+@validate_request("llm_factory", "llm_name", "model_type")
+def add_llm():
+    req = request.json
+    llm = {
+        "tenant_id": current_user.id,
+        "llm_factory": req["llm_factory"],
+        "model_type": req["model_type"],
+        "llm_name": req["llm_name"],
+        "api_base": req.get("api_base", ""),
+        "api_key": "xxxxxxxxxxxxxxx"
+    }
+
+    factory = req["llm_factory"]
+    msg = ""
+    if llm["model_type"] == LLMType.EMBEDDING.value:
+        mdl = EmbeddingModel[factory](
+            key=None, model_name=llm["llm_name"], base_url=llm["api_base"])
+        try:
+            arr, tc = mdl.encode(["Test if the api key is available"])
+            if len(arr[0]) == 0 or tc == 0:
+                raise Exception("Fail")
+        except Exception as e:
+            msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
+    elif llm["model_type"] == LLMType.CHAT.value:
+        mdl = ChatModel[factory](
+            key=None, model_name=llm["llm_name"], base_url=llm["api_base"])
+        try:
+            m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
+                             "temperature": 0.9})
+            if not tc:
+                raise Exception(m)
+        except Exception as e:
+            msg += f"\nFail to access model({llm['llm_name']})." + str(
+                e)
+    else:
+        # TODO: check other type of models
+        pass
+
+    if msg:
+        return get_data_error_result(retmsg=msg)
+
+
+    if not TenantLLMService.filter_update(
+            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory, TenantLLM.llm_name == llm["llm_name"]], llm):
+        TenantLLMService.save(**llm)
+
+    return get_json_result(data=True)
+
+
 @manager.route('/my_llms', methods=['GET'])
 @login_required
 def my_llms():
@@ -124,6 +175,12 @@ def list():
                 for m in llms if m.status == StatusEnum.VALID.value]
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding"
+
+        llm_set = set([m["llm_name"] for m in llms])
+        for o in objs:
+            if not o.api_key:continue
+            if o.llm_name in llm_set:continue
+            llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})
 
         res = {}
         for m in llms:

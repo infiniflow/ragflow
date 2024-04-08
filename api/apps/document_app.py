@@ -81,7 +81,7 @@ def upload():
             "parser_id": kb.parser_id,
             "parser_config": kb.parser_config,
             "created_by": current_user.id,
-            "type": filename_type(filename),
+            "type": filetype,
             "name": filename,
             "location": location,
             "size": len(blob),

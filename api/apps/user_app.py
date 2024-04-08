@@ -182,6 +182,10 @@ def user_info():
 
 def rollback_user_registration(user_id):
     try:
+        UserService.delete_by_id(user_id)
+    except Exception as e:
+        pass
+    try:
         TenantService.delete_by_id(user_id)
     except Exception as e:
         pass
