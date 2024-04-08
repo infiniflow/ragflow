@@ -23,7 +23,8 @@ import re
 import sys
 import traceback
 from functools import partial
-
+import signal
+from contextlib import contextmanager
 from rag.settings import database_logger
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 
@@ -97,8 +98,21 @@ def collect(comm, mod, tm):
     cron_logger.info("TOTAL:{}, To:{}".format(len(tasks), mtm))
     return tasks
 
+@contextmanager
+def timeout(time):
+    # Register a function to raise a TimeoutError on the signal.
+    signal.signal(signal.SIGALRM, raise_timeout)
+    # Schedule the signal to be sent after ``time``.
+    signal.alarm(time)
+    yield
+
+
+def raise_timeout(signum, frame):
+    raise TimeoutError
+
 
 def build(row):
+    from timeit import default_timer as timer
     if row["size"] > DOC_MAXIMUM_SIZE:
         set_progress(row["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
                      (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
@@ -111,11 +125,14 @@ def build(row):
         row["to_page"])
     chunker = FACTORY[row["parser_id"].lower()]
     try:
-        cron_logger.info(
-            "Chunkking {}/{}".format(row["location"], row["name"]))
-        cks = chunker.chunk(row["name"], binary=MINIO.get(row["kb_id"], row["location"]), from_page=row["from_page"],
+        st = timer()
+        with timeout(30):
+            binary = MINIO.get(row["kb_id"], row["location"])
+        cks = chunker.chunk(row["name"], binary=binary, from_page=row["from_page"],
                             to_page=row["to_page"], lang=row["language"], callback=callback,
                             kb_id=row["kb_id"], parser_config=row["parser_config"], tenant_id=row["tenant_id"])
+        cron_logger.info(
+            "Chunkking({}) {}/{}".format(timer()-st, row["location"], row["name"]))
     except Exception as e:
         if re.search("(No such file|not found)", str(e)):
             callback(-1, "Can not find file <%s>" % row["name"])

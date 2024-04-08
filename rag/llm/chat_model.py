@@ -18,6 +18,7 @@ from dashscope import Generation
 from abc import ABC
 from openai import OpenAI
 import openai
+from ollama import Client
 from rag.nlp import is_english
 from rag.utils import num_tokens_from_string
 
@@ -125,6 +126,32 @@ class ZhipuChat(Base):
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return ans, response.usage.completion_tokens
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+
+class OllamaChat(Base):
+    def __init__(self, key, model_name, **kwargs):
+        self.client = Client(host=kwargs["base_url"])
+        self.model_name = model_name
+
+    def chat(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        try:
+            options = {"temperature": gen_conf.get("temperature", 0.1),
+                       "num_predict": gen_conf.get("max_tokens", 128),
+                       "top_k": gen_conf.get("top_p", 0.3),
+                       "presence_penalty": gen_conf.get("presence_penalty", 0.4),
+                       "frequency_penalty": gen_conf.get("frequency_penalty", 0.7),
+                       }
+            response = self.client.chat(
+                model=self.model_name,
+                messages=history,
+                options=options
+            )
+            ans = response["message"]["content"].strip()
+            return ans, response["eval_count"]
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 

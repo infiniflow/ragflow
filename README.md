@@ -1,6 +1,6 @@
 <div align="center">
 <a href="https://demo.ragflow.io/">
-<img src="web/src/assets/logo-with-text.png" width="350" alt="ragflow logo">
+<img src="web/src/assets/logo-with-text.png" width="520" alt="ragflow logo">
 </a>
 </div>
 
@@ -124,12 +124,12 @@
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
-    * Running on http://172.22.0.5:9380
+    * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
 
-5. In your web browser, enter the IP address of your server as prompted and log in to RAGFlow.
-   > In the given scenario, you only need to enter `http://IP_of_RAGFlow ` (sans port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+5. In your web browser, enter the IP address of your server and log in to RAGFlow.
+   > In the given scenario, you only need to enter `http://IP_OF_YOUR_MACHINE` (sans port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
    > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
@@ -167,6 +167,11 @@ $ docker build -t infiniflow/ragflow:v1.0 .
 $ cd ragflow/docker
 $ docker compose up -d
 ```
+
+## 🆕 Latest Features
+
+- Support [Ollam](./docs/ollama.md) for local LLM deployment.
+- Support Chinese UI.
 
 ## 📜 Roadmap
 

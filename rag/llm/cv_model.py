@@ -16,7 +16,7 @@
 from zhipuai import ZhipuAI
 import io
 from abc import ABC
-
+from ollama import Client
 from PIL import Image
 from openai import OpenAI
 import os
@@ -138,6 +138,28 @@ class Zhipu4V(Base):
             max_tokens=max_tokens,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
+
+
+class OllamaCV(Base):
+    def __init__(self, key, model_name, lang="Chinese", **kwargs):
+        self.client = Client(host=kwargs["base_url"])
+        self.model_name = model_name
+        self.lang = lang
+
+    def describe(self, image, max_tokens=1024):
+        prompt = self.prompt("")
+        try:
+            options = {"num_predict": max_tokens}
+            response = self.client.generate(
+                model=self.model_name,
+                prompt=prompt[0]["content"][1]["text"],
+                images=[image],
+                options=options
+            )
+            ans = response["response"].strip()
+            return ans, 128
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
 
 
 class LocalCV(Base):

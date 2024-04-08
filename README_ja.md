@@ -124,12 +124,12 @@
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
-    * Running on http://172.22.0.5:9380
+    * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
 
 5. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
-   > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://172.22.0.5`（ポート番号は省略）だけを入力すればよい。
+   > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
 6. [service_conf.yaml](./docker/service_conf.yaml) で、`user_default_llm` で希望の LLM ファクトリを選択し、`API_KEY` フィールドを対応する API キーで更新する。
 
    > 詳しくは [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) を参照してください。
@@ -167,6 +167,11 @@ $ docker build -t infiniflow/ragflow:v1.0 .
 $ cd ragflow/docker
 $ docker compose up -d
 ```
+
+## 🆕 最新の新機能
+
+- [Ollam](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
+- 中国語インターフェースをサポートします。
 
 ## 📜 ロードマップ
 
