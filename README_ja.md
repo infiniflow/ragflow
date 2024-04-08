@@ -101,6 +101,7 @@
 
    ```bash
    $ cd ragflow/docker
+   $ chmod +x ./entrypoint.sh
    $ docker compose up -d
    ```
 
@@ -165,12 +166,13 @@ $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
 $ docker build -t infiniflow/ragflow:v1.0 .
 $ cd ragflow/docker
+$ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
 ## 🆕 最新の新機能
 
-- [Ollam](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
+- [Ollama](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
 - 中国語インターフェースをサポートします。
 
 ## 📜 ロードマップ

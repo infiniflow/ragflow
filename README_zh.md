@@ -101,6 +101,7 @@
 
    ```bash
    $ cd ragflow/docker
+   $ chmod +x ./entrypoint.sh
    $ docker compose -f docker-compose-CN.yml up -d
    ```
 
@@ -165,12 +166,13 @@ $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
 $ docker build -t infiniflow/ragflow:v1.0 .
 $ cd ragflow/docker
+$ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
 ## 🆕 最近新特性
 
-- 支持用 [Ollam](./docs/ollama.md) 对大模型进行本地化部署。
+- 支持用 [Ollama](./docs/ollama.md) 对大模型进行本地化部署。
 - 支持中文界面。
 
 ## 📜 路线图

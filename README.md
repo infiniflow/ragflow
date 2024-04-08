@@ -101,6 +101,7 @@
 
    ```bash
    $ cd ragflow/docker
+   $ chmod +x ./entrypoint.sh
    $ docker compose up -d
    ```
 
@@ -165,12 +166,13 @@ $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
 $ docker build -t infiniflow/ragflow:v1.0 .
 $ cd ragflow/docker
+$ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
 ## 🆕 Latest Features
 
-- Support [Ollam](./docs/ollama.md) for local LLM deployment.
+- Support [Ollama](./docs/ollama.md) for local LLM deployment.
 - Support Chinese UI.
 
 ## 📜 Roadmap
