@@ -124,12 +124,12 @@
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
-    * Running on http://172.22.0.5:9380
+    * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
 
-5. 根据刚才的界面提示在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
-   > 上面这个例子中，您只需输入 http://172.22.0.5 即可：未改动过配置则无需输入端口（默认的 HTTP 服务端口 80）。
+5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
+   > 上面这个例子中，您只需输入 http://IP_OF_YOUR_MACHINE 即可：未改动过配置则无需输入端口（默认的 HTTP 服务端口 80）。
 6. 在 [service_conf.yaml](./docker/service_conf.yaml) 文件的 `user_default_llm` 栏配置 LLM factory，并在 `API_KEY` 栏填写和你选择的大模型相对应的 API key。
 
    > 详见 [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md)。
@@ -168,9 +168,14 @@ $ cd ragflow/docker
 $ docker compose up -d
 ```
 
+## 🆕 最近新特性
+
+- 支持用 [Ollam](./docs/ollama.md) 对大模型进行本地化部署。
+- 支持中文界面。
+
 ## 📜 路线图
 
-详见 [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)。
+详见 [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162) 。
 
 ## 🏄 开源社区
 
@@ -179,7 +184,7 @@ $ docker compose up -d
 
 ## 🙌 贡献指南
 
-RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的[贡献者指南](https://github.com/infiniflow/ragflow/blob/main/docs/CONTRIBUTING.md)。
+RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的[贡献者指南](https://github.com/infiniflow/ragflow/blob/main/docs/CONTRIBUTING.md) 。
 
 ## 👥 加入社区
 

@@ -18,7 +18,7 @@ import time
 import uuid
 
 from api.db import LLMType, UserTenantRole
-from api.db.db_models import init_database_tables as init_web_db
+from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM
 from api.db.services import UserService
 from api.db.services.llm_service import LLMFactoriesService, LLMService, TenantLLMService, LLMBundle
 from api.db.services.user_service import TenantService, UserTenantService
@@ -100,16 +100,16 @@ factory_infos = [{
     "status": "1",
 },
     {
-    "name": "Local",
+    "name": "Ollama",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
         "status": "1",
 }, {
-        "name": "Moonshot",
+    "name": "Moonshot",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
-}
+},
     # {
     #     "name": "文心一言",
     #     "logo": "",
@@ -230,20 +230,6 @@ def init_llm_factory():
             "max_tokens": 512,
             "model_type": LLMType.EMBEDDING.value
         },
-        # ---------------------- 本地 ----------------------
-        {
-            "fid": factory_infos[3]["name"],
-            "llm_name": "qwen-14B-chat",
-            "tags": "LLM,CHAT,",
-            "max_tokens": 4096,
-            "model_type": LLMType.CHAT.value
-        }, {
-            "fid": factory_infos[3]["name"],
-            "llm_name": "flag-embedding",
-            "tags": "TEXT EMBEDDING,",
-            "max_tokens": 128 * 1000,
-            "model_type": LLMType.EMBEDDING.value
-        },
         # ------------------------ Moonshot -----------------------
         {
             "fid": factory_infos[4]["name"],
@@ -282,6 +268,9 @@ def init_llm_factory():
         except Exception as e:
             pass
 
+    LLMFactoriesService.filter_delete([LLMFactories.name=="Local"])
+    LLMService.filter_delete([LLM.fid=="Local"])
+
     """
     drop table llm;
     drop table llm_factories;
@@ -295,8 +284,7 @@ def init_llm_factory():
 def init_web_data():
     start_time = time.time()
 
-    if LLMFactoriesService.get_all().count() != len(factory_infos):
-        init_llm_factory()
+    init_llm_factory()
     if not UserService.get_all().count():
         init_superuser()
 
