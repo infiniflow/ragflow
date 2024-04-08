@@ -17,6 +17,7 @@ export default {
   llm_list: `${api_host}/llm/list`,
   my_llm: `${api_host}/llm/my_llms`,
   set_api_key: `${api_host}/llm/set_api_key`,
+  add_llm: `${api_host}/llm/add_llm`,
 
   //知识库管理
   kb_list: `${api_host}/kb/list`,

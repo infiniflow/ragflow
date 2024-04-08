@@ -14,6 +14,7 @@ const {
   my_llm,
   set_api_key,
   set_tenant_info,
+  add_llm,
 } = api;
 
 const methods = {
@@ -59,6 +60,10 @@ const methods = {
   },
   set_api_key: {
     url: set_api_key,
+    method: 'post',
+  },
+  add_llm: {
+    url: add_llm,
     method: 'post',
   },
 } as const;

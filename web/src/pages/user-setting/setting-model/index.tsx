@@ -1,15 +1,11 @@
 import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
+import SvgIcon from '@/components/svg-icon';
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import {
   LlmItem,
   useFetchLlmFactoryListOnMount,
   useFetchMyLlmListOnMount,
 } from '@/hooks/llmHooks';
-import { ReactComponent as MoonshotIcon } from '@/icons/moonshot.svg';
-import { ReactComponent as OpenAiIcon } from '@/icons/openai.svg';
-import { ReactComponent as TongYiIcon } from '@/icons/tongyi.svg';
-import { ReactComponent as WenXinIcon } from '@/icons/wenxin.svg';
-import { ReactComponent as ZhiPuIcon } from '@/icons/zhipu.svg';
 import { SettingOutlined, UserOutlined } from '@ant-design/icons';
 import {
   Avatar,
@@ -33,24 +29,27 @@ import ApiKeyModal from './api-key-modal';
 import {
   useSelectModelProvidersLoading,
   useSubmitApiKey,
+  useSubmitOllama,
   useSubmitSystemModelSetting,
 } from './hooks';
+import styles from './index.less';
+import OllamaModal from './ollama-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
 
-import styles from './index.less';
-
 const IconMap = {
-  'Tongyi-Qianwen': TongYiIcon,
-  Moonshot: MoonshotIcon,
-  OpenAI: OpenAiIcon,
-  'ZHIPU-AI': ZhiPuIcon,
-  文心一言: WenXinIcon,
+  'Tongyi-Qianwen': 'tongyi',
+  Moonshot: 'moonshot',
+  OpenAI: 'openai',
+  'ZHIPU-AI': 'zhipu',
+  文心一言: 'wenxin',
+  Ollama: 'ollama',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
-  const Icon = IconMap[name as keyof typeof IconMap];
-  return Icon ? (
-    <Icon width={48} height={48}></Icon>
+  const icon = IconMap[name as keyof typeof IconMap];
+
+  return icon ? (
+    <SvgIcon name={`llm/${icon}`} width={48} height={48}></SvgIcon>
   ) : (
     <Avatar shape="square" size="large" icon={<UserOutlined />} />
   );
@@ -90,7 +89,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
           <Col span={12} className={styles.factoryOperationWrapper}>
             <Space size={'middle'}>
               <Button onClick={handleApiKeyClick}>
-                API-Key
+                {item.name === 'Ollama' ? t('addTheModel') : 'API-Key'}
                 <SettingOutlined />
               </Button>
               <Button onClick={handleShowMoreClick}>
@@ -142,16 +141,31 @@ const UserSettingModel = () => {
     showSystemSettingModal,
   } = useSubmitSystemModelSetting();
   const { t } = useTranslate('setting');
+  const {
+    llmAddingVisible,
+    hideLlmAddingModal,
+    showLlmAddingModal,
+    onLlmAddingOk,
+    llmAddingLoading,
+  } = useSubmitOllama();
 
   const handleApiKeyClick = useCallback(
     (llmFactory: string) => {
-      showApiKeyModal({ llm_factory: llmFactory });
+      if (llmFactory === 'Ollama') {
+        showLlmAddingModal();
+      } else {
+        showApiKeyModal({ llm_factory: llmFactory });
+      }
     },
-    [showApiKeyModal],
+    [showApiKeyModal, showLlmAddingModal],
   );
 
   const handleAddModel = (llmFactory: string) => () => {
-    handleApiKeyClick(llmFactory);
+    if (llmFactory === 'Ollama') {
+      showLlmAddingModal();
+    } else {
+      handleApiKeyClick(llmFactory);
+    }
   };
 
   const items: CollapseProps['items'] = [
@@ -216,7 +230,7 @@ const UserSettingModel = () => {
             clickButton={showSystemSettingModal}
           ></SettingTitle>
           <Divider></Divider>
-          <Collapse defaultActiveKey={['1']} ghost items={items} />
+          <Collapse defaultActiveKey={['1', '2']} ghost items={items} />
         </section>
       </Spin>
       <ApiKeyModal
@@ -233,6 +247,12 @@ const UserSettingModel = () => {
         hideModal={hideSystemSettingModal}
         loading={saveSystemModelSettingLoading}
       ></SystemModelSettingModal>
+      <OllamaModal
+        visible={llmAddingVisible}
+        hideModal={hideLlmAddingModal}
+        onOk={onLlmAddingOk}
+        loading={llmAddingLoading}
+      ></OllamaModal>
     </>
   );
 };

@@ -2,6 +2,7 @@ import { useSetModalState } from '@/hooks/commonHooks';
 import {
   IApiKeySavingParams,
   ISystemModelSettingSavingParams,
+  useAddLlm,
   useFetchLlmList,
   useSaveApiKey,
   useSaveTenantInfo,
@@ -12,6 +13,7 @@ import {
   useFetchTenantInfo,
   useSelectTenantInfo,
 } from '@/hooks/userSettingHook';
+import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { useCallback, useEffect, useState } from 'react';
 
 type SavingParamsState = Omit<IApiKeySavingParams, 'api_key'>;
@@ -126,4 +128,32 @@ export const useSelectModelProvidersLoading = () => {
   ]);
 
   return loading;
+};
+
+export const useSubmitOllama = () => {
+  const loading = useOneNamespaceEffectsLoading('settingModel', ['add_llm']);
+  const addLlm = useAddLlm();
+  const {
+    visible: llmAddingVisible,
+    hideModal: hideLlmAddingModal,
+    showModal: showLlmAddingModal,
+  } = useSetModalState();
+
+  const onLlmAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideLlmAddingModal();
+      }
+    },
+    [hideLlmAddingModal, addLlm],
+  );
+
+  return {
+    llmAddingLoading: loading,
+    onLlmAddingOk,
+    llmAddingVisible,
+    hideLlmAddingModal,
+    showLlmAddingModal,
+  };
 };

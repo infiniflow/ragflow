@@ -151,6 +151,17 @@ const model: DvaModel<SettingModelState> = {
       }
       return retcode;
     },
+    *add_llm({ payload = {} }, { call, put }) {
+      const { data } = yield call(userService.add_llm, payload);
+      const { retcode } = data;
+      if (retcode === 0) {
+        message.success(i18n.t('message.modified'));
+
+        yield put({ type: 'my_llm' });
+        yield put({ type: 'factories_list' });
+      }
+      return retcode;
+    },
   },
 };
 export default model;
