@@ -46,8 +46,10 @@ const ApiKeyModal = ({
   };
 
   useEffect(() => {
-    form.setFieldValue('api_key', initialValue);
-  }, [initialValue, form]);
+    if (visible) {
+      form.setFieldValue('api_key', initialValue);
+    }
+  }, [initialValue, form, visible]);
 
   return (
     <Modal

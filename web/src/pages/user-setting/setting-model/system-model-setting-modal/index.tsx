@@ -30,8 +30,10 @@ const SystemModelSettingModal = ({
   };
 
   useEffect(() => {
-    form.setFieldsValue(initialValues);
-  }, [form, initialValues]);
+    if (visible) {
+      form.setFieldsValue(initialValues);
+    }
+  }, [form, initialValues, visible]);
 
   const onFormLayoutChange = () => {};
 
