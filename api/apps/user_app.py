@@ -221,7 +221,7 @@ def user_register(user_id, user):
                            "llm_name": llm.llm_name,
                            "model_type": llm.model_type,
                            "api_key": API_KEY,
-                           "base_url": LLM_BASE_URL
+                           "api_base": LLM_BASE_URL
                            })
 
     if not UserService.save(**user):
