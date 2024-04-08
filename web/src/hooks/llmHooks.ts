@@ -4,6 +4,7 @@ import {
   IMyLlmValue,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
+import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
@@ -199,6 +200,22 @@ export const useSaveTenantInfo = () => {
       return dispatch<any>({
         type: 'settingModel/set_tenant_info',
         payload: savingParams,
+      });
+    },
+    [dispatch],
+  );
+
+  return saveTenantInfo;
+};
+
+export const useAddLlm = () => {
+  const dispatch = useDispatch();
+
+  const saveTenantInfo = useCallback(
+    (requestBody: IAddLlmRequestBody) => {
+      return dispatch<any>({
+        type: 'settingModel/add_llm',
+        payload: requestBody,
       });
     },
     [dispatch],

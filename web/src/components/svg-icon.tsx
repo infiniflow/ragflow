@@ -21,13 +21,16 @@ try {
 interface IProps extends IconComponentProps {
   name: string;
   width: string | number;
+  height?: string | number;
 }
 
-const SvgIcon = ({ name, width, ...restProps }: IProps) => {
+const SvgIcon = ({ name, width, height, ...restProps }: IProps) => {
   const ListItem = routeList.find((item) => item.name === name);
   return (
     <Icon
-      component={() => <img src={ListItem?.value} alt="" width={width} />}
+      component={() => (
+        <img src={ListItem?.value} alt="" width={width} height={height} />
+      )}
       {...(restProps as any)}
     />
   );
