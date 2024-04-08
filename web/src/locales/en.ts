@@ -129,6 +129,7 @@ export default {
       uploadTitle: 'Click or drag file to this area to upload',
       uploadDescription:
         'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
+      chunk: 'Chunk',
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -256,6 +257,7 @@ export default {
       chunkMessage: 'Please input value!',
     },
     chat: {
+      createAssistant: 'Create an Assistant',
       assistantSetting: 'Assistant Setting',
       promptEngine: 'Prompt Engine',
       modelSetting: 'Model Setting',
@@ -383,7 +385,7 @@ export default {
       img2txtModel: 'Img2txt model',
       img2txtModelTip:
         'The default multi-module model all the newly created knowledgebase will use. It can describe a picture or video.',
-      sequence2txtModel: 'Img2txt model',
+      sequence2txtModel: 'Sequence2txt model',
       sequence2txtModelTip:
         'The default ASR model all the newly created knowledgebase will use. Use this model to translate voices to corresponding text.',
       workspace: 'Workspace',

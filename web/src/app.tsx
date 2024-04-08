@@ -1,4 +1,4 @@
-import i18next from '@/locales/config';
+import { default as i18n, default as i18next } from '@/locales/config';
 import { App, ConfigProvider, ConfigProviderProps } from 'antd';
 import enUS from 'antd/locale/en_US';
 import zhCN from 'antd/locale/zh_CN';
@@ -18,8 +18,12 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
   });
 
   useEffect(() => {
-    i18next.changeLanguage(storage.getLanguage());
-  }, [locale]);
+    // Because the language is saved in the backend, a token is required to obtain the api. However, the login page cannot obtain the language through the getUserInfo api, so the language needs to be saved in localstorage.
+    const lng = storage.getLanguage();
+    if (lng) {
+      i18n.changeLanguage(lng);
+    }
+  }, []);
 
   return (
     <ConfigProvider

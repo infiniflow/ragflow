@@ -204,7 +204,7 @@ const Chat = () => {
       <Flex className={styles.chatAppWrapper}>
         <Flex flex={1} vertical>
           <Button type="primary" onClick={handleShowChatConfigurationModal()}>
-            Create an Assistant
+            {t('createAssistant')}
           </Button>
           <Divider></Divider>
           <Flex className={styles.chatAppContent} vertical gap={10}>

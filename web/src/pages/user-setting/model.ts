@@ -66,6 +66,7 @@ const model: DvaModel<SettingModelState> = {
       // };
       // authorizationUtil.setUserInfo(userInfo);
       if (retcode === 0) {
+        i18n.changeLanguage(res.language === 'Chinese' ? 'zh' : 'en');
         yield put({ type: 'setUserInfo', payload: res });
         // localStorage.setItem('userInfo',res.)
       }
