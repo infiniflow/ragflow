@@ -398,6 +398,7 @@ export default {
       addLlmBaseUrl: 'Base url',
       baseUrlNameMessage: 'Please input your base url!',
       vision: 'Does it support Vision?',
+      ollamaLink: 'How to integrate Ollama',
     },
     message: {
       registered: 'Registered!',

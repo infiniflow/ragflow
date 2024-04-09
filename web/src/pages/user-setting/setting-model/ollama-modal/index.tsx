@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, Modal, Select, Switch } from 'antd';
+import { Flex, Form, Input, Modal, Select, Space, Switch } from 'antd';
 import omit from 'lodash/omit';
 
 type FieldType = IAddLlmRequestBody & { vision: boolean };
@@ -42,6 +42,20 @@ const OllamaModal = ({
       onOk={handleOk}
       onCancel={hideModal}
       okButtonProps={{ loading }}
+      footer={(originNode: React.ReactNode) => {
+        return (
+          <Flex justify={'space-between'}>
+            <a
+              href="https://github.com/infiniflow/ragflow/blob/main/docs/ollama.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('ollamaLink')}
+            </a>
+            <Space>{originNode}</Space>
+          </Flex>
+        );
+      }}
     >
       <Form
         name="basic"
