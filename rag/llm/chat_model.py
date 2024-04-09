@@ -117,6 +117,7 @@ class ZhipuChat(Base):
             history.insert(0, {"role": "system", "content": system})
         try:
             if "presence_penalty" in gen_conf: del gen_conf["presence_penalty"]
+            if "frequency_penalty" in gen_conf: del gen_conf["frequency_penalty"]
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=history,
