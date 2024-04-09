@@ -27,6 +27,7 @@ elasticsearch==8.12.1
 elasticsearch-dsl==8.12.0
 et-xmlfile==1.1.0
 filelock==3.13.1
+fastembed==0.2.6
 FlagEmbedding==1.2.5
 Flask==3.0.2
 Flask-Cors==4.0.0
