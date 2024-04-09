@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from rag.utils import ELASTICSEARCH
 from rag.nlp import search
 import os
@@ -36,6 +38,7 @@ stat_logger = getLogger("stat")
 access_logger = getLogger("access")
 database_logger = getLogger("database")
 chat_logger = getLogger("chat")
+database_logger.setLevel(logging.WARNING)
 
 API_VERSION = "v1"
 RAG_FLOW_SERVICE_NAME = "ragflow"
