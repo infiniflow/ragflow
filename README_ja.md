@@ -65,7 +65,7 @@
 
 - CPU >= 2 cores
 - RAM >= 8 GB
-- Docker
+- Docker >= 24.0.0
   > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
 
 ### 🚀 サーバーを起動
