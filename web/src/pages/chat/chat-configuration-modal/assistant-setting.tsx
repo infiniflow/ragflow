@@ -31,9 +31,9 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
       <Form.Item
         name={'name'}
         label={t('assistantName')}
-        rules={[{ required: true }]}
+        rules={[{ required: true, message: t('assistantNameMessage') }]}
       >
-        <Input placeholder="e.g. Resume Jarvis" />
+        <Input placeholder={t('namePlaceholder')} />
       </Form.Item>
       <Form.Item
         name="icon"
@@ -90,7 +90,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         rules={[
           {
             required: true,
-            message: 'Please select!',
+            message: t('knowledgeBasesMessage'),
             type: 'array',
           },
         ]}

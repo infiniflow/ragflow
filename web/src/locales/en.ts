@@ -269,6 +269,7 @@ export default {
       chatConfigurationDescription:
         ' Here, dress up a dedicated assistant for your special knowledge bases! 💕',
       assistantName: 'Assistant name',
+      assistantNameMessage: 'Assistant name is required',
       namePlaceholder: 'e.g. Resume Jarvis',
       assistantAvatar: 'Assistant avatar',
       language: 'Language',
