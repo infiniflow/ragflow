@@ -260,6 +260,7 @@ export default {
       chatConfiguration: '聊天配置',
       chatConfigurationDescription: '在这里，为你的专业知识库装扮专属助手！ 💕',
       assistantName: '助理姓名',
+      assistantNameMessage: '助理姓名是必填项',
       namePlaceholder: '例如 贾维斯简历',
       assistantAvatar: '助理头像',
       language: '语言',

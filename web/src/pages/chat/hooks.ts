@@ -1,5 +1,18 @@
 import { MessageType } from '@/constants/chat';
 import { fileIconMap } from '@/constants/common';
+import {
+  useCompleteConversation,
+  useFetchConversation,
+  useFetchConversationList,
+  useFetchDialog,
+  useFetchDialogList,
+  useRemoveConversation,
+  useRemoveDialog,
+  useSelectConversationList,
+  useSelectDialogList,
+  useSetDialog,
+  useUpdateConversation,
+} from '@/hooks/chatHooks';
 import { useSetModalState, useShowDeleteConfirm } from '@/hooks/commonHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IConversation, IDialog } from '@/interfaces/database/chat';
@@ -25,56 +38,12 @@ import {
 import { ChatModelState } from './model';
 import { isConversationIdExist } from './utils';
 
-export const useFetchDialogList = () => {
-  const dispatch = useDispatch();
-  const dialogList: IDialog[] = useSelector(
-    (state: any) => state.chatModel.dialogList,
-  );
-
-  useEffect(() => {
-    dispatch({ type: 'chatModel/listDialog' });
-  }, [dispatch]);
-
-  return dialogList;
-};
-
-export const useSetDialog = () => {
-  const dispatch = useDispatch();
-
-  const setDialog = useCallback(
-    (payload: IDialog) => {
-      return dispatch<any>({ type: 'chatModel/setDialog', payload });
-    },
-    [dispatch],
-  );
-
-  return setDialog;
-};
-
 export const useSelectCurrentDialog = () => {
   const currentDialog: IDialog = useSelector(
     (state: any) => state.chatModel.currentDialog,
   );
 
   return currentDialog;
-};
-
-export const useFetchDialog = () => {
-  const dispatch = useDispatch();
-
-  const fetchDialog = useCallback(
-    (dialogId: string, needToBeSaved = true) => {
-      if (dialogId) {
-        return dispatch<any>({
-          type: 'chatModel/getDialog',
-          payload: { dialog_id: dialogId, needToBeSaved },
-        });
-      }
-    },
-    [dispatch],
-  );
-
-  return fetchDialog;
 };
 
 export const useFetchDialogOnMount = (
@@ -147,21 +116,13 @@ export const useSelectPromptConfigParameters = (): VariableTableDataType[] => {
   return finalParameters;
 };
 
-export const useRemoveDialog = () => {
-  const dispatch = useDispatch();
+export const useDeleteDialog = () => {
   const showDeleteConfirm = useShowDeleteConfirm();
 
-  const removeDocument = (dialogIds: Array<string>) => () => {
-    return dispatch({
-      type: 'chatModel/removeDialog',
-      payload: {
-        dialog_ids: dialogIds,
-      },
-    });
-  };
+  const removeDocument = useRemoveDialog();
 
   const onRemoveDialog = (dialogIds: Array<string>) => {
-    showDeleteConfirm({ onOk: removeDocument(dialogIds) });
+    showDeleteConfirm({ onOk: () => removeDocument(dialogIds) });
   };
 
   return { onRemoveDialog };
@@ -216,16 +177,21 @@ export const useClickDialogCard = () => {
 };
 
 export const useSelectFirstDialogOnMount = () => {
-  const dialogList = useFetchDialogList();
-  const { dialogId } = useGetChatSearchParams();
+  const fetchDialogList = useFetchDialogList();
+  const dialogList = useSelectDialogList();
 
   const { handleClickDialog } = useClickDialogCard();
 
-  useEffect(() => {
-    if (dialogList.length > 0 && !dialogId) {
-      handleClickDialog(dialogList[0].id);
+  const fetchList = useCallback(async () => {
+    const data = await fetchDialogList();
+    if (data.retcode === 0 && data.data.length > 0) {
+      handleClickDialog(data.data[0].id);
     }
-  }, [dialogList, handleClickDialog, dialogId]);
+  }, [fetchDialogList, handleClickDialog]);
+
+  useEffect(() => {
+    fetchList();
+  }, [fetchList]);
 
   return dialogList;
 };
@@ -301,30 +267,19 @@ export const useEditDialog = () => {
 
 //#region conversation
 
-export const useFetchConversationList = () => {
-  const dispatch = useDispatch();
-  const conversationList: any[] = useSelector(
-    (state: any) => state.chatModel.conversationList,
-  );
+export const useFetchConversationListOnMount = () => {
+  const conversationList = useSelectConversationList();
   const { dialogId } = useGetChatSearchParams();
-
-  const fetchConversationList = useCallback(async () => {
-    if (dialogId) {
-      dispatch({
-        type: 'chatModel/listConversation',
-        payload: { dialog_id: dialogId },
-      });
-    }
-  }, [dispatch, dialogId]);
+  const fetchConversationList = useFetchConversationList();
 
   useEffect(() => {
-    fetchConversationList();
-  }, [fetchConversationList]);
+    fetchConversationList(dialogId);
+  }, [fetchConversationList, dialogId]);
 
   return conversationList;
 };
 
-export const useSelectConversationList = () => {
+export const useSelectDerivedConversationList = () => {
   const [list, setList] = useState<Array<IConversation>>([]);
   let chatModel: ChatModelState = useSelector((state: any) => state.chatModel);
   const { conversationList, currentDialog } = chatModel;
@@ -381,27 +336,23 @@ export const useClickConversationCard = () => {
 };
 
 export const useSetConversation = () => {
-  const dispatch = useDispatch();
   const { dialogId } = useGetChatSearchParams();
+  const updateConversation = useUpdateConversation();
 
   const setConversation = useCallback(
     (message: string) => {
-      return dispatch<any>({
-        type: 'chatModel/setConversation',
-        payload: {
-          // conversation_id: '',
-          dialog_id: dialogId,
-          name: message,
-          message: [
-            {
-              role: MessageType.Assistant,
-              content: message,
-            },
-          ],
-        },
+      return updateConversation({
+        dialog_id: dialogId,
+        name: message,
+        message: [
+          {
+            role: MessageType.Assistant,
+            content: message,
+          },
+        ],
       });
     },
-    [dispatch, dialogId],
+    [updateConversation, dialogId],
   );
 
   return { setConversation };
@@ -473,29 +424,12 @@ export const useSelectCurrentConversation = () => {
   }, [addPrologue]);
 
   useEffect(() => {
-    setCurrentConversation(conversation);
-  }, [conversation]);
+    if (conversationId) {
+      setCurrentConversation(conversation);
+    }
+  }, [conversation, conversationId]);
 
   return { currentConversation, addNewestConversation, removeLatestMessage };
-};
-
-export const useFetchConversation = () => {
-  const dispatch = useDispatch();
-
-  const fetchConversation = useCallback(
-    (conversationId: string, needToBeSaved = true) => {
-      return dispatch<any>({
-        type: 'chatModel/getConversation',
-        payload: {
-          needToBeSaved,
-          conversation_id: conversationId,
-        },
-      });
-    },
-    [dispatch],
-  );
-
-  return fetchConversation;
 };
 
 export const useScrollToBottom = (currentConversation: IClientConversation) => {
@@ -564,33 +498,26 @@ export const useSendMessage = (
   const loading = useOneNamespaceEffectsLoading('chatModel', [
     'completeConversation',
   ]);
-  const dispatch = useDispatch();
   const { setConversation } = useSetConversation();
   const { conversationId } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  // const conversation: IClientConversation = useSelector(
-  //   (state: any) => state.chatModel.currentConversation,
-  // );
+
   const fetchConversation = useFetchConversation();
+  const completeConversation = useCompleteConversation();
 
   const { handleClickConversation } = useClickConversationCard();
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
-      const retcode = await dispatch<any>({
-        type: 'chatModel/completeConversation',
-        payload: {
-          conversation_id: id ?? conversationId,
-          messages: [
-            ...(conversation?.message ?? []).map((x: IMessage) =>
-              omit(x, 'id'),
-            ),
-            {
-              role: MessageType.User,
-              content: message,
-            },
-          ],
-        },
+      const retcode = await completeConversation({
+        conversation_id: id ?? conversationId,
+        messages: [
+          ...(conversation?.message ?? []).map((x: IMessage) => omit(x, 'id')),
+          {
+            role: MessageType.User,
+            content: message,
+          },
+        ],
       });
 
       if (retcode === 0) {
@@ -607,13 +534,13 @@ export const useSendMessage = (
       }
     },
     [
-      dispatch,
       conversation?.message,
       conversationId,
       fetchConversation,
       handleClickConversation,
       removeLatestMessage,
       setValue,
+      completeConversation,
     ],
   );
 
@@ -664,37 +591,28 @@ export const useGetFileIcon = () => {
   return getFileIcon;
 };
 
-export const useRemoveConversation = () => {
-  const dispatch = useDispatch();
+export const useDeleteConversation = () => {
   const { dialogId } = useGetChatSearchParams();
   const { handleClickConversation } = useClickConversationCard();
   const showDeleteConfirm = useShowDeleteConfirm();
+  const removeConversation = useRemoveConversation();
 
-  const removeConversation = (conversationIds: Array<string>) => async () => {
-    const ret = await dispatch<any>({
-      type: 'chatModel/removeConversation',
-      payload: {
-        dialog_id: dialogId,
-        conversation_ids: conversationIds,
-      },
-    });
-
+  const deleteConversation = (conversationIds: Array<string>) => async () => {
+    const ret = await removeConversation(conversationIds, dialogId);
     if (ret === 0) {
       handleClickConversation('');
     }
-
     return ret;
   };
 
   const onRemoveConversation = (conversationIds: Array<string>) => {
-    showDeleteConfirm({ onOk: removeConversation(conversationIds) });
+    showDeleteConfirm({ onOk: deleteConversation(conversationIds) });
   };
 
   return { onRemoveConversation };
 };
 
 export const useRenameConversation = () => {
-  const dispatch = useDispatch();
   const [conversation, setConversation] = useState<IClientConversation>(
     {} as IClientConversation,
   );
@@ -704,19 +622,21 @@ export const useRenameConversation = () => {
     hideModal: hideConversationRenameModal,
     showModal: showConversationRenameModal,
   } = useSetModalState();
+  const updateConversation = useUpdateConversation();
 
   const onConversationRenameOk = useCallback(
     async (name: string) => {
-      const ret = await dispatch<any>({
-        type: 'chatModel/setConversation',
-        payload: { ...conversation, conversation_id: conversation.id, name },
+      const ret = await updateConversation({
+        ...conversation,
+        conversation_id: conversation.id,
+        name,
       });
 
       if (ret.retcode === 0) {
         hideConversationRenameModal();
       }
     },
-    [dispatch, conversation, hideConversationRenameModal],
+    [updateConversation, conversation, hideConversationRenameModal],
   );
 
   const loading = useOneNamespaceEffectsLoading('chatModel', [

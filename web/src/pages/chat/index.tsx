@@ -21,16 +21,16 @@ import ChatContainer from './chat-container';
 import {
   useClickConversationCard,
   useClickDialogCard,
+  useDeleteConversation,
+  useDeleteDialog,
   useEditDialog,
-  useFetchConversationList,
+  useFetchConversationListOnMount,
   useFetchDialogOnMount,
   useGetChatSearchParams,
   useHandleItemHover,
-  useRemoveConversation,
-  useRemoveDialog,
   useRenameConversation,
-  useSelectConversationList,
   useSelectConversationListLoading,
+  useSelectDerivedConversationList,
   useSelectDialogListLoading,
   useSelectFirstDialogOnMount,
 } from './hooks';
@@ -40,13 +40,13 @@ import styles from './index.less';
 
 const Chat = () => {
   const dialogList = useSelectFirstDialogOnMount();
-  const { onRemoveDialog } = useRemoveDialog();
-  const { onRemoveConversation } = useRemoveConversation();
+  const { onRemoveDialog } = useDeleteDialog();
+  const { onRemoveConversation } = useDeleteConversation();
   const { handleClickDialog } = useClickDialogCard();
   const { handleClickConversation } = useClickConversationCard();
   const { dialogId, conversationId } = useGetChatSearchParams();
   const { list: conversationList, addTemporaryConversation } =
-    useSelectConversationList();
+    useSelectDerivedConversationList();
   const { activated, handleItemEnter, handleItemLeave } = useHandleItemHover();
   const {
     activated: conversationActivated,
@@ -197,7 +197,7 @@ const Chat = () => {
     return appItems;
   };
 
-  useFetchConversationList();
+  useFetchConversationListOnMount();
 
   return (
     <Flex className={styles.chatWrapper}>
