@@ -383,6 +383,7 @@ export default {
       modelNameMessage: '请输入模型名称！',
       modelTypeMessage: '请输入模型类型！',
       baseUrlNameMessage: '请输入基础 Url！',
+      ollamaLink: '如何集成 Ollama',
     },
     message: {
       registered: '注册成功',
