@@ -25,8 +25,7 @@ from rag.settings import cron_logger
 
 class Docx(DocxParser):
     def __init__(self):
-        self.model_speciess = ParserType.LAWS.value
-        super().__init__()
+        pass
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -52,6 +51,10 @@ class Docx(DocxParser):
 
 
 class Pdf(PdfParser):
+    def __init__(self):
+        self.model_speciess = ParserType.LAWS.value
+        super().__init__()
+
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         callback(msg="OCR is  running...")
