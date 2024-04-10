@@ -14,6 +14,8 @@ import copy
 import re
 from io import BytesIO
 from docx import Document
+
+from api.db import ParserType
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
     make_colon_as_title, add_positions, tokenize_chunks
 from rag.nlp import huqie
@@ -23,7 +25,8 @@ from rag.settings import cron_logger
 
 class Docx(DocxParser):
     def __init__(self):
-        pass
+        self.model_speciess = ParserType.LAWS.value
+        super().__init__()
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
