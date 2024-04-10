@@ -23,7 +23,8 @@ EmbeddingModel = {
     "OpenAI": OpenAIEmbed,
     "Tongyi-Qianwen": HuEmbedding, #QWenEmbed,
     "ZHIPU-AI": ZhipuEmbed,
-    "Moonshot": HuEmbedding
+    "Moonshot": HuEmbedding,
+    "FastEmbed": FastEmbed
 }
 
 
