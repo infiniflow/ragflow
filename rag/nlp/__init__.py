@@ -135,9 +135,9 @@ def add_positions(d, poss):
     d["position_int"] = []
     d["top_int"] = []
     for pn, left, right, top, bottom in poss:
-        d["page_num_int"].append(pn + 1)
-        d["top_int"].append(top)
-        d["position_int"].append((pn + 1, left, right, top, bottom))
+        d["page_num_int"].append(int(pn + 1))
+        d["top_int"].append(int(top))
+        d["position_int"].append((int(pn + 1), int(left), int(right), int(top), int(bottom)))
 
 
 def remove_contents_table(sections, eng=False):

@@ -14,6 +14,8 @@ import copy
 import re
 from io import BytesIO
 from docx import Document
+
+from api.db import ParserType
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
     make_colon_as_title, add_positions, tokenize_chunks
 from rag.nlp import huqie
@@ -49,6 +51,10 @@ class Docx(DocxParser):
 
 
 class Pdf(PdfParser):
+    def __init__(self):
+        self.model_speciess = ParserType.LAWS.value
+        super().__init__()
+
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         callback(msg="OCR is  running...")

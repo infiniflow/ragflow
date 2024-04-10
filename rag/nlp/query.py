@@ -62,7 +62,7 @@ class EsQueryer:
             return Q("bool",
                      must=Q("query_string", fields=self.flds,
                             type="best_fields", query=" ".join(q),
-                            boost=1, minimum_should_match=min_match)
+                            boost=1)#, minimum_should_match=min_match)
                      ), tks
 
         def needQieqie(tk):

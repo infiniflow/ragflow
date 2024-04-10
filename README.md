@@ -172,8 +172,9 @@ $ docker compose up -d
 
 ## 🆕 Latest Features
 
-- Support [Ollama](./docs/ollama.md) for local LLM deployment.
-- Support Chinese UI.
+- 2023-04-10 Add a new layout recognize model for method 'Laws'.
+- 2023-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
+- 2023-04-07 Support Chinese UI.
 
 ## 📜 Roadmap
 
