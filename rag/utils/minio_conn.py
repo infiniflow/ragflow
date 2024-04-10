@@ -58,7 +58,7 @@ class HuMinio(object):
 
 
     def get(self, bucket, fnm):
-        for _ in range(10):
+        for _ in range(1):
             try:
                 r = self.conn.get_object(bucket, fnm)
                 return r.read()
