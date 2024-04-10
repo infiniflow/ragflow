@@ -75,6 +75,7 @@ export default {
       uploadDate: '上传日期',
       chunkMethod: '解析方法',
       enabled: '启用',
+      disabled: '禁用',
       action: '动作',
       parsingStatus: '解析状态',
       processBeginAt: '流程开始于',
@@ -100,6 +101,7 @@ export default {
       view: '看法',
       filesSelected: '选定的文件',
       upload: '上传',
+      run: '启动',
       runningStatus0: '未启动',
       runningStatus1: '解析中',
       runningStatus2: '取消',
@@ -127,6 +129,8 @@ export default {
       uploadDescription:
         '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
       chunk: '解析块',
+      bulk: '批量',
+      cancel: '取消',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
