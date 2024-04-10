@@ -219,7 +219,7 @@ const KnowledgeUploadFile = () => {
 
   const runSelectedDocument = () => {
     const ids = fileListRef.current.map((x) => x.response.id);
-    runDocumentByIds(ids);
+    runDocumentByIds({ doc_ids: ids, run: 1 });
   };
 
   const handleNextClick = () => {

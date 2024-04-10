@@ -155,23 +155,26 @@ export const useSetDocumentParser = () => {
   return setDocumentParser;
 };
 
-export const useRemoveDocument = (documentId: string) => {
+export const useRemoveDocument = () => {
   const dispatch = useDispatch();
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
-  const removeDocument = useCallback(() => {
-    try {
-      return dispatch<any>({
-        type: 'kFModel/document_rm',
-        payload: {
-          doc_id: documentId,
-          kb_id: knowledgeId,
-        },
-      });
-    } catch (errorInfo) {
-      console.log('Failed:', errorInfo);
-    }
-  }, [dispatch, knowledgeId, documentId]);
+  const removeDocument = useCallback(
+    (documentId: string) => {
+      try {
+        return dispatch<any>({
+          type: 'kFModel/document_rm',
+          payload: {
+            doc_id: documentId,
+            kb_id: knowledgeId,
+          },
+        });
+      } catch (errorInfo) {
+        console.log('Failed:', errorInfo);
+      }
+    },
+    [dispatch, knowledgeId],
+  );
 
   return removeDocument;
 };
@@ -204,11 +207,11 @@ export const useRunDocument = () => {
   const dispatch = useDispatch();
 
   const runDocumentByIds = useCallback(
-    (ids: string[]) => {
+    (payload: any) => {
       try {
         return dispatch<any>({
           type: 'kFModel/document_run',
-          payload: { doc_ids: ids, run: 1 },
+          payload,
         });
       } catch (errorInfo) {
         console.log('Failed:', errorInfo);

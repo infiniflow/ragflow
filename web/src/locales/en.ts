@@ -75,7 +75,8 @@ export default {
       chunkNumber: 'Chunk Number',
       uploadDate: 'Upload Date',
       chunkMethod: 'Chunk Method',
-      enabled: 'Enabled',
+      enabled: 'Enable',
+      disabled: 'Disable',
       action: 'Action',
       parsingStatus: 'Parsing Status',
       processBeginAt: 'Process Begin At',
@@ -102,6 +103,7 @@ export default {
       view: 'View',
       filesSelected: 'Files Selected',
       upload: 'Upload',
+      run: 'Run',
       runningStatus0: 'UNSTART',
       runningStatus1: 'Parsing',
       runningStatus2: 'CANCEL',
@@ -130,6 +132,8 @@ export default {
       uploadDescription:
         'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
       chunk: 'Chunk',
+      bulk: 'Bulk',
+      cancel: 'Cancel',
     },
     knowledgeConfiguration: {
       titleDescription:
