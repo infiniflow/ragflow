@@ -65,7 +65,7 @@
 
 - CPU >= 2 核
 - RAM >= 8 GB
-- Docker >= 24.0.0
+- Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > 如果你并没有在本机安装 Docker（Windows、Mac，或者 Linux）, 可以参考文档 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安装。
 
 ### 🚀 启动服务器

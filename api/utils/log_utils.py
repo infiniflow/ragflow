@@ -26,7 +26,8 @@ from api.utils import file_utils
 
 class LoggerFactory(object):
     TYPE = "FILE"
-    LOG_FORMAT = "[%(levelname)s] [%(asctime)s] [jobId] [%(process)s:%(thread)s] - [%(module)s.%(funcName)s] [line:%(lineno)d]: %(message)s"
+    LOG_FORMAT = "[%(levelname)s] [%(asctime)s] [%(module)s.%(funcName)s] [line:%(lineno)d]: %(message)s"
+    logging.basicConfig(format=LOG_FORMAT)
     LEVEL = logging.DEBUG
     logger_dict = {}
     global_handler_dict = {}
