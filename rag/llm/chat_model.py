@@ -158,6 +158,28 @@ class OllamaChat(Base):
             return "**ERROR**: " + str(e), 0
 
 
+class XinferenceChat(Base):
+    def __init__(self, key=None, model_name="", base_url=""):
+        self.client = OpenAI(api_key="xxx", base_url=base_url)
+        self.model_name = model_name
+
+    def chat(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                **gen_conf)
+            ans = response.choices[0].message.content.strip()
+            if response.choices[0].finish_reason == "length":
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            return ans, response.usage.completion_tokens
+        except openai.APIError as e:
+            return "**ERROR**: " + str(e), 0
+
+
 class LocalLLM(Base):
     class RPCProxy:
         def __init__(self, host, port):

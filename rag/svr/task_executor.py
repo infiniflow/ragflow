@@ -24,6 +24,8 @@ import sys
 import time
 import traceback
 from functools import partial
+
+from api.db.db_models import close_connection
 from rag.settings import database_logger
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 from multiprocessing import Pool
@@ -302,3 +304,4 @@ if __name__ == "__main__":
     comm = MPI.COMM_WORLD
     while True:
         main(int(sys.argv[2]), int(sys.argv[1]))
+        close_connection()

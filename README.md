@@ -172,6 +172,7 @@ $ docker compose up -d
 
 ## 🆕 Latest Features
 
+- 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
 - 2024-04-10 Add a new layout recognize model for method 'Laws'.
 - 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
 - 2024-04-07 Support Chinese UI.
