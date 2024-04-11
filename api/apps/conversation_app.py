@@ -358,6 +358,8 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
     rows = ["|" +
             "|".join([rmSpace(str(r[i])) for i in clmn_idx]).replace("None", " ") +
             "|" for r in tbl["rows"]]
+    rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])
+    rows = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|", "|", rows)
     if not docid_idx or not docnm_idx:
         chat_logger.warning("SQL missing field: " + sql)
         return {
@@ -365,8 +367,6 @@ def use_sql(question, field_map, tenant_id, chat_mdl):
             "reference": {"chunks": [], "doc_aggs": []}
         }
 
-    rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])
-    rows = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|", "|", rows)
     docid_idx = list(docid_idx)[0]
     docnm_idx = list(docnm_idx)[0]
     doc_aggs = {}
