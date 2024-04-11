@@ -13,15 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
-
-from rag.utils import ELASTICSEARCH
-from rag.nlp import search
 import os
-
 from enum import IntEnum, Enum
-
-from api.utils import get_base_config, decrypt_database_config
 from api.utils.file_utils import get_project_base_directory
 from api.utils.log_utils import LoggerFactory, getLogger
 
@@ -32,13 +25,16 @@ LoggerFactory.set_directory(
         "logs",
         "api"))
 # {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
-LoggerFactory.LEVEL = 10
+LoggerFactory.LEVEL = 30
 
 stat_logger = getLogger("stat")
 access_logger = getLogger("access")
 database_logger = getLogger("database")
 chat_logger = getLogger("chat")
-database_logger.setLevel(logging.WARNING)
+
+from rag.utils import ELASTICSEARCH
+from rag.nlp import search
+from api.utils import get_base_config, decrypt_database_config
 
 API_VERSION = "v1"
 RAG_FLOW_SERVICE_NAME = "ragflow"
@@ -79,7 +75,7 @@ default_llm = {
         "image2text_model": "glm-4v",
         "asr_model": "",
     },
-    "Local": {
+    "Ollama": {
         "chat_model": "qwen-14B-chat",
         "embedding_model": "flag-embedding",
         "image2text_model": "",
