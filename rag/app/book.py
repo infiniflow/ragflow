@@ -110,7 +110,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         [t for t in random_choices([t for t, _ in sections], k=100)])
     if bull >= 0:
         chunks = ["\n".join(ck)
-                  for ck in hierarchical_merge(bull, sections, 3)]
+                  for ck in hierarchical_merge(bull, sections, 5)]
     else:
         sections = [s.split("@") for s, _ in sections]
         sections = [(pr[0], "@" + pr[1]) for pr in sections if len(pr) == 2]

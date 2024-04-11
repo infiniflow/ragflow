@@ -133,7 +133,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     make_colon_as_title(sections)
     bull = bullets_category(sections)
-    chunks = hierarchical_merge(bull, sections, 3)
+    chunks = hierarchical_merge(bull, sections, 5)
     if not chunks:
         callback(0.99, "No chunk parsed out.")
 
