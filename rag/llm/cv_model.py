@@ -161,9 +161,10 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
+
 class XinferenceCV(Base):
     def __init__(self, key, model_name="", lang="Chinese", base_url=""):
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.client = OpenAI(api_key="xxx", base_url=base_url)
         self.model_name = model_name
         self.lang = lang
 
