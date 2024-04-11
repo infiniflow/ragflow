@@ -39,8 +39,12 @@
 
     .menu {
       border: none;
-      font-size: @fontSize14;
+      font-size: @fontSize16;
       font-weight: @fontWeight600;
+      :global(.ant-menu-item) {
+        display: flex;
+        align-items: center;
+      }
     }
 
     .defaultWidth {
