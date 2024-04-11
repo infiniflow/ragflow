@@ -13,7 +13,8 @@ const OllamaModal = ({
   hideModal,
   onOk,
   loading,
-}: IModalProps<IAddLlmRequestBody>) => {
+  llmFactory,
+}: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
   const [form] = Form.useForm<FieldType>();
 
   const { t } = useTranslate('setting');
@@ -28,7 +29,7 @@ const OllamaModal = ({
     const data = {
       ...omit(values, ['vision']),
       model_type: modelType,
-      llm_factory: 'Ollama',
+      llm_factory: llmFactory,
     };
     console.info(data);
 
@@ -37,7 +38,7 @@ const OllamaModal = ({
 
   return (
     <Modal
-      title={t('addLlmTitle')}
+      title={t('addLlmTitle', { name: llmFactory })}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
@@ -46,11 +47,11 @@ const OllamaModal = ({
         return (
           <Flex justify={'space-between'}>
             <a
-              href="https://github.com/infiniflow/ragflow/blob/main/docs/ollama.md"
+              href={`https://github.com/infiniflow/ragflow/blob/main/docs/${llmFactory.toLowerCase()}.md`}
               target="_blank"
               rel="noreferrer"
             >
-              {t('ollamaLink')}
+              {t('ollamaLink', { name: llmFactory })}
             </a>
             <Space>{originNode}</Space>
           </Flex>
@@ -76,7 +77,7 @@ const OllamaModal = ({
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
-          label={t('modelName')}
+          label={t(llmFactory === 'Xinference' ? 'modelUid' : 'modelName')}
           name="llm_name"
           rules={[{ required: true, message: t('modelNameMessage') }]}
         >
