@@ -110,6 +110,12 @@ factory_infos = [{
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
 },
+    {
+    "name": "Xinference",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+        "status": "1",
+},
     # {
     #     "name": "文心一言",
     #     "logo": "",

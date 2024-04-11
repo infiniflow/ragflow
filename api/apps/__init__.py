@@ -22,6 +22,7 @@ from werkzeug.wrappers.request import Request
 from flask_cors import CORS
 
 from api.db import StatusEnum
+from api.db.db_models import close_connection
 from api.db.services import UserService
 from api.utils import CustomJSONEncoder
 
@@ -42,7 +43,7 @@ for h in access_logger.handlers:
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True,max_age = 2592000)
+CORS(app, supports_credentials=True,max_age=2592000)
 app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
 app.errorhandler(Exception)(server_error_response)
@@ -94,8 +95,6 @@ client_urls_prefix = [
 ]
 
 
-
-
 @login_manager.request_loader
 def load_user(web_request):
     jwt = Serializer(secret_key=SECRET_KEY)
@@ -113,3 +112,8 @@ def load_user(web_request):
             return None
     else:
         return None
+
+
+@app.teardown_request
+def _db_close(exc):
+    close_connection()
