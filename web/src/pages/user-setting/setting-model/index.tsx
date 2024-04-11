@@ -25,6 +25,7 @@ import {
 } from 'antd';
 import { useCallback } from 'react';
 import SettingTitle from '../components/setting-title';
+import { isLocalLlmFactory } from '../utils';
 import ApiKeyModal from './api-key-modal';
 import {
   useSelectModelProvidersLoading,
@@ -43,6 +44,7 @@ const IconMap = {
   'ZHIPU-AI': 'zhipu',
   文心一言: 'wenxin',
   Ollama: 'ollama',
+  Xinference: 'xinference',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
@@ -89,7 +91,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
           <Col span={12} className={styles.factoryOperationWrapper}>
             <Space size={'middle'}>
               <Button onClick={handleApiKeyClick}>
-                {item.name === 'Ollama' ? t('addTheModel') : 'API-Key'}
+                {isLocalLlmFactory(item.name) ? t('addTheModel') : 'API-Key'}
                 <SettingOutlined />
               </Button>
               <Button onClick={handleShowMoreClick}>
@@ -147,12 +149,13 @@ const UserSettingModel = () => {
     showLlmAddingModal,
     onLlmAddingOk,
     llmAddingLoading,
+    selectedLlmFactory,
   } = useSubmitOllama();
 
   const handleApiKeyClick = useCallback(
     (llmFactory: string) => {
-      if (llmFactory === 'Ollama') {
-        showLlmAddingModal();
+      if (isLocalLlmFactory(llmFactory)) {
+        showLlmAddingModal(llmFactory);
       } else {
         showApiKeyModal({ llm_factory: llmFactory });
       }
@@ -161,8 +164,8 @@ const UserSettingModel = () => {
   );
 
   const handleAddModel = (llmFactory: string) => () => {
-    if (llmFactory === 'Ollama') {
-      showLlmAddingModal();
+    if (isLocalLlmFactory(llmFactory)) {
+      showLlmAddingModal(llmFactory);
     } else {
       handleApiKeyClick(llmFactory);
     }
@@ -252,6 +255,7 @@ const UserSettingModel = () => {
         hideModal={hideLlmAddingModal}
         onOk={onLlmAddingOk}
         loading={llmAddingLoading}
+        llmFactory={selectedLlmFactory}
       ></OllamaModal>
     </>
   );

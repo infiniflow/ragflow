@@ -132,6 +132,7 @@ export const useSelectModelProvidersLoading = () => {
 
 export const useSubmitOllama = () => {
   const loading = useOneNamespaceEffectsLoading('settingModel', ['add_llm']);
+  const [selectedLlmFactory, setSelectedLlmFactory] = useState<string>('');
   const addLlm = useAddLlm();
   const {
     visible: llmAddingVisible,
@@ -149,11 +150,17 @@ export const useSubmitOllama = () => {
     [hideLlmAddingModal, addLlm],
   );
 
+  const handleShowLlmAddingModal = (llmFactory: string) => {
+    setSelectedLlmFactory(llmFactory);
+    showLlmAddingModal();
+  };
+
   return {
     llmAddingLoading: loading,
     onLlmAddingOk,
     llmAddingVisible,
     hideLlmAddingModal,
-    showLlmAddingModal,
+    showLlmAddingModal: handleShowLlmAddingModal,
+    selectedLlmFactory,
   };
 };
