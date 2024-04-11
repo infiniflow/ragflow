@@ -386,7 +386,7 @@ class User(DataBaseModel, UserMixin):
         max_length=32,
         null=True,
         help_text="English|Chinese",
-        default="Chinese")
+        default="English")
     color_schema = CharField(
         max_length=32,
         null=True,
@@ -695,7 +695,7 @@ class Dialog(DataBaseModel):
     language = CharField(
         max_length=32,
         null=True,
-        default="Chinese",
+        default="English",
         help_text="English|Chinese")
     llm_id = CharField(max_length=32, null=False, help_text="default llm ID")
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7,

@@ -57,7 +57,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
       <Form.Item
         name={'language'}
         label={t('language')}
-        initialValue={'Chinese'}
+        initialValue={'English'}
         tooltip="coming soon"
         style={{ display: 'none' }}
       >
