@@ -310,6 +310,7 @@ export default {
         '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
       quote: '顯示引文',
       quoteTip: '是否應該顯示原文出處？',
+      overview: '概覽',
     },
     setting: {
       profile: '概述',

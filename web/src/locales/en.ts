@@ -335,6 +335,7 @@ export default {
         'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).',
       quote: 'Show Quote',
       quoteTip: 'Should the source of the original text be displayed?',
+      overview: 'Overview',
     },
     setting: {
       profile: 'Profile',

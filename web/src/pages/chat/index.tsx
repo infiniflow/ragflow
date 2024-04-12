@@ -1,6 +1,11 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import RenameModal from '@/components/rename-modal';
-import { DeleteOutlined, EditOutlined, FormOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  EditOutlined,
+  FormOutlined,
+  ProfileOutlined,
+} from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -35,7 +40,8 @@ import {
   useSelectFirstDialogOnMount,
 } from './hooks';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
+import ChatOverviewModal from './chat-overview-modal';
 import styles from './index.less';
 
 const Chat = () => {
@@ -73,6 +79,11 @@ const Chat = () => {
   const dialogLoading = useSelectDialogListLoading();
   const conversationLoading = useSelectConversationListLoading();
   const { t } = useTranslate('chat');
+  const {
+    visible: outlineVisible,
+    hideModal: hideOverviewModal,
+    showModal: showOverviewModal,
+  } = useSetModalState();
 
   useFetchDialogOnMount(dialogId, true);
 
@@ -161,6 +172,17 @@ const Chat = () => {
           <Space>
             <DeleteOutlined />
             {t('delete', { keyPrefix: 'common' })}
+          </Space>
+        ),
+      },
+      { type: 'divider' },
+      {
+        key: '3',
+        onClick: showOverviewModal,
+        label: (
+          <Space>
+            <ProfileOutlined />
+            {t('overview')}
           </Space>
         ),
       },
@@ -315,6 +337,10 @@ const Chat = () => {
         initialName={initialConversationName}
         loading={conversationRenameLoading}
       ></RenameModal>
+      <ChatOverviewModal
+        visible={outlineVisible}
+        hideModal={hideOverviewModal}
+      ></ChatOverviewModal>
     </Flex>
   );
 };
