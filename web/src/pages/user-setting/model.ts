@@ -1,3 +1,4 @@
+import { LanguageTranslationMap } from '@/constants/common';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import {
   IFactory,
@@ -66,7 +67,11 @@ const model: DvaModel<SettingModelState> = {
       // };
       // authorizationUtil.setUserInfo(userInfo);
       if (retcode === 0) {
-        i18n.changeLanguage(res.language === 'Chinese' ? 'zh' : 'en');
+        i18n.changeLanguage(
+          LanguageTranslationMap[
+            res.language as keyof typeof LanguageTranslationMap
+          ],
+        );
         yield put({ type: 'setUserInfo', payload: res });
         // localStorage.setItem('userInfo',res.)
       }

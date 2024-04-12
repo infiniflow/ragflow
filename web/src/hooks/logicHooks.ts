@@ -1,3 +1,4 @@
+import { LanguageTranslationMap } from '@/constants/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { useCallback, useState } from 'react';
@@ -53,7 +54,9 @@ export const useChangeLanguage = () => {
   const saveSetting = useSaveSetting();
 
   const changeLanguage = (lng: string) => {
-    i18n.changeLanguage(lng === 'Chinese' ? 'zh' : 'en');
+    i18n.changeLanguage(
+      LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap],
+    );
     saveSetting({ language: lng });
   };
 
