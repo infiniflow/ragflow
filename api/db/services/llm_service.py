@@ -136,7 +136,7 @@ class LLMBundle(object):
 
     def encode(self, texts: list, batch_size=32):
         emd, used_tokens = self.mdl.encode(texts, batch_size)
-        if TenantLLMService.increase_usage(
+        if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
             database_logger.error(
                 "Can't update token usage for {}/EMBEDDING".format(self.tenant_id))
@@ -144,7 +144,7 @@ class LLMBundle(object):
 
     def encode_queries(self, query: str):
         emd, used_tokens = self.mdl.encode_queries(query)
-        if TenantLLMService.increase_usage(
+        if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
             database_logger.error(
                 "Can't update token usage for {}/EMBEDDING".format(self.tenant_id))
