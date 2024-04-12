@@ -2,9 +2,11 @@ import { ReactComponent as TranslationIcon } from '@/assets/svg/translation.svg'
 import { useTranslate } from '@/hooks/commonHooks';
 import { GithubOutlined } from '@ant-design/icons';
 import { Dropdown, MenuProps, Space } from 'antd';
+import camelCase from 'lodash/camelCase';
 import React from 'react';
 import User from '../user';
 
+import { LanguageList } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logicHooks';
 import styled from './index.less';
 
@@ -28,17 +30,12 @@ const RightToolBar = () => {
     changeLanguage(key);
   };
 
-  const items: MenuProps['items'] = [
-    {
-      key: 'English',
-      label: <span>{t('english')}</span>,
-    },
-    { type: 'divider' },
-    {
-      key: 'Chinese',
-      label: <span>{t('chinese')}</span>,
-    },
-  ];
+  const items: MenuProps['items'] = LanguageList.map((x) => ({
+    key: x,
+    label: <span>{t(camelCase(x))}</span>,
+  })).reduce<MenuProps['items']>((pre, cur) => {
+    return [...pre!, { type: 'divider' }, cur];
+  }, []);
 
   return (
     <div className={styled.toolbarWrapper}>
