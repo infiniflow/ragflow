@@ -20,6 +20,7 @@ import {
   Upload,
   UploadFile,
 } from 'antd';
+import camelCase from 'lodash/camelCase';
 import { useEffect } from 'react';
 import SettingTitle from '../components/setting-title';
 import { TimezoneList } from '../constants';
@@ -29,6 +30,7 @@ import {
   useValidateSubmittable,
 } from '../hooks';
 
+import { LanguageList } from '@/constants/common';
 import { useTranslate } from '@/hooks/commonHooks';
 import { useChangeLanguage } from '@/hooks/logicHooks';
 import parentStyles from '../index.less';
@@ -162,12 +164,11 @@ const UserSettingProfile = () => {
               placeholder={t('languagePlaceholder', { keyPrefix: 'common' })}
               onChange={changeLanguage}
             >
-              <Option value="English">
-                {t('english', { keyPrefix: 'common' })}
-              </Option>
-              <Option value="Chinese">
-                {t('chinese', { keyPrefix: 'common' })}
-              </Option>
+              {LanguageList.map((x) => (
+                <Option value={x} key={x}>
+                  {t(camelCase(x), { keyPrefix: 'common' })}
+                </Option>
+              ))}
             </Select>
           </Form.Item>
           <Divider />
