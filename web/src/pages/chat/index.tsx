@@ -177,7 +177,7 @@ const Chat = () => {
         label: (
           <Space>
             <EditOutlined />
-            Edit
+            {t('rename', { keyPrefix: 'common' })}
           </Space>
         ),
       },
@@ -188,7 +188,7 @@ const Chat = () => {
         label: (
           <Space>
             <DeleteOutlined />
-            Delete chat
+            {t('delete', { keyPrefix: 'common' })}
           </Space>
         ),
       },

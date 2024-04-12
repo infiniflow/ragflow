@@ -333,6 +333,8 @@ export default {
       maxTokensMessage: 'Max Tokens is required',
       maxTokensTip:
         'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).',
+      quote: 'Show Quote',
+      quoteTip: 'Should the source of the original text be displayed?',
     },
     setting: {
       profile: 'Profile',
