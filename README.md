@@ -53,6 +53,13 @@
 - Multiple recall paired with fused re-ranking.
 - Intuitive APIs for seamless integration with business.
 
+## 📌 Latest Features
+
+- 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
+- 2024-04-10 Add a new layout recognization model to the 'Laws' method.
+- 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
+- 2024-04-07 Support Chinese UI.
+
 ## 🔎 System Architecture
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -170,12 +177,9 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🆕 Latest Features
+## 📚 Documentation
 
-- 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 Add a new layout recognize model for method 'Laws'.
-- 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
-- 2024-04-07 Support Chinese UI.
+- [FAQ](./docs/faq.md)
 
 ## 📜 Roadmap
 
