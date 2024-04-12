@@ -1,6 +1,6 @@
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import { PlusOutlined } from '@ant-design/icons';
-import { Form, Input, Select, Upload } from 'antd';
+import { Form, Input, Select, Switch, Upload } from 'antd';
 import classNames from 'classnames';
 import { ISegmentedContentProps } from '../interface';
 
@@ -82,6 +82,15 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         initialValue={t('setAnOpenerInitial')}
       >
         <Input.TextArea autoSize={{ minRows: 5 }} />
+      </Form.Item>
+      <Form.Item
+        label={t('quote')}
+        valuePropName="checked"
+        name={['prompt_config', 'quote']}
+        tooltip={t('quoteTip')}
+        initialValue={true}
+      >
+        <Switch />
       </Form.Item>
       <Form.Item
         label={t('knowledgeBases')}

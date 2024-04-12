@@ -15,8 +15,8 @@ export default {
       edit: '編輯',
       upload: '上傳',
       english: '英語',
-      chinese: '中文簡體',
-      traditionalChinese: '中文繁體',
+      chinese: '簡體中文',
+      traditionalChinese: '繁體中文',
       language: '語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請選擇語言',
@@ -269,7 +269,7 @@ export default {
       systemMessage: '請輸入',
       systemTip:
         '當LLM回答問題時，你需要LLM遵循的說明，比如角色設計、答案長度和答案語言等。',
-      topN: 'top n',
+      topN: 'Top N',
       topNTip: `並非所有相似度得分高於“相似度閾值”的塊都會被提供給法學碩士。LLM 只能看到這些“Top N”塊。`,
       variable: '變量',
       variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
