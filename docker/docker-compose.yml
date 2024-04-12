@@ -15,7 +15,7 @@ services:
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
-      - 80:80
+      - ${LISTEN_SRV_PORT}:80
       - 443:443
     volumes:
       - ./service_conf.yaml:/ragflow/conf/service_conf.yaml
