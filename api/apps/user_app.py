@@ -15,7 +15,7 @@
 #
 import re
 
-from flask import request, session, redirect, url_for
+from flask import request, session, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import login_required, current_user, login_user, logout_user
 
