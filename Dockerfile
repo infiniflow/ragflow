@@ -31,18 +31,17 @@ ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
 ADD ./requirements.txt ./requirements.txt
 
-RUN cd ./web && npm i && npm run build
-
 RUN apt install openmpi-bin openmpi-common libopenmpi-dev
 ENV LD_LIBRARY_PATH /usr/lib/x86_64-linux-gnu/openmpi/lib:$LD_LIBRARY_PATH
 RUN rm /root/miniconda3/envs/py11/compiler_compat/ld
-RUN conda run -n py11 pip install -r ./requirements.txt
+RUN cd ./web && npm i && npm run build
+RUN conda run -n py11 pip install -i https://mirrors.aliyun.com/pypi/simple/ -r ./requirements.txt
 
 RUN apt-get update && \
     apt-get install -y libglib2.0-0 libgl1-mesa-glx && \
     rm -rf /var/lib/apt/lists/*
 
-RUN conda run -n py11 pip install ollama
+RUN conda run -n py11 pip install -i https://mirrors.aliyun.com/pypi/simple/ ollama
 RUN conda run -n py11 python -m nltk.downloader punkt
 RUN conda run -n py11 python -m nltk.downloader wordnet
 
