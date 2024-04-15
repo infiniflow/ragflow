@@ -6,6 +6,7 @@ import {
   useFetchConversationList,
   useFetchDialog,
   useFetchDialogList,
+  useFetchStats,
   useRemoveConversation,
   useRemoveDialog,
   useSelectConversationList,
@@ -18,6 +19,7 @@ import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IConversation, IDialog } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
+import dayjs, { Dayjs } from 'dayjs';
 import omit from 'lodash/omit';
 import {
   ChangeEventHandler,
@@ -702,5 +704,29 @@ export const useGetSendButtonDisabled = () => {
   const { dialogId, conversationId } = useGetChatSearchParams();
 
   return dialogId === '' && conversationId === '';
+};
+//#endregion
+
+//#region API provided for external calls
+
+type RangeValue = [Dayjs | null, Dayjs | null] | null;
+
+export const useFetchStatsOnMount = (visible: boolean) => {
+  const fetchStats = useFetchStats();
+  const [pickerValue, setPickerValue] = useState<RangeValue>([
+    dayjs(),
+    dayjs().subtract(7, 'day'),
+  ]);
+
+  useEffect(() => {
+    if (visible && Array.isArray(pickerValue) && pickerValue[0]) {
+      fetchStats({ fromDate: pickerValue[0], toDate: pickerValue[1] });
+    }
+  }, [fetchStats, pickerValue, visible]);
+
+  return {
+    pickerValue,
+    setPickerValue,
+  };
 };
 //#endregion

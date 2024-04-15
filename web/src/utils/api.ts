@@ -3,7 +3,7 @@ let api_host = `/v1`;
 export { api_host };
 
 export default {
-  // 用户
+  // user
   login: `${api_host}/user/login`,
   logout: `${api_host}/user/logout`,
   register: `${api_host}/user/register`,
@@ -12,21 +12,21 @@ export default {
   tenant_info: `${api_host}/user/tenant_info`,
   set_tenant_info: `${api_host}/user/set_tenant_info`,
 
-  // 模型管理
+  // llm model
   factories_list: `${api_host}/llm/factories`,
   llm_list: `${api_host}/llm/list`,
   my_llm: `${api_host}/llm/my_llms`,
   set_api_key: `${api_host}/llm/set_api_key`,
   add_llm: `${api_host}/llm/add_llm`,
 
-  //知识库管理
+  // knowledge base
   kb_list: `${api_host}/kb/list`,
   create_kb: `${api_host}/kb/create`,
   update_kb: `${api_host}/kb/update`,
   rm_kb: `${api_host}/kb/rm`,
   get_kb_detail: `${api_host}/kb/detail`,
 
-  // chunk管理
+  // chunk
   chunk_list: `${api_host}/chunk/list`,
   create_chunk: `${api_host}/chunk/create`,
   set_chunk: `${api_host}/chunk/set`,
@@ -35,7 +35,7 @@ export default {
   rm_chunk: `${api_host}/chunk/rm`,
   retrieval_test: `${api_host}/chunk/retrieval_test`,
 
-  // 文件管理
+  // document
   upload: `${api_host}/document/upload`,
   get_document_list: `${api_host}/document/list`,
   document_change_status: `${api_host}/document/change_status`,
@@ -48,14 +48,22 @@ export default {
   get_document_file: `${api_host}/document/get`,
   document_upload: `${api_host}/document/upload`,
 
+  // chat
   setDialog: `${api_host}/dialog/set`,
   getDialog: `${api_host}/dialog/get`,
   removeDialog: `${api_host}/dialog/rm`,
   listDialog: `${api_host}/dialog/list`,
-
   setConversation: `${api_host}/conversation/set`,
   getConversation: `${api_host}/conversation/get`,
   listConversation: `${api_host}/conversation/list`,
   removeConversation: `${api_host}/conversation/rm`,
   completeConversation: `${api_host}/conversation/completion`,
+  // chat for external
+  createToken: `${api_host}/api/new_token`,
+  listToken: `${api_host}/api/token_list`,
+  removeToken: `${api_host}/api/rm`,
+  getStats: `${api_host}/api/stats`,
+  createExternalConversation: `${api_host}/api/new_conversation`,
+  getExternalConversation: `${api_host}/api/conversation`,
+  completeExternalConversation: `${api_host}/api/completion`,
 };

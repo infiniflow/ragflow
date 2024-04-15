@@ -91,3 +91,12 @@ export interface Docagg {
 //   term_similarity: number;
 //   vector_similarity: number;
 // }
+
+export interface IToken {
+  create_date: string;
+  create_time: number;
+  tenant_id: string;
+  token: string;
+  update_date?: any;
+  update_time?: any;
+}

@@ -56,7 +56,7 @@ const data = [
 ];
 
 interface IProps extends CategoricalChartProps {
-  data: Array<any>;
+  data?: Array<any>;
 }
 
 const RagLineChart = ({}: IProps) => {

@@ -1,4 +1,9 @@
-import { IConversation, IDialog, Message } from '@/interfaces/database/chat';
+import {
+  IConversation,
+  IDialog,
+  IToken,
+  Message,
+} from '@/interfaces/database/chat';
 import i18n from '@/locales/config';
 import chatService from '@/services/chatService';
 import { message } from 'antd';
@@ -13,6 +18,7 @@ export interface ChatModelState {
   currentDialog: IDialog;
   conversationList: IConversation[];
   currentConversation: IClientConversation;
+  tokenList: IToken[];
 }
 
 const model: DvaModel<ChatModelState> = {
@@ -23,6 +29,7 @@ const model: DvaModel<ChatModelState> = {
     currentDialog: <IDialog>{},
     conversationList: [],
     currentConversation: {} as IClientConversation,
+    tokenList: [],
   },
   reducers: {
     save(state, action) {
@@ -58,6 +65,12 @@ const model: DvaModel<ChatModelState> = {
       return {
         ...state,
         currentConversation: { ...payload, message: messageList },
+      };
+    },
+    setTokenList(state, { payload }) {
+      return {
+        ...state,
+        tokenList: payload,
       };
     },
   },
@@ -158,6 +171,75 @@ const model: DvaModel<ChatModelState> = {
         });
         message.success(i18n.t('message.deleted'));
       }
+      return data.retcode;
+    },
+    *createToken({ payload }, { call, put }) {
+      const { data } = yield call(chatService.createToken, {
+        dialog_id: payload.dialogId,
+      });
+      if (data.retcode === 0) {
+        yield put({
+          type: 'listToken',
+          payload: { dialog_id: payload.dialogId },
+        });
+        message.success(i18n.t('message.created'));
+      }
+      return data.retcode;
+    },
+    *listToken({ payload }, { call, put }) {
+      const { data } = yield call(chatService.listToken, {
+        dialog_id: payload.dialogId,
+      });
+      if (data.retcode === 0) {
+        yield put({
+          type: 'setTokenList',
+          payload: data.data,
+        });
+      }
+      return data.retcode;
+    },
+    *removeToken({ payload }, { call, put }) {
+      const { data } = yield call(chatService.removeToken, {
+        tokens: payload.tokens,
+      });
+      if (data.retcode === 0) {
+        yield put({
+          type: 'listToken',
+          payload: { dialog_id: payload.dialogId },
+        });
+      }
+      return data.retcode;
+    },
+    *getStats({ payload }, { call }) {
+      const { data } = yield call(chatService.getStats, payload);
+      return data.retcode;
+    },
+    *createExternalConversation({ payload }, { call, put }) {
+      const { data } = yield call(
+        chatService.createExternalConversation,
+        payload,
+      );
+      if (data.retcode === 0) {
+        yield put({
+          type: 'getExternalConversation',
+          payload: { conversation_id: payload.conversationId },
+        });
+      }
+      return data.retcode;
+    },
+    *getExternalConversation({ payload }, { call }) {
+      const { data } = yield call(
+        chatService.getExternalConversation,
+        null,
+        payload,
+      );
+      return data.retcode;
+    },
+    *completeExternalConversation({ payload }, { call }) {
+      const { data } = yield call(
+        chatService.completeExternalConversation,
+        payload,
+      );
       return data.retcode;
     },
   },

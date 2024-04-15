@@ -41,6 +41,7 @@ import {
 } from './hooks';
 
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
+import { useSetSelectedRecord } from '@/hooks/logicHooks';
 import ChatOverviewModal from './chat-overview-modal';
 import styles from './index.less';
 
@@ -80,10 +81,13 @@ const Chat = () => {
   const conversationLoading = useSelectConversationListLoading();
   const { t } = useTranslate('chat');
   const {
-    visible: outlineVisible,
+    visible: overviewVisible,
     hideModal: hideOverviewModal,
     showModal: showOverviewModal,
   } = useSetModalState();
+  const { currentRecord, setRecord } = useSetSelectedRecord<{
+    dialogId: string;
+  }>();
 
   useFetchDialogOnMount(dialogId, true);
 
@@ -109,6 +113,15 @@ const Chat = () => {
       domEvent.preventDefault();
       domEvent.stopPropagation();
       onRemoveDialog([dialogId]);
+    };
+
+  const handleShowOverviewModal =
+    (dialogId: string): any =>
+    (info: any) => {
+      info?.domEvent?.preventDefault();
+      info?.domEvent?.stopPropagation();
+      setRecord({ dialogId });
+      showOverviewModal('', '');
     };
 
   const handleRemoveConversation =
@@ -178,7 +191,7 @@ const Chat = () => {
       { type: 'divider' },
       {
         key: '3',
-        onClick: showOverviewModal,
+        onClick: handleShowOverviewModal(dialogId),
         label: (
           <Space>
             <ProfileOutlined />
@@ -338,8 +351,9 @@ const Chat = () => {
         loading={conversationRenameLoading}
       ></RenameModal>
       <ChatOverviewModal
-        visible={outlineVisible}
+        visible={overviewVisible}
         hideModal={hideOverviewModal}
+        dialogId={currentRecord.dialogId}
       ></ChatOverviewModal>
     </Flex>
   );

@@ -4,6 +4,7 @@ import authorizationUtil from '@/utils/authorizationUtil';
 import { message, notification } from 'antd';
 import { history } from 'umi';
 import { RequestMethod, extend } from 'umi-request';
+import { convertTheKeysOfTheObjectToSnake } from './commonUtil';
 
 const ABORT_REQUEST_ERR_MESSAGE = 'The user aborted a request.'; // 手动中断请求。errorHandler 抛出的error message
 
@@ -91,6 +92,8 @@ request.interceptors.request.use((url: string, options: any) => {
     url,
     options: {
       ...options,
+      data: convertTheKeysOfTheObjectToSnake(options.data),
+      params: convertTheKeysOfTheObjectToSnake(options.params),
       headers: {
         ...(options.skipToken ? undefined : { [Authorization]: authorization }),
         ...options.headers,
