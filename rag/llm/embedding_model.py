@@ -13,12 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from typing import Optional
 from zhipuai import ZhipuAI
 import os
 from abc import ABC
 from ollama import Client
 import dashscope
 from openai import OpenAI
+from fastembed import TextEmbedding
 from FlagEmbedding import FlagModel
 import torch
 import numpy as np
@@ -172,6 +174,34 @@ class OllamaEmbed(Base):
         return np.array(res["embedding"]), 128
 
 
+class FastEmbed(Base):
+    def __init__(
+        self,
+        key: Optional[str] = None,
+        model_name: str = "BAAI/bge-small-en-v1.5",
+        cache_dir: Optional[str] = None,
+        threads: Optional[int] = None,
+        **kwargs,
+    ):
+        self._model = TextEmbedding(model_name, cache_dir, threads, **kwargs)
+
+    def encode(self, texts: list, batch_size=32):
+        # Using the internal tokenizer to encode the texts and get the total number of tokens
+        encodings = self._model.model.tokenizer.encode_batch(texts)
+        total_tokens = sum(len(e) for e in encodings)
+
+        embeddings = [e.tolist() for e in self._model.embed(texts, batch_size)]
+
+        return np.array(embeddings), total_tokens
+
+    def encode_queries(self, text: str):
+        # Using the internal tokenizer to encode the texts and get the total number of tokens
+        encoding = self._model.model.tokenizer.encode(text)
+        embedding = next(self._model.query_embed(text)).tolist()
+
+        return np.array(embedding), len(encoding.ids)
+
+
 class XinferenceEmbed(Base):
     def __init__(self, key, model_name="", base_url=""):
         self.client = OpenAI(api_key="xxx", base_url=base_url)
@@ -187,3 +217,4 @@ class XinferenceEmbed(Base):
         res = self.client.embeddings.create(input=[text],
                                             model=self.model_name)
         return np.array(res.data[0].embedding), res.usage.total_tokens
+

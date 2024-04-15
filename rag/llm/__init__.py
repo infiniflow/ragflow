@@ -24,7 +24,8 @@ EmbeddingModel = {
     "Xinference": XinferenceEmbed,
     "Tongyi-Qianwen": HuEmbedding, #QWenEmbed,
     "ZHIPU-AI": ZhipuEmbed,
-    "Moonshot": HuEmbedding
+    "Moonshot": HuEmbedding,
+    "FastEmbed": FastEmbed
 }
 
 
