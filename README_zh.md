@@ -53,6 +53,13 @@
 - 基于多路召回、融合重排序。
 - 提供易用的 API，可以轻松集成到各类企业系统。
 
+## 📌 新增功能
+
+- 2024-04-11 支持用 [Xinference](./docs/xinference.md) 本地化部署大模型。
+- 2024-04-10 为‘Laws’版面分析增加了底层模型。
+- 2024-04-08 支持用 [Ollama](./docs/ollama.md) 本地化部署大模型。
+- 2024-04-07 支持中文界面。
+
 ## 🔎 系统架构
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -170,12 +177,9 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🆕 最近新特性
+## 📚 技术文档
 
-- 2024-04-11 支持用 [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 为‘Laws’版面分析增加了模型。
-- 2024-04-08 支持用 [Ollama](./docs/ollama.md) 对大模型进行本地化部署。
-- 2024-04-07 支持中文界面。
+- [FAQ](./docs/faq.md)
 
 ## 📜 路线图
 
