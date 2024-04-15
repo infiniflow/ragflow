@@ -160,6 +160,12 @@ def init_llm_factory():
             "model_type": LLMType.CHAT.value
         }, {
             "fid": factory_infos[0]["name"],
+            "llm_name": "gpt-4-turbo",
+            "tags": "LLM,CHAT,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.CHAT.value
+        },{
+            "fid": factory_infos[0]["name"],
             "llm_name": "gpt-4-32k",
             "tags": "LLM,CHAT,32K",
             "max_tokens": 32768,
