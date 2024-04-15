@@ -45,14 +45,14 @@ This feature and the related APIs are still in development. Contributions are we
 
 ### How to increase the length of RAGFlow responses?
 
-Adjust the **Max Tokens** slider in **Model Setting**:
-
-![](https://github.com/infiniflow/ragflow/assets/93570324/6a9c3577-6f5c-496a-9b8d-bee7f98a9c3c)
+1. Right click the desired dialog to display the **Chat Configuration** window.
+2. Switch to the **Model Setting** tab and adjust the **Max Tokens** slider to get the desired length.
+3. Click **OK** to confirm your change. 
 
 
 ### What does Empty response mean? How to set it?
 
-You limit what the system responds to what you specify in Empty response if nothing is retrieved from your knowledge base. If you do not specify anything in Empty response, you let your LLM improvise, giving it a chance to hallucinate.
+You limit what the system responds to what you specify in **Empty response** if nothing is retrieved from your knowledge base. If you do not specify anything in **Empty response**, you let your LLM improvise, giving it a chance to hallucinate.
 
 ### Can I set the base URL for OpenAI somewhere?
 
@@ -70,9 +70,9 @@ You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow
 
 ### How to configure RAGFlow to respond with 100% matched results, rather than utilizing LLM?
 
-In Configuration, choose **Q&A** as the chunk method:
-
-![](https://github.com/infiniflow/ragflow/assets/93570324/b119f201-ddc2-425f-ab6d-e82fa7b7ce8c)
+1. Click the **Knowledge Base** tab in the middle top of the page.
+2. Right click the desired knowledge base to display the **Configuration** dialogue. 
+3. Choose **Q&A** as the chunk method and click **Save** to confirm your change. 
 
 ## Debugging
 
@@ -136,7 +136,7 @@ $ docker ps
     es:
       hosts: 'http://es01:9200'
     ```
-    - - If you run RAGFlow outside of Docker, verify the ES host setting in **conf/service_conf.yml** using: 
+    - If you run RAGFlow outside of Docker, verify the ES host setting in **conf/service_conf.yml** using: 
     ```bash
     curl http://<IP_OF_ES>:<PORT_OF_ES>
     ```
@@ -144,7 +144,7 @@ $ docker ps
 
 ### How to handle `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`?
 
-Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (NOT `localhost`, NOT 9380, AND NO PORT NUMBER REQUIRED!) in your browser. This should work.
+Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (**NOT `localhost`, NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
 
 

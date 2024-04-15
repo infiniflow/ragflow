@@ -56,7 +56,7 @@
 ## 📌 Latest Features
 
 - 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 Add a new layout recognization model to the 'Laws' method.
+- 2024-04-10 Add a new layout recognization model for analyzing Laws documentation.
 - 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
 - 2024-04-07 Support Chinese UI.
 
