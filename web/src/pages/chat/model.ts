@@ -97,6 +97,7 @@ const model: DvaModel<ChatModelState> = {
       if (data.retcode === 0) {
         yield put({ type: 'setDialogList', payload: data.data });
       }
+      return data;
     },
     *listConversation({ payload }, { call, put }) {
       const { data } = yield call(chatService.listConversation, payload);

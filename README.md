@@ -53,6 +53,13 @@
 - Multiple recall paired with fused re-ranking.
 - Intuitive APIs for seamless integration with business.
 
+## 📌 Latest Features
+
+- 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
+- 2024-04-10 Add a new layout recognization model to the 'Laws' method.
+- 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
+- 2024-04-07 Support Chinese UI.
+
 ## 🔎 System Architecture
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -65,7 +72,7 @@
 
 - CPU >= 2 cores
 - RAM >= 8 GB
-- Docker >= 24.0.0
+- Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Start up the server
@@ -170,10 +177,9 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🆕 Latest Features
+## 📚 Documentation
 
-- Support [Ollama](./docs/ollama.md) for local LLM deployment.
-- Support Chinese UI.
+- [FAQ](./docs/faq.md)
 
 ## 📜 Roadmap
 
@@ -181,7 +187,7 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🏄 Community
 
-- [Discord](https://discord.gg/trjjfJ9y)
+- [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
 
 ## 🙌 Contributing

@@ -1,19 +1,19 @@
+import { ReactComponent as CancelIcon } from '@/assets/svg/cancel.svg';
 import { ReactComponent as RefreshIcon } from '@/assets/svg/refresh.svg';
 import { ReactComponent as RunIcon } from '@/assets/svg/run.svg';
 import { useTranslate } from '@/hooks/commonHooks';
+import { useRunDocument } from '@/hooks/documentHooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { CloseCircleOutlined } from '@ant-design/icons';
 import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
-import { useDispatch } from 'umi';
 import { RunningStatus, RunningStatusMap } from '../constant';
 import { isParserRunning } from '../utils';
 import styles from './index.less';
 
 const iconMap = {
   [RunningStatus.UNSTART]: RunIcon,
-  [RunningStatus.RUNNING]: CloseCircleOutlined,
+  [RunningStatus.RUNNING]: CancelIcon,
   [RunningStatus.CANCEL]: RefreshIcon,
   [RunningStatus.DONE]: RefreshIcon,
   [RunningStatus.FAIL]: RefreshIcon,
@@ -78,10 +78,10 @@ const PopoverContent = ({ record }: IProps) => {
 };
 
 export const ParsingStatusCell = ({ record }: IProps) => {
-  const dispatch = useDispatch();
   const text = record.run;
   const runningStatus = RunningStatusMap[text];
   const { t } = useTranslation();
+  const runDocumentByIds = useRunDocument();
 
   const isRunning = isParserRunning(text);
 
@@ -90,18 +90,15 @@ export const ParsingStatusCell = ({ record }: IProps) => {
   const label = t(`knowledgeDetails.runningStatus${text}`);
 
   const handleOperationIconClick = () => {
-    dispatch({
-      type: 'kFModel/document_run',
-      payload: {
-        doc_ids: [record.id],
-        run: isRunning ? 2 : 1,
-        knowledgeBaseId: record.kb_id,
-      },
+    runDocumentByIds({
+      doc_ids: [record.id],
+      run: isRunning ? 2 : 1,
+      knowledgeBaseId: record.kb_id,
     });
   };
 
   return (
-    <Flex justify={'space-between'}>
+    <Flex justify={'space-between'} align="center">
       <Popover content={<PopoverContent record={record}></PopoverContent>}>
         <Tag color={runningStatus.color}>
           {isRunning ? (

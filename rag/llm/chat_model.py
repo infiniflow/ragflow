@@ -49,7 +49,7 @@ class GptTurbo(Base):
             if response.choices[0].finish_reason == "length":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-            return ans, response.usage.completion_tokens
+            return ans, response.usage.total_tokens
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
 
@@ -73,7 +73,7 @@ class MoonshotChat(GptTurbo):
             if response.choices[0].finish_reason == "length":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-            return ans, response.usage.completion_tokens
+            return ans, response.usage.total_tokens
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
 
@@ -98,7 +98,7 @@ class QWenChat(Base):
         tk_count = 0
         if response.status_code == HTTPStatus.OK:
             ans += response.output.choices[0]['message']['content']
-            tk_count += response.usage.output_tokens
+            tk_count += response.usage.total_tokens
             if response.output.choices[0].get("finish_reason", "") == "length":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
@@ -117,6 +117,7 @@ class ZhipuChat(Base):
             history.insert(0, {"role": "system", "content": system})
         try:
             if "presence_penalty" in gen_conf: del gen_conf["presence_penalty"]
+            if "frequency_penalty" in gen_conf: del gen_conf["frequency_penalty"]
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=history,
@@ -126,7 +127,7 @@ class ZhipuChat(Base):
             if response.choices[0].finish_reason == "length":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-            return ans, response.usage.completion_tokens
+            return ans, response.usage.total_tokens
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
@@ -152,50 +153,29 @@ class OllamaChat(Base):
                 options=options
             )
             ans = response["message"]["content"].strip()
-            return ans, response["eval_count"]
+            return ans, response["eval_count"] + response["prompt_eval_count"]
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
 
-class LocalLLM(Base):
-    class RPCProxy:
-        def __init__(self, host, port):
-            self.host = host
-            self.port = int(port)
-            self.__conn()
-
-        def __conn(self):
-            from multiprocessing.connection import Client
-            self._connection = Client(
-                (self.host, self.port), authkey=b'infiniflow-token4kevinhu')
-
-        def __getattr__(self, name):
-            import pickle
-
-            def do_rpc(*args, **kwargs):
-                for _ in range(3):
-                    try:
-                        self._connection.send(
-                            pickle.dumps((name, args, kwargs)))
-                        return pickle.loads(self._connection.recv())
-                    except Exception as e:
-                        self.__conn()
-                raise Exception("RPC connection lost!")
-
-            return do_rpc
-
-    def __init__(self, *args, **kwargs):
-        self.client = LocalLLM.RPCProxy("127.0.0.1", 7860)
+class XinferenceChat(Base):
+    def __init__(self, key=None, model_name="", base_url=""):
+        self.client = OpenAI(api_key="xxx", base_url=base_url)
+        self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
         if system:
             history.insert(0, {"role": "system", "content": system})
         try:
-            ans = self.client.chat(
-                history,
-                gen_conf
-            )
-            return ans, num_tokens_from_string(ans)
-        except Exception as e:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                **gen_conf)
+            ans = response.choices[0].message.content.strip()
+            if response.choices[0].finish_reason == "length":
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            return ans, response.usage.total_tokens
+        except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
 

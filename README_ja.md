@@ -65,7 +65,7 @@
 
 - CPU >= 2 cores
 - RAM >= 8 GB
-- Docker >= 24.0.0
+- Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
 
 ### 🚀 サーバーを起動
@@ -172,8 +172,10 @@ $ docker compose up -d
 
 ## 🆕 最新の新機能
 
-- [Ollama](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
-- 中国語インターフェースをサポートします。
+- 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/xinference.md) をサポートします。
+- 2024-04-10 メソッド「Laws」に新しいレイアウト認識モデルを追加します。
+- 2024-04-08 [Ollama](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
+- 2024-04-07 中国語インターフェースをサポートします。
 
 ## 📜 ロードマップ
 
@@ -181,7 +183,7 @@ $ docker compose up -d
 
 ## 🏄 コミュニティ
 
-- [Discord](https://discord.gg/trjjfJ9y)
+- [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
 
 ## 🙌 コントリビュート

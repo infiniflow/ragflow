@@ -65,7 +65,7 @@
 
 - CPU >= 2 核
 - RAM >= 8 GB
-- Docker >= 24.0.0
+- Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > 如果你并没有在本机安装 Docker（Windows、Mac，或者 Linux）, 可以参考文档 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安装。
 
 ### 🚀 启动服务器
@@ -172,8 +172,10 @@ $ docker compose up -d
 
 ## 🆕 最近新特性
 
-- 支持用 [Ollama](./docs/ollama.md) 对大模型进行本地化部署。
-- 支持中文界面。
+- 2024-04-11 支持用 [Xinference](./docs/xinference.md) for local LLM deployment.
+- 2024-04-10 为‘Laws’版面分析增加了模型。
+- 2024-04-08 支持用 [Ollama](./docs/ollama.md) 对大模型进行本地化部署。
+- 2024-04-07 支持中文界面。
 
 ## 📜 路线图
 
@@ -181,7 +183,7 @@ $ docker compose up -d
 
 ## 🏄 开源社区
 
-- [Discord](https://discord.gg/trjjfJ9y)
+- [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
 
 ## 🙌 贡献指南

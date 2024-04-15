@@ -30,12 +30,12 @@ const ParsingActionCell = ({
   const documentId = record.id;
   const isRunning = isParserRunning(record.run);
   const { t } = useTranslate('knowledgeDetails');
-  const removeDocument = useRemoveDocument(documentId);
+  const removeDocument = useRemoveDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
 
   const onRmDocument = () => {
     if (!isRunning) {
-      showDeleteConfirm({ onOk: removeDocument });
+      showDeleteConfirm({ onOk: () => removeDocument(documentId) });
     }
   };
 

@@ -115,6 +115,12 @@ factory_infos = [{
     "tags": "TEXT EMBEDDING",
     "status": "1",
 },
+    {
+    "name": "Xinference",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+        "status": "1",
+},
     # {
     #     "name": "文心一言",
     #     "logo": "",
@@ -158,6 +164,12 @@ def init_llm_factory():
             "max_tokens": 8191,
             "model_type": LLMType.CHAT.value
         }, {
+            "fid": factory_infos[0]["name"],
+            "llm_name": "gpt-4-turbo",
+            "tags": "LLM,CHAT,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.CHAT.value
+        },{
             "fid": factory_infos[0]["name"],
             "llm_name": "gpt-4-32k",
             "tags": "LLM,CHAT,32K",

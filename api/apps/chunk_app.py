@@ -60,7 +60,7 @@ def list():
         for id in sres.ids:
             d = {
                 "chunk_id": id,
-                "content_with_weight": rmSpace(sres.highlight[id]) if question else sres.field[id].get(
+                "content_with_weight": rmSpace(sres.highlight[id]) if question and id in  sres.highlight else sres.field[id].get(
                     "content_with_weight", ""),
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],

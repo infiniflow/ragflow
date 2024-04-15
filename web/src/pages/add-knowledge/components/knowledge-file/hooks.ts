@@ -1,4 +1,4 @@
-import { useSetModalState } from '@/hooks/commonHooks';
+import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import {
   useCreateDocument,
   useFetchDocumentList,
@@ -11,7 +11,7 @@ import { useFetchTenantInfo } from '@/hooks/userSettingHook';
 import { Pagination } from '@/interfaces/common';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { PaginationProps } from 'antd';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import { KnowledgeRouteKey } from './constant';
 
@@ -43,6 +43,7 @@ export const useFetchDocumentListOnMount = () => {
 export const useGetPagination = (fetchDocumentList: () => void) => {
   const dispatch = useDispatch();
   const kFModel = useSelector((state: any) => state.kFModel);
+  const { t } = useTranslate('common');
 
   const setPagination = useCallback(
     (pageNumber = 1, pageSize?: number) => {
@@ -77,8 +78,9 @@ export const useGetPagination = (fetchDocumentList: () => void) => {
       pageSize: kFModel.pagination.pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
+      showTotal: (total) => `${t('total')} ${total}`,
     };
-  }, [kFModel, onPageChange]);
+  }, [kFModel, onPageChange, t]);
 
   return {
     pagination,
@@ -226,4 +228,17 @@ export const useChangeDocumentParser = (documentId: string) => {
     hideChangeParserModal,
     showChangeParserModal,
   };
+};
+
+export const useGetRowSelection = () => {
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys);
+    },
+  };
+
+  return rowSelection;
 };

@@ -1,18 +1,26 @@
-import { default as i18n, default as i18next } from '@/locales/config';
+import i18n from '@/locales/config';
 import { App, ConfigProvider, ConfigProviderProps } from 'antd';
 import enUS from 'antd/locale/en_US';
 import zhCN from 'antd/locale/zh_CN';
+import zh_HK from 'antd/locale/zh_HK';
 import React, { ReactNode, useEffect, useState } from 'react';
 import storage from './utils/authorizationUtil';
+
+const AntLanguageMap = {
+  en: enUS,
+  zh: zhCN,
+  'zh-TRADITIONAL': zh_HK,
+};
 
 type Locale = ConfigProviderProps['locale'];
 
 const RootProvider = ({ children }: React.PropsWithChildren) => {
-  const getLocale = (lng: string) => (lng === 'zh' ? zhCN : enUS);
+  const getLocale = (lng: string) =>
+    AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
-  i18next.on('languageChanged', function (lng: string) {
+  i18n.on('languageChanged', function (lng: string) {
     storage.setLanguage(lng);
     setLocal(getLocale(lng));
   });

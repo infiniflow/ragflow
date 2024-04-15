@@ -162,6 +162,23 @@ class OllamaCV(Base):
             return "**ERROR**: " + str(e), 0
 
 
+class XinferenceCV(Base):
+    def __init__(self, key, model_name="", lang="Chinese", base_url=""):
+        self.client = OpenAI(api_key="xxx", base_url=base_url)
+        self.model_name = model_name
+        self.lang = lang
+
+    def describe(self, image, max_tokens=300):
+        b64 = self.image2base64(image)
+
+        res = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=self.prompt(b64),
+            max_tokens=max_tokens,
+        )
+        return res.choices[0].message.content.strip(), res.usage.total_tokens
+
+
 class LocalCV(Base):
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         pass

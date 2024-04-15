@@ -14,22 +14,24 @@
 #  limitations under the License.
 #
 import logging
+import os
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from flask import Blueprint, Flask, request
+from flask import Blueprint, Flask
 from werkzeug.wrappers.request import Request
 from flask_cors import CORS
 
 from api.db import StatusEnum
+from api.db.db_models import close_connection
 from api.db.services import UserService
 from api.utils import CustomJSONEncoder
 
 from flask_session import Session
 from flask_login import LoginManager
-from api.settings import RetCode, SECRET_KEY, stat_logger
-from api.settings import API_VERSION, CLIENT_AUTHENTICATION, SITE_AUTHENTICATION, access_logger
-from api.utils.api_utils import get_json_result, server_error_response
+from api.settings import SECRET_KEY, stat_logger
+from api.settings import API_VERSION, access_logger
+from api.utils.api_utils import server_error_response
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 __all__ = ['app']
@@ -42,7 +44,7 @@ for h in access_logger.handlers:
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True,max_age = 2592000)
+CORS(app, supports_credentials=True,max_age=2592000)
 app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
 app.errorhandler(Exception)(server_error_response)
@@ -52,7 +54,7 @@ app.errorhandler(Exception)(server_error_response)
 #app.config["LOGIN_DISABLED"] = True
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
-app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024)
 
 Session(app)
 login_manager = LoginManager()
@@ -94,8 +96,6 @@ client_urls_prefix = [
 ]
 
 
-
-
 @login_manager.request_loader
 def load_user(web_request):
     jwt = Serializer(secret_key=SECRET_KEY)
@@ -113,3 +113,8 @@ def load_user(web_request):
             return None
     else:
         return None
+
+
+@app.teardown_request
+def _db_close(exc):
+    close_connection()

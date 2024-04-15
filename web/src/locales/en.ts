@@ -15,7 +15,8 @@ export default {
       edit: 'Edit',
       upload: 'Upload',
       english: 'English',
-      chinese: 'Chinese',
+      chinese: 'Simplified Chinese',
+      traditionalChinese: 'Traditional Chinese',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -75,7 +76,8 @@ export default {
       chunkNumber: 'Chunk Number',
       uploadDate: 'Upload Date',
       chunkMethod: 'Chunk Method',
-      enabled: 'Enabled',
+      enabled: 'Enable',
+      disabled: 'Disable',
       action: 'Action',
       parsingStatus: 'Parsing Status',
       processBeginAt: 'Process Begin At',
@@ -102,6 +104,7 @@ export default {
       view: 'View',
       filesSelected: 'Files Selected',
       upload: 'Upload',
+      run: 'Run',
       runningStatus0: 'UNSTART',
       runningStatus1: 'Parsing',
       runningStatus2: 'CANCEL',
@@ -130,6 +133,8 @@ export default {
       uploadDescription:
         'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
       chunk: 'Chunk',
+      bulk: 'Bulk',
+      cancel: 'Cancel',
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -269,6 +274,7 @@ export default {
       chatConfigurationDescription:
         ' Here, dress up a dedicated assistant for your special knowledge bases! 💕',
       assistantName: 'Assistant name',
+      assistantNameMessage: 'Assistant name is required',
       namePlaceholder: 'e.g. Resume Jarvis',
       assistantAvatar: 'Assistant avatar',
       language: 'Language',
@@ -327,6 +333,8 @@ export default {
       maxTokensMessage: 'Max Tokens is required',
       maxTokensTip:
         'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).',
+      quote: 'Show Quote',
+      quoteTip: 'Should the source of the original text be displayed?',
     },
     setting: {
       profile: 'Profile',
@@ -392,13 +400,14 @@ export default {
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
       modelName: 'Model name',
+      modelUid: 'Model UID',
       modelNameMessage: 'Please input your model name!',
       modelType: 'Model type',
       modelTypeMessage: 'Please input your model type!',
       addLlmBaseUrl: 'Base url',
       baseUrlNameMessage: 'Please input your base url!',
       vision: 'Does it support Vision?',
-      ollamaLink: 'How to integrate Ollama',
+      ollamaLink: 'How to integrate {{name}}',
     },
     message: {
       registered: 'Registered!',

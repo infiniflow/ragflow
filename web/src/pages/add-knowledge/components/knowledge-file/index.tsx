@@ -4,36 +4,21 @@ import {
   useSelectDocumentList,
   useSetDocumentStatus,
 } from '@/hooks/documentHooks';
+import { useSetSelectedRecord } from '@/hooks/logicHooks';
 import { useSelectParserList } from '@/hooks/userSettingHook';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';
-import {
-  FileOutlined,
-  FileTextOutlined,
-  PlusOutlined,
-  SearchOutlined,
-} from '@ant-design/icons';
-import type { MenuProps } from 'antd';
-import {
-  Button,
-  Divider,
-  Dropdown,
-  Flex,
-  Input,
-  Space,
-  Switch,
-  Table,
-  Tag,
-} from 'antd';
+import { Divider, Flex, Switch, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import CreateFileModal from './create-file-modal';
+import DocumentToolbar from './document-toolbar';
 import {
   useChangeDocumentParser,
   useCreateEmptyDocument,
   useFetchDocumentListOnMount,
   useGetPagination,
-  useHandleSearchChange,
+  useGetRowSelection,
   useNavigateToOtherPage,
   useRenameDocument,
 } from './hooks';
@@ -41,20 +26,15 @@ import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
-import { useSetSelectedRecord } from '@/hooks/logicHooks';
-import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
 const KnowledgeFile = () => {
   const data = useSelectDocumentList();
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const parserList = useSelectParserList();
-  const { pagination, setPagination, total, searchString } =
-    useGetPagination(fetchDocumentList);
+  const { pagination } = useGetPagination(fetchDocumentList);
   const onChangeStatus = useSetDocumentStatus();
-  const { linkToUploadPage, toChunk } = useNavigateToOtherPage();
-
-  const { handleInputChange } = useHandleSearchChange(setPagination);
+  const { toChunk } = useNavigateToOtherPage();
   const { currentRecord, setRecord } = useSetSelectedRecord();
   const {
     renameLoading,
@@ -81,38 +61,7 @@ const KnowledgeFile = () => {
     keyPrefix: 'knowledgeDetails',
   });
 
-  const actionItems: MenuProps['items'] = useMemo(() => {
-    return [
-      {
-        key: '1',
-        onClick: linkToUploadPage,
-        label: (
-          <div>
-            <Button type="link">
-              <Space>
-                <FileTextOutlined />
-                {t('localFiles')}
-              </Space>
-            </Button>
-          </div>
-        ),
-      },
-      { type: 'divider' },
-      {
-        key: '2',
-        onClick: showCreateModal,
-        label: (
-          <div>
-            <Button type="link">
-              <FileOutlined />
-              {t('emptyFiles')}
-            </Button>
-          </div>
-        ),
-        // disabled: true,
-      },
-    ];
-  }, [linkToUploadPage, showCreateModal, t]);
+  const rowSelection = useGetRowSelection();
 
   const columns: ColumnsType<IKnowledgeFile> = [
     {
@@ -161,7 +110,7 @@ const KnowledgeFile = () => {
       render: (_, { status, id }) => (
         <>
           <Switch
-            defaultChecked={status === '1'}
+            checked={status === '1'}
             onChange={(e) => {
               onChangeStatus(e, id);
             }}
@@ -201,36 +150,17 @@ const KnowledgeFile = () => {
       <h3>{t('dataset')}</h3>
       <p>{t('datasetDescription')}</p>
       <Divider></Divider>
-      <div className={styles.filter}>
-        <Space>
-          <h3>{t('total', { keyPrefix: 'common' })}</h3>
-          <Tag color="purple">
-            {total} {t('files')}
-          </Tag>
-        </Space>
-        <Space>
-          <Input
-            placeholder={t('searchFiles')}
-            value={searchString}
-            style={{ width: 220 }}
-            allowClear
-            onChange={handleInputChange}
-            prefix={<SearchOutlined />}
-          />
-
-          <Dropdown menu={{ items: actionItems }} trigger={['click']}>
-            <Button type="primary" icon={<PlusOutlined />}>
-              {t('addFile')}
-            </Button>
-          </Dropdown>
-        </Space>
-      </div>
+      <DocumentToolbar
+        selectedRowKeys={rowSelection.selectedRowKeys as string[]}
+        showCreateModal={showCreateModal}
+      ></DocumentToolbar>
       <Table
         rowKey="id"
         columns={finalColumns}
         dataSource={data}
         // loading={loading}
         pagination={pagination}
+        rowSelection={rowSelection}
         scroll={{ scrollToFirstRowOnChange: true, x: 1300, y: 'fill' }}
       />
       <CreateFileModal
