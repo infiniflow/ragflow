@@ -183,7 +183,7 @@ $ docker compose up -d
 
 ## 🏄 コミュニティ
 
-- [Discord](https://discord.gg/trjjfJ9y)
+- [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
 
 ## 🙌 コントリビュート
