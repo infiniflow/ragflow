@@ -23,7 +23,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     environment:
       - TZ=${TIMEZONE}
-      - HF_ENDPOINT=https://hf-mirror.co
+      - HF_ENDPOINT=https://hf-mirror.com
     networks:
       - ragflow
     restart: always
