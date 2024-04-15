@@ -15,6 +15,7 @@ const { RangePicker } = DatePicker;
 const ChatOverviewModal = ({
   visible,
   hideModal,
+  dialogId,
 }: IModalProps<any> & { dialogId: string }) => {
   const { t } = useTranslate('chat');
 
@@ -62,6 +63,7 @@ const ChatOverviewModal = ({
               disabledDate={disabledDate}
               value={pickerValue}
               onChange={setPickerValue}
+              allowClear={false}
             />
           </Space>
           <div className={styles.chartWrapper}>
@@ -71,6 +73,7 @@ const ChatOverviewModal = ({
         <ChatApiKeyModal
           visible={apiKeyVisible}
           hideModal={hideApiKeyModal}
+          dialogId={dialogId}
         ></ChatApiKeyModal>
       </Modal>
     </>

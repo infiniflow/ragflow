@@ -2,15 +2,19 @@ import { MessageType } from '@/constants/chat';
 import { fileIconMap } from '@/constants/common';
 import {
   useCompleteConversation,
+  useCreateToken,
   useFetchConversation,
   useFetchConversationList,
   useFetchDialog,
   useFetchDialogList,
   useFetchStats,
+  useListToken,
   useRemoveConversation,
   useRemoveDialog,
+  useRemoveToken,
   useSelectConversationList,
   useSelectDialogList,
+  useSelectTokenList,
   useSetDialog,
   useUpdateConversation,
 } from '@/hooks/chatHooks';
@@ -728,5 +732,26 @@ export const useFetchStatsOnMount = (visible: boolean) => {
     pickerValue,
     setPickerValue,
   };
+};
+
+export const useOperateApiKey = (visible: boolean, dialogId: string) => {
+  const removeToken = useRemoveToken();
+  const createToken = useCreateToken(dialogId);
+  const listToken = useListToken();
+  const tokenList = useSelectTokenList();
+
+  const showDeleteConfirm = useShowDeleteConfirm();
+
+  const onRemoveToken = (token: string) => {
+    showDeleteConfirm({ onOk: () => removeToken(dialogId, [token]) });
+  };
+
+  useEffect(() => {
+    if (visible && dialogId) {
+      listToken(dialogId);
+    }
+  }, [listToken, dialogId, visible]);
+
+  return { removeToken: onRemoveToken, createToken, tokenList };
 };
 //#endregion

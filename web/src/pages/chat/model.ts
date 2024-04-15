@@ -174,22 +174,18 @@ const model: DvaModel<ChatModelState> = {
       return data.retcode;
     },
     *createToken({ payload }, { call, put }) {
-      const { data } = yield call(chatService.createToken, {
-        dialog_id: payload.dialogId,
-      });
+      const { data } = yield call(chatService.createToken, payload);
       if (data.retcode === 0) {
         yield put({
           type: 'listToken',
-          payload: { dialog_id: payload.dialogId },
+          payload: payload,
         });
         message.success(i18n.t('message.created'));
       }
       return data.retcode;
     },
     *listToken({ payload }, { call, put }) {
-      const { data } = yield call(chatService.listToken, {
-        dialog_id: payload.dialogId,
-      });
+      const { data } = yield call(chatService.listToken, payload);
       if (data.retcode === 0) {
         yield put({
           type: 'setTokenList',

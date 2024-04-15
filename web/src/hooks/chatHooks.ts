@@ -167,18 +167,15 @@ export const useCompleteConversation = () => {
 
 // #region API provided for external calls
 
-export const useCreateToken = () => {
+export const useCreateToken = (dialogId: string) => {
   const dispatch = useDispatch();
 
-  const createToken = useCallback(
-    (dialogId: string) => {
-      return dispatch<any>({
-        type: 'chatModel/createToken',
-        payload: { dialogId },
-      });
-    },
-    [dispatch],
-  );
+  const createToken = useCallback(() => {
+    return dispatch<any>({
+      type: 'chatModel/createToken',
+      payload: { dialogId },
+    });
+  }, [dispatch, dialogId]);
 
   return createToken;
 };
@@ -200,11 +197,11 @@ export const useListToken = () => {
 };
 
 export const useSelectTokenList = () => {
-  const dialogList: IToken[] = useSelector(
-    (state: any) => state.chatModel.dialogList,
+  const tokenList: IToken[] = useSelector(
+    (state: any) => state.chatModel.tokenList,
   );
 
-  return dialogList;
+  return tokenList;
 };
 
 export const useRemoveToken = () => {
