@@ -57,7 +57,7 @@ def upload():
         if not e:
             return get_data_error_result(
                 retmsg="Can't find this knowledgebase!")
-        if DocumentService.get_doc_count(kb.tenant_id) >= 128:
+        if DocumentService.get_doc_count(kb.tenant_id) >= os.environ.get('MAX_FILE_NUM_PER_USER', 8192):
             return get_data_error_result(
                 retmsg="Exceed the maximum file number of a free user!")
 
