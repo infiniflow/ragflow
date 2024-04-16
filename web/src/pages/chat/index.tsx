@@ -1,11 +1,6 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import RenameModal from '@/components/rename-modal';
-import {
-  DeleteOutlined,
-  EditOutlined,
-  FormOutlined,
-  ProfileOutlined,
-} from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, FormOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -190,16 +185,16 @@ const Chat = () => {
         ),
       },
       { type: 'divider' },
-      {
-        key: '3',
-        onClick: handleShowOverviewModal(dialog),
-        label: (
-          <Space>
-            <ProfileOutlined />
-            {t('overview')}
-          </Space>
-        ),
-      },
+      // {
+      //   key: '3',
+      //   onClick: handleShowOverviewModal(dialog),
+      //   label: (
+      //     <Space>
+      //       <ProfileOutlined />
+      //       {t('overview')}
+      //     </Space>
+      //   ),
+      // },
     ];
 
     return appItems;
