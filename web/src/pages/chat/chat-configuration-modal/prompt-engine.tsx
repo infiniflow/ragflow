@@ -172,15 +172,7 @@ const PromptEngine = (
       >
         <Slider max={30} />
       </Form.Item>
-      <Form.Item
-        label={t('quote')}
-        valuePropName="checked"
-        name={['prompt_config', 'quote']}
-        tooltip={t('quoteTip')}
-        initialValue={true}
-      >
-        <Switch />
-      </Form.Item>
+
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
           <Col span={7} className={styles.variableAlign}>
