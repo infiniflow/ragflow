@@ -669,6 +669,32 @@ class Document(DataBaseModel):
         db_table = "document"
 
 
+class Folder(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    pf_id = CharField(
+        max_length=32,
+        null=False,
+        help_text="parent folder id",
+        index=True)
+    sf_id = CharField(
+        max_length=32,
+        null=False,
+        help_text="sub folder/file id",
+        index=True)
+    created_by = CharField(
+        max_length=32,
+        null=False,
+        help_text="who created it")
+    name = CharField(
+        max_length=255,
+        null=True,
+        help_text="file name or folder name",
+        index=True)
+
+    class Meta:
+        db_table = "folder"
+
+
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)

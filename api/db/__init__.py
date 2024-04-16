@@ -45,6 +45,7 @@ class FileType(StrEnum):
     VISUAL = 'visual'
     AURAL = 'aural'
     VIRTUAL = 'virtual'
+    FOLDER = 'folder'
 
 
 class LLMType(StrEnum):
