@@ -46,7 +46,7 @@ class Dealer:
             "k": topk,
             "similarity": sim,
             "num_candidates": topk * 2,
-            "query_vector": list(qv)
+            "query_vector": [float(v) for v in qv]
         }
 
     def search(self, req, idxnm, emb_mdl=None):

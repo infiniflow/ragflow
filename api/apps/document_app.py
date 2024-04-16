@@ -15,6 +15,7 @@
 #
 
 import base64
+import os
 import pathlib
 import re
 

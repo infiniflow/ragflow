@@ -80,8 +80,12 @@ def chat(dialog, messages, **kwargs):
             raise LookupError("LLM(%s) not found" % dialog.llm_id)
         max_tokens = 1024
     else: max_tokens = llm[0].max_tokens
+    kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
+    embd_nms = list(set([kb.embd_id for kb in kbs]))
+    assert len(embd_nms) == 1, "Knowledge bases use different embedding models."
+
     questions = [m["content"] for m in messages if m["role"] == "user"]
-    embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING)
+    embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING, embd_nms[0])
     chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
 
     prompt_config = dialog.prompt_config
