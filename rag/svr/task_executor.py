@@ -244,8 +244,9 @@ def main(comm, mod):
     for _, r in rows.iterrows():
         callback = partial(set_progress, r["id"], r["from_page"], r["to_page"])
         try:
-            embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING)
+            embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING, llm_name=r["embd_id"], lang=r["language"])
         except Exception as e:
+            traceback.print_stack(e)
             callback(prog=-1, msg=str(e))
             continue
 

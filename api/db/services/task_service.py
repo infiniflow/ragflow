@@ -41,7 +41,7 @@ class TaskService(CommonService):
             Document.size,
             Knowledgebase.tenant_id,
             Knowledgebase.language,
-            Tenant.embd_id,
+            Knowledgebase.embd_id,
             Tenant.img2txt_id,
             Tenant.asr_id,
             cls.model.update_time]

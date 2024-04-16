@@ -66,7 +66,7 @@ class TenantLLMService(CommonService):
             raise LookupError("Tenant not found")
 
         if llm_type == LLMType.EMBEDDING.value:
-            mdlnm = tenant.embd_id
+            mdlnm = tenant.embd_id if not llm_name else llm_name
         elif llm_type == LLMType.SPEECH2TEXT.value:
             mdlnm = tenant.asr_id
         elif llm_type == LLMType.IMAGE2TEXT.value:
@@ -77,9 +77,14 @@ class TenantLLMService(CommonService):
             assert False, "LLM type error"
 
         model_config = cls.get_api_key(tenant_id, mdlnm)
+        if model_config: model_config = model_config.to_dict()
         if not model_config:
-            raise LookupError("Model({}) not authorized".format(mdlnm))
-        model_config = model_config.to_dict()
+            if llm_type == LLMType.EMBEDDING.value:
+                llm = LLMService.query(llm_name=llm_name)
+                if llm and llm[0].fid in ["QAnything", "FastEmbed"]:
+                    model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": llm_name, "api_base": ""}
+            if not model_config: raise LookupError("Model({}) not authorized".format(mdlnm))
+
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return
