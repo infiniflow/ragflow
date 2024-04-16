@@ -23,7 +23,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     environment:
       - TZ=${TIMEZONE}
-      - HF_ENDPOINT=https://huggingface.com
+      - HF_ENDPOINT=https://huggingface.co
     networks:
       - ragflow
     restart: always
