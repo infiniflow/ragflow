@@ -1,6 +1,8 @@
+import CopyToClipboard from '@/components/copy-to-clipboard';
 import { IModalProps } from '@/interfaces/common';
 import { IToken } from '@/interfaces/database/chat';
-import { CopyOutlined, DeleteOutlined } from '@ant-design/icons';
+import { formatDate } from '@/utils/date';
+import { DeleteOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Modal, Space, Table } from 'antd';
 import { useOperateApiKey } from '../hooks';
@@ -10,10 +12,8 @@ const ChatApiKeyModal = ({
   dialogId,
   hideModal,
 }: IModalProps<any> & { dialogId: string }) => {
-  const { createToken, removeToken, tokenList } = useOperateApiKey(
-    visible,
-    dialogId,
-  );
+  const { createToken, removeToken, tokenList, listLoading, creatingLoading } =
+    useOperateApiKey(visible, dialogId);
 
   const columns: TableProps<IToken>['columns'] = [
     {
@@ -26,14 +26,17 @@ const ChatApiKeyModal = ({
       title: 'Created',
       dataIndex: 'create_date',
       key: 'create_date',
+      render: (text) => formatDate(text),
     },
     {
       title: 'Action',
       key: 'action',
       render: (_, record) => (
         <Space size="middle">
-          <CopyOutlined onClick={() => {}} />
-          <DeleteOutlined onClick={() => removeToken(record.token)} />
+          <CopyToClipboard text={record.token}></CopyToClipboard>
+          <DeleteOutlined
+            onClick={() => removeToken(record.token, record.tenant_id)}
+          />
         </Space>
       ),
     },
@@ -48,8 +51,15 @@ const ChatApiKeyModal = ({
         style={{ top: 300 }}
         width={'50vw'}
       >
-        <Table columns={columns} dataSource={tokenList} key={'token'} />
-        <Button onClick={createToken}>Create new key</Button>
+        <Table
+          columns={columns}
+          dataSource={tokenList}
+          rowKey={'token'}
+          loading={listLoading}
+        />
+        <Button onClick={createToken} loading={creatingLoading}>
+          Create new key
+        </Button>
       </Modal>
     </>
   );

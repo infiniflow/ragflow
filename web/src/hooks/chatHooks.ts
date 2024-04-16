@@ -208,10 +208,10 @@ export const useRemoveToken = () => {
   const dispatch = useDispatch();
 
   const removeToken = useCallback(
-    (dialogId: string, tokens: string[]) => {
+    (payload: { tenantId: string; dialogId: string; tokens: string[] }) => {
       return dispatch<any>({
         type: 'chatModel/removeToken',
-        payload: { tokens, dialogId },
+        payload: payload,
       });
     },
     [dispatch],

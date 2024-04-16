@@ -739,11 +739,17 @@ export const useOperateApiKey = (visible: boolean, dialogId: string) => {
   const createToken = useCreateToken(dialogId);
   const listToken = useListToken();
   const tokenList = useSelectTokenList();
+  const creatingLoading = useOneNamespaceEffectsLoading('chatModel', [
+    'createToken',
+  ]);
+  const listLoading = useOneNamespaceEffectsLoading('chatModel', ['list']);
 
   const showDeleteConfirm = useShowDeleteConfirm();
 
-  const onRemoveToken = (token: string) => {
-    showDeleteConfirm({ onOk: () => removeToken(dialogId, [token]) });
+  const onRemoveToken = (token: string, tenantId: string) => {
+    showDeleteConfirm({
+      onOk: () => removeToken({ dialogId, tokens: [token], tenantId }),
+    });
   };
 
   useEffect(() => {
@@ -752,6 +758,12 @@ export const useOperateApiKey = (visible: boolean, dialogId: string) => {
     }
   }, [listToken, dialogId, visible]);
 
-  return { removeToken: onRemoveToken, createToken, tokenList };
+  return {
+    removeToken: onRemoveToken,
+    createToken,
+    tokenList,
+    creatingLoading,
+    listLoading,
+  };
 };
 //#endregion

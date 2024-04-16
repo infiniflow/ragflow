@@ -1,10 +1,15 @@
 import isObject from 'lodash/isObject';
 import snakeCase from 'lodash/snakeCase';
 
+export const isFormData = (data: unknown): data is FormData => {
+  return data instanceof FormData;
+};
+
 export const convertTheKeysOfTheObjectToSnake = (data: unknown) => {
-  if (isObject(data)) {
+  if (isObject(data) && !isFormData(data)) {
     return Object.keys(data).reduce<Record<string, any>>((pre, cur) => {
-      pre[snakeCase(cur)] = (data as Record<string, any>)[cur];
+      const value = (data as Record<string, any>)[cur];
+      pre[isFormData(value) ? cur : snakeCase(cur)] = value;
       return pre;
     }, {});
   }

@@ -88,12 +88,15 @@ const request: RequestMethod = extend({
 
 request.interceptors.request.use((url: string, options: any) => {
   const authorization = authorizationUtil.getAuthorization();
+  const data = convertTheKeysOfTheObjectToSnake(options.data);
+  const params = convertTheKeysOfTheObjectToSnake(options.params);
+
   return {
     url,
     options: {
       ...options,
-      data: convertTheKeysOfTheObjectToSnake(options.data),
-      params: convertTheKeysOfTheObjectToSnake(options.params),
+      data,
+      params,
       headers: {
         ...(options.skipToken ? undefined : { [Authorization]: authorization }),
         ...options.headers,

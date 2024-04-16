@@ -7,6 +7,7 @@ import {
 import i18n from '@/locales/config';
 import chatService from '@/services/chatService';
 import { message } from 'antd';
+import omit from 'lodash/omit';
 import { DvaModel } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { IClientConversation, IMessage } from './interface';
@@ -195,9 +196,10 @@ const model: DvaModel<ChatModelState> = {
       return data.retcode;
     },
     *removeToken({ payload }, { call, put }) {
-      const { data } = yield call(chatService.removeToken, {
-        tokens: payload.tokens,
-      });
+      const { data } = yield call(
+        chatService.removeToken,
+        omit(payload, ['dialogId']),
+      );
       if (data.retcode === 0) {
         yield put({
           type: 'listToken',

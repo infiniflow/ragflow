@@ -121,7 +121,7 @@ const Chat = () => {
       info?.domEvent?.preventDefault();
       info?.domEvent?.stopPropagation();
       setRecord({ dialogId });
-      showOverviewModal('', '');
+      showOverviewModal();
     };
 
   const handleRemoveConversation =
