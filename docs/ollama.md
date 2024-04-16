@@ -31,7 +31,7 @@ $ docker exec -it ollama ollama run mistral
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/a9df198a-226d-4f30-b8d7-829f00256d46" width="1300"/>
 </div>
 
-> Base URL: Enter the base URL where the Ollama service is accessible, like, http://<your-ollama-endpoint-domain>:11434
+> Base URL: Enter the base URL where the Ollama service is accessible, like, `http://<your-ollama-endpoint-domain>:11434`.
 
 - Use Ollama Models.
 
