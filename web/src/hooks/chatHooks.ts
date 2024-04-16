@@ -1,4 +1,9 @@
-import { IConversation, IDialog, IToken } from '@/interfaces/database/chat';
+import {
+  IConversation,
+  IDialog,
+  IStats,
+  IToken,
+} from '@/interfaces/database/chat';
 import { useCallback } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
@@ -234,6 +239,12 @@ export const useFetchStats = () => {
   );
 
   return fetchStats;
+};
+
+export const useSelectStats = () => {
+  const stats: IStats = useSelector((state: any) => state.chatModel.stats);
+
+  return stats;
 };
 
 //#endregion

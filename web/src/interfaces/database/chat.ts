@@ -100,3 +100,12 @@ export interface IToken {
   update_date?: any;
   update_time?: any;
 }
+
+export interface IStats {
+  pv: [string, number][];
+  uv: [string, number][];
+  speed: [string, number][];
+  tokens: [string, number][];
+  round: [string, number][];
+  thumb_up: [string, number][];
+}

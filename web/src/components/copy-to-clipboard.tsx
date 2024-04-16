@@ -1,10 +1,12 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import { Tooltip } from 'antd';
 import { useState } from 'react';
 import { CopyToClipboard as Clipboard, Props } from 'react-copy-to-clipboard';
 
-const CopyToClipboard = ({ children, text }: Props) => {
+const CopyToClipboard = ({ text }: Props) => {
   const [copied, setCopied] = useState(false);
+  const { t } = useTranslate('common');
 
   const handleCopy = () => {
     setCopied(true);
@@ -14,7 +16,7 @@ const CopyToClipboard = ({ children, text }: Props) => {
   };
 
   return (
-    <Tooltip title={copied ? '复制成功' : '复制'}>
+    <Tooltip title={copied ? t('copied') : t('copy')}>
       <Clipboard text={text} onCopy={handleCopy}>
         {copied ? <CheckOutlined /> : <CopyOutlined />}
       </Clipboard>

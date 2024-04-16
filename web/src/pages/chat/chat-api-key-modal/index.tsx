@@ -1,4 +1,5 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
+import { useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
 import { IToken } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';
@@ -14,6 +15,7 @@ const ChatApiKeyModal = ({
 }: IModalProps<any> & { dialogId: string }) => {
   const { createToken, removeToken, tokenList, listLoading, creatingLoading } =
     useOperateApiKey(visible, dialogId);
+  const { t } = useTranslate('chat');
 
   const columns: TableProps<IToken>['columns'] = [
     {
@@ -23,13 +25,13 @@ const ChatApiKeyModal = ({
       render: (text) => <a>{text}</a>,
     },
     {
-      title: 'Created',
+      title: t('created'),
       dataIndex: 'create_date',
       key: 'create_date',
       render: (text) => formatDate(text),
     },
     {
-      title: 'Action',
+      title: t('action'),
       key: 'action',
       render: (_, record) => (
         <Space size="middle">
@@ -45,7 +47,7 @@ const ChatApiKeyModal = ({
   return (
     <>
       <Modal
-        title="API key"
+        title={t('apiKey')}
         open={visible}
         onCancel={hideModal}
         style={{ top: 300 }}
@@ -58,7 +60,7 @@ const ChatApiKeyModal = ({
           loading={listLoading}
         />
         <Button onClick={createToken} loading={creatingLoading}>
-          Create new key
+          {t('createNewKey')}
         </Button>
       </Modal>
     </>

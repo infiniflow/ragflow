@@ -1,12 +1,13 @@
 import LineChart from '@/components/line-chart';
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
+import { IDialog, IStats } from '@/interfaces/database/chat';
 import { Button, Card, DatePicker, Flex, Modal, Space, Typography } from 'antd';
-import dayjs from 'dayjs';
-import ChatApiKeyModal from '../chat-api-key-modal';
-
 import { RangePickerProps } from 'antd/es/date-picker';
-import { useFetchStatsOnMount } from '../hooks';
+import dayjs from 'dayjs';
+import camelCase from 'lodash/camelCase';
+import ChatApiKeyModal from '../chat-api-key-modal';
+import { useFetchStatsOnMount, useSelectChartStatsList } from '../hooks';
 import styles from './index.less';
 
 const { Paragraph } = Typography;
@@ -15,9 +16,10 @@ const { RangePicker } = DatePicker;
 const ChatOverviewModal = ({
   visible,
   hideModal,
-  dialogId,
-}: IModalProps<any> & { dialogId: string }) => {
+  dialog,
+}: IModalProps<any> & { dialog: IDialog }) => {
   const { t } = useTranslate('chat');
+  const chartList = useSelectChartStatsList();
 
   const {
     visible: apiKeyVisible,
@@ -36,29 +38,36 @@ const ChatOverviewModal = ({
       <Modal
         title={t('overview')}
         open={visible}
-        // onOk={handleOk}
         onCancel={hideModal}
         width={'100vw'}
       >
         <Flex vertical gap={'middle'}>
-          <Card title="geek">
-            Public URL
-            <Paragraph copyable>This is a copyable text.</Paragraph>
+          <Card title={dialog.name}>
+            <Flex gap={8} vertical>
+              {t('publicUrl')}
+              <Paragraph copyable className={styles.linkText}>
+                This is a copyable text.
+              </Paragraph>
+            </Flex>
             <Space size={'middle'}>
-              <Button>Preview</Button>
-              <Button>Embedded</Button>
+              <Button>{t('preview')}</Button>
+              <Button>{t('embedded')}</Button>
             </Space>
           </Card>
-          <Card title="Backend service API">
-            Service API Endpoint
-            <Paragraph copyable>This is a copyable text.</Paragraph>
+          <Card title={t('backendServiceApi')}>
+            <Flex gap={8} vertical>
+              {t('serviceApiEndpoint')}
+              <Paragraph copyable className={styles.linkText}>
+                This is a copyable text.
+              </Paragraph>
+            </Flex>
             <Space size={'middle'}>
-              <Button onClick={showApiKeyModal}>Api Key</Button>
-              <Button>Api Reference</Button>
+              <Button onClick={showApiKeyModal}>{t('apiKey')}</Button>
+              <Button>{t('apiReference')}</Button>
             </Space>
           </Card>
           <Space>
-            <b>Date Range:</b>
+            <b>{t('dateRange')}</b>
             <RangePicker
               disabledDate={disabledDate}
               value={pickerValue}
@@ -67,13 +76,18 @@ const ChatOverviewModal = ({
             />
           </Space>
           <div className={styles.chartWrapper}>
-            <LineChart></LineChart>
+            {Object.keys(chartList).map((x) => (
+              <div key={x} className={styles.chartItem}>
+                <b className={styles.chartLabel}>{t(camelCase(x))}</b>
+                <LineChart data={chartList[x as keyof IStats]}></LineChart>
+              </div>
+            ))}
           </div>
         </Flex>
         <ChatApiKeyModal
           visible={apiKeyVisible}
           hideModal={hideApiKeyModal}
-          dialogId={dialogId}
+          dialogId={dialog.id}
         ></ChatApiKeyModal>
       </Modal>
     </>

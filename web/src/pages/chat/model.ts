@@ -1,6 +1,7 @@
 import {
   IConversation,
   IDialog,
+  IStats,
   IToken,
   Message,
 } from '@/interfaces/database/chat';
@@ -20,6 +21,7 @@ export interface ChatModelState {
   conversationList: IConversation[];
   currentConversation: IClientConversation;
   tokenList: IToken[];
+  stats: IStats;
 }
 
 const model: DvaModel<ChatModelState> = {
@@ -31,6 +33,7 @@ const model: DvaModel<ChatModelState> = {
     conversationList: [],
     currentConversation: {} as IClientConversation,
     tokenList: [],
+    stats: {} as IStats,
   },
   reducers: {
     save(state, action) {
@@ -72,6 +75,12 @@ const model: DvaModel<ChatModelState> = {
       return {
         ...state,
         tokenList: payload,
+      };
+    },
+    setStats(state, { payload }) {
+      return {
+        ...state,
+        stats: payload,
       };
     },
   },
@@ -208,8 +217,14 @@ const model: DvaModel<ChatModelState> = {
       }
       return data.retcode;
     },
-    *getStats({ payload }, { call }) {
+    *getStats({ payload }, { call, put }) {
       const { data } = yield call(chatService.getStats, payload);
+      if (data.retcode === 0) {
+        yield put({
+          type: 'setStats',
+          payload: data.data,
+        });
+      }
       return data.retcode;
     },
     *createExternalConversation({ payload }, { call, put }) {

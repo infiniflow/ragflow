@@ -20,7 +20,7 @@ import {
 } from '@/hooks/chatHooks';
 import { useSetModalState, useShowDeleteConfirm } from '@/hooks/commonHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import { IConversation, IDialog } from '@/interfaces/database/chat';
+import { IConversation, IDialog, IStats } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
 import dayjs, { Dayjs } from 'dayjs';
@@ -766,4 +766,52 @@ export const useOperateApiKey = (visible: boolean, dialogId: string) => {
     listLoading,
   };
 };
+
+type ChartStatsType = {
+  [k in keyof IStats]: Array<{ xAxis: string; yAxis: number }>;
+};
+
+export const useSelectChartStatsList = (): ChartStatsType => {
+  // const stats: IStats = useSelectStats();
+  const stats = {
+    pv: [
+      ['2024-06-01', 1],
+      ['2024-07-24', 3],
+      ['2024-09-01', 10],
+    ],
+    uv: [
+      ['2024-02-01', 0],
+      ['2024-03-01', 99],
+      ['2024-05-01', 3],
+    ],
+    speed: [
+      ['2024-09-01', 2],
+      ['2024-09-01', 3],
+    ],
+    tokens: [
+      ['2024-09-01', 1],
+      ['2024-09-01', 3],
+    ],
+    round: [
+      ['2024-09-01', 0],
+      ['2024-09-01', 3],
+    ],
+    thumb_up: [
+      ['2024-09-01', 3],
+      ['2024-09-01', 9],
+    ],
+  };
+
+  return Object.keys(stats).reduce((pre, cur) => {
+    const item = stats[cur as keyof IStats];
+    if (item.length > 0) {
+      pre[cur as keyof IStats] = item.map((x) => ({
+        xAxis: x[0] as string,
+        yAxis: x[1] as number,
+      }));
+    }
+    return pre;
+  }, {} as ChartStatsType);
+};
+
 //#endregion

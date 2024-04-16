@@ -42,6 +42,7 @@ import {
 
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import { useSetSelectedRecord } from '@/hooks/logicHooks';
+import { IDialog } from '@/interfaces/database/chat';
 import ChatOverviewModal from './chat-overview-modal';
 import styles from './index.less';
 
@@ -85,9 +86,7 @@ const Chat = () => {
     hideModal: hideOverviewModal,
     showModal: showOverviewModal,
   } = useSetModalState();
-  const { currentRecord, setRecord } = useSetSelectedRecord<{
-    dialogId: string;
-  }>();
+  const { currentRecord, setRecord } = useSetSelectedRecord<IDialog>();
 
   useFetchDialogOnMount(dialogId, true);
 
@@ -116,11 +115,11 @@ const Chat = () => {
     };
 
   const handleShowOverviewModal =
-    (dialogId: string): any =>
+    (dialog: IDialog): any =>
     (info: any) => {
       info?.domEvent?.preventDefault();
       info?.domEvent?.stopPropagation();
-      setRecord({ dialogId });
+      setRecord(dialog);
       showOverviewModal();
     };
 
@@ -165,7 +164,9 @@ const Chat = () => {
     },
   ];
 
-  const buildAppItems = (dialogId: string) => {
+  const buildAppItems = (dialog: IDialog) => {
+    const dialogId = dialog.id;
+
     const appItems: MenuProps['items'] = [
       {
         key: '1',
@@ -191,7 +192,7 @@ const Chat = () => {
       { type: 'divider' },
       {
         key: '3',
-        onClick: handleShowOverviewModal(dialogId),
+        onClick: handleShowOverviewModal(dialog),
         label: (
           <Space>
             <ProfileOutlined />
@@ -265,7 +266,7 @@ const Chat = () => {
                     </Space>
                     {activated === x.id && (
                       <section>
-                        <Dropdown menu={{ items: buildAppItems(x.id) }}>
+                        <Dropdown menu={{ items: buildAppItems(x) }}>
                           <ChatAppCube
                             className={styles.cubeIcon}
                           ></ChatAppCube>
@@ -353,7 +354,7 @@ const Chat = () => {
       <ChatOverviewModal
         visible={overviewVisible}
         hideModal={hideOverviewModal}
-        dialogId={currentRecord.dialogId}
+        dialog={currentRecord}
       ></ChatOverviewModal>
     </Flex>
   );
