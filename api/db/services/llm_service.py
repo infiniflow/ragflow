@@ -83,7 +83,12 @@ class TenantLLMService(CommonService):
                 llm = LLMService.query(llm_name=llm_name)
                 if llm and llm[0].fid in ["QAnything", "FastEmbed"]:
                     model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": llm_name, "api_base": ""}
-            if not model_config: raise LookupError("Model({}) not authorized".format(mdlnm))
+            if not model_config:
+                if llm_name == "flag-embedding":
+                    model_config = {"llm_factory": "Tongyi-Qianwen", "api_key": "",
+                                "llm_name": llm_name, "api_base": ""}
+                else:
+                    raise LookupError("Model({}) not authorized".format(mdlnm))
 
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
