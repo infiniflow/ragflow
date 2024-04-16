@@ -90,6 +90,17 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 Parsing requests have to wait in queue due to limited server resources. We are currently enhancing our algorithms and increasing computing power.
 
+### Why does my document parsing stall at under one percent?
+
+If your RAGFlow is deployed *locally*, try the following: 
+
+1. Check the log of your RAGFlow server to see if it is running properly:
+```bash
+docker logs -f ragflow-server
+```
+2. Check if the **tast_executor.py** process exist.
+3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
+
 ### How to handle `Index failure`?
 
 An index failure usually indicates an unavailable Elasticsearch service.

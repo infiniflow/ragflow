@@ -252,7 +252,7 @@ def retrieval_test():
             return get_data_error_result(retmsg="Knowledgebase not found!")
 
         embd_mdl = TenantLLMService.model_instance(
-            kb.tenant_id, LLMType.EMBEDDING.value)
+            kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
         ranks = retrievaler.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size, similarity_threshold,
                                       vector_similarity_weight, top, doc_ids)
         for c in ranks["chunks"]:
