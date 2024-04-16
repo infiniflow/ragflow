@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import re, copy, time, datetime, demjson, \
+import re, copy, time, datetime, demjson3, \
     traceback, signal
 import numpy as np
 from deepdoc.parser.resume.entities import degrees, schools, corporations
@@ -197,7 +197,7 @@ def forProj(cv):
 
 
 def json_loads(line):
-    return demjson.decode(re.sub(r": *(True|False)", r": '\1'", line))
+    return demjson3.decode(re.sub(r": *(True|False)", r": '\1'", line))
 
 
 def forWork(cv):

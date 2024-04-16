@@ -109,6 +109,11 @@ factory_infos = [{
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
+}, {
+    "name": "FastEmbed",
+    "logo": "",
+    "tags": "TEXT EMBEDDING",
+    "status": "1",
 },
     {
     "name": "Xinference",
@@ -159,6 +164,12 @@ def init_llm_factory():
             "max_tokens": 8191,
             "model_type": LLMType.CHAT.value
         }, {
+            "fid": factory_infos[0]["name"],
+            "llm_name": "gpt-4-turbo",
+            "tags": "LLM,CHAT,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.CHAT.value
+        },{
             "fid": factory_infos[0]["name"],
             "llm_name": "gpt-4-32k",
             "tags": "LLM,CHAT,32K",
@@ -261,6 +272,58 @@ def init_llm_factory():
             "tags": "LLM,CHAT",
             "max_tokens": 128 * 1000,
             "model_type": LLMType.CHAT.value
+        },
+        # ------------------------ FastEmbed -----------------------
+        {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "BAAI/bge-small-en-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "BAAI/bge-small-zh-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "BAAI/bge-base-en-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "BAAI/bge-large-en-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "sentence-transformers/all-MiniLM-L6-v2",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "nomic-ai/nomic-embed-text-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 8192,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "jinaai/jina-embeddings-v2-small-en",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 2147483648,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "jinaai/jina-embeddings-v2-base-en",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 2147483648,
+            "model_type": LLMType.EMBEDDING.value
         },
     ]
     for info in factory_infos:

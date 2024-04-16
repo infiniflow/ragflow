@@ -15,7 +15,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v1.0-brightgreen"
-            alt="docker pull ragflow:v1.0"></a>
+            alt="docker pull infiniflow/ragflow:v0.1.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
@@ -52,6 +52,13 @@
 - カスタマイズ可能な LLM とエンベッディングモデル。
 - 複数の想起と融合された再ランク付け。
 - 直感的な API によってビジネスとの統合がシームレスに。
+
+## 📌 最新の機能
+
+- 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/xinference.md) をサポートします。
+- 2024-04-10 メソッド「Laws」に新しいレイアウト認識モデルを追加します。
+- 2024-04-08 [Ollama](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
+- 2024-04-07 中国語インターフェースをサポートします。
 
 ## 🔎 システム構成
 
@@ -164,18 +171,15 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v1.0 .
+$ docker build -t infiniflow/ragflow:v0.1.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🆕 最新の新機能
+## 📚 ドキュメンテーション
 
-- 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/xinference.md) をサポートします。
-- 2024-04-10 メソッド「Laws」に新しいレイアウト認識モデルを追加します。
-- 2024-04-08 [Ollama](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
-- 2024-04-07 中国語インターフェースをサポートします。
+- [FAQ](./docs/faq.md)
 
 ## 📜 ロードマップ
 
@@ -183,7 +187,7 @@ $ docker compose up -d
 
 ## 🏄 コミュニティ
 
-- [Discord](https://discord.gg/trjjfJ9y)
+- [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
 
 ## 🙌 コントリビュート

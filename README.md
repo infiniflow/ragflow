@@ -15,7 +15,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v1.0-brightgreen"
-            alt="docker pull ragflow:v1.0"></a>
+            alt="docker pull infiniflow/ragflow:v0.1.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
@@ -52,6 +52,13 @@
 - Configurable LLMs as well as embedding models.
 - Multiple recall paired with fused re-ranking.
 - Intuitive APIs for seamless integration with business.
+
+## 📌 Latest Features
+
+- 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
+- 2024-04-10 Add a new layout recognization model for analyzing Laws documentation.
+- 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
+- 2024-04-07 Support Chinese UI.
 
 ## 🔎 System Architecture
 
@@ -164,18 +171,15 @@ To build the Docker images from source:
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v1.0 .
+$ docker build -t infiniflow/ragflow:v0.1.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🆕 Latest Features
+## 📚 Documentation
 
-- 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 Add a new layout recognize model for method 'Laws'.
-- 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
-- 2024-04-07 Support Chinese UI.
+- [FAQ](./docs/faq.md)
 
 ## 📜 Roadmap
 
@@ -183,7 +187,7 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🏄 Community
 
-- [Discord](https://discord.gg/trjjfJ9y)
+- [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
 
 ## 🙌 Contributing

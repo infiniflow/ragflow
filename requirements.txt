@@ -19,7 +19,7 @@ cryptography==42.0.5
 dashscope==1.14.1
 datasets==2.17.1
 datrie==0.8.2
-demjson==2.2.4
+demjson3==3.0.6
 dill==0.3.8
 distro==1.9.0
 elastic-transport==8.12.0
@@ -27,6 +27,7 @@ elasticsearch==8.12.1
 elasticsearch-dsl==8.12.0
 et-xmlfile==1.1.0
 filelock==3.13.1
+fastembed==0.2.6
 FlagEmbedding==1.2.5
 Flask==3.0.2
 Flask-Cors==4.0.0

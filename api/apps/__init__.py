@@ -14,10 +14,11 @@
 #  limitations under the License.
 #
 import logging
+import os
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from flask import Blueprint, Flask, request
+from flask import Blueprint, Flask
 from werkzeug.wrappers.request import Request
 from flask_cors import CORS
 
@@ -28,9 +29,9 @@ from api.utils import CustomJSONEncoder
 
 from flask_session import Session
 from flask_login import LoginManager
-from api.settings import RetCode, SECRET_KEY, stat_logger
-from api.settings import API_VERSION, CLIENT_AUTHENTICATION, SITE_AUTHENTICATION, access_logger
-from api.utils.api_utils import get_json_result, server_error_response
+from api.settings import SECRET_KEY, stat_logger
+from api.settings import API_VERSION, access_logger
+from api.utils.api_utils import server_error_response
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 __all__ = ['app']
@@ -53,7 +54,7 @@ app.errorhandler(Exception)(server_error_response)
 #app.config["LOGIN_DISABLED"] = True
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
-app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024)
 
 Session(app)
 login_manager = LoginManager()
