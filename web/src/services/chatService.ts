@@ -12,6 +12,13 @@ const {
   completeConversation,
   listConversation,
   removeConversation,
+  createToken,
+  listToken,
+  removeToken,
+  getStats,
+  createExternalConversation,
+  getExternalConversation,
+  completeExternalConversation,
 } = api;
 
 const methods = {
@@ -49,6 +56,34 @@ const methods = {
   },
   removeConversation: {
     url: removeConversation,
+    method: 'post',
+  },
+  createToken: {
+    url: createToken,
+    method: 'post',
+  },
+  listToken: {
+    url: listToken,
+    method: 'get',
+  },
+  removeToken: {
+    url: removeToken,
+    method: 'post',
+  },
+  getStats: {
+    url: getStats,
+    method: 'get',
+  },
+  createExternalConversation: {
+    url: createExternalConversation,
+    method: 'post',
+  },
+  getExternalConversation: {
+    url: getExternalConversation,
+    method: 'get',
+  },
+  completeExternalConversation: {
+    url: completeExternalConversation,
     method: 'post',
   },
 } as const;
