@@ -49,9 +49,19 @@ else
 fi
 
 # Print all infomation
-echo "Current Repo：$git_repo_name"
+echo "Current Repo: $git_repo_name"
+
+# get Commit ID
+git_version=$(git log -1 --pretty=format:'%h')
+
+if [ -z "$git_version" ]; then
+    echo "Commit Id: The current directory is not a Git repository, or the Git command is not installed."
+else
+    echo "Commit Id: $git_version"
+fi
+
 echo "Operating system: $(get_distro_info)"
-echo "CPU Type：$cpu_model"
-echo "Memory：$memory_size"
-echo "Docker Version：$docker_version"
-echo "Python Version：$python_version"
+echo "CPU Type: $cpu_model"
+echo "Memory: $memory_size"
+echo "Docker Version: $docker_version"
+echo "Python Version: $python_version"
