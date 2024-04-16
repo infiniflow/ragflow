@@ -76,11 +76,15 @@ You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow
 
 ## Debugging
 
-### How to handle `WARNING: can't find /raglof/rag/res/borker.tm`?
+### `WARNING: can't find /raglof/rag/res/borker.tm`
 
 Ignore this warning and continue. All system warnings can be ignored.
 
-### How to handle `Realtime synonym is disabled, since no redis connection`?
+### `dependency failed to start: container ragflow-mysql is unhealthy`
+
+`dependency failed to start: container ragflow-mysql is unhealthy` means that your MySQL container failed to start. If you are using a Mac with an M1/M2 chip, replace `mysql:5.7.18` with `mariadb:10.5.8` in **docker-compose-base.yml**.
+
+### `Realtime synonym is disabled, since no redis connection`
 
 Ignore this warning and continue. All system warnings can be ignored.
 
@@ -101,7 +105,7 @@ docker logs -f ragflow-server
 2. Check if the **tast_executor.py** process exist.
 3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
 
-### How to handle `Index failure`?
+### `Index failure`
 
 An index failure usually indicates an unavailable Elasticsearch service.
 
@@ -119,13 +123,13 @@ $ docker ps
 *The system displays the following if all your RAGFlow components are running properly:* 
 
 ```
-5bc45806b680   infiniflow/ragflow:v0.1.0     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   ragflow-server
+5bc45806b680   infiniflow/ragflow:v0.2.0     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   ragflow-server
 91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
 d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
 cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
 ```
 
-### How to handle `Exception: Can't connect to ES cluster`?
+### `Exception: Can't connect to ES cluster`
 
 1. Check the status of your Elasticsearch component:
 
@@ -153,12 +157,37 @@ $ docker ps
     ```
 
 
-### How to handle `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`?
+### `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
 
 Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (**NOT `localhost`, NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
+### `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
 
+A correct Ollama IP address and port is crucial to adding models to Ollama:
 
+- If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. 127.0.0.1 is not an accessible IP address.
+- If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can comunicate with each other.
 
+### Do you offer examples of using deepdoc to parse PDF or other files?
 
+Yes, we do. See the Python files under the **rag/app** folder. 
+
+### Why did I fail to upload a 10MB+ file to my locally deployed RAGFlow?
+
+You probably forgot to update the **MAX_CONTENT_LENGTH** environment variable:
+
+1. Add environment variable `MAX_CONTENT_LENGTH` to **ragflow/docker/.env**:
+```
+MAX_CONTENT_LENGTH=100000000
+```
+2. Update **docker-compose.yml**:
+```
+environment:
+  - MAX_CONTENT_LENGTH=${MAX_CONTENT_LENGTH}
+``` 
+3. Restart the RAGFlow server:
+```
+docker compose up ragflow -d
+```
+   *Now you should be able to upload files of sizes less than 100MB.*
 

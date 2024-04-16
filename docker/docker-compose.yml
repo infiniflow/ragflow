@@ -9,7 +9,7 @@ services:
         condition: service_healthy
       es01:
         condition: service_healthy
-    image: infiniflow/ragflow:v0.1.0
+    image: infiniflow/ragflow:v0.2.0
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
@@ -23,7 +23,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     environment:
       - TZ=${TIMEZONE}
-      - HF_ENDPOINT=https://huggingface.com
+      - HF_ENDPOINT=https://huggingface.co
     networks:
       - ragflow
     restart: always

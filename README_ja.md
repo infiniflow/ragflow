@@ -15,7 +15,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v1.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.1.0"></a>
+            alt="docker pull infiniflow/ragflow:v0.2.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
@@ -55,7 +55,7 @@
 
 ## 📌 最新の機能
 
-- 2024-04-16 [QAnything](https://github.com/netease-youdao/QAnything) から埋め込みモデル「bce-embedding-base_v1」を追加します。
+- 2024-04-16 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) から埋め込みモデル「bce-embedding-base_v1」を追加します。
 - 2024-04-16 [FastEmbed](https://github.com/qdrant/fastembed) は、軽量かつ高速な埋め込み用に設計されています。
 - 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/xinference.md) をサポートします。
 - 2024-04-10 メソッド「Laws」に新しいレイアウト認識モデルを追加します。
@@ -173,7 +173,7 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.1.0 .
+$ docker build -t infiniflow/ragflow:v0.2.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d

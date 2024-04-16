@@ -1,4 +1,9 @@
-import { IConversation, IDialog } from '@/interfaces/database/chat';
+import {
+  IConversation,
+  IDialog,
+  IStats,
+  IToken,
+} from '@/interfaces/database/chat';
 import { useCallback } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
@@ -164,3 +169,82 @@ export const useCompleteConversation = () => {
 
   return completeConversation;
 };
+
+// #region API provided for external calls
+
+export const useCreateToken = (dialogId: string) => {
+  const dispatch = useDispatch();
+
+  const createToken = useCallback(() => {
+    return dispatch<any>({
+      type: 'chatModel/createToken',
+      payload: { dialogId },
+    });
+  }, [dispatch, dialogId]);
+
+  return createToken;
+};
+
+export const useListToken = () => {
+  const dispatch = useDispatch();
+
+  const listToken = useCallback(
+    (dialogId: string) => {
+      return dispatch<any>({
+        type: 'chatModel/listToken',
+        payload: { dialogId },
+      });
+    },
+    [dispatch],
+  );
+
+  return listToken;
+};
+
+export const useSelectTokenList = () => {
+  const tokenList: IToken[] = useSelector(
+    (state: any) => state.chatModel.tokenList,
+  );
+
+  return tokenList;
+};
+
+export const useRemoveToken = () => {
+  const dispatch = useDispatch();
+
+  const removeToken = useCallback(
+    (payload: { tenantId: string; dialogId: string; tokens: string[] }) => {
+      return dispatch<any>({
+        type: 'chatModel/removeToken',
+        payload: payload,
+      });
+    },
+    [dispatch],
+  );
+
+  return removeToken;
+};
+
+export const useFetchStats = () => {
+  const dispatch = useDispatch();
+
+  const fetchStats = useCallback(
+    (payload: any) => {
+      return dispatch<any>({
+        type: 'chatModel/getStats',
+        payload,
+      });
+    },
+    [dispatch],
+  );
+
+  return fetchStats;
+};
+
+export const useSelectStats = () => {
+  const stats: IStats = useSelector((state: any) => state.chatModel.stats);
+
+  return stats;
+};
+
+//#endregion

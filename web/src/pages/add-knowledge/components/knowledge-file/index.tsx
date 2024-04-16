@@ -26,6 +26,7 @@ import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
+import { formatDate } from '@/utils/date';
 import styles from './index.less';
 
 const KnowledgeFile = () => {
@@ -94,6 +95,9 @@ const KnowledgeFile = () => {
       title: t('uploadDate'),
       dataIndex: 'create_date',
       key: 'create_date',
+      render(value) {
+        return formatDate(value);
+      },
     },
     {
       title: t('chunkMethod'),

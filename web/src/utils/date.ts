@@ -1,20 +1,20 @@
-import moment from 'moment';
+import dayjs from 'dayjs';
 
 export function today() {
-  return formatDate(moment());
+  return formatDate(dayjs());
 }
 
 export function lastDay() {
-  return formatDate(moment().subtract(1, 'days'));
+  return formatDate(dayjs().subtract(1, 'days'));
 }
 
 export function lastWeek() {
-  return formatDate(moment().subtract(1, 'weeks'));
+  return formatDate(dayjs().subtract(1, 'weeks'));
 }
 
 export function formatDate(date: any) {
   if (!date) {
     return '';
   }
-  return moment(date).format('DD/MM/YYYY');
+  return dayjs(date).format('DD/MM/YYYY');
 }
