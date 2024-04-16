@@ -55,7 +55,7 @@
 
 ## 📌 Latest Features
 
-- 2024-04-16 Add an embedding model 'bce-embedding-base_v1' from [QAnything](https://github.com/netease-youdao/BCEmbedding).
+- 2024-04-16 Add an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding).
 - 2024-04-16 Add [FastEmbed](https://github.com/qdrant/fastembed) is designed for light and speeding embedding.
 - 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
 - 2024-04-10 Add a new layout recognization model for analyzing Laws documentation.

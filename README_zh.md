@@ -55,7 +55,7 @@
 
 ## 📌 新增功能
 
-- 2024-04-16 添加嵌入模型 [QAnything的bce-embedding-base_v1](https://github.com/netease-youdao/BCEmbedding) 。
+- 2024-04-16 添加嵌入模型 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) 。
 - 2024-04-16 添加 [FastEmbed](https://github.com/qdrant/fastembed) 专为轻型和高速嵌入而设计。
 - 2024-04-11 支持用 [Xinference](./docs/xinference.md) 本地化部署大模型。
 - 2024-04-10 为‘Laws’版面分析增加了底层模型。
