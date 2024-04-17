@@ -96,6 +96,8 @@ Parsing requests have to wait in queue due to limited server resources. We are c
 
 ### Why does my document parsing stall at under one percent?
 
+![stall](https://github.com/infiniflow/ragflow/assets/93570324/3589cc25-c733-47d5-bbfc-fedb74a3da50)
+
 If your RAGFlow is deployed *locally*, try the following: 
 
 1. Check the log of your RAGFlow server to see if it is running properly:
@@ -104,6 +106,16 @@ docker logs -f ragflow-server
 ```
 2. Check if the **tast_executor.py** process exist.
 3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
+
+### `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
+
+This error suggests that you do not have Internet access or are unable to connect to hf-mirror.com. Try the following: 
+
+1. Manually download the resource files from [huggingface.co/InfiniFlow/deepdoc](https://huggingface.co/InfiniFlow/deepdoc) to your local folder **~/deepdoc**. 
+2. Add a volumes to **docker-compose.yml**, for example:
+```
+- ~/deepdoc:/ragflow/rag/res/deepdoc
+```
 
 ### `Index failure`
 
@@ -165,7 +177,7 @@ Your IP address or port number may be incorrect. If you are using the default co
 
 A correct Ollama IP address and port is crucial to adding models to Ollama:
 
-- If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. 127.0.0.1 is not an accessible IP address.
+- If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address.Note that 127.0.0.1 is not a publicly accessible IP address.
 - If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can comunicate with each other.
 
 ### Do you offer examples of using deepdoc to parse PDF or other files?
@@ -191,3 +203,32 @@ docker compose up ragflow -d
 ```
    *Now you should be able to upload files of sizes less than 100MB.*
 
+### `Table 'rag_flow.document' doesn't exist`
+
+This exception occurs when starting up the RAGFlow server. Try the following: 
+
+  1. Prolong the sleep time: Go to **docker/entrypoint.sh**, locate line 26, and replace `sleep 60` with `sleep 280`.
+  2. Go to **docker/docker-compose.yml**, add the following after line 109:
+  ```
+  ./entrypoint.sh:/ragflow/entrypoint.sh
+  ```
+  3. Change directory:
+  ```bash
+  cd docker
+  ```
+  4. Stop the RAGFlow server:
+  ```bash
+  docker compose stop
+  ```
+  5. Restart up the RAGFlow server:
+  ```bash
+  docker compose up
+  ```
+
+### `hint : 102  Fail to access model  Connection error`
+
+![hint102](https://github.com/infiniflow/ragflow/assets/93570324/6633d892-b4f8-49b5-9a0a-37a0a8fba3d2)
+
+1. Ensure that the RAGFlow server can access the base URL.
+2. Do not forget to append **/v1/** to **http://IP:port**: 
+   **http://IP:port/v1/**
