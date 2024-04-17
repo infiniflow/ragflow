@@ -56,7 +56,7 @@
 ## 📌 Latest Features
 
 - 2024-04-16 Add an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding).
-- 2024-04-16 Add [FastEmbed](https://github.com/qdrant/fastembed) is designed for light and speeding embedding.
+- 2024-04-16 Add [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
 - 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
 - 2024-04-10 Add a new layout recognization model for analyzing Laws documentation.
 - 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
@@ -139,7 +139,7 @@
    ```
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
-   > In the given scenario, you only need to enter `http://IP_OF_YOUR_MACHINE` (sans port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+   > In the given scenario, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
    > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
