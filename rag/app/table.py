@@ -193,14 +193,14 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
             if n in df.columns:
                 del df[n]
         clmns = df.columns.values
-        txts = list(copy.deepcopy(clmns))
+        txts = [str(n) for n in clmns] #list(copy.deepcopy(clmns))
         py_clmns = [
             PY.get_pinyins(
                 re.sub(
                     r"(/.*|（[^（）]+?）|\([^()]+?\))",
                     "",
                     n),
-                '_')[0] for n in clmns]
+                '_')[0] for n in txts]
         clmn_tys = []
         for j in range(len(clmns)):
             cln, ty = column_data_type(df[clmns[j]])
@@ -208,7 +208,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], clmns[i].replace("_", " "))
+        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], txts[i].replace("_", " "))
                      for i in range(len(clmns))]
 
         eng = lang.lower() == "english"  # is_english(txts)
