@@ -79,7 +79,7 @@
 
 ### 🚀 Start up the server
 
-1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/max_map_count.md)):
+1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/max_map_count.md)) for elastic search:
 
    > To check the value of `vm.max_map_count`:
    >
@@ -98,6 +98,14 @@
    >
    > ```bash
    > vm.max_map_count=262144
+   > ```
+   > 
+   > There's no `vm.max_map_count` on Mac Docker host, you can uncomment the `- ./sysctl.conf:/etc/sysctl.conf` in docker-compose.yml under es01 service:
+   >
+   > ```
+   > volumes:
+   >   - esdata01:/usr/share/elasticsearch/data
+   >   - ./sysctl.conf:/etc/sysctl.conf
    > ```
 
 2. Clone the repo:
