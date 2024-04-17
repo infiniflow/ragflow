@@ -203,13 +203,13 @@ docker compose up ragflow -d
 ```
    *Now you should be able to upload files of sizes less than 100MB.*
 
-### `Table 'rag_flow.document' doesn't exist exception`
+### `Table 'rag_flow.document' doesn't exist`
 
 This exception occurs when starting up the RAGFlow server. Try the following: 
 
-  1. Prolong the sleep time: Go to **docker/entrypoint.sh**, locate line 26, and replace sleep 60 with sleep 280.
+  1. Prolong the sleep time: Go to **docker/entrypoint.sh**, locate line 26, and replace `sleep 60` with `sleep 280`.
   2. Go to **docker/docker-compose.yml**, add the following after line 109:
-  ```bash
+  ```
   ./entrypoint.sh:/ragflow/entrypoint.sh
   ```
   3. Change directory:
