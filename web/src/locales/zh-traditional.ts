@@ -144,12 +144,12 @@ export default {
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '塊令牌數',
-      chunkTokenNumberMessage: '塊令牌數是必填項',
+      chunkTokenNumber: '塊Token數',
+      chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
         '用於嵌入塊的嵌入模型。一旦知識庫有了塊，它就無法更改。如果你想改變它，你需要刪除所有的塊。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
-      chunkTokenNumberTip: '它大致確定了一個塊的令牌數量。',
+      chunkTokenNumberTip: '它大致確定了一個塊的Token數量。',
       chunkMethod: '解析方法',
       chunkMethodTip: '說明位於右側。',
       upload: '上傳',
@@ -163,7 +163,7 @@ export default {
       cancel: '取消',
       methodTitle: '分塊方法說明',
       methodExamples: '示例',
-      methodExamplesDescription: '這個視覺指南是為了讓您更容易理解。',
+      methodExamplesDescription: '提出以下屏幕截圖以促進理解。',
       dialogueExamplesTitle: '對話示例',
       methodEmpty: '這將顯示知識庫類別的可視化解釋',
       book: `<p>支持的文件格式為<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
@@ -182,7 +182,7 @@ export default {
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
-        <li>接下來，這些連續的片段被合併成令牌數不超過“令牌數”的塊。</li></p>`,
+        <li>接下來，這些連續的片段被合併成Token數不超過“Token數”的塊。</li></p>`,
       paper: `<p>僅支持<b>PDF</b>文件。</p><p>
         如果我們的模型運行良好，論文將按其部分進行切片，例如<i>摘要、1.1、1.2</i>等。</p><p>
         這樣做的好處是LLM可以更好的概括論文中相關章節的內容，
@@ -192,15 +192,24 @@ export default {
       presentation: `<p>支持的文件格式為<b>PDF</b>、<b>PPTX</b>。</p><p>
         每個頁面都將被視為一個塊。並且每個頁面的縮略圖都會被存儲。</p><p>
         <i>您上傳的所有PPT文件都會使用此方法自動分塊，無需為每個PPT文件進行設置。</i></p>`,
-      qa: `支持<p><b>EXCEL</b>和<b>CSV/TXT</b>文件。</p><p>
-        如果文件是Excel格式，應該有2列問題和答案，沒有標題。
-        問題欄位於答案欄之前。
-        如果有多個工作表也沒關係，只要列的組合正確即可。</p><p>
-     
-        如果是 csv 格式，則應採用 UTF-8 編碼。使用 TAB 作為分隔符來分隔問題和答案。</p><p>
-     
-        <i>所有變形的線都將被忽略。
-        每對問答都將被視為一個塊。</i></p>`,
+      qa: `<p>
+      此塊方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
+    </p>
+    <li>
+      如果文件以<b> excel </b>格式，則應由兩個列組成
+      沒有標題：一個提出問題，另一個用於答案，
+      答案列之前的問題列。多張紙是
+      只要列正確結構，就可以接受。
+    </li>
+    <li>
+      如果文件以<b> csv/txt </b>格式為
+      用作分開問題和答案的定界符。
+    </li>
+    <p>
+      <i>
+        未能遵循上述規則的文本行將被忽略，並且
+        每個問答對將被認為是一個獨特的部分。
+      </i>`,
       resume: `<p>支持的文件格式為<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。
         </p><p>
         簡歷有多種格式，就像一個人的個性一樣，但我們經常必須將它們組織成結構化數據，以便於搜索。
@@ -414,7 +423,7 @@ export default {
       202: '一個請求已經進入後台排隊（異步任務）。',
       204: '刪除數據成功。',
       400: '發出的請求有錯誤，服務器沒有進行新建或修改數據的操作。',
-      401: '用戶沒有權限（令牌、用戶名、密碼錯誤）。',
+      401: '用戶沒有權限（Token、用戶名、密碼錯誤）。',
       403: '用戶得到授權，但是訪問是被禁止的。',
       404: '發出的請求針對的是不存在的記錄，服務器沒有進行操作。',
       406: '請求的格式不可得。',
