@@ -145,12 +145,12 @@ export default {
       languagePlaceholder: '请输入语言',
       permissions: '权限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '块令牌数',
-      chunkTokenNumberMessage: '块令牌数是必填项',
+      chunkTokenNumber: '块Token数',
+      chunkTokenNumberMessage: '块Token数是必填项',
       embeddingModelTip:
         '用于嵌入块的嵌入模型。 一旦知识库有了块，它就无法更改。 如果你想改变它，你需要删除所有的块。',
       permissionsTip: '如果权限是“团队”，则所有团队成员都可以操作知识库。',
-      chunkTokenNumberTip: '它大致确定了一个块的令牌数量。',
+      chunkTokenNumberTip: '它大致确定了一个块的Token数量。',
       chunkMethod: '解析方法',
       chunkMethodTip: '说明位于右侧。',
       upload: '上传',
@@ -164,7 +164,7 @@ export default {
       cancel: '取消',
       methodTitle: '分块方法说明',
       methodExamples: '示例',
-      methodExamplesDescription: '这个视觉指南是为了让您更容易理解。',
+      methodExamplesDescription: '提出以下屏幕截图以促进理解。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
@@ -183,7 +183,7 @@ export default {
       <p>此方法将简单的方法应用于块文件：</p>
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
-      <li>接下来，这些连续的片段被合并成令牌数不超过“令牌数”的块。</li></p>`,
+      <li>接下来，这些连续的片段被合并成Token数不超过“Token数”的块。</li></p>`,
       paper: `<p>仅支持<b>PDF</b>文件。</p><p>
       如果我们的模型运行良好，论文将按其部分进行切片，例如<i>摘要、1.1、1.2</i>等。</p><p>
       这样做的好处是LLM可以更好的概括论文中相关章节的内容，
@@ -193,15 +193,25 @@ export default {
       presentation: `<p>支持的文件格式为<b>PDF</b>、<b>PPTX</b>。</p><p>
       每个页面都将被视为一个块。 并且每个页面的缩略图都会被存储。</p><p>
       <i>您上传的所有PPT文件都会使用此方法自动分块，无需为每个PPT文件进行设置。</i></p>`,
-      qa: `支持<p><b>EXCEL</b>和<b>CSV/TXT</b>文件。</p><p>
-      如果文件是Excel格式，应该有2列问题和答案，没有标题。
-      问题栏位于答案栏之前。
-      如果有多个工作表也没关系，只要列的组合正确即可。</p><p>
-   
-      如果是 csv 格式，则应采用 UTF-8 编码。 使用 TAB 作为分隔符来分隔问题和答案。</p><p>
-   
-      <i>所有变形的线都将被忽略。
-      每对问答都将被视为一个块。</i></p>`,
+      qa: ` <p>
+      此块方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
+    </p>
+    <li>
+      如果文件以<b> excel </b>格式，则应由两个列组成
+      没有标题：一个提出问题，另一个用于答案，
+      答案列之前的问题列。多张纸是
+      只要列正确结构，就可以接受。
+    </li>
+    <li>
+      如果文件以<b> csv/txt </b>格式为
+      用作分开问题和答案的定界符。
+    </li>
+    <p>
+      <i>
+        未能遵循上述规则的文本行将被忽略，并且
+        每个问答对将被认为是一个独特的部分。
+      </i>
+    </p>`,
       resume: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。
       </p><p>
       简历有多种格式，就像一个人的个性一样，但我们经常必须将它们组织成结构化数据，以便于搜索。
@@ -430,7 +440,7 @@ export default {
       202: '一个请求已经进入后台排队（异步任务）。',
       204: '删除数据成功。',
       400: '发出的请求有错误，服务器没有进行新建或修改数据的操作。',
-      401: '用户没有权限（令牌、用户名、密码错误）。',
+      401: '用户没有权限（Token、用户名、密码错误）。',
       403: '用户得到授权，但是访问是被禁止的。',
       404: '发出的请求针对的是不存在的记录，服务器没有进行操作。',
       406: '请求的格式不可得。',

@@ -171,7 +171,7 @@ export default {
       methodTitle: 'Chunking Method Description',
       methodExamples: 'Examples',
       methodExamplesDescription:
-        'This visual guides is in order to make understanding easier for you.',
+        'The following screenshots are presented to facilitate understanding.',
       dialogueExamplesTitle: 'Dialogue Examples',
       methodEmpty:
         'This will display a visual explanation of the knowledge base categories',
@@ -201,15 +201,27 @@ export default {
       presentation: `<p>The supported file formats are <b>PDF</b>, <b>PPTX</b>.</p><p>
       Every page will be treated as a chunk. And the thumbnail of every page will be stored.</p><p>
       <i>All the PPT files you uploaded will be chunked by using this method automatically, setting-up for every PPT file is not necessary.</i></p>`,
-      qa: `<p><b>EXCEL</b> and <b>CSV/TXT</b> files are supported.</p><p>
-      If the file is in excel format, there should be 2 columns question and answer without header.
-      And question column is ahead of answer column.
-      And it's O.K if it has multiple sheets as long as the columns are rightly composed.</p><p>
-    
-      If it's in csv format, it should be UTF-8 encoded. Use TAB as delimiter to separate question and answer.</p><p>
-    
-      <i>All the deformed lines will be ignored.
-      Every pair of Q&A will be treated as a chunk.</i></p>`,
+      qa: `
+      <p>
+      This chunk method supports <b>EXCEL</b> and <b>CSV/TXT</b> file formats.
+    </p>
+    <li>
+      If the file is in <b>Excel</b> format, it should consist of two columns
+      without headers: one for questions and the other for answers, with the
+      question column preceding the answer column. Multiple sheets are
+      acceptable as long as the columns are correctly structured.
+    </li>
+    <li>
+      If the file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB
+      used as the delimiter to separate questions and answers.
+    </li>
+    <p>
+      <i>
+        Lines of texts that fail to follow the above rules will be ignored, and
+        each Q&A pair will be considered a distinct chunk.
+      </i>
+    </p>
+      `,
       resume: `<p>The supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.
       </p><p>
       The résumé comes in a variety of formats, just like a person’s personality, but we often have to organize them into structured data that makes it easy to search.
