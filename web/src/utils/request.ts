@@ -4,7 +4,7 @@ import authorizationUtil from '@/utils/authorizationUtil';
 import { message, notification } from 'antd';
 import { history } from 'umi';
 import { RequestMethod, extend } from 'umi-request';
-import { convertTheKeysOfTheObjectToSnake } from './commonUtil';
+import { convertTheKeysOfTheObjectToSnake, getSearchValue } from './commonUtil';
 
 const ABORT_REQUEST_ERR_MESSAGE = 'The user aborted a request.'; // 手动中断请求。errorHandler 抛出的error message
 
@@ -87,7 +87,9 @@ const request: RequestMethod = extend({
 });
 
 request.interceptors.request.use((url: string, options: any) => {
-  const authorization = authorizationUtil.getAuthorization();
+  const authorization =
+    'Bearer ' + getSearchValue('shared_id') ??
+    authorizationUtil.getAuthorization();
   const data = convertTheKeysOfTheObjectToSnake(options.data);
   const params = convertTheKeysOfTheObjectToSnake(options.params);
 
@@ -95,8 +97,8 @@ request.interceptors.request.use((url: string, options: any) => {
     url,
     options: {
       ...options,
-      // data,
-      // params,
+      data,
+      params,
       headers: {
         ...(options.skipToken ? undefined : { [Authorization]: authorization }),
         ...options.headers,

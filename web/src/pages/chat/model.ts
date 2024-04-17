@@ -158,7 +158,7 @@ const model: DvaModel<ChatModelState> = {
       }
       return data;
     },
-    *completeConversation({ payload }, { call, put }) {
+    *completeConversation({ payload }, { call }) {
       const { data } = yield call(chatService.completeConversation, payload);
       // if (data.retcode === 0) {
       //   yield put({
@@ -235,10 +235,10 @@ const model: DvaModel<ChatModelState> = {
       if (data.retcode === 0) {
         yield put({
           type: 'getExternalConversation',
-          payload: { conversation_id: payload.conversationId },
+          payload: data.data.id,
         });
       }
-      return data.retcode;
+      return data;
     },
     *getExternalConversation({ payload }, { call }) {
       const { data } = yield call(
@@ -246,7 +246,7 @@ const model: DvaModel<ChatModelState> = {
         null,
         payload,
       );
-      return data.retcode;
+      return data;
     },
     *completeExternalConversation({ payload }, { call }) {
       const { data } = yield call(

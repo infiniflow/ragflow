@@ -248,3 +248,54 @@ export const useSelectStats = () => {
 };
 
 //#endregion
+
+//#region shared chat
+
+export const useCreateSharedConversation = () => {
+  const dispatch = useDispatch();
+
+  const createSharedConversation = useCallback(
+    (userId?: string) => {
+      return dispatch<any>({
+        type: 'chatModel/createExternalConversation',
+        payload: { userId },
+      });
+    },
+    [dispatch],
+  );
+
+  return createSharedConversation;
+};
+
+export const useFetchSharedConversation = () => {
+  const dispatch = useDispatch();
+
+  const fetchSharedConversation = useCallback(
+    (conversationId: string) => {
+      return dispatch<any>({
+        type: 'chatModel/getExternalConversation',
+        payload: conversationId,
+      });
+    },
+    [dispatch],
+  );
+
+  return fetchSharedConversation;
+};
+
+export const useCompleteSharedConversation = () => {
+  const dispatch = useDispatch();
+
+  const completeSharedConversation = useCallback(
+    (payload: any) => {
+      return dispatch<any>({
+        type: 'chatModel/completeExternalConversation',
+        payload: payload,
+      });
+    },
+    [dispatch],
+  );
+
+  return completeSharedConversation;
+};
+//#endregion

@@ -15,3 +15,8 @@ export const convertTheKeysOfTheObjectToSnake = (data: unknown) => {
   }
   return data;
 };
+
+export const getSearchValue = (key: string) => {
+  const params = new URL(document.location as any).searchParams;
+  return params.get(key);
+};
