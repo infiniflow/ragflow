@@ -87,9 +87,10 @@ const request: RequestMethod = extend({
 });
 
 request.interceptors.request.use((url: string, options: any) => {
-  const authorization =
-    'Bearer ' + getSearchValue('shared_id') ??
-    authorizationUtil.getAuthorization();
+  const sharedId = getSearchValue('shared_id');
+  const authorization = sharedId
+    ? 'Bearer ' + sharedId
+    : authorizationUtil.getAuthorization();
   const data = convertTheKeysOfTheObjectToSnake(options.data);
   const params = convertTheKeysOfTheObjectToSnake(options.params);
 

@@ -192,7 +192,7 @@ const model: DvaModel<ChatModelState> = {
         });
         message.success(i18n.t('message.created'));
       }
-      return data.retcode;
+      return data;
     },
     *listToken({ payload }, { call, put }) {
       const { data } = yield call(chatService.listToken, payload);
@@ -232,12 +232,12 @@ const model: DvaModel<ChatModelState> = {
         chatService.createExternalConversation,
         payload,
       );
-      if (data.retcode === 0) {
-        yield put({
-          type: 'getExternalConversation',
-          payload: data.data.id,
-        });
-      }
+      // if (data.retcode === 0) {
+      //   yield put({
+      //     type: 'getExternalConversation',
+      //     payload: data.data.id,
+      //   });
+      // }
       return data;
     },
     *getExternalConversation({ payload }, { call }) {

@@ -6,15 +6,21 @@ import {
 } from '@/hooks/chatHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import omit from 'lodash/omit';
-import { useCallback, useEffect, useState } from 'react';
+import {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
 import { useSearchParams } from 'umi';
 import { v4 as uuid } from 'uuid';
-import { useHandleMessageInputChange } from './hooks';
+import { useHandleMessageInputChange, useScrollToBottom } from './hooks';
 import { IClientConversation, IMessage } from './interface';
 
-export const useCreateConversationOnMount = () => {
+export const useCreateSharedConversationOnMount = () => {
   const [currentQueryParameters] = useSearchParams();
-  const [conversationId, setConversationId] = useState();
+  const [conversationId, setConversationId] = useState('');
 
   const createConversation = useCreateSharedConversation();
   const sharedId = currentQueryParameters.get('shared_id');
@@ -38,17 +44,22 @@ export const useCreateConversationOnMount = () => {
   return { conversationId };
 };
 
-export const useSelectCurrentConversation = (conversationId: string) => {
+export const useSelectCurrentSharedConversation = (conversationId: string) => {
   const [currentConversation, setCurrentConversation] =
     useState<IClientConversation>({} as IClientConversation);
   const fetchConversation = useFetchSharedConversation();
+  const loading = useOneNamespaceEffectsLoading('chatModel', [
+    'getExternalConversation',
+  ]);
+
+  const ref = useScrollToBottom(currentConversation);
 
   const addNewestConversation = useCallback((message: string) => {
     setCurrentConversation((pre) => {
       return {
         ...pre,
         message: [
-          ...pre.message,
+          ...(pre.message ?? []),
           {
             role: MessageType.User,
             content: message,
@@ -88,17 +99,25 @@ export const useSelectCurrentConversation = (conversationId: string) => {
     fetchConversationOnMount();
   }, [fetchConversationOnMount]);
 
-  return { currentConversation, addNewestConversation, removeLatestMessage };
+  return {
+    currentConversation,
+    addNewestConversation,
+    removeLatestMessage,
+    loading,
+    ref,
+    setCurrentConversation,
+  };
 };
 
-export const useSendMessage = (
+export const useSendSharedMessage = (
   conversation: IClientConversation,
   addNewestConversation: (message: string) => void,
   removeLatestMessage: () => void,
+  setCurrentConversation: Dispatch<SetStateAction<IClientConversation>>,
 ) => {
   const conversationId = conversation.id;
   const loading = useOneNamespaceEffectsLoading('chatModel', [
-    'completeConversation',
+    'completeExternalConversation',
   ]);
   const setConversation = useCreateSharedConversation();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -120,7 +139,10 @@ export const useSendMessage = (
       });
 
       if (retcode === 0) {
-        fetchConversation(conversationId);
+        const data = await fetchConversation(conversationId);
+        if (data.retcode === 0) {
+          setCurrentConversation(data.data);
+        }
       } else {
         // cancel loading
         setValue(message);
@@ -134,6 +156,7 @@ export const useSendMessage = (
       removeLatestMessage,
       setValue,
       completeConversation,
+      setCurrentConversation,
     ],
   );
 

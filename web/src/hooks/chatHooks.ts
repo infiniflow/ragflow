@@ -4,7 +4,7 @@ import {
   IStats,
   IToken,
 } from '@/interfaces/database/chat';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
 export const useFetchDialogList = () => {
@@ -297,5 +297,29 @@ export const useCompleteSharedConversation = () => {
   );
 
   return completeSharedConversation;
+};
+
+export const useCreatePublicUrlToken = (dialogId: string, visible: boolean) => {
+  const [token, setToken] = useState();
+  const createToken = useCreateToken(dialogId);
+  const { protocol, host } = window.location;
+
+  const urlWithToken = `${protocol}//${host}/chat/share?shared_id=${token}`;
+
+  const createUrlToken = useCallback(async () => {
+    if (visible) {
+      const data = await createToken();
+      const urlToken = data.data?.token;
+      if (urlToken) {
+        setToken(urlToken);
+      }
+    }
+  }, [createToken, visible]);
+
+  useEffect(() => {
+    createUrlToken();
+  }, [createUrlToken]);
+
+  return { token, createUrlToken, urlWithToken };
 };
 //#endregion
