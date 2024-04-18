@@ -41,7 +41,9 @@ class Recognizer(object):
                         "rag/res/deepdoc")
             model_file_path = os.path.join(model_dir, task_name + ".onnx")
             if not os.path.exists(model_file_path):
-                model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc")
+                model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
+                                              local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
+                                              local_dir_use_symlinks=False)
                 model_file_path = os.path.join(model_dir, task_name + ".onnx")
         else:
             model_file_path = os.path.join(model_dir, task_name + ".onnx")

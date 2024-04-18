@@ -43,7 +43,9 @@ class HuParser:
                 model_dir, "updown_concat_xgb.model"))
         except Exception as e:
             model_dir = snapshot_download(
-                repo_id="InfiniFlow/text_concat_xgb_v1.0")
+                repo_id="InfiniFlow/text_concat_xgb_v1.0",
+                local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
+                local_dir_use_symlinks=False)
             self.updown_cnt_mdl.load_model(os.path.join(
                 model_dir, "updown_concat_xgb.model"))
 
