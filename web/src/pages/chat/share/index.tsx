@@ -43,8 +43,8 @@ const SharedChat = () => {
         handlePressEnter={handlePressEnter}
         loading={loading}
         sendLoading={sendLoading}
-        ref={ref}
         conversation={currentConversation}
+        ref={ref}
       ></ChatContainer>
     </div>
   );
