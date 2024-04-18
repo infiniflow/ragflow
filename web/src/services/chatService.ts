@@ -76,7 +76,7 @@ const methods = {
   },
   createExternalConversation: {
     url: createExternalConversation,
-    method: 'post',
+    method: 'get',
   },
   getExternalConversation: {
     url: getExternalConversation,

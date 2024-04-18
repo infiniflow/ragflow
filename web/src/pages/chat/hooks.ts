@@ -715,6 +715,8 @@ export const useGetSendButtonDisabled = () => {
 
 type RangeValue = [Dayjs | null, Dayjs | null] | null;
 
+const getDay = (date: Dayjs) => date.format('YYYY-MM-DD');
+
 export const useFetchStatsOnMount = (visible: boolean) => {
   const fetchStats = useFetchStats();
   const [pickerValue, setPickerValue] = useState<RangeValue>([
@@ -724,7 +726,10 @@ export const useFetchStatsOnMount = (visible: boolean) => {
 
   useEffect(() => {
     if (visible && Array.isArray(pickerValue) && pickerValue[0]) {
-      fetchStats({ fromDate: pickerValue[0], toDate: pickerValue[1] });
+      fetchStats({
+        fromDate: getDay(pickerValue[0]),
+        toDate: getDay(pickerValue[1] ?? dayjs()),
+      });
     }
   }, [fetchStats, pickerValue, visible]);
 
