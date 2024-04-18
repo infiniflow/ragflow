@@ -208,20 +208,20 @@ docker compose up ragflow -d
 This exception occurs when starting up the RAGFlow server. Try the following: 
 
   1. Prolong the sleep time: Go to **docker/entrypoint.sh**, locate line 26, and replace `sleep 60` with `sleep 280`.
-  2. Go to **docker/docker-compose.yml**, add the following after line 109:
-  > If you are in a Windows machine,you should make sure the `entrypoint.sh` is LF end-lines.
+  2. If using Windows, ensure that the **entrypoint.sh** has LF end-lines.
+  3. Go to **docker/docker-compose.yml**, add the following after line 109:
   ```
   ./entrypoint.sh:/ragflow/entrypoint.sh
   ```
-  3. Change directory:
+  4. Change directory:
   ```bash
   cd docker
   ```
-  4. Stop the RAGFlow server:
+  5. Stop the RAGFlow server:
   ```bash
   docker compose stop
   ```
-  5. Restart up the RAGFlow server:
+  6. Restart up the RAGFlow server:
   ```bash
   docker compose up
   ```
