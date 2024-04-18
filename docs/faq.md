@@ -209,6 +209,7 @@ This exception occurs when starting up the RAGFlow server. Try the following:
 
   1. Prolong the sleep time: Go to **docker/entrypoint.sh**, locate line 26, and replace `sleep 60` with `sleep 280`.
   2. Go to **docker/docker-compose.yml**, add the following after line 109:
+  > If you are in a Windows machine,you should make sure the `entrypoint.sh` is LF end-lines.
   ```
   ./entrypoint.sh:/ragflow/entrypoint.sh
   ```
