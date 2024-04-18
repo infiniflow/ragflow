@@ -8,16 +8,20 @@ const registerServer = <T extends string>(
 ) => {
   const server: Service<T> = {} as Service<T>;
   for (let key in opt) {
-    server[key] = (params) => {
+    server[key] = (params: any, urlAppendix?: string) => {
+      let url = opt[key].url;
+      if (urlAppendix) {
+        url = url + '/' + urlAppendix;
+      }
       if (opt[key].method === 'post' || opt[key].method === 'POST') {
-        return request(opt[key].url, {
+        return request(url, {
           method: opt[key].method,
           data: params,
         });
       }
 
       if (opt[key].method === 'get' || opt[key].method === 'GET') {
-        return request.get(opt[key].url, {
+        return request.get(url, {
           params,
         });
       }

@@ -15,7 +15,7 @@
 #
 from peewee import Expression
 
-from api.db import TenantPermission, FileType, TaskStatus
+from api.db import FileType, TaskStatus
 from api.db.db_models import DB, Knowledgebase, Tenant
 from api.db.db_models import Document
 from api.db.services.common_service import CommonService

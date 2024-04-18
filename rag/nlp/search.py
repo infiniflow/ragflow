@@ -46,7 +46,7 @@ class Dealer:
             "k": topk,
             "similarity": sim,
             "num_candidates": topk * 2,
-            "query_vector": list(qv)
+            "query_vector": [float(v) for v in qv]
         }
 
     def search(self, req, idxnm, emb_mdl=None):
@@ -237,7 +237,7 @@ class Dealer:
             pieces_.append(t)
         es_logger.info("{} => {}".format(answer, pieces_))
         if not pieces_:
-            return answer
+            return answer, set([])
 
         ans_v, _ = embd_mdl.encode(pieces_)
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(

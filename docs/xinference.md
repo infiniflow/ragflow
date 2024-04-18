@@ -31,7 +31,7 @@ $ xinference launch -u mistral --model-name mistral-v0.1 --size-in-billions 7 --
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/bcbf4d7a-ade6-44c7-ad5f-0a92c8a73789" width="1300"/>
 </div>
 
-> Base URL: Enter the base URL where the Xinference service is accessible, like, http://<your-xinference-endpoint-domain>:9997/v1
+> Base URL: Enter the base URL where the Xinference service is accessible, like, `http://<your-xinference-endpoint-domain>:9997/v1`.
 
 - Use Xinference Models.
 

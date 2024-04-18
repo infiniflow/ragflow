@@ -35,7 +35,10 @@ import {
   useSelectFirstDialogOnMount,
 } from './hooks';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
+import { useSetSelectedRecord } from '@/hooks/logicHooks';
+import { IDialog } from '@/interfaces/database/chat';
+import ChatOverviewModal from './chat-overview-modal';
 import styles from './index.less';
 
 const Chat = () => {
@@ -73,6 +76,12 @@ const Chat = () => {
   const dialogLoading = useSelectDialogListLoading();
   const conversationLoading = useSelectConversationListLoading();
   const { t } = useTranslate('chat');
+  const {
+    visible: overviewVisible,
+    hideModal: hideOverviewModal,
+    showModal: showOverviewModal,
+  } = useSetModalState();
+  const { currentRecord, setRecord } = useSetSelectedRecord<IDialog>();
 
   useFetchDialogOnMount(dialogId, true);
 
@@ -98,6 +107,15 @@ const Chat = () => {
       domEvent.preventDefault();
       domEvent.stopPropagation();
       onRemoveDialog([dialogId]);
+    };
+
+  const handleShowOverviewModal =
+    (dialog: IDialog): any =>
+    (info: any) => {
+      info?.domEvent?.preventDefault();
+      info?.domEvent?.stopPropagation();
+      setRecord(dialog);
+      showOverviewModal();
     };
 
   const handleRemoveConversation =
@@ -141,7 +159,9 @@ const Chat = () => {
     },
   ];
 
-  const buildAppItems = (dialogId: string) => {
+  const buildAppItems = (dialog: IDialog) => {
+    const dialogId = dialog.id;
+
     const appItems: MenuProps['items'] = [
       {
         key: '1',
@@ -164,6 +184,17 @@ const Chat = () => {
           </Space>
         ),
       },
+      { type: 'divider' },
+      // {
+      //   key: '3',
+      //   onClick: handleShowOverviewModal(dialog),
+      //   label: (
+      //     <Space>
+      //       <ProfileOutlined />
+      //       {t('overview')}
+      //     </Space>
+      //   ),
+      // },
     ];
 
     return appItems;
@@ -230,7 +261,7 @@ const Chat = () => {
                     </Space>
                     {activated === x.id && (
                       <section>
-                        <Dropdown menu={{ items: buildAppItems(x.id) }}>
+                        <Dropdown menu={{ items: buildAppItems(x) }}>
                           <ChatAppCube
                             className={styles.cubeIcon}
                           ></ChatAppCube>
@@ -315,6 +346,11 @@ const Chat = () => {
         initialName={initialConversationName}
         loading={conversationRenameLoading}
       ></RenameModal>
+      <ChatOverviewModal
+        visible={overviewVisible}
+        hideModal={hideOverviewModal}
+        dialog={currentRecord}
+      ></ChatOverviewModal>
     </Flex>
   );
 };

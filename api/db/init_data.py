@@ -18,7 +18,7 @@ import time
 import uuid
 
 from api.db import LLMType, UserTenantRole
-from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM
+from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM
 from api.db.services import UserService
 from api.db.services.llm_service import LLMFactoriesService, LLMService, TenantLLMService, LLMBundle
 from api.db.services.user_service import TenantService, UserTenantService
@@ -109,9 +109,18 @@ factory_infos = [{
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
-},
-    {
+}, {
+    "name": "FastEmbed",
+    "logo": "",
+    "tags": "TEXT EMBEDDING",
+    "status": "1",
+}, {
     "name": "Xinference",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+        "status": "1",
+},{
+    "name": "QAnything",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
         "status": "1",
@@ -251,12 +260,6 @@ def init_llm_factory():
             "model_type": LLMType.CHAT.value
         }, {
             "fid": factory_infos[4]["name"],
-            "llm_name": "flag-embedding",
-            "tags": "TEXT EMBEDDING,",
-            "max_tokens": 128 * 1000,
-            "model_type": LLMType.EMBEDDING.value
-        }, {
-            "fid": factory_infos[4]["name"],
             "llm_name": "moonshot-v1-32k",
             "tags": "LLM,CHAT,",
             "max_tokens": 32768,
@@ -267,6 +270,66 @@ def init_llm_factory():
             "tags": "LLM,CHAT",
             "max_tokens": 128 * 1000,
             "model_type": LLMType.CHAT.value
+        },
+        # ------------------------ FastEmbed -----------------------
+        {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "BAAI/bge-small-en-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "BAAI/bge-small-zh-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "BAAI/bge-base-en-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "BAAI/bge-large-en-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "sentence-transformers/all-MiniLM-L6-v2",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "nomic-ai/nomic-embed-text-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 8192,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "jinaai/jina-embeddings-v2-small-en",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 2147483648,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[5]["name"],
+            "llm_name": "jinaai/jina-embeddings-v2-base-en",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 2147483648,
+            "model_type": LLMType.EMBEDDING.value
+        },
+        # ------------------------ QAnything -----------------------
+        {
+            "fid": factory_infos[7]["name"],
+            "llm_name": "maidalun1020/bce-embedding-base_v1",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
         },
     ]
     for info in factory_infos:
@@ -280,8 +343,10 @@ def init_llm_factory():
         except Exception as e:
             pass
 
-    LLMFactoriesService.filter_delete([LLMFactories.name=="Local"])
-    LLMService.filter_delete([LLM.fid=="Local"])
+    LLMFactoriesService.filter_delete([LLMFactories.name == "Local"])
+    LLMService.filter_delete([LLM.fid == "Local"])
+    LLMService.filter_delete([LLM.fid == "Moonshot", LLM.llm_name == "flag-embedding"])
+    TenantLLMService.filter_delete([TenantLLM.llm_factory == "Moonshot", TenantLLM.llm_name == "flag-embedding"])
 
     """
     drop table llm;

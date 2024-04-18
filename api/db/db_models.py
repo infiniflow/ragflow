@@ -754,15 +754,6 @@ class Dialog(DataBaseModel):
         db_table = "dialog"
 
 
-# class DialogKb(DataBaseModel):
-#     dialog_id = CharField(max_length=32, null=False, index=True)
-#     kb_id = CharField(max_length=32, null=False)
-#
-#     class Meta:
-#         db_table = "dialog_kb"
-#         primary_key = CompositeKey('dialog_id', 'kb_id')
-
-
 class Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
@@ -774,13 +765,26 @@ class Conversation(DataBaseModel):
         db_table = "conversation"
 
 
-"""
+class APIToken(DataBaseModel):
+    tenant_id = CharField(max_length=32, null=False)
+    token = CharField(max_length=255, null=False)
+    dialog_id = CharField(max_length=32, null=False, index=True)
 
     class Meta:
-        db_table = 't_pipeline_component_meta'
-        indexes = (
-            (('f_model_id', 'f_model_version', 'f_role', 'f_party_id', 'f_component_name'), True),
-        )
+        db_table = "api_token"
+        primary_key = CompositeKey('tenant_id', 'token')
 
 
-"""
+class API4Conversation(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    dialog_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=255, null=False, help_text="user_id")
+    message = JSONField(null=True)
+    reference = JSONField(null=True, default=[])
+    tokens = IntegerField(default=0)
+    duration = FloatField(default=0)
+    round = IntegerField(default=0)
+    thumb_up = IntegerField(default=0)
+
+    class Meta:
+        db_table = "api_4_conversation"

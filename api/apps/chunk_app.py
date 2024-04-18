@@ -60,7 +60,7 @@ def list():
         for id in sres.ids:
             d = {
                 "chunk_id": id,
-                "content_with_weight": rmSpace(sres.highlight[id]) if question and id in sres.highlight else sres.field[id].get(
+                "content_with_weight": rmSpace(sres.highlight[id]) if question and id in  sres.highlight else sres.field[id].get(
                     "content_with_weight", ""),
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
@@ -252,7 +252,7 @@ def retrieval_test():
             return get_data_error_result(retmsg="Knowledgebase not found!")
 
         embd_mdl = TenantLLMService.model_instance(
-            kb.tenant_id, LLMType.EMBEDDING.value)
+            kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
         ranks = retrievaler.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size, similarity_threshold,
                                       vector_similarity_weight, top, doc_ids)
         for c in ranks["chunks"]:

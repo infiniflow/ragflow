@@ -15,7 +15,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v1.0-brightgreen"
-            alt="docker pull ragflow:v1.0"></a>
+            alt="docker pull infiniflow/ragflow:v0.2.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
@@ -55,8 +55,10 @@
 
 ## 📌 Latest Features
 
+- 2024-04-16 Add an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding).
+- 2024-04-16 Add [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
 - 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 Add a new layout recognization model to the 'Laws' method.
+- 2024-04-10 Add a new layout recognization model for analyzing Laws documentation.
 - 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
 - 2024-04-07 Support Chinese UI.
 
@@ -137,7 +139,7 @@
    ```
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
-   > In the given scenario, you only need to enter `http://IP_OF_YOUR_MACHINE` (sans port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+   > In the given scenario, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
    > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
@@ -171,7 +173,7 @@ To build the Docker images from source:
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v1.0 .
+$ docker build -t infiniflow/ragflow:v0.2.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d

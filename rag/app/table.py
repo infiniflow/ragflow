@@ -199,7 +199,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                 re.sub(
                     r"(/.*|（[^（）]+?）|\([^()]+?\))",
                     "",
-                    n),
+                    str(n)),
                 '_')[0] for n in clmns]
         clmn_tys = []
         for j in range(len(clmns)):
@@ -208,7 +208,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], clmns[i].replace("_", " "))
+        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " "))
                      for i in range(len(clmns))]
 
         eng = lang.lower() == "english"  # is_english(txts)
@@ -223,8 +223,8 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                     continue
                 if not str(row[clmns[j]]):
                     continue
-                #if pd.isna(row[clmns[j]]):
-                #    continue
+                if pd.isna(row[clmns[j]]):
+                    continue
                 fld = clmns_map[j][0]
                 d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else huqie.qie(
                     row[clmns[j]])

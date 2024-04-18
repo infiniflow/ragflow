@@ -15,7 +15,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v1.0-brightgreen"
-            alt="docker pull ragflow:v1.0"></a>
+            alt="docker pull infiniflow/ragflow:v0.2.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
@@ -52,6 +52,15 @@
 - 大语言模型 LLM 以及向量模型均支持配置。
 - 基于多路召回、融合重排序。
 - 提供易用的 API，可以轻松集成到各类企业系统。
+
+## 📌 新增功能
+
+- 2024-04-16 添加嵌入模型 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) 。
+- 2024-04-16 添加 [FastEmbed](https://github.com/qdrant/fastembed) 专为轻型和高速嵌入而设计。
+- 2024-04-11 支持用 [Xinference](./docs/xinference.md) 本地化部署大模型。
+- 2024-04-10 为‘Laws’版面分析增加了底层模型。
+- 2024-04-08 支持用 [Ollama](./docs/ollama.md) 本地化部署大模型。
+- 2024-04-07 支持中文界面。
 
 ## 🔎 系统架构
 
@@ -164,18 +173,15 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v1.0 .
+$ docker build -t infiniflow/ragflow:v0.2.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🆕 最近新特性
+## 📚 技术文档
 
-- 2024-04-11 支持用 [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 为‘Laws’版面分析增加了模型。
-- 2024-04-08 支持用 [Ollama](./docs/ollama.md) 对大模型进行本地化部署。
-- 2024-04-07 支持中文界面。
+- [FAQ](./docs/faq.md)
 
 ## 📜 路线图
 
