@@ -832,9 +832,11 @@ class HuParser:
         bott = bx["bottom"] - self.page_cum_height[pn[0] - 1]
         page_images_cnt = len(self.page_images)
         if pn[-1] - 1 >= page_images_cnt: return ""
-        while pn[-1] - 1 < page_images_cnt and bott * ZM > self.page_images[pn[-1] - 1].size[1]:
+        while bott * ZM > self.page_images[pn[-1] - 1].size[1]:
             bott -= self.page_images[pn[-1] - 1].size[1] / ZM
             pn.append(pn[-1] + 1)
+            if pn[-1] - 1 >= page_images_cnt:
+                return ""
 
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
             .format("-".join([str(p) for p in pn]),
