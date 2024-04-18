@@ -4,7 +4,7 @@ import {
   IStats,
   IToken,
 } from '@/interfaces/database/chat';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
 export const useFetchDialogList = () => {
@@ -247,4 +247,79 @@ export const useSelectStats = () => {
   return stats;
 };
 
+//#endregion
+
+//#region shared chat
+
+export const useCreateSharedConversation = () => {
+  const dispatch = useDispatch();
+
+  const createSharedConversation = useCallback(
+    (userId?: string) => {
+      return dispatch<any>({
+        type: 'chatModel/createExternalConversation',
+        payload: { userId },
+      });
+    },
+    [dispatch],
+  );
+
+  return createSharedConversation;
+};
+
+export const useFetchSharedConversation = () => {
+  const dispatch = useDispatch();
+
+  const fetchSharedConversation = useCallback(
+    (conversationId: string) => {
+      return dispatch<any>({
+        type: 'chatModel/getExternalConversation',
+        payload: conversationId,
+      });
+    },
+    [dispatch],
+  );
+
+  return fetchSharedConversation;
+};
+
+export const useCompleteSharedConversation = () => {
+  const dispatch = useDispatch();
+
+  const completeSharedConversation = useCallback(
+    (payload: any) => {
+      return dispatch<any>({
+        type: 'chatModel/completeExternalConversation',
+        payload: payload,
+      });
+    },
+    [dispatch],
+  );
+
+  return completeSharedConversation;
+};
+
+export const useCreatePublicUrlToken = (dialogId: string, visible: boolean) => {
+  const [token, setToken] = useState();
+  const createToken = useCreateToken(dialogId);
+  const { protocol, host } = window.location;
+
+  const urlWithToken = `${protocol}//${host}/chat/share?shared_id=${token}`;
+
+  const createUrlToken = useCallback(async () => {
+    if (visible) {
+      const data = await createToken();
+      const urlToken = data.data?.token;
+      if (urlToken) {
+        setToken(urlToken);
+      }
+    }
+  }, [createToken, visible]);
+
+  useEffect(() => {
+    createUrlToken();
+  }, [createUrlToken]);
+
+  return { token, createUrlToken, urlWithToken };
+};
 //#endregion
