@@ -629,7 +629,7 @@ class Document(DataBaseModel):
         max_length=128,
         null=False,
         default="local",
-        help_text="where dose this document from")
+        help_text="where dose this document come from")
     type = CharField(max_length=32, null=False, help_text="file extension")
     created_by = CharField(
         max_length=32,

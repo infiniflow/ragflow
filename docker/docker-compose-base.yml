@@ -80,8 +80,8 @@ services:
     container_name: ragflow-minio
     command: server --console-address ":9001" /data
     ports:
-      - 9000:9000
-      - 9001:9001
+      - ${MINIO_PORT}:9000
+      - ${MINIO_CONSOLE_PORT}:9001
     environment:
       - MINIO_ROOT_USER=${MINIO_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
