@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 from typing import Optional
+
+from huggingface_hub import snapshot_download
 from zhipuai import ZhipuAI
 import os
 from abc import ABC
@@ -35,7 +37,10 @@ try:
         query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
         use_fp16=torch.cuda.is_available())
 except Exception as e:
-    flag_model = FlagModel("BAAI/bge-large-zh-v1.5",
+    model_dir = snapshot_download(repo_id="BAAI/bge-large-zh-v1.5",
+                                  local_dir=os.path.join(get_project_base_directory(), "rag/res/bge-large-zh-v1.5"),
+                                  local_dir_use_symlinks=False)
+    flag_model = FlagModel(model_dir,
                            query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
                            use_fp16=torch.cuda.is_available())
 

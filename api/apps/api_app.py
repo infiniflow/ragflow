@@ -105,8 +105,8 @@ def stats():
         res = {
             "pv": [(o["dt"], o["pv"]) for o in objs],
             "uv": [(o["dt"], o["uv"]) for o in objs],
-            "speed": [(o["dt"], o["tokens"]/o["duration"]) for o in objs],
-            "tokens": [(o["dt"], o["tokens"]/1000.) for o in objs],
+            "speed": [(o["dt"], float(o["tokens"])/float(o["duration"])) for o in objs],
+            "tokens": [(o["dt"], float(o["tokens"])/1000.) for o in objs],
             "round": [(o["dt"], o["round"]) for o in objs],
             "thumb_up": [(o["dt"], o["thumb_up"]) for o in objs]
         }
@@ -115,8 +115,7 @@ def stats():
         return server_error_response(e)
 
 
-@manager.route('/new_conversation', methods=['POST'])
-@validate_request("user_id")
+@manager.route('/new_conversation', methods=['GET'])
 def set_conversation():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
@@ -131,7 +130,7 @@ def set_conversation():
         conv = {
             "id": get_uuid(),
             "dialog_id": dia.id,
-            "user_id": req["user_id"],
+            "user_id": request.args.get("user_id", ""),
             "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
         }
         API4ConversationService.save(**conv)
