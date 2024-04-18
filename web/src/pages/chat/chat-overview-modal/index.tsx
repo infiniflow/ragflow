@@ -1,11 +1,15 @@
+import CopyToClipboard from '@/components/copy-to-clipboard';
 import LineChart from '@/components/line-chart';
+import { useCreatePublicUrlToken } from '@/hooks/chatHooks';
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
 import { IDialog, IStats } from '@/interfaces/database/chat';
+import { ReloadOutlined } from '@ant-design/icons';
 import { Button, Card, DatePicker, Flex, Modal, Space, Typography } from 'antd';
 import { RangePickerProps } from 'antd/es/date-picker';
 import dayjs from 'dayjs';
 import camelCase from 'lodash/camelCase';
+import { Link } from 'umi';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import { useFetchStatsOnMount, useSelectChartStatsList } from '../hooks';
 import styles from './index.less';
@@ -20,6 +24,10 @@ const ChatOverviewModal = ({
 }: IModalProps<any> & { dialog: IDialog }) => {
   const { t } = useTranslate('chat');
   const chartList = useSelectChartStatsList();
+  const { urlWithToken, createUrlToken, token } = useCreatePublicUrlToken(
+    dialog.id,
+    visible,
+  );
 
   const {
     visible: apiKeyVisible,
@@ -45,14 +53,20 @@ const ChatOverviewModal = ({
           <Card title={dialog.name}>
             <Flex gap={8} vertical>
               {t('publicUrl')}
-              <Paragraph copyable className={styles.linkText}>
-                This is a copyable text.
-              </Paragraph>
+              <Flex className={styles.linkText} gap={10}>
+                <span>{urlWithToken}</span>
+                <CopyToClipboard text={urlWithToken}></CopyToClipboard>
+                <ReloadOutlined onClick={createUrlToken} />
+              </Flex>
+              <Space size={'middle'}>
+                <Button>
+                  <Link to={`/chat/share?shared_id=${token}`} target="_blank">
+                    {t('preview')}
+                  </Link>
+                </Button>
+                <Button>{t('embedded')}</Button>
+              </Space>
             </Flex>
-            <Space size={'middle'}>
-              <Button>{t('preview')}</Button>
-              <Button>{t('embedded')}</Button>
-            </Space>
           </Card>
           <Card title={t('backendServiceApi')}>
             <Flex gap={8} vertical>

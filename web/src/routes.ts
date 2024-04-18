@@ -5,6 +5,11 @@ const routes = [
     layout: false,
   },
   {
+    path: '/chat/share',
+    component: '@/pages/chat/share',
+    layout: false,
+  },
+  {
     path: '/',
     component: '@/layouts',
     layout: false,
