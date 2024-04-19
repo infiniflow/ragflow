@@ -121,7 +121,6 @@ def dispatch():
                 tsks.append(new_task())
 
             bulk_insert_into_db(Task, tsks, True)
-            print("TSK:", len(tsks))
             set_dispatching(r["id"])
         except Exception as e:
             cron_logger.exception(e)
