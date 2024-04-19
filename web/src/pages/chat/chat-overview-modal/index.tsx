@@ -2,6 +2,7 @@ import LineChart from '@/components/line-chart';
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
 import { IDialog, IStats } from '@/interfaces/database/chat';
+import { formatDate } from '@/utils/date';
 import { Button, Card, DatePicker, Flex, Modal, Space, Typography } from 'antd';
 import { RangePickerProps } from 'antd/es/date-picker';
 import dayjs from 'dayjs';
@@ -19,13 +20,29 @@ import styles from './index.less';
 const { Paragraph } = Typography;
 const { RangePicker } = DatePicker;
 
+const StatsLineChart = ({ statsType }: { statsType: keyof IStats }) => {
+  const { t } = useTranslate('chat');
+  const chartList = useSelectChartStatsList();
+  const list =
+    chartList[statsType]?.map((x) => ({
+      ...x,
+      xAxis: formatDate(x.xAxis),
+    })) ?? [];
+
+  return (
+    <div className={styles.chartItem}>
+      <b className={styles.chartLabel}>{t(camelCase(statsType))}</b>
+      <LineChart data={list}></LineChart>
+    </div>
+  );
+};
+
 const ChatOverviewModal = ({
   visible,
   hideModal,
   dialog,
 }: IModalProps<any> & { dialog: IDialog }) => {
   const { t } = useTranslate('chat');
-  const chartList = useSelectChartStatsList();
   const {
     visible: apiKeyVisible,
     hideModal: hideApiKeyModal,
@@ -53,6 +70,8 @@ const ChatOverviewModal = ({
         title={t('overview')}
         open={visible}
         onCancel={hideModal}
+        cancelButtonProps={{ style: { display: 'none' } }}
+        onOk={hideModal}
         width={'100vw'}
       >
         <Flex vertical gap={'middle'}>
@@ -76,14 +95,8 @@ const ChatOverviewModal = ({
               </a>
             </Space>
           </Card>
-          <Card title={dialog.name}>
+          <Card title={`${dialog.name} Web App`}>
             <Flex gap={8} vertical>
-              {t('publicUrl')}
-              {/* <Flex className={styles.linkText} gap={10}>
-                <span>{urlWithToken}</span>
-                <CopyToClipboard text={urlWithToken}></CopyToClipboard>
-                <ReloadOutlined onClick={createUrlToken} />
-              </Flex> */}
               <Space size={'middle'}>
                 <Button onClick={handlePreview}>{t('preview')}</Button>
                 <Button onClick={showEmbedModal}>{t('embedded')}</Button>
@@ -101,12 +114,12 @@ const ChatOverviewModal = ({
             />
           </Space>
           <div className={styles.chartWrapper}>
-            {Object.keys(chartList).map((x) => (
-              <div key={x} className={styles.chartItem}>
-                <b className={styles.chartLabel}>{t(camelCase(x))}</b>
-                <LineChart data={chartList[x as keyof IStats]}></LineChart>
-              </div>
-            ))}
+            <StatsLineChart statsType={'pv'}></StatsLineChart>
+            <StatsLineChart statsType={'round'}></StatsLineChart>
+            <StatsLineChart statsType={'speed'}></StatsLineChart>
+            <StatsLineChart statsType={'thumb_up'}></StatsLineChart>
+            <StatsLineChart statsType={'tokens'}></StatsLineChart>
+            <StatsLineChart statsType={'uv'}></StatsLineChart>
           </div>
         </Flex>
         <ChatApiKeyModal
