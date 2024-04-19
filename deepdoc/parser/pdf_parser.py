@@ -64,7 +64,7 @@ class HuParser:
         """
 
     def __char_width(self, c):
-        return (c["x1"] - c["x0"]) // len(c["text"])
+        return (c["x1"] - c["x0"]) // max(len(c["text"]), 1)
 
     def __height(self, c):
         return c["bottom"] - c["top"]
