@@ -68,7 +68,7 @@ class Dealer:
         pg = int(req.get("page", 1)) - 1
         ps = int(req.get("size", 1000))
         topk = int(req.get("topk", 1024))
-        src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id",
+        src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
                                  "image_id", "doc_id", "q_512_vec", "q_768_vec", "position_int",
                                  "q_1024_vec", "q_1536_vec", "available_int", "content_with_weight"])
 
@@ -289,8 +289,18 @@ class Dealer:
                 sres.field[i].get("q_%d_vec" % len(sres.query_vector), "\t".join(["0"] * len(sres.query_vector)))) for i in sres.ids]
         if not ins_embd:
             return [], [], []
-        ins_tw = [sres.field[i][cfield].split(" ")
-                  for i in sres.ids]
+
+        for i in sres.ids:
+            if isinstance(sres.field[i].get("important_kwd", []), str):
+                sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
+        ins_tw = []
+        for i in sres.ids:
+            content_ltks = sres.field[i][cfield].split(" ")
+            title_tks = [t for t in sres.field[i].get("title_tks", "").split(" ") if t]
+            important_kwd = sres.field[i].get("important_kwd", [])
+            tks = content_ltks + title_tks + important_kwd
+            ins_tw.append(tks)
+
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                                         ins_embd,
                                                         keywords,
@@ -368,7 +378,7 @@ class Dealer:
 
     def sql_retrieval(self, sql, fetch_size=128, format="json"):
         from api.settings import chat_logger
-        sql = re.sub(r"[ ]+", " ", sql)
+        sql = re.sub(r"[ `]+", " ", sql)
         sql = sql.replace("%", "")
         es_logger.info(f"Get es sql: {sql}")
         replaces = []

@@ -19,6 +19,7 @@ import logging
 import os
 import hashlib
 import copy
+import random
 import re
 import sys
 import time
@@ -92,6 +93,7 @@ def set_progress(task_id, from_page=0, to_page=-1,
 
 def collect(comm, mod, tm):
     tasks = TaskService.get_tasks(tm, mod, comm)
+    #print(tasks)
     if len(tasks) == 0:
         time.sleep(1)
         return pd.DataFrame()
@@ -243,6 +245,7 @@ def main(comm, mod):
     tmf = open(tm_fnm, "a+")
     for _, r in rows.iterrows():
         callback = partial(set_progress, r["id"], r["from_page"], r["to_page"])
+        #callback(random.random()/10., "Task has been received.")
         try:
             embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING, llm_name=r["embd_id"], lang=r["language"])
         except Exception as e:
@@ -300,9 +303,8 @@ if __name__ == "__main__":
     peewee_logger.addHandler(database_logger.handlers[0])
     peewee_logger.setLevel(database_logger.level)
 
-    from mpi4py import MPI
-
-    comm = MPI.COMM_WORLD
+    #from mpi4py import MPI
+    #comm = MPI.COMM_WORLD
     while True:
         main(int(sys.argv[2]), int(sys.argv[1]))
         close_connection()

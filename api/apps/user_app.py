@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import re
+from datetime import datetime
 
 from flask import request, session, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -22,7 +23,7 @@ from flask_login import login_required, current_user, login_user, logout_user
 from api.db.db_models import TenantLLM
 from api.db.services.llm_service import TenantLLMService, LLMService
 from api.utils.api_utils import server_error_response, validate_request
-from api.utils import get_uuid, get_format_time, decrypt, download_img
+from api.utils import get_uuid, get_format_time, decrypt, download_img, current_timestamp, datetime_format
 from api.db import UserTenantRole, LLMType
 from api.settings import RetCode, GITHUB_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, API_KEY, \
     LLM_FACTORY, LLM_BASE_URL
@@ -56,6 +57,8 @@ def login():
         response_data = user.to_json()
         user.access_token = get_uuid()
         login_user(user)
+        user.update_time = current_timestamp(),
+        user.update_date = datetime_format(datetime.now()),
         user.save()
         msg = "Welcome back!"
         return cors_reponse(data=response_data, auth=user.get_id(), retmsg=msg)

@@ -3,6 +3,8 @@ from openpyxl import load_workbook
 import sys
 from io import BytesIO
 
+from rag.nlp import find_codec
+
 
 class HuExcelParser:
     def html(self, fnm):
@@ -66,7 +68,8 @@ class HuExcelParser:
                 return total
 
         if fnm.split(".")[-1].lower() in ["csv", "txt"]:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding)
             return len(txt.split("\n"))
 
 
