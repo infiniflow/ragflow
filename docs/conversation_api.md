@@ -1,4 +1,4 @@
-# Conversation API Instruction
+# Chat Bot API Instruction
 
 ## Base URL
 ```buildoutcfg
