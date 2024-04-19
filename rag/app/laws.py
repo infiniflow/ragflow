@@ -17,7 +17,7 @@ from docx import Document
 
 from api.db import ParserType
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
-    make_colon_as_title, add_positions, tokenize_chunks
+    make_colon_as_title, add_positions, tokenize_chunks, find_codec
 from rag.nlp import huqie
 from deepdoc.parser import PdfParser, DocxParser, PlainParser
 from rag.settings import cron_logger
@@ -111,7 +111,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding)
         else:
             with open(filename, "r") as f:
                 while True:
