@@ -6,10 +6,10 @@ import { Avatar, Button, Flex, Input, Skeleton, Spin } from 'antd';
 import classNames from 'classnames';
 import { useSelectConversationLoading } from '../hooks';
 
+import HightLightMarkdown from '@/components/highlight-markdown';
 import React, { ChangeEventHandler, forwardRef } from 'react';
 import { IClientConversation } from '../interface';
 import styles from './index.less';
-import SharedMarkdown from './shared-markdown';
 
 const MessageItem = ({ item }: { item: Message }) => {
   const isAssistant = item.role === MessageType.Assistant;
@@ -46,7 +46,7 @@ const MessageItem = ({ item }: { item: Message }) => {
             <b>{isAssistant ? '' : 'You'}</b>
             <div className={styles.messageText}>
               {item.content !== '' ? (
-                <SharedMarkdown content={item.content}></SharedMarkdown>
+                <HightLightMarkdown>{item.content}</HightLightMarkdown>
               ) : (
                 <Skeleton active className={styles.messageEmpty} />
               )}

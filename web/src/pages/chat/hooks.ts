@@ -14,15 +14,21 @@ import {
   useRemoveToken,
   useSelectConversationList,
   useSelectDialogList,
+  useSelectStats,
   useSelectTokenList,
   useSetDialog,
   useUpdateConversation,
 } from '@/hooks/chatHooks';
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/commonHooks';
+import {
+  useSetModalState,
+  useShowDeleteConfirm,
+  useTranslate,
+} from '@/hooks/commonHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IConversation, IDialog, IStats } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
+import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import omit from 'lodash/omit';
 import {
@@ -777,35 +783,35 @@ type ChartStatsType = {
 };
 
 export const useSelectChartStatsList = (): ChartStatsType => {
-  // const stats: IStats = useSelectStats();
-  const stats = {
-    pv: [
-      ['2024-06-01', 1],
-      ['2024-07-24', 3],
-      ['2024-09-01', 10],
-    ],
-    uv: [
-      ['2024-02-01', 0],
-      ['2024-03-01', 99],
-      ['2024-05-01', 3],
-    ],
-    speed: [
-      ['2024-09-01', 2],
-      ['2024-09-01', 3],
-    ],
-    tokens: [
-      ['2024-09-01', 1],
-      ['2024-09-01', 3],
-    ],
-    round: [
-      ['2024-09-01', 0],
-      ['2024-09-01', 3],
-    ],
-    thumb_up: [
-      ['2024-09-01', 3],
-      ['2024-09-01', 9],
-    ],
-  };
+  const stats: IStats = useSelectStats();
+  // const stats = {
+  //   pv: [
+  //     ['2024-06-01', 1],
+  //     ['2024-07-24', 3],
+  //     ['2024-09-01', 10],
+  //   ],
+  //   uv: [
+  //     ['2024-02-01', 0],
+  //     ['2024-03-01', 99],
+  //     ['2024-05-01', 3],
+  //   ],
+  //   speed: [
+  //     ['2024-09-01', 2],
+  //     ['2024-09-01', 3],
+  //   ],
+  //   tokens: [
+  //     ['2024-09-01', 1],
+  //     ['2024-09-01', 3],
+  //   ],
+  //   round: [
+  //     ['2024-09-01', 0],
+  //     ['2024-09-01', 3],
+  //   ],
+  //   thumb_up: [
+  //     ['2024-09-01', 3],
+  //     ['2024-09-01', 9],
+  //   ],
+  // };
 
   return Object.keys(stats).reduce((pre, cur) => {
     const item = stats[cur as keyof IStats];
@@ -817,6 +823,95 @@ export const useSelectChartStatsList = (): ChartStatsType => {
     }
     return pre;
   }, {} as ChartStatsType);
+};
+
+export const useShowTokenEmptyError = () => {
+  const [messageApi, contextHolder] = message.useMessage();
+  const { t } = useTranslate('chat');
+
+  const showTokenEmptyError = useCallback(() => {
+    messageApi.error(t('tokenError'));
+  }, [messageApi, t]);
+  return { showTokenEmptyError, contextHolder };
+};
+
+const getUrlWithToken = (token: string) => {
+  const { protocol, host } = window.location;
+  return `${protocol}//${host}/chat/share?shared_id=${token}`;
+};
+
+const useFetchTokenListBeforeOtherStep = (dialogId: string) => {
+  const { showTokenEmptyError, contextHolder } = useShowTokenEmptyError();
+
+  const listToken = useListToken();
+  const tokenList = useSelectTokenList();
+
+  const token =
+    Array.isArray(tokenList) && tokenList.length > 0 ? tokenList[0].token : '';
+
+  const handleOperate = useCallback(async () => {
+    const data = await listToken(dialogId);
+    const list = data.data;
+    if (data.retcode === 0 && Array.isArray(list) && list.length > 0) {
+      return list[0]?.token;
+    } else {
+      showTokenEmptyError();
+      return false;
+    }
+  }, [dialogId, listToken, showTokenEmptyError]);
+
+  return {
+    token,
+    contextHolder,
+    handleOperate,
+  };
+};
+
+export const useShowEmbedModal = (dialogId: string) => {
+  const {
+    visible: embedVisible,
+    hideModal: hideEmbedModal,
+    showModal: showEmbedModal,
+  } = useSetModalState();
+
+  const { handleOperate, token, contextHolder } =
+    useFetchTokenListBeforeOtherStep(dialogId);
+
+  const handleShowEmbedModal = useCallback(async () => {
+    const succeed = await handleOperate();
+    if (succeed) {
+      showEmbedModal();
+    }
+  }, [handleOperate, showEmbedModal]);
+
+  return {
+    showEmbedModal: handleShowEmbedModal,
+    hideEmbedModal,
+    embedVisible,
+    embedToken: token,
+    errorContextHolder: contextHolder,
+  };
+};
+
+export const usePreviewChat = (dialogId: string) => {
+  const { handleOperate, contextHolder } =
+    useFetchTokenListBeforeOtherStep(dialogId);
+
+  const open = useCallback((t: string) => {
+    window.open(getUrlWithToken(t), '_blank');
+  }, []);
+
+  const handlePreview = useCallback(async () => {
+    const token = await handleOperate();
+    if (token) {
+      open(token);
+    }
+  }, [handleOperate, open]);
+
+  return {
+    handlePreview,
+    contextHolder,
+  };
 };
 
 //#endregion
