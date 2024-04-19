@@ -1,5 +1,9 @@
 # Chat Bot API Instruction
 
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/infiniflow/ragflow/assets/12318111/df0dcc3d-789a-44f7-89f1-7a5f044ab729" width="830"/>
+</div>
+
 ## Base URL
 ```buildoutcfg
 https://demo.ragflow.io/v1/
