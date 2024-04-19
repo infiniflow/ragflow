@@ -15,7 +15,7 @@ from copy import deepcopy
 from io import BytesIO
 from nltk import word_tokenize
 from openpyxl import load_workbook
-from rag.nlp import is_english, random_choices
+from rag.nlp import is_english, random_choices, find_codec
 from rag.nlp import huqie
 from deepdoc.parser import ExcelParser
 
@@ -106,7 +106,8 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding)
         else:
             with open(filename, "r") as f:
                 while True:

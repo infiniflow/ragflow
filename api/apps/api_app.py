@@ -105,7 +105,7 @@ def stats():
         res = {
             "pv": [(o["dt"], o["pv"]) for o in objs],
             "uv": [(o["dt"], o["uv"]) for o in objs],
-            "speed": [(o["dt"], float(o["tokens"])/float(o["duration"])) for o in objs],
+            "speed": [(o["dt"], float(o["tokens"])/(float(o["duration"]+0.1))) for o in objs],
             "tokens": [(o["dt"], float(o["tokens"])/1000.) for o in objs],
             "round": [(o["dt"], o["round"]) for o in objs],
             "thumb_up": [(o["dt"], o["thumb_up"]) for o in objs]
@@ -176,7 +176,6 @@ def completion():
         conv.reference.append(ans["reference"])
         conv.message.append({"role": "assistant", "content": ans["answer"]})
         API4ConversationService.append_message(conv.id, conv.to_dict())
-        APITokenService.APITokenService(token)
         return get_json_result(data=ans)
     except Exception as e:
         return server_error_response(e)
