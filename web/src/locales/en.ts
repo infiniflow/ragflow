@@ -349,7 +349,7 @@ export default {
         'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).',
       quote: 'Show Quote',
       quoteTip: 'Should the source of the original text be displayed?',
-      overview: 'Overview',
+      overview: 'API',
       pv: 'Number of messages',
       uv: 'Active user number',
       speed: 'Token output speed',
@@ -367,6 +367,14 @@ export default {
       createNewKey: 'Create new key',
       created: 'Created',
       action: 'Action',
+      embedModalTitle: 'Embed into website',
+      comingSoon: 'Coming Soon',
+      fullScreenTitle: 'Full Embed',
+      fullScreenDescription:
+        'Embed the following iframe into your website at the desired location',
+      partialTitle: 'Partial Embed',
+      extensionTitle: 'Chrome Extension',
+      tokenError: 'Please create API Token first!',
     },
     setting: {
       profile: 'Profile',

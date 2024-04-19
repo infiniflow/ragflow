@@ -2,7 +2,11 @@ import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import remarkGfm from 'remark-gfm';
 
-const SharedMarkdown = ({ content }: { content: string }) => {
+const HightLightMarkdown = ({
+  children,
+}: {
+  children: string | null | undefined;
+}) => {
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}
@@ -24,9 +28,9 @@ const SharedMarkdown = ({ content }: { content: string }) => {
         } as any
       }
     >
-      {content}
+      {children}
     </Markdown>
   );
 };
 
-export default SharedMarkdown;
+export default HightLightMarkdown;

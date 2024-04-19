@@ -202,7 +202,7 @@ const model: DvaModel<ChatModelState> = {
           payload: data.data,
         });
       }
-      return data.retcode;
+      return data;
     },
     *removeToken({ payload }, { call, put }) {
       const { data } = yield call(
