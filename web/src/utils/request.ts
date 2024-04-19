@@ -98,8 +98,8 @@ request.interceptors.request.use((url: string, options: any) => {
     url,
     options: {
       ...options,
-      // data,
-      // params,
+      data,
+      params,
       headers: {
         ...(options.skipToken ? undefined : { [Authorization]: authorization }),
         ...options.headers,
