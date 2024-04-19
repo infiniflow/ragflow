@@ -12,7 +12,7 @@
 #
 import re
 from rag.app import laws
-from rag.nlp import huqie, tokenize
+from rag.nlp import huqie, tokenize, find_codec
 from deepdoc.parser import PdfParser, ExcelParser, PlainParser
 
 
@@ -82,7 +82,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding)
         else:
             with open(filename, "r") as f:
                 while True:

@@ -20,7 +20,7 @@ from openpyxl import load_workbook
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from rag.nlp import huqie, is_english, tokenize
+from rag.nlp import huqie, is_english, tokenize, find_codec
 from deepdoc.parser import ExcelParser
 
 
@@ -147,7 +147,8 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding)
         else:
             with open(filename, "r") as f:
                 while True:
