@@ -55,7 +55,7 @@
 
 ## 📌 Latest Features
 
-- 2024-04-19 Support conversation API([detail](./docs/conversation_api.md)).
+- 2024-04-19 Support conversation API ([detail](./docs/conversation_api.md)).
 - 2024-04-16 Add an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding).
 - 2024-04-16 Add [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
 - 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
