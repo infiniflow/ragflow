@@ -97,3 +97,14 @@ class KnowledgebaseService(CommonService):
             if k.parser_config and "field_map" in k.parser_config:
                 conf.update(k.parser_config["field_map"])
         return conf
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_name(cls, kb_name):
+        kb = cls.model.select().where(
+            (cls.model.name == kb_name)
+            & (cls.model.status == StatusEnum.VALID.value)
+        )
+        if not kb:
+            return False, None
+        return True, kb

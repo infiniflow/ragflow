@@ -120,15 +120,6 @@ class CommonService:
 
     @classmethod
     @DB.connection_context()
-    def get_by_name(cls, name):
-        try:
-            obj = cls.model.query(name=name)[0]
-            return True, obj
-        except Exception as e:
-            return False, None
-
-    @classmethod
-    @DB.connection_context()
     def get_by_ids(cls, pids, cols=None):
         if cols:
             objs = cls.model.select(*cols)
