@@ -39,7 +39,7 @@ No, this feature is still in development. Contributions are welcome.
 
 ### 4. Is it possible to share dialogue through URL?
 
-Yes, this feature is now available..
+Yes, this feature is now available.
 
 ### 5. Do you support multiple rounds of dialogues, i.e., referencing previous dialogues as context for the current dialogue?
 
@@ -48,7 +48,7 @@ This feature and the related APIs are still in development. Contributions are we
 
 ## Troubleshooting
 
-### 1. Issues with docker images.
+### 1. Issues with docker images
 
 #### 1.1 Due to the fast iteration of RAGFlow updates, it is recommended to build the image from scratch.
 
@@ -61,7 +61,7 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-#### 1.2 `process "/bin/sh -c cd ./web && npm i && npm run build"` failed.
+#### 1.2 `process "/bin/sh -c cd ./web && npm i && npm run build"` failed
 
 1. Check your network from within Docker, for example:
 ```bash
@@ -116,9 +116,13 @@ networks:
 
 Ignore this warning and continue. All system warnings can be ignored.
 
-#### 3.2 Could not login and see the networking error message on the login window.
+#### 3.2 `network anomaly There is an abnormality in your network and you cannot connect to the server.`
 
-You can only log in after the server has been initialized after you see the following message through `docker logs -f ragflow-server`:
+![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
+
+You will not log in to RAGFlow unless the server is fully initialized. Run `docker logs -f ragflow-server`.
+
+*The server is successfully initialized, if your system displays the following:*
 
 ```
     ____                 ______ __
@@ -135,12 +139,11 @@ You can only log in after the server has been initialized after you see the foll
 ```
 
 
-### 4. Issues with backend services within RAGFlow.
+### 4. Issues with RAGFlow backend services
 
 #### 4.1 `dependency failed to start: container ragflow-mysql is unhealthy`
 
-`dependency failed to start: container ragflow-mysql is unhealthy` means that your MySQL container failed to start. You could try to replace `mysql:5.7.18` with `mariadb:10.5.8` in **docker-compose-base.yml** if mysql could not start.
-
+`dependency failed to start: container ragflow-mysql is unhealthy` means that your MySQL container failed to start. Try replacing `mysql:5.7.18` with `mariadb:10.5.8` in **docker-compose-base.yml** if mysql fails to start.
 
 #### 4.2 `Realtime synonym is disabled, since no redis connection`
 
@@ -202,8 +205,7 @@ $ docker ps
 91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
 ```
 
-2. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-start-up-the-server). You also need to edit `/etc/sysctl.conf` to guarantee the value of `vm.max_map_count`.
-
+2. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-start-up-the-server). Updating the `vm.max_map_count` value in **/etc/sysctl.conf** is required, if you wish to keep your change permanent. This configuration is only useful for Linux.
 
 
 3. If your issue persists, ensure that the ES host setting is correct:
