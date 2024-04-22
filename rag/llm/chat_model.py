@@ -153,7 +153,7 @@ class OllamaChat(Base):
                 options=options
             )
             ans = response["message"]["content"].strip()
-            return ans, response["eval_count"] + response["prompt_eval_count"]
+            return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
