@@ -93,7 +93,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
     pdf_parser = None
     sections = []
-    if re.search(r"\.docx?$", filename, re.IGNORECASE):
+    if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         for txt in Docx()(filename, binary):
             sections.append(txt)
