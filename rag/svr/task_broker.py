@@ -32,6 +32,7 @@ from api.db.services.document_service import DocumentService
 from api.settings import database_logger
 from api.utils import get_format_time, get_uuid
 from api.utils.file_utils import get_project_base_directory
+from rag.utils.redis_conn import REDIS_CONN
 
 
 def collect(tm):
@@ -84,10 +85,16 @@ def dispatch():
 
         tsks = []
         try:
+            file_bin = MINIO.get(r["kb_id"], r["location"])
+            if REDIS_CONN.is_alive():
+                try:
+                    REDIS_CONN.set("{}/{}".format(r["kb_id"], r["location"]), file_bin, 12*60)
+                except Exception as e:
+                    cron_logger.warning("Put into redis[EXCEPTION]:" + str(e))
+
             if r["type"] == FileType.PDF.value:
                 do_layout = r["parser_config"].get("layout_recognize", True)
-                pages = PdfParser.total_page_number(
-                        r["name"], MINIO.get(r["kb_id"], r["location"]))
+                pages = PdfParser.total_page_number(r["name"], file_bin)
                 page_size = r["parser_config"].get("task_page_size", 12)
                 if r["parser_id"] == "paper":
                     page_size = r["parser_config"].get("task_page_size", 22)
@@ -110,8 +117,7 @@ def dispatch():
 
             elif r["parser_id"] == "table":
                 rn = HuExcelParser.row_number(
-                    r["name"], MINIO.get(
-                        r["kb_id"], r["location"]))
+                    r["name"], file_bin)
                 for i in range(0, rn, 3000):
                     task = new_task()
                     task["from_page"] = i

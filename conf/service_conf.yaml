@@ -13,11 +13,16 @@ minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
   host: 'minio:9000'
+redis:
+  db: 1
+  password: 'infini_rag_flow'
+  host: 'redis:6379'
 es:
   hosts: 'http://es01:9200'
 user_default_llm:
   factory: 'Tongyi-Qianwen'
   api_key: 'sk-xxxxxxxxxxxxx'
+  base_url: ''
 oauth:
   github:
     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
