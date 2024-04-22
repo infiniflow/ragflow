@@ -76,14 +76,13 @@ You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow
 
 ## Debugging
 ### If https://huggingface.co can not be accessed
-	- If RAGflow is installed by docker, it will automatically download the OCR and embedding modules from Huggingface website (https://huggingface.co).
-	- If your computer can not access https://huggingface.co, such error will appear and PDF file parsing will fail
-		-
-		  > FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'  
-	- if your computer can access https://hf-mirror.com
-		- cd ragflow-0.3.0/docker/; docker compose down
-		- replace https://huggingface.co with https://hf-mirror.com in the ragflow-0.3.0/docker/docker-compose.yml
-		- docker compose up -d
+ - If RAGflow is installed by docker, it will automatically download the OCR and embedding modules from Huggingface website (https://huggingface.co).
+ - If your computer can not access https://huggingface.co, such error will appear and PDF file parsing will fail
+   - FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'  
+ - if your computer can access https://hf-mirror.com
+   - cd ragflow-0.3.0/docker/; docker compose down
+   - replace https://huggingface.co with https://hf-mirror.com in the ragflow-0.3.0/docker/docker-compose.yml
+   - docker compose up -d
 
 ### `WARNING: can't find /raglof/rag/res/borker.tm`
 
