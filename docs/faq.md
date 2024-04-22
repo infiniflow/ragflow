@@ -66,9 +66,9 @@ $ docker compose up -d
 1. First of all, you need to test whether the network could work within docker through such commands as `curl https://hf-mirror.com`.
 2. If the network does not have any problems, it means that there is a problem within the docker network configuration, adjust the docker building accordingly:
 ```
-#Original：
+# Original：
 docker build -t infiniflow/ragflow:v0.3.0 .
-#Current：
+# Current：
 docker build -t infiniflow/ragflow:v0.3.0 . --network host
 ```
 
