@@ -119,7 +119,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     res = []
     pdf_parser = None
     sections = []
-    if re.search(r"\.docx?$", filename, re.IGNORECASE):
+    if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = Docx()(filename, binary)
         res = tokenize_table(tbls, doc, eng)
