@@ -85,9 +85,7 @@ This error suggests that you do not have Internet access or are unable to connec
 - ~/deepdoc:/ragflow/rag/res/deepdoc
 ```
 
-#### 2.2 `FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/FileNotFoundError: `
-
-#### `[Errno 2] No such file or directory: '/ragflow/rag/res/deepdoc/ocr.res'be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'`
+#### 2.2 `FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/FileNotFoundError: [Errno 2] No such file or directory: '/ragflow/rag/res/deepdoc/ocr.res'be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'`
 
 1. First of all, you need to test whether the network could work within docker through such commands as `curl https://hf-mirror.com`.
 2. Using `ifconfig` to see the `mtu` value under your environments. If the `mtu` of the server is `1450`, while the `mtu` of the NIC in the container is `1500`, it will lead to the unstable networking. Modify the `mtu` policy as follows:
