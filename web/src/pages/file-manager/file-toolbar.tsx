@@ -23,23 +23,21 @@ import {
   useFetchDocumentListOnMount,
   useGetPagination,
   useHandleSearchChange,
-  useNavigateToOtherPage,
 } from './hooks';
+
 import styles from './index.less';
 
 interface IProps {
   selectedRowKeys: string[];
-  showCreateModal(): void;
 }
 
-const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
+const FileToolbar = ({ selectedRowKeys }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const { setPagination, searchString } = useGetPagination(fetchDocumentList);
   const { handleInputChange } = useHandleSearchChange(setPagination);
   const removeDocument = useRemoveDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
-  const { linkToUploadPage } = useNavigateToOtherPage();
   const runDocumentByIds = useRunDocument();
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const changeStatus = useSetDocumentStatus();
@@ -48,7 +46,6 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
     return [
       {
         key: '1',
-        onClick: linkToUploadPage,
         label: (
           <div>
             <Button type="link">
@@ -63,7 +60,6 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
       { type: 'divider' },
       {
         key: '2',
-        onClick: showCreateModal,
         label: (
           <div>
             <Button type="link">
@@ -75,7 +71,7 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
         // disabled: true,
       },
     ];
-  }, [linkToUploadPage, showCreateModal, t]);
+  }, [t]);
 
   const handleDelete = useCallback(() => {
     showDeleteConfirm({
@@ -226,4 +222,4 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
   );
 };
 
-export default DocumentToolbar;
+export default FileToolbar;
