@@ -66,6 +66,8 @@ class Docx(DocxParser):
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
+        from timeit import default_timer as timer
+        start = timer()
         callback(msg="OCR is  running...")
         self.__images__(
             filename if not binary else binary,
@@ -75,8 +77,8 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished")
+        cron_logger.info("OCR: {}".format(timer() - start))
 
-        from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.63, "Layout analysis finished.")
@@ -90,7 +92,7 @@ class Pdf(PdfParser):
         self._concat_downward()
         #self._filter_forpages()
 
-        cron_logger.info("paddle layouts:".format(
+        cron_logger.info("paddle layouts: {}".format(
             (timer() - start) / (self.total_page + 0.1)))
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], tbls
@@ -117,7 +119,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     res = []
     pdf_parser = None
     sections = []
-    if re.search(r"\.docx?$", filename, re.IGNORECASE):
+    if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = Docx()(filename, binary)
         res = tokenize_table(tbls, doc, eng)
@@ -135,7 +137,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         excel_parser = ExcelParser()
         sections = [(excel_parser.html(binary), "")]
 
-    elif re.search(r"\.txt$", filename, re.IGNORECASE):
+    elif re.search(r"\.(txt|md)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:

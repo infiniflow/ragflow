@@ -60,7 +60,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     eng = lang.lower() == "english"  # is_english(cks)
 
-    if re.search(r"\.docx?$", filename, re.IGNORECASE):
+    if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = [txt for txt in laws.Docx()(filename, binary) if txt]
         callback(0.8, "Finish parsing.")
