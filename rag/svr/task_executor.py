@@ -19,13 +19,12 @@ import logging
 import os
 import hashlib
 import copy
-import random
 import re
 import sys
 import time
 import traceback
 from functools import partial
-
+from rag.utils import MINIO
 from api.db.db_models import close_connection
 from rag.settings import database_logger
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
@@ -35,7 +34,7 @@ from elasticsearch_dsl import Q
 from multiprocessing.context import TimeoutError
 from api.db.services.task_service import TaskService
 from rag.utils import ELASTICSEARCH
-from rag.utils import MINIO
+from timeit import default_timer as timer
 from rag.utils import rmSpace, findMaxTm
 
 from rag.nlp import search
@@ -48,6 +47,7 @@ from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.utils.file_utils import get_project_base_directory
+from rag.utils.redis_conn import REDIS_CONN
 
 BATCH_SIZE = 64
 
@@ -105,11 +105,16 @@ def collect(comm, mod, tm):
 
 def get_minio_binary(bucket, name):
     global MINIO
+    if REDIS_CONN.is_alive():
+        try:
+            r = REDIS_CONN.get("{}/{}".format(bucket, name))
+            if r: return r
+        except Exception as e:
+            cron_logger.warning("Get redis[EXCEPTION]:" + str(e))
     return MINIO.get(bucket, name)
 
 
 def build(row):
-    from timeit import default_timer as timer
     if row["size"] > DOC_MAXIMUM_SIZE:
         set_progress(row["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
                      (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
@@ -265,6 +270,7 @@ def main(comm, mod):
         callback(
             msg="Finished slicing files(%d). Start to embedding the content." %
             len(cks))
+        st = timer()
         try:
             tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
         except Exception as e:
@@ -272,9 +278,10 @@ def main(comm, mod):
             cron_logger.error(str(e))
             tk_count = 0
 
-        callback(msg="Finished embedding! Start to build index!")
+        callback(msg="Finished embedding({})! Start to build index!".format(timer()-st))
         init_kb(r)
         chunk_count = len(set([c["_id"] for c in cks]))
+        st = timer()
         es_r = ELASTICSEARCH.bulk(cks, search.index_name(r["tenant_id"]))
         if es_r:
             callback(-1, "Index failure!")
@@ -290,8 +297,8 @@ def main(comm, mod):
             DocumentService.increment_chunk_num(
                 r["doc_id"], r["kb_id"], tk_count, chunk_count, 0)
             cron_logger.info(
-                "Chunk doc({}), token({}), chunks({})".format(
-                    r["id"], tk_count, len(cks)))
+                "Chunk doc({}), token({}), chunks({}), elapsed:{}".format(
+                    r["id"], tk_count, len(cks), timer()-st))
 
         tmf.write(str(r["update_time"]) + "\n")
     tmf.close()
