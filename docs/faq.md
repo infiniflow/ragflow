@@ -19,19 +19,19 @@ English, simplified Chinese, traditional Chinese for now.
 
 We put painstaking effort into document pre-processing tasks like layout analysis, table structure recognition, and OCR (Optical Character Recognition) using our vision model. This contributes to the additional time required. 
 
-### 2. Why RAGFlow requires more resources than other products?
+### 2. Why does RAGFlow require more resources than other projects?
 
-Because RAGFlow has a series of built-in models for document structure parsing, these models require extra computational resources.
+RAGFlow has a number of built-in models for document structure parsing, which account for the additional computational resources.
 
 ## Feature
 
 ### 1. Which architectures or devices does RAGFlow support?
 
-Currently, only x86 CPU and Nvidia GPU are supported. 
+Currently, we only support x86 CPU and Nvidia GPU. 
 
 ### 2. Do you offer an API for integration with third-party applications?
 
-Yes, APIs are ready and could be accessed from [here](./conversation_api.md).
+The corresponding APIs are now available. See the [Conversation API](./conversation_api.md) for more information. 
 
 ### 3. Do you support stream output?
 
@@ -39,7 +39,7 @@ No, this feature is still in development. Contributions are welcome.
 
 ### 4. Is it possible to share dialogue through URL?
 
-Yes, dialogue could be embedded into other applications through URL directly.
+Yes, this feature is now available..
 
 ### 5. Do you support multiple rounds of dialogues, i.e., referencing previous dialogues as context for the current dialogue?
 
@@ -48,23 +48,27 @@ This feature and the related APIs are still in development. Contributions are we
 
 ## Troubleshooting
 
-### 1. Problems on docker images.
+### 1. Issues with docker images.
 
-#### 1.1 How to build docker images?
+#### 1.1 Due to the fast iteration of RAGFlow updates, it is recommended to build the image from scratch.
 
 ```
 $ git clone https://github.com/infiniflow/ragflow.git
-$ cd ragflow/
+$ cd ragflow
 $ docker build -t infiniflow/ragflow:v0.3.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-#### 1.2 `process "/bin/sh -c cd ./web && npm i && npm run build"` did not complete successfully.
+#### 1.2 `process "/bin/sh -c cd ./web && npm i && npm run build"` failed.
 
-1. First of all, you need to test whether the network could work within docker through such commands as `curl https://hf-mirror.com`.
-2. If the network does not have any problems, it means that there is a problem within the docker network configuration, adjust the docker building accordingly:
+1. Check your network from within Docker, for example:
+```bash
+curl https://hf-mirror.com
+```
+
+2. If your network works fine, the issue lies with the Docker network configuration. Adjust the Docker building accordingly:
 ```
 # Original：
 docker build -t infiniflow/ragflow:v0.3.0 .
@@ -72,8 +76,7 @@ docker build -t infiniflow/ragflow:v0.3.0 .
 docker build -t infiniflow/ragflow:v0.3.0 . --network host
 ```
 
-
-### 2. Problems on huggingface models.
+### 2. Issues with huggingface models.
 
 #### 2.1. `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
 
@@ -87,8 +90,12 @@ This error suggests that you do not have Internet access or are unable to connec
 
 #### 2.2 `FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/FileNotFoundError: [Errno 2] No such file or directory: '/ragflow/rag/res/deepdoc/ocr.res'be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'`
 
-1. First of all, you need to test whether the network could work within docker through such commands as `curl https://hf-mirror.com`.
-2. Using `ifconfig` to see the `mtu` value under your environments. If the `mtu` of the server is `1450`, while the `mtu` of the NIC in the container is `1500`, it will lead to the unstable networking. Modify the `mtu` policy as follows:
+1. Check your network from within Docker, for example: 
+```bash
+curl https://hf-mirror.com
+```
+2. Run `ifconfig` to check the `mtu` value. If the server's `mtu` is `1450` while the NIC's `mtu` in the container is `1500`, this mismatch may cause network instability. Adjust the `mtu` policy as follows:
+
 ```
 vim docker-compose-base.yml
 # Original configuration：
@@ -103,7 +110,7 @@ networks:
       com.docker.network.driver.mtu: 1450
 ```
 
-### 3. Problems on RAGFlow servers
+### 3. Issues with RAGFlow servers
 
 #### 3.1 `WARNING: can't find /raglof/rag/res/borker.tm`
 
@@ -128,7 +135,7 @@ You can only log in after the server has been initialized after you see the foll
 ```
 
 
-### 4. Problems on backend services within RAGFlow.
+### 4. Issues with backend services within RAGFlow.
 
 #### 4.1 `dependency failed to start: container ragflow-mysql is unhealthy`
 
