@@ -214,7 +214,7 @@ $ docker ps
     ```
 
 
-#### 4.9`{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
+#### 4.9 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
 
 Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (**NOT `localhost`, NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
