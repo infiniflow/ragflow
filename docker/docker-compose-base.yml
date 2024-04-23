@@ -29,23 +29,23 @@ services:
       - ragflow
     restart: always
 
-  kibana:
-    depends_on:
-        es01:
-          condition: service_healthy
-    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
-    container_name: ragflow-kibana
-    volumes:
-      - kibanadata:/usr/share/kibana/data
-    ports:
-      - ${KIBANA_PORT}:5601
-    environment:
-      - SERVERNAME=kibana
-      - ELASTICSEARCH_HOSTS=http://es01:9200
-      - TZ=${TIMEZONE}
-    mem_limit: ${MEM_LIMIT}
-    networks:
-      - ragflow
+  #kibana:
+  #  depends_on:
+  #      es01:
+  #        condition: service_healthy
+  #  image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+  #  container_name: ragflow-kibana
+  #  volumes:
+  #    - kibanadata:/usr/share/kibana/data
+  #  ports:
+  #    - ${KIBANA_PORT}:5601
+  #  environment:
+  #    - SERVERNAME=kibana
+  #    - ELASTICSEARCH_HOSTS=http://es01:9200
+  #    - TZ=${TIMEZONE}
+  #  mem_limit: ${MEM_LIMIT}
+  #  networks:
+  #    - ragflow
 
   mysql:
     image: mysql:5.7.18
