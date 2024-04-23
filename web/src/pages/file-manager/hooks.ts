@@ -1,8 +1,10 @@
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import {
   useFetchFileList,
+  useFetchParentFolderList,
   useRenameFile,
   useSelectFileList,
+  useSelectParentFolderList,
 } from '@/hooks/fileManagerHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { Pagination } from '@/interfaces/common';
@@ -11,11 +13,17 @@ import { PaginationProps } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSearchParams, useSelector } from 'umi';
 
+export const useGetFolderId = () => {
+  const [searchParams] = useSearchParams();
+  const id = searchParams.get('folderId') as string;
+
+  return id;
+};
+
 export const useFetchDocumentListOnMount = () => {
   const fetchDocumentList = useFetchFileList();
   const fileList = useSelectFileList();
-  const [searchParams] = useSearchParams();
-  const id = searchParams.get('folderId') as string;
+  const id = useGetFolderId();
 
   const dispatch = useDispatch();
 
@@ -163,4 +171,23 @@ export const useRenameCurrentFile = () => {
     hideFileRenameModal,
     showFileRenameModal: handleShowFileRenameModal,
   };
+};
+
+export const useSelectBreadcrumbItems = () => {
+  const parentFolderList = useSelectParentFolderList();
+  const id = useGetFolderId();
+  const fetchParentFolderList = useFetchParentFolderList();
+
+  useEffect(() => {
+    if (id) {
+      fetchParentFolderList(id);
+    }
+  }, [id, fetchParentFolderList]);
+
+  return parentFolderList.length === 1
+    ? []
+    : parentFolderList.map((x) => ({
+        title: x.name === '/' ? 'root' : x.name,
+        path: `/file?folderId=${x.id}`,
+      }));
 };

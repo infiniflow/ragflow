@@ -50,8 +50,31 @@ export const useRenameFile = () => {
   return renameFile;
 };
 
+export const useFetchParentFolderList = () => {
+  const dispatch = useDispatch();
+
+  const fetchParentFolderList = useCallback(
+    (fileId: string) => {
+      return dispatch<any>({
+        type: 'fileManager/getAllParentFolder',
+        payload: { fileId },
+      });
+    },
+    [dispatch],
+  );
+
+  return fetchParentFolderList;
+};
+
 export const useSelectFileList = () => {
   const fileList = useSelector((state) => state.fileManager.fileList);
 
   return fileList;
+};
+
+export const useSelectParentFolderList = () => {
+  const parentFolderList = useSelector(
+    (state) => state.fileManager.parentFolderList,
+  );
+  return parentFolderList.toReversed();
 };

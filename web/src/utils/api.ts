@@ -72,4 +72,5 @@ export default {
   uploadFile: `${api_host}/file/upload`,
   removeFile: `${api_host}/file/rm`,
   renameFile: `${api_host}/file/rename`,
+  getAllParentFolder: `${api_host}/file/all_parent_folder`,
 };

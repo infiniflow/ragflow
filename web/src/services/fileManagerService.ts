@@ -2,7 +2,8 @@ import api from '@/utils/api';
 import registerServer from '@/utils/registerServer';
 import request from '@/utils/request';
 
-const { listFile, removeFile, uploadFile, renameFile } = api;
+const { listFile, removeFile, uploadFile, renameFile, getAllParentFolder } =
+  api;
 
 const methods = {
   listFile: {
@@ -21,8 +22,15 @@ const methods = {
     url: renameFile,
     method: 'post',
   },
+  getAllParentFolder: {
+    url: getAllParentFolder,
+    method: 'get',
+  },
 } as const;
 
-const chatService = registerServer<keyof typeof methods>(methods, request);
+const fileManagerService = registerServer<keyof typeof methods>(
+  methods,
+  request,
+);
 
-export default chatService;
+export default fileManagerService;

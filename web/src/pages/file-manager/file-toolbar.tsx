@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons';
 import {
   Breadcrumb,
+  BreadcrumbProps,
   Button,
   Dropdown,
   Flex,
@@ -21,14 +22,30 @@ import {
   useFetchDocumentListOnMount,
   useGetPagination,
   useHandleSearchChange,
+  useSelectBreadcrumbItems,
 } from './hooks';
 
 import { useRemoveFile } from '@/hooks/fileManagerHooks';
+import { Link } from 'umi';
 import styles from './index.less';
 
 interface IProps {
   selectedRowKeys: string[];
 }
+
+const itemRender: BreadcrumbProps['itemRender'] = (
+  currentRoute,
+  params,
+  items,
+) => {
+  const isLast = currentRoute?.path === items[items.length - 1]?.path;
+
+  return isLast ? (
+    <span>{currentRoute.title}</span>
+  ) : (
+    <Link to={`${currentRoute.path}`}>{currentRoute.title}</Link>
+  );
+};
 
 const FileToolbar = ({ selectedRowKeys }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
@@ -37,6 +54,7 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
   const { handleInputChange } = useHandleSearchChange(setPagination);
   const removeDocument = useRemoveFile();
   const showDeleteConfirm = useShowDeleteConfirm();
+  const breadcrumbItems = useSelectBreadcrumbItems();
 
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
@@ -98,22 +116,7 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
 
   return (
     <div className={styles.filter}>
-      <Breadcrumb
-        items={[
-          {
-            title: 'Home',
-          },
-          {
-            title: <a href="">Application Center</a>,
-          },
-          {
-            title: <a href="">Application List</a>,
-          },
-          {
-            title: 'An Application',
-          },
-        ]}
-      />
+      <Breadcrumb items={breadcrumbItems} itemRender={itemRender} />
       <Space>
         <Dropdown
           menu={{ items }}
