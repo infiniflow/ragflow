@@ -29,7 +29,7 @@ function task_bro(){
 
 task_bro &
 
-WS=2
+WS=1
 for ((i=0;i<WS;i++))
 do
   task_exe $i $WS &

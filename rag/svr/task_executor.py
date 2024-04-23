@@ -163,6 +163,7 @@ def build(row):
         "doc_id": row["doc_id"],
         "kb_id": [str(row["kb_id"])]
     }
+    el = 0
     for ck in cks:
         d = copy.deepcopy(doc)
         d.update(ck)
@@ -182,10 +183,13 @@ def build(row):
         else:
             d["image"].save(output_buffer, format='JPEG')
 
+        st = timer()
         MINIO.put(row["kb_id"], d["_id"], output_buffer.getvalue())
+        el += timer() - st
         d["img_id"] = "{}-{}".format(row["kb_id"], d["_id"])
         del d["image"]
         docs.append(d)
+    cron_logger.info("MINIO PUT({}):{}".format(row["name"], el))
 
     return docs
 
@@ -258,7 +262,9 @@ def main(comm, mod):
             callback(prog=-1, msg=str(e))
             continue
 
+        st = timer()
         cks = build(r)
+        cron_logger.info("Build chunks({}): {}".format(r["name"], timer()-st))
         if cks is None:
             continue
         if not cks:
@@ -277,12 +283,14 @@ def main(comm, mod):
             callback(-1, "Embedding error:{}".format(str(e)))
             cron_logger.error(str(e))
             tk_count = 0
+        cron_logger.info("Embedding elapsed({}): {}".format(r["name"], timer()-st))
 
         callback(msg="Finished embedding({})! Start to build index!".format(timer()-st))
         init_kb(r)
         chunk_count = len(set([c["_id"] for c in cks]))
         st = timer()
         es_r = ELASTICSEARCH.bulk(cks, search.index_name(r["tenant_id"]))
+        cron_logger.info("Indexing elapsed({}): {}".format(r["name"], timer()-st))
         if es_r:
             callback(-1, "Index failure!")
             ELASTICSEARCH.deleteByQuery(

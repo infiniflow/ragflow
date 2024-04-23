@@ -77,12 +77,12 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished")
-        cron_logger.info("OCR: {}".format(timer() - start))
+        cron_logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.63, "Layout analysis finished.")
-        print("paddle layouts:", timer() - start)
+        print("layouts:", timer() - start)
         self._table_transformer_job(zoomin)
         callback(0.65, "Table analysis finished.")
         self._text_merge()
@@ -92,7 +92,7 @@ class Pdf(PdfParser):
         self._concat_downward()
         #self._filter_forpages()
 
-        cron_logger.info("paddle layouts: {}".format(
+        cron_logger.info("layouts: {}".format(
             (timer() - start) / (self.total_page + 0.1)))
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], tbls

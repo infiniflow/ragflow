@@ -33,6 +33,8 @@ from api.settings import database_logger
 from api.utils import get_format_time, get_uuid
 from api.utils.file_utils import get_project_base_directory
 from rag.utils.redis_conn import REDIS_CONN
+from api.db.db_models import init_database_tables as init_web_db
+from api.db.init_data import init_web_data
 
 
 def collect(tm):
@@ -181,6 +183,9 @@ if __name__ == "__main__":
     peewee_logger.propagate = False
     peewee_logger.addHandler(database_logger.handlers[0])
     peewee_logger.setLevel(database_logger.level)
+    # init db
+    init_web_db()
+    init_web_data()
 
     while True:
         dispatch()

@@ -11,7 +11,7 @@ import pdfplumber
 import logging
 from PIL import Image, ImageDraw
 import numpy as np
-
+from timeit import default_timer as timer
 from PyPDF2 import PdfReader as pdf2_read
 
 from api.utils.file_utils import get_project_base_directory
@@ -936,6 +936,7 @@ class HuParser:
         self.page_cum_height = [0]
         self.page_layout = []
         self.page_from = page_from
+        st = timer()
         try:
             self.pdf = pdfplumber.open(fnm) if isinstance(
                 fnm, str) else pdfplumber.open(BytesIO(fnm))
@@ -989,7 +990,9 @@ class HuParser:
             self.is_english = True
         else:
             self.is_english = False
+        self.is_english = False
 
+        st = timer()
         for i, img in enumerate(self.page_images):
             chars = self.page_chars[i] if not self.is_english else []
             self.mean_height.append(
@@ -1007,15 +1010,11 @@ class HuParser:
                                                                        chars[j]["width"]) / 2:
                     chars[j]["text"] += " "
                 j += 1
-            # if i > 0:
-            #     if not chars:
-            #         self.page_cum_height.append(img.size[1] / zoomin)
-            #     else:
-            #         self.page_cum_height.append(
-            #             np.max([c["bottom"] for c in chars]))
+
             self.__ocr(i + 1, img, chars, zoomin)
-            if callback:
-                callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+            #if callback:
+            #    callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+        #print("OCR:", timer()-st)
 
         if not self.is_english and not any(
                 [c for c in self.page_chars]) and self.boxes:
