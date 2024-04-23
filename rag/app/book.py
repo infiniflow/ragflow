@@ -110,6 +110,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
         sections = [(l, "") for l in sections if l]
+        remove_contents_table(sections, eng=is_english(
+            random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")
 
     else:
