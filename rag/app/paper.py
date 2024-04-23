@@ -78,7 +78,7 @@ class Pdf(PdfParser):
         title = ""
         authors = []
         i = 0
-        while i < min(32, len(self.boxes)):
+        while i < min(32, len(self.boxes)-1):
             b = self.boxes[i]
             i += 1
             if b.get("layoutno", "").find("title") >= 0:
