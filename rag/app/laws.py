@@ -71,7 +71,7 @@ class Pdf(PdfParser):
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.67, "Layout analysis finished")
-        cron_logger.info("paddle layouts:".format(
+        cron_logger.info("layouts:".format(
             (timer() - start) / (self.total_page + 0.1)))
         self._naive_vertical_merge()
 
