@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useDispatch } from 'umi';
+import { useDispatch, useSelector } from 'umi';
 
 export const useFetchFileList = () => {
   const dispatch = useDispatch();
@@ -35,4 +35,10 @@ export const useRenameFile = () => {
   }, [dispatch]);
 
   return renameFile;
+};
+
+export const useSelectFileList = () => {
+  const fileList = useSelector((state) => state.fileManager.fileList);
+
+  return fileList;
 };

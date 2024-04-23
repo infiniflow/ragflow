@@ -1,5 +1,5 @@
 import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchFileList } from '@/hooks/fileManagerHooks';
+import { useFetchFileList, useSelectFileList } from '@/hooks/fileManagerHooks';
 import { Pagination } from '@/interfaces/common';
 import { PaginationProps } from 'antd';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -7,6 +7,7 @@ import { useDispatch, useSelector } from 'umi';
 
 export const useFetchDocumentListOnMount = () => {
   const fetchDocumentList = useFetchFileList();
+  const fileList = useSelectFileList();
 
   const dispatch = useDispatch();
 
@@ -14,7 +15,7 @@ export const useFetchDocumentListOnMount = () => {
     fetchDocumentList();
   }, [dispatch, fetchDocumentList]);
 
-  return { fetchDocumentList };
+  return { fetchDocumentList, fileList };
 };
 
 export const useGetPagination = (fetchDocumentList: () => void) => {

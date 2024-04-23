@@ -1,11 +1,12 @@
+import { IFile } from '@/interfaces/database/file-manager';
 import kbService from '@/services/fileManagerService';
 import { DvaModel } from 'umi';
 
-export interface FileModelState {
-  fileList: any[];
+export interface FileManagerModelState {
+  fileList: IFile[];
 }
 
-const model: DvaModel<FileModelState> = {
+const model: DvaModel<FileManagerModelState> = {
   namespace: 'fileManager',
   state: { fileList: [] },
   reducers: {
@@ -20,6 +21,7 @@ const model: DvaModel<FileModelState> = {
       if (retcode === 0) {
         yield put({
           type: 'listFile',
+          payload: data.data?.files ?? [],
         });
       }
     },
@@ -27,12 +29,10 @@ const model: DvaModel<FileModelState> = {
       const { data } = yield call(kbService.listFile, payload);
       const { retcode, data: res } = data;
 
-      if (retcode === 0) {
+      if (retcode === 0 && Array.isArray(res.files)) {
         yield put({
-          type: 'updateState',
-          payload: {
-            data: res,
-          },
+          type: 'setFileList',
+          payload: res.files,
         });
       }
     },

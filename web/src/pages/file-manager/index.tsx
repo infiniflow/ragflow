@@ -2,22 +2,8 @@ import { Table } from 'antd';
 import ActionCell from './action-cell';
 import FileToolbar from './file-toolbar';
 
+import { useSelectFileList } from '@/hooks/fileManagerHooks';
 import styles from './index.less';
-
-const dataSource = [
-  {
-    key: '1',
-    name: '胡彦斌',
-    age: 32,
-    address: '西湖区湖底公园1号',
-  },
-  {
-    key: '2',
-    name: '胡彦祖',
-    age: 42,
-    address: '西湖区湖底公园1号',
-  },
-];
 
 const columns = [
   {
@@ -27,13 +13,13 @@ const columns = [
   },
   {
     title: 'Upload Date',
-    dataIndex: 'age',
-    key: 'age',
+    dataIndex: 'create_date',
+    key: 'create_date',
   },
   {
     title: 'Location',
-    dataIndex: 'address',
-    key: 'address',
+    dataIndex: 'location',
+    key: 'location',
   },
   {
     title: 'Action',
@@ -52,10 +38,12 @@ const columns = [
 ];
 
 const FileManager = () => {
+  const fileList = useSelectFileList();
+
   return (
     <section className={styles.fileManagerWrapper}>
       <FileToolbar selectedRowKeys={[]}></FileToolbar>
-      <Table dataSource={dataSource} columns={columns} />;
+      <Table dataSource={fileList} columns={columns} rowKey={'id'} />
     </section>
   );
 };
