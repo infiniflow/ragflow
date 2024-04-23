@@ -23,7 +23,6 @@ function watch_broker(){
 }
 
 function task_bro(){
-    sleep 160;
     watch_broker;
 }
 
