@@ -182,7 +182,14 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
         ),
       },
     ];
-  }, [handleDelete, handleRunClick, handleCancelClick, t]);
+  }, [
+    handleDelete,
+    handleRunClick,
+    handleCancelClick,
+    t,
+    handleDisableClick,
+    handleEnableClick,
+  ]);
 
   return (
     <div className={styles.filter}>

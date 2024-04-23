@@ -1,4 +1,5 @@
 import { ReactComponent as StarIon } from '@/assets/svg/chat-star.svg';
+// import { ReactComponent as FileIcon } from '@/assets/svg/file-management.svg';
 import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base.svg';
 import { ReactComponent as Logo } from '@/assets/svg/logo.svg';
 import { useTranslate } from '@/hooks/commonHooks';

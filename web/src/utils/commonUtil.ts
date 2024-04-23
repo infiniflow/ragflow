@@ -5,11 +5,18 @@ export const isFormData = (data: unknown): data is FormData => {
   return data instanceof FormData;
 };
 
+const excludedFields = ['img2txt_id'];
+
+const isExcludedField = (key: string) => {
+  return excludedFields.includes(key);
+};
+
 export const convertTheKeysOfTheObjectToSnake = (data: unknown) => {
   if (isObject(data) && !isFormData(data)) {
     return Object.keys(data).reduce<Record<string, any>>((pre, cur) => {
       const value = (data as Record<string, any>)[cur];
-      pre[isFormData(value) ? cur : snakeCase(cur)] = value;
+      pre[isFormData(value) || isExcludedField(cur) ? cur : snakeCase(cur)] =
+        value;
       return pre;
     }, {});
   }
