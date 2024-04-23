@@ -16,7 +16,7 @@
 from flask_login import current_user
 
 from api.db import FileType
-from api.db.db_models import DB
+from api.db.db_models import DB, File2Document, Knowledgebase
 from api.db.db_models import File, Document
 from api.db.services.common_service import CommonService
 from api.utils import get_uuid
@@ -44,7 +44,26 @@ class FileService(CommonService):
 
         files = files.paginate(page_number, items_per_page)
 
-        return list(files.dicts()), count
+        res_files = list(files.dicts())
+        for file in res_files:
+            kb_id = cls.get_kb_id_by_file_id(file['id'])
+            file['kb_ids'] = kb_id
+
+        return res_files, count
+
+    @classmethod
+    @DB.connection_context()
+    def get_kb_id_by_file_id(cls, file_id):
+        kb_ids = (cls.model.select(Document.kb_id)
+                 .join(File2Document, on=(File2Document.file_id == file_id))
+                 .join(Document, on=(File2Document.document_id == Document.id))
+                 .where(cls.model.id == file_id))
+        if not kb_ids:
+            return "Not found!"
+        kb_ids_list = []
+        for kb_id in list(kb_ids.dicts()):
+            kb_ids_list.append(kb_id['kb_id'])
+        return kb_ids_list
 
     @classmethod
     @DB.connection_context()

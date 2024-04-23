@@ -34,13 +34,13 @@ from rag.utils.minio_conn import MINIO
 
 @manager.route('/upload', methods=['POST'])
 @login_required
-@validate_request("parent_id")
+# @validate_request("parent_id")
 def upload():
     pf_id = request.form.get("parent_id")
     path = request.form.get("path")
     if not pf_id:
-        return get_json_result(
-            data=False, retmsg='Lack of "Parent Folder ID"', retcode=RetCode.ARGUMENT_ERROR)
+        root_folder = FileService.get_root_folder(current_user.id)
+        pf_id = root_folder.id
 
     if 'file' not in request.files:
         return get_json_result(
@@ -112,14 +112,14 @@ def upload():
 
 @manager.route('/create', methods=['POST'])
 @login_required
-@validate_request("name", "parent_id")
+@validate_request("name")
 def create():
     req = request.json
-    pf_id = req["parent_id"]
+    pf_id = request.args.get("parent_id")
     input_file_type = request.json.get("type")
     if not pf_id:
-        return get_json_result(
-            data=False, retmsg='Lack of "Parent Folder ID"', retcode=RetCode.ARGUMENT_ERROR)
+        root_folder = FileService.get_root_folder(current_user.id)
+        pf_id = root_folder.id
 
     try:
         if not FileService.is_parent_folder_exist(pf_id):
@@ -154,15 +154,16 @@ def create():
 @login_required
 def list():
     pf_id = request.args.get("parent_id")
-    if not pf_id:
-        return get_json_result(
-            data=False, retmsg='Lack of "Parent Folder ID"', retcode=RetCode.ARGUMENT_ERROR)
+
     keywords = request.args.get("keywords", "")
 
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 15))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", True)
+    if not pf_id:
+        root_folder = FileService.get_root_folder(current_user.id)
+        pf_id = root_folder.id
     try:
         e, file = FileService.get_by_id(pf_id)
         if not e:

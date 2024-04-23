@@ -82,33 +82,36 @@ def convert():
 
 @manager.route('/rm', methods=['POST'])
 @login_required
-@validate_request("file_id")
+@validate_request("file_ids")
 def rm():
     req = request.json
-    file_id = req["file_id"]
-    if not file_id:
+    file_ids = req["file_ids"]
+    if not file_ids:
         return get_json_result(
-            data=False, retmsg='Lack of "File ID"', retcode=RetCode.ARGUMENT_ERROR)
+            data=False, retmsg='Lack of "Files ID"', retcode=RetCode.ARGUMENT_ERROR)
     try:
-        informs = File2DocumentService.get_by_file_id(file_id)
-        for inform in informs:
-            if not inform:
+        for file_id in file_ids:
+            informs = File2DocumentService.get_by_file_id(file_id)
+            if not informs:
                 return get_data_error_result(retmsg="Inform not found!")
-            File2DocumentService.delete_by_file_id(file_id)
-            doc_id = inform.document_id
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
-                return get_data_error_result(retmsg="Document not found!")
-            tenant_id = DocumentService.get_tenant_id(doc_id)
-            if not tenant_id:
-                return get_data_error_result(retmsg="Tenant not found!")
-            ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-            DocumentService.increment_chunk_num(
-                doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-            if not DocumentService.delete(doc):
-                return get_data_error_result(
-                    retmsg="Database error (Document removal)!")
+            for inform in informs:
+                if not inform:
+                    return get_data_error_result(retmsg="Inform not found!")
+                File2DocumentService.delete_by_file_id(file_id)
+                doc_id = inform.document_id
+                e, doc = DocumentService.get_by_id(doc_id)
+                if not e:
+                    return get_data_error_result(retmsg="Document not found!")
+                tenant_id = DocumentService.get_tenant_id(doc_id)
+                if not tenant_id:
+                    return get_data_error_result(retmsg="Tenant not found!")
+                ELASTICSEARCH.deleteByQuery(
+                    Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+                DocumentService.increment_chunk_num(
+                    doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
+                if not DocumentService.delete(doc):
+                    return get_data_error_result(
+                        retmsg="Database error (Document removal)!")
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
