@@ -10,6 +10,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from tika import parser
+from io import BytesIO
 import re
 from rag.app import laws
 from rag.nlp import huqie, tokenize, find_codec
@@ -33,7 +35,7 @@ class Pdf(PdfParser):
         start = timer()
         self._layouts_rec(zoomin, drop=False)
         callback(0.63, "Layout analysis finished.")
-        print("paddle layouts:", timer() - start)
+        print("layouts:", timer() - start)
         self._table_transformer_job(zoomin)
         callback(0.65, "Table analysis finished.")
         self._text_merge()
@@ -60,7 +62,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     eng = lang.lower() == "english"  # is_english(cks)
 
-    if re.search(r"\.docx?$", filename, re.IGNORECASE):
+    if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = [txt for txt in laws.Docx()(filename, binary) if txt]
         callback(0.8, "Finish parsing.")
@@ -95,9 +97,17 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        binary = BytesIO(binary)
+        doc_parsed = parser.from_buffer(binary)
+        sections = doc_parsed['content'].split('\n')
+        sections = [l for l in sections if l]
+        callback(0.8, "Finish parsing.")
+
     else:
         raise NotImplementedError(
-            "file type not supported yet(docx, pdf, txt supported)")
+            "file type not supported yet(doc, docx, pdf, txt supported)")
 
     doc = {
         "docnm_kwd": filename,

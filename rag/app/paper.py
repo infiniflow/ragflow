@@ -42,7 +42,7 @@ class Pdf(PdfParser):
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.63, "Layout analysis finished")
-        print("paddle layouts:", timer() - start)
+        print("layouts:", timer() - start)
         self._table_transformer_job(zoomin)
         callback(0.68, "Table analysis finished")
         self._text_merge()
@@ -78,7 +78,7 @@ class Pdf(PdfParser):
         title = ""
         authors = []
         i = 0
-        while i < min(32, len(self.boxes)):
+        while i < min(32, len(self.boxes)-1):
             b = self.boxes[i]
             i += 1
             if b.get("layoutno", "").find("title") >= 0:
