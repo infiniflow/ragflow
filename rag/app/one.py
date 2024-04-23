@@ -102,7 +102,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
-        sections = [(l, "") for l in sections if l]
+        sections = [l for l in sections if l]
         callback(0.8, "Finish parsing.")
 
     else:
