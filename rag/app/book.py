@@ -76,6 +76,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             binary if binary else filename, from_page=from_page, to_page=to_page)
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
+        tbls = [((None, lns), None) for lns in tbls]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
