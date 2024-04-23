@@ -1,24 +1,34 @@
-import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchFileList, useSelectFileList } from '@/hooks/fileManagerHooks';
+import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
+import {
+  useFetchFileList,
+  useRenameFile,
+  useSelectFileList,
+} from '@/hooks/fileManagerHooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { Pagination } from '@/interfaces/common';
+import { IFile } from '@/interfaces/database/file-manager';
 import { PaginationProps } from 'antd';
-import { useCallback, useEffect, useMemo } from 'react';
-import { useDispatch, useSelector } from 'umi';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useDispatch, useNavigate, useSearchParams, useSelector } from 'umi';
 
 export const useFetchDocumentListOnMount = () => {
   const fetchDocumentList = useFetchFileList();
   const fileList = useSelectFileList();
+  const [searchParams] = useSearchParams();
+  const id = searchParams.get('folderId') as string;
 
   const dispatch = useDispatch();
 
   useEffect(() => {
-    fetchDocumentList();
-  }, [dispatch, fetchDocumentList]);
+    fetchDocumentList({ parent_id: id });
+  }, [dispatch, fetchDocumentList, id]);
 
   return { fetchDocumentList, fileList };
 };
 
-export const useGetPagination = (fetchDocumentList: () => void) => {
+export const useGetPagination = (
+  fetchDocumentList: (payload: IFile) => any,
+) => {
   const dispatch = useDispatch();
   const kFModel = useSelector((state: any) => state.kFModel);
   const { t } = useTranslate('common');
@@ -88,4 +98,69 @@ export const useHandleSearchChange = (setPagination: () => void) => {
   );
 
   return { handleInputChange };
+};
+
+export const useGetRowSelection = () => {
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys);
+    },
+  };
+
+  return rowSelection;
+};
+
+export const useNavigateToOtherFolder = () => {
+  const navigate = useNavigate();
+  const navigateToOtherFolder = useCallback(
+    (folderId: string) => {
+      navigate(`/file?folderId=${folderId}`);
+    },
+    [navigate],
+  );
+
+  return navigateToOtherFolder;
+};
+
+export const useRenameCurrentFile = () => {
+  const [file, setFile] = useState<IFile>({} as IFile);
+  const {
+    visible: fileRenameVisible,
+    hideModal: hideFileRenameModal,
+    showModal: showFileRenameModal,
+  } = useSetModalState();
+  const renameFile = useRenameFile();
+
+  const onFileRenameOk = useCallback(
+    async (name: string) => {
+      const ret = await renameFile(file.id, name);
+
+      if (ret === 0) {
+        hideFileRenameModal();
+      }
+    },
+    [renameFile, file, hideFileRenameModal],
+  );
+
+  const loading = useOneNamespaceEffectsLoading('fileManager', ['renameFile']);
+
+  const handleShowFileRenameModal = useCallback(
+    async (record: IFile) => {
+      setFile(record);
+      showFileRenameModal();
+    },
+    [showFileRenameModal],
+  );
+
+  return {
+    fileRenameLoading: loading,
+    initialFileName: file.name,
+    onFileRenameOk,
+    fileRenameVisible,
+    hideFileRenameModal,
+    showFileRenameModal: handleShowFileRenameModal,
+  };
 };

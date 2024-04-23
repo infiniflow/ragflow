@@ -1,15 +1,5 @@
-import { ReactComponent as CancelIcon } from '@/assets/svg/cancel.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/svg/delete.svg';
-import { ReactComponent as DisableIcon } from '@/assets/svg/disable.svg';
-import { ReactComponent as EnableIcon } from '@/assets/svg/enable.svg';
-import { ReactComponent as RunIcon } from '@/assets/svg/run.svg';
 import { useShowDeleteConfirm, useTranslate } from '@/hooks/commonHooks';
-import {
-  useRemoveDocument,
-  useRunDocument,
-  useSetDocumentStatus,
-} from '@/hooks/documentHooks';
-import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import {
   DownOutlined,
   FileOutlined,
@@ -17,7 +7,15 @@ import {
   PlusOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Flex, Input, MenuProps, Space } from 'antd';
+import {
+  Breadcrumb,
+  Button,
+  Dropdown,
+  Flex,
+  Input,
+  MenuProps,
+  Space,
+} from 'antd';
 import { useCallback, useMemo } from 'react';
 import {
   useFetchDocumentListOnMount,
@@ -25,6 +23,7 @@ import {
   useHandleSearchChange,
 } from './hooks';
 
+import { useRemoveFile } from '@/hooks/fileManagerHooks';
 import styles from './index.less';
 
 interface IProps {
@@ -36,11 +35,8 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const { setPagination, searchString } = useGetPagination(fetchDocumentList);
   const { handleInputChange } = useHandleSearchChange(setPagination);
-  const removeDocument = useRemoveDocument();
+  const removeDocument = useRemoveFile();
   const showDeleteConfirm = useShowDeleteConfirm();
-  const runDocumentByIds = useRunDocument();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-  const changeStatus = useSetDocumentStatus();
 
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
@@ -76,95 +72,15 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
   const handleDelete = useCallback(() => {
     showDeleteConfirm({
       onOk: () => {
-        selectedRowKeys.forEach((id) => {
-          removeDocument(id);
-        });
+        return removeDocument(selectedRowKeys);
       },
     });
   }, [removeDocument, showDeleteConfirm, selectedRowKeys]);
-
-  const runDocument = useCallback(
-    (run: number) => {
-      runDocumentByIds({
-        doc_ids: selectedRowKeys,
-        run,
-        knowledgeBaseId: knowledgeId,
-      });
-    },
-    [runDocumentByIds, selectedRowKeys, knowledgeId],
-  );
-
-  const handleRunClick = useCallback(() => {
-    runDocument(1);
-  }, [runDocument]);
-
-  const handleCancelClick = useCallback(() => {
-    runDocument(2);
-  }, [runDocument]);
-
-  const onChangeStatus = useCallback(
-    (enabled: boolean) => {
-      selectedRowKeys.forEach((id) => {
-        changeStatus(enabled, id);
-      });
-    },
-    [selectedRowKeys, changeStatus],
-  );
-
-  const handleEnableClick = useCallback(() => {
-    onChangeStatus(true);
-  }, [onChangeStatus]);
-
-  const handleDisableClick = useCallback(() => {
-    onChangeStatus(false);
-  }, [onChangeStatus]);
 
   const disabled = selectedRowKeys.length === 0;
 
   const items: MenuProps['items'] = useMemo(() => {
     return [
-      {
-        key: '0',
-        onClick: handleEnableClick,
-        label: (
-          <Flex gap={10}>
-            <EnableIcon></EnableIcon>
-            <b>{t('enabled')}</b>
-          </Flex>
-        ),
-      },
-      {
-        key: '1',
-        onClick: handleDisableClick,
-        label: (
-          <Flex gap={10}>
-            <DisableIcon></DisableIcon>
-            <b>{t('disabled')}</b>
-          </Flex>
-        ),
-      },
-      { type: 'divider' },
-      {
-        key: '2',
-        onClick: handleRunClick,
-        label: (
-          <Flex gap={10}>
-            <RunIcon></RunIcon>
-            <b>{t('run')}</b>
-          </Flex>
-        ),
-      },
-      {
-        key: '3',
-        onClick: handleCancelClick,
-        label: (
-          <Flex gap={10}>
-            <CancelIcon />
-            <b>{t('cancel')}</b>
-          </Flex>
-        ),
-      },
-      { type: 'divider' },
       {
         key: '4',
         onClick: handleDelete,
@@ -178,31 +94,40 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
         ),
       },
     ];
-  }, [
-    handleDelete,
-    handleRunClick,
-    handleCancelClick,
-    t,
-    handleDisableClick,
-    handleEnableClick,
-  ]);
+  }, [handleDelete, t]);
 
   return (
     <div className={styles.filter}>
-      <Dropdown
-        menu={{ items }}
-        placement="bottom"
-        arrow={false}
-        disabled={disabled}
-      >
-        <Button>
-          <Space>
-            <b> {t('bulk')}</b>
-            <DownOutlined />
-          </Space>
-        </Button>
-      </Dropdown>
+      <Breadcrumb
+        items={[
+          {
+            title: 'Home',
+          },
+          {
+            title: <a href="">Application Center</a>,
+          },
+          {
+            title: <a href="">Application List</a>,
+          },
+          {
+            title: 'An Application',
+          },
+        ]}
+      />
       <Space>
+        <Dropdown
+          menu={{ items }}
+          placement="bottom"
+          arrow={false}
+          disabled={disabled}
+        >
+          <Button>
+            <Space>
+              <b> {t('bulk')}</b>
+              <DownOutlined />
+            </Space>
+          </Button>
+        </Dropdown>
         <Input
           placeholder={t('searchFiles')}
           value={searchString}

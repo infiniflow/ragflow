@@ -1,14 +1,19 @@
+import { IFileListRequestBody } from '@/interfaces/request/file-manager';
 import { useCallback } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
 export const useFetchFileList = () => {
   const dispatch = useDispatch();
 
-  const fetchFileList = useCallback(() => {
-    return dispatch<any>({
-      type: 'fileManager/listFile',
-    });
-  }, [dispatch]);
+  const fetchFileList = useCallback(
+    (payload: IFileListRequestBody) => {
+      return dispatch<any>({
+        type: 'fileManager/listFile',
+        payload,
+      });
+    },
+    [dispatch],
+  );
 
   return fetchFileList;
 };
@@ -16,11 +21,15 @@ export const useFetchFileList = () => {
 export const useRemoveFile = () => {
   const dispatch = useDispatch();
 
-  const removeFile = useCallback(() => {
-    return dispatch<any>({
-      type: 'fileManager/removeFile',
-    });
-  }, [dispatch]);
+  const removeFile = useCallback(
+    (fileIds: string[]) => {
+      return dispatch<any>({
+        type: 'fileManager/removeFile',
+        payload: { fileIds },
+      });
+    },
+    [dispatch],
+  );
 
   return removeFile;
 };
@@ -28,11 +37,15 @@ export const useRemoveFile = () => {
 export const useRenameFile = () => {
   const dispatch = useDispatch();
 
-  const renameFile = useCallback(() => {
-    return dispatch<any>({
-      type: 'fileManager/renameFile',
-    });
-  }, [dispatch]);
+  const renameFile = useCallback(
+    (fileId: string, name: string) => {
+      return dispatch<any>({
+        type: 'fileManager/renameFile',
+        payload: { fileId, name },
+      });
+    },
+    [dispatch],
+  );
 
   return renameFile;
 };

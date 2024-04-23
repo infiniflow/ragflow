@@ -1,5 +1,4 @@
 import { useShowDeleteConfirm, useTranslate } from '@/hooks/commonHooks';
-import { useRemoveDocument } from '@/hooks/documentHooks';
 import { api_host } from '@/utils/api';
 import { downloadFile } from '@/utils/fileUtil';
 import {
@@ -10,24 +9,30 @@ import {
 } from '@ant-design/icons';
 import { Button, Space, Tooltip } from 'antd';
 
+import { useRemoveFile } from '@/hooks/fileManagerHooks';
+import { IFile } from '@/interfaces/database/file-manager';
 import styles from './index.less';
 
 interface IProps {
-  record: any;
+  record: IFile;
   setCurrentRecord: (record: any) => void;
-  showRenameModal: () => void;
+  showRenameModal: (record: IFile) => void;
 }
 
 const ActionCell = ({ record, setCurrentRecord, showRenameModal }: IProps) => {
   const documentId = record.id;
   const beingUsed = false;
   const { t } = useTranslate('knowledgeDetails');
-  const removeDocument = useRemoveDocument();
+  const removeDocument = useRemoveFile();
   const showDeleteConfirm = useShowDeleteConfirm();
 
   const onRmDocument = () => {
     if (!beingUsed) {
-      showDeleteConfirm({ onOk: () => removeDocument(documentId) });
+      showDeleteConfirm({
+        onOk: () => {
+          return removeDocument([documentId]);
+        },
+      });
     }
   };
 
@@ -44,7 +49,7 @@ const ActionCell = ({ record, setCurrentRecord, showRenameModal }: IProps) => {
 
   const onShowRenameModal = () => {
     setRecord();
-    showRenameModal();
+    showRenameModal(record);
   };
 
   return (
