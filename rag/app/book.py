@@ -11,6 +11,7 @@
 #  limitations under the License.
 #
 import copy
+from tika import parser
 import re
 from io import BytesIO
 
@@ -103,9 +104,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")
 
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        binary = BytesIO(binary)
+        doc_parsed = parser.from_buffer(binary)
+        sections = doc_parsed['content'].split('\n')
+        sections = [(l, "") for l in sections if l]
+        remove_contents_table(sections, eng=is_english(
+            random_choices([t for t, _ in sections], k=200)))
+        callback(0.8, "Finish parsing.")
+
     else:
         raise NotImplementedError(
-            "file type not supported yet(docx, pdf, txt supported)")
+            "file type not supported yet(doc, docx, pdf, txt supported)")
 
     make_colon_as_title(sections)
     bull = bullets_category(
