@@ -2,8 +2,8 @@ import { ReactComponent as DeleteIcon } from '@/assets/svg/delete.svg';
 import { useShowDeleteConfirm, useTranslate } from '@/hooks/commonHooks';
 import {
   DownOutlined,
-  FileOutlined,
   FileTextOutlined,
+  FolderOpenOutlined,
   PlusOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
@@ -31,6 +31,7 @@ import styles from './index.less';
 
 interface IProps {
   selectedRowKeys: string[];
+  showFolderCreateModal: () => void;
 }
 
 const itemRender: BreadcrumbProps['itemRender'] = (
@@ -47,7 +48,7 @@ const itemRender: BreadcrumbProps['itemRender'] = (
   );
 };
 
-const FileToolbar = ({ selectedRowKeys }: IProps) => {
+const FileToolbar = ({ selectedRowKeys, showFolderCreateModal }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const { setPagination, searchString } = useGetPagination(fetchDocumentList);
@@ -74,18 +75,19 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
       { type: 'divider' },
       {
         key: '2',
+        onClick: showFolderCreateModal,
         label: (
           <div>
             <Button type="link">
-              <FileOutlined />
-              {t('emptyFiles')}
+              <FolderOpenOutlined />
+              New Folder
             </Button>
           </div>
         ),
         // disabled: true,
       },
     ];
-  }, [t]);
+  }, [t, showFolderCreateModal]);
 
   const handleDelete = useCallback(() => {
     showDeleteConfirm({

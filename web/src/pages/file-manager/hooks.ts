@@ -1,5 +1,6 @@
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import {
+  useCreateFolder,
   useFetchFileList,
   useFetchParentFolderList,
   useRenameFile,
@@ -190,4 +191,37 @@ export const useSelectBreadcrumbItems = () => {
         title: x.name === '/' ? 'root' : x.name,
         path: `/file?folderId=${x.id}`,
       }));
+};
+
+export const useHandleCreateFolder = () => {
+  const {
+    visible: folderCreateModalVisible,
+    hideModal: hideFolderCreateModal,
+    showModal: showFolderCreateModal,
+  } = useSetModalState();
+  const createFolder = useCreateFolder();
+  const id = useGetFolderId();
+
+  const onFolderCreateOk = useCallback(
+    async (name: string) => {
+      const ret = await createFolder(id, name);
+
+      if (ret === 0) {
+        hideFolderCreateModal();
+      }
+    },
+    [createFolder, hideFolderCreateModal, id],
+  );
+
+  const loading = useOneNamespaceEffectsLoading('fileManager', [
+    'createFolder',
+  ]);
+
+  return {
+    folderCreateLoading: loading,
+    onFolderCreateOk,
+    folderCreateModalVisible,
+    hideFolderCreateModal,
+    showFolderCreateModal,
+  };
 };

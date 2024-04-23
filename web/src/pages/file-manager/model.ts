@@ -25,7 +25,7 @@ const model: DvaModel<FileManagerModelState> = {
       if (retcode === 0) {
         yield put({
           type: 'listFile',
-          payload: data.data?.files ?? [],
+          payload: { parentId: payload.parentId },
         });
       }
     },
@@ -43,7 +43,20 @@ const model: DvaModel<FileManagerModelState> = {
     *renameFile({ payload = {} }, { call, put }) {
       const { data } = yield call(fileManagerService.renameFile, payload);
       if (data.retcode === 0) {
-        yield put({ type: 'listFile' });
+        yield put({
+          type: 'listFile',
+          payload: { parentId: payload.parentId },
+        });
+      }
+      return data.retcode;
+    },
+    *createFolder({ payload = {} }, { call, put }) {
+      const { data } = yield call(fileManagerService.createFolder, payload);
+      if (data.retcode === 0) {
+        yield put({
+          type: 'listFile',
+          payload: { parentId: payload.parentId },
+        });
       }
       return data.retcode;
     },

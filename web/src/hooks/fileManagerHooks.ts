@@ -66,6 +66,22 @@ export const useFetchParentFolderList = () => {
   return fetchParentFolderList;
 };
 
+export const useCreateFolder = () => {
+  const dispatch = useDispatch();
+
+  const createFolder = useCallback(
+    (parentId: string, name: string) => {
+      return dispatch<any>({
+        type: 'fileManager/createFolder',
+        payload: { parentId, name, type: 'folder' },
+      });
+    },
+    [dispatch],
+  );
+
+  return createFolder;
+};
+
 export const useSelectFileList = () => {
   const fileList = useSelector((state) => state.fileManager.fileList);
 
