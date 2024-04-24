@@ -1,5 +1,6 @@
 import { IFile, IFolder } from '@/interfaces/database/file-manager';
 import fileManagerService from '@/services/fileManagerService';
+import omit from 'lodash/omit';
 import { DvaModel } from 'umi';
 
 export interface FileManagerModelState {
@@ -20,12 +21,14 @@ const model: DvaModel<FileManagerModelState> = {
   },
   effects: {
     *removeFile({ payload = {} }, { call, put }) {
-      const { data } = yield call(fileManagerService.removeFile, payload);
+      const { data } = yield call(fileManagerService.removeFile, {
+        fileIds: payload.fileIds,
+      });
       const { retcode } = data;
       if (retcode === 0) {
         yield put({
           type: 'listFile',
-          payload: data.data?.files ?? [],
+          payload: { parentId: payload.parentId },
         });
       }
     },
@@ -41,9 +44,25 @@ const model: DvaModel<FileManagerModelState> = {
       }
     },
     *renameFile({ payload = {} }, { call, put }) {
-      const { data } = yield call(fileManagerService.renameFile, payload);
+      const { data } = yield call(
+        fileManagerService.renameFile,
+        omit(payload, ['parentId']),
+      );
       if (data.retcode === 0) {
-        yield put({ type: 'listFile' });
+        yield put({
+          type: 'listFile',
+          payload: { parentId: payload.parentId },
+        });
+      }
+      return data.retcode;
+    },
+    *createFolder({ payload = {} }, { call, put }) {
+      const { data } = yield call(fileManagerService.createFolder, payload);
+      if (data.retcode === 0) {
+        yield put({
+          type: 'listFile',
+          payload: { parentId: payload.parentId },
+        });
       }
       return data.retcode;
     },

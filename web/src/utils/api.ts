@@ -73,4 +73,5 @@ export default {
   removeFile: `${api_host}/file/rm`,
   renameFile: `${api_host}/file/rename`,
   getAllParentFolder: `${api_host}/file/all_parent_folder`,
+  createFolder: `${api_host}/file/create`,
 };
