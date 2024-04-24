@@ -3,7 +3,7 @@ export interface IFile {
   create_time: number;
   created_by: string;
   id: string;
-  kb_ids: string[];
+  kbs_info: { kb_id: string; kb_name: string }[];
   location: string;
   name: string;
   parent_id: string;

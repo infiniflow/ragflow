@@ -56,6 +56,20 @@ const model: DvaModel<FileManagerModelState> = {
       }
       return data.retcode;
     },
+    *uploadFile({ payload = {} }, { call, put }) {
+      const formData = new FormData();
+      formData.append('parent_id', payload.parentId);
+      formData.append('file', payload.file);
+      formData.append('path', payload.path);
+      const { data } = yield call(fileManagerService.uploadFile, formData);
+      if (data.retcode === 0) {
+        yield put({
+          type: 'listFile',
+          payload: { parentId: payload.parentId },
+        });
+      }
+      return data.retcode;
+    },
     *createFolder({ payload = {} }, { call, put }) {
       const { data } = yield call(fileManagerService.createFolder, payload);
       if (data.retcode === 0) {
@@ -75,6 +89,19 @@ const model: DvaModel<FileManagerModelState> = {
         yield put({
           type: 'setParentFolderList',
           payload: data.data?.parent_folders ?? [],
+        });
+      }
+      return data.retcode;
+    },
+    *connectFileToKnowledge({ payload = {} }, { call, put }) {
+      const { data } = yield call(
+        fileManagerService.connectFileToKnowledge,
+        omit(payload, 'parentId'),
+      );
+      if (data.retcode === 0) {
+        yield put({
+          type: 'listFile',
+          payload: { parentId: payload.parentId },
         });
       }
       return data.retcode;

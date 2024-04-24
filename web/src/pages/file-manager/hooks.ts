@@ -4,6 +4,7 @@ import {
   useTranslate,
 } from '@/hooks/commonHooks';
 import {
+  useConnectToKnowledge,
   useCreateFolder,
   useFetchFileList,
   useFetchParentFolderList,
@@ -11,11 +12,14 @@ import {
   useRenameFile,
   useSelectFileList,
   useSelectParentFolderList,
+  useUploadFile,
 } from '@/hooks/fileManagerHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { Pagination } from '@/interfaces/common';
 import { IFile } from '@/interfaces/database/file-manager';
+import { getFilePathByWebkitRelativePath } from '@/utils/fileUtil';
 import { PaginationProps } from 'antd';
+import { UploadFile } from 'antd/lib';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSearchParams, useSelector } from 'umi';
 
@@ -249,4 +253,88 @@ export const useHandleDeleteFile = (fileIds: string[]) => {
 
 export const useSelectFileListLoading = () => {
   return useOneNamespaceEffectsLoading('fileManager', ['listFile']);
+};
+
+export const useHandleUploadFile = () => {
+  const {
+    visible: fileUploadVisible,
+    hideModal: hideFileUploadModal,
+    showModal: showFileUploadModal,
+  } = useSetModalState();
+  const uploadFile = useUploadFile();
+  const id = useGetFolderId();
+
+  const onFileUploadOk = useCallback(
+    async (fileList: UploadFile[]) => {
+      console.info('fileList', fileList);
+      if (fileList.length > 0) {
+        const ret = await uploadFile(
+          fileList[0],
+          id,
+          getFilePathByWebkitRelativePath(fileList[0] as any),
+        );
+
+        if (ret === 0) {
+          hideFileUploadModal();
+        }
+      }
+    },
+    [uploadFile, hideFileUploadModal, id],
+  );
+
+  const loading = useOneNamespaceEffectsLoading('fileManager', ['uploadFile']);
+
+  return {
+    fileUploadLoading: loading,
+    onFileUploadOk,
+    fileUploadVisible,
+    hideFileUploadModal,
+    showFileUploadModal,
+  };
+};
+
+export const useHandleConnectToKnowledge = () => {
+  const {
+    visible: connectToKnowledgeVisible,
+    hideModal: hideConnectToKnowledgeModal,
+    showModal: showConnectToKnowledgeModal,
+  } = useSetModalState();
+  const connectToKnowledge = useConnectToKnowledge();
+  const id = useGetFolderId();
+  const [fileIds, setFileIds] = useState<string[]>([]);
+
+  const onConnectToKnowledgeOk = useCallback(
+    async (knowledgeIds: string[]) => {
+      const ret = await connectToKnowledge({
+        parentId: id,
+        fileIds,
+        kbIds: knowledgeIds,
+      });
+
+      if (ret === 0) {
+        hideConnectToKnowledgeModal();
+      }
+    },
+    [connectToKnowledge, hideConnectToKnowledgeModal, id, fileIds],
+  );
+
+  const loading = useOneNamespaceEffectsLoading('fileManager', [
+    'connectFileToKnowledge',
+  ]);
+
+  const handleShowConnectToKnowledgeModal = useCallback(
+    (ids: string[]) => {
+      setFileIds(ids);
+      showConnectToKnowledgeModal();
+    },
+    [showConnectToKnowledgeModal],
+  );
+
+  return {
+    connectToKnowledgeLoading: loading,
+    onConnectToKnowledgeOk,
+    connectToKnowledgeVisible,
+    hideConnectToKnowledgeModal,
+    showConnectToKnowledgeModal: handleShowConnectToKnowledgeModal,
+  };
 };

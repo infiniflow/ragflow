@@ -32,6 +32,7 @@ import styles from './index.less';
 interface IProps {
   selectedRowKeys: string[];
   showFolderCreateModal: () => void;
+  showFileUploadModal: () => void;
 }
 
 const itemRender: BreadcrumbProps['itemRender'] = (
@@ -48,7 +49,11 @@ const itemRender: BreadcrumbProps['itemRender'] = (
   );
 };
 
-const FileToolbar = ({ selectedRowKeys, showFolderCreateModal }: IProps) => {
+const FileToolbar = ({
+  selectedRowKeys,
+  showFolderCreateModal,
+  showFileUploadModal,
+}: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const { setPagination, searchString } = useGetPagination(fetchDocumentList);
@@ -59,6 +64,7 @@ const FileToolbar = ({ selectedRowKeys, showFolderCreateModal }: IProps) => {
     return [
       {
         key: '1',
+        onClick: showFileUploadModal,
         label: (
           <div>
             <Button type="link">
@@ -85,7 +91,7 @@ const FileToolbar = ({ selectedRowKeys, showFolderCreateModal }: IProps) => {
         // disabled: true,
       },
     ];
-  }, [t, showFolderCreateModal]);
+  }, [t, showFolderCreateModal, showFileUploadModal]);
 
   const { handleRemoveFile } = useHandleDeleteFile(selectedRowKeys);
 
