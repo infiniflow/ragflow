@@ -10,6 +10,7 @@ import {
   useHandleCreateFolder,
   useNavigateToOtherFolder,
   useRenameCurrentFile,
+  useSelectFileListLoading,
 } from './hooks';
 
 import RenameModal from '@/components/rename-modal';
@@ -19,6 +20,7 @@ import styles from './index.less';
 const FileManager = () => {
   const fileList = useSelectFileList();
   const rowSelection = useGetRowSelection();
+  const loading = useSelectFileListLoading();
   const navigateToOtherFolder = useNavigateToOtherFolder();
   const {
     fileRenameVisible,
@@ -94,6 +96,7 @@ const FileManager = () => {
         columns={columns}
         rowKey={'id'}
         rowSelection={rowSelection}
+        loading={loading}
       />
       <RenameModal
         visible={fileRenameVisible}

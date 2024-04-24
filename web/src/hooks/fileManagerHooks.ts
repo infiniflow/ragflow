@@ -22,10 +22,10 @@ export const useRemoveFile = () => {
   const dispatch = useDispatch();
 
   const removeFile = useCallback(
-    (fileIds: string[]) => {
+    (fileIds: string[], parentId: string) => {
       return dispatch<any>({
         type: 'fileManager/removeFile',
-        payload: { fileIds },
+        payload: { fileIds, parentId },
       });
     },
     [dispatch],
@@ -38,10 +38,10 @@ export const useRenameFile = () => {
   const dispatch = useDispatch();
 
   const renameFile = useCallback(
-    (fileId: string, name: string) => {
+    (fileId: string, name: string, parentId: string) => {
       return dispatch<any>({
         type: 'fileManager/renameFile',
-        payload: { fileId, name },
+        payload: { fileId, name, parentId },
       });
     },
     [dispatch],

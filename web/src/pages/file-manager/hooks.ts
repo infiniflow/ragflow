@@ -1,8 +1,13 @@
-import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
+import {
+  useSetModalState,
+  useShowDeleteConfirm,
+  useTranslate,
+} from '@/hooks/commonHooks';
 import {
   useCreateFolder,
   useFetchFileList,
   useFetchParentFolderList,
+  useRemoveFile,
   useRenameFile,
   useSelectFileList,
   useSelectParentFolderList,
@@ -145,7 +150,7 @@ export const useRenameCurrentFile = () => {
 
   const onFileRenameOk = useCallback(
     async (name: string) => {
-      const ret = await renameFile(file.id, name);
+      const ret = await renameFile(file.id, name, file.parent_id);
 
       if (ret === 0) {
         hideFileRenameModal();
@@ -224,4 +229,24 @@ export const useHandleCreateFolder = () => {
     hideFolderCreateModal,
     showFolderCreateModal,
   };
+};
+
+export const useHandleDeleteFile = (fileIds: string[]) => {
+  const removeDocument = useRemoveFile();
+  const showDeleteConfirm = useShowDeleteConfirm();
+  const parentId = useGetFolderId();
+
+  const handleRemoveFile = () => {
+    showDeleteConfirm({
+      onOk: () => {
+        return removeDocument(fileIds, parentId);
+      },
+    });
+  };
+
+  return { handleRemoveFile };
+};
+
+export const useSelectFileListLoading = () => {
+  return useOneNamespaceEffectsLoading('fileManager', ['listFile']);
 };

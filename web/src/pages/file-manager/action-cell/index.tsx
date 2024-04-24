@@ -1,4 +1,5 @@
-import { useShowDeleteConfirm, useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/commonHooks';
+import { IFile } from '@/interfaces/database/file-manager';
 import { api_host } from '@/utils/api';
 import { downloadFile } from '@/utils/fileUtil';
 import {
@@ -8,9 +9,8 @@ import {
   ToolOutlined,
 } from '@ant-design/icons';
 import { Button, Space, Tooltip } from 'antd';
+import { useHandleDeleteFile } from '../hooks';
 
-import { useRemoveFile } from '@/hooks/fileManagerHooks';
-import { IFile } from '@/interfaces/database/file-manager';
 import styles from './index.less';
 
 interface IProps {
@@ -23,18 +23,7 @@ const ActionCell = ({ record, setCurrentRecord, showRenameModal }: IProps) => {
   const documentId = record.id;
   const beingUsed = false;
   const { t } = useTranslate('knowledgeDetails');
-  const removeDocument = useRemoveFile();
-  const showDeleteConfirm = useShowDeleteConfirm();
-
-  const onRmDocument = () => {
-    if (!beingUsed) {
-      showDeleteConfirm({
-        onOk: () => {
-          return removeDocument([documentId]);
-        },
-      });
-    }
-  };
+  const { handleRemoveFile } = useHandleDeleteFile([documentId]);
 
   const onDownloadDocument = () => {
     downloadFile({
@@ -71,7 +60,7 @@ const ActionCell = ({ record, setCurrentRecord, showRenameModal }: IProps) => {
       <Button
         type="text"
         disabled={beingUsed}
-        onClick={onRmDocument}
+        onClick={handleRemoveFile}
         className={styles.iconButton}
       >
         <DeleteOutlined size={20} />
