@@ -248,7 +248,7 @@ $ docker ps
 
 #### 4.9 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
 
-Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (**NOT `localhost`, NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
+Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
 #### 4.10 `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
 
