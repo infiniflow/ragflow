@@ -74,7 +74,7 @@
 ### 📝 必要条件
 
 - CPU >= 4 cores
-- RAM >= 12 GB
+- RAM >= 16 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
 
