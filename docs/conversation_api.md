@@ -11,7 +11,7 @@ https://demo.ragflow.io/v1/
 
 ## Authorization
 
-All the APIs are authorized with API-Key. Please keep it save and private. Don't reveal it in any way from the front-end. 
+All the APIs are authorized with API-Key. Please keep it safe and private. Don't reveal it in any way from the front-end. 
 The API-Key should put in the header of request:
 ```buildoutcfg
 Authorization: Bearer {API_KEY}
