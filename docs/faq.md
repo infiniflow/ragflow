@@ -1,4 +1,9 @@
-# Frequently Asked Questions
+# Frequently Asked Questions  
+
+<p>
+  <a href="./faq.md">English</a> |
+  <a href="./faq_zh.md">简体中文</a>
+</p>
 
 ## General
 
