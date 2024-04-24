@@ -68,17 +68,42 @@ $ docker compose up -d
 curl https://hf-mirror.com
 ```
 
-2. If your network works fine, the issue lies with the Docker network configuration. Adjust the Docker building accordingly:
+2. If your network works fine, the issue lies with the Docker network configuration. Replace the Docker building command:
+```bash
+docker build -t infiniflow/ragflow:vX.Y.Z.
 ```
-# Original：
-docker build -t infiniflow/ragflow:v0.3.0 .
-# Current：
-docker build -t infiniflow/ragflow:v0.3.0 . --network host
+   With this:  
+```bash
+docker build -t infiniflow/ragflow:vX.Y.Z. --network host
 ```
 
-### 2. Issues with huggingface models.
+### 2. Issues with huggingface models
 
-#### 2.1. `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
+#### 2.1 Cannot access https://huggingface.co
+ 
+A *locally* deployed RAGflow downloads OCR and embedding modules from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails: 
+
+```
+FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
+```
+ To fix this issue, use https://hf-mirror.com instead:
+
+ 1. Stop all containers and remove all related resources:
+
+ ```bash
+ cd ragflow/docker/
+ docker compose down
+ ```
+
+ 2. Replace `https://huggingface.co` with `https://hf-mirror.com` in **ragflow/docker/docker-compose.yml**.
+ 
+ 3. Start up the server: 
+
+ ```bash
+ docker compose up -d 
+ ```
+
+#### 2.2. `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
 
 This error suggests that you do not have Internet access or are unable to connect to hf-mirror.com. Try the following: 
 
@@ -88,7 +113,7 @@ This error suggests that you do not have Internet access or are unable to connec
 - ~/deepdoc:/ragflow/rag/res/deepdoc
 ```
 
-#### 2.2 `FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/FileNotFoundError: [Errno 2] No such file or directory: '/ragflow/rag/res/deepdoc/ocr.res'be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'`
+#### 2.3 `FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/FileNotFoundError: [Errno 2] No such file or directory: '/ragflow/rag/res/deepdoc/ocr.res'be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'`
 
 1. Check your network from within Docker, for example: 
 ```bash
@@ -143,7 +168,7 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 
 #### 4.1 `dependency failed to start: container ragflow-mysql is unhealthy`
 
-`dependency failed to start: container ragflow-mysql is unhealthy` means that your MySQL container failed to start. Try replacing `mysql:5.7.18` with `mariadb:10.5.8` in **docker-compose-base.yml** if mysql fails to start.
+`dependency failed to start: container ragflow-mysql is unhealthy` means that your MySQL container failed to start. Try replacing `mysql:5.7.18` with `mariadb:10.5.8` in **docker-compose-base.yml**.
 
 #### 4.2 `Realtime synonym is disabled, since no redis connection`
 
@@ -165,7 +190,7 @@ If your RAGFlow is deployed *locally*, try the following:
 ```bash
 docker logs -f ragflow-server
 ```
-2. Check if the **tast_executor.py** process exist.
+2. Check if the **task_executor.py** process exists.
 3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
 
 
@@ -303,7 +328,6 @@ You limit what the system responds to what you specify in **Empty response** if 
 ### 3. Can I set the base URL for OpenAI somewhere?
 
 ![](https://github.com/infiniflow/ragflow/assets/93570324/8cfb6fa4-8a97-415d-b9fa-b6f405a055f3)
-
 
 ### 4. How to run RAGFlow with a locally deployed LLM?
 
