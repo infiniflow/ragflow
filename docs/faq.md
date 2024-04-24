@@ -68,24 +68,40 @@ $ docker compose up -d
 curl https://hf-mirror.com
 ```
 
-2. If your network works fine, the issue lies with the Docker network configuration. Adjust the Docker building accordingly:
+2. If your network works fine, the issue lies with the Docker network configuration. Replace the Docker building command:
+```bash
+docker build -t infiniflow/ragflow:vX.Y.Z.
 ```
-# Original：
-docker build -t infiniflow/ragflow:v0.3.0 .
-# Current：
-docker build -t infiniflow/ragflow:v0.3.0 . --network host
+   With this:  
+```bash
+docker build -t infiniflow/ragflow:vX.Y.Z. --network host
 ```
 
-### 2. Issues with huggingface models.
+### 2. Issues with huggingface models
 
-#### 2.1 If https://huggingface.co can not be accessed
- - If RAGflow is installed by docker, it will automatically download the OCR and embedding modules from Huggingface website (https://huggingface.co).
- - If your computer can not access https://huggingface.co, such error will appear and PDF file parsing will fail
-   - FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'  
- - if your computer can access https://hf-mirror.com
-   - cd ragflow-0.3.0/docker/; docker compose down
-   - replace https://huggingface.co with https://hf-mirror.com in the ragflow-0.3.0/docker/docker-compose.yml
-   - docker compose up -d
+#### 2.1 Cannot access https://huggingface.co
+ 
+A *locally* deployed RAGflow downloads OCR and embedding modules from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails: 
+
+```
+FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
+```
+ To fix this issue, use https://hf-mirror.com instead:
+
+ 1. Stop all containers and remove all related resources:
+
+ ```bash
+ cd ragflow/docker/
+ docker compose down
+ ```
+
+ 2. Replace `https://huggingface.co` with `https://hf-mirror.com` in **ragflow/docker/docker-compose.yml**.
+ 
+ 3. Start up the server: 
+
+ ```bash
+ docker compose up -d 
+ ```
 
 #### 2.2. `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
 
@@ -152,7 +168,7 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 
 #### 4.1 `dependency failed to start: container ragflow-mysql is unhealthy`
 
-`dependency failed to start: container ragflow-mysql is unhealthy` means that your MySQL container failed to start. Try replacing `mysql:5.7.18` with `mariadb:10.5.8` in **docker-compose-base.yml** if mysql fails to start.
+`dependency failed to start: container ragflow-mysql is unhealthy` means that your MySQL container failed to start. Try replacing `mysql:5.7.18` with `mariadb:10.5.8` in **docker-compose-base.yml**.
 
 #### 4.2 `Realtime synonym is disabled, since no redis connection`
 
@@ -174,7 +190,7 @@ If your RAGFlow is deployed *locally*, try the following:
 ```bash
 docker logs -f ragflow-server
 ```
-2. Check if the **task_executor.py** process exist.
+2. Check if the **task_executor.py** process exists.
 3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
 
 
