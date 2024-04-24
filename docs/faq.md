@@ -1,4 +1,4 @@
-# Frequently Asked Questions  
+# Frequently Asked Questions
 
 <p>
   <a href="./faq.md">English</a> |
