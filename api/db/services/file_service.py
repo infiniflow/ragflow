@@ -46,24 +46,25 @@ class FileService(CommonService):
 
         res_files = list(files.dicts())
         for file in res_files:
-            kb_id = cls.get_kb_id_by_file_id(file['id'])
-            file['kb_ids'] = kb_id
+            kbs_info = cls.get_kb_id_by_file_id(file['id'])
+            file['kbs_info'] = kbs_info
 
         return res_files, count
 
     @classmethod
     @DB.connection_context()
     def get_kb_id_by_file_id(cls, file_id):
-        kb_ids = (cls.model.select(Document.kb_id)
-                 .join(File2Document, on=(File2Document.file_id == file_id))
-                 .join(Document, on=(File2Document.document_id == Document.id))
-                 .where(cls.model.id == file_id))
-        if not kb_ids:
+        kbs = (cls.model.select(Knowledgebase)
+               .join(File2Document, on=(File2Document.file_id == file_id))
+               .join(Document, on=(File2Document.document_id == Document.id))
+               .join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id))
+               .where(cls.model.id == file_id))
+        if not kbs:
             return "Not found!"
-        kb_ids_list = []
-        for kb_id in list(kb_ids.dicts()):
-            kb_ids_list.append(kb_id['kb_id'])
-        return kb_ids_list
+        kbs_info_list = []
+        for kb in list(kbs.dicts()):
+            kbs_info_list.append({"kb_id": kb['id'], "kb_name": kb['name']})
+        return kbs_info_list
 
     @classmethod
     @DB.connection_context()
@@ -149,6 +150,21 @@ class FileService(CommonService):
         else:
             raise RuntimeError("Database error (File doesn't exist)!")
         return file
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_parent_folders(cls, start_id):
+        parent_folders = []
+        current_id = start_id
+        while current_id:
+            e, file = cls.get_by_id(current_id)
+            if file.parent_id != file.id and e:
+                parent_folders.append(file)
+                current_id = file.parent_id
+            else:
+                parent_folders.append(file)
+                break
+        return parent_folders
 
     @classmethod
     @DB.connection_context()

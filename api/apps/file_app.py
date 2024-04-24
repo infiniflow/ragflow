@@ -115,7 +115,7 @@ def upload():
 @validate_request("name")
 def create():
     req = request.json
-    pf_id = request.args.get("parent_id")
+    pf_id = request.json.get("parent_id")
     input_file_type = request.json.get("type")
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
@@ -205,6 +205,23 @@ def get_parent_folder():
     except Exception as e:
         return server_error_response(e)
 
+
+@manager.route('/all_parent_folder', methods=['GET'])
+@login_required
+def get_all_parent_folders():
+    file_id = request.args.get("file_id")
+    try:
+        e, file = FileService.get_by_id(file_id)
+        if not e:
+            return get_data_error_result(retmsg="Folder not found!")
+
+        parent_folders = FileService.get_all_parent_folders(file_id)
+        parent_folders_res = []
+        for parent_folder in parent_folders:
+            parent_folders_res.append(parent_folder.to_json())
+        return get_json_result(data={"parent_folders": parent_folders_res})
+    except Exception as e:
+        return server_error_response(e)
 
 @manager.route('/rm', methods=['POST'])
 @login_required
