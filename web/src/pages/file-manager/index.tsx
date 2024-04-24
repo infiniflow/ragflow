@@ -7,16 +7,20 @@ import ActionCell from './action-cell';
 import FileToolbar from './file-toolbar';
 import {
   useGetRowSelection,
+  useHandleCreateFolder,
   useNavigateToOtherFolder,
   useRenameCurrentFile,
+  useSelectFileListLoading,
 } from './hooks';
 
 import RenameModal from '@/components/rename-modal';
+import FolderCreateModal from './folder-create-modal';
 import styles from './index.less';
 
 const FileManager = () => {
   const fileList = useSelectFileList();
   const rowSelection = useGetRowSelection();
+  const loading = useSelectFileListLoading();
   const navigateToOtherFolder = useNavigateToOtherFolder();
   const {
     fileRenameVisible,
@@ -26,6 +30,13 @@ const FileManager = () => {
     initialFileName,
     onFileRenameOk,
   } = useRenameCurrentFile();
+  const {
+    folderCreateModalVisible,
+    showFolderCreateModal,
+    hideFolderCreateModal,
+    folderCreateLoading,
+    onFolderCreateOk,
+  } = useHandleCreateFolder();
 
   const columns: ColumnsType<IFile> = [
     {
@@ -78,12 +89,14 @@ const FileManager = () => {
     <section className={styles.fileManagerWrapper}>
       <FileToolbar
         selectedRowKeys={rowSelection.selectedRowKeys as string[]}
+        showFolderCreateModal={showFolderCreateModal}
       ></FileToolbar>
       <Table
         dataSource={fileList}
         columns={columns}
         rowKey={'id'}
         rowSelection={rowSelection}
+        loading={loading}
       />
       <RenameModal
         visible={fileRenameVisible}
@@ -92,6 +105,12 @@ const FileManager = () => {
         initialName={initialFileName}
         loading={fileRenameLoading}
       ></RenameModal>
+      <FolderCreateModal
+        loading={folderCreateLoading}
+        visible={folderCreateModalVisible}
+        hideModal={hideFolderCreateModal}
+        onOk={onFolderCreateOk}
+      ></FolderCreateModal>
     </section>
   );
 };

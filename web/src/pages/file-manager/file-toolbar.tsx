@@ -1,9 +1,9 @@
 import { ReactComponent as DeleteIcon } from '@/assets/svg/delete.svg';
-import { useShowDeleteConfirm, useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/commonHooks';
 import {
   DownOutlined,
-  FileOutlined,
   FileTextOutlined,
+  FolderOpenOutlined,
   PlusOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
@@ -17,20 +17,21 @@ import {
   MenuProps,
   Space,
 } from 'antd';
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   useFetchDocumentListOnMount,
   useGetPagination,
+  useHandleDeleteFile,
   useHandleSearchChange,
   useSelectBreadcrumbItems,
 } from './hooks';
 
-import { useRemoveFile } from '@/hooks/fileManagerHooks';
 import { Link } from 'umi';
 import styles from './index.less';
 
 interface IProps {
   selectedRowKeys: string[];
+  showFolderCreateModal: () => void;
 }
 
 const itemRender: BreadcrumbProps['itemRender'] = (
@@ -47,13 +48,11 @@ const itemRender: BreadcrumbProps['itemRender'] = (
   );
 };
 
-const FileToolbar = ({ selectedRowKeys }: IProps) => {
+const FileToolbar = ({ selectedRowKeys, showFolderCreateModal }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const { setPagination, searchString } = useGetPagination(fetchDocumentList);
   const { handleInputChange } = useHandleSearchChange(setPagination);
-  const removeDocument = useRemoveFile();
-  const showDeleteConfirm = useShowDeleteConfirm();
   const breadcrumbItems = useSelectBreadcrumbItems();
 
   const actionItems: MenuProps['items'] = useMemo(() => {
@@ -74,26 +73,21 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
       { type: 'divider' },
       {
         key: '2',
+        onClick: showFolderCreateModal,
         label: (
           <div>
             <Button type="link">
-              <FileOutlined />
-              {t('emptyFiles')}
+              <FolderOpenOutlined />
+              New Folder
             </Button>
           </div>
         ),
         // disabled: true,
       },
     ];
-  }, [t]);
+  }, [t, showFolderCreateModal]);
 
-  const handleDelete = useCallback(() => {
-    showDeleteConfirm({
-      onOk: () => {
-        return removeDocument(selectedRowKeys);
-      },
-    });
-  }, [removeDocument, showDeleteConfirm, selectedRowKeys]);
+  const { handleRemoveFile } = useHandleDeleteFile(selectedRowKeys);
 
   const disabled = selectedRowKeys.length === 0;
 
@@ -101,7 +95,7 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
     return [
       {
         key: '4',
-        onClick: handleDelete,
+        onClick: handleRemoveFile,
         label: (
           <Flex gap={10}>
             <span className={styles.deleteIconWrapper}>
@@ -112,7 +106,7 @@ const FileToolbar = ({ selectedRowKeys }: IProps) => {
         ),
       },
     ];
-  }, [handleDelete, t]);
+  }, [handleRemoveFile, t]);
 
   return (
     <div className={styles.filter}>
