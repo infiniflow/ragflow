@@ -13,10 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from datetime import datetime
 
 from api.db.db_models import DB
 from api.db.db_models import File, Document, File2Document
 from api.db.services.common_service import CommonService
+from api.utils import current_timestamp, datetime_format
 
 
 class File2DocumentService(CommonService):
@@ -54,3 +56,12 @@ class File2DocumentService(CommonService):
     @DB.connection_context()
     def delete_by_file_id(cls, file_id):
         return cls.model.delete().where(cls.model.file_id == file_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def update_by_file_id(cls, file_id, obj):
+        obj["update_time"] = current_timestamp()
+        obj["update_date"] = datetime_format(datetime.now())
+        num = cls.model.update(obj).where(cls.model.id == file_id).execute()
+        e, obj = cls.get_by_id(cls.model.id)
+        return obj

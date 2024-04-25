@@ -15,6 +15,7 @@
 #
 from elasticsearch_dsl import Q
 
+from api.db.db_models import File2Document
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
@@ -39,13 +40,13 @@ def convert():
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
     file2documents = []
-
+    # if not kb_ids:
+    #     return get_json_result(
+    #         data=False, retmsg='Lack of "KB ID"', retcode=RetCode.ARGUMENT_ERROR)
     try:
         for file_id in file_ids:
+            File2DocumentService.delete_by_file_id(file_id)
             for kb_id in kb_ids:
-                if not kb_id:
-                    return get_json_result(
-                        data=False, retmsg='Lack of "KB ID"', retcode=RetCode.ARGUMENT_ERROR)
                 e, kb = KnowledgebaseService.get_by_id(kb_id)
                 if not e:
                     return get_data_error_result(
@@ -54,9 +55,6 @@ def convert():
                 if not e:
                     return get_data_error_result(
                         retmsg="Can't find this file!")
-                # if DocumentService.query(name=file.name, kb_id=kb_id):
-                #     return get_data_error_result(
-                #         retmsg="Duplicated document name in the same knowledgebase.")
 
                 doc = DocumentService.insert({
                     "id": get_uuid(),
