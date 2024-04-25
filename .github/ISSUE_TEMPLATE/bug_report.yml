@@ -1,5 +1,5 @@
 name: Bug Report
-description: Create a bug issue for infinity
+description: Create a bug issue for RAGFlow
 title: "[Bug]: "
 labels: [bug]
 body:

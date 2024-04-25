@@ -1,7 +1,7 @@
 ---
 name: Feature request
 title: '[Feature Request]: '
-about: Suggest an idea for Infinity
+about: Suggest an idea for RAGFlow
 labels: ''
 ---
 
