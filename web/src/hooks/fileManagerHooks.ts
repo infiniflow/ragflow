@@ -103,14 +103,14 @@ export const useUploadFile = () => {
   const dispatch = useDispatch();
 
   const uploadFile = useCallback(
-    (file: UploadFile, parentId: string, path: string) => {
+    (fileList: UploadFile[], parentId: string) => {
       try {
         return dispatch<any>({
           type: 'fileManager/uploadFile',
           payload: {
-            file,
+            file: fileList,
             parentId,
-            path,
+            path: fileList.map((file) => (file as any).webkitRelativePath),
           },
         });
       } catch (errorInfo) {

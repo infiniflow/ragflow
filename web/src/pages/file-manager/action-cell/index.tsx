@@ -17,7 +17,8 @@ interface IProps {
   record: IFile;
   setCurrentRecord: (record: any) => void;
   showRenameModal: (record: IFile) => void;
-  showConnectToKnowledgeModal: (ids: string[]) => void;
+  showConnectToKnowledgeModal: (record: IFile) => void;
+  setSelectedRowKeys(keys: string[]): void;
 }
 
 const ActionCell = ({
@@ -25,11 +26,15 @@ const ActionCell = ({
   setCurrentRecord,
   showRenameModal,
   showConnectToKnowledgeModal,
+  setSelectedRowKeys,
 }: IProps) => {
   const documentId = record.id;
   const beingUsed = false;
   const { t } = useTranslate('knowledgeDetails');
-  const { handleRemoveFile } = useHandleDeleteFile([documentId]);
+  const { handleRemoveFile } = useHandleDeleteFile(
+    [documentId],
+    setSelectedRowKeys,
+  );
 
   const onDownloadDocument = () => {
     downloadFile({
@@ -48,7 +53,7 @@ const ActionCell = ({
   };
 
   const onShowConnectToKnowledgeModal = () => {
-    showConnectToKnowledgeModal([documentId]);
+    showConnectToKnowledgeModal(record);
   };
 
   return (
@@ -79,14 +84,16 @@ const ActionCell = ({
       >
         <DeleteOutlined size={20} />
       </Button>
-      <Button
-        type="text"
-        disabled={beingUsed}
-        onClick={onDownloadDocument}
-        className={styles.iconButton}
-      >
-        <DownloadOutlined size={20} />
-      </Button>
+      {record.type !== 'folder' && (
+        <Button
+          type="text"
+          disabled={beingUsed}
+          onClick={onDownloadDocument}
+          className={styles.iconButton}
+        >
+          <DownloadOutlined size={20} />
+        </Button>
+      )}
     </Space>
   );
 };

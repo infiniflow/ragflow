@@ -69,7 +69,7 @@ export default {
       name: '名稱',
       namePlaceholder: '請輸入名稱',
       doc: '文件',
-      datasetDescription: '嘿，添加數據集後別忘了調整解析塊！😉',
+      datasetDescription: '😉 解析成功後才能問答哦。',
       addFile: '新增文件',
       searchFiles: '搜索文件',
       localFiles: '本地文件',

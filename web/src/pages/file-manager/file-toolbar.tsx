@@ -20,7 +20,6 @@ import {
 import { useMemo } from 'react';
 import {
   useFetchDocumentListOnMount,
-  useGetPagination,
   useHandleDeleteFile,
   useHandleSearchChange,
   useSelectBreadcrumbItems,
@@ -33,6 +32,7 @@ interface IProps {
   selectedRowKeys: string[];
   showFolderCreateModal: () => void;
   showFileUploadModal: () => void;
+  setSelectedRowKeys: (keys: string[]) => void;
 }
 
 const itemRender: BreadcrumbProps['itemRender'] = (
@@ -53,11 +53,11 @@ const FileToolbar = ({
   selectedRowKeys,
   showFolderCreateModal,
   showFileUploadModal,
+  setSelectedRowKeys,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
-  const { fetchDocumentList } = useFetchDocumentListOnMount();
-  const { setPagination, searchString } = useGetPagination(fetchDocumentList);
-  const { handleInputChange } = useHandleSearchChange(setPagination);
+  useFetchDocumentListOnMount();
+  const { handleInputChange, searchString } = useHandleSearchChange();
   const breadcrumbItems = useSelectBreadcrumbItems();
 
   const actionItems: MenuProps['items'] = useMemo(() => {
@@ -93,7 +93,10 @@ const FileToolbar = ({
     ];
   }, [t, showFolderCreateModal, showFileUploadModal]);
 
-  const { handleRemoveFile } = useHandleDeleteFile(selectedRowKeys);
+  const { handleRemoveFile } = useHandleDeleteFile(
+    selectedRowKeys,
+    setSelectedRowKeys,
+  );
 
   const disabled = selectedRowKeys.length === 0;
 
