@@ -369,7 +369,7 @@ export default {
       password: '密码',
       passwordDescription: '请输入您当前的密码以更改您的密码。',
       model: '模型提供商',
-      modelDescription: '在此管理您的帐户设置和首选项。',
+      modelDescription: '在此设置模型参数和 API Key。',
       team: '团队',
       logout: '登出',
       username: '用户名',

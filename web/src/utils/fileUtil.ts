@@ -85,3 +85,12 @@ export const downloadFile = ({
   downloadElement.click();
   document.body.removeChild(downloadElement);
 };
+
+export const getFilePathByWebkitRelativePath = (file: File) => {
+  const path = file.webkitRelativePath;
+  return path;
+  // if (path !== '') {
+  //   return path.slice(0, path.lastIndexOf('/'));
+  // }
+  // return path;
+};

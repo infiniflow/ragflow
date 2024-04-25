@@ -228,7 +228,7 @@ const UserSettingModel = () => {
         <section className={styles.modelWrapper}>
           <SettingTitle
             title={t('model')}
-            description={t('profileDescription')}
+            description={t('modelDescription')}
             showRightButton
             clickButton={showSystemSettingModal}
           ></SettingTitle>

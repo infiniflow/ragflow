@@ -9,6 +9,7 @@ const {
   renameFile,
   getAllParentFolder,
   createFolder,
+  connectFileToKnowledge,
 } = api;
 
 const methods = {
@@ -34,6 +35,10 @@ const methods = {
   },
   createFolder: {
     url: createFolder,
+    method: 'post',
+  },
+  connectFileToKnowledge: {
+    url: connectFileToKnowledge,
     method: 'post',
   },
 } as const;

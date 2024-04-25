@@ -17,9 +17,15 @@ interface IProps {
   record: IFile;
   setCurrentRecord: (record: any) => void;
   showRenameModal: (record: IFile) => void;
+  showConnectToKnowledgeModal: (ids: string[]) => void;
 }
 
-const ActionCell = ({ record, setCurrentRecord, showRenameModal }: IProps) => {
+const ActionCell = ({
+  record,
+  setCurrentRecord,
+  showRenameModal,
+  showConnectToKnowledgeModal,
+}: IProps) => {
   const documentId = record.id;
   const beingUsed = false;
   const { t } = useTranslate('knowledgeDetails');
@@ -41,9 +47,17 @@ const ActionCell = ({ record, setCurrentRecord, showRenameModal }: IProps) => {
     showRenameModal(record);
   };
 
+  const onShowConnectToKnowledgeModal = () => {
+    showConnectToKnowledgeModal([documentId]);
+  };
+
   return (
     <Space size={0}>
-      <Button type="text" className={styles.iconButton}>
+      <Button
+        type="text"
+        className={styles.iconButton}
+        onClick={onShowConnectToKnowledgeModal}
+      >
         <ToolOutlined size={20} />
       </Button>
 

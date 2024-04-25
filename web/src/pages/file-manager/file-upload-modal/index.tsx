@@ -1,61 +1,124 @@
+import { IModalProps } from '@/interfaces/common';
 import { InboxOutlined } from '@ant-design/icons';
-import { Modal, Segmented, Upload, UploadProps, message } from 'antd';
-import { useState } from 'react';
+import {
+  Flex,
+  Modal,
+  Segmented,
+  Tabs,
+  TabsProps,
+  Upload,
+  UploadFile,
+  UploadProps,
+} from 'antd';
+import { Dispatch, SetStateAction, useState } from 'react';
+import { useHandleUploadFile } from '../hooks';
 
 const { Dragger } = Upload;
 
-const FileUploadModal = () => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
+const FileUpload = ({
+  directory,
+  fileList,
+  setFileList,
+}: {
+  directory: boolean;
+  fileList: UploadFile[];
+  setFileList: Dispatch<SetStateAction<UploadFile[]>>;
+}) => {
   const props: UploadProps = {
-    name: 'file',
     multiple: true,
-    action: 'https://660d2bd96ddfa2943b33731c.mockapi.io/api/upload',
-    onChange(info) {
-      const { status } = info.file;
-      if (status !== 'uploading') {
-        console.log(info.file, info.fileList);
-      }
-      if (status === 'done') {
-        message.success(`${info.file.name} file uploaded successfully.`);
-      } else if (status === 'error') {
-        message.error(`${info.file.name} file upload failed.`);
-      }
+    onRemove: (file) => {
+      const index = fileList.indexOf(file);
+      const newFileList = fileList.slice();
+      newFileList.splice(index, 1);
+      setFileList(newFileList);
     },
-    onDrop(e) {
-      console.log('Dropped files', e.dataTransfer.files);
+    beforeUpload: (file) => {
+      setFileList((pre) => {
+        return [...pre, file];
+      });
+
+      return false;
     },
+    directory,
+    fileList,
   };
 
-  const handleOk = () => {
-    setIsModalOpen(false);
+  return (
+    <Dragger {...props}>
+      <p className="ant-upload-drag-icon">
+        <InboxOutlined />
+      </p>
+      <p className="ant-upload-text">
+        Click or drag file to this area to upload
+      </p>
+      <p className="ant-upload-hint">
+        Support for a single or bulk upload. Strictly prohibited from uploading
+        company data or other banned files.
+      </p>
+    </Dragger>
+  );
+};
+
+const FileUploadModal = ({ visible, hideModal }: IModalProps<any>) => {
+  const [value, setValue] = useState<string | number>('local');
+  const { onFileUploadOk, fileUploadLoading } = useHandleUploadFile();
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [directoryFileList, setDirectoryFileList] = useState<UploadFile[]>([]);
+
+  const onOk = () => {
+    onFileUploadOk([...fileList, ...directoryFileList]);
   };
 
-  const handleCancel = () => {
-    setIsModalOpen(false);
-  };
+  const items: TabsProps['items'] = [
+    {
+      key: '1',
+      label: 'File',
+      children: (
+        <FileUpload
+          directory={false}
+          fileList={fileList}
+          setFileList={setFileList}
+        ></FileUpload>
+      ),
+    },
+    {
+      key: '2',
+      label: 'Directory',
+      children: (
+        <FileUpload
+          directory
+          fileList={directoryFileList}
+          setFileList={setDirectoryFileList}
+        ></FileUpload>
+      ),
+    },
+  ];
 
   return (
     <>
       <Modal
         title="File upload"
-        open={isModalOpen}
-        onOk={handleOk}
-        onCancel={handleCancel}
+        open={visible}
+        onOk={onOk}
+        onCancel={hideModal}
+        confirmLoading={fileUploadLoading}
       >
-        <Segmented options={['Local uploads', 'S3 uploads']} block />
-        <Dragger {...props}>
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
-          <p className="ant-upload-text">
-            Click or drag file to this area to upload
-          </p>
-          <p className="ant-upload-hint">
-            Support for a single or bulk upload. Strictly prohibited from
-            uploading company data or other banned files.
-          </p>
-        </Dragger>
+        <Flex gap={'large'} vertical>
+          <Segmented
+            options={[
+              { label: 'Local uploads', value: 'local' },
+              { label: 'S3 uploads', value: 's3' },
+            ]}
+            block
+            value={value}
+            onChange={setValue}
+          />
+          {value === 'local' ? (
+            <Tabs defaultActiveKey="1" items={items} />
+          ) : (
+            'coming soon'
+          )}
+        </Flex>
       </Modal>
     </>
   );
