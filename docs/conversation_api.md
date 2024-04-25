@@ -303,5 +303,61 @@ This will be called to get the answer to users' questions.
 ## Get document content or image
 
 This is usually used when display content of citation.
-### Path: /document/get/\<id\>
+### Path: /api/document/get/\<id\>
 ### Method: GET
+
+## Upload file
+
+This is usually used when upload a file to.
+### Path: /api/document/upload/
+### Method: POST
+
+### Parameter:
+
+| name    | type   | optional | description                            |
+|---------|--------|----------|----------------------------------------|
+| file    | file   | No       | Upload file.                           |
+| kb_name | string | No       | Choose the upload knowledge base name. |
+
+### Response 
+```json
+{
+    "data": {
+        "chunk_num": 0,
+        "create_date": "Thu, 25 Apr 2024 14:30:06 GMT",
+        "create_time": 1714026606921,
+        "created_by": "553ec818fd5711ee8ea63043d7ed348e",
+        "id": "41e9324602cd11ef9f5f3043d7ed348e",
+        "kb_id": "06802686c0a311ee85d6246e9694c130",
+        "location": "readme.txt",
+        "name": "readme.txt",
+        "parser_config": {
+            "field_map": {
+            },
+            "pages": [
+                [
+                    0,
+                    1000000
+                ]
+            ]
+        },
+        "parser_id": "general",
+        "process_begin_at": null,
+        "process_duation": 0.0,
+        "progress": 0.0,
+        "progress_msg": "",
+        "run": "0",
+        "size": 929,
+        "source_type": "local",
+        "status": "1",
+        "thumbnail": null,
+        "token_num": 0,
+        "type": "doc",
+        "update_date": "Thu, 25 Apr 2024 14:30:06 GMT",
+        "update_time": 1714026606921
+    },
+    "retcode": 0,
+    "retmsg": "success"
+}
+
+```

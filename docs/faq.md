@@ -50,7 +50,7 @@ This feature and the related APIs are still in development. Contributions are we
 
 ### 1. Issues with docker images
 
-#### 1.1 Due to the fast iteration of RAGFlow updates, it is recommended to build the image from scratch.
+#### 1.1 How to build the RAGFlow image from scratch?
 
 ```
 $ git clone https://github.com/infiniflow/ragflow.git
@@ -343,3 +343,7 @@ You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow
 1. Click the **Knowledge Base** tab in the middle top of the page.
 2. Right click the desired knowledge base to display the **Configuration** dialogue. 
 3. Choose **Q&A** as the chunk method and click **Save** to confirm your change. 
+
+### Do I need to connect to Redis?
+
+No, connecting to Redis is not required to use RAGFlow. 
