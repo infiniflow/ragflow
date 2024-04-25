@@ -167,7 +167,7 @@ def update_progress():
             info = {
                 "process_duation": datetime.timestamp(
                     datetime.now()) -
-                d["process_begin_at"].timestamp(),
+                                   d["process_begin_at"].timestamp(),
                 "run": status}
             if prg != 0:
                 info["progress"] = prg

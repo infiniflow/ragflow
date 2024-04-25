@@ -25,6 +25,14 @@ class RedisDB:
     def is_alive(self):
         return self.REDIS is not None
 
+    def exist(self, k):
+        if not self.REDIS: return
+        try:
+            return self.REDIS.exists(k)
+        except Exception as e:
+            logging.warning("[EXCEPTION]exist" + str(k) + "||" + str(e))
+            self.__open__()
+
     def get(self, k):
         if not self.REDIS: return
         try:
@@ -48,6 +56,17 @@ class RedisDB:
             return True
         except Exception as e:
             logging.warning("[EXCEPTION]set" + str(k) + "||" + str(e))
+            self.__open__()
+        return False
+
+    def transaction(self, key, value, exp=3600):
+        try:
+            pipeline = self.REDIS.pipeline(transaction=True)
+            pipeline.set(key, value, exp, nx=True)
+            pipeline.execute()
+            return True
+        except Exception as e:
+            logging.warning("[EXCEPTION]set" + str(key) + "||" + str(e))
             self.__open__()
         return False
 

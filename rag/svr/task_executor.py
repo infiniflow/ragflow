@@ -107,8 +107,14 @@ def get_minio_binary(bucket, name):
     global MINIO
     if REDIS_CONN.is_alive():
         try:
+            for _ in range(30):
+                if REDIS_CONN.exist("{}/{}".format(bucket, name)):
+                    time.sleep(1)
+                    break
+                time.sleep(1)
             r = REDIS_CONN.get("{}/{}".format(bucket, name))
             if r: return r
+            cron_logger.warning("Cache missing: {}".format(name))
         except Exception as e:
             cron_logger.warning("Get redis[EXCEPTION]:" + str(e))
     return MINIO.get(bucket, name)
