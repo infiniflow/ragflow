@@ -11,7 +11,6 @@ import {
   UploadProps,
 } from 'antd';
 import { Dispatch, SetStateAction, useState } from 'react';
-import { useHandleUploadFile } from '../hooks';
 
 const { Dragger } = Upload;
 
@@ -59,14 +58,18 @@ const FileUpload = ({
   );
 };
 
-const FileUploadModal = ({ visible, hideModal }: IModalProps<any>) => {
+const FileUploadModal = ({
+  visible,
+  hideModal,
+  loading,
+  onOk: onFileUploadOk,
+}: IModalProps<UploadFile[]>) => {
   const [value, setValue] = useState<string | number>('local');
-  const { onFileUploadOk, fileUploadLoading } = useHandleUploadFile();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [directoryFileList, setDirectoryFileList] = useState<UploadFile[]>([]);
 
   const onOk = () => {
-    onFileUploadOk([...fileList, ...directoryFileList]);
+    return onFileUploadOk?.([...fileList, ...directoryFileList]);
   };
 
   const items: TabsProps['items'] = [
@@ -101,7 +104,7 @@ const FileUploadModal = ({ visible, hideModal }: IModalProps<any>) => {
         open={visible}
         onOk={onOk}
         onCancel={hideModal}
-        confirmLoading={fileUploadLoading}
+        confirmLoading={loading}
       >
         <Flex gap={'large'} vertical>
           <Segmented

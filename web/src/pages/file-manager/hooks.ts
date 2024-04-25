@@ -1,8 +1,4 @@
-import {
-  useSetModalState,
-  useShowDeleteConfirm,
-  useTranslate,
-} from '@/hooks/commonHooks';
+import { useSetModalState, useShowDeleteConfirm } from '@/hooks/commonHooks';
 import {
   useConnectToKnowledge,
   useCreateFolder,
@@ -14,10 +10,9 @@ import {
   useSelectParentFolderList,
   useUploadFile,
 } from '@/hooks/fileManagerHooks';
+import { useGetPagination, useSetPagination } from '@/hooks/logicHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import { Pagination } from '@/interfaces/common';
 import { IFile } from '@/interfaces/database/file-manager';
-import { getFilePathByWebkitRelativePath } from '@/utils/fileUtil';
 import { PaginationProps } from 'antd';
 import { UploadFile } from 'antd/lib';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -27,95 +22,72 @@ export const useGetFolderId = () => {
   const [searchParams] = useSearchParams();
   const id = searchParams.get('folderId') as string;
 
-  return id;
+  return id ?? '';
 };
 
 export const useFetchDocumentListOnMount = () => {
   const fetchDocumentList = useFetchFileList();
   const fileList = useSelectFileList();
   const id = useGetFolderId();
+  const { searchString, pagination } = useSelector(
+    (state) => state.fileManager,
+  );
+  const { pageSize, current } = pagination;
 
   const dispatch = useDispatch();
 
   useEffect(() => {
-    fetchDocumentList({ parent_id: id });
-  }, [dispatch, fetchDocumentList, id]);
+    fetchDocumentList({
+      parent_id: id,
+      keywords: searchString,
+      page_size: pageSize,
+      page: current,
+    });
+  }, [dispatch, fetchDocumentList, id, current, pageSize, searchString]);
 
   return { fetchDocumentList, fileList };
 };
 
-export const useGetPagination = (
-  fetchDocumentList: (payload: IFile) => any,
-) => {
-  const dispatch = useDispatch();
-  const kFModel = useSelector((state: any) => state.kFModel);
-  const { t } = useTranslate('common');
+export const useGetFilesPagination = () => {
+  const { pagination } = useSelector((state) => state.fileManager);
 
-  const setPagination = useCallback(
-    (pageNumber = 1, pageSize?: number) => {
-      const pagination: Pagination = {
-        current: pageNumber,
-      } as Pagination;
-      if (pageSize) {
-        pagination.pageSize = pageSize;
-      }
-      dispatch({
-        type: 'kFModel/setPagination',
-        payload: pagination,
-      });
-    },
-    [dispatch],
-  );
+  const setPagination = useSetPagination('fileManager');
 
   const onPageChange: PaginationProps['onChange'] = useCallback(
     (pageNumber: number, pageSize: number) => {
       setPagination(pageNumber, pageSize);
-      fetchDocumentList();
     },
-    [fetchDocumentList, setPagination],
+    [setPagination],
   );
 
-  const pagination: PaginationProps = useMemo(() => {
-    return {
-      showQuickJumper: true,
-      total: kFModel.total,
-      showSizeChanger: true,
-      current: kFModel.pagination.current,
-      pageSize: kFModel.pagination.pageSize,
-      pageSizeOptions: [1, 2, 10, 20, 50, 100],
-      onChange: onPageChange,
-      showTotal: (total) => `${t('total')} ${total}`,
-    };
-  }, [kFModel, onPageChange, t]);
+  const { pagination: paginationInfo } = useGetPagination(
+    pagination.total,
+    pagination.current,
+    pagination.pageSize,
+    onPageChange,
+  );
 
   return {
-    pagination,
+    pagination: paginationInfo,
     setPagination,
-    total: kFModel.total,
-    searchString: kFModel.searchString,
   };
 };
 
-export const useHandleSearchChange = (setPagination: () => void) => {
+export const useHandleSearchChange = () => {
   const dispatch = useDispatch();
-
-  const throttledGetDocumentList = useCallback(() => {
-    dispatch({
-      type: 'kFModel/throttledGetDocumentList',
-    });
-  }, [dispatch]);
+  const { searchString } = useSelector((state) => state.fileManager);
+  const setPagination = useSetPagination('fileManager');
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const value = e.target.value;
-      dispatch({ type: 'kFModel/setSearchString', payload: value });
+      dispatch({ type: 'fileManager/setSearchString', payload: value });
       setPagination();
-      throttledGetDocumentList();
     },
-    [setPagination, throttledGetDocumentList, dispatch],
+    [setPagination, dispatch],
   );
 
-  return { handleInputChange };
+  return { handleInputChange, searchString };
 };
 
 export const useGetRowSelection = () => {
@@ -128,7 +100,7 @@ export const useGetRowSelection = () => {
     },
   };
 
-  return rowSelection;
+  return { rowSelection, setSelectedRowKeys };
 };
 
 export const useNavigateToOtherFolder = () => {
@@ -235,15 +207,22 @@ export const useHandleCreateFolder = () => {
   };
 };
 
-export const useHandleDeleteFile = (fileIds: string[]) => {
+export const useHandleDeleteFile = (
+  fileIds: string[],
+  setSelectedRowKeys: (keys: string[]) => void,
+) => {
   const removeDocument = useRemoveFile();
   const showDeleteConfirm = useShowDeleteConfirm();
   const parentId = useGetFolderId();
 
   const handleRemoveFile = () => {
     showDeleteConfirm({
-      onOk: () => {
-        return removeDocument(fileIds, parentId);
+      onOk: async () => {
+        const retcode = await removeDocument(fileIds, parentId);
+        if (retcode === 0) {
+          setSelectedRowKeys([]);
+        }
+        return;
       },
     });
   };
@@ -268,12 +247,8 @@ export const useHandleUploadFile = () => {
     async (fileList: UploadFile[]) => {
       console.info('fileList', fileList);
       if (fileList.length > 0) {
-        const ret = await uploadFile(
-          fileList[0],
-          id,
-          getFilePathByWebkitRelativePath(fileList[0] as any),
-        );
-
+        const ret = await uploadFile(fileList, id);
+        console.info(ret);
         if (ret === 0) {
           hideFileUploadModal();
         }
@@ -301,13 +276,19 @@ export const useHandleConnectToKnowledge = () => {
   } = useSetModalState();
   const connectToKnowledge = useConnectToKnowledge();
   const id = useGetFolderId();
-  const [fileIds, setFileIds] = useState<string[]>([]);
+  const [record, setRecord] = useState<IFile>({} as IFile);
+
+  const initialValue = useMemo(() => {
+    return Array.isArray(record?.kbs_info)
+      ? record?.kbs_info?.map((x) => x.kb_id)
+      : [];
+  }, [record?.kbs_info]);
 
   const onConnectToKnowledgeOk = useCallback(
     async (knowledgeIds: string[]) => {
       const ret = await connectToKnowledge({
         parentId: id,
-        fileIds,
+        fileIds: [record.id],
         kbIds: knowledgeIds,
       });
 
@@ -315,7 +296,7 @@ export const useHandleConnectToKnowledge = () => {
         hideConnectToKnowledgeModal();
       }
     },
-    [connectToKnowledge, hideConnectToKnowledgeModal, id, fileIds],
+    [connectToKnowledge, hideConnectToKnowledgeModal, id, record.id],
   );
 
   const loading = useOneNamespaceEffectsLoading('fileManager', [
@@ -323,14 +304,15 @@ export const useHandleConnectToKnowledge = () => {
   ]);
 
   const handleShowConnectToKnowledgeModal = useCallback(
-    (ids: string[]) => {
-      setFileIds(ids);
+    (record: IFile) => {
+      setRecord(record);
       showConnectToKnowledgeModal();
     },
     [showConnectToKnowledgeModal],
   );
 
   return {
+    initialValue,
     connectToKnowledgeLoading: loading,
     onConnectToKnowledgeOk,
     connectToKnowledgeVisible,

@@ -1,14 +1,16 @@
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import { IModalProps } from '@/interfaces/common';
 import { Form, Modal, Select, SelectProps } from 'antd';
+import { useEffect } from 'react';
 
 const ConnectToKnowledgeModal = ({
   visible,
   hideModal,
   onOk,
-}: IModalProps<string[]>) => {
+  initialValue,
+}: IModalProps<string[]> & { initialValue: string[] }) => {
   const [form] = Form.useForm();
-  const { list } = useFetchKnowledgeList();
+  const { list, fetchList } = useFetchKnowledgeList();
 
   const options: SelectProps['options'] = list?.map((item) => ({
     label: item.name,
@@ -18,10 +20,15 @@ const ConnectToKnowledgeModal = ({
   const handleOk = async () => {
     const values = await form.getFieldsValue();
     const knowledgeIds = values.knowledgeIds ?? [];
-    if (knowledgeIds.length > 0) {
-      return onOk?.(knowledgeIds);
-    }
+    return onOk?.(knowledgeIds);
   };
+
+  useEffect(() => {
+    if (visible) {
+      form.setFieldValue('knowledgeIds', initialValue);
+      fetchList();
+    }
+  }, [visible, fetchList, initialValue, form]);
 
   return (
     <Modal
@@ -31,17 +38,7 @@ const ConnectToKnowledgeModal = ({
       onCancel={hideModal}
     >
       <Form form={form}>
-        <Form.Item
-          name="knowledgeIds"
-          noStyle
-          rules={[
-            {
-              required: true,
-              message: 'Please select your favourite colors!',
-              type: 'array',
-            },
-          ]}
-        >
+        <Form.Item name="knowledgeIds" noStyle>
           <Select
             mode="multiple"
             allowClear

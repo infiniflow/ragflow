@@ -70,7 +70,7 @@ export default {
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
       datasetDescription:
-        "Hey, don't forget to adjust the chunk after adding the dataset! 😉",
+        '😉 Questions and answers can only be answered after the parsing is successful.',
       addFile: 'Add file',
       searchFiles: 'Search your files',
       localFiles: 'Local files',
