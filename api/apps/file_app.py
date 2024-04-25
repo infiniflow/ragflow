@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import json
 import os
 import pathlib
 
@@ -38,6 +39,10 @@ from rag.utils.minio_conn import MINIO
 def upload():
     pf_id = request.form.get("parent_id")
     path = request.form.get("path")
+    if path:
+        path = json.loads(path)
+    else:
+        path = None
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
         pf_id = root_folder.id
@@ -45,67 +50,77 @@ def upload():
     if 'file' not in request.files:
         return get_json_result(
             data=False, retmsg='No file part!', retcode=RetCode.ARGUMENT_ERROR)
-    file_obj = request.files['file']
-    if file_obj.filename == '':
-        return get_json_result(
-            data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
+    file_objs = request.files.getlist('file')
 
+    for file_obj in file_objs:
+        if file_obj.filename == '':
+            return get_json_result(
+                data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
+    file_res = []
     try:
-        e, file = FileService.get_by_id(pf_id)
-        if not e:
-            return get_data_error_result(
-                retmsg="Can't find this folder!")
-        if FileService.get_file_count(file.tenant_id) >= int(os.environ.get('MAX_FILE_NUM_PER_USER', 8192)):
-            return get_data_error_result(
-                retmsg="Exceed the maximum file number of a free user!")
-
-        # split file name path
-        file_obj_names = path.split('/')
-        file_len = len(file_obj_names)
-
-        # get folder
-        file_id_list = FileService.get_id_list_by_id(pf_id, file_obj_names, 1, [pf_id])
-        len_id_list = len(file_id_list)
-
-        # create folder
-        if file_len != len_id_list:
-            e, file = FileService.get_by_id(file_id_list[len_id_list - 1])
+        for i in range(len(file_objs)):
+            file_obj = file_objs[i]
+            e, file = FileService.get_by_id(pf_id)
             if not e:
-                return get_data_error_result(retmsg="Folder not found!")
-            last_folder = FileService.create_folder(file, file_id_list[len_id_list - 1], file_obj_names, len_id_list)
-        else:
-            e, file = FileService.get_by_id(file_id_list[len_id_list - 2])
-            if not e:
-                return get_data_error_result(retmsg="Folder not found!")
-            last_folder = FileService.create_folder(file, file_id_list[len_id_list - 2], file_obj_names, len_id_list)
+                return get_data_error_result(
+                    retmsg="Can't find this folder!")
+            if FileService.get_file_count(file.tenant_id) >= int(os.environ.get('MAX_FILE_NUM_PER_USER', 8192)):
+                return get_data_error_result(
+                    retmsg="Exceed the maximum file number of a free user!")
 
-        # file type
-        filetype = filename_type(file_obj_names[file_len - 1])
-        if not filetype:
-            return get_data_error_result(
-                retmsg="This type of file has not been supported yet!")
+            # split file name path
+            if not path:
+                e, file = FileService.get_by_id(pf_id)
+                file_obj_names = [file.name, file_obj.filename]
+            else:
+                full_path = '/' + path[i]
+                file_obj_names = full_path.split('/')
+            file_len = len(file_obj_names)
 
-        location = file_obj_names[file_len - 1]
-        while MINIO.obj_exist(last_folder.id, location):
-            location += "_"
-        blob = request.files['file'].read()
-        MINIO.put(last_folder.id, location, blob)
-        filename = duplicate_name(
-            FileService.query,
-            name=file_obj_names[file_len - 1],
-            parent_id=last_folder.id)
-        file = {
-            "id": get_uuid(),
-            "parent_id": last_folder.id,
-            "tenant_id": current_user.id,
-            "created_by": current_user.id,
-            "type": filetype,
-            "name": filename,
-            "location": location,
-            "size": len(blob),
-        }
-        file = FileService.insert(file)
-        return get_json_result(data=file.to_json())
+            # get folder
+            file_id_list = FileService.get_id_list_by_id(pf_id, file_obj_names, 1, [pf_id])
+            len_id_list = len(file_id_list)
+
+            # create folder
+            if file_len != len_id_list:
+                e, file = FileService.get_by_id(file_id_list[len_id_list - 1])
+                if not e:
+                    return get_data_error_result(retmsg="Folder not found!")
+                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 1], file_obj_names, len_id_list)
+            else:
+                e, file = FileService.get_by_id(file_id_list[len_id_list - 2])
+                if not e:
+                    return get_data_error_result(retmsg="Folder not found!")
+                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 2], file_obj_names, len_id_list)
+
+            # file type
+            filetype = filename_type(file_obj_names[file_len - 1])
+            if not filetype:
+                return get_data_error_result(
+                    retmsg="This type of file has not been supported yet!")
+
+            location = file_obj_names[file_len - 1]
+            while MINIO.obj_exist(last_folder.id, location):
+                location += "_"
+            blob = request.files['file'].read()
+            filename = duplicate_name(
+                FileService.query,
+                name=file_obj_names[file_len - 1],
+                parent_id=last_folder.id)
+            file = {
+                "id": get_uuid(),
+                "parent_id": last_folder.id,
+                "tenant_id": current_user.id,
+                "created_by": current_user.id,
+                "type": filetype,
+                "name": filename,
+                "location": location,
+                "size": len(blob),
+            }
+            file = FileService.insert(file)
+            MINIO.put(last_folder.id, location, blob)
+            file_res.append(file.to_json())
+        return get_json_result(data=file_res)
     except Exception as e:
         return server_error_response(e)
 

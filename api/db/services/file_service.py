@@ -69,8 +69,7 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_pf_id_name(cls, id, name):
-        file = cls.model.select().where(cls.model.parent_id == id and
-                                        cls.model.name == name)
+        file = cls.model.select().where((cls.model.parent_id == id) & (cls.model.name == name))
         if file.count():
             e, file = cls.get_by_id(file[0].id)
             if not e:

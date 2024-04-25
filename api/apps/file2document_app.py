@@ -54,9 +54,9 @@ def convert():
                 if not e:
                     return get_data_error_result(
                         retmsg="Can't find this file!")
-                if DocumentService.query(name=file.name, kb_id=kb_id):
-                    return get_data_error_result(
-                        retmsg="Duplicated document name in the same knowledgebase.")
+                # if DocumentService.query(name=file.name, kb_id=kb_id):
+                #     return get_data_error_result(
+                #         retmsg="Duplicated document name in the same knowledgebase.")
 
                 doc = DocumentService.insert({
                     "id": get_uuid(),
