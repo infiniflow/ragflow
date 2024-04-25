@@ -352,7 +352,7 @@ export default {
       password: '密碼',
       passwordDescription: '請輸入您當前的密碼以更改您的密碼。',
       model: '模型提供商',
-      modelDescription: '在此管理您的帳戶設置和首選項。',
+      modelDescription: '在此設置模型參數和 API Key。',
       team: '團隊',
       logout: '登出',
       username: '使用者名稱',

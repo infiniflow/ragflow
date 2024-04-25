@@ -7,13 +7,17 @@ import ActionCell from './action-cell';
 import FileToolbar from './file-toolbar';
 import {
   useGetRowSelection,
+  useHandleConnectToKnowledge,
   useHandleCreateFolder,
+  useHandleUploadFile,
   useNavigateToOtherFolder,
   useRenameCurrentFile,
   useSelectFileListLoading,
 } from './hooks';
 
 import RenameModal from '@/components/rename-modal';
+import ConnectToKnowledgeModal from './connect-to-knowledge-modal';
+import FileUploadModal from './file-upload-modal';
 import FolderCreateModal from './folder-create-modal';
 import styles from './index.less';
 
@@ -37,6 +41,14 @@ const FileManager = () => {
     folderCreateLoading,
     onFolderCreateOk,
   } = useHandleCreateFolder();
+  const { fileUploadVisible, hideFileUploadModal, showFileUploadModal } =
+    useHandleUploadFile();
+  const {
+    connectToKnowledgeVisible,
+    hideConnectToKnowledgeModal,
+    showConnectToKnowledgeModal,
+    onConnectToKnowledgeOk,
+  } = useHandleConnectToKnowledge();
 
   const columns: ColumnsType<IFile> = [
     {
@@ -65,6 +77,17 @@ const FileManager = () => {
       },
     },
     {
+      title: 'kbs_info',
+      dataIndex: 'kbs_info',
+      key: 'kbs_info',
+      render(value) {
+        console.info(value);
+        return Array.isArray(value)
+          ? value?.map((x) => x.kb_name).join(',')
+          : '';
+      },
+    },
+    {
       title: 'Location',
       dataIndex: 'location',
       key: 'location',
@@ -80,6 +103,7 @@ const FileManager = () => {
             console.info(record);
           }}
           showRenameModal={showFileRenameModal}
+          showConnectToKnowledgeModal={showConnectToKnowledgeModal}
         ></ActionCell>
       ),
     },
@@ -90,6 +114,7 @@ const FileManager = () => {
       <FileToolbar
         selectedRowKeys={rowSelection.selectedRowKeys as string[]}
         showFolderCreateModal={showFolderCreateModal}
+        showFileUploadModal={showFileUploadModal}
       ></FileToolbar>
       <Table
         dataSource={fileList}
@@ -111,6 +136,15 @@ const FileManager = () => {
         hideModal={hideFolderCreateModal}
         onOk={onFolderCreateOk}
       ></FolderCreateModal>
+      <FileUploadModal
+        visible={fileUploadVisible}
+        hideModal={hideFileUploadModal}
+      ></FileUploadModal>
+      <ConnectToKnowledgeModal
+        visible={connectToKnowledgeVisible}
+        hideModal={hideConnectToKnowledgeModal}
+        onOk={onConnectToKnowledgeOk}
+      ></ConnectToKnowledgeModal>
     </section>
   );
 };

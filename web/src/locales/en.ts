@@ -382,7 +382,7 @@ export default {
       passwordDescription:
         'Please enter your current password to change your password.',
       model: 'Model Providers',
-      modelDescription: 'Manage your account settings and preferences here.',
+      modelDescription: 'Set the model parameter and API Key here.',
       team: 'Team',
       logout: 'Log out',
       username: 'Username',
