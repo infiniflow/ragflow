@@ -48,6 +48,7 @@ const FileManager = () => {
     hideConnectToKnowledgeModal,
     showConnectToKnowledgeModal,
     onConnectToKnowledgeOk,
+    initialValue,
   } = useHandleConnectToKnowledge();
 
   const columns: ColumnsType<IFile> = [
@@ -141,6 +142,7 @@ const FileManager = () => {
         hideModal={hideFileUploadModal}
       ></FileUploadModal>
       <ConnectToKnowledgeModal
+        initialValue={initialValue}
         visible={connectToKnowledgeVisible}
         hideModal={hideConnectToKnowledgeModal}
         onOk={onConnectToKnowledgeOk}

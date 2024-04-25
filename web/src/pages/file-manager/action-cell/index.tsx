@@ -17,7 +17,7 @@ interface IProps {
   record: IFile;
   setCurrentRecord: (record: any) => void;
   showRenameModal: (record: IFile) => void;
-  showConnectToKnowledgeModal: (ids: string[]) => void;
+  showConnectToKnowledgeModal: (record: IFile) => void;
 }
 
 const ActionCell = ({
@@ -48,7 +48,7 @@ const ActionCell = ({
   };
 
   const onShowConnectToKnowledgeModal = () => {
-    showConnectToKnowledgeModal([documentId]);
+    showConnectToKnowledgeModal(record);
   };
 
   return (

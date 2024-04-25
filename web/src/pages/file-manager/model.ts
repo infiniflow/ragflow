@@ -57,10 +57,16 @@ const model: DvaModel<FileManagerModelState> = {
       return data.retcode;
     },
     *uploadFile({ payload = {} }, { call, put }) {
+      const fileList = payload.file;
+      const pathList = payload.path;
       const formData = new FormData();
       formData.append('parent_id', payload.parentId);
-      formData.append('file', payload.file);
-      formData.append('path', payload.path);
+      // formData.append('file', payload.file);
+      // formData.append('path', payload.path);
+      fileList.forEach((file: any, index: number) => {
+        formData.append('file', file);
+        formData.append('path', pathList[index]);
+      });
       const { data } = yield call(fileManagerService.uploadFile, formData);
       if (data.retcode === 0) {
         yield put({

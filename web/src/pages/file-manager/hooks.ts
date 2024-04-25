@@ -17,7 +17,6 @@ import {
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { Pagination } from '@/interfaces/common';
 import { IFile } from '@/interfaces/database/file-manager';
-import { getFilePathByWebkitRelativePath } from '@/utils/fileUtil';
 import { PaginationProps } from 'antd';
 import { UploadFile } from 'antd/lib';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -268,11 +267,7 @@ export const useHandleUploadFile = () => {
     async (fileList: UploadFile[]) => {
       console.info('fileList', fileList);
       if (fileList.length > 0) {
-        const ret = await uploadFile(
-          fileList[0],
-          id,
-          getFilePathByWebkitRelativePath(fileList[0] as any),
-        );
+        const ret = await uploadFile(fileList, id);
 
         if (ret === 0) {
           hideFileUploadModal();
@@ -301,13 +296,19 @@ export const useHandleConnectToKnowledge = () => {
   } = useSetModalState();
   const connectToKnowledge = useConnectToKnowledge();
   const id = useGetFolderId();
-  const [fileIds, setFileIds] = useState<string[]>([]);
+  const [record, setRecord] = useState<IFile>({} as IFile);
+
+  const initialValue = useMemo(() => {
+    return Array.isArray(record?.kbs_info)
+      ? record?.kbs_info?.map((x) => x.kb_id)
+      : [];
+  }, [record?.kbs_info]);
 
   const onConnectToKnowledgeOk = useCallback(
     async (knowledgeIds: string[]) => {
       const ret = await connectToKnowledge({
         parentId: id,
-        fileIds,
+        fileIds: [record.id],
         kbIds: knowledgeIds,
       });
 
@@ -315,7 +316,7 @@ export const useHandleConnectToKnowledge = () => {
         hideConnectToKnowledgeModal();
       }
     },
-    [connectToKnowledge, hideConnectToKnowledgeModal, id, fileIds],
+    [connectToKnowledge, hideConnectToKnowledgeModal, id, record.id],
   );
 
   const loading = useOneNamespaceEffectsLoading('fileManager', [
@@ -323,14 +324,15 @@ export const useHandleConnectToKnowledge = () => {
   ]);
 
   const handleShowConnectToKnowledgeModal = useCallback(
-    (ids: string[]) => {
-      setFileIds(ids);
+    (record: IFile) => {
+      setRecord(record);
       showConnectToKnowledgeModal();
     },
     [showConnectToKnowledgeModal],
   );
 
   return {
+    initialValue,
     connectToKnowledgeLoading: loading,
     onConnectToKnowledgeOk,
     connectToKnowledgeVisible,
