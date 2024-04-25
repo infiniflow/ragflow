@@ -1,5 +1,5 @@
 name: Question
-description: Ask questions on infinity
+description: Ask questions on RAGFlow
 title: "[Question]: "
 labels: [question]
 body:
