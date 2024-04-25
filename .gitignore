@@ -21,3 +21,5 @@ Cargo.lock
 
 .idea/
 .vscode/
+fetch_database/
+conf/service_conf.yaml
