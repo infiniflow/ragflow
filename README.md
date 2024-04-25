@@ -11,6 +11,9 @@
 </p>
 
 <p align="center">
+    <a href="https://github.com/infiniflow/infinity/releases/latest">
+        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
+    </a>
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
