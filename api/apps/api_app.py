@@ -13,17 +13,27 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
+import re
 from datetime import datetime, timedelta
 from flask import request
 from flask_login import login_required, current_user
+
+from api.db import FileType, ParserType
 from api.db.db_models import APIToken, API4Conversation
+from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.dialog_service import DialogService, chat
+from api.db.services.document_service import DocumentService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
 from api.settings import RetCode
 from api.utils import get_uuid, current_timestamp, datetime_format
 from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request
 from itsdangerous import URLSafeTimedSerializer
+
+from api.utils.file_utils import filename_type, thumbnail
+from rag.utils import MINIO
 
 
 def generate_confirmation_token(tenent_id):
@@ -190,5 +200,75 @@ def get(conversation_id):
             return get_data_error_result(retmsg="Conversation not found!")
 
         return get_json_result(data=conv.to_dict())
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/document/upload', methods=['POST'])
+@validate_request("kb_name")
+def upload():
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+
+    kb_name = request.form.get("kb_name").strip()
+    tenant_id = objs[0].tenant_id
+
+    try:
+        e, kb = KnowledgebaseService.get_by_name(kb_name, tenant_id)
+        if not e:
+            return get_data_error_result(
+                retmsg="Can't find this knowledgebase!")
+        kb_id = kb.id
+    except Exception as e:
+        return server_error_response(e)
+
+    if 'file' not in request.files:
+        return get_json_result(
+            data=False, retmsg='No file part!', retcode=RetCode.ARGUMENT_ERROR)
+
+    file = request.files['file']
+    if file.filename == '':
+        return get_json_result(
+            data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
+    try:
+        if DocumentService.get_doc_count(kb.tenant_id) >= int(os.environ.get('MAX_FILE_NUM_PER_USER', 8192)):
+            return get_data_error_result(
+                retmsg="Exceed the maximum file number of a free user!")
+
+        filename = duplicate_name(
+            DocumentService.query,
+            name=file.filename,
+            kb_id=kb_id)
+        filetype = filename_type(filename)
+        if not filetype:
+            return get_data_error_result(
+                retmsg="This type of file has not been supported yet!")
+
+        location = filename
+        while MINIO.obj_exist(kb_id, location):
+            location += "_"
+        blob = request.files['file'].read()
+        MINIO.put(kb_id, location, blob)
+        doc = {
+            "id": get_uuid(),
+            "kb_id": kb.id,
+            "parser_id": kb.parser_id,
+            "parser_config": kb.parser_config,
+            "created_by": kb.tenant_id,
+            "type": filetype,
+            "name": filename,
+            "location": location,
+            "size": len(blob),
+            "thumbnail": thumbnail(filename, blob)
+        }
+        if doc["type"] == FileType.VISUAL:
+            doc["parser_id"] = ParserType.PICTURE.value
+        if re.search(r"\.(ppt|pptx|pages)$", filename):
+            doc["parser_id"] = ParserType.PRESENTATION.value
+        doc = DocumentService.insert(doc)
+        return get_json_result(data=doc.to_json())
     except Exception as e:
         return server_error_response(e)
