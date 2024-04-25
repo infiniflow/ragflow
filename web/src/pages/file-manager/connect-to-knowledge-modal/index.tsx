@@ -20,9 +20,7 @@ const ConnectToKnowledgeModal = ({
   const handleOk = async () => {
     const values = await form.getFieldsValue();
     const knowledgeIds = values.knowledgeIds ?? [];
-    if (knowledgeIds.length > 0) {
-      return onOk?.(knowledgeIds);
-    }
+    return onOk?.(knowledgeIds);
   };
 
   useEffect(() => {
@@ -40,17 +38,7 @@ const ConnectToKnowledgeModal = ({
       onCancel={hideModal}
     >
       <Form form={form}>
-        <Form.Item
-          name="knowledgeIds"
-          noStyle
-          rules={[
-            {
-              required: true,
-              message: 'Please select your favourite colors!',
-              type: 'array',
-            },
-          ]}
-        >
+        <Form.Item name="knowledgeIds" noStyle>
           <Select
             mode="multiple"
             allowClear

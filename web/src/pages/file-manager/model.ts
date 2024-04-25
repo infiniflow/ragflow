@@ -1,16 +1,22 @@
+import { paginationModel } from '@/base';
+import { BaseState } from '@/interfaces/common';
 import { IFile, IFolder } from '@/interfaces/database/file-manager';
 import fileManagerService from '@/services/fileManagerService';
 import omit from 'lodash/omit';
 import { DvaModel } from 'umi';
 
-export interface FileManagerModelState {
+export interface FileManagerModelState extends BaseState {
   fileList: IFile[];
   parentFolderList: IFolder[];
 }
 
 const model: DvaModel<FileManagerModelState> = {
   namespace: 'fileManager',
-  state: { fileList: [], parentFolderList: [] },
+  state: {
+    fileList: [],
+    parentFolderList: [],
+    ...(paginationModel.state as BaseState),
+  },
   reducers: {
     setFileList(state, { payload }) {
       return { ...state, fileList: payload };
@@ -18,6 +24,7 @@ const model: DvaModel<FileManagerModelState> = {
     setParentFolderList(state, { payload }) {
       return { ...state, parentFolderList: payload };
     },
+    ...paginationModel.reducers,
   },
   effects: {
     *removeFile({ payload = {} }, { call, put }) {
@@ -31,15 +38,28 @@ const model: DvaModel<FileManagerModelState> = {
           payload: { parentId: payload.parentId },
         });
       }
+      return retcode;
     },
-    *listFile({ payload = {} }, { call, put }) {
-      const { data } = yield call(fileManagerService.listFile, payload);
+    *listFile({ payload = {} }, { call, put, select }) {
+      const { searchString, pagination } = yield select(
+        (state: any) => state.fileManager,
+      );
+      const { current, pageSize } = pagination;
+      const { data } = yield call(fileManagerService.listFile, {
+        ...payload,
+        keywords: searchString.trim(),
+        page: current,
+        pageSize,
+      });
       const { retcode, data: res } = data;
-
       if (retcode === 0 && Array.isArray(res.files)) {
         yield put({
           type: 'setFileList',
           payload: res.files,
+        });
+        yield put({
+          type: 'setPagination',
+          payload: { total: res.total },
         });
       }
     },
@@ -114,4 +134,12 @@ const model: DvaModel<FileManagerModelState> = {
     },
   },
 };
+
+// const finalModel = modelExtend<DvaModel<FileManagerModelState & BaseState>>(
+//   paginationModel,
+//   model,
+// );
+
+// console.info(finalModel);
+
 export default model;
