@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/infiniflow/infinity/releases/latest">
+    <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
     </a>
     <a href="https://demo.ragflow.io" target="_blank">
