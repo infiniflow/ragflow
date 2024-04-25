@@ -40,39 +40,61 @@ def convert():
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
     file2documents = []
-    # if not kb_ids:
-    #     return get_json_result(
-    #         data=False, retmsg='Lack of "KB ID"', retcode=RetCode.ARGUMENT_ERROR)
+
     try:
         for file_id in file_ids:
-            File2DocumentService.delete_by_file_id(file_id)
-            for kb_id in kb_ids:
-                e, kb = KnowledgebaseService.get_by_id(kb_id)
-                if not e:
-                    return get_data_error_result(
-                        retmsg="Can't find this knowledgebase!")
-                e, file = FileService.get_by_id(file_id)
-                if not e:
-                    return get_data_error_result(
-                        retmsg="Can't find this file!")
+            e, file = FileService.get_by_id(file_id)
+            file_ids_list = [file_id]
+            if file.type == FileType.FOLDER:
+                file_ids_list = FileService.get_all_innermost_file_ids(file_id, [])
+            for id in file_ids_list:
+                informs = File2DocumentService.get_by_file_id(id)
+                # delete
+                for inform in informs:
+                    doc_id = inform.document_id
+                    e, doc = DocumentService.get_by_id(doc_id)
+                    if not e:
+                        return get_data_error_result(retmsg="Document not found!")
+                    tenant_id = DocumentService.get_tenant_id(doc_id)
+                    if not tenant_id:
+                        return get_data_error_result(retmsg="Tenant not found!")
+                    ELASTICSEARCH.deleteByQuery(
+                        Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+                    DocumentService.increment_chunk_num(
+                        doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
+                    if not DocumentService.delete(doc):
+                        return get_data_error_result(
+                            retmsg="Database error (Document removal)!")
+                File2DocumentService.delete_by_file_id(id)
 
-                doc = DocumentService.insert({
-                    "id": get_uuid(),
-                    "kb_id": kb.id,
-                    "parser_id": kb.parser_id,
-                    "parser_config": kb.parser_config,
-                    "created_by": current_user.id,
-                    "type": FileType.VIRTUAL,
-                    "name": file.name,
-                    "location": "",
-                    "size": 0
-                })
-                file2document = File2DocumentService.insert({
-                    "id": get_uuid(),
-                    "file_id": file_id,
-                    "document_id": doc.id,
-                })
-                file2documents.append(file2document.to_json())
+                # insert
+                for kb_id in kb_ids:
+                    e, kb = KnowledgebaseService.get_by_id(kb_id)
+                    if not e:
+                        return get_data_error_result(
+                            retmsg="Can't find this knowledgebase!")
+                    e, file = FileService.get_by_id(id)
+                    if not e:
+                        return get_data_error_result(
+                            retmsg="Can't find this file!")
+
+                    doc = DocumentService.insert({
+                        "id": get_uuid(),
+                        "kb_id": kb.id,
+                        "parser_id": kb.parser_id,
+                        "parser_config": kb.parser_config,
+                        "created_by": current_user.id,
+                        "type": FileType.VIRTUAL,
+                        "name": file.name,
+                        "location": "",
+                        "size": 0
+                    })
+                    file2document = File2DocumentService.insert({
+                        "id": get_uuid(),
+                        "file_id": id,
+                        "document_id": doc.id,
+                    })
+                    file2documents.append(file2document.to_json())
         return get_json_result(data=file2documents)
     except Exception as e:
         return server_error_response(e)

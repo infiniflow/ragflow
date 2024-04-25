@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from flask_login import current_user
+from peewee import fn
 
 from api.db import FileType
 from api.db.db_models import DB, File2Document, Knowledgebase
@@ -33,8 +34,7 @@ class FileService(CommonService):
         if keywords:
             files = cls.model.select().where(
                 (cls.model.tenant_id == tenant_id)
-                & cls.model.parent_id == pf_id,
-                cls.model.name.like(f"%%{keywords}%%"))
+                & (cls.model.parent_id == pf_id), (fn.LOWER(cls.model.name).like(f"%%{keywords.lower()}%%")))
         else:
             files = cls.model.select().where((cls.model.tenant_id == tenant_id)
                                              & (cls.model.parent_id == pf_id))
