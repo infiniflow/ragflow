@@ -13,15 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import json
 import os
 import pathlib
 
 from flask import request
 from flask_login import login_required, current_user
-from elasticsearch_dsl import Q
-from rag.nlp import search
-from rag.utils import ELASTICSEARCH
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.db import FileType
@@ -38,11 +34,7 @@ from rag.utils.minio_conn import MINIO
 # @validate_request("parent_id")
 def upload():
     pf_id = request.form.get("parent_id")
-    path = request.form.get("path")
-    if path:
-        path = json.loads(path)
-    else:
-        path = None
+
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
         pf_id = root_folder.id
@@ -58,8 +50,7 @@ def upload():
                 data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
-        for i in range(len(file_objs)):
-            file_obj = file_objs[i]
+        for file_obj in file_objs:
             e, file = FileService.get_by_id(pf_id)
             if not e:
                 return get_data_error_result(
@@ -69,11 +60,11 @@ def upload():
                     retmsg="Exceed the maximum file number of a free user!")
 
             # split file name path
-            if not path:
+            if not file_obj.filename:
                 e, file = FileService.get_by_id(pf_id)
                 file_obj_names = [file.name, file_obj.filename]
             else:
-                full_path = '/' + path[i]
+                full_path = '/' + file_obj.filename
                 file_obj_names = full_path.split('/')
             file_len = len(file_obj_names)
 
@@ -185,7 +176,7 @@ def list():
             return get_data_error_result(retmsg="Folder not found!")
 
         files, total = FileService.get_by_pf_id(
-            pf_id, page_number, items_per_page, orderby, desc, keywords)
+            current_user.id, pf_id, page_number, items_per_page, orderby, desc, keywords)
 
         parent_folder = FileService.get_parent_folder(pf_id)
         if not FileService.get_parent_folder(pf_id):
@@ -259,7 +250,7 @@ def rm():
                     if not e:
                         return get_data_error_result(retmsg="File not found!")
                     MINIO.rm(file.parent_id, file.location)
-                FileService.delete_folder_by_pf_id(file_id)
+                FileService.delete_folder_by_pf_id(current_user.id, file_id)
             else:
                 if not FileService.delete(file):
                     return get_data_error_result(

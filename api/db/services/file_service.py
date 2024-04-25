@@ -28,14 +28,16 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_pf_id(cls, pf_id, page_number, items_per_page,
+    def get_by_pf_id(cls, tenant_id, pf_id, page_number, items_per_page,
                      orderby, desc, keywords):
         if keywords:
             files = cls.model.select().where(
-                cls.model.parent_id == pf_id,
+                (cls.model.tenant_id == tenant_id)
+                & cls.model.parent_id == pf_id,
                 cls.model.name.like(f"%%{keywords}%%"))
         else:
-            files = cls.model.select().where(cls.model.parent_id == pf_id)
+            files = cls.model.select().where((cls.model.tenant_id == tenant_id)
+                                             & (cls.model.parent_id == pf_id))
         count = files.count()
         if desc:
             files = files.order_by(cls.model.getter_by(orderby).desc())
@@ -187,12 +189,14 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def delete_folder_by_pf_id(cls, folder_id):
+    def delete_folder_by_pf_id(cls, user_id, folder_id):
         try:
-            files = cls.model.select().where(cls.model.parent_id == folder_id)
+            files = cls.model.select().where(cls.model.tenant_id == user_id
+                                             & cls.model.parent_id == folder_id)
             for file in files:
                 cls.delete_folder_by_pf_id(file.id)
-            return cls.model.delete().where(cls.model.id == folder_id).execute(),
+            return cls.model.delete().where(cls.model.tenant_id == user_id
+                                            & cls.model.id == folder_id).execute(),
         except Exception as e:
             print(e)
             raise RuntimeError("Database error (File retrieval)!")
