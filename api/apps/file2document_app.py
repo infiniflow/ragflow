@@ -45,7 +45,7 @@ def convert():
         for file_id in file_ids:
             e, file = FileService.get_by_id(file_id)
             file_ids_list = [file_id]
-            if file.type == FileType.FOLDER:
+            if file.type == FileType.FOLDER.value:
                 file_ids_list = FileService.get_all_innermost_file_ids(file_id, [])
             for id in file_ids_list:
                 informs = File2DocumentService.get_by_file_id(id)

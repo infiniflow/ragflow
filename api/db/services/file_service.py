@@ -120,7 +120,7 @@ class FileService(CommonService):
                 "name": name[count],
                 "location": "",
                 "size": 0,
-                "type": FileType.FOLDER
+                "type": FileType.FOLDER.value
             })
             return cls.create_folder(file, file.id, name, count + 1)
 
@@ -138,7 +138,23 @@ class FileService(CommonService):
     def get_root_folder(cls, tenant_id):
         file = cls.model.select().where(cls.model.tenant_id == tenant_id and
                                         cls.model.parent_id == cls.model.id)
-        e, file = cls.get_by_id(file[0].id)
+        if not file:
+            file_id = get_uuid()
+            file = {
+                "id": file_id,
+                "parent_id": file_id,
+                "tenant_id": tenant_id,
+                "created_by": tenant_id,
+                "name": "/",
+                "type": FileType.FOLDER.value,
+                "size": 0,
+                "location": "",
+            }
+            cls.save(**file)
+        else:
+            file_id = file[0].id
+
+        e, file = cls.get_by_id(file_id)
         if not e:
             raise RuntimeError("Database error (File retrieval)!")
         return file
@@ -214,9 +230,11 @@ class FileService(CommonService):
     @DB.connection_context()
     def get_folder_size(cls, folder_id):
         size = 0
+
         def dfs(parent_id):
             nonlocal size
-            for f in cls.model.select(*[cls.model.id, cls.model.size, cls.model.type]).where(cls.model.parent_id == parent_id):
+            for f in cls.model.select(*[cls.model.id, cls.model.size, cls.model.type]).where(
+                    cls.model.parent_id == parent_id, cls.model.id != parent_id):
                 size += f.size
                 if f.type == FileType.FOLDER.value:
                     dfs(f.id)

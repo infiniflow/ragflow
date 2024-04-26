@@ -24,7 +24,7 @@ from api.db.db_models import TenantLLM
 from api.db.services.llm_service import TenantLLMService, LLMService
 from api.utils.api_utils import server_error_response, validate_request
 from api.utils import get_uuid, get_format_time, decrypt, download_img, current_timestamp, datetime_format
-from api.db import UserTenantRole, LLMType
+from api.db import UserTenantRole, LLMType, FileType
 from api.settings import RetCode, GITHUB_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, API_KEY, \
     LLM_FACTORY, LLM_BASE_URL
 from api.db.services.user_service import UserService, TenantService, UserTenantService
@@ -229,7 +229,7 @@ def user_register(user_id, user):
         "tenant_id": user_id,
         "created_by": user_id,
         "name": "/",
-        "type": FileType.FOLDER,
+        "type": FileType.FOLDER.value,
         "size": 0,
         "location": "",
     }
