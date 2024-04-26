@@ -64,7 +64,7 @@ def upload():
                 return get_data_error_result(
                     retmsg="Can't find this folder!")
             MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
-            if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
+            if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(current_user.id) >= MAX_FILE_NUM_PER_USER:
                 return get_data_error_result(
                     retmsg="Exceed the maximum file number of a free user!")
 
@@ -143,9 +143,9 @@ def create():
                 retmsg="Duplicated folder name in the same folder.")
 
         if input_file_type == FileType.FOLDER.value:
-            file_type = FileType.FOLDER
+            file_type = FileType.FOLDER.value
         else:
-            file_type = FileType.VIRTUAL
+            file_type = FileType.VIRTUAL.value
 
         file = FileService.insert({
             "id": get_uuid(),
@@ -251,7 +251,7 @@ def rm():
             if not file.tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
 
-            if file.type == FileType.FOLDER:
+            if file.type == FileType.FOLDER.value:
                 file_id_list = FileService.get_all_innermost_file_ids(file_id, [])
                 for inner_file_id in file_id_list:
                     e, file = FileService.get_by_id(inner_file_id)
