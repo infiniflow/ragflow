@@ -160,12 +160,12 @@ export const useRemoveDocument = () => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const removeDocument = useCallback(
-    (documentId: string) => {
+    (documentIds: string[]) => {
       try {
         return dispatch<any>({
           type: 'kFModel/document_rm',
           payload: {
-            doc_id: documentId,
+            doc_id: documentIds,
             kb_id: knowledgeId,
           },
         });

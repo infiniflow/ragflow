@@ -27,3 +27,9 @@ export const getSearchValue = (key: string) => {
   const params = new URL(document.location as any).searchParams;
   return params.get(key);
 };
+
+// Formatize numbers, add thousands of separators
+export const formatNumberWithThousandsSeparator = (numberStr: string) => {
+  const formattedNumber = numberStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return formattedNumber;
+};

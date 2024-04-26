@@ -244,14 +244,14 @@ export const useHandleUploadFile = () => {
   const id = useGetFolderId();
 
   const onFileUploadOk = useCallback(
-    async (fileList: UploadFile[]) => {
-      console.info('fileList', fileList);
+    async (fileList: UploadFile[]): Promise<number | undefined> => {
       if (fileList.length > 0) {
-        const ret = await uploadFile(fileList, id);
+        const ret: number = await uploadFile(fileList, id);
         console.info(ret);
         if (ret === 0) {
           hideFileUploadModal();
         }
+        return ret;
       }
     },
     [uploadFile, hideFileUploadModal, id],
@@ -295,6 +295,7 @@ export const useHandleConnectToKnowledge = () => {
       if (ret === 0) {
         hideConnectToKnowledgeModal();
       }
+      return ret;
     },
     [connectToKnowledge, hideConnectToKnowledgeModal, id, record.id],
   );
@@ -319,4 +320,21 @@ export const useHandleConnectToKnowledge = () => {
     hideConnectToKnowledgeModal,
     showConnectToKnowledgeModal: handleShowConnectToKnowledgeModal,
   };
+};
+
+export const useHandleBreadcrumbClick = () => {
+  const navigate = useNavigate();
+  const setPagination = useSetPagination('fileManager');
+
+  const handleBreadcrumbClick = useCallback(
+    (path?: string) => {
+      if (path) {
+        setPagination();
+        navigate(path);
+      }
+    },
+    [setPagination, navigate],
+  );
+
+  return { handleBreadcrumbClick };
 };

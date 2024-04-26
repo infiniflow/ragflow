@@ -20,12 +20,12 @@ import {
 import { useMemo } from 'react';
 import {
   useFetchDocumentListOnMount,
+  useHandleBreadcrumbClick,
   useHandleDeleteFile,
   useHandleSearchChange,
   useSelectBreadcrumbItems,
 } from './hooks';
 
-import { Link } from 'umi';
 import styles from './index.less';
 
 interface IProps {
@@ -34,20 +34,6 @@ interface IProps {
   showFileUploadModal: () => void;
   setSelectedRowKeys: (keys: string[]) => void;
 }
-
-const itemRender: BreadcrumbProps['itemRender'] = (
-  currentRoute,
-  params,
-  items,
-) => {
-  const isLast = currentRoute?.path === items[items.length - 1]?.path;
-
-  return isLast ? (
-    <span>{currentRoute.title}</span>
-  ) : (
-    <Link to={`${currentRoute.path}`}>{currentRoute.title}</Link>
-  );
-};
 
 const FileToolbar = ({
   selectedRowKeys,
@@ -59,6 +45,26 @@ const FileToolbar = ({
   useFetchDocumentListOnMount();
   const { handleInputChange, searchString } = useHandleSearchChange();
   const breadcrumbItems = useSelectBreadcrumbItems();
+  const { handleBreadcrumbClick } = useHandleBreadcrumbClick();
+
+  const itemRender: BreadcrumbProps['itemRender'] = (
+    currentRoute,
+    params,
+    items,
+  ) => {
+    const isLast = currentRoute?.path === items[items.length - 1]?.path;
+
+    return isLast ? (
+      <span>{currentRoute.title}</span>
+    ) : (
+      <span
+        className={styles.breadcrumbItemButton}
+        onClick={() => handleBreadcrumbClick(currentRoute.path)}
+      >
+        {currentRoute.title}
+      </span>
+    );
+  };
 
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
@@ -70,7 +76,7 @@ const FileToolbar = ({
             <Button type="link">
               <Space>
                 <FileTextOutlined />
-                {t('localFiles')}
+                {t('uploadFile', { keyPrefix: 'fileManager' })}
               </Space>
             </Button>
           </div>
@@ -83,12 +89,13 @@ const FileToolbar = ({
         label: (
           <div>
             <Button type="link">
-              <FolderOpenOutlined />
-              New Folder
+              <Space>
+                <FolderOpenOutlined />
+                {t('newFolder', { keyPrefix: 'fileManager' })}
+              </Space>
             </Button>
           </div>
         ),
-        // disabled: true,
       },
     ];
   }, [t, showFolderCreateModal, showFileUploadModal]);
