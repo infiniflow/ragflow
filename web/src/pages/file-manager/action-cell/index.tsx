@@ -6,7 +6,7 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
-  ToolOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 import { Button, Space, Tooltip } from 'antd';
 import { useHandleDeleteFile } from '../hooks';
@@ -30,7 +30,7 @@ const ActionCell = ({
 }: IProps) => {
   const documentId = record.id;
   const beingUsed = false;
-  const { t } = useTranslate('knowledgeDetails');
+  const { t } = useTranslate('fileManager');
   const { handleRemoveFile } = useHandleDeleteFile(
     [documentId],
     setSelectedRowKeys,
@@ -58,13 +58,15 @@ const ActionCell = ({
 
   return (
     <Space size={0}>
-      <Button
-        type="text"
-        className={styles.iconButton}
-        onClick={onShowConnectToKnowledgeModal}
-      >
-        <ToolOutlined size={20} />
-      </Button>
+      <Tooltip title={t('addToKnowledge')}>
+        <Button
+          type="text"
+          className={styles.iconButton}
+          onClick={onShowConnectToKnowledgeModal}
+        >
+          <LinkOutlined size={20} />
+        </Button>
+      </Tooltip>
 
       <Tooltip title={t('rename', { keyPrefix: 'common' })}>
         <Button
@@ -76,23 +78,27 @@ const ActionCell = ({
           <EditOutlined size={20} />
         </Button>
       </Tooltip>
-      <Button
-        type="text"
-        disabled={beingUsed}
-        onClick={handleRemoveFile}
-        className={styles.iconButton}
-      >
-        <DeleteOutlined size={20} />
-      </Button>
-      {record.type !== 'folder' && (
+      <Tooltip title={t('delete', { keyPrefix: 'common' })}>
         <Button
           type="text"
           disabled={beingUsed}
-          onClick={onDownloadDocument}
+          onClick={handleRemoveFile}
           className={styles.iconButton}
         >
-          <DownloadOutlined size={20} />
+          <DeleteOutlined size={20} />
         </Button>
+      </Tooltip>
+      {record.type !== 'folder' && (
+        <Tooltip title={t('download', { keyPrefix: 'common' })}>
+          <Button
+            type="text"
+            disabled={beingUsed}
+            onClick={onDownloadDocument}
+            className={styles.iconButton}
+          >
+            <DownloadOutlined size={20} />
+          </Button>
+        </Tooltip>
       )}
     </Space>
   );

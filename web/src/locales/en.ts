@@ -23,6 +23,7 @@ export default {
       copy: 'Copy',
       copied: 'Copied',
       comingSoon: 'Coming Soon',
+      download: 'Download',
     },
     login: {
       login: 'Sign in',

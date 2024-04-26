@@ -23,6 +23,7 @@ export default {
       copy: '複製',
       copied: '複製成功',
       comingSoon: '即將推出',
+      download: '下載',
     },
     login: {
       login: '登入',
