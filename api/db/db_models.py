@@ -669,6 +669,61 @@ class Document(DataBaseModel):
         db_table = "document"
 
 
+class File(DataBaseModel):
+    id = CharField(
+        max_length=32,
+        primary_key=True,
+    )
+    parent_id = CharField(
+        max_length=32,
+        null=False,
+        help_text="parent folder id",
+        index=True)
+    tenant_id = CharField(
+        max_length=32,
+        null=False,
+        help_text="tenant id",
+        index=True)
+    created_by = CharField(
+        max_length=32,
+        null=False,
+        help_text="who created it")
+    name = CharField(
+        max_length=255,
+        null=False,
+        help_text="file name or folder name",
+        index=True)
+    location = CharField(
+        max_length=255,
+        null=True,
+        help_text="where dose it store")
+    size = IntegerField(default=0)
+    type = CharField(max_length=32, null=False, help_text="file extension")
+
+    class Meta:
+        db_table = "file"
+
+
+class File2Document(DataBaseModel):
+    id = CharField(
+        max_length=32,
+        primary_key=True,
+    )
+    file_id = CharField(
+        max_length=32,
+        null=True,
+        help_text="file id",
+        index=True)
+    document_id = CharField(
+        max_length=32,
+        null=True,
+        help_text="document id",
+        index=True)
+
+    class Meta:
+        db_table = "file2document"
+
+
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)

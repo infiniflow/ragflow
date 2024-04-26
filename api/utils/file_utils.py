@@ -155,7 +155,9 @@ def filename_type(filename):
         return FileType.AURAL.value
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4)$", filename):
-        return FileType.VISUAL
+        return FileType.VISUAL.value
+
+    return FileType.OTHER.value
 
 
 def thumbnail(filename, blob):

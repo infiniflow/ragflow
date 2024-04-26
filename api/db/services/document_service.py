@@ -15,6 +15,11 @@
 #
 from peewee import Expression
 
+from elasticsearch_dsl import Q
+from rag.utils import ELASTICSEARCH
+from rag.utils.minio_conn import MINIO
+from rag.nlp import search
+
 from api.db import FileType, TaskStatus
 from api.db.db_models import DB, Knowledgebase, Tenant
 from api.db.db_models import Document
@@ -67,6 +72,20 @@ class DocumentService(CommonService):
         if not KnowledgebaseService.update_by_id(
                 kb.id, {"doc_num": kb.doc_num - 1}):
             raise RuntimeError("Database error (Knowledgebase)!")
+        return cls.delete_by_id(doc.id)
+
+    @classmethod
+    @DB.connection_context()
+    def remove_document(cls, doc, tenant_id):
+        ELASTICSEARCH.deleteByQuery(
+            Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+
+        cls.increment_chunk_num(
+            doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
+        if not cls.delete(doc):
+            raise RuntimeError("Database error (Document removal)!")
+
+        MINIO.rm(doc.kb_id, doc.location)
         return cls.delete_by_id(doc.id)
 
     @classmethod

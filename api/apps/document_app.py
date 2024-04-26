@@ -23,6 +23,9 @@ import flask
 from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
+
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
 from rag.nlp import search
 from rag.utils import ELASTICSEARCH
 from api.db.services import duplicate_name
@@ -68,7 +71,7 @@ def upload():
             name=file.filename,
             kb_id=kb.id)
         filetype = filename_type(filename)
-        if not filetype:
+        if filetype == FileType.OTHER.value:
             return get_data_error_result(
                 retmsg="This type of file has not been supported yet!")
 
@@ -218,26 +221,39 @@ def change_status():
 @validate_request("doc_id")
 def rm():
     req = request.json
-    try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(retmsg="Document not found!")
-        tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-        if not tenant_id:
-            return get_data_error_result(retmsg="Tenant not found!")
-        ELASTICSEARCH.deleteByQuery(
-            Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+    doc_ids = req["doc_id"]
+    if isinstance(doc_ids, str): doc_ids = [doc_ids]
+    errors = ""
+    for doc_id in doc_ids:
+        try:
+            e, doc = DocumentService.get_by_id(doc_id)
 
-        DocumentService.increment_chunk_num(
-            doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-        if not DocumentService.delete(doc):
-            return get_data_error_result(
-                retmsg="Database error (Document removal)!")
+            if not e:
+                return get_data_error_result(retmsg="Document not found!")
+            tenant_id = DocumentService.get_tenant_id(doc_id)
+            if not tenant_id:
+                return get_data_error_result(retmsg="Tenant not found!")
 
-        MINIO.rm(doc.kb_id, doc.location)
-        return get_json_result(data=True)
-    except Exception as e:
-        return server_error_response(e)
+            ELASTICSEARCH.deleteByQuery(
+                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+            DocumentService.increment_chunk_num(
+                doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
+            if not DocumentService.delete(doc):
+                return get_data_error_result(
+                    retmsg="Database error (Document removal)!")
+
+            informs = File2DocumentService.get_by_document_id(doc_id)
+            if not informs:
+                MINIO.rm(doc.kb_id, doc.location)
+            else:
+                File2DocumentService.delete_by_document_id(doc_id)
+        except Exception as e:
+            errors += str(e)
+
+
+    if errors: return server_error_response(e)
+    return get_json_result(data=True)
+
 
 
 @manager.route('/run', methods=['POST'])
@@ -302,7 +318,13 @@ def get(doc_id):
         if not e:
             return get_data_error_result(retmsg="Document not found!")
 
-        response = flask.make_response(MINIO.get(doc.kb_id, doc.location))
+        informs = File2DocumentService.get_by_document_id(doc_id)
+        if not informs:
+            response = flask.make_response(MINIO.get(doc.kb_id, doc.location))
+        else:
+            e, file = FileService.get_by_id(informs[0].file_id)
+            response = flask.make_response(MINIO.get(file.parent_id, doc.location))
+
         ext = re.search(r"\.([^.]+)$", doc.name)
         if ext:
             if doc.type == FileType.VISUAL.value:
