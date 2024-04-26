@@ -23,6 +23,8 @@ import flask
 from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
+
+from api.db.services.file2document_service import File2DocumentService
 from rag.nlp import search
 from rag.utils import ELASTICSEARCH
 from api.db.services import duplicate_name
@@ -217,23 +219,30 @@ def change_status():
 @validate_request("doc_id")
 def rm():
     req = request.json
+    doc_id = req["doc_id"]
     try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
+        e, doc = DocumentService.get_by_id(doc_id)
+
         if not e:
             return get_data_error_result(retmsg="Document not found!")
-        tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+        tenant_id = DocumentService.get_tenant_id(doc_id)
         if not tenant_id:
             return get_data_error_result(retmsg="Tenant not found!")
+
         ELASTICSEARCH.deleteByQuery(
             Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-
         DocumentService.increment_chunk_num(
             doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
         if not DocumentService.delete(doc):
             return get_data_error_result(
                 retmsg="Database error (Document removal)!")
 
-        MINIO.rm(doc.kb_id, doc.location)
+        informs = File2DocumentService.get_by_document_id(doc_id)
+        if not informs:
+            MINIO.rm(doc.kb_id, doc.location)
+        else:
+            File2DocumentService.delete_by_document_id(doc_id)
+
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

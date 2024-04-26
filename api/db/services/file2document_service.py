@@ -33,14 +33,8 @@ class File2DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_document_id(cls, document_id):
-        obj = cls.model.select().where(cls.model.document_id == document_id)
-        if obj.count():
-            e, obj = cls.get_by_id(obj[0].id)
-            if not e:
-                raise RuntimeError("Database error (Inform doesn't exist)!")
-        else:
-            raise RuntimeError("Database error (Inform doesn't exist)!")
-        return obj
+        objs = cls.model.select().where(cls.model.document_id == document_id)
+        return objs
 
     @classmethod
     @DB.connection_context()
@@ -56,6 +50,11 @@ class File2DocumentService(CommonService):
     @DB.connection_context()
     def delete_by_file_id(cls, file_id):
         return cls.model.delete().where(cls.model.file_id == file_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_document_id(cls, doc_id):
+        return cls.model.delete().where(cls.model.document_id == doc_id).execute()
 
     @classmethod
     @DB.connection_context()

@@ -191,12 +191,12 @@ class FileService(CommonService):
     @DB.connection_context()
     def delete_folder_by_pf_id(cls, user_id, folder_id):
         try:
-            files = cls.model.select().where(cls.model.tenant_id == user_id
-                                             & cls.model.parent_id == folder_id)
+            files = cls.model.select().where((cls.model.tenant_id == user_id)
+                                             & (cls.model.parent_id == folder_id))
             for file in files:
-                cls.delete_folder_by_pf_id(file.id)
-            return cls.model.delete().where(cls.model.tenant_id == user_id
-                                            & cls.model.id == folder_id).execute(),
+                cls.delete_folder_by_pf_id(user_id, file.id)
+            return cls.model.delete().where((cls.model.tenant_id == user_id)
+                                            & (cls.model.id == folder_id)).execute(),
         except Exception as e:
             print(e)
             raise RuntimeError("Database error (File retrieval)!")

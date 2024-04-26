@@ -16,8 +16,12 @@
 import os
 import pathlib
 
+from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
+
+from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.db import FileType
@@ -26,6 +30,8 @@ from api.db.services.file_service import FileService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
+from rag.nlp import search
+from rag.utils import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 
 
@@ -77,12 +83,14 @@ def upload():
                 e, file = FileService.get_by_id(file_id_list[len_id_list - 1])
                 if not e:
                     return get_data_error_result(retmsg="Folder not found!")
-                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 1], file_obj_names, len_id_list)
+                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 1], file_obj_names,
+                                                        len_id_list)
             else:
                 e, file = FileService.get_by_id(file_id_list[len_id_list - 2])
                 if not e:
                     return get_data_error_result(retmsg="Folder not found!")
-                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 2], file_obj_names, len_id_list)
+                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 2], file_obj_names,
+                                                        len_id_list)
 
             # file type
             filetype = filename_type(file_obj_names[file_len - 1])
@@ -229,6 +237,7 @@ def get_all_parent_folders():
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route('/rm', methods=['POST'])
 @login_required
 @validate_request("file_ids")
@@ -255,6 +264,25 @@ def rm():
                 if not FileService.delete(file):
                     return get_data_error_result(
                         retmsg="Database error (File removal)!")
+
+            # delete file2document
+            informs = File2DocumentService.get_by_file_id(file_id)
+            for inform in informs:
+                doc_id = inform.document_id
+                e, doc = DocumentService.get_by_id(doc_id)
+                if not e:
+                    return get_data_error_result(retmsg="Document not found!")
+                tenant_id = DocumentService.get_tenant_id(doc_id)
+                if not tenant_id:
+                    return get_data_error_result(retmsg="Tenant not found!")
+                ELASTICSEARCH.deleteByQuery(
+                    Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+                DocumentService.increment_chunk_num(
+                    doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
+                if not DocumentService.delete(doc):
+                    return get_data_error_result(
+                        retmsg="Database error (Document removal)!")
+            File2DocumentService.delete_by_file_id(file_id)
 
         return get_json_result(data=True)
     except Exception as e:
