@@ -35,7 +35,7 @@ const FolderCreateModal = ({ visible, hideModal, loading, onOk }: IProps) => {
 
   return (
     <Modal
-      title={'New Folder'}
+      title={t('newFolder', { keyPrefix: 'fileManager' })}
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}

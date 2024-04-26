@@ -22,6 +22,7 @@ export default {
       languagePlaceholder: '請選擇語言',
       copy: '複製',
       copied: '複製成功',
+      comingSoon: '即將推出',
     },
     login: {
       login: '登入',
@@ -52,6 +53,7 @@ export default {
       home: '首頁',
       setting: '用戶設置',
       logout: '登出',
+      fileManager: '文件管理',
     },
     knowledgeList: {
       welcome: '歡迎回來',
@@ -218,7 +220,7 @@ export default {
         您只需與<i>'ragflow'</i>交談即可列出所有符合資格的候選人。
         </p>
           `,
-      table: `支持<p><b>excel</b>和<b>csv/txt</b>格式文件。</p><p>以下是一些提示： <ul> <li>对于Csv或Txt文件，列之间的分隔符为 <em><b>tab</b></em>。</li> <li>第一行必须是列标题。</li> <li>列标题必须是有意义的术语，以便我们的法学硕士能够理解。列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好使用方括号枚举值，例如 <i>“性別/性別（男性，女性）”</i>.<p>以下是标题的一些示例：<ol> <li>供应商/供货商<b>'tab'</b>顏色（黃色、紅色、棕色）<b>'tab'</b>性別（男、女）<b>'tab'</B>尺码（m、l、xl、xxl）</li> <li>姓名/名字<b>'tab'</b>電話/手機/微信<b>'tab'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，mpa，mba，emba）</li> </ol> </p> </li> <li>表中的每一行都将被视为一个块。</li> </ul>`,
+      table: `支持<p><b>excel</b>和<b>csv/txt</b>格式文件。</p><p>以下是一些提示： <ul> <li>对于Csv或Txt文件，列之间的分隔符为 <em><b>tab</b></em>。</li> <li>第一行必须是列标题。</li> <li>列标题必须是有意义的术语，以便我们的大語言模型能够理解。列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好使用方括号枚举值，例如 <i>“性別/性別（男性，女性）”</i>.<p>以下是标题的一些示例：<ol> <li>供应商/供货商<b>'tab'</b>顏色（黃色、紅色、棕色）<b>'tab'</b>性別（男、女）<b>'tab'</B>尺码（m、l、xl、xxl）</li> <li>姓名/名字<b>'tab'</b>電話/手機/微信<b>'tab'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，mpa，mba，emba）</li> </ol> </p> </li> <li>表中的每一行都将被视为一个块。</li> </ul>`,
       picture: `
        <p>支持圖像文件。視頻即將推出。</p><p>
         如果圖片中有文字，則應用 OCR 提取文字作為其文字描述。
@@ -424,6 +426,7 @@ export default {
       renamed: '重命名成功',
       operated: '操作成功',
       updated: '更新成功',
+      uploaded: '上傳成功',
       200: '服務器成功返回請求的數據。',
       201: '新建或修改數據成功。',
       202: '一個請求已經進入後台排隊（異步任務）。',
@@ -443,6 +446,23 @@ export default {
       networkAnomalyDescription: '您的網絡發生異常，無法連接服務器',
       networkAnomaly: '網絡異常',
       hint: '提示',
+    },
+    fileManager: {
+      name: '名稱',
+      uploadDate: '上傳日期',
+      knowledgeBase: '知識庫',
+      size: '大小',
+      action: '操作',
+      addToKnowledge: '添加到知識庫',
+      pleaseSelect: '請選擇',
+      newFolder: '新建文件夾',
+      uploadFile: '上傳文件',
+      uploadTitle: '點擊或拖拽文件至此區域即可上傳',
+      uploadDescription: '支持單次或批量上傳。嚴禁上傳公司數據或其他違禁文件。',
+      file: '文件',
+      directory: '文件夾',
+      local: '本地上傳',
+      s3: 'S3 上傳',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

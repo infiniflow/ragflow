@@ -35,7 +35,7 @@ const ParsingActionCell = ({
 
   const onRmDocument = () => {
     if (!isRunning) {
-      showDeleteConfirm({ onOk: () => removeDocument(documentId) });
+      showDeleteConfirm({ onOk: () => removeDocument([documentId]) });
     }
   };
 

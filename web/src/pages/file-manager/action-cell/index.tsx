@@ -38,7 +38,7 @@ const ActionCell = ({
 
   const onDownloadDocument = () => {
     downloadFile({
-      url: `${api_host}/document/get/${documentId}`,
+      url: `${api_host}/file/get/${documentId}`,
       filename: record.name,
     });
   };
