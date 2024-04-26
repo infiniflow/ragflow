@@ -347,8 +347,8 @@ def init_llm_factory():
     LLMService.filter_delete([LLM.fid == "Local"])
     LLMService.filter_delete([LLM.fid == "Moonshot", LLM.llm_name == "flag-embedding"])
     TenantLLMService.filter_delete([TenantLLM.llm_factory == "Moonshot", TenantLLM.llm_name == "flag-embedding"])
-    LLMFactoriesService.filter_update([LLMFactoriesService.model.name == "QAnything"], {"name": "Youdao"})
-    LLMService.filter_update([LLMService.model.fid == "QAnything"], {"fid": "Youdao"})
+    LLMFactoriesService.filter_delete([LLMFactoriesService.model.name == "QAnything"])
+    LLMService.filter_delete([LLMService.model.fid == "QAnything"])
     TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
     """
     drop table llm;
