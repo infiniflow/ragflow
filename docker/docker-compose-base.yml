@@ -96,8 +96,8 @@ services:
 volumes:
   esdata01:
     driver: local
-  kibanadata:
-    driver: local
+#  kibanadata:
+#    driver: local
   mysql_data:
     driver: local
   minio_data:
