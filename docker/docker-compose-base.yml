@@ -74,6 +74,25 @@ services:
       retries: 3
     restart: always
 
+  redis:
+    container_name: ragflow-redis
+    image: redis:7.2.4
+    ports:
+      - "${REDIS_PORT}:6379"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TZ: ${TIMEZONE}
+    volumes:
+      - redis_data:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping | grep PONG" ]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ragflow
+    restart: always
 
   minio:
     image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
@@ -99,6 +118,8 @@ volumes:
 #  kibanadata:
 #    driver: local
   mysql_data:
+    driver: local
+  redis_data:
     driver: local
   minio_data:
     driver: local
