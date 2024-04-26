@@ -1,3 +1,4 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import { IModalProps } from '@/interfaces/common';
 import { Form, Modal, Select, SelectProps } from 'antd';
@@ -8,9 +9,11 @@ const ConnectToKnowledgeModal = ({
   hideModal,
   onOk,
   initialValue,
+  loading,
 }: IModalProps<string[]> & { initialValue: string[] }) => {
   const [form] = Form.useForm();
   const { list, fetchList } = useFetchKnowledgeList();
+  const { t } = useTranslate('fileManager');
 
   const options: SelectProps['options'] = list?.map((item) => ({
     label: item.name,
@@ -32,10 +35,11 @@ const ConnectToKnowledgeModal = ({
 
   return (
     <Modal
-      title="Add to Knowledge Base"
+      title={t('addToKnowledge')}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
+      confirmLoading={loading}
     >
       <Form form={form}>
         <Form.Item name="knowledgeIds" noStyle>
@@ -43,7 +47,7 @@ const ConnectToKnowledgeModal = ({
             mode="multiple"
             allowClear
             style={{ width: '100%' }}
-            placeholder="Please select"
+            placeholder={t('pleaseSelect')}
             options={options}
           />
         </Form.Item>

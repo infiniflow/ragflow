@@ -1,7 +1,7 @@
 import { useSelectFileList } from '@/hooks/fileManagerHooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { formatDate } from '@/utils/date';
-import { Button, Flex, Table } from 'antd';
+import { Button, Flex, Space, Table, Tag } from 'antd';
 import { ColumnsType } from 'antd/es/table';
 import ActionCell from './action-cell';
 import FileToolbar from './file-toolbar';
@@ -18,6 +18,7 @@ import {
 
 import RenameModal from '@/components/rename-modal';
 import SvgIcon from '@/components/svg-icon';
+import { useTranslate } from '@/hooks/commonHooks';
 import { getExtension } from '@/utils/documentUtils';
 import ConnectToKnowledgeModal from './connect-to-knowledge-modal';
 import FileUploadModal from './file-upload-modal';
@@ -25,6 +26,7 @@ import FolderCreateModal from './folder-create-modal';
 import styles from './index.less';
 
 const FileManager = () => {
+  const { t } = useTranslate('fileManager');
   const fileList = useSelectFileList();
   const { rowSelection, setSelectedRowKeys } = useGetRowSelection();
   const loading = useSelectFileListLoading();
@@ -57,12 +59,13 @@ const FileManager = () => {
     showConnectToKnowledgeModal,
     onConnectToKnowledgeOk,
     initialValue,
+    connectToKnowledgeLoading,
   } = useHandleConnectToKnowledge();
   const { pagination } = useGetFilesPagination();
 
   const columns: ColumnsType<IFile> = [
     {
-      title: 'Name',
+      title: t('name'),
       dataIndex: 'name',
       key: 'name',
       render(value, record) {
@@ -88,7 +91,7 @@ const FileManager = () => {
       },
     },
     {
-      title: 'Upload Date',
+      title: t('uploadDate'),
       dataIndex: 'create_date',
       key: 'create_date',
       render(text) {
@@ -96,22 +99,33 @@ const FileManager = () => {
       },
     },
     {
-      title: 'Knowledge Base',
-      dataIndex: 'kbs_info',
-      key: 'kbs_info',
+      title: t('size'),
+      dataIndex: 'size',
+      key: 'size',
       render(value) {
-        return Array.isArray(value)
-          ? value?.map((x) => x.kb_name).join(',')
-          : '';
+        return (value / 1024).toFixed(2) + ' KB';
       },
     },
     {
-      title: 'Location',
-      dataIndex: 'location',
-      key: 'location',
+      title: t('knowledgeBase'),
+      dataIndex: 'kbs_info',
+      key: 'kbs_info',
+      render(value) {
+        return Array.isArray(value) ? (
+          <Space wrap>
+            {value?.map((x) => (
+              <Tag color="blue" key={x.kb_id}>
+                {x.kb_name}
+              </Tag>
+            ))}
+          </Space>
+        ) : (
+          ''
+        );
+      },
     },
     {
-      title: 'Action',
+      title: t('action'),
       dataIndex: 'action',
       key: 'action',
       render: (text, record) => (
@@ -168,6 +182,7 @@ const FileManager = () => {
         visible={connectToKnowledgeVisible}
         hideModal={hideConnectToKnowledgeModal}
         onOk={onConnectToKnowledgeOk}
+        loading={connectToKnowledgeLoading}
       ></ConnectToKnowledgeModal>
     </section>
   );

@@ -22,6 +22,7 @@ export default {
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      comingSoon: 'Coming Soon',
     },
     login: {
       login: 'Sign in',
@@ -52,6 +53,7 @@ export default {
       home: 'Home',
       setting: '用户设置',
       logout: '登出',
+      fileManager: 'File Management',
     },
     knowledgeList: {
       welcome: 'Welcome back',
@@ -479,6 +481,24 @@ export default {
         'There is an abnormality in your network and you cannot connect to the server.',
       networkAnomaly: 'network anomaly',
       hint: 'hint',
+    },
+    fileManager: {
+      name: 'Name',
+      uploadDate: 'Upload Date',
+      knowledgeBase: 'Knowledge Base',
+      size: 'Size',
+      action: 'Action',
+      addToKnowledge: 'Add to Knowledge Base',
+      pleaseSelect: 'Please select',
+      newFolder: 'New Folder',
+      file: 'File',
+      uploadFile: 'Upload File',
+      directory: 'Directory',
+      uploadTitle: 'Click or drag file to this area to upload',
+      uploadDescription:
+        'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
+      local: 'Local uploads',
+      s3: 'S3 uploads',
     },
     footer: {
       profile: 'All rights reserved @ React',

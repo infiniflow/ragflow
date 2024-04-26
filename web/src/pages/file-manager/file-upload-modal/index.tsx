@@ -1,3 +1,4 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
 import { InboxOutlined } from '@ant-design/icons';
 import {
@@ -23,6 +24,7 @@ const FileUpload = ({
   fileList: UploadFile[];
   setFileList: Dispatch<SetStateAction<UploadFile[]>>;
 }) => {
+  const { t } = useTranslate('fileManager');
   const props: UploadProps = {
     multiple: true,
     onRemove: (file) => {
@@ -47,13 +49,8 @@ const FileUpload = ({
       <p className="ant-upload-drag-icon">
         <InboxOutlined />
       </p>
-      <p className="ant-upload-text">
-        Click or drag file to this area to upload
-      </p>
-      <p className="ant-upload-hint">
-        Support for a single or bulk upload. Strictly prohibited from uploading
-        company data or other banned files.
-      </p>
+      <p className="ant-upload-text">{t('uploadTitle')}</p>
+      <p className="ant-upload-hint">{t('uploadDescription')}</p>
     </Dragger>
   );
 };
@@ -64,18 +61,25 @@ const FileUploadModal = ({
   loading,
   onOk: onFileUploadOk,
 }: IModalProps<UploadFile[]>) => {
+  const { t } = useTranslate('fileManager');
   const [value, setValue] = useState<string | number>('local');
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [directoryFileList, setDirectoryFileList] = useState<UploadFile[]>([]);
 
-  const onOk = () => {
-    return onFileUploadOk?.([...fileList, ...directoryFileList]);
+  const onOk = async () => {
+    const ret = await onFileUploadOk?.([...fileList, ...directoryFileList]);
+    console.info(ret);
+    if (ret !== undefined && ret === 0) {
+      setFileList([]);
+      setDirectoryFileList([]);
+    }
+    return ret;
   };
 
   const items: TabsProps['items'] = [
     {
       key: '1',
-      label: 'File',
+      label: t('file'),
       children: (
         <FileUpload
           directory={false}
@@ -86,7 +90,7 @@ const FileUploadModal = ({
     },
     {
       key: '2',
-      label: 'Directory',
+      label: t('directory'),
       children: (
         <FileUpload
           directory
@@ -100,7 +104,7 @@ const FileUploadModal = ({
   return (
     <>
       <Modal
-        title="File upload"
+        title={t('uploadFile')}
         open={visible}
         onOk={onOk}
         onCancel={hideModal}
@@ -109,8 +113,8 @@ const FileUploadModal = ({
         <Flex gap={'large'} vertical>
           <Segmented
             options={[
-              { label: 'Local uploads', value: 'local' },
-              { label: 'S3 uploads', value: 's3' },
+              { label: t('local'), value: 'local' },
+              { label: t('s3'), value: 's3' },
             ]}
             block
             value={value}
@@ -119,7 +123,7 @@ const FileUploadModal = ({
           {value === 'local' ? (
             <Tabs defaultActiveKey="1" items={items} />
           ) : (
-            'coming soon'
+            t('comingSoon', { keyPrefix: 'common' })
           )}
         </Flex>
       </Modal>

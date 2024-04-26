@@ -70,7 +70,7 @@ const FileToolbar = ({
             <Button type="link">
               <Space>
                 <FileTextOutlined />
-                {t('localFiles')}
+                {t('uploadFile', { keyPrefix: 'fileManager' })}
               </Space>
             </Button>
           </div>
@@ -83,12 +83,13 @@ const FileToolbar = ({
         label: (
           <div>
             <Button type="link">
-              <FolderOpenOutlined />
-              New Folder
+              <Space>
+                <FolderOpenOutlined />
+                {t('newFolder', { keyPrefix: 'fileManager' })}
+              </Space>
             </Button>
           </div>
         ),
-        // disabled: true,
       },
     ];
   }, [t, showFolderCreateModal, showFileUploadModal]);

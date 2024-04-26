@@ -22,6 +22,7 @@ export default {
       languagePlaceholder: '请选择语言',
       copy: '复制',
       copied: '复制成功',
+      comingSoon: '即将推出',
     },
     login: {
       login: '登录',
@@ -52,6 +53,7 @@ export default {
       home: '首页',
       setting: '用户设置',
       logout: '登出',
+      fileManager: '文件管理',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -225,7 +227,7 @@ export default {
       <ul>
     <li>对于 csv 或 txt 文件，列之间的分隔符为 <em><b>TAB</b></em>。</li>
     <li>第一行必须是列标题。</li>
-    <li>列标题必须是有意义的术语，以便我们的法学硕士能够理解。
+    <li>列标题必须是有意义的术语，以便我们的大语言模型能够理解。
     列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好
     使用方括号枚举值，例如 <i>'gender/sex(male,female)'</i>.<p>
     以下是标题的一些示例：<ol>
@@ -298,7 +300,7 @@ export default {
       systemTip:
         '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。',
       topN: 'Top N',
-      topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给法学硕士。 LLM 只能看到这些“Top N”块。`,
+      topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
       variable: '变量',
       variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
       这些变量用于填写提示中的“系统”部分，以便给LLM一个提示。
@@ -315,7 +317,7 @@ export default {
       improvise: '即兴创作',
       precise: '精确',
       balance: '平衡',
-      freedomTip: `“精确”意味着法学硕士会保守并谨慎地回答你的问题。 “即兴发挥”意味着你希望法学硕士能够自由地畅所欲言。 “平衡”是谨慎与自由之间的平衡。`,
+      freedomTip: `“精确”意味着大语言模型会保守并谨慎地回答你的问题。 “即兴发挥”意味着你希望大语言模型能够自由地畅所欲言。 “平衡”是谨慎与自由之间的平衡。`,
       temperature: '温度',
       temperatureMessage: '温度是必填项',
       temperatureTip:
@@ -460,6 +462,24 @@ export default {
       networkAnomalyDescription: '您的网络发生异常，无法连接服务器',
       networkAnomaly: '网络异常',
       hint: '提示',
+    },
+    fileManager: {
+      name: '名称',
+      uploadDate: '上传日期',
+      knowledgeBase: '知识库',
+      size: '大小',
+      action: '操作',
+      addToKnowledge: '添加到知识库',
+      pleaseSelect: '请选择',
+      newFolder: '新建文件夹',
+      uploadFile: '上传文件',
+      uploadTitle: '点击或拖拽文件至此区域即可上传',
+      uploadDescription:
+        '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
+      file: '文件',
+      directory: '文件夹',
+      local: '本地上传',
+      s3: 'S3 上传',
     },
     footer: {
       profile: 'All rights reserved @ React',
