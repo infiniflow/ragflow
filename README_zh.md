@@ -58,6 +58,7 @@
 
 ## 📌 新增功能
 
+- 2024-04-26 增添了'文件管理'功能.
 - 2024-04-19 支持对话 API ([更多](./docs/conversation_api.md)).
 - 2024-04-16 添加嵌入模型 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) 。
 - 2024-04-16 添加 [FastEmbed](https://github.com/qdrant/fastembed) 专为轻型和高速嵌入而设计。

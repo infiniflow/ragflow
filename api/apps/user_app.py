@@ -28,6 +28,7 @@ from api.db import UserTenantRole, LLMType
 from api.settings import RetCode, GITHUB_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, API_KEY, \
     LLM_FACTORY, LLM_BASE_URL
 from api.db.services.user_service import UserService, TenantService, UserTenantService
+from api.db.services.file_service import FileService
 from api.settings import stat_logger
 from api.utils.api_utils import get_json_result, cors_reponse
 
@@ -221,6 +222,17 @@ def user_register(user_id, user):
         "invited_by": user_id,
         "role": UserTenantRole.OWNER
     }
+    file_id = get_uuid()
+    file = {
+        "id": file_id,
+        "parent_id": file_id,
+        "tenant_id": user_id,
+        "created_by": user_id,
+        "name": "/",
+        "type": FileType.FOLDER,
+        "size": 0,
+        "location": "",
+    }
     tenant_llm = []
     for llm in LLMService.query(fid=LLM_FACTORY):
         tenant_llm.append({"tenant_id": user_id,
@@ -236,6 +248,7 @@ def user_register(user_id, user):
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
+    FileService.insert(file)
     return UserService.query(email=user["email"])
 
 
