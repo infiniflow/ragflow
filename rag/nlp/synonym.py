@@ -17,12 +17,12 @@ class Dealer:
         try:
             self.dictionary = json.load(open(path, 'r'))
         except Exception as e:
-            logging.warn("Miss synonym.json")
+            logging.warning("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
             logging.warning(
-                "Realtime synonym is disabled, since no redis connection.")
+                "Real-time synonym is disabled, since no redis connection.")
         if not len(self.dictionary.keys()):
             logging.warning(f"Fail to load synonym")
 
