@@ -250,10 +250,8 @@ def rm():
         except Exception as e:
             errors += str(e)
 
-
     if errors: return server_error_response(e)
     return get_json_result(data=True)
-
 
 
 @manager.route('/run', methods=['POST'])
@@ -304,6 +302,11 @@ def rename():
                 req["doc_id"], {"name": req["name"]}):
             return get_data_error_result(
                 retmsg="Database error (Document rename)!")
+
+        informs = File2DocumentService.get_by_document_id(req["doc_id"])
+        if informs:
+            e, file = FileService.get_by_id(informs[0].file_id)
+            FileService.update_by_id(file.id, {"name": req["name"]})
 
         return get_json_result(data=True)
     except Exception as e:
