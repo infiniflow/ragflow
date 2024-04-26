@@ -312,6 +312,13 @@ def rename():
             return get_data_error_result(
                 retmsg="Database error (File rename)!")
 
+        informs = File2DocumentService.get_by_file_id(req["file_id"])
+        if informs:
+            if not DocumentService.update_by_id(
+                    informs[0].document_id, {"name": req["name"]}):
+                return get_data_error_result(
+                    retmsg="Database error (Document rename)!")
+
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
