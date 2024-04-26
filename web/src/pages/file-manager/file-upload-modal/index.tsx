@@ -13,6 +13,8 @@ import {
 } from 'antd';
 import { Dispatch, SetStateAction, useState } from 'react';
 
+import styles from './index.less';
+
 const { Dragger } = Upload;
 
 const FileUpload = ({
@@ -45,7 +47,7 @@ const FileUpload = ({
   };
 
   return (
-    <Dragger {...props}>
+    <Dragger {...props} className={styles.uploader}>
       <p className="ant-upload-drag-icon">
         <InboxOutlined />
       </p>

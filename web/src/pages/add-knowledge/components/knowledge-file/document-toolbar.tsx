@@ -80,9 +80,7 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
   const handleDelete = useCallback(() => {
     showDeleteConfirm({
       onOk: () => {
-        selectedRowKeys.forEach((id) => {
-          removeDocument(id);
-        });
+        removeDocument(selectedRowKeys);
       },
     });
   }, [removeDocument, showDeleteConfirm, selectedRowKeys]);

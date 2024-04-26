@@ -461,6 +461,7 @@ export default {
       renamed: 'Renamed',
       operated: 'Operated',
       updated: 'Updated',
+      uploaded: 'Uploaded',
       200: 'The server successfully returns the requested data.',
       201: 'Create or modify data successfully.',
       202: 'A request has been queued in the background (asynchronous task).',

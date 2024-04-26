@@ -19,6 +19,7 @@ import {
 import RenameModal from '@/components/rename-modal';
 import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/commonHooks';
+import { formatNumberWithThousandsSeparator } from '@/utils/commonUtil';
 import { getExtension } from '@/utils/documentUtils';
 import ConnectToKnowledgeModal from './connect-to-knowledge-modal';
 import FileUploadModal from './file-upload-modal';
@@ -103,7 +104,9 @@ const FileManager = () => {
       dataIndex: 'size',
       key: 'size',
       render(value) {
-        return (value / 1024).toFixed(2) + ' KB';
+        return (
+          formatNumberWithThousandsSeparator((value / 1024).toFixed(2)) + ' KB'
+        );
       },
     },
     {

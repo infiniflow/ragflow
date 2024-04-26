@@ -321,3 +321,20 @@ export const useHandleConnectToKnowledge = () => {
     showConnectToKnowledgeModal: handleShowConnectToKnowledgeModal,
   };
 };
+
+export const useHandleBreadcrumbClick = () => {
+  const navigate = useNavigate();
+  const setPagination = useSetPagination('fileManager');
+
+  const handleBreadcrumbClick = useCallback(
+    (path?: string) => {
+      if (path) {
+        setPagination();
+        navigate(path);
+      }
+    },
+    [setPagination, navigate],
+  );
+
+  return { handleBreadcrumbClick };
+};
