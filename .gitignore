@@ -21,5 +21,11 @@ Cargo.lock
 
 .idea/
 .vscode/
-fetch_database/
-conf/service_conf.yaml
+
+
+# Exclude Mac generated files
+.DS_Store
+
+# Exclude the log folder
+docker/ragflow-logs/
+

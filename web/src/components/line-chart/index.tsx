@@ -50,9 +50,10 @@ const data = [
 
 interface IProps extends CategoricalChartProps {
   data?: Array<{ xAxis: string; yAxis: number }>;
+  showLegend?: boolean;
 }
 
-const RagLineChart = ({ data }: IProps) => {
+const RagLineChart = ({ data, showLegend = false }: IProps) => {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart
@@ -72,7 +73,7 @@ const RagLineChart = ({ data }: IProps) => {
         <XAxis dataKey="xAxis" />
         <YAxis />
         <Tooltip />
-        <Legend />
+        {showLegend && <Legend />}
         <Line
           type="monotone"
           dataKey="yAxis"

@@ -13,12 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import random
+
 from peewee import Expression
 from api.db.db_models import DB
 from api.db import StatusEnum, FileType, TaskStatus
 from api.db.db_models import Task, Document, Knowledgebase, Tenant
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
+from api.utils import current_timestamp
 
 
 class TaskService(CommonService):
@@ -26,7 +29,7 @@ class TaskService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_tasks(cls, tm, mod=0, comm=1, items_per_page=64):
+    def get_tasks(cls, tm, mod=0, comm=1, items_per_page=1, takeit=True):
         fields = [
             cls.model.id,
             cls.model.doc_id,
@@ -45,20 +48,47 @@ class TaskService(CommonService):
             Tenant.img2txt_id,
             Tenant.asr_id,
             cls.model.update_time]
-        docs = cls.model.select(*fields) \
-            .join(Document, on=(cls.model.doc_id == Document.id)) \
-            .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id)) \
-            .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))\
-            .where(
-                Document.status == StatusEnum.VALID.value,
-                Document.run == TaskStatus.RUNNING.value,
-                ~(Document.type == FileType.VIRTUAL.value),
-                cls.model.progress == 0,
-                cls.model.update_time >= tm,
-                (Expression(cls.model.create_time, "%%", comm) == mod))\
-            .order_by(cls.model.update_time.asc())\
-            .paginate(1, items_per_page)
-        return list(docs.dicts())
+        with DB.lock("get_task", -1):
+            docs = cls.model.select(*fields) \
+                .join(Document, on=(cls.model.doc_id == Document.id)) \
+                .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id)) \
+                .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))\
+                .where(
+                    Document.status == StatusEnum.VALID.value,
+                    Document.run == TaskStatus.RUNNING.value,
+                    ~(Document.type == FileType.VIRTUAL.value),
+                    cls.model.progress == 0,
+                    #cls.model.update_time >= tm,
+                    #(Expression(cls.model.create_time, "%%", comm) == mod)
+                )\
+                .order_by(cls.model.update_time.asc())\
+                .paginate(0, items_per_page)
+            docs = list(docs.dicts())
+            if not docs: return []
+            if not takeit: return docs
+
+            cls.model.update(progress_msg=cls.model.progress_msg + "\n" + "Task has been received.", progress=random.random()/10.).where(
+                cls.model.id == docs[0]["id"]).execute()
+            return docs
+
+    @classmethod
+    @DB.connection_context()
+    def get_ongoing_doc_name(cls):
+        with DB.lock("get_task", -1):
+            docs = cls.model.select(*[Document.kb_id, Document.location]) \
+                .join(Document, on=(cls.model.doc_id == Document.id)) \
+                .where(
+                    Document.status == StatusEnum.VALID.value,
+                    Document.run == TaskStatus.RUNNING.value,
+                    ~(Document.type == FileType.VIRTUAL.value),
+                    cls.model.progress >= 0,
+                    cls.model.progress < 1,
+                    cls.model.create_time >= current_timestamp() - 180000
+                )
+            docs = list(docs.dicts())
+            if not docs: return []
+
+            return list(set([(d["kb_id"], d["location"]) for d in docs]))
 
     @classmethod
     @DB.connection_context()
@@ -74,9 +104,10 @@ class TaskService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_progress(cls, id, info):
-        if info["progress_msg"]:
-            cls.model.update(progress_msg=cls.model.progress_msg + "\n" + info["progress_msg"]).where(
-                cls.model.id == id).execute()
-        if "progress" in info:
-            cls.model.update(progress=info["progress"]).where(
-                cls.model.id == id).execute()
+        with DB.lock("update_progress", -1):
+            if info["progress_msg"]:
+                cls.model.update(progress_msg=cls.model.progress_msg + "\n" + info["progress_msg"]).where(
+                    cls.model.id == id).execute()
+            if "progress" in info:
+                cls.model.update(progress=info["progress"]).where(
+                    cls.model.id == id).execute()

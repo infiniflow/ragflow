@@ -11,7 +11,7 @@ import pdfplumber
 import logging
 from PIL import Image, ImageDraw
 import numpy as np
-
+from timeit import default_timer as timer
 from PyPDF2 import PdfReader as pdf2_read
 
 from api.utils.file_utils import get_project_base_directory
@@ -37,16 +37,17 @@ class HuParser:
             self.updown_cnt_mdl.set_param({"device": "cuda"})
         try:
             model_dir = os.path.join(
-                    get_project_base_directory(),
-                    "rag/res/deepdoc")
+                get_project_base_directory(),
+                "rag/res/deepdoc")
             self.updown_cnt_mdl.load_model(os.path.join(
                 model_dir, "updown_concat_xgb.model"))
         except Exception as e:
             model_dir = snapshot_download(
-                repo_id="InfiniFlow/text_concat_xgb_v1.0")
+                repo_id="InfiniFlow/text_concat_xgb_v1.0",
+                local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
+                local_dir_use_symlinks=False)
             self.updown_cnt_mdl.load_model(os.path.join(
                 model_dir, "updown_concat_xgb.model"))
-
 
         self.page_from = 0
         """
@@ -62,7 +63,7 @@ class HuParser:
         """
 
     def __char_width(self, c):
-        return (c["x1"] - c["x0"]) // len(c["text"])
+        return (c["x1"] - c["x0"]) // max(len(c["text"]), 1)
 
     def __height(self, c):
         return c["bottom"] - c["top"]
@@ -74,7 +75,7 @@ class HuParser:
     def _y_dis(
             self, a, b):
         return (
-            b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
+                       b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
 
     def _match_proj(self, b):
         proj_patt = [
@@ -97,9 +98,9 @@ class HuParser:
         tks_down = huqie.qie(down["text"][:LEN]).split(" ")
         tks_up = huqie.qie(up["text"][-LEN:]).split(" ")
         tks_all = up["text"][-LEN:].strip() \
-            + (" " if re.match(r"[a-zA-Z0-9]+",
-                               up["text"][-1] + down["text"][0]) else "") \
-            + down["text"][:LEN].strip()
+                  + (" " if re.match(r"[a-zA-Z0-9]+",
+                                     up["text"][-1] + down["text"][0]) else "") \
+                  + down["text"][:LEN].strip()
         tks_all = huqie.qie(tks_all).split(" ")
         fea = [
             up.get("R", -1) == down.get("R", -1),
@@ -121,7 +122,7 @@ class HuParser:
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[\(（][^\)）]+$", up["text"])
-            and re.search(r"[\)）]", down["text"]) else False,
+                    and re.search(r"[\)）]", down["text"]) else False,
             self._match_proj(down),
             True if re.match(r"[A-Z]", down["text"]) else False,
             True if re.match(r"[A-Z]", up["text"][-1]) else False,
@@ -183,7 +184,7 @@ class HuParser:
                 continue
             for tb in tbls:  # for table
                 left, top, right, bott = tb["x0"] - MARGIN, tb["top"] - MARGIN, \
-                    tb["x1"] + MARGIN, tb["bottom"] + MARGIN
+                                         tb["x1"] + MARGIN, tb["bottom"] + MARGIN
                 left *= ZM
                 top *= ZM
                 right *= ZM
@@ -295,7 +296,7 @@ class HuParser:
         for b in bxs:
             if not b["text"]:
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * \
-                    ZM, b["top"] * ZM, b["bottom"] * ZM
+                                         ZM, b["top"] * ZM, b["bottom"] * ZM
                 b["text"] = self.ocr.recognize(np.array(img),
                                                np.array([[left, top], [right, top], [right, bott], [left, bott]],
                                                         dtype=np.float32))
@@ -620,7 +621,7 @@ class HuParser:
                 i += 1
                 continue
             lout_no = str(self.boxes[i]["page_number"]) + \
-                "-" + str(self.boxes[i]["layoutno"])
+                      "-" + str(self.boxes[i]["layoutno"])
             if TableStructureRecognizer.is_caption(self.boxes[i]) or self.boxes[i]["layout_type"] in ["table caption",
                                                                                                       "title",
                                                                                                       "figure caption",
@@ -828,9 +829,13 @@ class HuParser:
         pn = [bx["page_number"]]
         top = bx["top"] - self.page_cum_height[pn[0] - 1]
         bott = bx["bottom"] - self.page_cum_height[pn[0] - 1]
+        page_images_cnt = len(self.page_images)
+        if pn[-1] - 1 >= page_images_cnt: return ""
         while bott * ZM > self.page_images[pn[-1] - 1].size[1]:
             bott -= self.page_images[pn[-1] - 1].size[1] / ZM
             pn.append(pn[-1] + 1)
+            if pn[-1] - 1 >= page_images_cnt:
+                return ""
 
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
             .format("-".join([str(p) for p in pn]),
@@ -930,6 +935,7 @@ class HuParser:
         self.page_cum_height = [0]
         self.page_layout = []
         self.page_from = page_from
+        st = timer()
         try:
             self.pdf = pdfplumber.open(fnm) if isinstance(
                 fnm, str) else pdfplumber.open(BytesIO(fnm))
@@ -968,6 +974,7 @@ class HuParser:
                         self.outlines.append((a["/Title"], depth))
                         continue
                     dfs(a, depth + 1)
+
             dfs(outlines, 0)
         except Exception as e:
             logging.warning(f"Outlines exception: {e}")
@@ -977,13 +984,15 @@ class HuParser:
         logging.info("Images converted.")
         self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(
             random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i]))))) for i in
-            range(len(self.page_chars))]
+                           range(len(self.page_chars))]
         if sum([1 if e else 0 for e in self.is_english]) > len(
                 self.page_images) / 2:
             self.is_english = True
         else:
             self.is_english = False
+        self.is_english = False
 
+        st = timer()
         for i, img in enumerate(self.page_images):
             chars = self.page_chars[i] if not self.is_english else []
             self.mean_height.append(
@@ -1001,15 +1010,11 @@ class HuParser:
                                                                        chars[j]["width"]) / 2:
                     chars[j]["text"] += " "
                 j += 1
-            # if i > 0:
-            #     if not chars:
-            #         self.page_cum_height.append(img.size[1] / zoomin)
-            #     else:
-            #         self.page_cum_height.append(
-            #             np.max([c["bottom"] for c in chars]))
+
             self.__ocr(i + 1, img, chars, zoomin)
-            if callback:
+            if callback and i % 6 == 5:
                 callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+        # print("OCR:", timer()-st)
 
         if not self.is_english and not any(
                 [c for c in self.page_chars]) and self.boxes:
@@ -1045,7 +1050,7 @@ class HuParser:
             left, right, top, bottom = float(left), float(
                 right), float(top), float(bottom)
             poss.append(([int(p) - 1 for p in pn.split("-")],
-                        left, right, top, bottom))
+                         left, right, top, bottom))
         if not poss:
             if need_position:
                 return None, None
@@ -1071,7 +1076,7 @@ class HuParser:
                 self.page_images[pns[0]].crop((left * ZM, top * ZM,
                                                right *
                                                ZM, min(
-                                                   bottom, self.page_images[pns[0]].size[1])
+                    bottom, self.page_images[pns[0]].size[1])
                                                ))
             )
             if 0 < ii < len(poss) - 1:

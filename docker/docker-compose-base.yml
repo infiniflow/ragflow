@@ -29,23 +29,23 @@ services:
       - ragflow
     restart: always
 
-  kibana:
-    depends_on:
-        es01:
-          condition: service_healthy
-    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
-    container_name: ragflow-kibana
-    volumes:
-      - kibanadata:/usr/share/kibana/data
-    ports:
-      - ${KIBANA_PORT}:5601
-    environment:
-      - SERVERNAME=kibana
-      - ELASTICSEARCH_HOSTS=http://es01:9200
-      - TZ=${TIMEZONE}
-    mem_limit: ${MEM_LIMIT}
-    networks:
-      - ragflow
+  #kibana:
+  #  depends_on:
+  #      es01:
+  #        condition: service_healthy
+  #  image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+  #  container_name: ragflow-kibana
+  #  volumes:
+  #    - kibanadata:/usr/share/kibana/data
+  #  ports:
+  #    - ${KIBANA_PORT}:5601
+  #  environment:
+  #    - SERVERNAME=kibana
+  #    - ELASTICSEARCH_HOSTS=http://es01:9200
+  #    - TZ=${TIMEZONE}
+  #  mem_limit: ${MEM_LIMIT}
+  #  networks:
+  #    - ragflow
 
   mysql:
     image: mysql:5.7.18
@@ -80,8 +80,8 @@ services:
     container_name: ragflow-minio
     command: server --console-address ":9001" /data
     ports:
-      - 9000:9000
-      - 9001:9001
+      - ${MINIO_PORT}:9000
+      - ${MINIO_CONSOLE_PORT}:9001
     environment:
       - MINIO_ROOT_USER=${MINIO_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
@@ -96,8 +96,8 @@ services:
 volumes:
   esdata01:
     driver: local
-  kibanadata:
-    driver: local
+#  kibanadata:
+#    driver: local
   mysql_data:
     driver: local
   minio_data:

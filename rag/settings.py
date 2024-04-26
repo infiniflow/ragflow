@@ -25,6 +25,11 @@ SUBPROCESS_STD_LOG_NAME = "std.log"
 
 ES = get_base_config("es", {})
 MINIO = decrypt_database_config(name="minio")
+try:
+    REDIS = decrypt_database_config(name="redis")
+except Exception as e:
+    REDIS = {}
+    pass
 DOC_MAXIMUM_SIZE = 128 * 1024 * 1024
 
 # Logger
@@ -39,5 +44,6 @@ LoggerFactory.LEVEL = 30
 es_logger = getLogger("es")
 minio_logger = getLogger("minio")
 cron_logger = getLogger("cron_logger")
+cron_logger.setLevel(20)
 chunk_logger = getLogger("chunk_logger")
 database_logger = getLogger("database")

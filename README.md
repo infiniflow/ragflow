@@ -11,11 +11,14 @@
 </p>
 
 <p align="center">
+    <a href="https://github.com/infiniflow/ragflow/releases/latest">
+        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
+    </a>
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v1.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.2.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.3.2-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.3.2"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
@@ -55,6 +58,7 @@
 
 ## 📌 Latest Features
 
+- 2024-04-19 Support conversation API ([detail](./docs/conversation_api.md)).
 - 2024-04-16 Add an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding).
 - 2024-04-16 Add [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
 - 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
@@ -72,8 +76,9 @@
 
 ### 📝 Prerequisites
 
-- CPU >= 2 cores
-- RAM >= 8 GB
+- CPU >= 4 cores
+- RAM >= 16 GB
+- Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
@@ -137,9 +142,10 @@
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
+   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.  
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
-   > In the given scenario, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+   > With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
    > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
@@ -173,7 +179,7 @@ To build the Docker images from source:
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.2.0 .
+$ docker build -t infiniflow/ragflow:v0.3.2 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d

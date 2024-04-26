@@ -5,6 +5,11 @@ const routes = [
     layout: false,
   },
   {
+    path: '/chat/share',
+    component: '@/pages/chat/share',
+    layout: false,
+  },
+  {
     path: '/',
     component: '@/layouts',
     layout: false,
@@ -77,7 +82,7 @@ const routes = [
       },
       {
         path: '/file',
-        component: '@/pages/file',
+        component: '@/pages/file-manager',
       },
     ],
   },

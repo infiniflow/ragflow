@@ -11,11 +11,14 @@
 </p>
 
 <p align="center">
+    <a href="https://github.com/infiniflow/ragflow/releases/latest">
+        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
+    </a>
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v1.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.2.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.3.2-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.3.2"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=7d09f1" alt="license">
   </a>
@@ -55,6 +58,7 @@
 
 ## 📌 新增功能
 
+- 2024-04-19 支持对话 API ([更多](./docs/conversation_api.md)).
 - 2024-04-16 添加嵌入模型 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) 。
 - 2024-04-16 添加 [FastEmbed](https://github.com/qdrant/fastembed) 专为轻型和高速嵌入而设计。
 - 2024-04-11 支持用 [Xinference](./docs/xinference.md) 本地化部署大模型。
@@ -72,8 +76,9 @@
 
 ### 📝 前提条件
 
-- CPU >= 2 核
-- RAM >= 8 GB
+- CPU >= 4 核
+- RAM >= 16 GB
+- Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > 如果你并没有在本机安装 Docker（Windows、Mac，或者 Linux）, 可以参考文档 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安装。
 
@@ -137,6 +142,7 @@
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
+   > 如果您跳过这一步系统确认步骤就登录 RAGFlow，你的浏览器有可能会提示 `network anomaly` 或 `网络异常`，因为 RAGFlow 可能并未完全启动成功。
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
    > 上面这个例子中，您只需输入 http://IP_OF_YOUR_MACHINE 即可：未改动过配置则无需输入端口（默认的 HTTP 服务端口 80）。
@@ -173,7 +179,7 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.2.0 .
+$ docker build -t infiniflow/ragflow:v0.3.2 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d

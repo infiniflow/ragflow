@@ -32,7 +32,7 @@ class Pdf(PdfParser):
 
         self._layouts_rec(zoomin)
         callback(0.65, "Layout analysis finished.")
-        print("paddle layouts:", timer() - start)
+        print("layouts:", timer() - start)
         self._table_transformer_job(zoomin)
         callback(0.67, "Table analysis finished.")
         self._text_merge()

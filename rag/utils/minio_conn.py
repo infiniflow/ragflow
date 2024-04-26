@@ -56,7 +56,6 @@ class HuMinio(object):
         except Exception as e:
             minio_logger.error(f"Fail rm {bucket}/{fnm}: " + str(e))
 
-
     def get(self, bucket, fnm):
         for _ in range(1):
             try:

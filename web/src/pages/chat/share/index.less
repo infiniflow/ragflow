@@ -1,0 +1,50 @@
+.chatWrapper {
+  height: 100%;
+}
+
+.chatContainer {
+  padding: 10px;
+  box-sizing: border-box;
+  height: 100%;
+  .messageContainer {
+    overflow-y: auto;
+    padding-right: 6px;
+  }
+}
+
+.messageItem {
+  padding: 24px 0;
+  .messageItemSection {
+    display: inline-block;
+  }
+  .messageItemSectionLeft {
+    width: 70%;
+  }
+  .messageItemSectionRight {
+    width: 40%;
+  }
+  .messageItemContent {
+    display: inline-flex;
+    gap: 20px;
+  }
+  .messageItemContentReverse {
+    flex-direction: row-reverse;
+  }
+  .messageText {
+    .chunkText();
+    padding: 0 14px;
+    background-color: rgba(249, 250, 251, 1);
+    word-break: break-all;
+  }
+  .messageEmpty {
+    width: 300px;
+  }
+}
+
+.messageItemLeft {
+  text-align: left;
+}
+
+.messageItemRight {
+  text-align: right;
+}

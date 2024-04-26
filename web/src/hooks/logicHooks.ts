@@ -1,9 +1,12 @@
 import { LanguageTranslationMap } from '@/constants/common';
+import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { useCallback, useState } from 'react';
+import { PaginationProps } from 'antd';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSetModalState } from './commonHooks';
+import { useDispatch } from 'umi';
+import { useSetModalState, useTranslate } from './commonHooks';
 import { useSetDocumentParser } from './documentHooks';
 import { useOneNamespaceEffectsLoading } from './storeHooks';
 import { useSaveSetting } from './userSettingHook';
@@ -61,4 +64,52 @@ export const useChangeLanguage = () => {
   };
 
   return changeLanguage;
+};
+
+export const useGetPagination = (
+  total: number,
+  page: number,
+  pageSize: number,
+  onPageChange: PaginationProps['onChange'],
+) => {
+  const { t } = useTranslate('common');
+
+  const pagination: PaginationProps = useMemo(() => {
+    return {
+      showQuickJumper: true,
+      total,
+      showSizeChanger: true,
+      current: page,
+      pageSize: pageSize,
+      pageSizeOptions: [1, 2, 10, 20, 50, 100],
+      onChange: onPageChange,
+      showTotal: (total) => `${t('total')} ${total}`,
+    };
+  }, [t, onPageChange, page, pageSize, total]);
+
+  return {
+    pagination,
+  };
+};
+
+export const useSetPagination = (namespace: string) => {
+  const dispatch = useDispatch();
+
+  const setPagination = useCallback(
+    (pageNumber = 1, pageSize?: number) => {
+      const pagination: Pagination = {
+        current: pageNumber,
+      } as Pagination;
+      if (pageSize) {
+        pagination.pageSize = pageSize;
+      }
+      dispatch({
+        type: `${namespace}/setPagination`,
+        payload: pagination,
+      });
+    },
+    [dispatch, namespace],
+  );
+
+  return setPagination;
 };
