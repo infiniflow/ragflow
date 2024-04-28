@@ -15,8 +15,8 @@
 #
 import random
 
-from peewee import Expression
-from api.db.db_models import DB
+from peewee import Expression, JOIN
+from api.db.db_models import DB, File2Document, File
 from api.db import StatusEnum, FileType, TaskStatus
 from api.db.db_models import Task, Document, Knowledgebase, Tenant
 from api.db.services.common_service import CommonService
@@ -75,8 +75,10 @@ class TaskService(CommonService):
     @DB.connection_context()
     def get_ongoing_doc_name(cls):
         with DB.lock("get_task", -1):
-            docs = cls.model.select(*[Document.kb_id, Document.location]) \
+            docs = cls.model.select(*[Document.id, Document.kb_id, Document.location, File.parent_id]) \
                 .join(Document, on=(cls.model.doc_id == Document.id)) \
+                .join(File2Document, on=(File2Document.document_id == Document.id), join_type=JOIN.LEFT_OUTER) \
+                .join(File, on=(File2Document.file_id == File.id)) \
                 .where(
                     Document.status == StatusEnum.VALID.value,
                     Document.run == TaskStatus.RUNNING.value,
@@ -88,7 +90,7 @@ class TaskService(CommonService):
             docs = list(docs.dicts())
             if not docs: return []
 
-            return list(set([(d["kb_id"], d["location"]) for d in docs]))
+            return list(set([(d["parent_id"] if d["parent_id"] else d["kb_id"], d["location"]) for d in docs]))
 
     @classmethod
     @DB.connection_context()
