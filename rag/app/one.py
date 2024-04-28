@@ -14,7 +14,7 @@ from tika import parser
 from io import BytesIO
 import re
 from rag.app import laws
-from rag.nlp import huqie, tokenize, find_codec
+from rag.nlp import rag_tokenizer, tokenize, find_codec
 from deepdoc.parser import PdfParser, ExcelParser, PlainParser
 
 
@@ -111,9 +111,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     doc = {
         "docnm_kwd": filename,
-        "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
-    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
+    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     tokenize(doc, "\n".join(sections), eng)
     return [doc]
 

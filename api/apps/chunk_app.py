@@ -20,7 +20,7 @@ from flask_login import login_required, current_user
 from elasticsearch_dsl import Q
 
 from rag.app.qa import rmPrefix, beAdoc
-from rag.nlp import search, huqie
+from rag.nlp import search, rag_tokenizer
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
@@ -125,10 +125,10 @@ def set():
     d = {
         "id": req["chunk_id"],
         "content_with_weight": req["content_with_weight"]}
-    d["content_ltks"] = huqie.qie(req["content_with_weight"])
-    d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
+    d["content_ltks"] = rag_tokenizer.tokenize(req["content_with_weight"])
+    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req["important_kwd"]
-    d["important_tks"] = huqie.qie(" ".join(req["important_kwd"]))
+    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
     if "available_int" in req:
         d["available_int"] = req["available_int"]
 
@@ -152,7 +152,7 @@ def set():
                     retmsg="Q&A must be separated by TAB/ENTER key.")
             q, a = rmPrefix(arr[0]), rmPrefix[arr[1]]
             d = beAdoc(d, arr[0], arr[1], not any(
-                [huqie.is_chinese(t) for t in q + a]))
+                [rag_tokenizer.is_chinese(t) for t in q + a]))
 
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
@@ -202,11 +202,11 @@ def create():
     md5 = hashlib.md5()
     md5.update((req["content_with_weight"] + req["doc_id"]).encode("utf-8"))
     chunck_id = md5.hexdigest()
-    d = {"id": chunck_id, "content_ltks": huqie.qie(req["content_with_weight"]),
+    d = {"id": chunck_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
          "content_with_weight": req["content_with_weight"]}
-    d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
+    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req.get("important_kwd", [])
-    d["important_tks"] = huqie.qie(" ".join(req.get("important_kwd", [])))
+    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req.get("important_kwd", [])))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
 

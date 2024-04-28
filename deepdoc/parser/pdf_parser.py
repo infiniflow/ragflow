@@ -16,7 +16,7 @@ from PyPDF2 import PdfReader as pdf2_read
 
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer
-from rag.nlp import huqie
+from rag.nlp import rag_tokenizer
 from copy import deepcopy
 from huggingface_hub import snapshot_download
 
@@ -95,13 +95,13 @@ class RAGFlowPdfParser:
         h = max(self.__height(up), self.__height(down))
         y_dis = self._y_dis(up, down)
         LEN = 6
-        tks_down = huqie.qie(down["text"][:LEN]).split(" ")
-        tks_up = huqie.qie(up["text"][-LEN:]).split(" ")
+        tks_down = rag_tokenizer.tokenize(down["text"][:LEN]).split(" ")
+        tks_up = rag_tokenizer.tokenize(up["text"][-LEN:]).split(" ")
         tks_all = up["text"][-LEN:].strip() \
                   + (" " if re.match(r"[a-zA-Z0-9]+",
                                      up["text"][-1] + down["text"][0]) else "") \
                   + down["text"][:LEN].strip()
-        tks_all = huqie.qie(tks_all).split(" ")
+        tks_all = rag_tokenizer.tokenize(tks_all).split(" ")
         fea = [
             up.get("R", -1) == down.get("R", -1),
             y_dis / h,
@@ -142,8 +142,8 @@ class RAGFlowPdfParser:
             tks_down[-1] == tks_up[-1],
             max(down["in_row"], up["in_row"]),
             abs(down["in_row"] - up["in_row"]),
-            len(tks_down) == 1 and huqie.tag(tks_down[0]).find("n") >= 0,
-            len(tks_up) == 1 and huqie.tag(tks_up[0]).find("n") >= 0
+            len(tks_down) == 1 and rag_tokenizer.tag(tks_down[0]).find("n") >= 0,
+            len(tks_up) == 1 and rag_tokenizer.tag(tks_up[0]).find("n") >= 0
         ]
         return fea
 
@@ -599,7 +599,7 @@ class RAGFlowPdfParser:
 
             if b["text"].strip()[0] != b_["text"].strip()[0] \
                     or b["text"].strip()[0].lower() in set("qwertyuopasdfghjklzxcvbnm") \
-                    or huqie.is_chinese(b["text"].strip()[0]) \
+                    or rag_tokenizer.is_chinese(b["text"].strip()[0]) \
                     or b["top"] > b_["bottom"]:
                 i += 1
                 continue
