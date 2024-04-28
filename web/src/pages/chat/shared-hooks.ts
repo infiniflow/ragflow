@@ -129,6 +129,7 @@ export const useSendSharedMessage = (
     async (message: string, id?: string) => {
       const retcode = await completeConversation({
         conversation_id: id ?? conversationId,
+        quote: false,
         messages: [
           ...(conversation?.message ?? []).map((x: IMessage) => omit(x, 'id')),
           {
