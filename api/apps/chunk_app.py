@@ -233,10 +233,10 @@ def create():
         return server_error_response(e)
 
 
-@manager.route('/retrieval_test', methods=['POST'])
+@manager.route('/retrieval', methods=['POST'])
 @login_required
 @validate_request("kb_id", "question")
-def retrieval_test():
+def retrieval():
     req = request.json
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
