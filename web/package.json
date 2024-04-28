@@ -31,6 +31,7 @@
     "react-pdf-highlighter": "^6.1.0",
     "react-string-replace": "^1.1.1",
     "react-syntax-highlighter": "^15.5.0",
+    "reactflow": "^11.11.2",
     "recharts": "^2.12.4",
     "remark-gfm": "^4.0.0",
     "umi": "^4.0.90",

@@ -84,6 +84,10 @@ const routes = [
         path: '/file',
         component: '@/pages/file-manager',
       },
+      {
+        path: '/flow',
+        component: '@/pages/flow',
+      },
     ],
   },
   {
