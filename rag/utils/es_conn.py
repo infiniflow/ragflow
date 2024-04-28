@@ -27,7 +27,7 @@ class HuEs:
         for _ in range(10):
             try:
                 # Check if the password exists in settings.ES
-                if "password" in settings.ES:
+                if "password" in settings.ES and settings.ES["password"]:
                     # Initialize self.es with basic_auth if password is present
                     self.es = Elasticsearch(
                         settings.ES["hosts"].split(","),
