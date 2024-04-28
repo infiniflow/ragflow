@@ -78,14 +78,13 @@ class TaskService(CommonService):
             docs = cls.model.select(*[Document.id, Document.kb_id, Document.location, File.parent_id]) \
                 .join(Document, on=(cls.model.doc_id == Document.id)) \
                 .join(File2Document, on=(File2Document.document_id == Document.id), join_type=JOIN.LEFT_OUTER) \
-                .join(File, on=(File2Document.file_id == File.id)) \
+                .join(File, on=(File2Document.file_id == File.id), join_type=JOIN.LEFT_OUTER) \
                 .where(
                     Document.status == StatusEnum.VALID.value,
                     Document.run == TaskStatus.RUNNING.value,
                     ~(Document.type == FileType.VIRTUAL.value),
-                    cls.model.progress >= 0,
                     cls.model.progress < 1,
-                    cls.model.create_time >= current_timestamp() - 180000
+                    cls.model.create_time >= current_timestamp() - 1000 * 600
                 )
             docs = list(docs.dicts())
             if not docs: return []

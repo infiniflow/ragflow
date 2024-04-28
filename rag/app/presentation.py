@@ -17,7 +17,7 @@ from io import BytesIO
 from PIL import Image
 
 from rag.nlp import tokenize, is_english
-from rag.nlp import huqie
+from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, PptParser, PlainParser
 from PyPDF2 import PdfReader as pdf2_read
 
@@ -96,9 +96,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     eng = lang.lower() == "english"
     doc = {
         "docnm_kwd": filename,
-        "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
-    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
+    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
         ppt_parser = Ppt()

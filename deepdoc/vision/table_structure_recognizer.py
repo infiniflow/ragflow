@@ -19,7 +19,7 @@ import numpy as np
 from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
-from rag.nlp import huqie
+from rag.nlp import rag_tokenizer
 from .recognizer import Recognizer
 
 
@@ -117,14 +117,14 @@ class TableStructureRecognizer(Recognizer):
         for p, n in patt:
             if re.search(p, b["text"].strip()):
                 return n
-        tks = [t for t in huqie.qie(b["text"]).split(" ") if len(t) > 1]
+        tks = [t for t in rag_tokenizer.tokenize(b["text"]).split(" ") if len(t) > 1]
         if len(tks) > 3:
             if len(tks) < 12:
                 return "Tx"
             else:
                 return "Lx"
 
-        if len(tks) == 1 and huqie.tag(tks[0]) == "nr":
+        if len(tks) == 1 and rag_tokenizer.tag(tks[0]) == "nr":
             return "Nr"
 
         return "Ot"
