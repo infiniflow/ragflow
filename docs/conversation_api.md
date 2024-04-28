@@ -221,6 +221,7 @@ This will be called to get the answer to users' questions.
 |------|-------|----|----|
 | conversation_id| string | No | This is from calling /new_conversation.|
 | messages| json | No | All the conversation history stored here including the latest user's question.|
+| quote | bool | Yes | Default: true |
 
 ### Response 
 ```json
