@@ -33,7 +33,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, ge
 from itsdangerous import URLSafeTimedSerializer
 
 from api.utils.file_utils import filename_type, thumbnail
-from rag.utils import MINIO
+from rag.utils.minio_conn import MINIO
 
 
 def generate_confirmation_token(tenent_id):

@@ -23,7 +23,7 @@ from huggingface_hub import snapshot_download
 logging.getLogger("pdfminer").setLevel(logging.WARNING)
 
 
-class HuParser:
+class RAGFlowPdfParser:
     def __init__(self):
         self.ocr = OCR()
         if hasattr(self, "model_speciess"):

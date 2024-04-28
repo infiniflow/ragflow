@@ -28,7 +28,7 @@ from api.db.db_models import Knowledgebase
 from api.settings import stat_logger, RetCode
 from api.utils.api_utils import get_json_result
 from rag.nlp import search
-from rag.utils import ELASTICSEARCH
+from rag.utils.es_conn import ELASTICSEARCH
 
 
 @manager.route('/create', methods=['post'])

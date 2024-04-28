@@ -16,7 +16,7 @@
 from peewee import Expression
 
 from elasticsearch_dsl import Q
-from rag.utils import ELASTICSEARCH
+from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 from rag.nlp import search
 

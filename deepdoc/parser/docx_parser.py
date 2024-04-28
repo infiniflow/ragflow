@@ -7,7 +7,7 @@ from rag.nlp import huqie
 from io import BytesIO
 
 
-class HuDocxParser:
+class RAGFlowDocxParser:
 
     def __extract_table_content(self, tb):
         df = []
