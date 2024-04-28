@@ -26,17 +26,29 @@ class HuEs:
     def conn(self):
         for _ in range(10):
             try:
-                self.es = Elasticsearch(
-                    settings.ES["hosts"].split(","),
-                    timeout=600
-                )
+                # Check if the password exists in settings.ES
+                if "password" in settings.ES:
+                    # Initialize self.es with basic_auth if password is present
+                    self.es = Elasticsearch(
+                        settings.ES["hosts"].split(","),
+                        basic_auth=(settings.ES["user"], settings.ES["password"]),
+                        verify_certs=False,
+                        timeout=600
+                    )
+                else:
+                    # Initialize self.es without basic_auth if password is not present
+                    self.es = Elasticsearch(
+                        settings.ES["hosts"].split(","),
+                        verify_certs=False,
+                        timeout=600
+                    )
                 if self.es:
                     self.info = self.es.info()
                     es_logger.info("Connect to es.")
                     break
             except Exception as e:
                 es_logger.error("Fail to connect to es: " + str(e))
-                time.sleep(1)
+                time.sleep(5)
 
     def version(self):
         v = self.info.get("version", {"number": "5.6"})
