@@ -29,7 +29,7 @@ from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from rag.nlp import search
-from rag.utils import ELASTICSEARCH
+from rag.utils.es_conn import ELASTICSEARCH
 
 
 @manager.route('/convert', methods=['POST'])

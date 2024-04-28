@@ -27,7 +27,7 @@ from flask_login import login_required, current_user
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from rag.nlp import search
-from rag.utils import ELASTICSEARCH
+from rag.utils.es_conn import ELASTICSEARCH
 from api.db.services import duplicate_name
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request

@@ -56,7 +56,7 @@ class Base(ABC):
         raise NotImplementedError("Please implement encode method!")
 
 
-class HuEmbedding(Base):
+class DefaultEmbedding(Base):
     def __init__(self, *args, **kwargs):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!

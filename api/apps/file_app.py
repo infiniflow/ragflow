@@ -33,7 +33,7 @@ from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from rag.nlp import search
-from rag.utils import ELASTICSEARCH
+from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 
 
