@@ -24,6 +24,8 @@ import sys
 import time
 import traceback
 from functools import partial
+
+from api.db.services.file2document_service import File2DocumentService
 from rag.utils import MINIO
 from api.db.db_models import close_connection
 from rag.settings import database_logger
@@ -135,7 +137,8 @@ def build(row):
     pool = Pool(processes=1)
     try:
         st = timer()
-        thr = pool.apply_async(get_minio_binary, args=(row["kb_id"], row["location"]))
+        bucket, name = File2DocumentService.get_minio_address(doc_id=row["doc_id"])
+        thr = pool.apply_async(get_minio_binary, args=(bucket, name))
         binary = thr.get(timeout=90)
         pool.terminate()
         cron_logger.info(
