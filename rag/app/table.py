@@ -20,7 +20,7 @@ from openpyxl import load_workbook
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from rag.nlp import huqie, is_english, tokenize, find_codec
+from rag.nlp import rag_tokenizer, is_english, tokenize, find_codec
 from deepdoc.parser import ExcelParser
 
 
@@ -216,7 +216,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
         for ii, row in df.iterrows():
             d = {
                 "docnm_kwd": filename,
-                "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+                "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
             }
             row_txt = []
             for j in range(len(clmns)):
@@ -227,7 +227,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                 if pd.isna(row[clmns[j]]):
                     continue
                 fld = clmns_map[j][0]
-                d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else huqie.qie(
+                d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(
                     row[clmns[j]])
                 row_txt.append("{}:{}".format(clmns[j], row[clmns[j]]))
             if not row_txt:

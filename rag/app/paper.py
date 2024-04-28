@@ -15,7 +15,7 @@ import re
 from collections import Counter
 
 from api.db import ParserType
-from rag.nlp import huqie, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
 import numpy as np
 from rag.utils import num_tokens_from_string
@@ -153,10 +153,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
 
-    doc = {"docnm_kwd": filename, "authors_tks": huqie.qie(paper["authors"]),
-           "title_tks": huqie.qie(paper["title"] if paper["title"] else filename)}
-    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
-    doc["authors_sm_tks"] = huqie.qieqie(doc["authors_tks"])
+    doc = {"docnm_kwd": filename, "authors_tks": rag_tokenizer.tokenize(paper["authors"]),
+           "title_tks": rag_tokenizer.tokenize(paper["title"] if paper["title"] else filename)}
+    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
+    doc["authors_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["authors_tks"])
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     print("It's English.....", eng)

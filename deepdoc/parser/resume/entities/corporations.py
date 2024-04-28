@@ -1,6 +1,6 @@
 import re,json,os
 import pandas as pd
-from rag.nlp import huqie
+from rag.nlp import rag_tokenizer
 from . import regions
 current_file_path = os.path.dirname(os.path.abspath(__file__))
 GOODS = pd.read_csv(os.path.join(current_file_path, "res/corp_baike_len.csv"), sep="\t", header=0).fillna(0)
@@ -22,14 +22,14 @@ def baike(cid, default_v=0):
 def corpNorm(nm, add_region=True):
     global CORP_TKS
     if not nm or type(nm)!=type(""):return ""
-    nm = huqie.tradi2simp(huqie.strQ2B(nm)).lower()
+    nm = rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(nm)).lower()
     nm = re.sub(r"&amp;", "&", nm)
     nm = re.sub(r"[\(\)（）\+'\"\t \*\\【】-]+", " ", nm)
     nm = re.sub(r"([—-]+.*| +co\..*|corp\..*| +inc\..*| +ltd.*)", "", nm, 10000, re.IGNORECASE)
     nm = re.sub(r"(计算机|技术|(技术|科技|网络)*有限公司|公司|有限|研发中心|中国|总部)$", "", nm, 10000, re.IGNORECASE)
     if not nm or (len(nm)<5 and not regions.isName(nm[0:2])):return nm
 
-    tks = huqie.qie(nm).split(" ")
+    tks = rag_tokenizer.tokenize(nm).split(" ")
     reg = [t for i,t in enumerate(tks) if regions.isName(t) and (t != "中国" or i > 0)]
     nm = ""
     for t in tks:

@@ -4,13 +4,14 @@ import traceback
 
 from api.db.db_models import close_connection
 from api.db.services.task_service import TaskService
+from rag.settings import cron_logger
 from rag.utils.minio_conn import MINIO
 from rag.utils.redis_conn import REDIS_CONN
 
 
 def collect():
     doc_locations = TaskService.get_ongoing_doc_name()
-    #print(tasks)
+    print(doc_locations)
     if len(doc_locations) == 0:
         time.sleep(1)
         return
@@ -28,7 +29,7 @@ def main():
                     if REDIS_CONN.exist(key):continue
                     file_bin = MINIO.get(kb_id, loc)
                     REDIS_CONN.transaction(key, file_bin, 12 * 60)
-                    print("CACHE:", loc)
+                    cron_logger.info("CACHE: {}".format(loc))
                 except Exception as e:
                     traceback.print_stack(e)
         except Exception as e:

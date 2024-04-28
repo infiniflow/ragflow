@@ -16,7 +16,7 @@ from docx import Document
 from timeit import default_timer as timer
 import re
 from deepdoc.parser.pdf_parser import PlainParser
-from rag.nlp import huqie, naive_merge, tokenize_table, tokenize_chunks, find_codec
+from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from rag.settings import cron_logger
 
@@ -112,9 +112,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
     doc = {
         "docnm_kwd": filename,
-        "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
-    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
+    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     pdf_parser = None
     sections = []

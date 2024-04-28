@@ -21,7 +21,6 @@ from datetime import datetime
 from api.db.db_models import Task
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
 from api.db.services.task_service import TaskService
 from deepdoc.parser import PdfParser
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
