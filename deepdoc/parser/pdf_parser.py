@@ -470,7 +470,8 @@ class RAGFlowPdfParser:
                         continue
 
                     if re.match(r"[0-9]{2,3}/[0-9]{3}$", up["text"]) \
-                            or re.match(r"[0-9]{2,3}/[0-9]{3}$", down["text"]):
+                            or re.match(r"[0-9]{2,3}/[0-9]{3}$", down["text"]) \
+                            or not down["text"].strip():
                         i += 1
                         continue
 
