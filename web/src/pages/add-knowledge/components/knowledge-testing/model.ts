@@ -49,7 +49,7 @@ const model: DvaModel<TestingModelState> = {
       const { pagination, selectedDocumentIds }: TestingModelState =
         yield select((state: any) => state.testingModel);
 
-      const { data } = yield call(kbService.retrieval_test, {
+      const { data } = yield call(kbService.retrieval, {
         ...payload,
         doc_ids: selectedDocumentIds,
         page: pagination.current,
