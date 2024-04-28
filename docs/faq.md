@@ -340,10 +340,21 @@ You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow
 
 ### 6. How to configure RAGFlow to respond with 100% matched results, rather than utilizing LLM?
 
-1. Click the **Knowledge Base** tab in the middle top of the page.
+1. Click **Knowledge Base** in the middle top of the page.
 2. Right click the desired knowledge base to display the **Configuration** dialogue. 
 3. Choose **Q&A** as the chunk method and click **Save** to confirm your change. 
 
 ### Do I need to connect to Redis?
 
-No, connecting to Redis is not required to use RAGFlow. 
+No, connecting to Redis is not required. 
+
+### `Error: Range of input length should be [1, 30000]`
+
+This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue: 
+
+1. Click **Chat** in the middle top of the page. 
+2. Right click the desired conversation > **Edit** > **Prompt Engine**
+3. Reduce the **TopN** and/or raise **Silimarity threshold**.
+4. Click **OK** to confirm your changes.
+
+![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
