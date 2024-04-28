@@ -14,7 +14,7 @@ from io import BytesIO
 from pptx import Presentation
 
 
-class HuPptParser(object):
+class RAGFlowPptParser(object):
     def __init__(self):
         super().__init__()
 

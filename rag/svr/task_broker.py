@@ -24,9 +24,9 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.task_service import TaskService
 from deepdoc.parser import PdfParser
-from deepdoc.parser.excel_parser import HuExcelParser
+from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.settings import cron_logger
-from rag.utils import MINIO
+from rag.utils.minio_conn import MINIO
 from rag.utils import findMaxTm
 import pandas as pd
 from api.db import FileType, TaskStatus
@@ -121,7 +121,7 @@ def dispatch():
                         tsks.append(task)
 
             elif r["parser_id"] == "table":
-                rn = HuExcelParser.row_number(
+                rn = RAGFlowExcelParser.row_number(
                     r["name"], file_bin)
                 for i in range(0, rn, 3000):
                     task = new_task()

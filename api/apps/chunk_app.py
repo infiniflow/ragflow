@@ -21,7 +21,8 @@ from elasticsearch_dsl import Q
 
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import search, huqie
-from rag.utils import ELASTICSEARCH, rmSpace
+from rag.utils.es_conn import ELASTICSEARCH
+from rag.utils import rmSpace
 from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService
