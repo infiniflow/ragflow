@@ -31,7 +31,7 @@ const FlowSider = () => {
           >
             <Flex justify="space-between" align="center">
               <Space size={15}>
-                <Avatar shape={'square'} />
+                <Avatar icon={x.icon} shape={'square'} />
                 <section>
                   <b>{x.name}</b>
                   <div>{x.description}</div>

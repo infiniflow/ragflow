@@ -60,7 +60,7 @@ function FlowCanvas() {
     [],
   );
 
-  const { handleDrop, allowDrop } = useHandleDrop();
+  const { handleDrop, allowDrop } = useHandleDrop(setNodes);
 
   useEffect(() => {
     console.info('nodes:', nodes);
@@ -78,7 +78,7 @@ function FlowCanvas() {
         onNodesChange={onNodesChange}
         edges={edges}
         onEdgesChange={onEdgesChange}
-        fitView
+        // fitView
         onConnect={onConnect}
         nodeTypes={nodeTypes}
       >
