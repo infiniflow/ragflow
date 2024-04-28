@@ -328,12 +328,12 @@ def rename():
 # @login_required
 def get(file_id):
     try:
-        e, doc = FileService.get_by_id(file_id)
+        e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(retmsg="Document not found!")
 
-        response = flask.make_response(MINIO.get(doc.parent_id, doc.location))
-        ext = re.search(r"\.([^.]+)$", doc.name)
+        response = flask.make_response(MINIO.get(file.parent_id, file.location))
+        ext = re.search(r"\.([^.]+)$", file.name)
         if ext:
             if doc.type == FileType.VISUAL.value:
                 response.headers.set('Content-Type', 'image/%s' % ext.group(1))

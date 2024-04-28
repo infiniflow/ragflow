@@ -21,7 +21,6 @@ from api.db.db_models import DB, File2Document, Knowledgebase
 from api.db.db_models import File, Document
 from api.db.services.common_service import CommonService
 from api.utils import get_uuid
-from rag.utils import MINIO
 
 
 class FileService(CommonService):
@@ -241,3 +240,4 @@ class FileService(CommonService):
 
         dfs(folder_id)
         return size
+
