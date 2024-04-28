@@ -21,7 +21,7 @@ const {
   get_chunk,
   switch_chunk,
   rm_chunk,
-  retrieval_test,
+  retrieval,
   document_rename,
   document_run,
   get_document_file,
@@ -112,8 +112,8 @@ const methods = {
     url: rm_chunk,
     method: 'post',
   },
-  retrieval_test: {
-    url: retrieval_test,
+  retrieval: {
+    url: retrieval,
     method: 'post',
   },
 };
