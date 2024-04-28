@@ -11,10 +11,6 @@
 #  limitations under the License.
 #
 
-from deepdoc.vision.seeit import draw_box
-from deepdoc.vision import OCR, init_in_out
-import argparse
-import numpy as np
 import os
 import sys
 sys.path.insert(
@@ -24,6 +20,11 @@ sys.path.insert(
             os.path.dirname(
                 os.path.abspath(__file__)),
             '../../')))
+
+from deepdoc.vision.seeit import draw_box
+from deepdoc.vision import OCR, init_in_out
+import argparse
+import numpy as np
 
 
 def main(args):

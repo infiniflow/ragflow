@@ -15,7 +15,7 @@ es_logger.info("Elasticsearch version: "+str(elasticsearch.__version__))
 
 
 @singleton
-class HuEs:
+class ESConnection:
     def __init__(self):
         self.info = {}
         self.conn()
@@ -454,4 +454,4 @@ class HuEs:
             scroll_size = len(page['hits']['hits'])
 
 
-ELASTICSEARCH = HuEs()
+ELASTICSEARCH = ESConnection()
