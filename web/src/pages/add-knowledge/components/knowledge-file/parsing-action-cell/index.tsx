@@ -93,22 +93,26 @@ const ParsingActionCell = ({
           <EditOutlined size={20} />
         </Button>
       </Tooltip>
-      <Button
-        type="text"
-        disabled={isRunning}
-        onClick={onRmDocument}
-        className={styles.iconButton}
-      >
-        <DeleteOutlined size={20} />
-      </Button>
-      <Button
-        type="text"
-        disabled={isRunning}
-        onClick={onDownloadDocument}
-        className={styles.iconButton}
-      >
-        <DownloadOutlined size={20} />
-      </Button>
+      <Tooltip title={t('delete', { keyPrefix: 'common' })}>
+        <Button
+          type="text"
+          disabled={isRunning}
+          onClick={onRmDocument}
+          className={styles.iconButton}
+        >
+          <DeleteOutlined size={20} />
+        </Button>
+      </Tooltip>
+      <Tooltip title={t('download', { keyPrefix: 'common' })}>
+        <Button
+          type="text"
+          disabled={isRunning}
+          onClick={onDownloadDocument}
+          className={styles.iconButton}
+        >
+          <DownloadOutlined size={20} />
+        </Button>
+      </Tooltip>
     </Space>
   );
 };
