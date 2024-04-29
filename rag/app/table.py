@@ -47,6 +47,7 @@ class Excel(ExcelParser):
                 cell.value for i,
                 cell in enumerate(
                     rows[0]) if i not in missed]
+            if not headers:continue
             data = []
             for i, r in enumerate(rows[1:]):
                 rn += 1
