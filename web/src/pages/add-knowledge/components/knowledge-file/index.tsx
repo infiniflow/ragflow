@@ -8,7 +8,7 @@ import { useSetSelectedRecord } from '@/hooks/logicHooks';
 import { useSelectParserList } from '@/hooks/userSettingHook';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';
-import { Divider, Flex, Switch, Table } from 'antd';
+import { Divider, Flex, Switch, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 import CreateFileModal from './create-file-modal';
@@ -30,6 +30,8 @@ import RenameModal from './rename-modal';
 import FileUploadModal from '@/components/file-upload-modal';
 import { formatDate } from '@/utils/date';
 import styles from './index.less';
+
+const { Text } = Typography;
 
 const KnowledgeFile = () => {
   const data = useSelectDocumentList();
@@ -80,7 +82,7 @@ const KnowledgeFile = () => {
       key: 'name',
       fixed: 'left',
       render: (text: any, { id, thumbnail, name }) => (
-        <div className={styles.tochunks} onClick={() => toChunk(id)}>
+        <div className={styles.toChunks} onClick={() => toChunk(id)}>
           <Flex gap={10} align="center">
             {thumbnail ? (
               <img className={styles.img} src={thumbnail} alt="" />
@@ -90,7 +92,9 @@ const KnowledgeFile = () => {
                 width={24}
               ></SvgIcon>
             )}
-            {text}
+            <Text ellipsis={{ tooltip: text }} className={styles.nameText}>
+              {text}
+            </Text>
           </Flex>
         </div>
       ),

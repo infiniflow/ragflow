@@ -218,7 +218,13 @@ const model: DvaModel<KFModelState> = {
       });
 
       const { data } = yield call(kbService.document_upload, formData);
-      if (data.retcode === 0 || data.retcode === 500) {
+
+      const succeed = data.retcode === 0;
+
+      if (succeed) {
+        message.success(i18n.t('message.uploaded'));
+      }
+      if (succeed || data.retcode === 500) {
         yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
