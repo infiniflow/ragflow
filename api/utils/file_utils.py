@@ -66,6 +66,15 @@ def get_rag_python_directory(*args):
     return get_rag_directory("python", *args)
 
 
+def get_home_cache_dir():
+    dir = os.path.join(os.path.expanduser('~'), ".raglow")
+    try:
+        os.mkdir(dir)
+    except OSError as error:
+        pass
+    return dir
+
+
 @cached(cache=LRUCache(maxsize=10))
 def load_json_conf(conf_path):
     if os.path.isabs(conf_path):
