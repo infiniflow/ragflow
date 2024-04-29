@@ -4,7 +4,7 @@ import {
   CloudOutlined,
   DeleteOutlined,
   EditOutlined,
-  FormOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import {
   Avatar,
@@ -157,7 +157,7 @@ const Chat = () => {
       onClick: handleCreateTemporaryConversation,
       label: (
         <Space>
-          <EditOutlined />
+          <PlusOutlined />
           {t('newChat')}
         </Space>
       ),
@@ -293,7 +293,8 @@ const Chat = () => {
               <Tag>{conversationList.length}</Tag>
             </Space>
             <Dropdown menu={{ items }}>
-              <FormOutlined />
+              {/* <FormOutlined /> */}
+              <PlusOutlined />
             </Dropdown>
           </Flex>
           <Divider></Divider>
