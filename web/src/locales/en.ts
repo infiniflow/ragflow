@@ -24,6 +24,7 @@ export default {
       copied: 'Copied',
       comingSoon: 'Coming Soon',
       download: 'Download',
+      close: 'Close',
     },
     login: {
       login: 'Sign in',

@@ -24,6 +24,7 @@ export default {
       copied: '复制成功',
       comingSoon: '即将推出',
       download: '下载',
+      close: '关闭',
     },
     login: {
       login: '登录',
