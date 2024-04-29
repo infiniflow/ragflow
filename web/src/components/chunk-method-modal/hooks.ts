@@ -74,9 +74,9 @@ export const useFetchParserListOnMount = (
     setSelectedTag(parserId);
   }, [parserId, documentId]);
 
-  const handleChange = (tag: string, checked: boolean) => {
-    const nextSelectedTag = checked ? tag : selectedTag;
-    setSelectedTag(nextSelectedTag);
+  const handleChange = (tag: string) => {
+    // const nextSelectedTag = checked ? tag : selectedTag;
+    setSelectedTag(tag);
   };
 
   return { parserList: nextParserList, handleChange, selectedTag };
