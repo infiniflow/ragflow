@@ -42,3 +42,7 @@ export const getExtension = (name: string) =>
 export const isPdf = (name: string) => {
   return getExtension(name) === 'pdf';
 };
+
+export const getUnSupportedFilesCount = (message: string) => {
+  return message.split('\n').length;
+};

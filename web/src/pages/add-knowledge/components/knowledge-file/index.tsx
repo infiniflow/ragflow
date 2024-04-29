@@ -19,6 +19,7 @@ import {
   useFetchDocumentListOnMount,
   useGetPagination,
   useGetRowSelection,
+  useHandleUploadDocument,
   useNavigateToOtherPage,
   useRenameDocument,
 } from './hooks';
@@ -26,6 +27,7 @@ import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
+import FileUploadModal from '@/components/file-upload-modal';
 import { formatDate } from '@/utils/date';
 import styles from './index.less';
 
@@ -58,6 +60,13 @@ const KnowledgeFile = () => {
     hideChangeParserModal,
     showChangeParserModal,
   } = useChangeDocumentParser(currentRecord.id);
+  const {
+    documentUploadVisible,
+    hideDocumentUploadModal,
+    showDocumentUploadModal,
+    onDocumentUploadOk,
+    documentUploadLoading,
+  } = useHandleUploadDocument();
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
@@ -157,6 +166,7 @@ const KnowledgeFile = () => {
       <DocumentToolbar
         selectedRowKeys={rowSelection.selectedRowKeys as string[]}
         showCreateModal={showCreateModal}
+        showDocumentUploadModal={showDocumentUploadModal}
       ></DocumentToolbar>
       <Table
         rowKey="id"
@@ -190,6 +200,12 @@ const KnowledgeFile = () => {
         hideModal={hideRenameModal}
         initialName={currentRecord.name}
       ></RenameModal>
+      <FileUploadModal
+        visible={documentUploadVisible}
+        hideModal={hideDocumentUploadModal}
+        loading={documentUploadLoading}
+        onOk={onDocumentUploadOk}
+      ></FileUploadModal>
     </div>
   );
 };
