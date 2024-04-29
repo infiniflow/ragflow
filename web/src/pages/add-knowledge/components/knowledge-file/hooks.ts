@@ -4,13 +4,15 @@ import {
   useFetchDocumentList,
   useSaveDocumentName,
   useSetDocumentParser,
+  useUploadDocument,
 } from '@/hooks/documentHooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useFetchTenantInfo } from '@/hooks/userSettingHook';
 import { Pagination } from '@/interfaces/common';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { PaginationProps } from 'antd';
+import { getUnSupportedFilesCount } from '@/utils/documentUtils';
+import { PaginationProps, UploadFile } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import { KnowledgeRouteKey } from './constant';
@@ -241,4 +243,43 @@ export const useGetRowSelection = () => {
   };
 
   return rowSelection;
+};
+
+export const useHandleUploadDocument = () => {
+  const {
+    visible: documentUploadVisible,
+    hideModal: hideDocumentUploadModal,
+    showModal: showDocumentUploadModal,
+  } = useSetModalState();
+  const uploadDocument = useUploadDocument();
+
+  const onDocumentUploadOk = useCallback(
+    async (fileList: UploadFile[]): Promise<number | undefined> => {
+      if (fileList.length > 0) {
+        const ret: any = await uploadDocument(fileList);
+        const count = getUnSupportedFilesCount(ret.retmsg);
+        /// 500 error code indicates that some file types are not supported
+        let retcode = ret.retcode;
+        if (
+          ret.retcode === 0 ||
+          (ret.retcode === 500 && count !== fileList.length) // Some files were not uploaded successfully, but some were uploaded successfully.
+        ) {
+          retcode = 0;
+          hideDocumentUploadModal();
+        }
+        return retcode;
+      }
+    },
+    [uploadDocument, hideDocumentUploadModal],
+  );
+
+  const loading = useOneNamespaceEffectsLoading('kFModel', ['upload_document']);
+
+  return {
+    documentUploadLoading: loading,
+    onDocumentUploadOk,
+    documentUploadVisible,
+    hideDocumentUploadModal,
+    showDocumentUploadModal,
+  };
 };

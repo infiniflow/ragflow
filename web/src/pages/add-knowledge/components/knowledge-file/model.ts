@@ -210,11 +210,15 @@ const model: DvaModel<KFModelState> = {
       }
     },
     *upload_document({ payload = {} }, { call, put }) {
+      const fileList = payload.fileList;
       const formData = new FormData();
-      formData.append('file', payload.file);
       formData.append('kb_id', payload.kb_id);
+      fileList.forEach((file: any) => {
+        formData.append('file', file);
+      });
+
       const { data } = yield call(kbService.document_upload, formData);
-      if (data.retcode === 0) {
+      if (data.retcode === 0 || data.retcode === 500) {
         yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
