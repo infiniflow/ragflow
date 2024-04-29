@@ -30,9 +30,14 @@ import styles from './index.less';
 interface IProps {
   selectedRowKeys: string[];
   showCreateModal(): void;
+  showDocumentUploadModal(): void;
 }
 
-const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
+const DocumentToolbar = ({
+  selectedRowKeys,
+  showCreateModal,
+  showDocumentUploadModal,
+}: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const { setPagination, searchString } = useGetPagination(fetchDocumentList);
@@ -48,7 +53,7 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
     return [
       {
         key: '1',
-        onClick: linkToUploadPage,
+        onClick: showDocumentUploadModal,
         label: (
           <div>
             <Button type="link">
@@ -75,7 +80,7 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
         // disabled: true,
       },
     ];
-  }, [linkToUploadPage, showCreateModal, t]);
+  }, [showDocumentUploadModal, showCreateModal, t]);
 
   const handleDelete = useCallback(() => {
     showDeleteConfirm({

@@ -85,8 +85,6 @@ const model: DvaModel<FileManagerModelState> = {
       const pathList = payload.path;
       const formData = new FormData();
       formData.append('parent_id', payload.parentId);
-      // formData.append('file', payload.file);
-      // formData.append('path', payload.path);
       fileList.forEach((file: any, index: number) => {
         formData.append('file', file);
         formData.append('path', pathList[index]);

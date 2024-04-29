@@ -184,12 +184,12 @@ export const useUploadDocument = () => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const uploadDocument = useCallback(
-    (file: UploadFile) => {
+    (fileList: UploadFile[]) => {
       try {
         return dispatch<any>({
           type: 'kFModel/upload_document',
           payload: {
-            file,
+            fileList,
             kb_id: knowledgeId,
           },
         });

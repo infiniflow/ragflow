@@ -1,3 +1,4 @@
+import { IFactory } from '@/interfaces/database/llm';
 import isObject from 'lodash/isObject';
 import snakeCase from 'lodash/snakeCase';
 
@@ -32,4 +33,30 @@ export const getSearchValue = (key: string) => {
 export const formatNumberWithThousandsSeparator = (numberStr: string) => {
   const formattedNumber = numberStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return formattedNumber;
+};
+
+const orderFactoryList = [
+  'OpenAI',
+  'Moonshot',
+  'ZHIPU-AI',
+  'Ollama',
+  'Xinference',
+];
+
+export const sortLLmFactoryListBySpecifiedOrder = (list: IFactory[]) => {
+  const finalList: IFactory[] = [];
+  orderFactoryList.forEach((orderItem) => {
+    const index = list.findIndex((item) => item.name === orderItem);
+    if (index !== -1) {
+      finalList.push(list[index]);
+    }
+  });
+
+  list.forEach((item) => {
+    if (finalList.every((x) => x.name !== item.name)) {
+      finalList.push(item);
+    }
+  });
+
+  return finalList;
 };
