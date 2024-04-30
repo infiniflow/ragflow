@@ -2,7 +2,6 @@
 import os
 import random
 
-import fitz
 import xgboost as xgb
 from io import BytesIO
 import torch
@@ -922,9 +921,7 @@ class RAGFlowPdfParser:
                 fnm) if not binary else pdfplumber.open(BytesIO(binary))
             return len(pdf.pages)
         except Exception as e:
-            pdf = fitz.open(fnm) if not binary else fitz.open(
-                stream=fnm, filetype="pdf")
-            return len(pdf)
+            logging.error(str(e))
 
     def __images__(self, fnm, zoomin=3, page_from=0,
                    page_to=299, callback=None):
@@ -946,23 +943,7 @@ class RAGFlowPdfParser:
                                self.pdf.pages[page_from:page_to]]
             self.total_page = len(self.pdf.pages)
         except Exception as e:
-            self.pdf = fitz.open(fnm) if isinstance(
-                fnm, str) else fitz.open(
-                stream=fnm, filetype="pdf")
-            self.page_images = []
-            self.page_chars = []
-            mat = fitz.Matrix(zoomin, zoomin)
-            self.total_page = len(self.pdf)
-            for i, page in enumerate(self.pdf):
-                if i < page_from:
-                    continue
-                if i >= page_to:
-                    break
-                pix = page.get_pixmap(matrix=mat)
-                img = Image.frombytes("RGB", [pix.width, pix.height],
-                                      pix.samples)
-                self.page_images.append(img)
-                self.page_chars.append([])
+            logging.error(str(e))
 
         self.outlines = []
         try:

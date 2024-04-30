@@ -35,7 +35,7 @@ class RAGFlowMinio(object):
         self.conn = None
 
     def put(self, bucket, fnm, binary):
-        for _ in range(10):
+        for _ in range(3):
             try:
                 if not self.conn.bucket_exists(bucket):
                     self.conn.make_bucket(bucket)

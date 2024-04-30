@@ -1,12 +1,13 @@
+import pdfplumber
 
 from .ocr import OCR
 from .recognizer import Recognizer
 from .layout_recognizer import LayoutRecognizer
 from .table_structure_recognizer import TableStructureRecognizer
 
+
 def init_in_out(args):
     from PIL import Image
-    import fitz
     import os
     import traceback
     from api.utils.file_utils import traversal_files
@@ -18,13 +19,11 @@ def init_in_out(args):
 
     def pdf_pages(fnm, zoomin=3):
         nonlocal outputs, images
-        pdf = fitz.open(fnm)
-        mat = fitz.Matrix(zoomin, zoomin)
-        for i, page in enumerate(pdf):
-            pix = page.get_pixmap(matrix=mat)
-            img = Image.frombytes("RGB", [pix.width, pix.height],
-                                  pix.samples)
-            images.append(img)
+        pdf = pdfplumber.open(fnm)
+        images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                            enumerate(pdf.pages)]
+
+        for i, page in enumerate(images):
             outputs.append(os.path.split(fnm)[-1] + f"_{i}.jpg")
 
     def images_and_outputs(fnm):
