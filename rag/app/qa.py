@@ -116,17 +116,30 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                         break
                     txt += l
         lines = txt.split("\n")
-        #is_english([rmPrefix(l) for l in lines[:100]])
+        comma, tab = 0, 0
+        for l in lines:
+            if len(l.split(",")) == 2: comma += 1
+            if len(l.split("\t")) == 2: tab += 1
+        delimiter = "\t" if tab >= comma else ","
+
         fails = []
-        for i, line in enumerate(lines):
-            arr = [l for l in line.split("\t") if len(l) > 1]
+        question, answer = "", ""
+        i = 0
+        while i < len(lines):
+            arr = lines[i].split(delimiter)
             if len(arr) != 2:
-                fails.append(str(i))
-                continue
-            res.append(beAdoc(deepcopy(doc), arr[0], arr[1], eng))
+                if question: answer += "\n" + lines[i]
+                else:
+                    fails.append(str(i+1))
+            elif len(arr) == 2:
+                if question and answer: res.append(beAdoc(deepcopy(doc), question, answer, eng))
+                question, answer = arr
+            i += 1
             if len(res) % 999 == 0:
                 callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (
                     f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+
+        if question: res.append(beAdoc(deepcopy(doc), question, answer, eng))
 
         callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
