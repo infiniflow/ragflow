@@ -69,6 +69,7 @@ nvidia-cusparse-cu12==12.1.0.106
 nvidia-nccl-cu12==2.19.3
 nvidia-nvjitlink-cu12==12.3.101
 nvidia-nvtx-cu12==12.1.105
+ollama==0.1.9
 onnxruntime-gpu==1.17.1
 openai==1.12.0
 opencv-python==4.9.0.80
