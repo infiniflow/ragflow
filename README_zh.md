@@ -186,6 +186,66 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
+## 🛠️ 源码启动服务
+
+如需从源码启动服务，请参考以下步骤：
+
+1. 克隆仓库
+```bash
+$ git clone https://github.com/infiniflow/ragflow.git
+$ cd ragflow/
+```
+
+2. 创建虚拟环境（确保已安装 Anaconda 或 Miniconda）
+```bash
+$ conda create -n ragflow python=3.11.0
+$ conda activate ragflow
+$ pip install -r requirements.txt
+```
+如果cuda > 12.0，需额外执行以下命令：
+```bash
+$ pip uninstall -y onnxruntime-gpu
+$ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+```
+
+3. 拷贝入口脚本并配置环境变量
+```bash
+$ cp docker/entrypoint.sh .
+$ vi entrypoint.sh
+```
+使用以下命令获取python路径及ragflow项目路径：
+```bash
+$ which python
+$ pwd
+```
+
+将上述`which python`的输出作为`PY`的值，将`pwd`的输出作为`PYTHONPATH`的值。
+
+`LD_LIBRARY_PATH`如果环境已经配置好，可以注释掉。
+
+```bash
+# 此处配置需要按照实际情况调整，两个export为新增配置
+PY=${PY}
+export PYTHONPATH=${PYTHONPATH}
+# 可选：添加Hugging Face镜像
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+4. 启动基础服务
+```bash
+$ cd docker
+$ docker compose -f docker-compose-base.yml up -d 
+```
+
+5. 检查配置文件
+确保**docker/.env**中的配置与**conf/service_conf.yaml**中配置一致， **service_conf.yaml**中相关服务的IP地址与端口应该改成本机IP地址及容器映射出来的端口。
+
+6. 启动服务
+```bash
+$ chmod +x ./entrypoint.sh
+$ bash ./entrypoint.sh
+```
+
 ## 📚 技术文档
 
 - [FAQ](./docs/faq.md)
