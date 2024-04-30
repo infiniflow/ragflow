@@ -64,6 +64,7 @@ export default {
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
+      searchKnowledgePlaceholder: 'Search',
     },
     knowledgeDetails: {
       dataset: 'Dataset',

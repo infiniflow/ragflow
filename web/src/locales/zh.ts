@@ -64,6 +64,7 @@ export default {
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
+      searchKnowledgePlaceholder: '搜索',
     },
     knowledgeDetails: {
       dataset: '数据集',
