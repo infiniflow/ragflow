@@ -251,6 +251,8 @@ export default {
       keyword: '關鍵詞',
       function: '函數',
       chunkMessage: '請輸入值！',
+      full: '全文',
+      ellipse: '省略',
     },
     chat: {
       createAssistant: '新建助理',

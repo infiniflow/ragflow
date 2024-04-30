@@ -4,6 +4,7 @@ import { buildChunkHighlights } from '@/utils/documentUtils';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useSelector } from 'umi';
+import { ChunkTextMode } from './constant';
 
 export const useSelectDocumentInfo = () => {
   const documentInfo: IKnowledgeFile = useSelector(
@@ -62,4 +63,15 @@ export const useSelectChunkListLoading = () => {
     'chunk_list',
     'switch_chunk',
   ]);
+};
+
+// Switch chunk text to be fully displayed or ellipse
+export const useChangeChunkTextMode = () => {
+  const [textMode, setTextMode] = useState<ChunkTextMode>(ChunkTextMode.Full);
+
+  const changeChunkTextMode = useCallback((mode: ChunkTextMode) => {
+    setTextMode(mode);
+  }, []);
+
+  return { textMode, changeChunkTextMode };
 };

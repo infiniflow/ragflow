@@ -22,11 +22,17 @@ import {
   Popover,
   Radio,
   RadioChangeEvent,
+  Segmented,
+  SegmentedProps,
   Space,
+  Typography,
 } from 'antd';
 import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
 import { Link, useDispatch, useSelector } from 'umi';
+import { ChunkTextMode } from '../../constant';
 import { ChunkModelState } from '../../model';
+
+const { Text } = Typography;
 
 interface IProps {
   checked: boolean;
@@ -35,6 +41,7 @@ interface IProps {
   createChunk: () => void;
   removeChunk: () => void;
   switchChunk: (available: number) => void;
+  changeChunkTextMode(mode: ChunkTextMode): void;
 }
 
 const ChunkToolBar = ({
@@ -44,6 +51,7 @@ const ChunkToolBar = ({
   createChunk,
   removeChunk,
   switchChunk,
+  changeChunkTextMode,
 }: IProps) => {
   const { documentInfo, available, searchString }: ChunkModelState =
     useSelector((state: any) => state.chunkModel);
@@ -170,9 +178,18 @@ const ChunkToolBar = ({
           <ArrowLeftOutlined />
         </Link>
         <FilePdfOutlined />
-        {documentInfo.name}
+        <Text ellipsis={{ tooltip: documentInfo.name }} style={{ width: 150 }}>
+          {documentInfo.name}
+        </Text>
       </Space>
       <Space>
+        <Segmented
+          options={[
+            { label: t(ChunkTextMode.Full), value: ChunkTextMode.Full },
+            { label: t(ChunkTextMode.Ellipse), value: ChunkTextMode.Ellipse },
+          ]}
+          onChange={changeChunkTextMode as SegmentedProps['onChange']}
+        />
         <Popover content={content} placement="bottom" arrow={false}>
           <Button>
             {t('bulk')}

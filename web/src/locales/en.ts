@@ -278,6 +278,8 @@ export default {
       keyword: 'Keyword',
       function: 'Function',
       chunkMessage: 'Please input value!',
+      full: 'Full text',
+      ellipse: 'Ellipse',
     },
     chat: {
       createAssistant: 'Create an Assistant',

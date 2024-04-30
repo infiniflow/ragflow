@@ -268,6 +268,8 @@ export default {
       keyword: '关键词',
       function: '函数',
       chunkMessage: '请输入值！',
+      full: '全文',
+      ellipse: '省略',
     },
     chat: {
       createAssistant: '新建助理',
