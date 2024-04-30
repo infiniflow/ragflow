@@ -29,7 +29,7 @@ class TaskService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_tasks(cls, tm, mod=0, comm=1, items_per_page=1, takeit=True):
+    def get_tasks(cls, doc_id, items_per_page=1, takeit=True):
         fields = [
             cls.model.id,
             cls.model.doc_id,
@@ -58,11 +58,8 @@ class TaskService(CommonService):
                     Document.run == TaskStatus.RUNNING.value,
                     ~(Document.type == FileType.VIRTUAL.value),
                     cls.model.progress == 0,
-                    #cls.model.update_time >= tm,
-                    #(Expression(cls.model.create_time, "%%", comm) == mod)
-                )\
-                .order_by(cls.model.update_time.asc())\
-                .paginate(0, items_per_page)
+                    cls.model.doc_id == doc_id,
+                )
             docs = list(docs.dicts())
             if not docs: return []
             if not takeit: return docs

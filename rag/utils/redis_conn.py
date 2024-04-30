@@ -5,6 +5,27 @@ import logging
 from rag import settings
 from rag.utils import singleton
 
+
+class Payload:
+    def __init__(self, consumer, queue_name, group_name, msg_id, message):
+        self.__consumer = consumer
+        self.__queue_name = queue_name
+        self.__group_name = group_name
+        self.__msg_id = msg_id
+        self.__message = json.loads(message['message'])
+
+    def ack(self):
+        try:
+            self.__consumer.xack(self.__queue_name, self.__group_name, self.__msg_id)
+            return True
+        except Exception as e:
+            logging.warning("[EXCEPTION]ack" + str(self.__queue_name) + "||" + str(e))
+        return False
+
+    def get_message(self):
+        return self.__message
+
+
 @singleton
 class RedisDB:
     def __init__(self):
@@ -17,7 +38,8 @@ class RedisDB:
             self.REDIS = redis.StrictRedis(host=self.config["host"].split(":")[0],
                                      port=int(self.config.get("host", ":6379").split(":")[1]),
                                      db=int(self.config.get("db", 1)),
-                                     password=self.config["password"])
+                                     password=self.config.get("password"),
+                                     decode_responses=True)
         except Exception as e:
             logging.warning("Redis can't be connected.")
         return self.REDIS
@@ -69,6 +91,46 @@ class RedisDB:
             logging.warning("[EXCEPTION]set" + str(key) + "||" + str(e))
             self.__open__()
         return False
+
+    def queue_product(self, queue, message, exp=settings.SVR_QUEUE_RETENTION) -> bool:
+        try:
+            payload = {"message": json.dumps(message)}
+            pipeline = self.REDIS.pipeline()
+            pipeline.xadd(queue, payload)
+            pipeline.expire(queue, exp)
+            pipeline.execute()
+            return True
+        except Exception as e:
+            logging.warning("[EXCEPTION]producer" + str(queue) + "||" + str(e))
+        return False
+
+    def queue_consumer(self, queue_name, group_name, consumer_name, msg_id=b">") -> Payload:
+        try:
+            group_info = self.REDIS.xinfo_groups(queue_name)
+            if not any(e["name"] == group_name for e in group_info):
+                self.REDIS.xgroup_create(
+                    queue_name,
+                    group_name,
+                    id="$",
+                    mkstream=True
+                )
+            args = {
+                "groupname": group_name,
+                "consumername": consumer_name,
+                "count": 1,
+                "block": 10000,
+                "streams": {queue_name: msg_id},
+            }
+            messages = self.REDIS.xreadgroup(**args)
+            if not messages:
+                return None
+            stream, element_list = messages[0]
+            msg_id, payload = element_list[0]
+            res = Payload(self.REDIS, queue_name, group_name, msg_id, payload)
+            return res
+        except Exception as e:
+            logging.warning("[EXCEPTION]consumer" + str(queue_name) + "||" + str(e))
+        return None
 
 
 REDIS_CONN = RedisDB()

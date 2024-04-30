@@ -26,111 +26,109 @@ from deepdoc.parser import PdfParser
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.settings import cron_logger
 from rag.utils.minio_conn import MINIO
-from rag.utils import findMaxTm
-import pandas as pd
 from api.db import FileType, TaskStatus
 from api.db.services.document_service import DocumentService
 from api.settings import database_logger
 from api.utils import get_format_time, get_uuid
-from api.utils.file_utils import get_project_base_directory
 from rag.utils.redis_conn import REDIS_CONN
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
+from rag.settings import SVR_QUEUE_NAME
+from rag.svr.task_executor import run_embedding
+from concurrent.futures import ThreadPoolExecutor
+POOL_EXECUTOR = ThreadPoolExecutor(max_workers=5)
 
 
-def collect(tm):
-    docs = DocumentService.get_newly_uploaded(tm)
-    if len(docs) == 0:
-        return pd.DataFrame()
-    docs = pd.DataFrame(docs)
-    mtm = docs["update_time"].max()
-    cron_logger.info("TOTAL:{}, To:{}".format(len(docs), mtm))
-    return docs
-
-
-def set_dispatching(docid):
+def dispatching(docid):
     try:
         DocumentService.update_by_id(
             docid, {"progress": random.random() * 1 / 100.,
                     "progress_msg": "Task dispatched...",
                     "process_begin_at": get_format_time()
                     })
+        POOL_EXECUTOR.submit(run_embedding, docid)
     except Exception as e:
         cron_logger.error("set_dispatching:({}), {}".format(docid, str(e)))
 
 
 def dispatch():
-    tm_fnm = os.path.join(
-        get_project_base_directory(),
-        "rag/res",
-        f"broker.tm")
-    tm = findMaxTm(tm_fnm)
-    rows = collect(tm)
-    if len(rows) == 0:
+    try:
+        payload = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", "rag_flow_svr_task_consumer")
+    except Exception as e:
+        cron_logger.error("get task event from queue exception:" + str(e))
         return
 
-    tmf = open(tm_fnm, "a+")
-    for _, r in rows.iterrows():
-        try:
-            tsks = TaskService.query(doc_id=r["id"])
-            if tsks:
-                for t in tsks:
-                    TaskService.delete_by_id(t.id)
-        except Exception as e:
-            cron_logger.exception(e)
+    if payload is None:
+        return
+    msg = payload.get_message()
+    if msg is None:
+        return
+    run = int(msg.get("run"))
+    if run != 1:
+        return
+    doc_id = msg.get("doc_id")
+    _, doc_info = DocumentService.get_by_id(doc_id)
+    if doc_info is None:
+        return
+    r = doc_info.to_dict()
+    try:
+        tsks = TaskService.query(doc_id=r["id"])
+        if tsks:
+            for t in tsks:
+                TaskService.delete_by_id(t.id)
+    except Exception as e:
+        cron_logger.exception(e)
 
-        def new_task():
-            nonlocal r
-            return {
-                "id": get_uuid(),
-                "doc_id": r["id"]
-            }
+    def new_task():
+        nonlocal r
+        return {
+            "id": get_uuid(),
+            "doc_id": r["id"]
+        }
 
-        tsks = []
-        try:
-            bucket, name = File2DocumentService.get_minio_address(doc_id=r["id"])
-            file_bin = MINIO.get(bucket, name)
-            if r["type"] == FileType.PDF.value:
-                do_layout = r["parser_config"].get("layout_recognize", True)
-                pages = PdfParser.total_page_number(r["name"], file_bin)
-                page_size = r["parser_config"].get("task_page_size", 12)
-                if r["parser_id"] == "paper":
-                    page_size = r["parser_config"].get("task_page_size", 22)
-                if r["parser_id"] == "one":
-                    page_size = 1000000000
-                if not do_layout:
-                    page_size = 1000000000
-                page_ranges = r["parser_config"].get("pages")
-                if not page_ranges:
-                    page_ranges = [(1, 100000)]
-                for s, e in page_ranges:
-                    s -= 1
-                    s = max(0, s)
-                    e = min(e - 1, pages)
-                    for p in range(s, e, page_size):
-                        task = new_task()
-                        task["from_page"] = p
-                        task["to_page"] = min(p + page_size, e)
-                        tsks.append(task)
-
-            elif r["parser_id"] == "table":
-                rn = RAGFlowExcelParser.row_number(
-                    r["name"], file_bin)
-                for i in range(0, rn, 3000):
+    tsks = []
+    try:
+        bucket, name = File2DocumentService.get_minio_address(doc_id=r["id"])
+        file_bin = MINIO.get(bucket, name)
+        if r["type"] == FileType.PDF.value:
+            do_layout = r["parser_config"].get("layout_recognize", True)
+            pages = PdfParser.total_page_number(r["name"], file_bin)
+            page_size = r["parser_config"].get("task_page_size", 12)
+            if r["parser_id"] == "paper":
+                 page_size = r["parser_config"].get("task_page_size", 22)
+            if r["parser_id"] == "one":
+                page_size = 1000000000
+            if not do_layout:
+                page_size = 1000000000
+            page_ranges = r["parser_config"].get("pages")
+            if not page_ranges:
+                page_ranges = [(1, 100000)]
+            for s, e in page_ranges:
+                s -= 1
+                s = max(0, s)
+                e = min(e - 1, pages)
+                for p in range(s, e, page_size):
                     task = new_task()
-                    task["from_page"] = i
-                    task["to_page"] = min(i + 3000, rn)
+                    task["from_page"] = p
+                    task["to_page"] = min(p + page_size, e)
                     tsks.append(task)
-            else:
-                tsks.append(new_task())
 
-            bulk_insert_into_db(Task, tsks, True)
-            set_dispatching(r["id"])
-        except Exception as e:
-            cron_logger.exception(e)
+        elif r["parser_id"] == "table":
+            rn = RAGFlowExcelParser.row_number(
+                r["name"], file_bin)
+            for i in range(0, rn, 3000):
+                task = new_task()
+                task["from_page"] = i
+                task["to_page"] = min(i + 3000, rn)
+                tsks.append(task)
+        else:
+            tsks.append(new_task())
 
-        tmf.write(str(r["update_time"]) + "\n")
-    tmf.close()
+        bulk_insert_into_db(Task, tsks, True)
+        dispatching(r["id"])
+        payload.ack()
+    except Exception as e:
+        cron_logger.exception(e)
 
 
 def update_progress():
@@ -161,7 +159,7 @@ def update_progress():
 
             msg = "\n".join(msg)
             info = {
-                "process_duation": datetime.timestamp(
+                "process_duration": datetime.timestamp(
                     datetime.now()) -
                                    d["process_begin_at"].timestamp(),
                 "run": status}

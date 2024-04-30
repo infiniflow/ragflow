@@ -26,11 +26,7 @@ import traceback
 from functools import partial
 
 from api.db.services.file2document_service import File2DocumentService
-from rag.utils.minio_conn import MINIO
-from api.db.db_models import close_connection
-from rag.settings import database_logger
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
-from multiprocessing import Pool
 import numpy as np
 from elasticsearch_dsl import Q
 from multiprocessing.context import TimeoutError
@@ -49,7 +45,7 @@ from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.utils.file_utils import get_project_base_directory
-from rag.utils.redis_conn import REDIS_CONN
+from rag.utils.minio_conn import MINIO
 
 BATCH_SIZE = 64
 
@@ -93,9 +89,8 @@ def set_progress(task_id, from_page=0, to_page=-1,
         sys.exit()
 
 
-def collect(comm, mod, tm):
-    tasks = TaskService.get_tasks(tm, mod, comm)
-    #print(tasks)
+def collect(doc_id):
+    tasks = TaskService.get_tasks(doc_id)
     if len(tasks) == 0:
         time.sleep(1)
         return pd.DataFrame()
@@ -106,7 +101,6 @@ def collect(comm, mod, tm):
 
 
 def get_minio_binary(bucket, name):
-    global MINIO
     return MINIO.get(bucket, name)
 
 
@@ -122,13 +116,10 @@ def build(row):
         row["from_page"],
         row["to_page"])
     chunker = FACTORY[row["parser_id"].lower()]
-    pool = Pool(processes=1)
     try:
         st = timer()
         bucket, name = File2DocumentService.get_minio_address(doc_id=row["doc_id"])
-        thr = pool.apply_async(get_minio_binary, args=(bucket, name))
-        binary = thr.get(timeout=90)
-        pool.terminate()
+        binary = get_minio_binary(bucket, name)
         cron_logger.info(
             "From minio({}) {}/{}".format(timer()-st, row["location"], row["name"]))
         cks = chunker.chunk(row["name"], binary=binary, from_page=row["from_page"],
@@ -147,7 +138,6 @@ def build(row):
         else:
             callback(-1, f"Internal server error: %s" %
                      str(e).replace("'", ""))
-        pool.terminate()
         traceback.print_exc()
 
         cron_logger.error(
@@ -238,17 +228,11 @@ def embedding(docs, mdl, parser_config={}, callback=None):
     return tk_count
 
 
-def main(comm, mod):
-    tm_fnm = os.path.join(
-        get_project_base_directory(),
-        "rag/res",
-        f"{comm}-{mod}.tm")
-    tm = findMaxTm(tm_fnm)
-    rows = collect(comm, mod, tm)
+def run_embedding(doc_id):
+    rows = collect(doc_id)
     if len(rows) == 0:
         return
 
-    tmf = open(tm_fnm, "a+")
     for _, r in rows.iterrows():
         callback = partial(set_progress, r["id"], r["from_page"], r["to_page"])
         #callback(random.random()/10., "Task has been received.")
@@ -265,7 +249,6 @@ def main(comm, mod):
         if cks is None:
             continue
         if not cks:
-            tmf.write(str(r["update_time"]) + "\n")
             callback(1., "No chunk! Done!")
             continue
         # TODO: exception handler
@@ -305,18 +288,3 @@ def main(comm, mod):
                 "Chunk doc({}), token({}), chunks({}), elapsed:{}".format(
                     r["id"], tk_count, len(cks), timer()-st))
 
-        tmf.write(str(r["update_time"]) + "\n")
-    tmf.close()
-
-
-if __name__ == "__main__":
-    peewee_logger = logging.getLogger('peewee')
-    peewee_logger.propagate = False
-    peewee_logger.addHandler(database_logger.handlers[0])
-    peewee_logger.setLevel(database_logger.level)
-
-    #from mpi4py import MPI
-    #comm = MPI.COMM_WORLD
-    while True:
-        main(int(sys.argv[2]), int(sys.argv[1]))
-        close_connection()

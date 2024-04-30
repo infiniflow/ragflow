@@ -92,6 +92,17 @@ services:
       - ragflow
     restart: always
 
+  redis:
+    image: redis:7.2.4
+    container_name: ragflow-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - ragflow
+    restart: always
+
+
 
 volumes:
   esdata01:
@@ -101,6 +112,8 @@ volumes:
   mysql_data:
     driver: local
   minio_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:

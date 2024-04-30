@@ -37,7 +37,9 @@ from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from rag.utils.minio_conn import MINIO
+from rag.utils.redis_conn import REDIS_CONN
 from api.utils.file_utils import filename_type, thumbnail
+from rag.settings import SVR_QUEUE_NAME
 
 
 @manager.route('/upload', methods=['POST'])
@@ -277,7 +279,11 @@ def run():
                 return get_data_error_result(retmsg="Tenant not found!")
             ELASTICSEARCH.deleteByQuery(
                 Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
-
+            REDIS_CONN.queue_product(SVR_QUEUE_NAME,
+                                     message={
+                                         'doc_id': id,
+                                         'run': str(req["run"]),
+                                     })
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -374,7 +380,7 @@ def change_parser():
             DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1,
-                                                    doc.process_duation * -1)
+                                                    doc.process_duration * -1)
             if not e:
                 return get_data_error_result(retmsg="Document not found!")
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
