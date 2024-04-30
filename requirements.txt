@@ -101,6 +101,7 @@ python-dotenv==1.0.1
 python-pptx==0.6.23
 pytz==2024.1
 PyYAML==6.0.1
+redis==5.0.3
 regex==2023.12.25
 requests==2.31.0
 ruamel.yaml==0.18.6
