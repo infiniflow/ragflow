@@ -64,6 +64,7 @@ export default {
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
+      searchKnowledgePlaceholder: '搜索',
     },
     knowledgeDetails: {
       dataset: '数据集',
@@ -268,6 +269,8 @@ export default {
       keyword: '关键词',
       function: '函数',
       chunkMessage: '请输入值！',
+      full: '全文',
+      ellipse: '省略',
     },
     chat: {
       createAssistant: '新建助理',

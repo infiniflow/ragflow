@@ -68,13 +68,18 @@ const FileUploadModal = ({
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [directoryFileList, setDirectoryFileList] = useState<UploadFile[]>([]);
 
+  const clearFileList = () => {
+    setFileList([]);
+    setDirectoryFileList([]);
+  };
+
   const onOk = async () => {
     const ret = await onFileUploadOk?.([...fileList, ...directoryFileList]);
-    if (ret !== undefined && ret === 0) {
-      setFileList([]);
-      setDirectoryFileList([]);
-    }
     return ret;
+  };
+
+  const afterClose = () => {
+    clearFileList();
   };
 
   const items: TabsProps['items'] = [
@@ -110,6 +115,7 @@ const FileUploadModal = ({
         onOk={onOk}
         onCancel={hideModal}
         confirmLoading={loading}
+        afterClose={afterClose}
       >
         <Flex gap={'large'} vertical>
           <Segmented

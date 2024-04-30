@@ -179,7 +179,8 @@ const KnowledgeFile = () => {
         // loading={loading}
         pagination={pagination}
         rowSelection={rowSelection}
-        scroll={{ scrollToFirstRowOnChange: true, x: 1300, y: 'fill' }}
+        className={styles.documentTable}
+        scroll={{ scrollToFirstRowOnChange: true, x: 1300 }}
       />
       <CreateFileModal
         visible={createVisible}

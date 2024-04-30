@@ -4,6 +4,7 @@ import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
 import classNames from 'classnames';
 import { useState } from 'react';
 
+import { ChunkTextMode } from '../../constant';
 import styles from './index.less';
 
 interface IProps {
@@ -14,6 +15,7 @@ interface IProps {
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
   selected: boolean;
   clickChunkCard: (chunkId: string) => void;
+  textMode: ChunkTextMode;
 }
 
 const ChunkCard = ({
@@ -24,6 +26,7 @@ const ChunkCard = ({
   switchChunk,
   selected,
   clickChunkCard,
+  textMode,
 }: IProps) => {
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(available === 1);
@@ -68,8 +71,15 @@ const ChunkCard = ({
           onDoubleClick={handleContentDoubleClick}
           onClick={handleContentClick}
           className={styles.content}
-          dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
-        ></section>
+        >
+          <div
+            dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
+            className={classNames({
+              [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,
+            })}
+          ></div>
+        </section>
+
         <div>
           <Switch checked={enabled} onChange={onChange} />
         </div>

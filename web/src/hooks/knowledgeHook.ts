@@ -125,13 +125,19 @@ export const useFetchKnowledgeBaseConfiguration = () => {
   }, [fetchKnowledgeBaseConfiguration]);
 };
 
+export const useSelectKnowledgeList = () => {
+  const knowledgeModel = useSelector((state) => state.knowledgeModel);
+  const { data = [] } = knowledgeModel;
+  return data;
+};
+
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
 ) => {
   const dispatch = useDispatch();
   const loading = useOneNamespaceEffectsLoading('knowledgeModel', ['getList']);
 
-  const knowledgeModel = useSelector((state: any) => state.knowledgeModel);
+  const knowledgeModel = useSelector((state) => state.knowledgeModel);
   const { data = [] } = knowledgeModel;
   const list: IKnowledge[] = useMemo(() => {
     return shouldFilterListWithoutDocument

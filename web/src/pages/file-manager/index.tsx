@@ -16,13 +16,13 @@ import {
   useSelectFileListLoading,
 } from './hooks';
 
+import FileUploadModal from '@/components/file-upload-modal';
 import RenameModal from '@/components/rename-modal';
 import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/commonHooks';
 import { formatNumberWithThousandsSeparator } from '@/utils/commonUtil';
 import { getExtension } from '@/utils/documentUtils';
 import ConnectToKnowledgeModal from './connect-to-knowledge-modal';
-import FileUploadModal from './file-upload-modal';
 import FolderCreateModal from './folder-create-modal';
 import styles from './index.less';
 
