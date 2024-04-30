@@ -141,12 +141,12 @@ class OllamaChat(Base):
         if system:
             history.insert(0, {"role": "system", "content": system})
         try:
-            options = {"temperature": gen_conf.get("temperature", 0.1),
-                       "num_predict": gen_conf.get("max_tokens", 128),
-                       "top_k": gen_conf.get("top_p", 0.3),
-                       "presence_penalty": gen_conf.get("presence_penalty", 0.4),
-                       "frequency_penalty": gen_conf.get("frequency_penalty", 0.7),
-                       }
+            options = {}
+            if "temperature" in gen_conf: options["temperature"] = gen_conf["temperature"]
+            if "max_tokens" in gen_conf: options["num_predict"] = gen_conf["max_tokens"]
+            if "top_p" in gen_conf: options["top_k"] = gen_conf["top_p"]
+            if "presence_penalty" in gen_conf: options["presence_penalty"] = gen_conf["presence_penalty"]
+            if "frequency_penalty" in gen_conf: options["frequency_penalty"] = gen_conf["frequency_penalty"]
             response = self.client.chat(
                 model=self.model_name,
                 messages=history,

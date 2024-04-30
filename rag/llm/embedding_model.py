@@ -236,8 +236,8 @@ class YoudaoEmbed(Base):
             try:
                 print("LOADING BCE...")
                 YoudaoEmbed._client = qanthing(model_name_or_path=os.path.join(
-                    get_project_base_directory(),
-                    "rag/res/bce-embedding-base_v1"))
+                    get_home_cache_dir(),
+                    "bce-embedding-base_v1"))
             except Exception as e:
                 YoudaoEmbed._client = qanthing(
                     model_name_or_path=model_name.replace(
