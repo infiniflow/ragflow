@@ -181,6 +181,9 @@ const ChatConfigurationModal = ({
             key={key}
             show={key === value}
             form={form}
+            {...(key === ConfigurationSegmented.ModelSetting
+              ? { initialLlmSetting: initialDialog.llm_setting, visible }
+              : {})}
             {...(key === ConfigurationSegmented.PromptEngine
               ? { ref: promptEngineRef }
               : {})}
