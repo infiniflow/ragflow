@@ -90,12 +90,6 @@ def dispatch():
         try:
             bucket, name = File2DocumentService.get_minio_address(doc_id=r["id"])
             file_bin = MINIO.get(bucket, name)
-            if REDIS_CONN.is_alive():
-                try:
-                    REDIS_CONN.set("{}/{}".format(bucket, name), file_bin, 12*60)
-                except Exception as e:
-                    cron_logger.warning("Put into redis[EXCEPTION]:" + str(e))
-
             if r["type"] == FileType.PDF.value:
                 do_layout = r["parser_config"].get("layout_recognize", True)
                 pages = PdfParser.total_page_number(r["name"], file_bin)
