@@ -9,6 +9,9 @@ mysql:
   port: 3306
   max_connections: 100
   stale_timeout: 30
+redis:
+  password: 'infini_rag_flow'
+  host: '127.0.0.1:6379'
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
