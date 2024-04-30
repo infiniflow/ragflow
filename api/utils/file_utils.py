@@ -19,7 +19,7 @@ import os
 import re
 from io import BytesIO
 
-import fitz
+import pdfplumber
 from PIL import Image
 from cachetools import LRUCache, cached
 from ruamel.yaml import YAML
@@ -172,11 +172,9 @@ def filename_type(filename):
 def thumbnail(filename, blob):
     filename = filename.lower()
     if re.match(r".*\.pdf$", filename):
-        pdf = fitz.open(stream=blob, filetype="pdf")
-        pix = pdf[0].get_pixmap(matrix=fitz.Matrix(0.03, 0.03))
+        pdf = pdfplumber.open(BytesIO(blob))
         buffered = BytesIO()
-        Image.frombytes("RGB", [pix.width, pix.height],
-                        pix.samples).save(buffered, format="png")
+        pdf.pages[0].to_image().annotated.save(buffered, format="png")
         return "data:image/png;base64," + \
             base64.b64encode(buffered.getvalue()).decode("utf-8")
 
