@@ -186,6 +186,66 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
+## 🛠️ Launch Service from Source
+
+To launch the service from source, please follow these steps:
+
+1. Clone the repository
+```bash
+$ git clone https://github.com/infiniflow/ragflow.git
+$ cd ragflow/
+```
+
+2. Create a virtual environment (ensure Anaconda or Miniconda is installed)
+```bash
+$ conda create -n ragflow python=3.11.0
+$ conda activate ragflow
+$ pip install -r requirements.txt
+```
+If CUDA version is greater than 12.0, execute the following additional commands:
+```bash
+$ pip uninstall -y onnxruntime-gpu
+$ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+```
+
+3. Copy the entry script and configure environment variables
+```bash
+$ cp docker/entrypoint.sh .
+$ vi entrypoint.sh
+```
+Use the following commands to obtain the Python path and the ragflow project path:
+```bash
+$ which python
+$ pwd
+```
+
+Set the output of `which python` as the value for `PY` and the output of `pwd` as the value for `PYTHONPATH`.
+
+If `LD_LIBRARY_PATH` is already configured, it can be commented out.
+
+```bash
+# Adjust configurations according to your actual situation; the two export commands are newly added.
+PY=${PY}
+export PYTHONPATH=${PYTHONPATH}
+# Optional: Add Hugging Face mirror
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+4. Start the base services
+```bash
+$ cd docker
+$ docker compose -f docker-compose-base.yml up -d 
+```
+
+5. Check the configuration files
+Ensure that the settings in **docker/.env** match those in **conf/service_conf.yaml**. The IP addresses and ports for related services in **service_conf.yaml** should be changed to the local machine IP and ports exposed by the container.
+
+6. Launch the service
+```bash
+$ chmod +x ./entrypoint.sh
+$ bash ./entrypoint.sh
+```
+
 ## 📚 Documentation
 
 - [FAQ](./docs/faq.md)
