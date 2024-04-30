@@ -1,16 +1,19 @@
 import ModalManager from '@/components/modal-manager';
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import { useSelectUserInfo } from '@/hooks/userSettingHook';
-import { PlusOutlined } from '@ant-design/icons';
-import { Button, Empty, Flex, Space, Spin } from 'antd';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Empty, Flex, Input, Space, Spin } from 'antd';
 import KnowledgeCard from './knowledge-card';
 import KnowledgeCreatingModal from './knowledge-creating-modal';
 
 import { useTranslation } from 'react-i18next';
+import { useSearchKnowledge, useSelectKnowledgeListByKeywords } from './hooks';
 import styles from './index.less';
 
-const Knowledge = () => {
-  const { list, loading } = useFetchKnowledgeList();
+const KnowledgeList = () => {
+  const { searchString, handleInputChange } = useSearchKnowledge();
+  const { loading } = useFetchKnowledgeList();
+  const list = useSelectKnowledgeListByKeywords(searchString);
   const userInfo = useSelectUserInfo();
   const { t } = useTranslation('translation', { keyPrefix: 'knowledgeList' });
 
@@ -24,9 +27,15 @@ const Knowledge = () => {
           <p className={styles.description}>{t('description')}</p>
         </div>
         <Space size={'large'}>
-          {/* <Button icon={<FilterIcon />} className={styles.filterButton}>
-            Filters
-          </Button> */}
+          <Input
+            placeholder={t('searchKnowledgePlaceholder')}
+            value={searchString}
+            style={{ width: 220 }}
+            allowClear
+            onChange={handleInputChange}
+            prefix={<SearchOutlined />}
+          />
+
           <ModalManager>
             {({ visible, hideModal, showModal }) => (
               <>
@@ -70,4 +79,4 @@ const Knowledge = () => {
   );
 };
 
-export default Knowledge;
+export default KnowledgeList;

@@ -48,6 +48,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
   visible,
   documentExtension,
   parserConfig,
+  loading,
 }) => {
   const { parserList, handleChange, selectedTag } = useFetchParserListOnMount(
     documentId,
@@ -109,6 +110,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
       onOk={handleOk}
       onCancel={hideModal}
       afterClose={afterClose}
+      confirmLoading={loading}
     >
       <Space size={[0, 8]} wrap>
         <Form.Item label={t('chunkMethod')} className={styles.chunkMethod}>

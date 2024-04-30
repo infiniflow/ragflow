@@ -64,6 +64,7 @@ export default {
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
+      searchKnowledgePlaceholder: 'Search',
     },
     knowledgeDetails: {
       dataset: 'Dataset',
@@ -278,6 +279,8 @@ export default {
       keyword: 'Keyword',
       function: 'Function',
       chunkMessage: 'Please input value!',
+      full: 'Full text',
+      ellipse: 'Ellipse',
     },
     chat: {
       createAssistant: 'Create an Assistant',

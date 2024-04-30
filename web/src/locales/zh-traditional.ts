@@ -64,6 +64,7 @@ export default {
       name: '名稱',
       namePlaceholder: '請輸入名稱',
       doc: '文件',
+      searchKnowledgePlaceholder: '搜索',
     },
     knowledgeDetails: {
       dataset: '數據集',
@@ -251,6 +252,8 @@ export default {
       keyword: '關鍵詞',
       function: '函數',
       chunkMessage: '請輸入值！',
+      full: '全文',
+      ellipse: '省略',
     },
     chat: {
       createAssistant: '新建助理',

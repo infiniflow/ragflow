@@ -23,7 +23,6 @@ import {
   useFetchDocumentListOnMount,
   useGetPagination,
   useHandleSearchChange,
-  useNavigateToOtherPage,
 } from './hooks';
 import styles from './index.less';
 
@@ -44,7 +43,6 @@ const DocumentToolbar = ({
   const { handleInputChange } = useHandleSearchChange(setPagination);
   const removeDocument = useRemoveDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
-  const { linkToUploadPage } = useNavigateToOtherPage();
   const runDocumentByIds = useRunDocument();
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const changeStatus = useSetDocumentStatus();
@@ -77,7 +75,6 @@ const DocumentToolbar = ({
             </Button>
           </div>
         ),
-        // disabled: true,
       },
     ];
   }, [showDocumentUploadModal, showCreateModal, t]);
