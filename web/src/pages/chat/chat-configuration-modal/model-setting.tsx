@@ -11,10 +11,19 @@ import { ISegmentedContentProps } from '../interface';
 
 import { useTranslate } from '@/hooks/commonHooks';
 import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
+import { Variable } from '@/interfaces/database/chat';
 import { variableEnabledFieldMap } from '../constants';
 import styles from './index.less';
 
-const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
+const ModelSetting = ({
+  show,
+  form,
+  initialLlmSetting,
+  visible,
+}: ISegmentedContentProps & {
+  initialLlmSetting?: Variable;
+  visible?: boolean;
+}) => {
   const { t } = useTranslate('chat');
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
     label: t(camelCase(x)),
@@ -29,14 +38,23 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
   };
 
   useEffect(() => {
-    const values = Object.keys(variableEnabledFieldMap).reduce<
-      Record<string, boolean>
-    >((pre, field) => {
-      pre[field] = true;
-      return pre;
-    }, {});
-    form.setFieldsValue(values);
-  }, [form]);
+    if (visible) {
+      const values = Object.keys(variableEnabledFieldMap).reduce<
+        Record<string, boolean>
+      >((pre, field) => {
+        pre[field] =
+          initialLlmSetting === undefined
+            ? true
+            : !!initialLlmSetting[
+                variableEnabledFieldMap[
+                  field as keyof typeof variableEnabledFieldMap
+                ] as keyof Variable
+              ];
+        return pre;
+      }, {});
+      form.setFieldsValue(values);
+    }
+  }, [form, initialLlmSetting, visible]);
 
   useFetchLlmList(LlmModelType.Chat);
 
@@ -60,7 +78,6 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
         name="parameters"
         tooltip={t('freedomTip')}
         initialValue={ModelVariableType.Precise}
-        // rules={[{ required: true, message: 'Please input!' }]}
       >
         <Select<ModelVariableType>
           options={parameterOptions}
@@ -76,26 +93,33 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           >
             <Switch size="small" />
           </Form.Item>
-          <Flex flex={1}>
-            <Form.Item
-              name={['llm_setting', 'temperature']}
-              noStyle
-              rules={[{ required: true, message: t('temperatureMessage') }]}
-            >
-              <Slider className={styles.variableSlider} max={1} step={0.01} />
-            </Form.Item>
-          </Flex>
-          <Form.Item
-            name={['llm_setting', 'temperature']}
-            noStyle
-            rules={[{ required: true, message: t('temperatureMessage') }]}
-          >
-            <InputNumber
-              className={styles.sliderInputNumber}
-              max={1}
-              min={0}
-              step={0.01}
-            />
+          <Form.Item noStyle dependencies={['temperatureEnabled']}>
+            {({ getFieldValue }) => {
+              const disabled = !getFieldValue('temperatureEnabled');
+              return (
+                <>
+                  <Flex flex={1}>
+                    <Form.Item name={['llm_setting', 'temperature']} noStyle>
+                      <Slider
+                        className={styles.variableSlider}
+                        max={1}
+                        step={0.01}
+                        disabled={disabled}
+                      />
+                    </Form.Item>
+                  </Flex>
+                  <Form.Item name={['llm_setting', 'temperature']} noStyle>
+                    <InputNumber
+                      className={styles.sliderInputNumber}
+                      max={1}
+                      min={0}
+                      step={0.01}
+                      disabled={disabled}
+                    />
+                  </Form.Item>
+                </>
+              );
+            }}
           </Form.Item>
         </Flex>
       </Form.Item>
@@ -104,26 +128,33 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item name={'topPEnabled'} valuePropName="checked" noStyle>
             <Switch size="small" />
           </Form.Item>
-          <Flex flex={1}>
-            <Form.Item
-              name={['llm_setting', 'top_p']}
-              noStyle
-              rules={[{ required: true, message: t('topPMessage') }]}
-            >
-              <Slider className={styles.variableSlider} max={1} step={0.01} />
-            </Form.Item>
-          </Flex>
-          <Form.Item
-            name={['llm_setting', 'top_p']}
-            noStyle
-            rules={[{ required: true, message: t('topPMessage') }]}
-          >
-            <InputNumber
-              className={styles.sliderInputNumber}
-              max={1}
-              min={0}
-              step={0.01}
-            />
+          <Form.Item noStyle dependencies={['topPEnabled']}>
+            {({ getFieldValue }) => {
+              const disabled = !getFieldValue('topPEnabled');
+              return (
+                <>
+                  <Flex flex={1}>
+                    <Form.Item name={['llm_setting', 'top_p']} noStyle>
+                      <Slider
+                        className={styles.variableSlider}
+                        max={1}
+                        step={0.01}
+                        disabled={disabled}
+                      />
+                    </Form.Item>
+                  </Flex>
+                  <Form.Item name={['llm_setting', 'top_p']} noStyle>
+                    <InputNumber
+                      className={styles.sliderInputNumber}
+                      max={1}
+                      min={0}
+                      step={0.01}
+                      disabled={disabled}
+                    />
+                  </Form.Item>
+                </>
+              );
+            }}
           </Form.Item>
         </Flex>
       </Form.Item>
@@ -136,26 +167,36 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           >
             <Switch size="small" />
           </Form.Item>
-          <Flex flex={1}>
-            <Form.Item
-              name={['llm_setting', 'presence_penalty']}
-              noStyle
-              rules={[{ required: true, message: t('presencePenaltyMessage') }]}
-            >
-              <Slider className={styles.variableSlider} max={1} step={0.01} />
-            </Form.Item>
-          </Flex>
-          <Form.Item
-            name={['llm_setting', 'presence_penalty']}
-            noStyle
-            rules={[{ required: true, message: t('presencePenaltyMessage') }]}
-          >
-            <InputNumber
-              className={styles.sliderInputNumber}
-              max={1}
-              min={0}
-              step={0.01}
-            />
+          <Form.Item noStyle dependencies={['presencePenaltyEnabled']}>
+            {({ getFieldValue }) => {
+              const disabled = !getFieldValue('presencePenaltyEnabled');
+              return (
+                <>
+                  <Flex flex={1}>
+                    <Form.Item
+                      name={['llm_setting', 'presence_penalty']}
+                      noStyle
+                    >
+                      <Slider
+                        className={styles.variableSlider}
+                        max={1}
+                        step={0.01}
+                        disabled={disabled}
+                      />
+                    </Form.Item>
+                  </Flex>
+                  <Form.Item name={['llm_setting', 'presence_penalty']} noStyle>
+                    <InputNumber
+                      className={styles.sliderInputNumber}
+                      max={1}
+                      min={0}
+                      step={0.01}
+                      disabled={disabled}
+                    />
+                  </Form.Item>
+                </>
+              );
+            }}
           </Form.Item>
         </Flex>
       </Form.Item>
@@ -171,28 +212,39 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           >
             <Switch size="small" />
           </Form.Item>
-          <Flex flex={1}>
-            <Form.Item
-              name={['llm_setting', 'frequency_penalty']}
-              noStyle
-              rules={[
-                { required: true, message: t('frequencyPenaltyMessage') },
-              ]}
-            >
-              <Slider className={styles.variableSlider} max={1} step={0.01} />
-            </Form.Item>
-          </Flex>
-          <Form.Item
-            name={['llm_setting', 'frequency_penalty']}
-            noStyle
-            rules={[{ required: true, message: t('frequencyPenaltyMessage') }]}
-          >
-            <InputNumber
-              className={styles.sliderInputNumber}
-              max={1}
-              min={0}
-              step={0.01}
-            />
+          <Form.Item noStyle dependencies={['frequencyPenaltyEnabled']}>
+            {({ getFieldValue }) => {
+              const disabled = !getFieldValue('frequencyPenaltyEnabled');
+              return (
+                <>
+                  <Flex flex={1}>
+                    <Form.Item
+                      name={['llm_setting', 'frequency_penalty']}
+                      noStyle
+                    >
+                      <Slider
+                        className={styles.variableSlider}
+                        max={1}
+                        step={0.01}
+                        disabled={disabled}
+                      />
+                    </Form.Item>
+                  </Flex>
+                  <Form.Item
+                    name={['llm_setting', 'frequency_penalty']}
+                    noStyle
+                  >
+                    <InputNumber
+                      className={styles.sliderInputNumber}
+                      max={1}
+                      min={0}
+                      step={0.01}
+                      disabled={disabled}
+                    />
+                  </Form.Item>
+                </>
+              );
+            }}
           </Form.Item>
         </Flex>
       </Form.Item>
@@ -201,25 +253,32 @@ const ModelSetting = ({ show, form }: ISegmentedContentProps) => {
           <Form.Item name={'maxTokensEnabled'} valuePropName="checked" noStyle>
             <Switch size="small" />
           </Form.Item>
-          <Flex flex={1}>
-            <Form.Item
-              name={['llm_setting', 'max_tokens']}
-              noStyle
-              rules={[{ required: true, message: t('maxTokensMessage') }]}
-            >
-              <Slider className={styles.variableSlider} max={2048} />
-            </Form.Item>
-          </Flex>
-          <Form.Item
-            name={['llm_setting', 'max_tokens']}
-            noStyle
-            rules={[{ required: true, message: t('maxTokensMessage') }]}
-          >
-            <InputNumber
-              className={styles.sliderInputNumber}
-              max={2048}
-              min={0}
-            />
+          <Form.Item noStyle dependencies={['maxTokensEnabled']}>
+            {({ getFieldValue }) => {
+              const disabled = !getFieldValue('maxTokensEnabled');
+
+              return (
+                <>
+                  <Flex flex={1}>
+                    <Form.Item name={['llm_setting', 'max_tokens']} noStyle>
+                      <Slider
+                        className={styles.variableSlider}
+                        max={2048}
+                        disabled={disabled}
+                      />
+                    </Form.Item>
+                  </Flex>
+                  <Form.Item name={['llm_setting', 'max_tokens']} noStyle>
+                    <InputNumber
+                      disabled={disabled}
+                      className={styles.sliderInputNumber}
+                      max={2048}
+                      min={0}
+                    />
+                  </Form.Item>
+                </>
+              );
+            }}
           </Form.Item>
         </Flex>
       </Form.Item>

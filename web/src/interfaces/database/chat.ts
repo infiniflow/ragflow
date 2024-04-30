@@ -21,11 +21,11 @@ export interface LlmSetting {
 }
 
 export interface Variable {
-  frequency_penalty: number;
-  max_tokens: number;
-  presence_penalty: number;
-  temperature: number;
-  top_p: number;
+  frequency_penalty?: number;
+  max_tokens?: number;
+  presence_penalty?: number;
+  temperature?: number;
+  top_p?: number;
 }
 
 export interface IDialog {
@@ -38,7 +38,7 @@ export interface IDialog {
   kb_names: string[];
   language: string;
   llm_id: string;
-  llm_setting: LlmSetting;
+  llm_setting: Variable;
   llm_setting_type: string;
   name: string;
   prompt_config: PromptConfig;
