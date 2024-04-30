@@ -16,6 +16,8 @@
 from peewee import Expression
 
 from elasticsearch_dsl import Q
+
+from api.utils import current_timestamp
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 from rag.nlp import search
@@ -90,7 +92,7 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_newly_uploaded(cls, tm, mod=0, comm=1, items_per_page=64):
+    def get_newly_uploaded(cls, tm):
         fields = [
             cls.model.id,
             cls.model.kb_id,
@@ -112,11 +114,9 @@ class DocumentService(CommonService):
                 cls.model.status == StatusEnum.VALID.value,
                 ~(cls.model.type == FileType.VIRTUAL.value),
                 cls.model.progress == 0,
-                cls.model.update_time >= tm,
-                cls.model.run == TaskStatus.RUNNING.value,
-                (Expression(cls.model.create_time, "%%", comm) == mod))\
-            .order_by(cls.model.update_time.asc())\
-            .paginate(1, items_per_page)
+                cls.model.update_time >= current_timestamp() - 1000 * 600,
+                cls.model.run == TaskStatus.RUNNING.value)\
+            .order_by(cls.model.update_time.asc())
         return list(docs.dicts())
 
     @classmethod
