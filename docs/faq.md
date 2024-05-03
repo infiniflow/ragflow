@@ -193,18 +193,31 @@ docker logs -f ragflow-server
 2. Check if the **task_executor.py** process exists.
 3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
 
+#### 4.5 Why does my pdf parsing stall near completion, while the log does not show any error?
 
-#### 4.5 `Index failure`
+If your RAGFlow is deployed *locally*, the parsing process is likely killed due to insufficient RAM. Try increasing your memory allocation by increasing the `MEM_LIMIT` value in **docker/.env**.
+
+> Ensure that you restart up your RAGFlow server for your changes to take effect!
+> ```bash
+> docker compose stop
+> ```
+> ```bash
+> docker compose up -d
+> ```
+
+![nearcompletion](https://github.com/infiniflow/ragflow/assets/93570324/563974c3-f8bb-4ec8-b241-adcda8929cbb)
+
+#### 4.6 `Index failure`
 
 An index failure usually indicates an unavailable Elasticsearch service.
 
-#### 4.6 How to check the log of RAGFlow?
+#### 4.7 How to check the log of RAGFlow?
 
 ```bash
 tail -f path_to_ragflow/docker/ragflow-logs/rag/*.log
 ```
 
-#### 4.7 How to check the status of each component in RAGFlow?
+#### 4.8 How to check the status of each component in RAGFlow?
 
 ```bash
 $ docker ps
@@ -218,7 +231,7 @@ d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 
 cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
 ```
 
-#### 4.8 `Exception: Can't connect to ES cluster`
+#### 4.9 `Exception: Can't connect to ES cluster`
 
 1. Check the status of your Elasticsearch component:
 
@@ -245,23 +258,26 @@ $ docker ps
     curl http://<IP_OF_ES>:<PORT_OF_ES>
     ```
 
+#### 4.10 Can't start ES container and get `Elasticsearch did not exit normally`
 
-#### 4.9 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
+This is because you forgot to update the `vm.max_map_count` value in **/etc/sysctl.conf** and your change to this value was reset after a system reboot. 
+
+#### 4.11 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
 
 Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
-#### 4.10 `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
+#### 4.12 `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
 
 A correct Ollama IP address and port is crucial to adding models to Ollama:
 
 - If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address.Note that 127.0.0.1 is not a publicly accessible IP address.
 - If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can comunicate with each other.
 
-#### 4.11 Do you offer examples of using deepdoc to parse PDF or other files?
+#### 4.13 Do you offer examples of using deepdoc to parse PDF or other files?
 
 Yes, we do. See the Python files under the **rag/app** folder. 
 
-#### 4.12 Why did I fail to upload a 10MB+ file to my locally deployed RAGFlow?
+#### 4.14 Why did I fail to upload a 10MB+ file to my locally deployed RAGFlow?
 
 You probably forgot to update the **MAX_CONTENT_LENGTH** environment variable:
 
@@ -280,7 +296,7 @@ docker compose up ragflow -d
 ```
    *Now you should be able to upload files of sizes less than 100MB.*
 
-#### 4.13 `Table 'rag_flow.document' doesn't exist`
+#### 4.15 `Table 'rag_flow.document' doesn't exist`
 
 This exception occurs when starting up the RAGFlow server. Try the following: 
 
@@ -303,7 +319,7 @@ This exception occurs when starting up the RAGFlow server. Try the following:
   docker compose up
   ```
 
-#### 4.14 `hint : 102  Fail to access model  Connection error`
+#### 4.16 `hint : 102  Fail to access model  Connection error`
 
 ![hint102](https://github.com/infiniflow/ragflow/assets/93570324/6633d892-b4f8-49b5-9a0a-37a0a8fba3d2)
 
@@ -311,6 +327,13 @@ This exception occurs when starting up the RAGFlow server. Try the following:
 2. Do not forget to append **/v1/** to **http://IP:port**: 
    **http://IP:port/v1/**
 
+#### 4.17 `FileNotFoundError: [Errno 2] No such file or directory`
+
+1. Check if the status of your minio container is healthy:
+   ```bash
+   docker ps
+   ```
+2. Ensure that the username and password settings of MySQL and MinIO in **docker/.env** are in line with those in **docker/service_conf.yml**.
 
 ## Usage
 
@@ -344,11 +367,11 @@ You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow
 2. Right click the desired knowledge base to display the **Configuration** dialogue. 
 3. Choose **Q&A** as the chunk method and click **Save** to confirm your change. 
 
-### Do I need to connect to Redis?
+### 7 Do I need to connect to Redis?
 
 No, connecting to Redis is not required. 
 
-### `Error: Range of input length should be [1, 30000]`
+### 8 `Error: Range of input length should be [1, 30000]`
 
 This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue: 
 
@@ -358,3 +381,25 @@ This error occurs because there are too many chunks matching your search criteri
 4. Click **OK** to confirm your changes.
 
 ![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
+
+### 9 How to update RAGFlow to the latest version?
+
+1. Pull the latest source code
+   ```bash
+   cd ragflow
+   git pull
+   ```
+2. If you used `docker compose up -d` to start up RAGFlow server:
+   ```bash
+   docker pull infiniflow/ragflow:dev
+   ```
+   ```bash
+   docker compose up ragflow -d
+   ```
+3. If you used `docker compose -f docker-compose-CN.yml up -d` to start up RAGFlow server:
+   ```bash
+   docker pull swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev
+   ```
+   ```bash
+   docker compose -f docker-compose-CN.yml up -d
+   ```
