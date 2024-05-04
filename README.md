@@ -15,7 +15,7 @@
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
     </a>
     <a href="https://demo.ragflow.io" target="_blank">
-        <img alt="Static Badge" src="https://img.shields.io/badge/RAGFLOW-LLM-white?&labelColor=dd0af7"></a>
+        <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.4.0-brightgreen"
             alt="docker pull infiniflow/ragflow:v0.4.0"></a>
