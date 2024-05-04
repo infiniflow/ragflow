@@ -129,7 +129,10 @@ class RedisDB:
             res = Payload(self.REDIS, queue_name, group_name, msg_id, payload)
             return res
         except Exception as e:
-            logging.warning("[EXCEPTION]consumer" + str(queue_name) + "||" + str(e))
+            if 'key' in str(e):
+                pass
+            else:
+                logging.warning("[EXCEPTION]consumer" + str(queue_name) + "||" + str(e))
         return None
 
 
