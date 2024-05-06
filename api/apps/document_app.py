@@ -367,7 +367,8 @@ def change_parser():
             return get_data_error_result(retmsg="Not supported yet!")
 
         e = DocumentService.update_by_id(doc.id,
-                                         {"parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": "0"})
+                                         {"parser_id": req["parser_id"], "progress": 0, "progress_msg": "",
+                                          "run": TaskStatus.UNSTART.value})
         if not e:
             return get_data_error_result(retmsg="Document not found!")
         if "parser_config" in req:
