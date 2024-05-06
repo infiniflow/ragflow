@@ -64,6 +64,7 @@ class ChatStyle(StrEnum):
 
 
 class TaskStatus(StrEnum):
+    UNSTART = "0"
     RUNNING = "1"
     CANCEL = "2"
     DONE = "3"
