@@ -2,7 +2,9 @@ import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import {
   useCreateDocument,
   useFetchDocumentList,
+  useRunDocument,
   useSaveDocumentName,
+  useSelectRunDocumentLoading,
   useSetDocumentParser,
   useUploadDocument,
 } from '@/hooks/documentHooks';
@@ -281,5 +283,38 @@ export const useHandleUploadDocument = () => {
     documentUploadVisible,
     hideDocumentUploadModal,
     showDocumentUploadModal,
+  };
+};
+
+export const useHandleRunDocumentByIds = (id: string) => {
+  const loading = useSelectRunDocumentLoading();
+  const runDocumentByIds = useRunDocument();
+  const [currentId, setCurrentId] = useState<string>('');
+  const isLoading = loading && currentId !== '' && currentId === id;
+
+  const handleRunDocumentByIds = async (
+    documentId: string,
+    knowledgeBaseId: string,
+    isRunning: boolean,
+  ) => {
+    if (isLoading) {
+      return;
+    }
+    setCurrentId(documentId);
+    try {
+      await runDocumentByIds({
+        doc_ids: [documentId],
+        run: isRunning ? 2 : 1,
+        knowledgeBaseId,
+      });
+      setCurrentId('');
+    } catch (error) {
+      setCurrentId('');
+    }
+  };
+
+  return {
+    handleRunDocumentByIds,
+    loading: isLoading,
   };
 };
