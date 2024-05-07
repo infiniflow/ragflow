@@ -128,9 +128,11 @@ class TenantLLMService(CommonService):
         else:
             assert False, "LLM type error"
 
-        num = cls.model.update(used_tokens=cls.model.used_tokens + used_tokens)\
-            .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
-            .execute()
+        num = 0
+        for u in cls.query(tenant_id = tenant_id, llm_name=mdlnm):
+            num += cls.model.update(used_tokens = u.used_tokens + used_tokens)\
+                .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
+                .execute()
         return num
 
 

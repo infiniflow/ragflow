@@ -155,8 +155,8 @@ def queue_tasks(doc, bucket, name):
     else:
         tsks.append(new_task())
 
-    for t in tsks:
-        REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=t)
-
     bulk_insert_into_db(Task, tsks, True)
     DocumentService.begin2parse(doc["id"])
+
+    for t in tsks:
+        REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=t)
