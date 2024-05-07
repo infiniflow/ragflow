@@ -335,7 +335,7 @@ def get(file_id):
         response = flask.make_response(MINIO.get(file.parent_id, file.location))
         ext = re.search(r"\.([^.]+)$", file.name)
         if ext:
-            if doc.type == FileType.VISUAL.value:
+            if file.type == FileType.VISUAL.value:
                 response.headers.set('Content-Type', 'image/%s' % ext.group(1))
             else:
                 response.headers.set(
