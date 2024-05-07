@@ -25,13 +25,16 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.utils import current_timestamp, get_uuid
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
-from rag.settings import MINIO, SVR_QUEUE_NAME
+from rag.settings import SVR_QUEUE_NAME
+from rag.utils.minio_conn import MINIO
 from rag.utils.redis_conn import REDIS_CONN
 
 
 class TaskService(CommonService):
     model = Task
 
+    @classmethod
+    @DB.connection_context()
     def get_tasks(cls, task_id):
         fields = [
             cls.model.id,
