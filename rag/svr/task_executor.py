@@ -26,7 +26,11 @@ import traceback
 from functools import partial
 
 from api.db.services.file2document_service import File2DocumentService
+from rag.utils.minio_conn import MINIO
+from api.db.db_models import close_connection
+from rag.settings import database_logger, SVR_QUEUE_NAME
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
+from multiprocessing import Pool
 import numpy as np
 from elasticsearch_dsl import Q
 from multiprocessing.context import TimeoutError
@@ -45,7 +49,7 @@ from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.utils.file_utils import get_project_base_directory
-from rag.utils.minio_conn import MINIO
+from rag.utils.redis_conn import REDIS_CONN
 
 BATCH_SIZE = 64
 
@@ -89,14 +93,25 @@ def set_progress(task_id, from_page=0, to_page=-1,
         sys.exit()
 
 
-def collect(doc_id):
-    tasks = TaskService.get_tasks(doc_id)
-    if len(tasks) == 0:
-        time.sleep(1)
+def collect():
+    try:
+        payload = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", "rag_flow_svr_task_consumer")
+        if not payload:
+            time.sleep(1)
+            return pd.DataFrame()
+    except Exception as e:
+        cron_logger.error("Get task event from queue exception:" + str(e))
         return pd.DataFrame()
+
+    msg = payload.get_message()
+    payload.ack()
+    if not msg: return pd.DataFrame()
+
+    if TaskService.do_cancel(msg["id"]):
+        return pd.DataFrame()
+    tasks = TaskService.get_tasks(msg["id"])
+    assert tasks, "{} empty task!".format(msg["id"])
     tasks = pd.DataFrame(tasks)
-    mtm = tasks["update_time"].max()
-    cron_logger.info("TOTAL:{}, To:{}".format(len(tasks), mtm))
     return tasks
 
 
@@ -228,14 +243,13 @@ def embedding(docs, mdl, parser_config={}, callback=None):
     return tk_count
 
 
-def run_embedding(doc_id):
-    rows = collect(doc_id)
+def main():
+    rows = collect()
     if len(rows) == 0:
         return
 
     for _, r in rows.iterrows():
         callback = partial(set_progress, r["id"], r["from_page"], r["to_page"])
-        #callback(random.random()/10., "Task has been received.")
         try:
             embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING, llm_name=r["embd_id"], lang=r["language"])
         except Exception as e:
@@ -288,3 +302,14 @@ def run_embedding(doc_id):
                 "Chunk doc({}), token({}), chunks({}), elapsed:{}".format(
                     r["id"], tk_count, len(cks), timer()-st))
 
+
+
+if __name__ == "__main__":
+    peewee_logger = logging.getLogger('peewee')
+    peewee_logger.propagate = False
+    peewee_logger.addHandler(database_logger.handlers[0])
+    peewee_logger.setLevel(database_logger.level)
+
+    while True:
+        main()
+        close_connection()

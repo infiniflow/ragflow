@@ -14,7 +14,6 @@
 #  limitations under the License
 #
 
-import base64
 import os
 import pathlib
 import re
@@ -27,7 +26,7 @@ from flask_login import login_required, current_user
 from api.db.db_models import Task
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.task_service import TaskService
+from api.db.services.task_service import TaskService, queue_tasks
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
 from api.db.services import duplicate_name
@@ -390,7 +389,7 @@ def change_parser():
             DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1,
-                                                    doc.process_duration * -1)
+                                                    doc.process_duation * -1)
             if not e:
                 return get_data_error_result(retmsg="Document not found!")
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])

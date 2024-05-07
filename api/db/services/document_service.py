@@ -15,9 +15,6 @@
 #
 import random
 from datetime import datetime
-
-from peewee import Expression
-
 from elasticsearch_dsl import Q
 
 from api.settings import stat_logger
@@ -96,7 +93,7 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_newly_uploaded(cls, tm):
+    def get_newly_uploaded(cls):
         fields = [
             cls.model.id,
             cls.model.kb_id,
@@ -137,10 +134,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
+    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
         num = cls.model.update(token_num=cls.model.token_num + token_num,
                                chunk_num=cls.model.chunk_num + chunk_num,
-                               process_duration=cls.model.process_duration + duration).where(
+                               process_duation=cls.model.process_duation + duation).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(

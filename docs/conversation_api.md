@@ -344,7 +344,7 @@ This is usually used when upload a file to.
         },
         "parser_id": "general",
         "process_begin_at": null,
-        "process_duration": 0.0,
+        "process_duation": 0.0,
         "progress": 0.0,
         "progress_msg": "",
         "run": "0",

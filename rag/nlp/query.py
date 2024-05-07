@@ -8,13 +8,12 @@ import copy
 from elasticsearch_dsl import Q
 
 from rag.nlp import rag_tokenizer, term_weight, synonym
-from rag.utils.redis_conn import REDIS_CONN
 
 class EsQueryer:
     def __init__(self, es):
         self.tw = term_weight.Dealer()
         self.es = es
-        self.syn = synonym.Dealer(REDIS_CONN)
+        self.syn = synonym.Dealer()
         self.flds = ["ask_tks^10", "ask_small_tks"]
 
     @staticmethod
