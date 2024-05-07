@@ -45,7 +45,7 @@ export interface IKnowledgeFile {
   name: string;
   parser_id: string;
   process_begin_at?: any;
-  process_duration: number;
+  process_duation: number;
   progress: number; // parsing process
   progress_msg: string; // parsing log
   run: RunningStatus; // parsing status
