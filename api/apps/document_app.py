@@ -38,9 +38,7 @@ from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from rag.utils.minio_conn import MINIO
-from rag.utils.redis_conn import REDIS_CONN
 from api.utils.file_utils import filename_type, thumbnail
-from rag.settings import SVR_QUEUE_NAME
 
 
 @manager.route('/upload', methods=['POST'])
