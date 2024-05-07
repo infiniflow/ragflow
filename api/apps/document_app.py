@@ -14,7 +14,6 @@
 #  limitations under the License
 #
 
-import base64
 import os
 import pathlib
 import re
@@ -24,8 +23,10 @@ from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
+from api.db.db_models import Task
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.task_service import TaskService, queue_tasks
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
 from api.db.services import duplicate_name
@@ -37,7 +38,9 @@ from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from rag.utils.minio_conn import MINIO
+from rag.utils.redis_conn import REDIS_CONN
 from api.utils.file_utils import filename_type, thumbnail
+from rag.settings import SVR_QUEUE_NAME
 
 
 @manager.route('/upload', methods=['POST'])
@@ -277,6 +280,14 @@ def run():
                 return get_data_error_result(retmsg="Tenant not found!")
             ELASTICSEARCH.deleteByQuery(
                 Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+            
+            if str(req["run"]) == TaskStatus.RUNNING.value:
+                TaskService.filter_delete([Task.doc_id == id])
+                e, doc = DocumentService.get_by_id(id)
+                doc = doc.to_dict()
+                doc["tenant_id"] = tenant_id
+                bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
+                queue_tasks(doc, bucket, name)
 
         return get_json_result(data=True)
     except Exception as e:

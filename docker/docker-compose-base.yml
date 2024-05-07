@@ -29,24 +29,6 @@ services:
       - ragflow
     restart: always
 
-  #kibana:
-  #  depends_on:
-  #      es01:
-  #        condition: service_healthy
-  #  image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
-  #  container_name: ragflow-kibana
-  #  volumes:
-  #    - kibanadata:/usr/share/kibana/data
-  #  ports:
-  #    - ${KIBANA_PORT}:5601
-  #  environment:
-  #    - SERVERNAME=kibana
-  #    - ELASTICSEARCH_HOSTS=http://es01:9200
-  #    - TZ=${TIMEZONE}
-  #  mem_limit: ${MEM_LIMIT}
-  #  networks:
-  #    - ragflow
-
   mysql:
     image: mysql:5.7.18
     container_name: ragflow-mysql
@@ -74,7 +56,6 @@ services:
       retries: 3
     restart: always
 
-
   minio:
     image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
     container_name: ragflow-minio
@@ -92,15 +73,26 @@ services:
       - ragflow
     restart: always
 
+  redis:
+    image: redis:7.2.4
+    container_name: ragflow-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - ragflow
+    restart: always
+
+
 
 volumes:
   esdata01:
     driver: local
-#  kibanadata:
-#    driver: local
   mysql_data:
     driver: local
   minio_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:
