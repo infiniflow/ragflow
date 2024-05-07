@@ -89,6 +89,7 @@ def set_progress(task_id, from_page=0, to_page=-1,
     except Exception as e:
         cron_logger.error("set_progress:({}), {}".format(task_id, str(e)))
 
+    close_connection()
     if cancel:
         sys.exit()
 
@@ -312,4 +313,3 @@ if __name__ == "__main__":
 
     while True:
         main()
-        close_connection()
