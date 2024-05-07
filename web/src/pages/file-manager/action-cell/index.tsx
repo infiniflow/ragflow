@@ -6,10 +6,11 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  EyeOutlined,
   LinkOutlined,
 } from '@ant-design/icons';
 import { Button, Space, Tooltip } from 'antd';
-import { useHandleDeleteFile } from '../hooks';
+import { useHandleDeleteFile, useNavigateToDocument } from '../hooks';
 
 import styles from './index.less';
 
@@ -35,6 +36,7 @@ const ActionCell = ({
     [documentId],
     setSelectedRowKeys,
   );
+  const navigateToDocument = useNavigateToDocument(record.id, record.name);
 
   const onDownloadDocument = () => {
     downloadFile({
@@ -58,6 +60,15 @@ const ActionCell = ({
 
   return (
     <Space size={0}>
+      <Tooltip title={t('addToKnowledge')}>
+        <Button
+          type="text"
+          className={styles.iconButton}
+          onClick={navigateToDocument}
+        >
+          <EyeOutlined size={20} />
+        </Button>
+      </Tooltip>
       <Tooltip title={t('addToKnowledge')}>
         <Button
           type="text"
