@@ -50,7 +50,6 @@ joblib==1.3.2
 lxml==5.1.0
 MarkupSafe==2.1.5
 minio==7.2.4
-mpi4py==3.1.5
 mpmath==1.3.0
 multidict==6.0.5
 multiprocess==0.70.16
