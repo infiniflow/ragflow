@@ -95,8 +95,7 @@ class OpenAIEmbed(Base):
     def encode(self, texts: list, batch_size=32):
         res = self.client.embeddings.create(input=texts,
                                             model=self.model_name)
-        return np.array([d.embedding for d in res.data]
-                        ), res.usage.total_tokens
+        return np.array([d.embedding for d in res.data]), res.usage.total_tokens
 
     def encode_queries(self, text):
         res = self.client.embeddings.create(input=[text],

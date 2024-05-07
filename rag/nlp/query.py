@@ -9,12 +9,11 @@ from elasticsearch_dsl import Q
 
 from rag.nlp import rag_tokenizer, term_weight, synonym
 
-
 class EsQueryer:
     def __init__(self, es):
         self.tw = term_weight.Dealer()
         self.es = es
-        self.syn = synonym.Dealer(None)
+        self.syn = synonym.Dealer()
         self.flds = ["ask_tks^10", "ask_small_tks"]
 
     @staticmethod
