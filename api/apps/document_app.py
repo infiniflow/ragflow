@@ -24,8 +24,10 @@ from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
+from api.db.db_models import Task
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.task_service import TaskService
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
 from api.db.services import duplicate_name
@@ -284,6 +286,14 @@ def run():
                                          'doc_id': id,
                                          'run': str(req["run"]),
                                      })
+            if str(req["run"]) == TaskStatus.RUNNING.value:
+                TaskService.filter_delete([Task.doc_id == id])
+                e, doc = DocumentService.get_by_id(id)
+                doc = doc.to_dict()
+                doc["tenant_id"] = tenant_id
+                bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
+                queue_tasks(doc, bucket, name)
+
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
