@@ -280,11 +280,7 @@ def run():
                 return get_data_error_result(retmsg="Tenant not found!")
             ELASTICSEARCH.deleteByQuery(
                 Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
-            REDIS_CONN.queue_product(SVR_QUEUE_NAME,
-                                     message={
-                                         'doc_id': id,
-                                         'run': str(req["run"]),
-                                     })
+            
             if str(req["run"]) == TaskStatus.RUNNING.value:
                 TaskService.filter_delete([Task.doc_id == id])
                 e, doc = DocumentService.get_by_id(id)
