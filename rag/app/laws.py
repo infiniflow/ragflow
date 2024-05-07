@@ -113,7 +113,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         txt = ""
         if binary:
             encoding = find_codec(binary)
-            txt = binary.decode(encoding)
+            txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 while True:
