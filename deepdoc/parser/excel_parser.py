@@ -69,7 +69,7 @@ class RAGFlowExcelParser:
 
         if fnm.split(".")[-1].lower() in ["csv", "txt"]:
             encoding = find_codec(binary)
-            txt = binary.decode(encoding)
+            txt = binary.decode(encoding, errors="ignore")
             return len(txt.split("\n"))
 
 

@@ -13,17 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from peewee import Expression
-
+import random
+from datetime import datetime
 from elasticsearch_dsl import Q
 
-from api.utils import current_timestamp
+from api.settings import stat_logger
+from api.utils import current_timestamp, get_format_time
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 from rag.nlp import search
 
 from api.db import FileType, TaskStatus
-from api.db.db_models import DB, Knowledgebase, Tenant
+from api.db.db_models import DB, Knowledgebase, Tenant, Task
 from api.db.db_models import Document
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -92,7 +93,7 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_newly_uploaded(cls, tm):
+    def get_newly_uploaded(cls):
         fields = [
             cls.model.id,
             cls.model.kb_id,
@@ -196,3 +197,55 @@ class DocumentService(CommonService):
                                                    on=(Knowledgebase.id == cls.model.kb_id)).where(
             Knowledgebase.tenant_id == tenant_id)
         return len(docs)
+
+    @classmethod
+    @DB.connection_context()
+    def begin2parse(cls, docid):
+        cls.update_by_id(
+            docid, {"progress": random.random() * 1 / 100.,
+                    "progress_msg": "Task dispatched...",
+                    "process_begin_at": get_format_time()
+                    })
+
+    @classmethod
+    @DB.connection_context()
+    def update_progress(cls):
+        docs = cls.get_unfinished_docs()
+        for d in docs:
+            try:
+                tsks = Task.query(doc_id=d["id"], order_by=Task.create_time)
+                if not tsks:
+                    continue
+                msg = []
+                prg = 0
+                finished = True
+                bad = 0
+                status = TaskStatus.RUNNING.value
+                for t in tsks:
+                    if 0 <= t.progress < 1:
+                        finished = False
+                    prg += t.progress if t.progress >= 0 else 0
+                    msg.append(t.progress_msg)
+                    if t.progress == -1:
+                        bad += 1
+                prg /= len(tsks)
+                if finished and bad:
+                    prg = -1
+                    status = TaskStatus.FAIL.value
+                elif finished:
+                    status = TaskStatus.DONE.value
+
+                msg = "\n".join(msg)
+                info = {
+                    "process_duation": datetime.timestamp(
+                        datetime.now()) -
+                                       d["process_begin_at"].timestamp(),
+                    "run": status}
+                if prg != 0:
+                    info["progress"] = prg
+                if msg:
+                    info["progress_msg"] = msg
+                cls.update_by_id(d["id"], info)
+            except Exception as e:
+                stat_logger.error("fetch task exception:" + str(e))
+

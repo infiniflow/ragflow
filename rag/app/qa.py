@@ -107,7 +107,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         txt = ""
         if binary:
             encoding = find_codec(binary)
-            txt = binary.decode(encoding)
+            txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 while True:

@@ -50,7 +50,7 @@ The serving port of mysql inside the container. The modification should be synch
 The max database connection.
 
 ### stale_timeout
-The timeout duation in seconds.
+The timeout duration in seconds.
 
 ## minio
 
