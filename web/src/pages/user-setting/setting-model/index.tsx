@@ -45,6 +45,7 @@ const IconMap = {
   文心一言: 'wenxin',
   Ollama: 'ollama',
   Xinference: 'xinference',
+  DeepSeek: 'deepseek',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {

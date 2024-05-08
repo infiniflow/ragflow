@@ -1,7 +1,7 @@
 import { useSelectFileList } from '@/hooks/fileManagerHooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { formatDate } from '@/utils/date';
-import { Button, Flex, Space, Table, Tag } from 'antd';
+import { Button, Flex, Space, Table, Tag, Typography } from 'antd';
 import { ColumnsType } from 'antd/es/table';
 import ActionCell from './action-cell';
 import FileToolbar from './file-toolbar';
@@ -25,6 +25,8 @@ import { getExtension } from '@/utils/documentUtils';
 import ConnectToKnowledgeModal from './connect-to-knowledge-modal';
 import FolderCreateModal from './folder-create-modal';
 import styles from './index.less';
+
+const { Text } = Typography;
 
 const FileManager = () => {
   const { t } = useTranslate('fileManager');
@@ -69,6 +71,7 @@ const FileManager = () => {
       title: t('name'),
       dataIndex: 'name',
       key: 'name',
+      fixed: 'left',
       render(value, record) {
         return (
           <Flex gap={10} align="center">
@@ -82,10 +85,10 @@ const FileManager = () => {
                 className={styles.linkButton}
                 onClick={() => navigateToOtherFolder(record.id)}
               >
-                {value}
+                <Text ellipsis={{ tooltip: value }}>{value}</Text>
               </Button>
             ) : (
-              value
+              <Text ellipsis={{ tooltip: value }}>{value}</Text>
             )}
           </Flex>
         );
@@ -160,6 +163,7 @@ const FileManager = () => {
         rowSelection={rowSelection}
         loading={loading}
         pagination={pagination}
+        scroll={{ scrollToFirstRowOnChange: true, x: '100%' }}
       />
       <RenameModal
         visible={fileRenameVisible}
