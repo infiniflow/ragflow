@@ -75,4 +75,5 @@ export default {
   getAllParentFolder: `${api_host}/file/all_parent_folder`,
   createFolder: `${api_host}/file/create`,
   connectFileToKnowledge: `${api_host}/file2document/convert`,
+  getFile: `${api_host}/file/get`,
 };
