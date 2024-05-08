@@ -4,7 +4,7 @@ USER  root
 WORKDIR /ragflow
 
 ADD ./web ./web
-RUN cd ./web && npm i && npm run build
+RUN cd ./web && npm i --force && npm run build
 
 ADD ./api ./api
 ADD ./conf ./conf
