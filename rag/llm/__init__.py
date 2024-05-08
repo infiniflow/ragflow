@@ -45,6 +45,7 @@ ChatModel = {
     "Tongyi-Qianwen": QWenChat,
     "Ollama": OllamaChat,
     "Xinference": XinferenceChat,
-    "Moonshot": MoonshotChat
+    "Moonshot": MoonshotChat,
+    "DeepSeek": DeepSeekChat
 }
 

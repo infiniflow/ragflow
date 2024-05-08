@@ -123,7 +123,12 @@ factory_infos = [{
     "name": "Youdao",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-        "status": "1",
+    "status": "1",
+},{
+    "name": "DeepSeek",
+    "logo": "",
+    "tags": "LLM",
+    "status": "1",
 },
     # {
     #     "name": "文心一言",
@@ -330,6 +335,21 @@ def init_llm_factory():
             "tags": "TEXT EMBEDDING,",
             "max_tokens": 512,
             "model_type": LLMType.EMBEDDING.value
+        },
+        # ------------------------ DeepSeek -----------------------
+        {
+            "fid": factory_infos[8]["name"],
+            "llm_name": "deepseek-chat",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 32768,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[8]["name"],
+            "llm_name": "deepseek-coder",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 16385,
+            "model_type": LLMType.CHAT.value
         },
     ]
     for info in factory_infos:
