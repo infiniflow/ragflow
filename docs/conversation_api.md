@@ -310,7 +310,7 @@ This is usually used when display content of citation.
 ## Upload file
 
 This is usually used when upload a file to.
-### Path: /api/file/upload/
+### Path: /api/document/upload/
 ### Method: POST
 
 ### Parameter:
