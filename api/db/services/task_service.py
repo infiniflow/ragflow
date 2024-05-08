@@ -159,4 +159,4 @@ def queue_tasks(doc, bucket, name):
     DocumentService.begin2parse(doc["id"])
 
     for t in tsks:
-        REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=t)
+        assert REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=t), "Can't access Redis. Please check the Redis' status."
