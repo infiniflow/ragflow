@@ -9,7 +9,7 @@ RUN /root/miniconda3/envs/py11/bin/pip install onnxruntime-gpu --extra-index-url
 
 
 ADD ./web ./web
-RUN cd ./web && npm i && npm run build
+RUN cd ./web && npm i --force && npm run build
 
 ADD ./api ./api
 ADD ./conf ./conf
