@@ -254,8 +254,8 @@ def main():
         try:
             embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING, llm_name=r["embd_id"], lang=r["language"])
         except Exception as e:
-            traceback.print_stack(e)
-            callback(prog=-1, msg=str(e))
+            callback(-1, msg=str(e))
+            cron_logger.error(str(e))
             continue
 
         st = timer()
