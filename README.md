@@ -119,7 +119,7 @@
    $ chmod +x ./entrypoint.sh
    $ docker compose up -d
    ```
-   > Please note that running the above commands will automatically download the development version docker image of RAGFlow. If you want to download and run a specific version of docker image, please find the RAGFLOW_VERSION variable in the docker/.env file, change it to e.g. RAGFLOW_VERSION=v0.5.0, and then run the above command.
+   > Please note that running the above commands will automatically download the development version docker image of RAGFlow. If you want to download and run a specific version of docker image, please find the RAGFLOW_VERSION variable in the docker/.env file, change it to the corresponding version. For example, RAGFLOW_VERSION=v0.5.0, and then run the above commands.
 
    > The core image is about 9 GB in size and may take a while to load.
 
