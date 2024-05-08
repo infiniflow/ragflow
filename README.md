@@ -58,15 +58,14 @@
 
 ## 📌 Latest Features
 
-- 2024-05-08 Integrate new LLM: DeepSeek.
-- 2024-04-26 Add file management.
-- 2024-04-19 Support conversation API ([detail](./docs/conversation_api.md)).
-- 2024-04-16 Add an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding), and [FastEmbed](https://github.com/qdrant/fastembed) which is designed specifically for light and speedy embedding.
-- 2024-04-16 
-- 2024-04-11 Support [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 Add a new layout recognization model for analyzing Laws documentation.
-- 2024-04-08 Support [Ollama](./docs/ollama.md) for local LLM deployment.
-- 2024-04-07 Support Chinese UI.
+- 2024-05-08 Integrates LLM DeepSeek.
+- 2024-04-26 Adds file management.
+- 2024-04-19 Supports conversation API ([detail](./docs/conversation_api.md)).
+- 2024-04-16 Integrates an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding), and [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
+- 2024-04-11 Supports [Xinference](./docs/xinference.md) for local LLM deployment.
+- 2024-04-10 Adds a new layout recognition model for analyzing Laws documentation.
+- 2024-04-08 Supports [Ollama](./docs/ollama.md) for local LLM deployment.
+- 2024-04-07 Supports Chinese UI.
 
 ## 🔎 System Architecture
 
@@ -182,7 +181,7 @@ To build the Docker images from source:
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.5.0 .
+$ docker build -t infiniflow/ragflow:dev .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
