@@ -6,7 +6,6 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
-  EyeOutlined,
   LinkOutlined,
 } from '@ant-design/icons';
 import { Button, Space, Tooltip } from 'antd';
@@ -60,7 +59,7 @@ const ActionCell = ({
 
   return (
     <Space size={0}>
-      <Tooltip title={t('addToKnowledge')}>
+      {/* <Tooltip title={t('addToKnowledge')}>
         <Button
           type="text"
           className={styles.iconButton}
@@ -68,7 +67,7 @@ const ActionCell = ({
         >
           <EyeOutlined size={20} />
         </Button>
-      </Tooltip>
+      </Tooltip> */}
       <Tooltip title={t('addToKnowledge')}>
         <Button
           type="text"

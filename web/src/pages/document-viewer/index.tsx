@@ -3,6 +3,8 @@ import FileViewer from 'react-file-viewer';
 import { useParams, useSearchParams } from 'umi';
 import Excel from './excel';
 
+import styles from './index.less';
+
 const DocumentViewer = () => {
   const { id: documentId } = useParams();
   const api = `${api_host}/file/get/${documentId}`;
@@ -14,7 +16,7 @@ const DocumentViewer = () => {
   };
 
   return (
-    <section style={{ width: '100%' }}>
+    <section className={styles.viewerWrapper}>
       {ext === 'xlsx' && <Excel filePath={api}></Excel>}
       {ext !== 'xlsx' && (
         <FileViewer fileType={ext} filePath={api} onError={onError} />
