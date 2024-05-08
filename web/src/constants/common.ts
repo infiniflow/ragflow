@@ -68,3 +68,23 @@ export const FileMimeTypeMap = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   mp4: 'video/mp4',
 };
+
+//#region file preview
+export const Images = [
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'bmp',
+  'tif',
+  'tiff',
+  'webp',
+  // 'svg',
+  'ico',
+];
+
+// Without FileViewer
+export const ExceptiveType = ['xlsx', 'xls', 'pdf', ...Images];
+
+export const SupportedPreviewDocumentTypes = ['docx', 'csv', ...ExceptiveType];
+//#endregion

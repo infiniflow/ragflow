@@ -13,7 +13,6 @@ import {
 import { useGetPagination, useSetPagination } from '@/hooks/logicHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IFile } from '@/interfaces/database/file-manager';
-import { getExtension } from '@/utils/documentUtils';
 import { PaginationProps } from 'antd';
 import { UploadFile } from 'antd/lib';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -338,13 +337,4 @@ export const useHandleBreadcrumbClick = () => {
   );
 
   return { handleBreadcrumbClick };
-};
-
-export const useNavigateToDocument = (documentId: string, name: string) => {
-  const navigate = useNavigate();
-  const navigateToDocument = () => {
-    navigate(`/document/${documentId}?ext=${getExtension(name)}`);
-  };
-
-  return navigateToDocument;
 };
