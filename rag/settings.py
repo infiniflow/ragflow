@@ -32,8 +32,6 @@ except Exception as e:
     pass
 DOC_MAXIMUM_SIZE = 128 * 1024 * 1024
 
-TASK_EXECUTOR_THREADS = get_base_config("task_executor_threads", 4)
-
 # Logger
 LoggerFactory.set_directory(
     os.path.join(

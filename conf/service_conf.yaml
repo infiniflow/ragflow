@@ -39,4 +39,3 @@ permission:
   switch: false
   component: false
   dataset: false
-task_executor_threads: 4
