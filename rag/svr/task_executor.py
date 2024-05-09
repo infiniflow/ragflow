@@ -21,6 +21,7 @@ import hashlib
 import copy
 import re
 import sys
+import threading
 import time
 import traceback
 from functools import partial
@@ -28,7 +29,7 @@ from functools import partial
 from api.db.services.file2document_service import File2DocumentService
 from rag.utils.minio_conn import MINIO
 from api.db.db_models import close_connection
-from rag.settings import database_logger, SVR_QUEUE_NAME
+from rag.settings import database_logger, SVR_QUEUE_NAME, TASK_EXECUTOR_THREADS
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 from multiprocessing import Pool
 import numpy as np
@@ -304,6 +305,11 @@ def main():
                     r["id"], tk_count, len(cks), timer()-st))
 
 
+def worker(thread_number):
+    cron_logger.info("Task worker run : {}".format(str(thread_number)))
+    while True:
+        main()
+
 
 if __name__ == "__main__":
     peewee_logger = logging.getLogger('peewee')
@@ -311,5 +317,6 @@ if __name__ == "__main__":
     peewee_logger.addHandler(database_logger.handlers[0])
     peewee_logger.setLevel(database_logger.level)
 
-    while True:
-        main()
+    for i in range(TASK_EXECUTOR_THREADS):
+        t = threading.Thread(target=worker, args=(i,))
+        t.start()
