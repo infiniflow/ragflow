@@ -16,9 +16,9 @@ minio:
 es:
   hosts: 'https://159.138.86.213:9200'
   user: 'elastic'
-  password:
+  password: ''
 user_default_llm:
-  factory: 'Tongyi-Qianwen'
+  factory: 'OpenAI'
   api_key: 'sk-xxxxxxxxxxxxx'
   base_url: ''
 oauth:
