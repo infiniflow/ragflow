@@ -52,16 +52,21 @@ class Dealer:
     def search(self, req, idxnm, emb_mdl=None):
         qst = req.get("question", "")
         bqry, keywords = self.qryr.question(qst)
-        if req.get("kb_ids"):
-            bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
-        if req.get("doc_ids"):
-            bqry.filter.append(Q("terms", doc_id=req["doc_ids"]))
-        if "available_int" in req:
-            if req["available_int"] == 0:
-                bqry.filter.append(Q("range", available_int={"lt": 1}))
-            else:
-                bqry.filter.append(
-                    Q("bool", must_not=Q("range", available_int={"lt": 1})))
+        def add_filters(bqry):
+            nonlocal req
+            if req.get("kb_ids"):
+                bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
+            if req.get("doc_ids"):
+                bqry.filter.append(Q("terms", doc_id=req["doc_ids"]))
+            if "available_int" in req:
+                if req["available_int"] == 0:
+                    bqry.filter.append(Q("range", available_int={"lt": 1}))
+                else:
+                    bqry.filter.append(
+                        Q("bool", must_not=Q("range", available_int={"lt": 1})))
+            return bqry
+
+        bqry = add_filters(bqry)
         bqry.boost = 0.05
 
         s = Search()
@@ -117,8 +122,7 @@ class Dealer:
         es_logger.info("TOTAL: {}".format(self.es.getTotal(res)))
         if self.es.getTotal(res) == 0 and "knn" in s:
             bqry, _ = self.qryr.question(qst, min_match="10%")
-            if req.get("kb_ids"):
-                bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
+            bqry = add_filters(bqry)
             s["query"] = bqry.to_dict()
             s["knn"]["filter"] = bqry.to_dict()
             s["knn"]["similarity"] = 0.17
