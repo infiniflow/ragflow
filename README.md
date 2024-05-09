@@ -247,6 +247,29 @@ $ chmod +x ./entrypoint.sh
 $ bash ./entrypoint.sh
 ```
 
+7. Start the WebUI service
+```bash
+$ cd web
+$ npm install --registry=https://registry.npmmirror.com --force
+$ vim .umirc.ts
+# Modify proxy.target to 127.0.0.1:9380
+$ npm run dev 
+```
+
+8. Deploy the WebUI service
+```bash
+$ cd web
+$ npm install --registry=https://registry.npmmirror.com --force
+$ umi build
+$ mkdir -p /ragflow/web
+$ cp -r dist /ragflow/web
+$ apt install nginx -y
+$ cp ../docker/nginx/proxy.conf /etc/nginx
+$ cp ../docker/nginx/nginx.conf /etc/nginx
+$ cp ../docker/nginx/ragflow.conf /etc/nginx/conf.d
+$ systemctl start nginx
+```
+
 ## 📚 Documentation
 
 - [FAQ](./docs/faq.md)
