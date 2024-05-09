@@ -367,11 +367,11 @@ You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow
 2. Right click the desired knowledge base to display the **Configuration** dialogue. 
 3. Choose **Q&A** as the chunk method and click **Save** to confirm your change. 
 
-### 7 Do I need to connect to Redis?
+### 7. Do I need to connect to Redis?
 
 No, connecting to Redis is not required. 
 
-### 8 `Error: Range of input length should be [1, 30000]`
+### 8. `Error: Range of input length should be [1, 30000]`
 
 This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue: 
 
@@ -382,14 +382,15 @@ This error occurs because there are too many chunks matching your search criteri
 
 ![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
 
-### 9 How to upgrade RAGFlow?
+### 9. How to upgrade RAGFlow?
    
-   You can upgrade RAGFlow to either the dev version or the latest version 
+You can upgrade RAGFlow to either the dev version or the latest version:
+
 - Dev versions are for developers and contributors. They are published on a nightly basis and may crash because they are not fully tested. We cannot guarantee their validity and you are at your own risk trying out latest, untested features.
-- The latest version is stable and reliable, and works best with RAGFlow users.
+- The latest version refers to the most recent, officially published release. It is stable and works best with regular users.
 
 
-   Update RAGFlow to dev version:
+To upgrade RAGFlow to the dev version:
 
 1. Pull the latest source code
    ```bash

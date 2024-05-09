@@ -58,12 +58,12 @@
 
 ## 📌 Latest Features
 
-- 2024-05-08 Integrates LLM DeepSeek.
+- 2024-05-08 Integrates LLM DeepSeek-V2.
 - 2024-04-26 Adds file management.
 - 2024-04-19 Supports conversation API ([detail](./docs/conversation_api.md)).
 - 2024-04-16 Integrates an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding), and [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
 - 2024-04-11 Supports [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 Adds a new layout recognition model for analyzing Laws documentation.
+- 2024-04-10 Adds a new layout recognition model for analyzing legal documents.
 - 2024-04-08 Supports [Ollama](./docs/ollama.md) for local LLM deployment.
 - 2024-04-07 Supports Chinese UI.
 
