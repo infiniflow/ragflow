@@ -88,11 +88,12 @@ const routes = [
         path: '/flow',
         component: '@/pages/flow',
       },
-      {
-        path: 'document/:id',
-        component: '@/pages/document-viewer',
-      },
     ],
+  },
+  {
+    path: 'document/:id',
+    component: '@/pages/document-viewer',
+    layout: false,
   },
   {
     path: '/*',

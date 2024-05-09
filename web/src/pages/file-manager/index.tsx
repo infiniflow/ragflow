@@ -96,8 +96,8 @@ const FileManager = () => {
     },
     {
       title: t('uploadDate'),
-      dataIndex: 'create_date',
-      key: 'create_date',
+      dataIndex: 'create_time',
+      key: 'create_time',
       render(text) {
         return formatDate(text);
       },
