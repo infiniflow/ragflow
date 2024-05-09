@@ -30,6 +30,7 @@ import MarkdownContent from '../markdown-content';
 
 import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/commonHooks';
+import { useGetDocumentUrl } from '@/hooks/documentHooks';
 import { getExtension, isPdf } from '@/utils/documentUtils';
 import styles from './index.less';
 
@@ -44,6 +45,7 @@ const MessageItem = ({
 }) => {
   const userInfo = useSelectUserInfo();
   const fileThumbnails = useSelectFileThumbnails();
+  const getDocumentUrl = useGetDocumentUrl();
 
   const isAssistant = item.role === MessageType.Assistant;
 
@@ -113,7 +115,7 @@ const MessageItem = ({
                         )}
 
                         <NewDocumentLink
-                          documentId={item.doc_id}
+                          link={getDocumentUrl(item.doc_id)}
                           preventDefault={!isPdf(item.doc_name)}
                         >
                           {item.doc_name}

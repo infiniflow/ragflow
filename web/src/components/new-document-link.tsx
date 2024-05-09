@@ -1,22 +1,24 @@
-import { api_host } from '@/utils/api';
 import React from 'react';
 
 interface IProps extends React.PropsWithChildren {
-  documentId: string;
+  link: string;
   preventDefault?: boolean;
+  color?: string;
 }
 
 const NewDocumentLink = ({
   children,
-  documentId,
+  link,
   preventDefault = false,
+  color = 'rgb(15, 79, 170)',
 }: IProps) => {
   return (
     <a
       target="_blank"
       onClick={!preventDefault ? undefined : (e) => e.preventDefault()}
-      href={`${api_host}/document/get/${documentId}`}
+      href={link}
       rel="noreferrer"
+      style={{ color }}
     >
       {children}
     </a>
