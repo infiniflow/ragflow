@@ -382,11 +382,11 @@ This error occurs because there are too many chunks matching your search criteri
 
 ![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
 
-### 9 How to update RAGFlow to new version?
+### 9 How to upgrade RAGFlow?
    
-   You can try to update RAGFlow to 
-- dev version: High update frequency,for developers, testers, and technology enthusiasts
-- latest version: Stable and reliable release version,for users
+   You can upgrade RAGFlow to either the dev version or the latest version 
+- Dev versions are for developers and contributors. They are published on a nightly basis and may crash because they are not fully tested. We cannot guarantee their validity and you are at your own risk trying out latest, untested features.
+- The latest version is stable and reliable, and works best with RAGFlow users.
 
 
    Update RAGFlow to dev version:
@@ -411,16 +411,15 @@ This error occurs because there are too many chunks matching your search criteri
    docker compose -f docker-compose-CN.yml up -d
    ```
    
-Update RAGFlow to latest version:
+To upgrade RAGFlow to latest version:
 
-1. Update **ragflow/docker/.env**
+1. Update **ragflow/docker/.env** as follows:
    ```bash
    RAGFLOW_VERSION=latest
    ```
-2. Pull the latest source code
+2. Pull the latest source code:
    ```bash
    cd ragflow
-   
    git pull
    ```   
 
