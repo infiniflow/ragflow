@@ -487,6 +487,7 @@ export default {
       local: '本地上传',
       s3: 'S3 上传',
       preview: '预览',
+      fileError: '文件错误',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -10,7 +10,6 @@ import { LoginModelState } from '@/pages/login/model';
 import { SettingModelState } from '@/pages/user-setting/model';
 
 declare module 'lodash';
-declare module 'react-file-viewer';
 
 function useSelector<TState = RootState, TSelected = unknown>(
   selector: (state: TState) => TSelected,
