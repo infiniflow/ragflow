@@ -412,7 +412,7 @@ To upgrade RAGFlow to the dev version:
    docker compose -f docker-compose-CN.yml up -d
    ```
    
-To upgrade RAGFlow to latest version:
+To upgrade RAGFlow to the latest version:
 
 1. Update **ragflow/docker/.env** as follows:
    ```bash
