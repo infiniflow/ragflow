@@ -27,7 +27,8 @@ class KnowledgebaseService(CommonService):
                           page_number, items_per_page, orderby, desc):
         kbs = cls.model.select().where(
             ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission ==
-             TenantPermission.TEAM.value)) | (cls.model.tenant_id == user_id))
+                                                            TenantPermission.TEAM.value)) | (
+                         cls.model.tenant_id == user_id))
             & (cls.model.status == StatusEnum.VALID.value)
         )
         if desc:
@@ -56,7 +57,8 @@ class KnowledgebaseService(CommonService):
             cls.model.chunk_num,
             cls.model.parser_id,
             cls.model.parser_config]
-        kbs = cls.model.select(*fields).join(Tenant, on=((Tenant.id == cls.model.tenant_id) & (Tenant.status == StatusEnum.VALID.value))).where(
+        kbs = cls.model.select(*fields).join(Tenant, on=(
+                    (Tenant.id == cls.model.tenant_id) & (Tenant.status == StatusEnum.VALID.value))).where(
             (cls.model.id == kb_id),
             (cls.model.status == StatusEnum.VALID.value)
         )
@@ -86,6 +88,7 @@ class KnowledgebaseService(CommonService):
                     old[k] = list(set(old[k] + v))
                 else:
                     old[k] = v
+
         dfs_update(m.parser_config, config)
         cls.update_by_id(id, {"parser_config": m.parser_config})
 
@@ -97,3 +100,15 @@ class KnowledgebaseService(CommonService):
             if k.parser_config and "field_map" in k.parser_config:
                 conf.update(k.parser_config["field_map"])
         return conf
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_name(cls, kb_name, tenant_id):
+        kb = cls.model.select().where(
+            (cls.model.name == kb_name)
+            & (cls.model.tenant_id == tenant_id)
+            & (cls.model.status == StatusEnum.VALID.value)
+        )
+        if kb:
+            return True, kb[0]
+        return False, None

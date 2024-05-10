@@ -125,15 +125,21 @@ export const useFetchKnowledgeBaseConfiguration = () => {
   }, [fetchKnowledgeBaseConfiguration]);
 };
 
+export const useSelectKnowledgeList = () => {
+  const knowledgeModel = useSelector((state) => state.knowledgeModel);
+  const { data = [] } = knowledgeModel;
+  return data;
+};
+
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
-): { list: IKnowledge[]; loading: boolean } => {
+) => {
   const dispatch = useDispatch();
   const loading = useOneNamespaceEffectsLoading('knowledgeModel', ['getList']);
 
-  const knowledgeModel = useSelector((state: any) => state.knowledgeModel);
+  const knowledgeModel = useSelector((state) => state.knowledgeModel);
   const { data = [] } = knowledgeModel;
-  const list = useMemo(() => {
+  const list: IKnowledge[] = useMemo(() => {
     return shouldFilterListWithoutDocument
       ? data.filter((x: IKnowledge) => x.chunk_num > 0)
       : data;
@@ -149,7 +155,7 @@ export const useFetchKnowledgeList = (
     fetchList();
   }, [fetchList]);
 
-  return { list, loading };
+  return { list, loading, fetchList };
 };
 
 export const useSelectFileThumbnails = () => {

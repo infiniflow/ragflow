@@ -50,7 +50,9 @@ const ChatApiKeyModal = ({
         title={t('apiKey')}
         open={visible}
         onCancel={hideModal}
+        cancelButtonProps={{ style: { display: 'none' } }}
         style={{ top: 300 }}
+        onOk={hideModal}
         width={'50vw'}
       >
         <Table

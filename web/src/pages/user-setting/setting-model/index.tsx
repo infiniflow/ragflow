@@ -45,6 +45,7 @@ const IconMap = {
   文心一言: 'wenxin',
   Ollama: 'ollama',
   Xinference: 'xinference',
+  DeepSeek: 'deepseek',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
@@ -223,12 +224,12 @@ const UserSettingModel = () => {
   ];
 
   return (
-    <>
+    <section id="xx" className={styles.modelWrapper}>
       <Spin spinning={loading}>
-        <section className={styles.modelWrapper}>
+        <section className={styles.modelContainer}>
           <SettingTitle
             title={t('model')}
-            description={t('profileDescription')}
+            description={t('modelDescription')}
             showRightButton
             clickButton={showSystemSettingModal}
           ></SettingTitle>
@@ -257,7 +258,7 @@ const UserSettingModel = () => {
         loading={llmAddingLoading}
         llmFactory={selectedLlmFactory}
       ></OllamaModal>
-    </>
+    </section>
   );
 };
 

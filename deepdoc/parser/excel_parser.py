@@ -3,8 +3,10 @@ from openpyxl import load_workbook
 import sys
 from io import BytesIO
 
+from rag.nlp import find_codec
 
-class HuExcelParser:
+
+class RAGFlowExcelParser:
     def html(self, fnm):
         if isinstance(fnm, str):
             wb = load_workbook(fnm)
@@ -66,10 +68,11 @@ class HuExcelParser:
                 return total
 
         if fnm.split(".")[-1].lower() in ["csv", "txt"]:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding, errors="ignore")
             return len(txt.split("\n"))
 
 
 if __name__ == "__main__":
-    psr = HuExcelParser()
+    psr = RAGFlowExcelParser()
     psr(sys.argv[1])

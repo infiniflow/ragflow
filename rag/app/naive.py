@@ -10,11 +10,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from tika import parser
 from io import BytesIO
 from docx import Document
+from timeit import default_timer as timer
 import re
 from deepdoc.parser.pdf_parser import PlainParser
-from rag.nlp import huqie, naive_merge, tokenize_table, tokenize_chunks
+from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from rag.settings import cron_logger
 
@@ -66,7 +68,8 @@ class Docx(DocxParser):
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
-        callback(msg="OCR is  running...")
+        start = timer()
+        callback(msg="OCR is running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -75,12 +78,11 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished")
+        cron_logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
 
-        from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.63, "Layout analysis finished.")
-        print("paddle layouts:", timer() - start)
         self._table_transformer_job(zoomin)
         callback(0.65, "Table analysis finished.")
         self._text_merge()
@@ -90,8 +92,7 @@ class Pdf(PdfParser):
         self._concat_downward()
         #self._filter_forpages()
 
-        cron_logger.info("paddle layouts:".format(
-            (timer() - start) / (self.total_page + 0.1)))
+        cron_logger.info("layouts: {}".format(timer() - start))
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], tbls
 
@@ -111,13 +112,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
     doc = {
         "docnm_kwd": filename,
-        "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
-    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
+    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     pdf_parser = None
     sections = []
-    if re.search(r"\.docx?$", filename, re.IGNORECASE):
+    if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = Docx()(filename, binary)
         res = tokenize_table(tbls, doc, eng)
@@ -135,14 +136,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         excel_parser = ExcelParser()
         sections = [(excel_parser.html(binary), "")]
 
-    elif re.search(r"\.txt$", filename, re.IGNORECASE):
+    elif re.search(r"\.(txt|md)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
-            try:
-                txt = binary.decode("utf-8")
-            except Exception as e:
-                txt = binary.decode("gb2312")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 while True:
@@ -154,16 +153,26 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections = [(l, "") for l in sections if l]
         callback(0.8, "Finish parsing.")
 
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        binary = BytesIO(binary)
+        doc_parsed = parser.from_buffer(binary)
+        sections = doc_parsed['content'].split('\n')
+        sections = [(l, "") for l in sections if l]
+        callback(0.8, "Finish parsing.")
+
     else:
         raise NotImplementedError(
-            "file type not supported yet(docx, pdf, txt supported)")
+            "file type not supported yet(doc, docx, pdf, txt supported)")
 
+    st = timer()
     chunks = naive_merge(
         sections, parser_config.get(
             "chunk_token_num", 128), parser_config.get(
             "delimiter", "\n!?。；！？"))
 
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+    cron_logger.info("naive_merge({}): {}".format(filename, timer() - st))
     return res
 
 

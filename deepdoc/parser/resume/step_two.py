@@ -3,7 +3,7 @@ import re, copy, time, datetime, demjson3, \
     traceback, signal
 import numpy as np
 from deepdoc.parser.resume.entities import degrees, schools, corporations
-from rag.nlp import huqie, surname
+from rag.nlp import rag_tokenizer, surname
 from xpinyin import Pinyin
 from contextlib import contextmanager
 
@@ -83,7 +83,7 @@ def forEdu(cv):
         if n.get("school_name") and isinstance(n["school_name"], str):
             sch.append(re.sub(r"(211|985|重点大学|[,&;；-])", "", n["school_name"]))
             e["sch_nm_kwd"] = sch[-1]
-        fea.append(huqie.qieqie(huqie.qie(n.get("school_name", ""))).split(" ")[-1])
+        fea.append(rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(n.get("school_name", ""))).split(" ")[-1])
 
         if n.get("discipline_name") and isinstance(n["discipline_name"], str):
             maj.append(n["discipline_name"])
@@ -166,10 +166,10 @@ def forEdu(cv):
             if "tag_kwd" not in cv: cv["tag_kwd"] = []
             if "好学历" not in cv["tag_kwd"]: cv["tag_kwd"].append("好学历")
 
-    if cv.get("major_kwd"): cv["major_tks"] = huqie.qie(" ".join(maj))
-    if cv.get("school_name_kwd"): cv["school_name_tks"] = huqie.qie(" ".join(sch))
-    if cv.get("first_school_name_kwd"): cv["first_school_name_tks"] = huqie.qie(" ".join(fsch))
-    if cv.get("first_major_kwd"): cv["first_major_tks"] = huqie.qie(" ".join(fmaj))
+    if cv.get("major_kwd"): cv["major_tks"] = rag_tokenizer.tokenize(" ".join(maj))
+    if cv.get("school_name_kwd"): cv["school_name_tks"] = rag_tokenizer.tokenize(" ".join(sch))
+    if cv.get("first_school_name_kwd"): cv["first_school_name_tks"] = rag_tokenizer.tokenize(" ".join(fsch))
+    if cv.get("first_major_kwd"): cv["first_major_tks"] = rag_tokenizer.tokenize(" ".join(fmaj))
 
     return cv
 
@@ -187,11 +187,11 @@ def forProj(cv):
         if n.get("achivement"): desc.append(str(n["achivement"]))
 
     if pro_nms:
-        # cv["pro_nms_tks"] = huqie.qie(" ".join(pro_nms))
-        cv["project_name_tks"] = huqie.qie(pro_nms[0])
+        # cv["pro_nms_tks"] = rag_tokenizer.tokenize(" ".join(pro_nms))
+        cv["project_name_tks"] = rag_tokenizer.tokenize(pro_nms[0])
     if desc:
-        cv["pro_desc_ltks"] = huqie.qie(rmHtmlTag(" ".join(desc)))
-        cv["project_desc_ltks"] = huqie.qie(rmHtmlTag(desc[0]))
+        cv["pro_desc_ltks"] = rag_tokenizer.tokenize(rmHtmlTag(" ".join(desc)))
+        cv["project_desc_ltks"] = rag_tokenizer.tokenize(rmHtmlTag(desc[0]))
 
     return cv
 
@@ -280,25 +280,25 @@ def forWork(cv):
     if fea["corporation_id"]: cv["corporation_id"] = fea["corporation_id"]
 
     if fea["position_name"]:
-        cv["position_name_tks"] = huqie.qie(fea["position_name"][0])
-        cv["position_name_sm_tks"] = huqie.qieqie(cv["position_name_tks"])
-        cv["pos_nm_tks"] = huqie.qie(" ".join(fea["position_name"][1:]))
+        cv["position_name_tks"] = rag_tokenizer.tokenize(fea["position_name"][0])
+        cv["position_name_sm_tks"] = rag_tokenizer.fine_grained_tokenize(cv["position_name_tks"])
+        cv["pos_nm_tks"] = rag_tokenizer.tokenize(" ".join(fea["position_name"][1:]))
 
     if fea["industry_name"]:
-        cv["industry_name_tks"] = huqie.qie(fea["industry_name"][0])
-        cv["industry_name_sm_tks"] = huqie.qieqie(cv["industry_name_tks"])
-        cv["indu_nm_tks"] = huqie.qie(" ".join(fea["industry_name"][1:]))
+        cv["industry_name_tks"] = rag_tokenizer.tokenize(fea["industry_name"][0])
+        cv["industry_name_sm_tks"] = rag_tokenizer.fine_grained_tokenize(cv["industry_name_tks"])
+        cv["indu_nm_tks"] = rag_tokenizer.tokenize(" ".join(fea["industry_name"][1:]))
 
     if fea["corporation_name"]:
         cv["corporation_name_kwd"] = fea["corporation_name"][0]
         cv["corp_nm_kwd"] = fea["corporation_name"]
-        cv["corporation_name_tks"] = huqie.qie(fea["corporation_name"][0])
-        cv["corporation_name_sm_tks"] = huqie.qieqie(cv["corporation_name_tks"])
-        cv["corp_nm_tks"] = huqie.qie(" ".join(fea["corporation_name"][1:]))
+        cv["corporation_name_tks"] = rag_tokenizer.tokenize(fea["corporation_name"][0])
+        cv["corporation_name_sm_tks"] = rag_tokenizer.fine_grained_tokenize(cv["corporation_name_tks"])
+        cv["corp_nm_tks"] = rag_tokenizer.tokenize(" ".join(fea["corporation_name"][1:]))
 
     if fea["responsibilities"]:
-        cv["responsibilities_ltks"] = huqie.qie(fea["responsibilities"][0])
-        cv["resp_ltks"] = huqie.qie(" ".join(fea["responsibilities"][1:]))
+        cv["responsibilities_ltks"] = rag_tokenizer.tokenize(fea["responsibilities"][0])
+        cv["resp_ltks"] = rag_tokenizer.tokenize(" ".join(fea["responsibilities"][1:]))
 
     if fea["subordinates_count"]: fea["subordinates_count"] = [int(i) for i in fea["subordinates_count"] if
                                                                re.match(r"[^0-9]+$", str(i))]
@@ -444,15 +444,15 @@ def parse(cv):
                 if nms:
                     t = k[:-4]
                     cv[f"{t}_kwd"] = nms
-                    cv[f"{t}_tks"] = huqie.qie(" ".join(nms))
+                    cv[f"{t}_tks"] = rag_tokenizer.tokenize(" ".join(nms))
             except Exception as e:
                 print("【EXCEPTION】:", str(traceback.format_exc()), cv[k])
                 cv[k] = []
 
         # tokenize fields
         if k in tks_fld:
-            cv[f"{k}_tks"] = huqie.qie(cv[k])
-            if k in small_tks_fld: cv[f"{k}_sm_tks"] = huqie.qie(cv[f"{k}_tks"])
+            cv[f"{k}_tks"] = rag_tokenizer.tokenize(cv[k])
+            if k in small_tks_fld: cv[f"{k}_sm_tks"] = rag_tokenizer.tokenize(cv[f"{k}_tks"])
 
         # keyword fields
         if k in kwd_fld: cv[f"{k}_kwd"] = [n.lower()
@@ -492,7 +492,7 @@ def parse(cv):
         cv["name_kwd"] = name
         cv["name_pinyin_kwd"] = PY.get_pinyins(nm[:20], ' ')[:3]
         cv["name_tks"] = (
-                huqie.qie(name) + " " + (" ".join(list(name)) if not re.match(r"[a-zA-Z ]+$", name) else "")
+                rag_tokenizer.tokenize(name) + " " + (" ".join(list(name)) if not re.match(r"[a-zA-Z ]+$", name) else "")
         ) if name else ""
     else:
         cv["integerity_flt"] /= 2.
@@ -515,7 +515,7 @@ def parse(cv):
         cv["updated_at_dt"] = f"%s-%02d-%02d 00:00:00" % (y, int(m), int(d))
         # long text tokenize
 
-    if cv.get("responsibilities"): cv["responsibilities_ltks"] = huqie.qie(rmHtmlTag(cv["responsibilities"]))
+    if cv.get("responsibilities"): cv["responsibilities_ltks"] = rag_tokenizer.tokenize(rmHtmlTag(cv["responsibilities"]))
 
     # for yes or no field
     fea = []

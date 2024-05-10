@@ -1,6 +1,7 @@
 export interface Pagination {
   current: number;
   pageSize: number;
+  total: number;
 }
 
 export interface BaseState {
@@ -13,5 +14,5 @@ export interface IModalProps<T> {
   hideModal(): void;
   visible: boolean;
   loading?: boolean;
-  onOk?(payload?: T): Promise<void> | void;
+  onOk?(payload?: T): Promise<any> | void;
 }

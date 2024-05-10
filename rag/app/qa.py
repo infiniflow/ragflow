@@ -15,8 +15,8 @@ from copy import deepcopy
 from io import BytesIO
 from nltk import word_tokenize
 from openpyxl import load_workbook
-from rag.nlp import is_english, random_choices
-from rag.nlp import huqie
+from rag.nlp import is_english, random_choices, find_codec
+from rag.nlp import rag_tokenizer
 from deepdoc.parser import ExcelParser
 
 
@@ -73,8 +73,8 @@ def beAdoc(d, q, a, eng):
     aprefix = "Answer: " if eng else "回答："
     d["content_with_weight"] = "\t".join(
         [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
-    d["content_ltks"] = huqie.qie(q)
-    d["content_sm_ltks"] = huqie.qieqie(d["content_ltks"])
+    d["content_ltks"] = rag_tokenizer.tokenize(q)
+    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     return d
 
 
@@ -94,7 +94,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     res = []
     doc = {
         "docnm_kwd": filename,
-        "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -106,7 +106,8 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 while True:
@@ -115,17 +116,30 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                         break
                     txt += l
         lines = txt.split("\n")
-        #is_english([rmPrefix(l) for l in lines[:100]])
+        comma, tab = 0, 0
+        for l in lines:
+            if len(l.split(",")) == 2: comma += 1
+            if len(l.split("\t")) == 2: tab += 1
+        delimiter = "\t" if tab >= comma else ","
+
         fails = []
-        for i, line in enumerate(lines):
-            arr = [l for l in line.split("\t") if len(l) > 1]
+        question, answer = "", ""
+        i = 0
+        while i < len(lines):
+            arr = lines[i].split(delimiter)
             if len(arr) != 2:
-                fails.append(str(i))
-                continue
-            res.append(beAdoc(deepcopy(doc), arr[0], arr[1], eng))
+                if question: answer += "\n" + lines[i]
+                else:
+                    fails.append(str(i+1))
+            elif len(arr) == 2:
+                if question and answer: res.append(beAdoc(deepcopy(doc), question, answer, eng))
+                question, answer = arr
+            i += 1
             if len(res) % 999 == 0:
                 callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (
                     f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+
+        if question: res.append(beAdoc(deepcopy(doc), question, answer, eng))
 
         callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))

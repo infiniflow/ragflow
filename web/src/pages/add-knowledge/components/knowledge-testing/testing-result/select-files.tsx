@@ -1,5 +1,6 @@
 import { ReactComponent as NavigationPointerIcon } from '@/assets/svg/navigation-pointer.svg';
 import NewDocumentLink from '@/components/new-document-link';
+import { useGetDocumentUrl } from '@/hooks/documentHooks';
 import { ITestingDocument } from '@/interfaces/database/knowledge';
 import { isPdf } from '@/utils/documentUtils';
 import { Table, TableProps } from 'antd';
@@ -15,6 +16,7 @@ const SelectFiles = ({ handleTesting }: IProps) => {
   );
 
   const dispatch = useDispatch();
+  const getDocumentUrl = useGetDocumentUrl();
 
   const columns: TableProps<ITestingDocument>['columns'] = [
     {
@@ -35,7 +37,10 @@ const SelectFiles = ({ handleTesting }: IProps) => {
       key: 'view',
       width: 50,
       render: (_, { doc_id, doc_name }) => (
-        <NewDocumentLink documentId={doc_id} preventDefault={!isPdf(doc_name)}>
+        <NewDocumentLink
+          link={getDocumentUrl(doc_id)}
+          preventDefault={!isPdf(doc_name)}
+        >
           <NavigationPointerIcon />
         </NewDocumentLink>
       ),

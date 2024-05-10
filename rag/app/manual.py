@@ -2,7 +2,7 @@ import copy
 import re
 
 from api.db import ParserType
-from rag.nlp import huqie, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
 from rag.utils import num_tokens_from_string
 
@@ -16,7 +16,7 @@ class Pdf(PdfParser):
                  to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
         start = timer()
-        callback(msg="OCR is  running...")
+        callback(msg="OCR is running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -32,7 +32,7 @@ class Pdf(PdfParser):
 
         self._layouts_rec(zoomin)
         callback(0.65, "Layout analysis finished.")
-        print("paddle layouts:", timer() - start)
+        print("layouts:", timer() - start)
         self._table_transformer_job(zoomin)
         callback(0.67, "Table analysis finished.")
         self._text_merge()
@@ -70,8 +70,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     doc = {
         "docnm_kwd": filename
     }
-    doc["title_tks"] = huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", doc["docnm_kwd"]))
-    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
+    doc["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc["docnm_kwd"]))
+    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
 

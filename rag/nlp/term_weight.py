@@ -4,7 +4,7 @@ import json
 import re
 import os
 import numpy as np
-from rag.nlp import huqie
+from rag.nlp import rag_tokenizer
 from api.utils.file_utils import get_project_base_directory
 
 
@@ -83,7 +83,7 @@ class Dealer:
             txt = re.sub(p, r, txt)
 
         res = []
-        for t in huqie.qie(txt).split(" "):
+        for t in rag_tokenizer.tokenize(txt).split(" "):
             tk = t
             if (stpwd and tk in self.stop_words) or (
                     re.match(r"[0-9]$", tk) and not num):
@@ -161,7 +161,7 @@ class Dealer:
             return m[self.ne[t]]
 
         def postag(t):
-            t = huqie.tag(t)
+            t = rag_tokenizer.tag(t)
             if t in set(["r", "c", "d"]):
                 return 0.3
             if t in set(["ns", "nt"]):
@@ -175,14 +175,14 @@ class Dealer:
         def freq(t):
             if re.match(r"[0-9. -]{2,}$", t):
                 return 3
-            s = huqie.freq(t)
+            s = rag_tokenizer.freq(t)
             if not s and re.match(r"[a-z. -]+$", t):
                 return 300
             if not s:
                 s = 0
 
             if not s and len(t) >= 4:
-                s = [tt for tt in huqie.qieqie(t).split(" ") if len(tt) > 1]
+                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split(" ") if len(tt) > 1]
                 if len(s) > 1:
                     s = np.min([freq(tt) for tt in s]) / 6.
                 else:
@@ -198,7 +198,7 @@ class Dealer:
             elif re.match(r"[a-z. -]+$", t):
                 return 300
             elif len(t) >= 4:
-                s = [tt for tt in huqie.qieqie(t).split(" ") if len(tt) > 1]
+                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split(" ") if len(tt) > 1]
                 if len(s) > 1:
                     return max(3, np.min([df(tt) for tt in s]) / 6.)
 

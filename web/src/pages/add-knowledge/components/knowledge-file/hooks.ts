@@ -2,15 +2,19 @@ import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import {
   useCreateDocument,
   useFetchDocumentList,
+  useRunDocument,
   useSaveDocumentName,
+  useSelectRunDocumentLoading,
   useSetDocumentParser,
+  useUploadDocument,
 } from '@/hooks/documentHooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { useFetchTenantInfo } from '@/hooks/userSettingHook';
 import { Pagination } from '@/interfaces/common';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { PaginationProps } from 'antd';
+import { getUnSupportedFilesCount } from '@/utils/documentUtils';
+import { PaginationProps, UploadFile } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import { KnowledgeRouteKey } from './constant';
@@ -241,4 +245,76 @@ export const useGetRowSelection = () => {
   };
 
   return rowSelection;
+};
+
+export const useHandleUploadDocument = () => {
+  const {
+    visible: documentUploadVisible,
+    hideModal: hideDocumentUploadModal,
+    showModal: showDocumentUploadModal,
+  } = useSetModalState();
+  const uploadDocument = useUploadDocument();
+
+  const onDocumentUploadOk = useCallback(
+    async (fileList: UploadFile[]): Promise<number | undefined> => {
+      if (fileList.length > 0) {
+        const ret: any = await uploadDocument(fileList);
+        const count = getUnSupportedFilesCount(ret.retmsg);
+        /// 500 error code indicates that some file types are not supported
+        let retcode = ret.retcode;
+        if (
+          ret.retcode === 0 ||
+          (ret.retcode === 500 && count !== fileList.length) // Some files were not uploaded successfully, but some were uploaded successfully.
+        ) {
+          retcode = 0;
+          hideDocumentUploadModal();
+        }
+        return retcode;
+      }
+    },
+    [uploadDocument, hideDocumentUploadModal],
+  );
+
+  const loading = useOneNamespaceEffectsLoading('kFModel', ['upload_document']);
+
+  return {
+    documentUploadLoading: loading,
+    onDocumentUploadOk,
+    documentUploadVisible,
+    hideDocumentUploadModal,
+    showDocumentUploadModal,
+  };
+};
+
+export const useHandleRunDocumentByIds = (id: string) => {
+  const loading = useSelectRunDocumentLoading();
+  const runDocumentByIds = useRunDocument();
+  const [currentId, setCurrentId] = useState<string>('');
+  const isLoading = loading && currentId !== '' && currentId === id;
+
+  const handleRunDocumentByIds = async (
+    documentId: string,
+    knowledgeBaseId: string,
+    isRunning: boolean,
+  ) => {
+    if (isLoading) {
+      return;
+    }
+    setCurrentId(documentId);
+    try {
+      await runDocumentByIds({
+        doc_ids: [documentId],
+        run: isRunning ? 2 : 1,
+        knowledgeBaseId,
+      });
+      setCurrentId('');
+    } catch (error) {
+      setCurrentId('');
+    }
+  };
+
+  return {
+    handleRunDocumentByIds,
+    loading: isLoading,
+  };
 };

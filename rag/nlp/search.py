@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from rag.settings import es_logger
 from rag.utils import rmSpace
-from rag.nlp import huqie, query
+from rag.nlp import rag_tokenizer, query
 import numpy as np
 
 
@@ -52,23 +52,28 @@ class Dealer:
     def search(self, req, idxnm, emb_mdl=None):
         qst = req.get("question", "")
         bqry, keywords = self.qryr.question(qst)
-        if req.get("kb_ids"):
-            bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
-        if req.get("doc_ids"):
-            bqry.filter.append(Q("terms", doc_id=req["doc_ids"]))
-        if "available_int" in req:
-            if req["available_int"] == 0:
-                bqry.filter.append(Q("range", available_int={"lt": 1}))
-            else:
-                bqry.filter.append(
-                    Q("bool", must_not=Q("range", available_int={"lt": 1})))
+        def add_filters(bqry):
+            nonlocal req
+            if req.get("kb_ids"):
+                bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
+            if req.get("doc_ids"):
+                bqry.filter.append(Q("terms", doc_id=req["doc_ids"]))
+            if "available_int" in req:
+                if req["available_int"] == 0:
+                    bqry.filter.append(Q("range", available_int={"lt": 1}))
+                else:
+                    bqry.filter.append(
+                        Q("bool", must_not=Q("range", available_int={"lt": 1})))
+            return bqry
+
+        bqry = add_filters(bqry)
         bqry.boost = 0.05
 
         s = Search()
         pg = int(req.get("page", 1)) - 1
         ps = int(req.get("size", 1000))
         topk = int(req.get("topk", 1024))
-        src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id",
+        src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
                                  "image_id", "doc_id", "q_512_vec", "q_768_vec", "position_int",
                                  "q_1024_vec", "q_1536_vec", "available_int", "content_with_weight"])
 
@@ -117,8 +122,7 @@ class Dealer:
         es_logger.info("TOTAL: {}".format(self.es.getTotal(res)))
         if self.es.getTotal(res) == 0 and "knn" in s:
             bqry, _ = self.qryr.question(qst, min_match="10%")
-            if req.get("kb_ids"):
-                bqry.filter.append(Q("terms", kb_id=req["kb_ids"]))
+            bqry = add_filters(bqry)
             s["query"] = bqry.to_dict()
             s["knn"]["filter"] = bqry.to_dict()
             s["knn"]["similarity"] = 0.17
@@ -128,7 +132,7 @@ class Dealer:
         kwds = set([])
         for k in keywords:
             kwds.add(k)
-            for kk in huqie.qieqie(k).split(" "):
+            for kk in rag_tokenizer.fine_grained_tokenize(k).split(" "):
                 if len(kk) < 2:
                     continue
                 if kk in kwds:
@@ -243,7 +247,7 @@ class Dealer:
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
             len(ans_v[0]), len(chunk_v[0]))
 
-        chunks_tks = [huqie.qie(self.qryr.rmWWW(ck)).split(" ")
+        chunks_tks = [rag_tokenizer.tokenize(self.qryr.rmWWW(ck)).split(" ")
                       for ck in chunks]
         cites = {}
         thr = 0.63
@@ -251,7 +255,7 @@ class Dealer:
             for i, a in enumerate(pieces_):
                 sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i],
                                                                 chunk_v,
-                                                                huqie.qie(
+                                                                rag_tokenizer.tokenize(
                                                                     self.qryr.rmWWW(pieces_[i])).split(" "),
                                                                 chunks_tks,
                                                                 tkweight, vtweight)
@@ -289,8 +293,18 @@ class Dealer:
                 sres.field[i].get("q_%d_vec" % len(sres.query_vector), "\t".join(["0"] * len(sres.query_vector)))) for i in sres.ids]
         if not ins_embd:
             return [], [], []
-        ins_tw = [sres.field[i][cfield].split(" ")
-                  for i in sres.ids]
+
+        for i in sres.ids:
+            if isinstance(sres.field[i].get("important_kwd", []), str):
+                sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
+        ins_tw = []
+        for i in sres.ids:
+            content_ltks = sres.field[i][cfield].split(" ")
+            title_tks = [t for t in sres.field[i].get("title_tks", "").split(" ") if t]
+            important_kwd = sres.field[i].get("important_kwd", [])
+            tks = content_ltks + title_tks + important_kwd
+            ins_tw.append(tks)
+
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                                         ins_embd,
                                                         keywords,
@@ -300,8 +314,8 @@ class Dealer:
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd,
                                            ins_embd,
-                                           huqie.qie(ans).split(" "),
-                                           huqie.qie(inst).split(" "))
+                                           rag_tokenizer.tokenize(ans).split(" "),
+                                           rag_tokenizer.tokenize(inst).split(" "))
 
     def retrieval(self, question, embd_mdl, tenant_id, kb_ids, page, page_size, similarity_threshold=0.2,
                   vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True):
@@ -368,14 +382,14 @@ class Dealer:
 
     def sql_retrieval(self, sql, fetch_size=128, format="json"):
         from api.settings import chat_logger
-        sql = re.sub(r"[ ]+", " ", sql)
+        sql = re.sub(r"[ `]+", " ", sql)
         sql = sql.replace("%", "")
         es_logger.info(f"Get es sql: {sql}")
         replaces = []
         for r in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
             fld, v = r.group(1), r.group(3)
             match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(
-                fld, huqie.qieqie(huqie.qie(v)))
+                fld, rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(v)))
             replaces.append(
                 ("{}{}'{}'".format(
                     r.group(1),

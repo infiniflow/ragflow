@@ -5,6 +5,7 @@ import {
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/commonUtil';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
@@ -110,13 +111,12 @@ export const useFetchLlmFactoryListOnMount = () => {
   const factoryList = useSelectLlmFactoryList();
   const myLlmList = useSelectMyLlmList();
 
-  const list = useMemo(
-    () =>
-      factoryList.filter((x) =>
-        Object.keys(myLlmList).every((y) => y !== x.name),
-      ),
-    [factoryList, myLlmList],
-  );
+  const list = useMemo(() => {
+    const currentList = factoryList.filter((x) =>
+      Object.keys(myLlmList).every((y) => y !== x.name),
+    );
+    return sortLLmFactoryListBySpecifiedOrder(currentList);
+  }, [factoryList, myLlmList]);
 
   const fetchLlmFactoryList = useCallback(() => {
     dispatch({

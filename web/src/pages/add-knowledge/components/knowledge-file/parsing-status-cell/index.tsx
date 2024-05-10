@@ -2,12 +2,13 @@ import { ReactComponent as CancelIcon } from '@/assets/svg/cancel.svg';
 import { ReactComponent as RefreshIcon } from '@/assets/svg/refresh.svg';
 import { ReactComponent as RunIcon } from '@/assets/svg/run.svg';
 import { useTranslate } from '@/hooks/commonHooks';
-import { useRunDocument } from '@/hooks/documentHooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
+import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus, RunningStatusMap } from '../constant';
+import { useHandleRunDocumentByIds } from '../hooks';
 import { isParserRunning } from '../utils';
 import styles from './index.less';
 
@@ -81,7 +82,9 @@ export const ParsingStatusCell = ({ record }: IProps) => {
   const text = record.run;
   const runningStatus = RunningStatusMap[text];
   const { t } = useTranslation();
-  const runDocumentByIds = useRunDocument();
+  const { handleRunDocumentByIds, loading } = useHandleRunDocumentByIds(
+    record.id,
+  );
 
   const isRunning = isParserRunning(text);
 
@@ -90,11 +93,7 @@ export const ParsingStatusCell = ({ record }: IProps) => {
   const label = t(`knowledgeDetails.runningStatus${text}`);
 
   const handleOperationIconClick = () => {
-    runDocumentByIds({
-      doc_ids: [record.id],
-      run: isRunning ? 2 : 1,
-      knowledgeBaseId: record.kb_id,
-    });
+    handleRunDocumentByIds(record.id, record.kb_id, isRunning);
   };
 
   return (
@@ -112,7 +111,12 @@ export const ParsingStatusCell = ({ record }: IProps) => {
           )}
         </Tag>
       </Popover>
-      <div onClick={handleOperationIconClick} className={styles.operationIcon}>
+      <div
+        onClick={handleOperationIconClick}
+        className={classNames(styles.operationIcon, {
+          [styles.operationIconSpin]: loading,
+        })}
+      >
         <OperationIcon />
       </div>
     </Flex>

@@ -136,7 +136,7 @@ def chat(dialog, messages, **kwargs):
     chat_logger.info("User: {}|Assistant: {}".format(
         msg[-1]["content"], answer))
 
-    if knowledges and prompt_config.get("quote", True):
+    if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         answer, idx = retrievaler.insert_citations(answer,
                                                    [ck["content_ltks"]
                                                        for ck in kbinfos["chunks"]],

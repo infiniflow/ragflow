@@ -20,7 +20,7 @@ from openpyxl import load_workbook
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from rag.nlp import huqie, is_english, tokenize
+from rag.nlp import rag_tokenizer, is_english, tokenize, find_codec
 from deepdoc.parser import ExcelParser
 
 
@@ -47,6 +47,7 @@ class Excel(ExcelParser):
                 cell.value for i,
                 cell in enumerate(
                     rows[0]) if i not in missed]
+            if not headers:continue
             data = []
             for i, r in enumerate(rows[1:]):
                 rn += 1
@@ -147,7 +148,8 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 while True:
@@ -199,7 +201,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                 re.sub(
                     r"(/.*|（[^（）]+?）|\([^()]+?\))",
                     "",
-                    n),
+                    str(n)),
                 '_')[0] for n in clmns]
         clmn_tys = []
         for j in range(len(clmns)):
@@ -208,14 +210,14 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], clmns[i].replace("_", " "))
+        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " "))
                      for i in range(len(clmns))]
 
         eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
             d = {
                 "docnm_kwd": filename,
-                "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+                "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
             }
             row_txt = []
             for j in range(len(clmns)):
@@ -226,7 +228,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                 if pd.isna(row[clmns[j]]):
                     continue
                 fld = clmns_map[j][0]
-                d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else huqie.qie(
+                d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(
                     row[clmns[j]])
                 row_txt.append("{}:{}".format(clmns[j], row[clmns[j]]))
             if not row_txt:

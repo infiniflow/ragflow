@@ -18,10 +18,14 @@ import logging
 import os
 import signal
 import sys
+import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
+
 from werkzeug.serving import run_simple
 from api.apps import app
 from api.db.runtime_config import RuntimeConfig
+from api.db.services.document_service import DocumentService
 from api.settings import (
     HOST, HTTP_PORT, access_logger, database_logger, stat_logger,
 )
@@ -30,6 +34,16 @@ from api import utils
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
 from api.versions import get_versions
+
+
+def update_progress():
+    while True:
+        time.sleep(1)
+        try:
+            DocumentService.update_progress()
+        except Exception as e:
+            stat_logger.error("update_progress exception:" + str(e))
+
 
 if __name__ == '__main__':
     print("""
@@ -70,6 +84,9 @@ if __name__ == '__main__':
     # rag_arch.common.log.ROpenHandler
     peewee_logger.addHandler(database_logger.handlers[0])
     peewee_logger.setLevel(database_logger.level)
+
+    thr = ThreadPoolExecutor(max_workers=1)
+    thr.submit(update_progress)
 
     # start http server
     try:

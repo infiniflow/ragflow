@@ -50,7 +50,6 @@ joblib==1.3.2
 lxml==5.1.0
 MarkupSafe==2.1.5
 minio==7.2.4
-mpi4py==3.1.5
 mpmath==1.3.0
 multidict==6.0.5
 multiprocess==0.70.16
@@ -69,6 +68,7 @@ nvidia-cusparse-cu12==12.1.0.106
 nvidia-nccl-cu12==2.19.3
 nvidia-nvjitlink-cu12==12.3.101
 nvidia-nvtx-cu12==12.1.105
+ollama==0.1.9
 onnxruntime-gpu==1.17.1
 openai==1.12.0
 opencv-python==4.9.0.80
@@ -91,8 +91,6 @@ pycryptodomex==3.20.0
 pydantic==2.6.2
 pydantic_core==2.16.3
 PyJWT==2.8.0
-PyMuPDF==1.23.25
-PyMuPDFb==1.23.22
 PyMySQL==1.1.0
 PyPDF2==3.0.1
 pypdfium2==4.27.0
@@ -102,6 +100,7 @@ python-dotenv==1.0.1
 python-pptx==0.6.23
 pytz==2024.1
 PyYAML==6.0.1
+redis==5.0.3
 regex==2023.12.25
 requests==2.31.0
 ruamel.yaml==0.18.6
@@ -116,6 +115,7 @@ sniffio==1.3.1
 StrEnum==0.4.15
 sympy==1.12
 threadpoolctl==3.3.0
+tika==2.6.0
 tiktoken==0.6.0
 tokenizers==0.15.2
 torch==2.2.1

@@ -19,7 +19,7 @@ import os
 import re
 from io import BytesIO
 
-import fitz
+import pdfplumber
 from PIL import Image
 from cachetools import LRUCache, cached
 from ruamel.yaml import YAML
@@ -64,6 +64,15 @@ def get_rag_directory(*args):
 
 def get_rag_python_directory(*args):
     return get_rag_directory("python", *args)
+
+
+def get_home_cache_dir():
+    dir = os.path.join(os.path.expanduser('~'), ".ragflow")
+    try:
+        os.mkdir(dir)
+    except OSError as error:
+        pass
+    return dir
 
 
 @cached(cache=LRUCache(maxsize=10))
@@ -147,7 +156,7 @@ def filename_type(filename):
         return FileType.PDF.value
 
     if re.match(
-            r".*\.(docx|doc|ppt|pptx|yml|xml|htm|json|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md)$", filename):
+            r".*\.(doc|docx|ppt|pptx|yml|xml|htm|json|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md)$", filename):
         return FileType.DOC.value
 
     if re.match(
@@ -155,17 +164,17 @@ def filename_type(filename):
         return FileType.AURAL.value
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4)$", filename):
-        return FileType.VISUAL
+        return FileType.VISUAL.value
+
+    return FileType.OTHER.value
 
 
 def thumbnail(filename, blob):
     filename = filename.lower()
     if re.match(r".*\.pdf$", filename):
-        pdf = fitz.open(stream=blob, filetype="pdf")
-        pix = pdf[0].get_pixmap(matrix=fitz.Matrix(0.03, 0.03))
+        pdf = pdfplumber.open(BytesIO(blob))
         buffered = BytesIO()
-        Image.frombytes("RGB", [pix.width, pix.height],
-                        pix.samples).save(buffered, format="png")
+        pdf.pages[0].to_image().annotated.save(buffered, format="png")
         return "data:image/png;base64," + \
             base64.b64encode(buffered.getvalue()).decode("utf-8")
 

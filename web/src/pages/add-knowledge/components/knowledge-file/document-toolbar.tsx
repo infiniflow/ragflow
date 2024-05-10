@@ -23,23 +23,26 @@ import {
   useFetchDocumentListOnMount,
   useGetPagination,
   useHandleSearchChange,
-  useNavigateToOtherPage,
 } from './hooks';
 import styles from './index.less';
 
 interface IProps {
   selectedRowKeys: string[];
   showCreateModal(): void;
+  showDocumentUploadModal(): void;
 }
 
-const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
+const DocumentToolbar = ({
+  selectedRowKeys,
+  showCreateModal,
+  showDocumentUploadModal,
+}: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const { fetchDocumentList } = useFetchDocumentListOnMount();
   const { setPagination, searchString } = useGetPagination(fetchDocumentList);
   const { handleInputChange } = useHandleSearchChange(setPagination);
   const removeDocument = useRemoveDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
-  const { linkToUploadPage } = useNavigateToOtherPage();
   const runDocumentByIds = useRunDocument();
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const changeStatus = useSetDocumentStatus();
@@ -48,7 +51,7 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
     return [
       {
         key: '1',
-        onClick: linkToUploadPage,
+        onClick: showDocumentUploadModal,
         label: (
           <div>
             <Button type="link">
@@ -72,17 +75,14 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
             </Button>
           </div>
         ),
-        // disabled: true,
       },
     ];
-  }, [linkToUploadPage, showCreateModal, t]);
+  }, [showDocumentUploadModal, showCreateModal, t]);
 
   const handleDelete = useCallback(() => {
     showDeleteConfirm({
       onOk: () => {
-        selectedRowKeys.forEach((id) => {
-          removeDocument(id);
-        });
+        removeDocument(selectedRowKeys);
       },
     });
   }, [removeDocument, showDeleteConfirm, selectedRowKeys]);
@@ -182,7 +182,14 @@ const DocumentToolbar = ({ selectedRowKeys, showCreateModal }: IProps) => {
         ),
       },
     ];
-  }, [handleDelete, handleRunClick, handleCancelClick, t]);
+  }, [
+    handleDelete,
+    handleRunClick,
+    handleCancelClick,
+    t,
+    handleDisableClick,
+    handleEnableClick,
+  ]);
 
   return (
     <div className={styles.filter}>

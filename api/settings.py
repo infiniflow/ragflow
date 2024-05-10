@@ -32,7 +32,7 @@ access_logger = getLogger("access")
 database_logger = getLogger("database")
 chat_logger = getLogger("chat")
 
-from rag.utils import ELASTICSEARCH
+from rag.utils.es_conn import ELASTICSEARCH
 from rag.nlp import search
 from api.utils import get_base_config, decrypt_database_config
 
