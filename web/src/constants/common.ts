@@ -69,6 +69,8 @@ export const FileMimeTypeMap = {
   mp4: 'video/mp4',
 };
 
+export const Domain = 'demo.ragflow.io';
+
 //#region file preview
 export const Images = [
   'jpg',
