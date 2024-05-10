@@ -367,11 +367,11 @@ You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow
 2. Right click the desired knowledge base to display the **Configuration** dialogue. 
 3. Choose **Q&A** as the chunk method and click **Save** to confirm your change. 
 
-### 7 Do I need to connect to Redis?
+### 7. Do I need to connect to Redis?
 
 No, connecting to Redis is not required. 
 
-### 8 `Error: Range of input length should be [1, 30000]`
+### 8. `Error: Range of input length should be [1, 30000]`
 
 This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue: 
 
@@ -382,7 +382,15 @@ This error occurs because there are too many chunks matching your search criteri
 
 ![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
 
-### 9 How to update RAGFlow to the latest version?
+### 9. How to upgrade RAGFlow?
+   
+You can upgrade RAGFlow to either the dev version or the latest version:
+
+- Dev versions are for developers and contributors. They are published on a nightly basis and may crash because they are not fully tested. We cannot guarantee their validity and you are at your own risk trying out latest, untested features.
+- The latest version refers to the most recent, officially published release. It is stable and works best with regular users.
+
+
+To upgrade RAGFlow to the dev version:
 
 1. Pull the latest source code
    ```bash
@@ -399,6 +407,33 @@ This error occurs because there are too many chunks matching your search criteri
 3. If you used `docker compose -f docker-compose-CN.yml up -d` to start up RAGFlow server:
    ```bash
    docker pull swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev
+   ```
+   ```bash
+   docker compose -f docker-compose-CN.yml up -d
+   ```
+   
+To upgrade RAGFlow to the latest version:
+
+1. Update **ragflow/docker/.env** as follows:
+   ```bash
+   RAGFLOW_VERSION=latest
+   ```
+2. Pull the latest source code:
+   ```bash
+   cd ragflow
+   git pull
+   ```   
+
+3. If you used `docker compose up -d` to start up RAGFlow server:
+   ```bash
+   docker pull infiniflow/ragflow:latest
+   ```
+   ```bash
+   docker compose up ragflow -d
+   ```
+4. If you used `docker compose -f docker-compose-CN.yml up -d` to start up RAGFlow server:
+   ```bash
+   docker pull swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:latest
    ```
    ```bash
    docker compose -f docker-compose-CN.yml up -d
