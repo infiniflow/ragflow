@@ -167,6 +167,17 @@ const model: DvaModel<SettingModelState> = {
       }
       return retcode;
     },
+    *delete_llm({ payload = {} }, { call, put }) {
+      const { data } = yield call(userService.delete_llm, payload);
+      const { retcode } = data;
+      if (retcode === 0) {
+        message.success(i18n.t('message.deleted'));
+
+        yield put({ type: 'my_llm' });
+        yield put({ type: 'factories_list' });
+      }
+      return retcode;
+    },
   },
 };
 export default model;
