@@ -1,7 +1,8 @@
 import { useTranslate } from '@/hooks/commonHooks';
 import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
 import { IModalProps } from '@/interfaces/common';
-import { Form, Modal, Select, SelectProps } from 'antd';
+import { filterOptionsByInput } from '@/utils/commonUtil';
+import { Form, Modal, Select } from 'antd';
 import { useEffect } from 'react';
 
 const ConnectToKnowledgeModal = ({
@@ -15,7 +16,7 @@ const ConnectToKnowledgeModal = ({
   const { list, fetchList } = useFetchKnowledgeList();
   const { t } = useTranslate('fileManager');
 
-  const options: SelectProps['options'] = list?.map((item) => ({
+  const options = list?.map((item) => ({
     label: item.name,
     value: item.id,
   }));
@@ -46,9 +47,12 @@ const ConnectToKnowledgeModal = ({
           <Select
             mode="multiple"
             allowClear
+            showSearch
             style={{ width: '100%' }}
             placeholder={t('pleaseSelect')}
             options={options}
+            optionFilterProp="children"
+            filterOption={filterOptionsByInput}
           />
         </Form.Item>
       </Form>

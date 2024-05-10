@@ -44,6 +44,7 @@ const ActionCell = ({
     setSelectedRowKeys,
   );
   const extension = getExtension(record.name);
+  const isKnowledgeBase = record.source_type === 'knowledgebase';
 
   const onDownloadDocument = () => {
     downloadFile({
@@ -77,26 +78,30 @@ const ActionCell = ({
         </Button>
       </Tooltip>
 
-      <Tooltip title={t('rename', { keyPrefix: 'common' })}>
-        <Button
-          type="text"
-          disabled={beingUsed}
-          onClick={onShowRenameModal}
-          className={styles.iconButton}
-        >
-          <EditOutlined size={20} />
-        </Button>
-      </Tooltip>
-      <Tooltip title={t('delete', { keyPrefix: 'common' })}>
-        <Button
-          type="text"
-          disabled={beingUsed}
-          onClick={handleRemoveFile}
-          className={styles.iconButton}
-        >
-          <DeleteOutlined size={20} />
-        </Button>
-      </Tooltip>
+      {isKnowledgeBase || (
+        <Tooltip title={t('rename', { keyPrefix: 'common' })}>
+          <Button
+            type="text"
+            disabled={beingUsed}
+            onClick={onShowRenameModal}
+            className={styles.iconButton}
+          >
+            <EditOutlined size={20} />
+          </Button>
+        </Tooltip>
+      )}
+      {isKnowledgeBase || (
+        <Tooltip title={t('delete', { keyPrefix: 'common' })}>
+          <Button
+            type="text"
+            disabled={beingUsed}
+            onClick={handleRemoveFile}
+            className={styles.iconButton}
+          >
+            <DeleteOutlined size={20} />
+          </Button>
+        </Tooltip>
+      )}
       {record.type !== 'folder' && (
         <Tooltip title={t('download', { keyPrefix: 'common' })}>
           <Button
