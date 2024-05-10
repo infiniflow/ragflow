@@ -506,6 +506,7 @@ export default {
       local: 'Local uploads',
       s3: 'S3 uploads',
       preview: 'Preview',
+      fileError: 'File error',
     },
     footer: {
       profile: 'All rights reserved @ React',

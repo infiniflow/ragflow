@@ -6,7 +6,11 @@ import {
   useFetchLlmFactoryListOnMount,
   useFetchMyLlmListOnMount,
 } from '@/hooks/llmHooks';
-import { SettingOutlined, UserOutlined } from '@ant-design/icons';
+import {
+  CloseCircleOutlined,
+  SettingOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -21,6 +25,7 @@ import {
   Space,
   Spin,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { useCallback } from 'react';
@@ -28,6 +33,7 @@ import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
 import ApiKeyModal from './api-key-modal';
 import {
+  useHandleDeleteLlm,
   useSelectModelProvidersLoading,
   useSubmitApiKey,
   useSubmitOllama,
@@ -67,6 +73,7 @@ interface IModelCardProps {
 const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
   const { visible, switchVisible } = useSetModalState();
   const { t } = useTranslate('setting');
+  const { handleDeleteLlm } = useHandleDeleteLlm(item.name);
 
   const handleApiKeyClick = () => {
     clickApiKey(item.name);
@@ -113,6 +120,11 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
               <List.Item>
                 <Space>
                   {item.name} <Tag color="#b8b8b8">{item.type}</Tag>
+                  <Tooltip title={t('delete', { keyPrefix: 'common' })}>
+                    <Button type={'text'} onClick={handleDeleteLlm(item.name)}>
+                      <CloseCircleOutlined style={{ color: '#D92D20' }} />
+                    </Button>
+                  </Tooltip>
                 </Space>
               </List.Item>
             )}

@@ -4,7 +4,10 @@ import {
   IMyLlmValue,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import {
+  IAddLlmRequestBody,
+  IDeleteLlmRequestBody,
+} from '@/interfaces/request/llm';
 import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/commonUtil';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
@@ -211,7 +214,7 @@ export const useSaveTenantInfo = () => {
 export const useAddLlm = () => {
   const dispatch = useDispatch();
 
-  const saveTenantInfo = useCallback(
+  const addLlm = useCallback(
     (requestBody: IAddLlmRequestBody) => {
       return dispatch<any>({
         type: 'settingModel/add_llm',
@@ -221,5 +224,21 @@ export const useAddLlm = () => {
     [dispatch],
   );
 
-  return saveTenantInfo;
+  return addLlm;
+};
+
+export const useDeleteLlm = () => {
+  const dispatch = useDispatch();
+
+  const deleteLlm = useCallback(
+    (requestBody: IDeleteLlmRequestBody) => {
+      return dispatch<any>({
+        type: 'settingModel/delete_llm',
+        payload: requestBody,
+      });
+    },
+    [dispatch],
+  );
+
+  return deleteLlm;
 };

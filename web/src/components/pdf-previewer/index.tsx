@@ -34,7 +34,7 @@ const HighlightPopup = ({
   ) : null;
 
 const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
-  const url = useGetDocumentUrl(documentId);
+  const getDocumentUrl = useGetDocumentUrl(documentId);
   const { highlights: state, setWidthAndHeight } = useGetChunkHighlights(chunk);
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
   const [loaded, setLoaded] = useState(false);
@@ -55,7 +55,7 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
   return (
     <div className={styles.documentContainer}>
       <PdfLoader
-        url={url}
+        url={getDocumentUrl()}
         beforeLoad={<Skeleton active />}
         workerSrc="/pdfjs-dist/pdf.worker.min.js"
       >

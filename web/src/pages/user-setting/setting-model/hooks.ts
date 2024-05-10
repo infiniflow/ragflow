@@ -1,8 +1,9 @@
-import { useSetModalState } from '@/hooks/commonHooks';
+import { useSetModalState, useShowDeleteConfirm } from '@/hooks/commonHooks';
 import {
   IApiKeySavingParams,
   ISystemModelSettingSavingParams,
   useAddLlm,
+  useDeleteLlm,
   useFetchLlmList,
   useSaveApiKey,
   useSaveTenantInfo,
@@ -163,4 +164,19 @@ export const useSubmitOllama = () => {
     showLlmAddingModal: handleShowLlmAddingModal,
     selectedLlmFactory,
   };
+};
+
+export const useHandleDeleteLlm = (llmFactory: string) => {
+  const deleteLlm = useDeleteLlm();
+  const showDeleteConfirm = useShowDeleteConfirm();
+
+  const handleDeleteLlm = (name: string) => () => {
+    showDeleteConfirm({
+      onOk: async () => {
+        deleteLlm({ llm_factory: llmFactory, llm_name: name });
+      },
+    });
+  };
+
+  return { handleDeleteLlm };
 };
