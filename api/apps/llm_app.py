@@ -28,7 +28,7 @@ from rag.llm import EmbeddingModel, ChatModel
 def factories():
     try:
         fac = LLMFactoriesService.get_all()
-        return get_json_result(data=[f.to_dict() for f in fac if f.name not in ["QAnything", "FastEmbed"]])
+        return get_json_result(data=[f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed"]])
     except Exception as e:
         return server_error_response(e)
 
@@ -142,6 +142,16 @@ def add_llm():
     return get_json_result(data=True)
 
 
+@manager.route('/delete_llm', methods=['POST'])
+@login_required
+@validate_request("llm_factory", "llm_name")
+def delete_llm():
+    req = request.json
+    TenantLLMService.filter_delete(
+            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"], TenantLLM.llm_name == req["llm_name"]])
+    return get_json_result(data=True)
+
+
 @manager.route('/my_llms', methods=['GET'])
 @login_required
 def my_llms():
@@ -174,7 +184,7 @@ def list():
         llms = [m.to_dict()
                 for m in llms if m.status == StatusEnum.VALID.value]
         for m in llms:
-            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in ["QAnything","FastEmbed"]
+            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in ["Youdao","FastEmbed"]
 
         llm_set = set([m["llm_name"] for m in llms])
         for o in objs:

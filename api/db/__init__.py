@@ -45,6 +45,8 @@ class FileType(StrEnum):
     VISUAL = 'visual'
     AURAL = 'aural'
     VIRTUAL = 'virtual'
+    FOLDER = 'folder'
+    OTHER = "other"
 
 
 class LLMType(StrEnum):
@@ -62,6 +64,7 @@ class ChatStyle(StrEnum):
 
 
 class TaskStatus(StrEnum):
+    UNSTART = "0"
     RUNNING = "1"
     CANCEL = "2"
     DONE = "3"

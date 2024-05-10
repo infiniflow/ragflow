@@ -120,10 +120,15 @@ factory_infos = [{
     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
         "status": "1",
 },{
-    "name": "QAnything",
+    "name": "Youdao",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-        "status": "1",
+    "status": "1",
+},{
+    "name": "DeepSeek",
+    "logo": "",
+    "tags": "LLM",
+    "status": "1",
 },
     # {
     #     "name": "文心一言",
@@ -323,13 +328,28 @@ def init_llm_factory():
             "max_tokens": 2147483648,
             "model_type": LLMType.EMBEDDING.value
         },
-        # ------------------------ QAnything -----------------------
+        # ------------------------ Youdao -----------------------
         {
             "fid": factory_infos[7]["name"],
             "llm_name": "maidalun1020/bce-embedding-base_v1",
             "tags": "TEXT EMBEDDING,",
             "max_tokens": 512,
             "model_type": LLMType.EMBEDDING.value
+        },
+        # ------------------------ DeepSeek -----------------------
+        {
+            "fid": factory_infos[8]["name"],
+            "llm_name": "deepseek-chat",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 32768,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[8]["name"],
+            "llm_name": "deepseek-coder",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 16385,
+            "model_type": LLMType.CHAT.value
         },
     ]
     for info in factory_infos:
@@ -347,7 +367,9 @@ def init_llm_factory():
     LLMService.filter_delete([LLM.fid == "Local"])
     LLMService.filter_delete([LLM.fid == "Moonshot", LLM.llm_name == "flag-embedding"])
     TenantLLMService.filter_delete([TenantLLM.llm_factory == "Moonshot", TenantLLM.llm_name == "flag-embedding"])
-
+    LLMFactoriesService.filter_delete([LLMFactoriesService.model.name == "QAnything"])
+    LLMService.filter_delete([LLMService.model.fid == "QAnything"])
+    TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
     """
     drop table llm;
     drop table llm_factories;

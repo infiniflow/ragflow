@@ -40,8 +40,8 @@ class API4ConversationService(CommonService):
     @classmethod
     @DB.connection_context()
     def append_message(cls, id, conversation):
-        cls.model.update_by_id(id, conversation)
-        return cls.model.update(round=cls.model.round + 1).where(id=id).execute()
+        cls.update_by_id(id, conversation)
+        return cls.model.update(round=cls.model.round + 1).where(cls.model.id==id).execute()
 
     @classmethod
     @DB.connection_context()

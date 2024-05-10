@@ -1,6 +1,11 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import RenameModal from '@/components/rename-modal';
-import { DeleteOutlined, EditOutlined, FormOutlined } from '@ant-design/icons';
+import {
+  CloudOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  PlusOutlined,
+} from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -152,7 +157,7 @@ const Chat = () => {
       onClick: handleCreateTemporaryConversation,
       label: (
         <Space>
-          <EditOutlined />
+          <PlusOutlined />
           {t('newChat')}
         </Space>
       ),
@@ -185,16 +190,16 @@ const Chat = () => {
         ),
       },
       { type: 'divider' },
-      // {
-      //   key: '3',
-      //   onClick: handleShowOverviewModal(dialog),
-      //   label: (
-      //     <Space>
-      //       <ProfileOutlined />
-      //       {t('overview')}
-      //     </Space>
-      //   ),
-      // },
+      {
+        key: '3',
+        onClick: handleShowOverviewModal(dialog),
+        label: (
+          <Space>
+            <CloudOutlined />
+            {t('overview')}
+          </Space>
+        ),
+      },
     ];
 
     return appItems;
@@ -288,7 +293,8 @@ const Chat = () => {
               <Tag>{conversationList.length}</Tag>
             </Space>
             <Dropdown menu={{ items }}>
-              <FormOutlined />
+              {/* <FormOutlined /> */}
+              <PlusOutlined />
             </Dropdown>
           </Flex>
           <Divider></Divider>

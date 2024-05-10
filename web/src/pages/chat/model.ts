@@ -158,7 +158,7 @@ const model: DvaModel<ChatModelState> = {
       }
       return data;
     },
-    *completeConversation({ payload }, { call, put }) {
+    *completeConversation({ payload }, { call }) {
       const { data } = yield call(chatService.completeConversation, payload);
       // if (data.retcode === 0) {
       //   yield put({
@@ -192,7 +192,7 @@ const model: DvaModel<ChatModelState> = {
         });
         message.success(i18n.t('message.created'));
       }
-      return data.retcode;
+      return data;
     },
     *listToken({ payload }, { call, put }) {
       const { data } = yield call(chatService.listToken, payload);
@@ -202,7 +202,7 @@ const model: DvaModel<ChatModelState> = {
           payload: data.data,
         });
       }
-      return data.retcode;
+      return data;
     },
     *removeToken({ payload }, { call, put }) {
       const { data } = yield call(
@@ -210,6 +210,7 @@ const model: DvaModel<ChatModelState> = {
         omit(payload, ['dialogId']),
       );
       if (data.retcode === 0) {
+        message.success(i18n.t('message.deleted'));
         yield put({
           type: 'listToken',
           payload: { dialog_id: payload.dialogId },
@@ -232,13 +233,13 @@ const model: DvaModel<ChatModelState> = {
         chatService.createExternalConversation,
         payload,
       );
-      if (data.retcode === 0) {
-        yield put({
-          type: 'getExternalConversation',
-          payload: { conversation_id: payload.conversationId },
-        });
-      }
-      return data.retcode;
+      // if (data.retcode === 0) {
+      //   yield put({
+      //     type: 'getExternalConversation',
+      //     payload: data.data.id,
+      //   });
+      // }
+      return data;
     },
     *getExternalConversation({ payload }, { call }) {
       const { data } = yield call(
@@ -246,7 +247,7 @@ const model: DvaModel<ChatModelState> = {
         null,
         payload,
       );
-      return data.retcode;
+      return data;
     },
     *completeExternalConversation({ payload }, { call }) {
       const { data } = yield call(

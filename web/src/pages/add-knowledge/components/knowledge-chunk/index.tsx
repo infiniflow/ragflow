@@ -10,6 +10,7 @@ import CreatingModal from './components/chunk-creating-modal';
 import ChunkToolBar from './components/chunk-toolbar';
 import DocumentPreview from './components/document-preview/preview';
 import {
+  useChangeChunkTextMode,
   useHandleChunkCardClick,
   useSelectChunkListLoading,
   useSelectDocumentInfo,
@@ -35,6 +36,7 @@ const Chunk = () => {
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo.type === 'pdf';
   const { t } = useTranslation();
+  const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
 
   const getChunkList = useFetchChunkList();
 
@@ -87,9 +89,10 @@ const Chunk = () => {
     },
     [],
   );
-  const showSelectedChunkWarning = () => {
+
+  const showSelectedChunkWarning = useCallback(() => {
     message.warning(t('message.pleaseSelectChunk'));
-  };
+  }, [t]);
 
   const handleRemoveChunk = useCallback(async () => {
     if (selectedChunkIds.length > 0) {
@@ -100,7 +103,7 @@ const Chunk = () => {
     } else {
       showSelectedChunkWarning();
     }
-  }, [selectedChunkIds, documentId, removeChunk]);
+  }, [selectedChunkIds, documentId, removeChunk, showSelectedChunkWarning]);
 
   const switchChunk = useCallback(
     async (available?: number, chunkIds?: string[]) => {
@@ -125,7 +128,13 @@ const Chunk = () => {
         getChunkList();
       }
     },
-    [dispatch, documentId, getChunkList, selectedChunkIds],
+    [
+      dispatch,
+      documentId,
+      getChunkList,
+      selectedChunkIds,
+      showSelectedChunkWarning,
+    ],
   );
 
   useEffect(() => {
@@ -147,6 +156,7 @@ const Chunk = () => {
           removeChunk={handleRemoveChunk}
           checked={selectedChunkIds.length === data.length}
           switchChunk={switchChunk}
+          changeChunkTextMode={changeChunkTextMode}
         ></ChunkToolBar>
         <Divider></Divider>
         <Flex flex={1} gap={'middle'}>
@@ -175,6 +185,7 @@ const Chunk = () => {
                       switchChunk={switchChunk}
                       clickChunkCard={handleChunkCardClick}
                       selected={item.chunk_id === selectedChunkId}
+                      textMode={textMode}
                     ></ChunkCard>
                   ))}
                 </Space>

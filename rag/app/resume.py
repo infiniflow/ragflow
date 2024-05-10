@@ -18,7 +18,7 @@ import re
 import pandas as pd
 import requests
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from rag.nlp import huqie
+from rag.nlp import rag_tokenizer
 from deepdoc.parser.resume import refactor
 from deepdoc.parser.resume import step_one, step_two
 from rag.settings import cron_logger
@@ -131,9 +131,9 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         titles.append(str(v))
     doc = {
         "docnm_kwd": filename,
-        "title_tks": huqie.qie("-".join(titles) + "-简历")
+        "title_tks": rag_tokenizer.tokenize("-".join(titles) + "-简历")
     }
-    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
+    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pairs = []
     for n, m in field_map.items():
         if not resume.get(n):
@@ -147,8 +147,8 @@ def chunk(filename, binary=None, callback=None, **kwargs):
 
     doc["content_with_weight"] = "\n".join(
         ["{}: {}".format(re.sub(r"（[^（）]+）", "", k), v) for k, v in pairs])
-    doc["content_ltks"] = huqie.qie(doc["content_with_weight"])
-    doc["content_sm_ltks"] = huqie.qieqie(doc["content_ltks"])
+    doc["content_ltks"] = rag_tokenizer.tokenize(doc["content_with_weight"])
+    doc["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(doc["content_ltks"])
     for n, _ in field_map.items():
         if n not in resume:
             continue
@@ -156,7 +156,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
                 len(resume[n]) == 1 or n not in forbidden_select_fields4resume):
             resume[n] = resume[n][0]
         if n.find("_tks") > 0:
-            resume[n] = huqie.qieqie(resume[n])
+            resume[n] = rag_tokenizer.fine_grained_tokenize(resume[n])
         doc[n] = resume[n]
 
     print(doc)

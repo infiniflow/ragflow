@@ -167,20 +167,22 @@ const Login = () => {
                     Sign in with Google
                   </div>
                 </Button> */}
-                <Button
-                  block
-                  size="large"
-                  onClick={toGoogle}
-                  style={{ marginTop: 15 }}
-                >
-                  <div>
-                    <Icon
-                      icon="local:github"
-                      style={{ verticalAlign: 'middle', marginRight: 5 }}
-                    />
-                    Sign in with Github
-                  </div>
-                </Button>
+                {location.host === 'demo.ragflow.io' && (
+                  <Button
+                    block
+                    size="large"
+                    onClick={toGoogle}
+                    style={{ marginTop: 15 }}
+                  >
+                    <div>
+                      <Icon
+                        icon="local:github"
+                        style={{ verticalAlign: 'middle', marginRight: 5 }}
+                      />
+                      Sign in with Github
+                    </div>
+                  </Button>
+                )}
               </>
             )}
           </Form>

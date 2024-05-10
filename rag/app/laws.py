@@ -11,14 +11,15 @@
 #  limitations under the License.
 #
 import copy
+from tika import parser
 import re
 from io import BytesIO
 from docx import Document
 
 from api.db import ParserType
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
-    make_colon_as_title, add_positions, tokenize_chunks
-from rag.nlp import huqie
+    make_colon_as_title, add_positions, tokenize_chunks, find_codec
+from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser
 from rag.settings import cron_logger
 
@@ -57,7 +58,7 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
-        callback(msg="OCR is  running...")
+        callback(msg="OCR is running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -71,7 +72,7 @@ class Pdf(PdfParser):
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.67, "Layout analysis finished")
-        cron_logger.info("paddle layouts:".format(
+        cron_logger.info("layouts:".format(
             (timer() - start) / (self.total_page + 0.1)))
         self._naive_vertical_merge()
 
@@ -88,12 +89,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
     doc = {
         "docnm_kwd": filename,
-        "title_tks": huqie.qie(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
-    doc["title_sm_tks"] = huqie.qieqie(doc["title_tks"])
+    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pdf_parser = None
     sections = []
-    if re.search(r"\.docx?$", filename, re.IGNORECASE):
+    if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         for txt in Docx()(filename, binary):
             sections.append(txt)
@@ -111,7 +112,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
-            txt = binary.decode("utf-8")
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 while True:
@@ -122,9 +124,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections = txt.split("\n")
         sections = [l for l in sections if l]
         callback(0.8, "Finish parsing.")
+
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        binary = BytesIO(binary)
+        doc_parsed = parser.from_buffer(binary)
+        sections = doc_parsed['content'].split('\n')
+        sections = [l for l in sections if l]
+        callback(0.8, "Finish parsing.")
+
     else:
         raise NotImplementedError(
-            "file type not supported yet(docx, pdf, txt supported)")
+            "file type not supported yet(doc, docx, pdf, txt supported)")
 
     # is it English
     eng = lang.lower() == "english"  # is_english(sections)

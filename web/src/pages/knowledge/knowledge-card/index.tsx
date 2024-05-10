@@ -100,7 +100,7 @@ const KnowledgeCard = ({ item }: IProps) => {
             <div className={styles.bottomLeft}>
               <CalendarOutlined className={styles.leftIcon} />
               <span className={styles.rightText}>
-                {formatDate(item.update_date)}
+                {formatDate(item.update_time)}
               </span>
             </div>
             {/* <Avatar.Group size={25}>

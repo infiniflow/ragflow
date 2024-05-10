@@ -7,14 +7,13 @@ import logging
 import copy
 from elasticsearch_dsl import Q
 
-from rag.nlp import huqie, term_weight, synonym
-
+from rag.nlp import rag_tokenizer, term_weight, synonym
 
 class EsQueryer:
     def __init__(self, es):
         self.tw = term_weight.Dealer()
         self.es = es
-        self.syn = synonym.Dealer(None)
+        self.syn = synonym.Dealer()
         self.flds = ["ask_tks^10", "ask_small_tks"]
 
     @staticmethod
@@ -47,13 +46,13 @@ class EsQueryer:
         txt = re.sub(
             r"[ \r\n\t,，。？?/`!！&]+",
             " ",
-            huqie.tradi2simp(
-                huqie.strQ2B(
+            rag_tokenizer.tradi2simp(
+                rag_tokenizer.strQ2B(
                     txt.lower()))).strip()
         txt = EsQueryer.rmWWW(txt)
 
         if not self.isChinese(txt):
-            tks = huqie.qie(txt).split(" ")
+            tks = rag_tokenizer.tokenize(txt).split(" ")
             q = copy.deepcopy(tks)
             for i in range(1, len(tks)):
                 q.append("\"%s %s\"^2" % (tks[i - 1], tks[i]))
@@ -65,7 +64,7 @@ class EsQueryer:
                             boost=1)#, minimum_should_match=min_match)
                      ), tks
 
-        def needQieqie(tk):
+        def need_fine_grained_tokenize(tk):
             if len(tk) < 4:
                 return False
             if re.match(r"[0-9a-z\.\+#_\*-]+$", tk):
@@ -81,7 +80,7 @@ class EsQueryer:
             logging.info(json.dumps(twts, ensure_ascii=False))
             tms = []
             for tk, w in sorted(twts, key=lambda x: x[1] * -1):
-                sm = huqie.qieqie(tk).split(" ") if needQieqie(tk) else []
+                sm = rag_tokenizer.fine_grained_tokenize(tk).split(" ") if need_fine_grained_tokenize(tk) else []
                 sm = [
                     re.sub(
                         r"[ ,\./;'\[\]\\`~!@#$%\^&\*\(\)=\+_<>\?:\"\{\}\|，。；‘’【】、！￥……（）——《》？：“”-]+",
@@ -110,10 +109,10 @@ class EsQueryer:
             if len(twts) > 1:
                 tms += f" (\"%s\"~4)^1.5" % (" ".join([t for t, _ in twts]))
             if re.match(r"[0-9a-z ]+$", tt):
-                tms = f"(\"{tt}\" OR \"%s\")" % huqie.qie(tt)
+                tms = f"(\"{tt}\" OR \"%s\")" % rag_tokenizer.tokenize(tt)
 
             syns = " OR ".join(
-                ["\"%s\"^0.7" % EsQueryer.subSpecialChar(huqie.qie(s)) for s in syns])
+                ["\"%s\"^0.7" % EsQueryer.subSpecialChar(rag_tokenizer.tokenize(s)) for s in syns])
             if syns:
                 tms = f"({tms})^5 OR ({syns})^0.7"
 

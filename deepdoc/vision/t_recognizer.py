@@ -10,17 +10,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-from deepdoc.vision.seeit import draw_box
-from deepdoc.vision import Recognizer, LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
-from api.utils.file_utils import get_project_base_directory
-import argparse
-import os
-import sys
-import re
-
-import numpy as np
-
+import os, sys
 sys.path.insert(
     0,
     os.path.abspath(
@@ -28,6 +18,13 @@ sys.path.insert(
             os.path.dirname(
                 os.path.abspath(__file__)),
             '../../')))
+
+from deepdoc.vision.seeit import draw_box
+from deepdoc.vision import Recognizer, LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
+from api.utils.file_utils import get_project_base_directory
+import argparse
+import re
+import numpy as np
 
 
 def main(args):

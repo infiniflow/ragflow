@@ -3,7 +3,7 @@ import kbService from '@/services/kbService';
 import { DvaModel } from 'umi';
 
 export interface KnowledgeModelState {
-  data: any[];
+  data: IKnowledge[];
   knowledge: IKnowledge;
 }
 

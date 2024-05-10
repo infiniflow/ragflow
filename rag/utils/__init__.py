@@ -15,9 +15,6 @@ def singleton(cls, *args, **kw):
     return _singleton
 
 
-from .minio_conn import MINIO
-from .es_conn import ELASTICSEARCH
-
 def rmSpace(txt):
     txt = re.sub(r"([^a-z0-9.,]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
     return re.sub(r"([^ ]) +([^a-z0-9.,])", r"\1\2", txt, flags=re.IGNORECASE)
@@ -66,3 +63,7 @@ def num_tokens_from_string(string: str) -> int:
     num_tokens = len(encoder.encode(string))
     return num_tokens
 
+
+def truncate(string: str, max_len: int) -> int:
+    """Returns truncated text if the length of text exceed max_len."""
+    return encoder.decode(encoder.encode(string)[:max_len])

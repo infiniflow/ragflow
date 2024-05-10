@@ -8,7 +8,7 @@ import { useSetSelectedRecord } from '@/hooks/logicHooks';
 import { useSelectParserList } from '@/hooks/userSettingHook';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';
-import { Divider, Flex, Switch, Table } from 'antd';
+import { Divider, Flex, Switch, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 import CreateFileModal from './create-file-modal';
@@ -19,6 +19,7 @@ import {
   useFetchDocumentListOnMount,
   useGetPagination,
   useGetRowSelection,
+  useHandleUploadDocument,
   useNavigateToOtherPage,
   useRenameDocument,
 } from './hooks';
@@ -26,8 +27,11 @@ import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
 
+import FileUploadModal from '@/components/file-upload-modal';
 import { formatDate } from '@/utils/date';
 import styles from './index.less';
+
+const { Text } = Typography;
 
 const KnowledgeFile = () => {
   const data = useSelectDocumentList();
@@ -58,6 +62,13 @@ const KnowledgeFile = () => {
     hideChangeParserModal,
     showChangeParserModal,
   } = useChangeDocumentParser(currentRecord.id);
+  const {
+    documentUploadVisible,
+    hideDocumentUploadModal,
+    showDocumentUploadModal,
+    onDocumentUploadOk,
+    documentUploadLoading,
+  } = useHandleUploadDocument();
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
@@ -71,7 +82,7 @@ const KnowledgeFile = () => {
       key: 'name',
       fixed: 'left',
       render: (text: any, { id, thumbnail, name }) => (
-        <div className={styles.tochunks} onClick={() => toChunk(id)}>
+        <div className={styles.toChunks} onClick={() => toChunk(id)}>
           <Flex gap={10} align="center">
             {thumbnail ? (
               <img className={styles.img} src={thumbnail} alt="" />
@@ -81,7 +92,9 @@ const KnowledgeFile = () => {
                 width={24}
               ></SvgIcon>
             )}
-            {text}
+            <Text ellipsis={{ tooltip: text }} className={styles.nameText}>
+              {text}
+            </Text>
           </Flex>
         </div>
       ),
@@ -93,8 +106,8 @@ const KnowledgeFile = () => {
     },
     {
       title: t('uploadDate'),
-      dataIndex: 'create_date',
-      key: 'create_date',
+      dataIndex: 'create_time',
+      key: 'create_time',
       render(value) {
         return formatDate(value);
       },
@@ -157,6 +170,7 @@ const KnowledgeFile = () => {
       <DocumentToolbar
         selectedRowKeys={rowSelection.selectedRowKeys as string[]}
         showCreateModal={showCreateModal}
+        showDocumentUploadModal={showDocumentUploadModal}
       ></DocumentToolbar>
       <Table
         rowKey="id"
@@ -165,7 +179,8 @@ const KnowledgeFile = () => {
         // loading={loading}
         pagination={pagination}
         rowSelection={rowSelection}
-        scroll={{ scrollToFirstRowOnChange: true, x: 1300, y: 'fill' }}
+        className={styles.documentTable}
+        scroll={{ scrollToFirstRowOnChange: true, x: 1300 }}
       />
       <CreateFileModal
         visible={createVisible}
@@ -190,6 +205,12 @@ const KnowledgeFile = () => {
         hideModal={hideRenameModal}
         initialName={currentRecord.name}
       ></RenameModal>
+      <FileUploadModal
+        visible={documentUploadVisible}
+        hideModal={hideDocumentUploadModal}
+        loading={documentUploadLoading}
+        onOk={onDocumentUploadOk}
+      ></FileUploadModal>
     </div>
   );
 };

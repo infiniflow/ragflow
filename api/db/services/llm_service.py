@@ -81,7 +81,7 @@ class TenantLLMService(CommonService):
         if not model_config:
             if llm_type == LLMType.EMBEDDING.value:
                 llm = LLMService.query(llm_name=llm_name)
-                if llm and llm[0].fid in ["QAnything", "FastEmbed"]:
+                if llm and llm[0].fid in ["Youdao", "FastEmbed"]:
                     model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": llm_name, "api_base": ""}
             if not model_config:
                 if llm_name == "flag-embedding":
@@ -128,9 +128,11 @@ class TenantLLMService(CommonService):
         else:
             assert False, "LLM type error"
 
-        num = cls.model.update(used_tokens=cls.model.used_tokens + used_tokens)\
-            .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
-            .execute()
+        num = 0
+        for u in cls.query(tenant_id = tenant_id, llm_name=mdlnm):
+            num += cls.model.update(used_tokens = u.used_tokens + used_tokens)\
+                .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
+                .execute()
         return num
 
 
