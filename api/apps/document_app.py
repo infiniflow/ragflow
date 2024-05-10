@@ -23,7 +23,7 @@ from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.db_models import Task
+from api.db.db_models import Task, File
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.task_service import TaskService, queue_tasks
@@ -33,7 +33,7 @@ from api.db.services import duplicate_name
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
-from api.db import FileType, TaskStatus, ParserType
+from api.db import FileType, TaskStatus, ParserType, FileSource
 from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
@@ -59,12 +59,19 @@ def upload():
             return get_json_result(
                 data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
 
+    e, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not e:
+        raise LookupError("Can't find this knowledgebase!")
+
+    root_folder = FileService.get_root_folder(current_user.id)
+    pf_id = root_folder.id
+    FileService.init_knowledgebase_docs(pf_id, current_user.id)
+    kb_root_folder = FileService.get_kb_folder(current_user.id)
+    kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
+
     err = []
     for file in file_objs:
         try:
-            e, kb = KnowledgebaseService.get_by_id(kb_id)
-            if not e:
-                raise LookupError("Can't find this knowledgebase!")
             MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
             if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
                 raise RuntimeError("Exceed the maximum file number of a free user!")
@@ -99,6 +106,8 @@ def upload():
             if re.search(r"\.(ppt|pptx|pages)$", filename):
                 doc["parser_id"] = ParserType.PRESENTATION.value
             DocumentService.insert(doc)
+
+            FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
         except Exception as e:
             err.append(file.filename + ": " + str(e))
     if err:
@@ -228,11 +237,13 @@ def rm():
     req = request.json
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str): doc_ids = [doc_ids]
+    root_folder = FileService.get_root_folder(current_user.id)
+    pf_id = root_folder.id
+    FileService.init_knowledgebase_docs(pf_id, current_user.id)
     errors = ""
     for doc_id in doc_ids:
         try:
             e, doc = DocumentService.get_by_id(doc_id)
-
             if not e:
                 return get_data_error_result(retmsg="Document not found!")
             tenant_id = DocumentService.get_tenant_id(doc_id)
@@ -241,21 +252,25 @@ def rm():
 
             ELASTICSEARCH.deleteByQuery(
                 Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-            DocumentService.increment_chunk_num(
-                doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
+
+            DocumentService.clear_chunk_num(doc_id)
+            b, n = File2DocumentService.get_minio_address(doc_id=doc_id)
+
             if not DocumentService.delete(doc):
                 return get_data_error_result(
                     retmsg="Database error (Document removal)!")
 
-            informs = File2DocumentService.get_by_document_id(doc_id)
-            if not informs:
-                MINIO.rm(doc.kb_id, doc.location)
-            else:
-                File2DocumentService.delete_by_document_id(doc_id)
+            f2d = File2DocumentService.get_by_document_id(doc_id)
+            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+            File2DocumentService.delete_by_document_id(doc_id)
+
+            MINIO.rm(b, n)
         except Exception as e:
             errors += str(e)
 
-    if errors: return server_error_response(e)
+    if errors:
+        return get_json_result(data=False, retmsg=errors, retcode=RetCode.SERVER_ERROR)
+
     return get_json_result(data=True)
 
 

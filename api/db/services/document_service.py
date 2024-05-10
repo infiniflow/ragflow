@@ -152,6 +152,22 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def clear_chunk_num(cls, doc_id):
+        doc = cls.model.get_by_id(doc_id)
+        assert doc, "Can't fine document in database."
+
+        num = Knowledgebase.update(
+            token_num=Knowledgebase.token_num -
+            doc.token_num,
+            chunk_num=Knowledgebase.chunk_num -
+            doc.chunk_num,
+            doc_num=Knowledgebase.doc_num-1
+        ).where(
+            Knowledgebase.id == doc.kb_id).execute()
+        return num
+
+    @classmethod
+    @DB.connection_context()
     def get_tenant_id(cls, doc_id):
         docs = cls.model.select(
             Knowledgebase.tenant_id).join(

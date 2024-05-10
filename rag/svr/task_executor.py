@@ -109,6 +109,7 @@ def collect():
     if not msg: return pd.DataFrame()
 
     if TaskService.do_cancel(msg["id"]):
+        cron_logger.info("Task {} has been canceled.".format(msg["id"]))
         return pd.DataFrame()
     tasks = TaskService.get_tasks(msg["id"])
     assert tasks, "{} empty task!".format(msg["id"])
