@@ -247,7 +247,28 @@ $ docker compose -f docker-compose-base.yml up -d
 $ chmod +x ./entrypoint.sh
 $ bash ./entrypoint.sh
 ```
+7. 启动WebUI服务
+```bash
+$ cd web
+$ npm install --registry=https://registry.npmmirror.com --force
+$ vim .umirc.ts
+# 修改proxy.target为127.0.0.1:9380
+$ npm run dev 
+```
 
+8. 部署WebUI服务
+```bash
+$ cd web
+$ npm install --registry=https://registry.npmmirror.com --force
+$ umi build
+$ mkdir -p /ragflow/web
+$ cp -r dist /ragflow/web
+$ apt install nginx -y
+$ cp ../docker/nginx/proxy.conf /etc/nginx
+$ cp ../docker/nginx/nginx.conf /etc/nginx
+$ cp ../docker/nginx/ragflow.conf /etc/nginx/conf.d
+$ systemctl start nginx
+```
 ## 📚 技术文档
 
 - [FAQ](./docs/faq.md)
