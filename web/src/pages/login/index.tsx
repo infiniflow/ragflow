@@ -36,7 +36,10 @@ const Login = () => {
     try {
       const params = await form.validateFields();
 
-      const rsaPassWord = rsaPsw(params.password) as string;
+      // const rsaPassWord = rsaPsw(params.password) as string;
+
+      // Integrate with Penless, don't need to encrypt
+      const rsaPassWord = params.password;
 
       if (title === 'login') {
         const retcode = await login({
@@ -124,6 +127,7 @@ const Login = () => {
                 <Checkbox> {t('rememberMe')}</Checkbox>
               </Form.Item>
             )}
+            {/*
             <div>
               {title === 'login' && (
                 <div>
@@ -142,6 +146,7 @@ const Login = () => {
                 </div>
               )}
             </div>
+            */}
             <Button
               type="primary"
               block

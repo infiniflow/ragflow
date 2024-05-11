@@ -25,6 +25,8 @@ user_default_llm:
   factory: 'OpenAI'
   api_key: 'sk-xxxxxxxxxxxxx'
   base_url: ''
+pocketbase:
+  host: 'https://luban.ticosdev.cc'
 oauth:
   github:
     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
