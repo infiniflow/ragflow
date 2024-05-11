@@ -68,15 +68,17 @@ const ActionCell = ({
 
   return (
     <Space size={0}>
-      <Tooltip title={t('addToKnowledge')}>
-        <Button
-          type="text"
-          className={styles.iconButton}
-          onClick={onShowConnectToKnowledgeModal}
-        >
-          <LinkOutlined size={20} />
-        </Button>
-      </Tooltip>
+      {isKnowledgeBase || (
+        <Tooltip title={t('addToKnowledge')}>
+          <Button
+            type="text"
+            className={styles.iconButton}
+            onClick={onShowConnectToKnowledgeModal}
+          >
+            <LinkOutlined size={20} />
+          </Button>
+        </Tooltip>
+      )}
 
       {isKnowledgeBase || (
         <Tooltip title={t('rename', { keyPrefix: 'common' })}>
