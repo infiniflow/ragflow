@@ -15,12 +15,12 @@
 #
 from datetime import datetime
 
+from api.db import FileSource
 from api.db.db_models import DB
-from api.db.db_models import File, Document, File2Document
+from api.db.db_models import File, File2Document
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
-from api.db.services.file_service import FileService
-from api.utils import current_timestamp, datetime_format
+from api.utils import current_timestamp, datetime_format, get_uuid
 
 
 class File2DocumentService(CommonService):
@@ -71,13 +71,15 @@ class File2DocumentService(CommonService):
     @DB.connection_context()
     def get_minio_address(cls, doc_id=None, file_id=None):
         if doc_id:
-            ids = File2DocumentService.get_by_document_id(doc_id)
+            f2d = cls.get_by_document_id(doc_id)
         else:
-            ids = File2DocumentService.get_by_file_id(file_id)
-        if ids:
-            e, file = FileService.get_by_id(ids[0].file_id)
-            return file.parent_id, file.location
-        else:
-            assert doc_id, "please specify doc_id"
-            e, doc = DocumentService.get_by_id(doc_id)
-            return doc.kb_id, doc.location
+            f2d = cls.get_by_file_id(file_id)
+        if f2d:
+            file = File.get_by_id(f2d[0].file_id)
+            if file.source_type == FileSource.LOCAL:
+                return file.parent_id, file.location
+            doc_id = f2d[0].document_id
+
+        assert doc_id, "please specify doc_id"
+        e, doc = DocumentService.get_by_id(doc_id)
+        return doc.kb_id, doc.location

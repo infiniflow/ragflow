@@ -26,7 +26,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
-from api.db import FileType
+from api.db import FileType, FileSource
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.settings import RetCode
@@ -45,7 +45,7 @@ def upload():
 
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
-        pf_id = root_folder.id
+        pf_id = root_folder["id"]
 
     if 'file' not in request.files:
         return get_json_result(
@@ -132,7 +132,7 @@ def create():
     input_file_type = request.json.get("type")
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
-        pf_id = root_folder.id
+        pf_id = root_folder["id"]
 
     try:
         if not FileService.is_parent_folder_exist(pf_id):
@@ -176,7 +176,8 @@ def list():
     desc = request.args.get("desc", True)
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
-        pf_id = root_folder.id
+        pf_id = root_folder["id"]
+        FileService.init_knowledgebase_docs(pf_id, current_user.id)
     try:
         e, file = FileService.get_by_id(pf_id)
         if not e:
@@ -199,7 +200,7 @@ def list():
 def get_root_folder():
     try:
         root_folder = FileService.get_root_folder(current_user.id)
-        return get_json_result(data={"root_folder": root_folder.to_json()})
+        return get_json_result(data={"root_folder": root_folder})
     except Exception as e:
         return server_error_response(e)
 
@@ -250,6 +251,8 @@ def rm():
                 return get_data_error_result(retmsg="File or Folder not found!")
             if not file.tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
+            if file.source_type == FileSource.KNOWLEDGEBASE:
+                continue
 
             if file.type == FileType.FOLDER.value:
                 file_id_list = FileService.get_all_innermost_file_ids(file_id, [])
