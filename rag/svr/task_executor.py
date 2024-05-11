@@ -94,9 +94,9 @@ def set_progress(task_id, from_page=0, to_page=-1,
         sys.exit()
 
 
-def collect(thread_num):
+def collect(worker_id):
     try:
-        payload = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", f"rag_flow_svr_task_consumer_{thread_num}")
+        payload = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", f"rag_flow_svr_task_consumer_{worker_id}")
         if not payload:
             time.sleep(1)
             return pd.DataFrame()
@@ -245,8 +245,8 @@ def embedding(docs, mdl, parser_config={}, callback=None):
     return tk_count
 
 
-def main(thread_num):
-    rows = collect(thread_num)
+def main(worker_id):
+    rows = collect(worker_id)
     if len(rows) == 0:
         return
 
