@@ -3,7 +3,8 @@ import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { PaginationProps } from 'antd';
-import { useCallback, useMemo, useState } from 'react';
+import axios from 'axios';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
 import { useSetModalState, useTranslate } from './commonHooks';
@@ -112,4 +113,23 @@ export const useSetPagination = (namespace: string) => {
   );
 
   return setPagination;
+};
+
+export interface AppConf {
+  appName: string;
+}
+
+export const useFetchAppConf = () => {
+  const [appConf, setAppConf] = useState<AppConf>({} as AppConf);
+  const fetchAppConf = useCallback(async () => {
+    const ret = await axios.get('/conf.json');
+
+    setAppConf(ret.data);
+  }, []);
+
+  useEffect(() => {
+    fetchAppConf();
+  }, [fetchAppConf]);
+
+  return appConf;
 };
