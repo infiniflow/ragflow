@@ -285,7 +285,12 @@ def main():
         init_kb(r)
         chunk_count = len(set([c["_id"] for c in cks]))
         st = timer()
-        es_r = ELASTICSEARCH.bulk(cks, search.index_name(r["tenant_id"]))
+        es_r = ""
+        for b in range(0, len(cks), 32):
+            es_r = ELASTICSEARCH.bulk(cks[b:b+32], search.index_name(r["tenant_id"]))
+            if b % 128 == 0:
+                callback(prog=0.8 + 0.1 * (b + 1) / len(cks), msg="")
+
         cron_logger.info("Indexing elapsed({}): {}".format(r["name"], timer()-st))
         if es_r:
             callback(-1, "Index failure!")
