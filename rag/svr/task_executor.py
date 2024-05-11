@@ -94,9 +94,9 @@ def set_progress(task_id, from_page=0, to_page=-1,
         sys.exit()
 
 
-def collect():
+def collect(thread_num):
     try:
-        payload = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", "rag_flow_svr_task_consumer")
+        payload = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", f"rag_flow_svr_task_consumer_{thread_num}")
         if not payload:
             time.sleep(1)
             return pd.DataFrame()
@@ -245,8 +245,8 @@ def embedding(docs, mdl, parser_config={}, callback=None):
     return tk_count
 
 
-def main():
-    rows = collect()
+def main(thread_num):
+    rows = collect(thread_num)
     if len(rows) == 0:
         return
 
@@ -318,4 +318,7 @@ if __name__ == "__main__":
     peewee_logger.setLevel(database_logger.level)
 
     while True:
-        main()
+        if len(sys.argv) == 3:
+            main(sys.argv[1])
+        else:
+            main('0')
