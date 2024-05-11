@@ -35,11 +35,15 @@ class FileService(CommonService):
         if keywords:
             files = cls.model.select().where(
                 (cls.model.tenant_id == tenant_id)
-                & (cls.model.parent_id == pf_id), (fn.LOWER(cls.model.name).like(f"%%{keywords.lower()}%%")))
+                (cls.model.parent_id == pf_id),
+                (fn.LOWER(cls.model.name).like(f"%%{keywords.lower()}%%")),
+                ~(cls.model.id == pf_id)
+            )
         else:
-            files = cls.model.select().where((cls.model.tenant_id == tenant_id)
-                                             & (cls.model.parent_id == pf_id)
-                                             & ~(cls.model.id == pf_id))
+            files = cls.model.select().where((cls.model.tenant_id == tenant_id),
+                                             (cls.model.parent_id == pf_id),
+                                             ~(cls.model.id == pf_id)
+                                             )
         count = files.count()
         if desc:
             files = files.order_by(cls.model.getter_by(orderby).desc())
@@ -138,27 +142,23 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_root_folder(cls, tenant_id):
-        file = cls.model.select().where(cls.model.tenant_id == tenant_id and
-                                        cls.model.parent_id == cls.model.id)
-        if not file:
-            file_id = get_uuid()
-            file = {
-                "id": file_id,
-                "parent_id": file_id,
-                "tenant_id": tenant_id,
-                "created_by": tenant_id,
-                "name": "/",
-                "type": FileType.FOLDER.value,
-                "size": 0,
-                "location": "",
-            }
-            cls.save(**file)
-        else:
-            file_id = file[0].id
+        for file in cls.model.select().where((cls.model.tenant_id == tenant_id),
+                                        (cls.model.parent_id == cls.model.id)
+                                        ):
+            return file.to_dict()
 
-        e, file = cls.get_by_id(file_id)
-        if not e:
-            raise RuntimeError("Database error (File retrieval)!")
+        file_id = get_uuid()
+        file = {
+            "id": file_id,
+            "parent_id": file_id,
+            "tenant_id": tenant_id,
+            "created_by": tenant_id,
+            "name": "/",
+            "type": FileType.FOLDER.value,
+            "size": 0,
+            "location": "",
+        }
+        cls.save(**file)
         return file
 
     @classmethod

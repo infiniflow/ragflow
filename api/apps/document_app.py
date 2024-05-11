@@ -64,7 +64,7 @@ def upload():
         raise LookupError("Can't find this knowledgebase!")
 
     root_folder = FileService.get_root_folder(current_user.id)
-    pf_id = root_folder.id
+    pf_id = root_folder["id"]
     FileService.init_knowledgebase_docs(pf_id, current_user.id)
     kb_root_folder = FileService.get_kb_folder(current_user.id)
     kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
@@ -238,7 +238,7 @@ def rm():
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str): doc_ids = [doc_ids]
     root_folder = FileService.get_root_folder(current_user.id)
-    pf_id = root_folder.id
+    pf_id = root_folder["id"]
     FileService.init_knowledgebase_docs(pf_id, current_user.id)
     errors = ""
     for doc_id in doc_ids:

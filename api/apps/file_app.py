@@ -45,7 +45,7 @@ def upload():
 
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
-        pf_id = root_folder.id
+        pf_id = root_folder["id"]
 
     if 'file' not in request.files:
         return get_json_result(
@@ -132,7 +132,7 @@ def create():
     input_file_type = request.json.get("type")
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
-        pf_id = root_folder.id
+        pf_id = root_folder["id"]
 
     try:
         if not FileService.is_parent_folder_exist(pf_id):
@@ -176,7 +176,7 @@ def list():
     desc = request.args.get("desc", True)
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
-        pf_id = root_folder.id
+        pf_id = root_folder["id"]
         FileService.init_knowledgebase_docs(pf_id, current_user.id)
     try:
         e, file = FileService.get_by_id(pf_id)
@@ -200,7 +200,7 @@ def list():
 def get_root_folder():
     try:
         root_folder = FileService.get_root_folder(current_user.id)
-        return get_json_result(data={"root_folder": root_folder.to_json()})
+        return get_json_result(data={"root_folder": root_folder})
     except Exception as e:
         return server_error_response(e)
 
