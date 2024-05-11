@@ -3,6 +3,16 @@ USER  root
 
 WORKDIR /ragflow
 
+ENV PYTHONPATH=/ragflow/
+ENV HF_ENDPOINT=https://hf-mirror.com
+
+ENV CONDA_DEFAULT_ENV py11
+ENV CONDA_PREFIX /root/miniconda3/envs/py11
+ENV PATH /root/miniconda3/bin:$PATH
+ENV PATH $CONDA_PREFIX/bin:$PATH
+
+RUN conda run -n py11 pip install -i https://mirrors.aliyun.com/pypi/simple/ pocketbase --no-deps
+
 ADD ./web ./web
 RUN cd ./web && npm i --force && npm run build
 
@@ -10,9 +20,6 @@ ADD ./api ./api
 ADD ./conf ./conf
 ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
-
-ENV PYTHONPATH=/ragflow/
-ENV HF_ENDPOINT=https://hf-mirror.com
 
 ADD docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh

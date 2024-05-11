@@ -31,42 +31,80 @@ from api.db.services.user_service import UserService, TenantService, UserTenantS
 from api.db.services.file_service import FileService
 from api.settings import stat_logger
 from api.utils.api_utils import get_json_result, cors_reponse
+from pocketbase import PocketBase
+from api.settings import POCKETBASE_HOST
+from api.db.db_models import User
+from api.utils.user_utils import user_register, rollback_user_registration
 
 
+
+# @manager.route('/login', methods=['POST', 'GET'])
+# def login():
+#     login_channel = "password"
+#     if not request.json:
+#         return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
+#                                retmsg='Unautherized!')
+
+#     email = request.json.get('email', "")
+#     users = UserService.query(email=email)
+#     if not users:
+#         return get_json_result(
+#             data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg=f'This Email is not registered!')
+
+#     password = request.json.get('password')
+#     try:
+#         password = decrypt(password)
+#     except BaseException:
+#         return get_json_result(
+#             data=False, retcode=RetCode.SERVER_ERROR, retmsg='Fail to crypt password')
+
+#     user = UserService.query_user(email, password)
+#     if user:
+#         response_data = user.to_json()
+#         user.access_token = get_uuid()
+#         login_user(user)
+#         user.update_time = current_timestamp(),
+#         user.update_date = datetime_format(datetime.now()),
+#         user.save()
+#         msg = "Welcome back!"
+#         return cors_reponse(data=response_data, auth=user.get_id(), retmsg=msg)
+#     else:
+#         return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
+#                                retmsg='Email and Password do not match!')
+
+# Integrate with Penless
 @manager.route('/login', methods=['POST', 'GET'])
 def login():
-    login_channel = "password"
+    pb = PocketBase(POCKETBASE_HOST)
+
     if not request.json:
         return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
-                               retmsg='Unautherized!')
+                               retmsg='Unauthorized!')
 
     email = request.json.get('email', "")
-    users = UserService.query(email=email)
-    if not users:
-        return get_json_result(
-            data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg=f'This Email is not registered!')
 
     password = request.json.get('password')
+
+    stat_logger.warning(f"login request: email={email}, password={password}")
     try:
-        password = decrypt(password)
-    except BaseException:
+        res = pb.collection("users").auth_with_password(email, password)
+        if res:
+            user = User(
+                id=res.record.id,
+                nickname=res.record.username,
+                email=res.record.email,
+                access_token=res.token
+            )
+            response_data = user.to_json()
+            login_user(user)
+            msg = "Welcome back!"
+            return cors_reponse(data=response_data, auth=user.get_id(), retmsg=msg)
+        else:
+            return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
+                                   retmsg='Email and Password do not match!')
+    except Exception as e:  # Replaced TODO comment with this try/except block
         return get_json_result(
-            data=False, retcode=RetCode.SERVER_ERROR, retmsg='Fail to crypt password')
-
-    user = UserService.query_user(email, password)
-    if user:
-        response_data = user.to_json()
-        user.access_token = get_uuid()
-        login_user(user)
-        user.update_time = current_timestamp(),
-        user.update_date = datetime_format(datetime.now()),
-        user.save()
-        msg = "Welcome back!"
-        return cors_reponse(data=response_data, auth=user.get_id(), retmsg=msg)
-    else:
-        return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
-                               retmsg='Email and Password do not match!')
-
+            data=False, retcode=RetCode.SERVER_ERROR, retmsg=f'Authentication failed: {e}')
 
 @manager.route('/github_callback', methods=['GET'])
 def github_callback():
@@ -182,75 +220,6 @@ def setting_user():
 @login_required
 def user_info():
     return get_json_result(data=current_user.to_dict())
-
-
-def rollback_user_registration(user_id):
-    try:
-        UserService.delete_by_id(user_id)
-    except Exception as e:
-        pass
-    try:
-        TenantService.delete_by_id(user_id)
-    except Exception as e:
-        pass
-    try:
-        u = UserTenantService.query(tenant_id=user_id)
-        if u:
-            UserTenantService.delete_by_id(u[0].id)
-    except Exception as e:
-        pass
-    try:
-        TenantLLM.delete().where(TenantLLM.tenant_id == user_id).excute()
-    except Exception as e:
-        pass
-
-
-def user_register(user_id, user):
-    user["id"] = user_id
-    tenant = {
-        "id": user_id,
-        "name": user["nickname"] + "‘s Kingdom",
-        "llm_id": CHAT_MDL,
-        "embd_id": EMBEDDING_MDL,
-        "asr_id": ASR_MDL,
-        "parser_ids": PARSERS,
-        "img2txt_id": IMAGE2TEXT_MDL
-    }
-    usr_tenant = {
-        "tenant_id": user_id,
-        "user_id": user_id,
-        "invited_by": user_id,
-        "role": UserTenantRole.OWNER
-    }
-    file_id = get_uuid()
-    file = {
-        "id": file_id,
-        "parent_id": file_id,
-        "tenant_id": user_id,
-        "created_by": user_id,
-        "name": "/",
-        "type": FileType.FOLDER.value,
-        "size": 0,
-        "location": "",
-    }
-    tenant_llm = []
-    for llm in LLMService.query(fid=LLM_FACTORY):
-        tenant_llm.append({"tenant_id": user_id,
-                           "llm_factory": LLM_FACTORY,
-                           "llm_name": llm.llm_name,
-                           "model_type": llm.model_type,
-                           "api_key": API_KEY,
-                           "api_base": LLM_BASE_URL
-                           })
-
-    if not UserService.save(**user):
-        return
-    TenantService.insert(**tenant)
-    UserTenantService.insert(**usr_tenant)
-    TenantLLMService.insert_many(tenant_llm)
-    FileService.insert(file)
-    return UserService.query(email=user["email"])
-
 
 @manager.route("/register", methods=["POST"])
 @validate_request("nickname", "email", "password")
