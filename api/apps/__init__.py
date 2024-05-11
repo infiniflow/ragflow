@@ -29,10 +29,17 @@ from api.utils import CustomJSONEncoder
 
 from flask_session import Session
 from flask_login import LoginManager
+from api.settings import POCKETBASE_HOST
 from api.settings import SECRET_KEY, stat_logger
 from api.settings import API_VERSION, access_logger
 from api.utils.api_utils import server_error_response
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+from pocketbase import PocketBase
+from api.db.db_models import User
+from api.utils.user_utils import user_register, rollback_user_registration
+from api.utils import get_format_time
+from threading import Lock
+registration_lock = Lock()
 
 __all__ = ['app']
 
@@ -95,17 +102,76 @@ client_urls_prefix = [
     for path in search_pages_path(dir)
 ]
 
+# @login_manager.request_loader
+# def load_user(web_request):
+#     jwt = Serializer(secret_key=SECRET_KEY)
+#     authorization = web_request.headers.get("Authorization")
+#     if authorization:
+#         try:
+#             access_token = str(jwt.loads(authorization))
+#             user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
+#             if user:
+#                 return user[0]
+#             else:
+#                 return None
+#         except Exception as e:
+#             stat_logger.exception(e)
+#             return None
+#     else:
+#         return None
 
+# Integrate with Penless
 @login_manager.request_loader
 def load_user(web_request):
+    pb = PocketBase(POCKETBASE_HOST)
     jwt = Serializer(secret_key=SECRET_KEY)
     authorization = web_request.headers.get("Authorization")
+    stat_logger.warning(authorization)
     if authorization:
         try:
-            access_token = str(jwt.loads(authorization))
-            user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
-            if user:
-                return user[0]
+            pb.auth_store.base_token=str(jwt.loads(authorization))
+            pb.collection("users").authRefresh()
+
+            if pb.auth_store.model and pb.auth_store.model.id:
+                user = User(
+                    id=pb.auth_store.model.id,
+                    nickname=pb.auth_store.model.username,
+                    email=pb.auth_store.model.email,
+                    access_token=pb.auth_store.token
+                )
+                
+                userInDb = UserService.filter_by_id(user.id)
+                if userInDb is None:
+                    # Synchronize this section to prevent race conditions
+                    with registration_lock:
+                        # Re-check if user is already registered after acquiring the lock to avoid race condition
+                        userInDb = UserService.filter_by_id(user.id)
+                        if userInDb is not None:
+                            return user
+                        stat_logger.info(f"User {user.email} not in local DB, which comes from penless, register it")
+                        user_dict = {
+                            "access_token": user.access_token,
+                            "email": user.email,
+                            "nickname": user.nickname,
+                            "password": '',
+                            "login_channel": "password",
+                            "last_login_time": get_format_time(),
+                            "is_superuser": False,
+                        }
+
+                        user_id = user.id
+                        try:
+                            users = user_register(user_id, user_dict)
+                            if not users:
+                                raise Exception('Register user failure.')
+                            if len(users) > 1:
+                                raise Exception('Same E-mail exist!')
+                            # User registration logic goes here
+                        except Exception as e:
+                            rollback_user_registration(user_id)
+                            stat_logger.exception(e)
+                            return None
+                return user
             else:
                 return None
         except Exception as e:
@@ -113,8 +179,7 @@ def load_user(web_request):
             return None
     else:
         return None
-
-
+    
 @app.teardown_request
 def _db_close(exc):
     close_connection()

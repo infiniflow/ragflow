@@ -139,6 +139,9 @@ PROXY_PROTOCOL = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("protocol")
 
 DATABASE = decrypt_database_config(name="mysql")
 
+# Pocketbase
+POCKETBASE_HOST = get_base_config("pocketbase", {}).get("host")
+
 # Switch
 # upload
 UPLOAD_DATA_FROM_CLIENT = True
