@@ -83,3 +83,11 @@ class ParserType(StrEnum):
     NAIVE = "naive"
     PICTURE = "picture"
     ONE = "one"
+
+
+class FileSource(StrEnum):
+    LOCAL = ""
+    KNOWLEDGEBASE = "knowledgebase"
+    S3 = "s3"
+
+KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"
