@@ -200,7 +200,7 @@ def rollback_user_registration(user_id):
     except Exception as e:
         pass
     try:
-        TenantLLM.delete().where(TenantLLM.tenant_id == user_id).excute()
+        TenantLLM.delete().where(TenantLLM.tenant_id == user_id).execute()
     except Exception as e:
         pass
 
