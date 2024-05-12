@@ -95,7 +95,7 @@ This document describes how to set up a local RAGFlow server, how to create a kn
 
 ## LLM configurations
 
-For now, RAGFlow supports DeepSeek-V1, Moonshot, OpenAI, Tongyi-Qianwen, and also supports deploy LLM locally through Ollama and Xinference. To configure your LLM:
+For now, RAGFlow supports DeepSeek-V2, Moonshot, OpenAI, Tongyi-Qianwen, and also supports deploy LLM locally through Ollama and Xinference. To configure your LLM:
 
 1. Click on your logo on the top right of the page > **Model Providers**.
 2. Choose the desired LLM and set the corresponding API-key.
