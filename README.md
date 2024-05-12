@@ -28,6 +28,17 @@
 
 [RAGFlow](https://demo.ragflow.io) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data.
 
+## 📌 Latest Updates
+
+- 2024-05-08 Integrates LLM DeepSeek-V2.
+- 2024-04-26 Adds file management.
+- 2024-04-19 Supports conversation API ([detail](./docs/conversation_api.md)).
+- 2024-04-16 Integrates an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding), and [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
+- 2024-04-11 Supports [Xinference](./docs/xinference.md) for local LLM deployment.
+- 2024-04-10 Adds a new layout recognition model for analyzing legal documents.
+- 2024-04-08 Supports [Ollama](./docs/ollama.md) for local LLM deployment.
+- 2024-04-07 Supports Chinese UI.
+
 ## 🌟 Key Features
 
 ### 🍭 **"Quality in, quality out"**
@@ -55,17 +66,6 @@
 - Configurable LLMs as well as embedding models.
 - Multiple recall paired with fused re-ranking.
 - Intuitive APIs for seamless integration with business.
-
-## 📌 Latest Features
-
-- 2024-05-08 Integrates LLM DeepSeek-V2.
-- 2024-04-26 Adds file management.
-- 2024-04-19 Supports conversation API ([detail](./docs/conversation_api.md)).
-- 2024-04-16 Integrates an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding), and [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
-- 2024-04-11 Supports [Xinference](./docs/xinference.md) for local LLM deployment.
-- 2024-04-10 Adds a new layout recognition model for analyzing legal documents.
-- 2024-04-08 Supports [Ollama](./docs/ollama.md) for local LLM deployment.
-- 2024-04-07 Supports Chinese UI.
 
 ## 🔎 System Architecture
 
