@@ -1,10 +1,13 @@
 # Quickstart
 
-RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding.
+RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. When integrated with LLMs, it is capable of providing truthful question-answering capabilities, backed by well-founded citations from various complex formatted data.
 
-When integrated with LLM, it is capable of providing truthful question-answering capabilities, backed by well-founded citations from various complex formatted data.
+This quick start guide describes a general process from:
 
-This document describes how to set up a local RAGFlow server, how to create a knowledge base, and how to set up an AI chat based on your dataset. 
+- Starting up a local RAGFlow server, 
+- Creating a knowledge base, 
+- Intervening with file parsing, to 
+- Establishing an AI chat based on your datasets. 
 
 ## Prerequisites
 
@@ -85,36 +88,82 @@ This document describes how to set up a local RAGFlow server, how to create a kn
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
-   > With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+   > - With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 
-6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
+## Configure LLMs
 
-   > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
+RAGFlow is a RAG solution, and it needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. For now, RAGFlow supports the following LLMs, and the list is expanding:
 
-   _The show is now on!_
+- OpenAI
+- Tongyi-Qianwen
+- Moonshot
+- DeepSeek-V2
 
-## LLM configurations
+>  RAGFlow also supports deploying LLMs locally using Ollama or Xinference, but this part is not covered in this quick start guide. 
 
-For now, RAGFlow supports DeepSeek-V2, Moonshot, OpenAI, Tongyi-Qianwen, and also supports deploy LLM locally through Ollama and Xinference. To configure your LLM:
+To add and configure an LLM: 
 
-1. Click on your logo on the top right of the page > **Model Providers**.
-2. Choose the desired LLM and set the corresponding API-key.
+1. Click on your logo on the top right of the page **>** **Model Providers**:
 
-## Create a knowledge base
+   ![2 add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
-1. Click the **Knowledge Base** tab in the top middle of the page. 
+   > Each RAGFlow account is able to use **text-embedding-v2** for free, a small embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
 
-2. Click **Create knowledge base** 
+2. Click on the desired LLM and update the API key accordingly (DeepSeek-V2 in this case):
 
-3. Input the name of your knowledge base and click **OK** to confirm.
+   ![update api key](https://github.com/infiniflow/ragflow/assets/93570324/4e5e13ef-a98d-42e6-bcb1-0c6045fc1666)
 
-4. Upload your dataset (document): Click **dataset** > **Add file** to upload and parse your files.
+   *Your added models appear as follows:* 
 
-   _When the file parsing completes, its parsing status changes to **Success**._
+   ![added available models](https://github.com/infiniflow/ragflow/assets/93570324/d08b80e4-f921-480a-b41d-11832489c916)
 
-   > For now, RAGFlow supports Word, slides, excel, txt, images, scanned copies, structured data, and web pages. The list is still expanding. 
+3. Click **System Mode Settings** to globally set the following models: 
 
-5. You will now see the uploaded files are chunked. And you are also allowed to intervene with the chunking. 
+   - Chat model, 
+   - Embedding model, 
+   - Image-to-text model. 
+
+   ![system model settings](https://github.com/infiniflow/ragflow/assets/93570324/cdcc1da5-4494-44cd-ad5b-1222ed6acc3f)
+
+> Some of the small models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a particular LLM. And you may need to update your API key accordingly to use these models. 
+
+## Create your first knowledge base
+
+You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. For now, RAGFlow supports Word, slides, excel, txt, images, scanned copies, structured data, and web pages. 
+
+To create your first knowledge base:
+
+1. Click the **Knowledge Base** tab in the top middle of the page **>** **Create knowledge base**.
+
+2. Input the name of your knowledge base and click **OK** to confirm.
+
+   _You are taken to the **Configuration** page of your knowledge base._
+
+   ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
+
+3. Select the embedding model and chunk (parsing) method for your knowledge base, and click **Save** to confirm your change. 
+
+   _You are taken to the **Dataset** page of your knowledge base._
+
+4. Click **+ Add file** **>** **Local files** to start uploading a particular file to the knowledge base. 
+
+5. In the uploaded file entry, click the play button to start file parsing:
+
+   ![file parsing](https://github.com/infiniflow/ragflow/assets/93570324/19f273fa-0ab0-435e-bdf4-a47fb080a078)
+
+   _When the file parsing completes, its parsing status changes to **SUCCESS**._
+
+   
+
+6. You will now see the uploaded files are chunked. And you are also allowed to intervene with the chunking. 
+
+## Intervene with file parsing 
+
+RAGFlow also features visibility and explainability. Users are allowed to view the chunking results and intervene where necessary. To do so: 
+
+1. Click on the file that completes file parsing to view the chunking results: 
+
+   
 
 ## Set up an AI chat
 
