@@ -181,9 +181,9 @@
 ソースからDockerイメージをビルドするには:
 
 ```bash
-$ git clone https://github.com/infiniflow/ragflow.git
+$ git clone https://github.com/tiwater/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.5.0 .
+$ docker build -t penless/ragflow:v0.5.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
@@ -195,7 +195,7 @@ $ docker compose up -d
 
 1. リポジトリをクローンします
 ```bash
-$ git clone https://github.com/infiniflow/ragflow.git
+$ git clone https://github.com/tiwater/ragflow.git
 $ cd ragflow/
 ```
 

@@ -9,7 +9,7 @@ services:
         condition: service_healthy
       es01:
         condition: service_healthy
-    image: swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:${RAGFLOW_VERSION}
+    image: penless/ragflow:${RAGFLOW_VERSION}
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380

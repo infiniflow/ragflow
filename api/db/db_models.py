@@ -33,6 +33,7 @@ from api.db import SerializedType, ParserType
 from api.settings import DATABASE, stat_logger, SECRET_KEY
 from api.utils.log_utils import getLogger
 from api import utils
+import jwt
 
 LOGGER = getLogger()
 
@@ -413,8 +414,8 @@ class User(DataBaseModel, UserMixin):
         return self.email
 
     def get_id(self):
-        jwt = Serializer(secret_key=SECRET_KEY)
-        return jwt.dumps(str(self.access_token))
+        encoded_jwt = jwt.encode({'access_token': str(self.access_token)}, SECRET_KEY, algorithm='HS256')
+        return encoded_jwt
 
     class Meta:
         db_table = "user"

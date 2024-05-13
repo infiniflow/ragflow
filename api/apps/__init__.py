@@ -39,6 +39,7 @@ from api.db.db_models import User
 from api.utils.user_utils import user_register, rollback_user_registration
 from api.utils import get_format_time
 from threading import Lock
+import jwt
 registration_lock = Lock()
 
 __all__ = ['app']
@@ -121,15 +122,21 @@ client_urls_prefix = [
 #         return None
 
 # Integrate with Penless
+
 @login_manager.request_loader
 def load_user(web_request):
     pb = PocketBase(POCKETBASE_HOST)
-    jwt = Serializer(secret_key=SECRET_KEY)
     authorization = web_request.headers.get("Authorization")
-    stat_logger.warning(authorization)
     if authorization:
         try:
-            pb.auth_store.base_token=str(jwt.loads(authorization))
+            # Remove the 'Bearer ' prefix from the token if it exists
+            if authorization.startswith('Bearer '):
+                authorization = authorization[len('Bearer '):]
+            
+            # Decode the token
+            decoded_token = jwt.decode(authorization, SECRET_KEY, algorithms=["HS256"])
+            pb.auth_store.base_token = str(decoded_token['access_token'])
+            
             pb.collection("users").authRefresh()
 
             if pb.auth_store.model and pb.auth_store.model.id:

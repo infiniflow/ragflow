@@ -134,3 +134,4 @@ yarl==1.9.4
 zhipuai==2.0.1
 BCEmbedding
 loguru==0.7.2
+PyJWT==2.8.0

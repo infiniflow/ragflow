@@ -189,9 +189,9 @@ To update the default HTTP serving port (80), go to [docker-compose.yml](./docke
 To build the Docker images from source:
 
 ```bash
-$ git clone https://github.com/infiniflow/ragflow.git
+$ git clone https://github.com/tiwater/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:dev .
+$ docker build -t penless/ragflow:dev .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
@@ -203,7 +203,7 @@ To launch the service from source, please follow these steps:
 
 1. Clone the repository
 ```bash
-$ git clone https://github.com/infiniflow/ragflow.git
+$ git clone https://github.com/tiwater/ragflow.git
 $ cd ragflow/
 ```
 
