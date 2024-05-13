@@ -349,12 +349,8 @@ def get(doc_id):
         if not e:
             return get_data_error_result(retmsg="Document not found!")
 
-        informs = File2DocumentService.get_by_document_id(doc_id)
-        if not informs:
-            response = flask.make_response(MINIO.get(doc.kb_id, doc.location))
-        else:
-            e, file = FileService.get_by_id(informs[0].file_id)
-            response = flask.make_response(MINIO.get(file.parent_id, doc.location))
+        b,n = File2DocumentService.get_minio_address(doc_id=doc_id)
+        response = flask.make_response(MINIO.get(b, n))
 
         ext = re.search(r"\.([^.]+)$", doc.name)
         if ext:
