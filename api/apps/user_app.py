@@ -84,8 +84,6 @@ def login():
     email = request.json.get('email', "")
 
     password = request.json.get('password')
-
-    stat_logger.warning(f"login request: email={email}, password={password}")
     try:
         res = pb.collection("users").auth_with_password(email, password)
         if res:

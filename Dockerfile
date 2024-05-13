@@ -11,6 +11,8 @@ ENV CONDA_PREFIX /root/miniconda3/envs/py11
 ENV PATH /root/miniconda3/bin:$PATH
 ENV PATH $CONDA_PREFIX/bin:$PATH
 
+ADD ./requirements.txt ./requirements.txt
+RUN conda run -n py11 pip install -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
 RUN conda run -n py11 pip install -i https://mirrors.aliyun.com/pypi/simple/ pocketbase --no-deps
 
 ADD ./web ./web

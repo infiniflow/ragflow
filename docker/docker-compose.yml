@@ -9,7 +9,7 @@ services:
         condition: service_healthy
       es01:
         condition: service_healthy
-    image: swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:${RAGFLOW_VERSION}
+    image: penless/ragflow:${RAGFLOW_VERSION}
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
@@ -22,6 +22,7 @@ services:
       - ./nginx/proxy.conf:/etc/nginx/proxy.conf
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - model_cache:/root/.cache
+      - ragflow_cache:/root/.ragflow
     environment:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=https://huggingface.com
@@ -32,3 +33,9 @@ services:
 volumes:
   model_cache:
     driver: local
+  ragflow_cache:
+    driver: local
+
+networks:
+  ragflow:
+    driver: bridge

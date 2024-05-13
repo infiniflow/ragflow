@@ -124,3 +124,4 @@ BCEmbedding
 loguru==0.7.2
 ollama==0.1.8
 redis==5.0.4
+PyJWT==2.8.0

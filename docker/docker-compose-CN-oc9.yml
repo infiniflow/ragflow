@@ -9,7 +9,7 @@ services:
         condition: service_healthy
       es01:
         condition: service_healthy
-    image: edwardelric233/ragflow:oc9
+    image: penless/ragflow:oc9
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380

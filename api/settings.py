@@ -118,7 +118,7 @@ SECRET_KEY = get_base_config(
     RAG_FLOW_SERVICE_NAME,
     {}).get(
         "secret_key",
-    "infiniflow")
+    "penless")
 TOKEN_EXPIRE_IN = get_base_config(
     RAG_FLOW_SERVICE_NAME, {}).get(
         "token_expires_in", 3600)
