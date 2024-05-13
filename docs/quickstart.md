@@ -92,7 +92,7 @@ This quick start guide describes a general process from:
 
 ## Configure LLMs
 
-RAGFlow is a RAG solution, and it needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. For now, RAGFlow supports the following LLMs, and the list is expanding:
+RAGFlow is a RAG engine, and it needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. For now, RAGFlow supports the following LLMs, and the list is expanding:
 
 - OpenAI
 - Tongyi-Qianwen
@@ -107,7 +107,7 @@ To add and configure an LLM:
 
    ![2 add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
-   > Each RAGFlow account is able to use **text-embedding-v2** for free, a small embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
+   > Each RAGFlow account is able to use **text-embedding-v2** for free, a embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
 
 2. Click on the desired LLM and update the API key accordingly (DeepSeek-V2 in this case):
 
@@ -125,11 +125,11 @@ To add and configure an LLM:
 
    ![system model settings](https://github.com/infiniflow/ragflow/assets/93570324/cdcc1da5-4494-44cd-ad5b-1222ed6acc3f)
 
-> Some of the small models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a particular LLM. And you may need to update your API key accordingly to use these models. 
+> Some of the models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a particular LLM. And you may need to update your API key accordingly to use these models. 
 
 ## Create your first knowledge base
 
-You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. For now, RAGFlow supports Word, slides, excel, txt, images, scanned copies, structured data, and web pages. 
+You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. For now, RAGFlow supports PDF, slides, excel, TXT, images, scanned copies, and web pages. 
 
 To create your first knowledge base:
 
@@ -141,7 +141,9 @@ To create your first knowledge base:
 
    ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
 
-3. Select the embedding model and chunk (parsing) method for your knowledge base, and click **Save** to confirm your change. 
+3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunk method (template) for your knowledge base. 
+
+   > IMPORTANT: Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model. 
 
    _You are taken to the **Dataset** page of your knowledge base._
 
@@ -153,22 +155,50 @@ To create your first knowledge base:
 
    _When the file parsing completes, its parsing status changes to **SUCCESS**._
 
-   
-
-6. You will now see the uploaded files are chunked. And you are also allowed to intervene with the chunking. 
-
 ## Intervene with file parsing 
 
-RAGFlow also features visibility and explainability. Users are allowed to view the chunking results and intervene where necessary. To do so: 
+RAGFlow features visibility and explainability, allowing you to view the chunking results and intervene where necessary. To do so: 
 
 1. Click on the file that completes file parsing to view the chunking results: 
 
-   
+   _You are taken to the **Chunk** page:_
+
+   ![chunks](https://github.com/infiniflow/ragflow/assets/93570324/0547fd0e-e71b-41f8-8e0e-31649c85fd3d)
+
+2. Hover over each snapshot for a quick view of each chunk:
+
+   ![hover](https://github.com/infiniflow/ragflow/assets/93570324/174e0f46-518e-4d26-ab06-3c78d9b012bd)
+
+3. Double click the chunked texts to add keywords or make *manual* changes where necessary:
+
+   ![update chunk](https://github.com/infiniflow/ragflow/assets/93570324/1d84b408-4e9f-46fd-9413-8c1059bf9c76)
+
+4. In Retrieval testing, ask a quick question in **Test text** to double check if your configurations work:
+
+   _As you can tell from the following, RAGFlow responds with truthful citations._
+
+   ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
 
 ## Set up an AI chat
 
 Conversations in RAGFlow are based on a particular knowledge base or multiple knowledge bases.
 
-1. Click the **Chat** tab in the middle top of the UI > **Create an assistant**.
-2. In the popup window, you can configure your chats including configuring assistant, configuring prompt, and configuring model behaviors in the chat. 
-3. You can now start an AI chat. 
+1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue of your next dialogue.
+
+2. Update **Assistant Setting**: 
+
+   - Name your assistant and specify your knowledge bases.
+   - **Empty response**:
+     - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here. 
+     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, while may give rise to hallucinations. 
+
+3. Update **Prompt Engine** or leave it as is for the beginning.
+
+4. Update **Model Setting**.
+
+5. Now, let's start the show:
+
+   ![question1](https://github.com/infiniflow/ragflow/assets/93570324/bb72dd67-b35e-4b2a-87e9-4e4edbd6e677)
+
+   ![question2](https://github.com/infiniflow/ragflow/assets/93570324/7cc585ae-88d0-4aa2-817d-0370b2ad7230)
+
