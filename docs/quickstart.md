@@ -12,11 +12,8 @@ This quick start guide describes a general process from:
 ## Prerequisites
 
 - CPU >= 4 cores
-
 - RAM >= 16 GB
-
 - Disk >= 50 GB
-
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -196,9 +193,12 @@ Conversations in RAGFlow are based on a particular knowledge base or multiple kn
 
 4. Update **Model Setting**.
 
-5. Now, let's start the show:
+5. RAGFlow also offers conversation APIs. Hover over your dialogue **>** **Chat Bot API** to integrate RAGFlow's chat capabilities into your applications:
+
+   ![chatbot api](https://github.com/infiniflow/ragflow/assets/93570324/fec23715-f9af-4ac2-81e5-942c5035c5e6)
+
+6. Now, let's start the show:
 
    ![question1](https://github.com/infiniflow/ragflow/assets/93570324/bb72dd67-b35e-4b2a-87e9-4e4edbd6e677)
 
    ![question2](https://github.com/infiniflow/ragflow/assets/93570324/7cc585ae-88d0-4aa2-817d-0370b2ad7230)
-
