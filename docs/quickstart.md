@@ -126,7 +126,7 @@ To add and configure an LLM:
 
 ## Create your first knowledge base
 
-You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), slides (PPT, PPTX).
+You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
 
 To create your first knowledge base:
 
