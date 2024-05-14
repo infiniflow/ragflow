@@ -114,7 +114,7 @@ To add and configure an LLM:
 
    ![added available models](https://github.com/infiniflow/ragflow/assets/93570324/d08b80e4-f921-480a-b41d-11832489c916)
 
-3. Click **System Mode Settings** to globally set the following models: 
+3. Click **System Model Settings** to select the default models: 
 
    - Chat model, 
    - Embedding model, 
@@ -140,7 +140,7 @@ To create your first knowledge base:
 
 3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunk method (template) for your knowledge base. 
 
-   > IMPORTANT: Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model. 
+   > IMPORTANT: Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
 
    _You are taken to the **Dataset** page of your knowledge base._
 
@@ -180,14 +180,15 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
 Conversations in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base and finished file parsing, you can go ahead and start an AI conversation. 
 
-1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue of your next dialogue.
+1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue *of your next dialogue*.
+   > RAGFlow offer the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
 2. Update **Assistant Setting**: 
 
    - Name your assistant and specify your knowledge bases.
    - **Empty response**:
      - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here. 
-     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, while may give rise to hallucinations. 
+     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, which may give rise to hallucinations. 
 
 3. Update **Prompt Engine** or leave it as is for the beginning.
 
