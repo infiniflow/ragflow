@@ -38,7 +38,7 @@ import re
 @manager.route('/list', methods=['POST'])
 @login_required
 @validate_request("doc_id")
-def list():
+def list_chunk():
     req = request.json
     doc_id = req["doc_id"]
     page = int(req.get("page", 1))

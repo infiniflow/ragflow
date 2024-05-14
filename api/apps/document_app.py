@@ -154,7 +154,7 @@ def create():
 
 @manager.route('/list', methods=['GET'])
 @login_required
-def list():
+def list_docs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(
