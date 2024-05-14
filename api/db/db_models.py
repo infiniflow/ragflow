@@ -653,7 +653,7 @@ class Document(DataBaseModel):
         help_text="process message",
         default="")
     process_begin_at = DateTimeField(null=True)
-    process_duation = FloatField(default=0)
+    process_duration = FloatField(default=0)
     run = CharField(
         max_length=1,
         null=True,
@@ -735,7 +735,7 @@ class Task(DataBaseModel):
     from_page = IntegerField(default=0)
     to_page = IntegerField(default=-1)
     begin_at = DateTimeField(null=True)
-    process_duation = FloatField(default=0)
+    process_duration = FloatField(default=0)
     progress = FloatField(default=0)
     progress_msg = TextField(
         null=True,

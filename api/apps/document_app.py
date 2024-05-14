@@ -395,7 +395,7 @@ def change_parser():
             DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1,
-                                                    doc.process_duation * -1)
+                                                    doc.process_duration * -1)
             if not e:
                 return get_data_error_result(retmsg="Document not found!")
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
