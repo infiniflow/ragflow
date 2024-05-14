@@ -24,6 +24,7 @@ import {
   useShowDeleteConfirm,
   useTranslate,
 } from '@/hooks/commonHooks';
+import { useConnectWithSseNext } from '@/hooks/logicHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IConversation, IDialog, IStats } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
@@ -518,10 +519,11 @@ export const useSendMessage = (
   const completeConversation = useCompleteConversation();
 
   const { handleClickConversation } = useClickConversationCard();
+  const { send } = useConnectWithSseNext();
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
-      const retcode = await completeConversation({
+      const retcode = await send({
         conversation_id: id ?? conversationId,
         messages: [
           ...(conversation?.message ?? []).map((x: IMessage) => omit(x, 'id')),
@@ -552,7 +554,7 @@ export const useSendMessage = (
       handleClickConversation,
       removeLatestMessage,
       setValue,
-      completeConversation,
+      send,
     ],
   );
 
