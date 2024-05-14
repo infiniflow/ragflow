@@ -26,7 +26,7 @@
 
 ## 💡 RAGFlow とは？
 
-[RAGFlow](https://demo.ragflow.io) は、深い文書理解に基づいたオープンソースの RAG (Retrieval-Augmented Generation) エンジンである。LLM（大規模言語モデル）を組み合わせることで、様々な複雑なフォーマットのデータから根拠のある引用に裏打ちされた、信頼できる質問応答機能を実現し、あらゆる規模のビジネスに適した RAG ワークフローを提供します。
+[RAGFlow](https://ragflow.io/) は、深い文書理解に基づいたオープンソースの RAG (Retrieval-Augmented Generation) エンジンである。LLM（大規模言語モデル）を組み合わせることで、様々な複雑なフォーマットのデータから根拠のある引用に裏打ちされた、信頼できる質問応答機能を実現し、あらゆる規模のビジネスに適した RAG ワークフローを提供します。
 
 ## 📌 最新情報
 
@@ -252,6 +252,7 @@ $ bash ./entrypoint.sh
 
 ## 📚 ドキュメンテーション
 
+- [Quickstart](./docs/quickstart.md)
 - [FAQ](./docs/faq.md)
 
 ## 📜 ロードマップ

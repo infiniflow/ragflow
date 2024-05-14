@@ -26,7 +26,7 @@
 
 ## 💡 RAGFlow 是什么？
 
-[RAGFlow](https://demo.ragflow.io) 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。
+[RAGFlow](https://ragflow.io/) 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。
 
 ## 📌 近期更新
 
@@ -271,6 +271,7 @@ $ systemctl start nginx
 ```
 ## 📚 技术文档
 
+- [Quickstart](./docs/quickstart.md)
 - [FAQ](./docs/faq.md)
 
 ## 📜 路线图
