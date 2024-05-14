@@ -28,4 +28,5 @@ export interface IFolder {
   type: string;
   update_date: string;
   update_time: number;
+  source_type: string;
 }

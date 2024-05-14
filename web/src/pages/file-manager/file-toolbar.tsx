@@ -26,6 +26,7 @@ import {
   useSelectBreadcrumbItems,
 } from './hooks';
 
+import { useSelectParentFolderList } from '@/hooks/fileManagerHooks';
 import styles from './index.less';
 
 interface IProps {
@@ -46,7 +47,9 @@ const FileToolbar = ({
   const { handleInputChange, searchString } = useHandleSearchChange();
   const breadcrumbItems = useSelectBreadcrumbItems();
   const { handleBreadcrumbClick } = useHandleBreadcrumbClick();
-  const isKnowledgeBase = breadcrumbItems.at(-1)?.title === '.knowledgebase';
+  const parentFolderList = useSelectParentFolderList();
+  const isKnowledgeBase =
+    parentFolderList.at(-1)?.source_type === 'knowledgebase';
 
   const itemRender: BreadcrumbProps['itemRender'] = (
     currentRoute,
