@@ -136,7 +136,7 @@ def get_kb_names(kb_ids):
 
 @manager.route('/list', methods=['GET'])
 @login_required
-def list():
+def list_dialogs():
     try:
         diags = DialogService.query(
             tenant_id=current_user.id,
