@@ -165,7 +165,7 @@ def create():
 
 @manager.route('/list', methods=['GET'])
 @login_required
-def list():
+def list_files():
     pf_id = request.args.get("parent_id")
 
     keywords = request.args.get("keywords", "")
