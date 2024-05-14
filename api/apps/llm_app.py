@@ -175,7 +175,7 @@ def my_llms():
 
 @manager.route('/list', methods=['GET'])
 @login_required
-def list():
+def list_app():
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
