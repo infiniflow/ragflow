@@ -134,7 +134,6 @@ def add_llm():
     if msg:
         return get_data_error_result(retmsg=msg)
 
-
     if not TenantLLMService.filter_update(
             [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory, TenantLLM.llm_name == llm["llm_name"]], llm):
         TenantLLMService.save(**llm)
@@ -175,7 +174,7 @@ def my_llms():
 
 @manager.route('/list', methods=['GET'])
 @login_required
-def list():
+def llm_list():
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
