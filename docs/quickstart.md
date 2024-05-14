@@ -126,13 +126,13 @@ To add and configure an LLM:
 
 ## Create your first knowledge base
 
-You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. For now, RAGFlow supports PDF, slides, excel, TXT, images, scanned copies, and web pages. 
+You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. File formats that RAGFlow supports include PDF, GIF, TIF, PNG, JPEG, JPG, MD, PPT, PPTX, DOC, DOCX, TXT, CSV, XLSX, and XLS. 
 
 To create your first knowledge base:
 
 1. Click the **Knowledge Base** tab in the top middle of the page **>** **Create knowledge base**.
 
-2. Input the name of your knowledge base and click **OK** to confirm.
+2. Input the name of your knowledge base and click **OK** to confirm your changes.
 
    _You are taken to the **Configuration** page of your knowledge base._
 
@@ -178,7 +178,7 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
 ## Set up an AI chat
 
-Conversations in RAGFlow are based on a particular knowledge base or multiple knowledge bases.
+Conversations in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base and finished file parsing, you can go ahead and start an AI conversation. 
 
 1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue of your next dialogue.
 
