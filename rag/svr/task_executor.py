@@ -261,7 +261,7 @@ def main():
 
         st = timer()
         cks = build(r)
-        cron_logger.info("Build chunks({}): {}".format(r["name"], timer()-st))
+        cron_logger.info("Build chunks({}): {:.2f}".format(r["name"], timer()-st))
         if cks is None:
             continue
         if not cks:
@@ -279,7 +279,7 @@ def main():
             callback(-1, "Embedding error:{}".format(str(e)))
             cron_logger.error(str(e))
             tk_count = 0
-        cron_logger.info("Embedding elapsed({}): {}".format(r["name"], timer()-st))
+        cron_logger.info("Embedding elapsed({:.2f}): {}".format(r["name"], timer()-st))
 
         callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer()-st))
         init_kb(r)
@@ -291,7 +291,7 @@ def main():
             if b % 128 == 0:
                 callback(prog=0.8 + 0.1 * (b + 1) / len(cks), msg="")
 
-        cron_logger.info("Indexing elapsed({}): {}".format(r["name"], timer()-st))
+        cron_logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer()-st))
         if es_r:
             callback(-1, "Index failure!")
             ELASTICSEARCH.deleteByQuery(
@@ -306,7 +306,7 @@ def main():
             DocumentService.increment_chunk_num(
                 r["doc_id"], r["kb_id"], tk_count, chunk_count, 0)
             cron_logger.info(
-                "Chunk doc({}), token({}), chunks({}), elapsed:{}".format(
+                "Chunk doc({}), token({}), chunks({}), elapsed:{:.2f}".format(
                     r["id"], tk_count, len(cks), timer()-st))
 
 
