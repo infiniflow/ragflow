@@ -11,6 +11,8 @@ import {
 import { useGetChunkHighlights } from '../../hooks';
 import { useGetDocumentUrl } from './hooks';
 
+import { useCatchDocumentError } from '@/components/pdf-previewer/hooks';
+import FileError from '@/pages/document-viewer/file-error';
 import styles from './index.less';
 
 interface IProps {
@@ -30,9 +32,11 @@ const HighlightPopup = ({
 // TODO: merge with DocumentPreviewer
 const Preview = ({ selectedChunkId }: IProps) => {
   const url = useGetDocumentUrl();
+  useCatchDocumentError(url);
   const { highlights: state, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunkId);
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
+  const error = useCatchDocumentError(url);
 
   const resetHash = () => {};
 
@@ -48,6 +52,7 @@ const Preview = ({ selectedChunkId }: IProps) => {
         url={url}
         beforeLoad={<Skeleton active />}
         workerSrc="/pdfjs-dist/pdf.worker.min.js"
+        errorMessage={<FileError>{error}</FileError>}
       >
         {(pdfDocument) => {
           pdfDocument.getPage(1).then((page) => {
