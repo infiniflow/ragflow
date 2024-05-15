@@ -67,7 +67,7 @@ To bulk delete files or folders:
 
 ![bulk delete](https://github.com/infiniflow/ragflow/assets/93570324/519b99ab-ec7f-4c8a-8cea-e0b6dcb3cb46)
 
-> - You are not allowed to delete the **.knowledgebase** folder. 
+> - You are not allowed to delete the **root/.knowledgebase** folder. 
 > - Deleting files that have been linked to knowledge bases will AUTOMATICALLY REMOVE all associated file references across the knowledge bases. 
 
 ## Download uploaded file
