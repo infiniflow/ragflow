@@ -518,6 +518,7 @@ export const useSendMessage = (
   const completeConversation = useCompleteConversation();
 
   const { handleClickConversation } = useClickConversationCard();
+  // const { send } = useConnectWithSseNext();
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {

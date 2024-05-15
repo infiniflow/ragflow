@@ -1,7 +1,11 @@
+import { Authorization } from '@/constants/authorization';
 import { LanguageTranslationMap } from '@/constants/common';
 import { Pagination } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import api from '@/utils/api';
+import authorizationUtil from '@/utils/authorizationUtil';
+import { getSearchValue } from '@/utils/commonUtil';
 import { PaginationProps } from 'antd';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -132,4 +136,64 @@ export const useFetchAppConf = () => {
   }, [fetchAppConf]);
 
   return appConf;
+};
+
+export const useConnectWithSse = (url: string) => {
+  const [content, setContent] = useState<string>('');
+
+  const connect = useCallback(() => {
+    const source = new EventSource(
+      url || '/sse/createSseEmitter?clientId=123456',
+    );
+
+    source.onopen = function () {
+      console.log('Connection to the server was opened.');
+    };
+
+    source.onmessage = function (event: any) {
+      setContent(event.data);
+    };
+
+    source.onerror = function (error) {
+      console.error('Error occurred:', error);
+    };
+  }, [url]);
+
+  return { connect, content };
+};
+
+export const useConnectWithSseNext = () => {
+  const [content, setContent] = useState<string>('');
+  const sharedId = getSearchValue('shared_id');
+  const authorization = sharedId
+    ? 'Bearer ' + sharedId
+    : authorizationUtil.getAuthorization();
+  const send = useCallback(
+    async (body: any) => {
+      const response = await fetch(api.completeConversation, {
+        method: 'POST',
+        headers: {
+          [Authorization]: authorization,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      const reader = response?.body
+        ?.pipeThrough(new TextDecoderStream())
+        .getReader();
+
+      // const reader = response.body.getReader();
+
+      while (true) {
+        const { value, done } = await reader?.read();
+        console.log('Received', value);
+        setContent(value);
+        if (done) break;
+      }
+      return response;
+    },
+    [authorization],
+  );
+
+  return { send, content };
 };

@@ -3,7 +3,7 @@
   "author": "zhaofengchao <13723060510@163.com>",
   "scripts": {
     "build": "umi build",
-    "dev": "cross-env PORT=9200 umi dev",
+    "dev": "cross-env PORT=9200 UMI_DEV_SERVER_COMPRESS=none umi dev",
     "postinstall": "umi setup",
     "lint": "umi lint --eslint-only",
     "setup": "umi setup",
