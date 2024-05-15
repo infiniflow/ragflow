@@ -34,9 +34,9 @@ class FileService(CommonService):
                      orderby, desc, keywords):
         if keywords:
             files = cls.model.select().where(
-                (cls.model.tenant_id == tenant_id)
+                (cls.model.tenant_id == tenant_id),
                 (cls.model.parent_id == pf_id),
-                (fn.LOWER(cls.model.name).like(f"%%{keywords.lower()}%%")),
+                (fn.LOWER(cls.model.name).contains(keywords.lower())),
                 ~(cls.model.id == pf_id)
             )
         else:
