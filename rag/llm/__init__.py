@@ -25,7 +25,8 @@ EmbeddingModel = {
     "Tongyi-Qianwen": DefaultEmbedding, #QWenEmbed,
     "ZHIPU-AI": ZhipuEmbed,
     "FastEmbed": FastEmbed,
-    "Youdao": YoudaoEmbed
+    "Youdao": YoudaoEmbed,
+    "DeepSeek": DefaultEmbedding
 }
 
 
