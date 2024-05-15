@@ -279,7 +279,7 @@ def main():
             callback(-1, "Embedding error:{}".format(str(e)))
             cron_logger.error(str(e))
             tk_count = 0
-        cron_logger.info("Embedding elapsed({:.2f}): {}".format(r["name"], timer()-st))
+        cron_logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer()-st))
 
         callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer()-st))
         init_kb(r)
