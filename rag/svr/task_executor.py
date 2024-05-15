@@ -281,7 +281,7 @@ def main():
             tk_count = 0
         cron_logger.info("Embedding elapsed({}): {}".format(r["name"], timer()-st))
 
-        callback(msg="Finished embedding({})! Start to build index!".format(timer()-st))
+        callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer()-st))
         init_kb(r)
         chunk_count = len(set([c["_id"] for c in cks]))
         st = timer()
