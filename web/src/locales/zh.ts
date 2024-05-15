@@ -475,7 +475,7 @@ export default {
       knowledgeBase: '知识库',
       size: '大小',
       action: '操作',
-      addToKnowledge: '添加到知识库',
+      addToKnowledge: '链接知识库',
       pleaseSelect: '请选择',
       newFolder: '新建文件夹',
       uploadFile: '上传文件',
