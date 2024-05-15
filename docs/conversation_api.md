@@ -315,10 +315,12 @@ This is usually used when upload a file to.
 
 ### Parameter:
 
-| name    | type   | optional | description                            |
-|---------|--------|----------|----------------------------------------|
-| file    | file   | No       | Upload file.                           |
-| kb_name | string | No       | Choose the upload knowledge base name. |
+| name      | type   | optional | description                                             |
+|-----------|--------|----------|---------------------------------------------------------|
+| file      | file   | No       | Upload file.                                            |
+| kb_name   | string | No       | Choose the upload knowledge base name.                  |
+| parser_id | string | Yes      | Choose the parsing method.                              |
+| run       | string | Yes      | Parsing will start automatically when the value is "1". |
 
 ### Response 
 ```json
