@@ -194,7 +194,7 @@ def list_app():
 
         res = {}
         for m in llms:
-            if model_type and m["model_type"] != model_type:
+            if model_type and m["model_type"].find(model_type)<0:
                 continue
             if m["fid"] not in res:
                 res[m["fid"]] = []
