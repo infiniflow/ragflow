@@ -144,6 +144,12 @@ def init_llm_factory():
         # ---------------------- OpenAI ------------------------
         {
             "fid": factory_infos[0]["name"],
+            "llm_name": "gpt-4o",
+            "tags": "LLM,CHAT,128K",
+            "max_tokens": 128000,
+            "model_type": LLMType.CHAT.value + "," + LLMType.IMAGE2TEXT.value
+        }, {
+            "fid": factory_infos[0]["name"],
             "llm_name": "gpt-3.5-turbo",
             "tags": "LLM,CHAT,4K",
             "max_tokens": 4096,

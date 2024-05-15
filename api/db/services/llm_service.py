@@ -81,7 +81,7 @@ class TenantLLMService(CommonService):
         if not model_config:
             if llm_type == LLMType.EMBEDDING.value:
                 llm = LLMService.query(llm_name=llm_name)
-                if llm and llm[0].fid in ["Youdao", "FastEmbed"]:
+                if llm and llm[0].fid in ["Youdao", "FastEmbed", "DeepSeek"]:
                     model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": llm_name, "api_base": ""}
             if not model_config:
                 if llm_name == "flag-embedding":
