@@ -14,6 +14,7 @@ import { useGetPagination, useSetPagination } from '@/hooks/logicHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { PaginationProps } from 'antd';
+import { TableRowSelection } from 'antd/es/table/interface';
 import { UploadFile } from 'antd/lib';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSearchParams, useSelector } from 'umi';
@@ -93,8 +94,11 @@ export const useHandleSearchChange = () => {
 export const useGetRowSelection = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
-  const rowSelection = {
+  const rowSelection: TableRowSelection<IFile> = {
     selectedRowKeys,
+    getCheckboxProps: (record) => {
+      return { disabled: record.source_type === 'knowledgebase' };
+    },
     onChange: (newSelectedRowKeys: React.Key[]) => {
       setSelectedRowKeys(newSelectedRowKeys);
     },

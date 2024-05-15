@@ -494,7 +494,7 @@ export default {
       knowledgeBase: 'Knowledge Base',
       size: 'Size',
       action: 'Action',
-      addToKnowledge: 'Add to Knowledge Base',
+      addToKnowledge: 'Link to Knowledge Base',
       pleaseSelect: 'Please select',
       newFolder: 'New Folder',
       file: 'File',
