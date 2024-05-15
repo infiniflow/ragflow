@@ -30,6 +30,7 @@
 
 ## 📌 Latest Updates
 
+- 2024-05-15 Integrates OpenAI GPT-4o.
 - 2024-05-08 Integrates LLM DeepSeek-V2.
 - 2024-04-26 Adds file management.
 - 2024-04-19 Supports conversation API ([detail](./docs/conversation_api.md)).
