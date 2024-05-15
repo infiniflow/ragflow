@@ -458,7 +458,7 @@ export default {
       knowledgeBase: '知識庫',
       size: '大小',
       action: '操作',
-      addToKnowledge: '添加到知識庫',
+      addToKnowledge: '鏈接知識庫',
       pleaseSelect: '請選擇',
       newFolder: '新建文件夾',
       uploadFile: '上傳文件',
