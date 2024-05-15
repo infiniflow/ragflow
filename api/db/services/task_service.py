@@ -96,7 +96,7 @@ class TaskService(CommonService):
             return doc.run == TaskStatus.CANCEL.value or doc.progress < 0
         except Exception as e:
             pass
-        return True
+        return False
 
     @classmethod
     @DB.connection_context()
