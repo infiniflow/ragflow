@@ -67,13 +67,15 @@ export const useSelectLlmOptionsByModelType = () => {
   const groupOptionsByModelType = (modelType: LlmModelType) => {
     return Object.entries(llmInfo)
       .filter(([, value]) =>
-        modelType ? value.some((x) => x.model_type === modelType) : true,
+        modelType ? value.some((x) => x.model_type.includes(modelType)) : true,
       )
       .map(([key, value]) => {
         return {
           label: key,
           options: value
-            .filter((x) => (modelType ? x.model_type === modelType : true))
+            .filter((x) =>
+              modelType ? x.model_type.includes(modelType) : true,
+            )
             .map((x) => ({
               label: x.llm_name,
               value: x.llm_name,
