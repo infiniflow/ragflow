@@ -19,6 +19,7 @@
     "axios": "^1.6.3",
     "classnames": "^2.5.1",
     "dayjs": "^1.11.10",
+    "eventsource-parser": "^1.1.2",
     "i18next": "^23.7.16",
     "js-base64": "^3.7.5",
     "jsencrypt": "^3.3.2",

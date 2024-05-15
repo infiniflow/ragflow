@@ -72,6 +72,11 @@ export interface IReference {
   total: number;
 }
 
+export interface IAnswer {
+  answer: string;
+  reference: IReference;
+}
+
 export interface Docagg {
   count: number;
   doc_id: string;

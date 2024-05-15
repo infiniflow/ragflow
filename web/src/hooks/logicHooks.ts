@@ -1,6 +1,7 @@
 import { Authorization } from '@/constants/authorization';
 import { LanguageTranslationMap } from '@/constants/common';
 import { Pagination } from '@/interfaces/common';
+import { IAnswer } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import api from '@/utils/api';
@@ -8,6 +9,7 @@ import authorizationUtil from '@/utils/authorizationUtil';
 import { getSearchValue } from '@/utils/commonUtil';
 import { PaginationProps } from 'antd';
 import axios from 'axios';
+import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
@@ -138,32 +140,8 @@ export const useFetchAppConf = () => {
   return appConf;
 };
 
-export const useConnectWithSse = (url: string) => {
-  const [content, setContent] = useState<string>('');
-
-  const connect = useCallback(() => {
-    const source = new EventSource(
-      url || '/sse/createSseEmitter?clientId=123456',
-    );
-
-    source.onopen = function () {
-      console.log('Connection to the server was opened.');
-    };
-
-    source.onmessage = function (event: any) {
-      setContent(event.data);
-    };
-
-    source.onerror = function (error) {
-      console.error('Error occurred:', error);
-    };
-  }, [url]);
-
-  return { connect, content };
-};
-
-export const useConnectWithSseNext = () => {
-  const [content, setContent] = useState<string>('');
+export const useSendMessageWithSse = () => {
+  const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const sharedId = getSearchValue('shared_id');
   const authorization = sharedId
     ? 'Bearer ' + sharedId
@@ -180,14 +158,27 @@ export const useConnectWithSseNext = () => {
       });
       const reader = response?.body
         ?.pipeThrough(new TextDecoderStream())
+        .pipeThrough(new EventSourceParserStream())
         .getReader();
 
       // const reader = response.body.getReader();
 
       while (true) {
         const { value, done } = await reader?.read();
-        console.log('Received', value);
-        setContent(value);
+        try {
+          const val = JSON.parse(value.data);
+          const d = val?.data;
+          console.info('value:', val);
+          if (typeof d !== 'boolean') {
+            console.log('Received:', d);
+            const textContent = d?.answer || '';
+            console.info('data:', d);
+            console.info('text:', textContent);
+            setAnswer(d);
+          }
+        } catch (e) {
+          console.warn(e);
+        }
         if (done) break;
       }
       return response;
@@ -195,5 +186,9 @@ export const useConnectWithSseNext = () => {
     [authorization],
   );
 
-  return { send, content };
+  useEffect(() => {
+    console.info('aaa:', answer.answer);
+  }, [answer.answer]);
+
+  return { send, answer };
 };
