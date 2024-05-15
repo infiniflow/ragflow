@@ -31,11 +31,11 @@ from api.settings import RetCode
 from api.utils import get_uuid, current_timestamp, datetime_format
 from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request
 from itsdangerous import URLSafeTimedSerializer
-
+from api.db.services.task_service import TaskService, queue_tasks
 from api.utils.file_utils import filename_type, thumbnail
 from rag.utils.minio_conn import MINIO
-
-
+from api.db.db_models import Task
+from api.db.services.file2document_service import File2DocumentService
 def generate_confirmation_token(tenent_id):
     serializer = URLSafeTimedSerializer(tenent_id)
     return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
@@ -229,6 +229,7 @@ def upload():
         return get_json_result(
             data=False, retmsg='No file part!', retcode=RetCode.ARGUMENT_ERROR)
 
+
     file = request.files['file']
     if file.filename == '':
         return get_json_result(
@@ -252,6 +253,7 @@ def upload():
             location += "_"
         blob = request.files['file'].read()
         MINIO.put(kb_id, location, blob)
+
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -264,11 +266,42 @@ def upload():
             "size": len(blob),
             "thumbnail": thumbnail(filename, blob)
         }
+
+        form_data=request.form
+        if "parser_id" in form_data.keys():
+            if request.form.get("parser_id").strip() in list(vars(ParserType).values())[1:-3]:
+                doc["parser_id"] = request.form.get("parser_id").strip()
         if doc["type"] == FileType.VISUAL:
             doc["parser_id"] = ParserType.PICTURE.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):
             doc["parser_id"] = ParserType.PRESENTATION.value
-        doc = DocumentService.insert(doc)
-        return get_json_result(data=doc.to_json())
+
+        doc_result = DocumentService.insert(doc)
+
     except Exception as e:
         return server_error_response(e)
+
+    if "run" in form_data.keys():
+        if request.form.get("run").strip() == "1":
+            try:
+                info = {"run": 1, "progress": 0}
+                info["progress_msg"] = ""
+                info["chunk_num"] = 0
+                info["token_num"] = 0
+                DocumentService.update_by_id(doc["id"], info)
+                # if str(req["run"]) == TaskStatus.CANCEL.value:
+                tenant_id = DocumentService.get_tenant_id(doc["id"])
+                if not tenant_id:
+                    return get_data_error_result(retmsg="Tenant not found!")
+
+                #e, doc = DocumentService.get_by_id(doc["id"])
+                TaskService.filter_delete([Task.doc_id == doc["id"]])
+                e, doc = DocumentService.get_by_id(doc["id"])
+                doc = doc.to_dict()
+                doc["tenant_id"] = tenant_id
+                bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
+                queue_tasks(doc, bucket, name)
+            except Exception as e:
+                 return server_error_response(e)
+
+    return get_json_result(data=doc_result.to_json())
