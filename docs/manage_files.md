@@ -48,6 +48,13 @@ As of RAGFlow v0.5.0, the search feature is still in a rudimentary form, support
 
 ![search file](https://github.com/infiniflow/ragflow/assets/93570324/77ffc2e5-bd80-4ed1-841f-068e664efffe)
 
+## Rename file or folder
+
+RAGFlow's file management allows you to rename a file or folder:
+
+![rename_file](https://github.com/infiniflow/ragflow/assets/93570324/5abb0704-d9e9-4b43-9ed4-5750ccee011f)
+
+
 ## Delete files or folders
 
 RAGFlow's file management allows you to delete files or folders individually or in bulk. 
@@ -62,3 +69,11 @@ To bulk delete files or folders:
 
 > - You are not allowed to delete the **.knowledgebase** folder. 
 > - Deleting files that have been linked to knowledge bases will AUTOMATICALLY REMOVE all associated file references across the knowledge bases. 
+
+## Download uploaded file
+
+RAGFlow's file management allows you to download an uploaded file:
+
+![download_file](https://github.com/infiniflow/ragflow/assets/93570324/cf3b297f-7d9b-4522-bf5f-4f45743e4ed5)
+
+> As of RAGFlow v0.5.0, bulk download is not supported, nor can you download an entire folder. 
