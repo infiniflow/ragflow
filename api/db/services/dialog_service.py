@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import re
+from copy import deepcopy
 
 from api.db import LLMType
 from api.db.db_models import Dialog, Conversation
@@ -71,7 +72,7 @@ def message_fit_in(msg, max_length=4000):
     return max_length, msg
 
 
-def chat(dialog, messages, **kwargs):
+def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     llm = LLMService.query(llm_name=dialog.llm_id)
     if not llm:
@@ -82,7 +83,10 @@ def chat(dialog, messages, **kwargs):
     else: max_tokens = llm[0].max_tokens
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
     embd_nms = list(set([kb.embd_id for kb in kbs]))
-    assert len(embd_nms) == 1, "Knowledge bases use different embedding models."
+    if len(embd_nms) != 1:
+        if stream:
+            yield {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
+        return {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
 
     questions = [m["content"] for m in messages if m["role"] == "user"]
     embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING, embd_nms[0])
@@ -94,7 +98,9 @@ def chat(dialog, messages, **kwargs):
     if field_map:
         chat_logger.info("Use SQL to retrieval:{}".format(questions[-1]))
         ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True))
-        if ans: return ans
+        if ans:
+            yield ans
+            return
 
     for p in prompt_config["parameters"]:
         if p["key"] == "knowledge":
@@ -118,8 +124,9 @@ def chat(dialog, messages, **kwargs):
         "{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     if not knowledges and prompt_config.get("empty_response"):
-        return {
-            "answer": prompt_config["empty_response"], "reference": kbinfos}
+        if stream:
+            yield {"answer": prompt_config["empty_response"], "reference": kbinfos}
+        return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n".join(knowledges)
     gen_conf = dialog.llm_setting
@@ -130,33 +137,45 @@ def chat(dialog, messages, **kwargs):
         gen_conf["max_tokens"] = min(
             gen_conf["max_tokens"],
             max_tokens - used_token_count)
-    answer = chat_mdl.chat(
-        prompt_config["system"].format(
-            **kwargs), msg, gen_conf)
-    chat_logger.info("User: {}|Assistant: {}".format(
-        msg[-1]["content"], answer))
 
-    if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
-        answer, idx = retrievaler.insert_citations(answer,
-                                                   [ck["content_ltks"]
-                                                       for ck in kbinfos["chunks"]],
-                                                   [ck["vector"]
-                                                       for ck in kbinfos["chunks"]],
-                                                   embd_mdl,
-                                                   tkweight=1 - dialog.vector_similarity_weight,
-                                                   vtweight=dialog.vector_similarity_weight)
-        idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
-        recall_docs = [
-            d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
-        if not recall_docs: recall_docs = kbinfos["doc_aggs"]
-        kbinfos["doc_aggs"] = recall_docs
+    def decorate_answer(answer):
+        nonlocal prompt_config, knowledges, kwargs, kbinfos
+        if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
+            answer, idx = retrievaler.insert_citations(answer,
+                                                       [ck["content_ltks"]
+                                                           for ck in kbinfos["chunks"]],
+                                                       [ck["vector"]
+                                                           for ck in kbinfos["chunks"]],
+                                                       embd_mdl,
+                                                       tkweight=1 - dialog.vector_similarity_weight,
+                                                       vtweight=dialog.vector_similarity_weight)
+            idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
+            recall_docs = [
+                d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
+            if not recall_docs: recall_docs = kbinfos["doc_aggs"]
+            kbinfos["doc_aggs"] = recall_docs
 
-    for c in kbinfos["chunks"]:
-        if c.get("vector"):
-            del c["vector"]
-    if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api")>=0:
-        answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
-    return {"answer": answer, "reference": kbinfos}
+        refs = deepcopy(kbinfos)
+        for c in refs["chunks"]:
+            if c.get("vector"):
+                del c["vector"]
+        if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api")>=0:
+            answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
+        return {"answer": answer, "reference": refs}
+
+    if stream:
+        answer = ""
+        for ans in chat_mdl.chat_streamly(prompt_config["system"].format(**kwargs), msg, gen_conf):
+            answer = ans
+            yield {"answer": answer, "reference": {}}
+        yield decorate_answer(answer)
+    else:
+        answer = chat_mdl.chat(
+            prompt_config["system"].format(
+                **kwargs), msg, gen_conf)
+        chat_logger.info("User: {}|Assistant: {}".format(
+            msg[-1]["content"], answer))
+        return decorate_answer(answer)
 
 
 def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
