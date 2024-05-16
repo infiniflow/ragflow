@@ -1,7 +1,6 @@
 import { MessageType } from '@/constants/chat';
 import { fileIconMap } from '@/constants/common';
 import {
-  useCompleteConversation,
   useCreateToken,
   useFetchConversation,
   useFetchConversationList,
@@ -26,7 +25,12 @@ import {
 } from '@/hooks/commonHooks';
 import { useSendMessageWithSse } from '@/hooks/logicHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import { IConversation, IDialog, IStats } from '@/interfaces/database/chat';
+import {
+  IAnswer,
+  IConversation,
+  IDialog,
+  IStats,
+} from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
 import { message } from 'antd';
@@ -406,7 +410,7 @@ export const useSelectCurrentConversation = () => {
     [],
   );
 
-  const addNewestAnswer = useCallback((answer: string) => {
+  const addNewestAnswer = useCallback((answer: IAnswer) => {
     setCurrentConversation((pre) => {
       const latestMessage = pre.message?.at(-1);
 
@@ -415,7 +419,11 @@ export const useSelectCurrentConversation = () => {
           ...pre,
           message: [
             ...pre.message.slice(0, -1),
-            { ...latestMessage, content: answer } as IMessage,
+            {
+              ...latestMessage,
+              content: answer.answer,
+              reference: answer.reference,
+            } as IMessage,
           ],
         };
       }
@@ -538,25 +546,19 @@ export const useSendMessage = (
   conversation: IClientConversation,
   addNewestConversation: (message: string, answer?: string) => void,
   removeLatestMessage: () => void,
-  addNewestAnswer: (answer: string) => void,
+  addNewestAnswer: (answer: IAnswer) => void,
 ) => {
-  // const loading = useOneNamespaceEffectsLoading('chatModel', [
-  //   'completeConversation',
-  // ]);
-  const [loading, setLoading] = useState(false);
   const { setConversation } = useSetConversation();
   const { conversationId } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
   const fetchConversation = useFetchConversation();
-  const completeConversation = useCompleteConversation();
 
   const { handleClickConversation } = useClickConversationCard();
-  const { send, answer } = useSendMessageWithSse();
+  const { send, answer, done } = useSendMessageWithSse();
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
-      setLoading(true);
       const res: Response = await send({
         conversation_id: id ?? conversationId,
         messages: [
@@ -575,7 +577,6 @@ export const useSendMessage = (
           handleClickConversation(id);
         } else {
           console.info('222');
-          setLoading(false);
           // fetchConversation(conversationId);
         }
       } else {
@@ -586,6 +587,7 @@ export const useSendMessage = (
         console.info('removeLatestMessage111');
         removeLatestMessage();
       }
+      console.info('false');
     },
     [
       conversation?.message,
@@ -615,25 +617,25 @@ export const useSendMessage = (
 
   useEffect(() => {
     if (answer.answer) {
-      setLoading(true);
-      addNewestAnswer(answer.answer);
+      addNewestAnswer(answer);
+      console.info('true?');
       console.info('send msg:', answer.answer);
     }
-  }, [answer.answer, addNewestAnswer]);
+  }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(() => {
-    if (!loading) {
+    if (done) {
       setValue('');
       handleSendMessage(value.trim());
     }
     addNewestConversation(value);
-  }, [addNewestConversation, handleSendMessage, loading, setValue, value]);
+  }, [addNewestConversation, handleSendMessage, done, setValue, value]);
 
   return {
     handlePressEnter,
     handleInputChange,
     value,
-    loading,
+    loading: !done,
   };
 };
 

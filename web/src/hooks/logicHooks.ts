@@ -5,8 +5,7 @@ import { IAnswer } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import api from '@/utils/api';
-import authorizationUtil from '@/utils/authorizationUtil';
-import { getSearchValue } from '@/utils/commonUtil';
+import { getAuthorization } from '@/utils/authorizationUtil';
 import { PaginationProps } from 'antd';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -142,53 +141,52 @@ export const useFetchAppConf = () => {
 
 export const useSendMessageWithSse = () => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
-  const sharedId = getSearchValue('shared_id');
-  const authorization = sharedId
-    ? 'Bearer ' + sharedId
-    : authorizationUtil.getAuthorization();
-  const send = useCallback(
-    async (body: any) => {
+  const [done, setDone] = useState(true);
+
+  const send = useCallback(async (body: any) => {
+    try {
+      setDone(false);
       const response = await fetch(api.completeConversation, {
         method: 'POST',
         headers: {
-          [Authorization]: authorization,
+          [Authorization]: getAuthorization(),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
       });
+
       const reader = response?.body
         ?.pipeThrough(new TextDecoderStream())
         .pipeThrough(new EventSourceParserStream())
         .getReader();
 
-      // const reader = response.body.getReader();
-
       while (true) {
-        const { value, done } = await reader?.read();
-        try {
-          const val = JSON.parse(value.data);
-          const d = val?.data;
-          console.info('value:', val);
-          if (typeof d !== 'boolean') {
-            console.log('Received:', d);
-            const textContent = d?.answer || '';
-            console.info('data:', d);
-            console.info('text:', textContent);
-            setAnswer(d);
+        const x = await reader?.read();
+        if (x) {
+          const { done, value } = x;
+          try {
+            const val = JSON.parse(value?.data || '');
+            const d = val?.data;
+            if (typeof d !== 'boolean') {
+              setAnswer(d);
+            }
+          } catch (e) {
+            console.warn(e);
           }
-        } catch (e) {
-          console.warn(e);
+          if (done) {
+            console.info('done');
+            break;
+          }
         }
-        if (done) break;
       }
+      console.info('done?');
+      setDone(true);
       return response;
-    },
-    [authorization],
-  );
+    } catch (e) {
+      setDone(true);
+      console.warn(e);
+    }
+  }, []);
 
-  useEffect(() => {
-    console.info('aaa:', answer.answer);
-  }, [answer.answer]);
-
-  return { send, answer };
+  return { send, answer, done };
 };

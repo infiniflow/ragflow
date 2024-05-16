@@ -39,6 +39,7 @@ const MessageItem = ({
   const userInfo = useSelectUserInfo();
   const fileThumbnails = useSelectFileThumbnails();
   const getDocumentUrl = useGetDocumentUrl();
+  const { t } = useTranslate('chat');
 
   const isAssistant = item.role === MessageType.Assistant;
 
@@ -49,10 +50,10 @@ const MessageItem = ({
   const content = useMemo(() => {
     let text = item.content;
     if (text === '') {
-      text = 'Content is being generated...';
+      text = t('searching');
     }
     return loading ? text?.concat('~~2$$') : text;
-  }, [item.content, loading]);
+  }, [item.content, loading, t]);
 
   return (
     <div
@@ -169,7 +170,9 @@ const ChatContainer = () => {
                 const referenceIndex = assistantMessages.findIndex(
                   (x) => x.id === message.id,
                 );
-                const reference = conversation.reference[referenceIndex];
+                const reference = message?.reference
+                  ? message?.reference
+                  : conversation.reference[referenceIndex];
                 return (
                   <MessageItem
                     loading={

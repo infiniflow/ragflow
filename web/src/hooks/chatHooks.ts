@@ -154,6 +154,9 @@ export const useRemoveConversation = () => {
   return removeConversation;
 };
 
+/*
+@deprecated
+ */
 export const useCompleteConversation = () => {
   const dispatch = useDispatch();
 
