@@ -322,9 +322,10 @@ def rename():
                 data=False,
                 retmsg="The extension of file can't be changed",
                 retcode=RetCode.ARGUMENT_ERROR)
-        if DocumentService.query(name=req["name"], kb_id=doc.kb_id):
-            return get_data_error_result(
-                retmsg="Duplicated document name in the same knowledgebase.")
+        for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
+            if d.name == req["name"]:
+                return get_data_error_result(
+                    retmsg="Duplicated document name in the same knowledgebase.")
 
         if not DocumentService.update_by_id(
                 req["doc_id"], {"name": req["name"]}):
