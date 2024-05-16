@@ -16,6 +16,7 @@
 import random
 from datetime import datetime
 from elasticsearch_dsl import Q
+from peewee import fn
 
 from api.settings import stat_logger
 from api.utils import current_timestamp, get_format_time
@@ -40,8 +41,9 @@ class DocumentService(CommonService):
                      orderby, desc, keywords):
         if keywords:
             docs = cls.model.select().where(
-                cls.model.kb_id == kb_id,
-                cls.model.name.like(f"%%{keywords}%%"))
+                (cls.model.kb_id == kb_id),
+                (fn.LOWER(cls.model.name).contains(keywords.lower()))
+             )
         else:
             docs = cls.model.select().where(cls.model.kb_id == kb_id)
         count = docs.count()
