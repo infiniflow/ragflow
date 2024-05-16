@@ -18,7 +18,7 @@ const NewDocumentLink = ({
       onClick={!preventDefault ? undefined : (e) => e.preventDefault()}
       href={link}
       rel="noreferrer"
-      style={{ color }}
+      style={{ color, wordBreak: 'break-all' }}
     >
       {children}
     </a>

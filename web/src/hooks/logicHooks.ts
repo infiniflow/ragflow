@@ -139,54 +139,60 @@ export const useFetchAppConf = () => {
   return appConf;
 };
 
-export const useSendMessageWithSse = () => {
+export const useSendMessageWithSse = (
+  url: string = api.completeConversation,
+) => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
 
-  const send = useCallback(async (body: any) => {
-    try {
-      setDone(false);
-      const response = await fetch(api.completeConversation, {
-        method: 'POST',
-        headers: {
-          [Authorization]: getAuthorization(),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
+  const send = useCallback(
+    async (body: any) => {
+      try {
+        setDone(false);
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            [Authorization]: getAuthorization(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
 
-      const reader = response?.body
-        ?.pipeThrough(new TextDecoderStream())
-        .pipeThrough(new EventSourceParserStream())
-        .getReader();
+        const reader = response?.body
+          ?.pipeThrough(new TextDecoderStream())
+          .pipeThrough(new EventSourceParserStream())
+          .getReader();
 
-      while (true) {
-        const x = await reader?.read();
-        if (x) {
-          const { done, value } = x;
-          try {
-            const val = JSON.parse(value?.data || '');
-            const d = val?.data;
-            if (typeof d !== 'boolean') {
-              setAnswer(d);
+        while (true) {
+          const x = await reader?.read();
+          if (x) {
+            const { done, value } = x;
+            try {
+              const val = JSON.parse(value?.data || '');
+              const d = val?.data;
+              if (typeof d !== 'boolean') {
+                console.info('data:', d);
+                setAnswer(d);
+              }
+            } catch (e) {
+              console.warn(e);
             }
-          } catch (e) {
-            console.warn(e);
-          }
-          if (done) {
-            console.info('done');
-            break;
+            if (done) {
+              console.info('done');
+              break;
+            }
           }
         }
+        console.info('done?');
+        setDone(true);
+        return response;
+      } catch (e) {
+        setDone(true);
+        console.warn(e);
       }
-      console.info('done?');
-      setDone(true);
-      return response;
-    } catch (e) {
-      setDone(true);
-      console.warn(e);
-    }
-  }, []);
+    },
+    [url],
+  );
 
   return { send, answer, done };
 };

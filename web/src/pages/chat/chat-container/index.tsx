@@ -23,6 +23,7 @@ import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/commonHooks';
 import { useGetDocumentUrl } from '@/hooks/documentHooks';
 import { getExtension, isPdf } from '@/utils/documentUtils';
+import { buildMessageItemReference } from '../utils';
 import styles from './index.less';
 
 const MessageItem = ({
@@ -164,15 +165,6 @@ const ChatContainer = () => {
           <div>
             <Spin spinning={loading}>
               {conversation?.message?.map((message, i) => {
-                const assistantMessages = conversation?.message
-                  ?.filter((x) => x.role === MessageType.Assistant)
-                  .slice(1);
-                const referenceIndex = assistantMessages.findIndex(
-                  (x) => x.id === message.id,
-                );
-                const reference = message?.reference
-                  ? message?.reference
-                  : conversation.reference[referenceIndex];
                 return (
                   <MessageItem
                     loading={
@@ -182,7 +174,7 @@ const ChatContainer = () => {
                     }
                     key={message.id}
                     item={message}
-                    reference={reference}
+                    reference={buildMessageItemReference(conversation, message)}
                     clickDocumentButton={clickDocumentButton}
                   ></MessageItem>
                 );

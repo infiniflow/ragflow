@@ -62,7 +62,7 @@ const MarkdownContent = ({
     (chunkIndex: number) => {
       const chunks = reference?.chunks ?? [];
       const chunkItem = chunks[chunkIndex];
-      const document = reference?.doc_aggs.find(
+      const document = reference?.doc_aggs?.find(
         (x) => x?.doc_id === chunkItem?.doc_id,
       );
       const documentId = document?.doc_id;

@@ -286,20 +286,4 @@ export const useFetchSharedConversation = () => {
   return fetchSharedConversation;
 };
 
-export const useCompleteSharedConversation = () => {
-  const dispatch = useDispatch();
-
-  const completeSharedConversation = useCallback(
-    (payload: any) => {
-      return dispatch<any>({
-        type: 'chatModel/completeExternalConversation',
-        payload: payload,
-      });
-    },
-    [dispatch],
-  );
-
-  return completeSharedConversation;
-};
-
 //#endregion
