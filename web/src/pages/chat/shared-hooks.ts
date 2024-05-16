@@ -1,10 +1,12 @@
 import { MessageType } from '@/constants/chat';
 import {
-  useCompleteSharedConversation,
   useCreateSharedConversation,
   useFetchSharedConversation,
 } from '@/hooks/chatHooks';
+import { useSendMessageWithSse } from '@/hooks/logicHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { IAnswer } from '@/interfaces/database/chat';
+import api from '@/utils/api';
 import omit from 'lodash/omit';
 import {
   Dispatch,
@@ -76,6 +78,27 @@ export const useSelectCurrentSharedConversation = (conversationId: string) => {
     });
   }, []);
 
+  const addNewestAnswer = useCallback((answer: IAnswer) => {
+    setCurrentConversation((pre) => {
+      const latestMessage = pre.message?.at(-1);
+
+      if (latestMessage) {
+        return {
+          ...pre,
+          message: [
+            ...pre.message.slice(0, -1),
+            {
+              ...latestMessage,
+              content: answer.answer,
+              reference: answer.reference,
+            } as IMessage,
+          ],
+        };
+      }
+      return pre;
+    });
+  }, []);
+
   const removeLatestMessage = useCallback(() => {
     setCurrentConversation((pre) => {
       const nextMessages = pre.message.slice(0, -2);
@@ -106,6 +129,7 @@ export const useSelectCurrentSharedConversation = (conversationId: string) => {
     loading,
     ref,
     setCurrentConversation,
+    addNewestAnswer,
   };
 };
 
@@ -114,20 +138,19 @@ export const useSendSharedMessage = (
   addNewestConversation: (message: string) => void,
   removeLatestMessage: () => void,
   setCurrentConversation: Dispatch<SetStateAction<IClientConversation>>,
+  addNewestAnswer: (answer: IAnswer) => void,
 ) => {
   const conversationId = conversation.id;
-  const loading = useOneNamespaceEffectsLoading('chatModel', [
-    'completeExternalConversation',
-  ]);
   const setConversation = useCreateSharedConversation();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
-  const fetchConversation = useFetchSharedConversation();
-  const completeConversation = useCompleteSharedConversation();
+  const { send, answer, done } = useSendMessageWithSse(
+    api.completeExternalConversation,
+  );
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
-      const retcode = await completeConversation({
+      const res: Response = await send({
         conversation_id: id ?? conversationId,
         quote: false,
         messages: [
@@ -139,11 +162,11 @@ export const useSendSharedMessage = (
         ],
       });
 
-      if (retcode === 0) {
-        const data = await fetchConversation(conversationId);
-        if (data.retcode === 0) {
-          setCurrentConversation(data.data);
-        }
+      if (res?.status === 200) {
+        // const data = await fetchConversation(conversationId);
+        // if (data.retcode === 0) {
+        //   setCurrentConversation(data.data);
+        // }
       } else {
         // cancel loading
         setValue(message);
@@ -153,11 +176,11 @@ export const useSendSharedMessage = (
     [
       conversationId,
       conversation?.message,
-      fetchConversation,
+      // fetchConversation,
       removeLatestMessage,
       setValue,
-      completeConversation,
-      setCurrentConversation,
+      send,
+      // setCurrentConversation,
     ],
   );
 
@@ -176,18 +199,24 @@ export const useSendSharedMessage = (
     [conversationId, setConversation, sendMessage],
   );
 
-  const handlePressEnter = () => {
-    if (!loading) {
+  useEffect(() => {
+    if (answer.answer) {
+      addNewestAnswer(answer);
+    }
+  }, [answer, addNewestAnswer]);
+
+  const handlePressEnter = useCallback(() => {
+    if (done) {
       setValue('');
       addNewestConversation(value);
       handleSendMessage(value.trim());
     }
-  };
+  }, [addNewestConversation, done, handleSendMessage, setValue, value]);
 
   return {
     handlePressEnter,
     handleInputChange,
     value,
-    loading,
+    loading: !done,
   };
 };

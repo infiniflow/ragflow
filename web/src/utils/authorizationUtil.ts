@@ -1,5 +1,5 @@
 import { Authorization, Token, UserInfo } from '@/constants/authorization';
-
+import { getSearchValue } from './commonUtil';
 const KeySet = [Authorization, Token, UserInfo];
 
 const storage = {
@@ -21,7 +21,7 @@ const storage = {
   setToken: (value: string) => {
     localStorage.setItem(Token, value);
   },
-  setUserInfo: (value: string | Object) => {
+  setUserInfo: (value: string | Record<string, unknown>) => {
     let valueStr = typeof value !== 'string' ? JSON.stringify(value) : value;
     localStorage.setItem(UserInfo, valueStr);
   },
@@ -44,6 +44,15 @@ const storage = {
   getLanguage: (): string => {
     return localStorage.getItem('lng') as string;
   },
+};
+
+export const getAuthorization = () => {
+  const sharedId = getSearchValue('shared_id');
+  const authorization = sharedId
+    ? 'Bearer ' + sharedId
+    : storage.getAuthorization() || '';
+
+  return authorization;
 };
 
 export default storage;

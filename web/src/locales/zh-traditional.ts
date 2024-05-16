@@ -25,6 +25,7 @@ export default {
       comingSoon: '即將推出',
       download: '下載',
       close: '关闭',
+      preview: '預覽',
     },
     login: {
       login: '登入',
@@ -352,6 +353,7 @@ export default {
       partialTitle: '部分嵌入',
       extensionTitle: 'Chrome 插件',
       tokenError: '請先創建 Api Token!',
+      searching: '搜索中',
     },
     setting: {
       profile: '概述',
