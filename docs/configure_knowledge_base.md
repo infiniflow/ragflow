@@ -1,42 +1,131 @@
 # Configure a knowledge base
 
-Knowledge base, hallucination-free chat, and file management are three pillars of RAGFlow. RAGFlow's AI chats are based on knowledge bases. Each of RAGFlow's knowledge bases serves as a knowledge source, *parsing* uploaded files from your local machines and file references generated in file management into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the knowledge base feature, covering the following topics:
+Knowledge base, hallucination-free chat, and file management are three pillars of RAGFlow. RAGFlow's AI chats are based on knowledge bases. Each of RAGFlow's knowledge bases serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in **File Management** into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the knowledge base feature, covering the following topics:
 
 - Create a knowledge base
 - Configure a knowledge base
 - Search for a knowledge base
 - Delete a knowledge base
 
-## Create a knowledge base
+## Create knowledge base
 
-a **root/.knowledgebase** folder is created each time a knowledge base is created. 
+RAGFlow allows you to create unlimited number of knowledge bases. With multiple knowledge bases, you can build more flexible, diversified, and permission-based question answering. To create your first knowledge:
 
-## Configure a knowledge base
+![create knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/110541ed-6cea-4a03-a11c-414a0948ba80)
 
-File parsing is an indispensable topic in knowledge base configuration. The meaning of file parsing in RAGFlow is twofold: file chunking based on file layout and converting chunks into vector embeddings. 
+_Each time a knowledge base is created, a folder with the same name is generated in the **root/.knowledgebase** directory._
 
-### Select an embedding model
+## Configure knowledge base
 
-once 
+The following screen shot shows the configuration page of a knowledge base. A proper configuration of your knowledge base is crucial for future AI chats. For example, choosing the wrong embedding model or chunk method would cause unexpected semantic loss or mismatched answers in chats. 
 
-### Select a chunk method
+![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
+
+This section covers the following topics: 
+
+- Select chunk method
+- Select embedding model
+- Upload file
+- Parse file
+- Intervene with file parsing results
+
+### Select chunk method
+
+RAGFlow offers multiple chunking template to facilitate chunking files of different layouts and ensure semantic integrity. In **Chunk method**, you can choose the default template that suits the layouts and formats of your files. The following table shows the descriptions and the compatible file formats of each supported chunk template:
+
+| **Template** | Description                                                  | File format                                          |
+| ------------ | ------------------------------------------------------------ | ---------------------------------------------------- |
+| General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, EXCEL, PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF |
+| Q&A          |                                                              | EXCEL, CSV/TXT                                       |
+| Resume       |                                                              | DOCX, PDF, TXT                                       |
+| Manual       |                                                              | PDF                                                  |
+| Table        |                                                              | EXCEL, CSV/TXT                                       |
+| Paper        |                                                              | PDF                                                  |
+| Book         |                                                              | DOCX, PDF, TXT                                       |
+| Laws         |                                                              | DOCX, PDF, TXT                                       |
+| Presentation |                                                              | PDF, PPTX                                            |
+| Picture      |                                                              | JPEG, JPG, PNG, TIF, GIF                             |
+| One          | The entire document is chunked as one.                       | DOCX, EXCEL, PDF, TXT                                |
+
+You can also change the chunk template for a particular file on the **Datasets** page. 
+
+![change chunk method](https://github.com/infiniflow/ragflow/assets/93570324/ac116353-2793-42b2-b181-65e7082bed42)
+
+### Select embedding model
+
+An embedding model builds vector index on file chunks. Once you have chosen an embedding model and used it to parse a file, you are no longer allowed to change it. To switch to a different embedding model, you *must* deletes all completed file chunks in the knowledge base. The obvious reason is that we must *ensure* that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are compared in the same embedding space). 
+
+The following embedding models can be deployed locally:
+
+- BAAI/bge-base-en-v1.5
+- BAAI/bge-large-en-v1.5
+- BAAI/bge-small-en-v1.5
+- BAAI/bge-small-zh-v1.5
+- jinaai/jina-embeddings-v2-base-en
+- jinaai/jina-embeddings-v2-small-en
+- nomic-ai/nomic-embed-text-v1.5
+- sentence-transformers/all-MiniLM-L6-v2
+- maidalun1020/bce-embedding-base_v1
 
 ### Upload file
 
-- RAGFlow's file management allows you to link a file to multiple knowledge bases, in which case each target knowledge base holds a reference to the file
-- In **Knowledge Base**, you are also given the option of uploading files from your local machines to a knowledge base, in which case the knowledge base holds file copies. 
+- RAGFlow's file management allows you to link a file to multiple knowledge bases, in which case each target knowledge base holds a reference to the file.
+- In **Knowledge Base**, you are also given the option of uploading a single file or a folder of files (bulk upload) from your local machine to a knowledge base, in which case the knowledge base holds file copies. 
 
-does it support bulk load?
+While uploading files directly to a knowledge base seems more convenient, we *highly* recommend uploading files to **File Management** and then linking them to the target knowledge bases. This way, you can avoid permanently deleting files uploaded to the knowledge base. 
 
-As of RAGFlow v0.5.0, 
+### Parse file
 
-## Search for a knowledge base
+File parsing is a crucial topic in knowledge base configuration. The meaning of file parsing in RAGFlow is twofold: chunking files based on file layout and building embedding and full-text (keyword) indexes on these chunks. After having selected the chunk method and embedding model, you can start parsing an file:
+
+![parse file](https://github.com/infiniflow/ragflow/assets/93570324/5311f166-6426-447f-aa1f-bd488f1cfc7b)
+
+- Click the play button next to **UNSTART** to start file parsing.
+- Click the red-cross icon and then refresh, if your file parsing stalls for a long time. 
+- As shown above, RAGFlow allows you to use a different chunk method for a particular file, offering flexibility beyond the default method. 
+- As shown above, RAGFlow allows you to enable or disable individual files, offering finer control over knowledge base-based AI chats. 
+
+### Intervene with file parsing results
+
+RAGFlow features visibility and explainability, allowing you to view the chunking results and intervene where necessary. To do so: 
+
+1. Click on the file that completes file parsing to view the chunking results: 
+
+   _You are taken to the **Chunk** page:_
+
+   ![chunks](https://github.com/infiniflow/ragflow/assets/93570324/0547fd0e-e71b-41f8-8e0e-31649c85fd3d)
+
+2. Hover over each snapshot for a quick view of each chunk:
+
+   ![hover](https://github.com/infiniflow/ragflow/assets/93570324/174e0f46-518e-4d26-ab06-3c78d9b012bd)
+
+3. Double click the chunked texts to add keywords or make *manual* changes where necessary:
+
+   ![update chunk](https://github.com/infiniflow/ragflow/assets/93570324/1d84b408-4e9f-46fd-9413-8c1059bf9c76)
+
+4. In Retrieval testing, ask a quick question in **Test text** to double check if your configurations work:
+
+   _As you can tell from the following, RAGFlow responds with truthful citations._
+
+   ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
+
+## Run retrieval testing
+
+Before going to production, you need to tune your 
+
+multi-route recall requires you to tune the parameters to 
+
+## Search for knowledge base
 
 As of RAGFlow v0.5.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
 
 ![search knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/836ae94c-2438-42be-879e-c7ad2a59693e)
 
-## Delete a knowledge base
+## Delete knowledge base
 
-You are allowed to delete a knowledge base. Once you delete a knowledge base, the associated folder under **root/.knowledge** directory is AUTOMATICALLY REMOVED. the files and file references inside it are AUTOMATICALLY REMOVED. 
+You are allowed to delete a knowledge base. Hover your mouse over the three dot of the intended knowledge base card and the **Delete** option appears. Once you delete a knowledge base, the associated folder under **root/.knowledge** directory is AUTOMATICALLY REMOVED. The consequence is: 
 
+- The files uploaded directly to the knowledge base are gone;  
+- The file references, which you created from within **File Management**, are gone, but the associated files still exist in **File Management**. 
+
+![delete knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/fec7a508-6cfe-4bca-af90-81d3fdb94098)
