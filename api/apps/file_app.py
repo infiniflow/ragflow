@@ -306,9 +306,10 @@ def rename():
                 data=False,
                 retmsg="The extension of file can't be changed",
                 retcode=RetCode.ARGUMENT_ERROR)
-        if FileService.query(name=req["name"], pf_id=file.parent_id):
-            return get_data_error_result(
-                retmsg="Duplicated file name in the same folder.")
+        for file in FileService.query(name=req["name"], pf_id=file.parent_id):
+            if file.name == req["name"]:
+                return get_data_error_result(
+                    retmsg="Duplicated file name in the same folder.")
 
         if not FileService.update_by_id(
                 req["file_id"], {"name": req["name"]}):
