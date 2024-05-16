@@ -22,6 +22,15 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
     return e?.fileList;
   };
 
+  const uploadButtion = (
+    <button style={{ border: 0, background: 'none' }} type="button">
+            <PlusOutlined />
+            <div style={{ marginTop: 8 }}>
+              {t('upload', { keyPrefix: 'common' })}
+            </div>
+          </button>
+  )
+
   return (
     <section
       className={classNames({
@@ -46,12 +55,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
           maxCount={1}
           showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
         >
-          <button style={{ border: 0, background: 'none' }} type="button">
-            <PlusOutlined />
-            <div style={{ marginTop: 8 }}>
-              {t('upload', { keyPrefix: 'common' })}
-            </div>
-          </button>
+          {show ? uploadButtion : null}
         </Upload>
       </Form.Item>
       <Form.Item
