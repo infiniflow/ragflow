@@ -9,7 +9,7 @@ Knowledge base, hallucination-free chat, and file management are three pillars o
 
 ## Create knowledge base
 
-RAGFlow allows you to create unlimited number of knowledge bases. With multiple knowledge bases, you can build more flexible, diversified, and permission-based question answering. To create your first knowledge:
+With multiple knowledge bases, you can build more flexible, diversified question answering. To create your first knowledge base:
 
 ![create knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/110541ed-6cea-4a03-a11c-414a0948ba80)
 
@@ -28,6 +28,7 @@ This section covers the following topics:
 - Upload file
 - Parse file
 - Intervene with file parsing results
+- Run retrieval testing
 
 ### Select chunk method
 
@@ -37,7 +38,6 @@ RAGFlow offers multiple chunking template to facilitate chunking files of differ
 | ------------ | ------------------------------------------------------------ | ---------------------------------------------------- |
 | General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, EXCEL, PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF |
 | Q&A          |                                                              | EXCEL, CSV/TXT                                       |
-| Resume       |                                                              | DOCX, PDF, TXT                                       |
 | Manual       |                                                              | PDF                                                  |
 | Table        |                                                              | EXCEL, CSV/TXT                                       |
 | Paper        |                                                              | PDF                                                  |
@@ -69,7 +69,7 @@ The following embedding models can be deployed locally:
 
 ### Upload file
 
-- RAGFlow's file management allows you to link a file to multiple knowledge bases, in which case each target knowledge base holds a reference to the file.
+- RAGFlow's **File Management** allows you to link a file to multiple knowledge bases, in which case each target knowledge base holds a reference to the file.
 - In **Knowledge Base**, you are also given the option of uploading a single file or a folder of files (bulk upload) from your local machine to a knowledge base, in which case the knowledge base holds file copies. 
 
 While uploading files directly to a knowledge base seems more convenient, we *highly* recommend uploading files to **File Management** and then linking them to the target knowledge bases. This way, you can avoid permanently deleting files uploaded to the knowledge base. 
@@ -95,9 +95,7 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
    ![chunks](https://github.com/infiniflow/ragflow/assets/93570324/0547fd0e-e71b-41f8-8e0e-31649c85fd3d)
 
-2. Hover over each snapshot for a quick view of each chunk:
-
-   ![hover](https://github.com/infiniflow/ragflow/assets/93570324/174e0f46-518e-4d26-ab06-3c78d9b012bd)
+2. Hover over each snapshot for a quick view of each chunk.
 
 3. Double click the chunked texts to add keywords or make *manual* changes where necessary:
 
@@ -109,11 +107,14 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
    ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
 
-## Run retrieval testing
+### Run retrieval testing
 
-Before going to production, you need to tune your 
+RAGFlow uses multiple recall of both full-text search and vector search in its hallucination-free AI chat. Prior to setting up an AI chat, consider adjusting the following parameters to ensure that the intended information always turns up in answers:
 
-multi-route recall requires you to tune the parameters to 
+- Similarity threshold: Chunks with similarities below the threshold will be filtered. Currently set as 0.2.
+- Vector similarity weight: The percentage by which vector similarity contributes to the overall score. Currently set as 0.3.
+
+![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
 
 ## Search for knowledge base
 
