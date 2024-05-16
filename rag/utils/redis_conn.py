@@ -44,6 +44,10 @@ class RedisDB:
             logging.warning("Redis can't be connected.")
         return self.REDIS
 
+    def health(self, queue_name):
+        self.REDIS.ping()
+        return self.REDIS.xinfo_groups(queue_name)[0]
+
     def is_alive(self):
         return self.REDIS is not None
 
