@@ -109,10 +109,10 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
 ### Run retrieval testing
 
-RAGFlow uses multiple recall of both full-text search and vector search in its hallucination-free AI chat. Prior to setting up an AI chat, consider adjusting the following parameters to ensure that the intended information always turns up in answers:
+RAGFlow uses multiple recall of both full-text search and vector search in its chats. Prior to setting up an AI chat, consider adjusting the following parameters to ensure that the intended information always turns up in answers:
 
-- Similarity threshold: Chunks with similarities below the threshold will be filtered. Currently set as 0.2.
-- Vector similarity weight: The percentage by which vector similarity contributes to the overall score. Currently set as 0.3.
+- Similarity threshold: Chunks with similarities below the threshold will be filtered. Defaultly set to 0.2.
+- Vector similarity weight: The percentage by which vector similarity contributes to the overall score. Defaultly set to 0.3.
 
 ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
 
