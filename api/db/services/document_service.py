@@ -180,6 +180,19 @@ class DocumentService(CommonService):
         if not docs:
             return
         return docs[0]["tenant_id"]
+	
+	@classmethod
+    @DB.connection_context()
+    def get_tenant_id_by_name(cls, name):
+        docs = cls.model.select(
+            Knowledgebase.tenant_id).join(
+            Knowledgebase, on=(
+                    Knowledgebase.id == cls.model.kb_id)).where(
+            cls.model.name == name, Knowledgebase.status == StatusEnum.VALID.value)
+        docs = docs.dicts()
+        if not docs:
+            return
+        return docs[0]["tenant_id"]
 
     @classmethod
     @DB.connection_context()
