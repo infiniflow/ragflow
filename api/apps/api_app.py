@@ -39,6 +39,9 @@ from itsdangerous import URLSafeTimedSerializer
 from api.utils.file_utils import filename_type, thumbnail
 from rag.utils.minio_conn import MINIO
 
+from rag.utils.es_conn import ELASTICSEARCH
+from rag.nlp import search
+from elasticsearch_dsl import Q
 
 def generate_confirmation_token(tenent_id):
     serializer = URLSafeTimedSerializer(tenent_id)
@@ -347,3 +350,43 @@ def upload():
                  return server_error_response(e)
 
     return get_json_result(data=doc_result.to_json())
+
+
+@manager.route('/list_chunks', methods=['POST'])
+# @login_required
+def list_chunks():
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+
+    form_data = request.form
+
+    try:
+        if "doc_name" in form_data.keys():
+            tenant_id = DocumentService.get_tenant_id_by_name(form_data['doc_name'])
+            q = Q("match", docnm_kwd=form_data['doc_name'])
+
+        elif "doc_id" in form_data.keys():
+            tenant_id = DocumentService.get_tenant_id(form_data['doc_id'])
+            q = Q("match", doc_id=form_data['doc_id'])
+        else:
+            return get_json_result(
+                data=False,retmsg="Can't find doc_name or doc_id"
+            )
+
+        res_es_search = ELASTICSEARCH.search(q,idxnm=search.index_name(tenant_id),timeout="600s")
+
+        res = [{} for _ in range(len(res_es_search['hits']['hits']))]
+
+        for index , chunk in enumerate(res_es_search['hits']['hits']):
+            res[index]['doc_name'] = chunk['_source']['docnm_kwd']
+            res[index]['content'] = chunk['_source']['content_with_weight']
+            if 'img_id' in chunk['_source'].keys():
+                res[index]['img_id'] = chunk['_source']['img_id']
+
+    except Exception as e:
+        return server_error_response(e)
+
+    return get_json_result(data=res)
