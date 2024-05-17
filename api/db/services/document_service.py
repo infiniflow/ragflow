@@ -181,7 +181,7 @@ class DocumentService(CommonService):
             return
         return docs[0]["tenant_id"]
 
-	@classmethod
+    @classmethod
     @DB.connection_context()
     def get_tenant_id_by_name(cls, name):
         docs = cls.model.select(
