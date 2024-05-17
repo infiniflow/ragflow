@@ -4,7 +4,7 @@
 
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
 
-PY=/root/miniconda3/envs/py11/bin/python
+PY=python3
 
 function task_exe(){
     while [ 1 -eq 1 ];do
