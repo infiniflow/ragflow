@@ -162,9 +162,7 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
    ![chunks](https://github.com/infiniflow/ragflow/assets/93570324/0547fd0e-e71b-41f8-8e0e-31649c85fd3d)
 
-2. Hover over each snapshot for a quick view of each chunk:
-
-   ![hover](https://github.com/infiniflow/ragflow/assets/93570324/174e0f46-518e-4d26-ab06-3c78d9b012bd)
+2. Hover over each snapshot for a quick view of each chunk.
 
 3. Double click the chunked texts to add keywords or make *manual* changes where necessary:
 

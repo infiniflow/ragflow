@@ -3,7 +3,7 @@
   "author": "zhaofengchao <13723060510@163.com>",
   "scripts": {
     "build": "umi build",
-    "dev": "cross-env PORT=9200 UMI_DEV_SERVER_COMPRESS=none umi dev",
+    "dev": "cross-env UMI_DEV_SERVER_COMPRESS=none umi dev",
     "postinstall": "umi setup",
     "lint": "umi lint --eslint-only",
     "setup": "umi setup",
@@ -19,6 +19,7 @@
     "axios": "^1.6.3",
     "classnames": "^2.5.1",
     "dayjs": "^1.11.10",
+    "eventsource-parser": "^1.1.2",
     "i18next": "^23.7.16",
     "js-base64": "^3.7.5",
     "jsencrypt": "^3.3.2",

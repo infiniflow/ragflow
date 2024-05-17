@@ -43,7 +43,7 @@ class DocumentService(CommonService):
             docs = cls.model.select().where(
                 (cls.model.kb_id == kb_id),
                 (fn.LOWER(cls.model.name).contains(keywords.lower()))
-             )
+            )
         else:
             docs = cls.model.select().where(cls.model.kb_id == kb_id)
         count = docs.count()
@@ -75,7 +75,7 @@ class DocumentService(CommonService):
     def delete(cls, doc):
         e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
         if not KnowledgebaseService.update_by_id(
-                kb.id, {"doc_num": kb.doc_num - 1}):
+                kb.id, {"doc_num": max(0, kb.doc_num - 1)}):
             raise RuntimeError("Database error (Knowledgebase)!")
         return cls.delete_by_id(doc.id)
 

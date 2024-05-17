@@ -23,3 +23,23 @@
 .referenceIcon {
   padding: 0 6px;
 }
+
+.cursor {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background-color: black;
+  animation: blink 0.6s infinite;
+  vertical-align: text-top;
+  @keyframes blink {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+}

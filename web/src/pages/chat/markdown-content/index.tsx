@@ -16,6 +16,7 @@ import { visitParents } from 'unist-util-visit-parents';
 import styles from './index.less';
 
 const reg = /(#{2}\d+\${2})/g;
+const curReg = /(~{2}\d+\${2})/g;
 
 const getChunkIndex = (match: string) => Number(match.slice(2, -2));
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
@@ -61,7 +62,7 @@ const MarkdownContent = ({
     (chunkIndex: number) => {
       const chunks = reference?.chunks ?? [];
       const chunkItem = chunks[chunkIndex];
-      const document = reference?.doc_aggs.find(
+      const document = reference?.doc_aggs?.find(
         (x) => x?.doc_id === chunkItem?.doc_id,
       );
       const documentId = document?.doc_id;
@@ -129,7 +130,7 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      return reactStringReplace(text, reg, (match, i) => {
+      let replacedText = reactStringReplace(text, reg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
         return (
           <Popover content={getPopoverContent(chunkIndex)}>
@@ -137,6 +138,12 @@ const MarkdownContent = ({
           </Popover>
         );
       });
+
+      replacedText = reactStringReplace(replacedText, curReg, (match, i) => (
+        <span className={styles.cursor} key={i}></span>
+      ));
+
+      return replacedText;
     },
     [getPopoverContent],
   );
