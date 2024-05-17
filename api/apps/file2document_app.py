@@ -58,11 +58,7 @@ def convert():
                     tenant_id = DocumentService.get_tenant_id(doc_id)
                     if not tenant_id:
                         return get_data_error_result(retmsg="Tenant not found!")
-                    ELASTICSEARCH.deleteByQuery(
-                        Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-                    DocumentService.increment_chunk_num(
-                        doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-                    if not DocumentService.delete(doc):
+                    if not DocumentService.remove_document(doc, tenant_id):
                         return get_data_error_result(
                             retmsg="Database error (Document removal)!")
                 File2DocumentService.delete_by_file_id(id)
@@ -125,11 +121,7 @@ def rm():
                 tenant_id = DocumentService.get_tenant_id(doc_id)
                 if not tenant_id:
                     return get_data_error_result(retmsg="Tenant not found!")
-                ELASTICSEARCH.deleteByQuery(
-                    Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-                DocumentService.increment_chunk_num(
-                    doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-                if not DocumentService.delete(doc):
+                if not DocumentService.remove_document(doc, tenant_id):
                     return get_data_error_result(
                         retmsg="Database error (Document removal)!")
         return get_json_result(data=True)

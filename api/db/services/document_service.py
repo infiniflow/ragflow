@@ -72,25 +72,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def delete(cls, doc):
-        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-        if not KnowledgebaseService.update_by_id(
-                kb.id, {"doc_num": max(0, kb.doc_num - 1)}):
-            raise RuntimeError("Database error (Knowledgebase)!")
-        return cls.delete_by_id(doc.id)
-
-    @classmethod
-    @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
         ELASTICSEARCH.deleteByQuery(
-            Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-
-        cls.increment_chunk_num(
-            doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-        if not cls.delete(doc):
-            raise RuntimeError("Database error (Document removal)!")
-
-        MINIO.rm(doc.kb_id, doc.location)
+                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+        cls.clear_chunk_num(doc.id)
         return cls.delete_by_id(doc.id)
 
     @classmethod
