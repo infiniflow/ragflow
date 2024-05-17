@@ -248,8 +248,8 @@ class OllamaChat(Base):
             )
             for resp in response:
                 if resp["done"]:
-                    return resp["prompt_eval_count"] + resp["eval_count"]
-                ans = resp["message"]["content"]
+                    yield resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
+                ans += resp["message"]["content"]
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
