@@ -391,9 +391,9 @@ def init_llm_factory():
     TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
     ## insert openai two embedding models to the current openai user.
     print("Start to insert 2 OpenAI embedding models...")
-    tenant_ids = set([row.tenant_id for row in TenantLLMService.get_openai_models()])
+    tenant_ids = set([row["tenant_id"] for row in TenantLLMService.get_openai_models()])
     for tid in tenant_ids:
-        for row in TenantLLMService.get_openai_models(llm_factory="OpenAI", tenant_id=tid):
+        for row in TenantLLMService.query(llm_factory="OpenAI", tenant_id=tid):
             row = row.to_dict()
             row["model_type"] = LLMType.EMBEDDING.value
             row["llm_name"] = "text-embedding-3-small"
