@@ -367,16 +367,16 @@ This is usually used when upload a file to.
 
 ## Get document chunks
 
-Get the chunks of the document based on filename or doc_id.
+Get the chunks of the document based on doc_name or doc_id.
 ### Path: /api/list_chunks/
 ### Method: POST
 
 ### Parameter:
 
-| name     | type   | optional | description                                             |
-|----------|--------|----------|---------------------------------------------------------|
-| filename | string | Yes      |                                           |
-| doc_id   | string | Yes      |                   |
+| name     | type   | optional | description                     |
+|----------|--------|----------|---------------------------------|
+| doc_name | string | Yes      | The doc name in knowledge base. |
+| doc_id   | string | Yes      | The doc_id of doc.              |
 
 
 ### Response 

@@ -364,16 +364,16 @@ def list_chunks():
     form_data = request.form
 
     try:
-        if "filename" in form_data.keys():
-            tenant_id = DocumentService.get_tenant_id_by_name(form_data['filename'])
-            q = Q("match", docnm_kwd=form_data['filename'])
+        if "doc_name" in form_data.keys():
+            tenant_id = DocumentService.get_tenant_id_by_name(form_data['doc_name'])
+            q = Q("match", docnm_kwd=form_data['doc_name'])
 
         elif "doc_id" in form_data.keys():
             tenant_id = DocumentService.get_tenant_id(form_data['doc_id'])
             q = Q("match", doc_id=form_data['doc_id'])
         else:
             return get_json_result(
-                data=False,retmsg="Can't find filename or doc_id"
+                data=False,retmsg="Can't find doc_name or doc_id"
             )
 
         res_es_search = ELASTICSEARCH.search(q,idxnm=search.index_name(tenant_id),timeout="600s")
