@@ -162,7 +162,7 @@ def completion():
             return resp
 
         else:
-            ans = chat(dia, msg, False, **req)
+            ans = chat(dia, msg, **req)
             fillin_conv(ans)
             ConversationService.update_by_id(conv.id, conv.to_dict())
             return get_json_result(data=ans)
