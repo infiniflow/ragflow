@@ -222,10 +222,13 @@ def completion():
             resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
             return resp
         else:
-            ans = chat(dia, msg, **req)
-            fillin_conv(ans)
-            API4ConversationService.append_message(conv.id, conv.to_dict())
-            return get_json_result(data=ans)
+            answer = None
+            for ans in chat(dia, msg, **req):
+                answer = ans
+                fillin_conv(ans)
+                API4ConversationService.append_message(conv.id, conv.to_dict())
+                break
+            return get_json_result(data=answer)
 
     except Exception as e:
         return server_error_response(e)
