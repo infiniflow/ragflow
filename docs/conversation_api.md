@@ -364,3 +364,38 @@ This is usually used when upload a file to.
 }
 
 ```
+
+## Get document chunks
+
+Get the chunks of the document based on filename or doc_id.
+### Path: /api/list_chunks/
+### Method: POST
+
+### Parameter:
+
+| name     | type   | optional | description                                             |
+|----------|--------|----------|---------------------------------------------------------|
+| filename | string | Yes      |                                           |
+| doc_id   | string | Yes      |                   |
+
+
+### Response 
+```json
+{
+    "data": [
+        {
+            "content": "Figure 14: Per-request neural-net processingof RL-Cache.\n103\n(sn)\nCPU\n 102\nGPU\n8101\n100\n8\n16 64 256 1K\n4K",
+            "doc_name": "RL-Cache.pdf",
+            "img_id": "0335167613f011ef91240242ac120006-b46c3524952f82dbe061ce9b123f2211"
+        },
+        {
+            "content": "4.3 ProcessingOverheadof RL-CacheACKNOWLEDGMENTSThis section evaluates how e￿ectively our RL-Cache implemen-tation leverages modern multi-core CPUs and GPUs to keep the per-request neural-net processing overhead low. Figure 14 depictsThis researchwas supported inpart by the Regional Government of Madrid (grant P2018/TCS-4499, EdgeData-CM)andU.S. National Science Foundation (grants CNS-1763617 andCNS-1717179).REFERENCES",
+            "doc_name": "RL-Cache.pdf",
+            "img_id": "0335167613f011ef91240242ac120006-d4c12c43938eb55d2d8278eea0d7e6d7"
+        }
+    ],
+    "retcode": 0,
+    "retmsg": "success"
+}
+
+```
