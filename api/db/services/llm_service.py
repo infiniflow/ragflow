@@ -81,7 +81,7 @@ class TenantLLMService(CommonService):
         if not model_config:
             if llm_type == LLMType.EMBEDDING.value:
                 llm = LLMService.query(llm_name=llm_name)
-                if llm and llm[0].fid in ["Youdao", "FastEmbed"]:
+                if llm and llm[0].fid in ["Youdao", "FastEmbed", "DeepSeek"]:
                     model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": llm_name, "api_base": ""}
             if not model_config:
                 if llm_name == "flag-embedding":
@@ -135,6 +135,16 @@ class TenantLLMService(CommonService):
                 .execute()
         return num
 
+    @classmethod
+    @DB.connection_context()
+    def get_openai_models(cls):
+        objs = cls.model.select().where(
+            (cls.model.llm_factory == "OpenAI"),
+            ~(cls.model.llm_name == "text-embedding-3-small"),
+            ~(cls.model.llm_name == "text-embedding-3-large")
+        ).dicts()
+        return list(objs)
+
 
 class LLMBundle(object):
     def __init__(self, tenant_id, llm_type, llm_name=None, lang="Chinese"):
@@ -172,8 +182,18 @@ class LLMBundle(object):
 
     def chat(self, system, history, gen_conf):
         txt, used_tokens = self.mdl.chat(system, history, gen_conf)
-        if TenantLLMService.increase_usage(
+        if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens, self.llm_name):
             database_logger.error(
                 "Can't update token usage for {}/CHAT".format(self.tenant_id))
         return txt
+
+    def chat_streamly(self, system, history, gen_conf):
+        for txt in self.mdl.chat_streamly(system, history, gen_conf):
+            if isinstance(txt, int):
+                if not TenantLLMService.increase_usage(
+                        self.tenant_id, self.llm_type, txt, self.llm_name):
+                    database_logger.error(
+                        "Can't update token usage for {}/CHAT".format(self.tenant_id))
+                return
+            yield txt

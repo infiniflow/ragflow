@@ -14,6 +14,8 @@ import {
   Popup,
 } from 'react-pdf-highlighter';
 
+import FileError from '@/pages/document-viewer/file-error';
+import { useCatchDocumentError } from './hooks';
 import styles from './index.less';
 
 interface IProps {
@@ -34,10 +36,12 @@ const HighlightPopup = ({
   ) : null;
 
 const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
-  const url = useGetDocumentUrl(documentId);
+  const getDocumentUrl = useGetDocumentUrl(documentId);
   const { highlights: state, setWidthAndHeight } = useGetChunkHighlights(chunk);
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
   const [loaded, setLoaded] = useState(false);
+  const url = getDocumentUrl();
+  const error = useCatchDocumentError(url);
 
   const resetHash = () => {};
 
@@ -58,6 +62,7 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
         url={url}
         beforeLoad={<Skeleton active />}
         workerSrc="/pdfjs-dist/pdf.worker.min.js"
+        errorMessage={<FileError>{error}</FileError>}
       >
         {(pdfDocument) => {
           pdfDocument.getPage(1).then((page) => {

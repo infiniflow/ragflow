@@ -13,12 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from flask import request
+from flask import request, Response, jsonify
 from flask_login import login_required
 from api.db.services.dialog_service import DialogService, ConversationService, chat
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
+import json
 
 
 @manager.route('/set', methods=['POST'])
@@ -103,9 +104,12 @@ def list_convsersation():
 
 @manager.route('/completion', methods=['POST'])
 @login_required
-@validate_request("conversation_id", "messages")
+#@validate_request("conversation_id", "messages")
 def completion():
     req = request.json
+    #req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
+    #    {"role": "user", "content": "上海有吗？"}
+    #]}
     msg = []
     for m in req["messages"]:
         if m["role"] == "system":
@@ -123,13 +127,45 @@ def completion():
             return get_data_error_result(retmsg="Dialog not found!")
         del req["conversation_id"]
         del req["messages"]
-        ans = chat(dia, msg, **req)
+
         if not conv.reference:
             conv.reference = []
-        conv.reference.append(ans["reference"])
-        conv.message.append({"role": "assistant", "content": ans["answer"]})
-        ConversationService.update_by_id(conv.id, conv.to_dict())
-        return get_json_result(data=ans)
+        conv.message.append({"role": "assistant", "content": ""})
+        conv.reference.append({"chunks": [], "doc_aggs": []})
+
+        def fillin_conv(ans):
+            nonlocal conv
+            if not conv.reference:
+                conv.reference.append(ans["reference"])
+            else: conv.reference[-1] = ans["reference"]
+            conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+
+        def stream():
+            nonlocal dia, msg, req, conv
+            try:
+                for ans in chat(dia, msg, True, **req):
+                    fillin_conv(ans)
+                    yield "data:"+json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
+                ConversationService.update_by_id(conv.id, conv.to_dict())
+            except Exception as e:
+                yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
+                                            "data": {"answer": "**ERROR**: "+str(e), "reference": []}},
+                                           ensure_ascii=False) + "\n\n"
+            yield "data:"+json.dumps({"retcode": 0, "retmsg": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+        if req.get("stream", True):
+            resp = Response(stream(), mimetype="text/event-stream")
+            resp.headers.add_header("Cache-control", "no-cache")
+            resp.headers.add_header("Connection", "keep-alive")
+            resp.headers.add_header("X-Accel-Buffering", "no")
+            resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+            return resp
+
+        else:
+            ans = chat(dia, msg, False, **req)
+            fillin_conv(ans)
+            ConversationService.update_by_id(conv.id, conv.to_dict())
+            return get_json_result(data=ans)
     except Exception as e:
         return server_error_response(e)
 

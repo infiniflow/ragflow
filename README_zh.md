@@ -26,7 +26,19 @@
 
 ## 💡 RAGFlow 是什么？
 
-[RAGFlow](https://demo.ragflow.io) 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。
+[RAGFlow](https://ragflow.io/) 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。
+
+## 📌 近期更新
+
+- 2024-05-15 集成大模型 OpenAI GPT-4o。
+- 2024-05-08 集成大模型 DeepSeek。
+- 2024-04-26 增添了'文件管理'功能。
+- 2024-04-19 支持对话 API ([更多](./docs/conversation_api.md))。
+- 2024-04-16 集成嵌入模型 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) 和 专为轻型和高速嵌入而设计的 [FastEmbed](https://github.com/qdrant/fastembed)。
+- 2024-04-11 支持用 [Xinference](./docs/xinference.md) 本地化部署大模型。
+- 2024-04-10 为‘Laws’版面分析增加了底层模型。
+- 2024-04-08 支持用 [Ollama](./docs/ollama.md) 本地化部署大模型。
+- 2024-04-07 支持中文界面。
 
 ## 🌟 主要功能
 
@@ -55,17 +67,6 @@
 - 大语言模型 LLM 以及向量模型均支持配置。
 - 基于多路召回、融合重排序。
 - 提供易用的 API，可以轻松集成到各类企业系统。
-
-## 📌 新增功能
-
-- 2024-05-08 集成大模型 DeepSeek
-- 2024-04-26 增添了'文件管理'功能.
-- 2024-04-19 支持对话 API ([更多](./docs/conversation_api.md)).
-- 2024-04-16 集成嵌入模型 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) 和 专为轻型和高速嵌入而设计的 [FastEmbed](https://github.com/qdrant/fastembed) 。
-- 2024-04-11 支持用 [Xinference](./docs/xinference.md) 本地化部署大模型。
-- 2024-04-10 为‘Laws’版面分析增加了底层模型。
-- 2024-04-08 支持用 [Ollama](./docs/ollama.md) 本地化部署大模型。
-- 2024-04-07 支持中文界面。
 
 ## 🔎 系统架构
 
@@ -271,6 +272,7 @@ $ systemctl start nginx
 ```
 ## 📚 技术文档
 
+- [Quickstart](./docs/quickstart.md)
 - [FAQ](./docs/faq.md)
 
 ## 📜 路线图

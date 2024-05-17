@@ -109,7 +109,7 @@ def detail():
 
 @manager.route('/list', methods=['GET'])
 @login_required
-def list():
+def list_kbs():
     page_number = request.args.get("page", 1)
     items_per_page = request.args.get("page_size", 150)
     orderby = request.args.get("orderby", "create_time")
@@ -136,12 +136,7 @@ def rm():
                 data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
 
         for doc in DocumentService.query(kb_id=req["kb_id"]):
-            ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=doc.id), idxnm=search.index_name(kbs[0].tenant_id))
-
-            DocumentService.increment_chunk_num(
-                doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-            if not DocumentService.delete(doc):
+            if not DocumentService.remove_document(doc, kbs[0].tenant_id):
                 return get_data_error_result(
                     retmsg="Database error (Document removal)!")
 

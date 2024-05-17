@@ -55,6 +55,9 @@ class ESConnection:
         v = v["number"].split(".")[0]
         return int(v) >= 7
 
+    def health(self):
+        return dict(self.es.cluster.health())
+
     def upsert(self, df, idxnm=""):
         res = []
         for d in df:

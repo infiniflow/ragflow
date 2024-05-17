@@ -6,16 +6,7 @@ import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
 import { useSelectUserInfo } from '@/hooks/userSettingHook';
 import { IReference, Message } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
-import {
-  Avatar,
-  Button,
-  Drawer,
-  Flex,
-  Input,
-  List,
-  Skeleton,
-  Spin,
-} from 'antd';
+import { Avatar, Button, Drawer, Flex, Input, List, Spin } from 'antd';
 import classNames from 'classnames';
 import { useMemo } from 'react';
 import {
@@ -32,26 +23,38 @@ import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/commonHooks';
 import { useGetDocumentUrl } from '@/hooks/documentHooks';
 import { getExtension, isPdf } from '@/utils/documentUtils';
+import { buildMessageItemReference } from '../utils';
 import styles from './index.less';
 
 const MessageItem = ({
   item,
   reference,
+  loading = false,
   clickDocumentButton,
 }: {
   item: Message;
   reference: IReference;
+  loading?: boolean;
   clickDocumentButton: (documentId: string, chunk: IChunk) => void;
 }) => {
   const userInfo = useSelectUserInfo();
   const fileThumbnails = useSelectFileThumbnails();
   const getDocumentUrl = useGetDocumentUrl();
+  const { t } = useTranslate('chat');
 
   const isAssistant = item.role === MessageType.Assistant;
 
   const referenceDocumentList = useMemo(() => {
     return reference?.doc_aggs ?? [];
   }, [reference?.doc_aggs]);
+
+  const content = useMemo(() => {
+    let text = item.content;
+    if (text === '') {
+      text = t('searching');
+    }
+    return loading ? text?.concat('~~2$$') : text;
+  }, [item.content, loading, t]);
 
   return (
     <div
@@ -85,15 +88,11 @@ const MessageItem = ({
           <Flex vertical gap={8} flex={1}>
             <b>{isAssistant ? '' : userInfo.nickname}</b>
             <div className={styles.messageText}>
-              {item.content !== '' ? (
-                <MarkdownContent
-                  content={item.content}
-                  reference={reference}
-                  clickDocumentButton={clickDocumentButton}
-                ></MarkdownContent>
-              ) : (
-                <Skeleton active className={styles.messageEmpty} />
-              )}
+              <MarkdownContent
+                content={content}
+                reference={reference}
+                clickDocumentButton={clickDocumentButton}
+              ></MarkdownContent>
             </div>
             {isAssistant && referenceDocumentList.length > 0 && (
               <List
@@ -106,7 +105,10 @@ const MessageItem = ({
                     <List.Item>
                       <Flex gap={'small'} align="center">
                         {fileThumbnail ? (
-                          <img src={fileThumbnail}></img>
+                          <img
+                            src={fileThumbnail}
+                            className={styles.thumbnailImg}
+                          ></img>
                         ) : (
                           <SvgIcon
                             name={`file-icon/${fileExtension}`}
@@ -139,13 +141,19 @@ const ChatContainer = () => {
     currentConversation: conversation,
     addNewestConversation,
     removeLatestMessage,
+    addNewestAnswer,
   } = useFetchConversationOnMount();
   const {
     handleInputChange,
     handlePressEnter,
     value,
     loading: sendLoading,
-  } = useSendMessage(conversation, addNewestConversation, removeLatestMessage);
+  } = useSendMessage(
+    conversation,
+    addNewestConversation,
+    removeLatestMessage,
+    addNewestAnswer,
+  );
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   const disabled = useGetSendButtonDisabled();
@@ -159,19 +167,17 @@ const ChatContainer = () => {
         <Flex flex={1} vertical className={styles.messageContainer}>
           <div>
             <Spin spinning={loading}>
-              {conversation?.message?.map((message) => {
-                const assistantMessages = conversation?.message
-                  ?.filter((x) => x.role === MessageType.Assistant)
-                  .slice(1);
-                const referenceIndex = assistantMessages.findIndex(
-                  (x) => x.id === message.id,
-                );
-                const reference = conversation.reference[referenceIndex];
+              {conversation?.message?.map((message, i) => {
                 return (
                   <MessageItem
+                    loading={
+                      message.role === MessageType.Assistant &&
+                      sendLoading &&
+                      conversation?.message.length - 1 === i
+                    }
                     key={message.id}
                     item={message}
-                    reference={reference}
+                    reference={buildMessageItemReference(conversation, message)}
                     clickDocumentButton={clickDocumentButton}
                   ></MessageItem>
                 );

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon, useNavigate } from 'umi';
 import RightPanel from './right-panel';
 
+import { Domain } from '@/constants/common';
 import styles from './index.less';
 
 const Login = () => {
@@ -172,7 +173,7 @@ const Login = () => {
                     Sign in with Google
                   </div>
                 </Button> */}
-                {location.host === 'demo.ragflow.io' && (
+                {location.host === Domain && (
                   <Button
                     block
                     size="large"

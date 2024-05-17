@@ -26,6 +26,7 @@ import {
   useSelectBreadcrumbItems,
 } from './hooks';
 
+import { useSelectParentFolderList } from '@/hooks/fileManagerHooks';
 import styles from './index.less';
 
 interface IProps {
@@ -46,6 +47,9 @@ const FileToolbar = ({
   const { handleInputChange, searchString } = useHandleSearchChange();
   const breadcrumbItems = useSelectBreadcrumbItems();
   const { handleBreadcrumbClick } = useHandleBreadcrumbClick();
+  const parentFolderList = useSelectParentFolderList();
+  const isKnowledgeBase =
+    parentFolderList.at(-1)?.source_type === 'knowledgebase';
 
   const itemRender: BreadcrumbProps['itemRender'] = (
     currentRoute,
@@ -128,19 +132,21 @@ const FileToolbar = ({
     <div className={styles.filter}>
       <Breadcrumb items={breadcrumbItems} itemRender={itemRender} />
       <Space>
-        <Dropdown
-          menu={{ items }}
-          placement="bottom"
-          arrow={false}
-          disabled={disabled}
-        >
-          <Button>
-            <Space>
-              <b> {t('bulk')}</b>
-              <DownOutlined />
-            </Space>
-          </Button>
-        </Dropdown>
+        {isKnowledgeBase || (
+          <Dropdown
+            menu={{ items }}
+            placement="bottom"
+            arrow={false}
+            disabled={disabled}
+          >
+            <Button>
+              <Space>
+                <b> {t('bulk')}</b>
+                <DownOutlined />
+              </Space>
+            </Button>
+          </Dropdown>
+        )}
         <Input
           placeholder={t('searchFiles')}
           value={searchString}
@@ -150,11 +156,13 @@ const FileToolbar = ({
           prefix={<SearchOutlined />}
         />
 
-        <Dropdown menu={{ items: actionItems }} trigger={['click']}>
-          <Button type="primary" icon={<PlusOutlined />}>
-            {t('addFile')}
-          </Button>
-        </Dropdown>
+        {isKnowledgeBase || (
+          <Dropdown menu={{ items: actionItems }} trigger={['click']}>
+            <Button type="primary" icon={<PlusOutlined />}>
+              {t('addFile')}
+            </Button>
+          </Dropdown>
+        )}
       </Space>
     </div>
   );

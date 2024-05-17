@@ -25,6 +25,7 @@ export default {
       comingSoon: '即将推出',
       download: '下载',
       close: '关闭',
+      preview: '预览',
     },
     login: {
       login: '登录',
@@ -369,6 +370,7 @@ export default {
       partialTitle: '部分嵌入',
       extensionTitle: 'Chrome 插件',
       tokenError: '请先创建 Api Token!',
+      searching: '搜索中',
     },
     setting: {
       profile: '概要',
@@ -475,7 +477,7 @@ export default {
       knowledgeBase: '知识库',
       size: '大小',
       action: '操作',
-      addToKnowledge: '添加到知识库',
+      addToKnowledge: '链接知识库',
       pleaseSelect: '请选择',
       newFolder: '新建文件夹',
       uploadFile: '上传文件',
@@ -487,6 +489,7 @@ export default {
       local: '本地上传',
       s3: 'S3 上传',
       preview: '预览',
+      fileError: '文件错误',
     },
     footer: {
       profile: 'All rights reserved @ React',

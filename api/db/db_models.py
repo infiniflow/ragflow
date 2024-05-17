@@ -21,14 +21,13 @@ import operator
 from functools import wraps
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from flask_login import UserMixin
-
+from playhouse.migrate import MySQLMigrator, migrate
 from peewee import (
-    BigAutoField, BigIntegerField, BooleanField, CharField,
-    CompositeKey, Insert, IntegerField, TextField, FloatField, DateTimeField,
+    BigIntegerField, BooleanField, CharField,
+    CompositeKey, IntegerField, TextField, FloatField, DateTimeField,
     Field, Model, Metadata
 )
 from playhouse.pool import PooledMySQLDatabase
-
 from api.db import SerializedType, ParserType
 from api.settings import DATABASE, stat_logger, SECRET_KEY
 from api.utils.log_utils import getLogger
@@ -345,7 +344,7 @@ class DataBaseModel(BaseModel):
 
 
 @DB.connection_context()
-def init_database_tables():
+def init_database_tables(alter_fields=[]):
     members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
     table_objs = []
     create_failed_list = []
@@ -362,6 +361,7 @@ def init_database_tables():
     if create_failed_list:
         LOGGER.info(f"create tables failed: {create_failed_list}")
         raise Exception(f"create tables failed: {create_failed_list}")
+    migrate_db()
 
 
 def fill_db_model_object(model_object, human_model_dict):
@@ -700,6 +700,11 @@ class File(DataBaseModel):
         help_text="where dose it store")
     size = IntegerField(default=0)
     type = CharField(max_length=32, null=False, help_text="file extension")
+    source_type = CharField(
+        max_length=128,
+        null=False,
+        default="",
+        help_text="where dose this document come from")
 
     class Meta:
         db_table = "file"
@@ -818,3 +823,14 @@ class API4Conversation(DataBaseModel):
 
     class Meta:
         db_table = "api_4_conversation"
+
+
+def migrate_db():
+    try:
+        with DB.transaction():
+            migrator = MySQLMigrator(DB)
+            migrate(
+                migrator.add_column('file', 'source_type', CharField(max_length=128, null=False, default="", help_text="where dose this document come from"))
+            )
+    except Exception as e:
+        pass

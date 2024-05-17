@@ -1,4 +1,5 @@
 import LineChart from '@/components/line-chart';
+import { Domain } from '@/constants/common';
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
 import { IDialog, IStats } from '@/interfaces/database/chat';
@@ -80,7 +81,9 @@ const ChatOverviewModal = ({
             <Flex gap={8} vertical>
               {t('serviceApiEndpoint')}
               <Paragraph copyable className={styles.linkText}>
-                https://demo.ragflow.io/v1/api/
+                https://
+                {location.hostname === Domain ? Domain : '<YOUR_MACHINE_IP>'}
+                /v1/api/
               </Paragraph>
             </Flex>
             <Space size={'middle'}>

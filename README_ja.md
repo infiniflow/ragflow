@@ -26,7 +26,21 @@
 
 ## 💡 RAGFlow とは？
 
-[RAGFlow](https://demo.ragflow.io) は、深い文書理解に基づいたオープンソースの RAG (Retrieval-Augmented Generation) エンジンである。LLM（大規模言語モデル）を組み合わせることで、様々な複雑なフォーマットのデータから根拠のある引用に裏打ちされた、信頼できる質問応答機能を実現し、あらゆる規模のビジネスに適した RAG ワークフローを提供します。
+[RAGFlow](https://ragflow.io/) は、深い文書理解に基づいたオープンソースの RAG (Retrieval-Augmented Generation) エンジンである。LLM（大規模言語モデル）を組み合わせることで、様々な複雑なフォーマットのデータから根拠のある引用に裏打ちされた、信頼できる質問応答機能を実現し、あらゆる規模のビジネスに適した RAG ワークフローを提供します。
+
+## 📌 最新情報
+
+- 2024-05-15 OpenAI GPT-4oを統合しました。
+- 2024-05-08 LLM DeepSeek-V2を統合しました。
+- 2024-04-26 「ファイル管理」機能を追加しました。
+- 2024-04-19 会話 API をサポートします ([詳細](./docs/conversation_api.md))。
+- 2024-04-16 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) から埋め込みモデル「bce-embedding-base_v1」を追加します。
+- 2024-04-16 [FastEmbed](https://github.com/qdrant/fastembed) は、軽量かつ高速な埋め込み用に設計されています。
+- 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/xinference.md) をサポートします。
+- 2024-04-10 メソッド「Laws」に新しいレイアウト認識モデルを追加します。
+- 2024-04-08 [Ollama](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
+- 2024-04-07 中国語インターフェースをサポートします。
+
 
 ## 🌟 主な特徴
 
@@ -55,18 +69,6 @@
 - カスタマイズ可能な LLM とエンベッディングモデル。
 - 複数の想起と融合された再ランク付け。
 - 直感的な API によってビジネスとの統合がシームレスに。
-
-## 📌 最新の機能
-
-- 2024-05-08 
-- 2024-04-26 「ファイル管理」機能を追加しました。
-- 2024-04-19 会話 API をサポートします ([詳細](./docs/conversation_api.md))。
-- 2024-04-16 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) から埋め込みモデル「bce-embedding-base_v1」を追加します。
-- 2024-04-16 [FastEmbed](https://github.com/qdrant/fastembed) は、軽量かつ高速な埋め込み用に設計されています。
-- 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/xinference.md) をサポートします。
-- 2024-04-10 メソッド「Laws」に新しいレイアウト認識モデルを追加します。
-- 2024-04-08 [Ollama](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
-- 2024-04-07 中国語インターフェースをサポートします。
 
 ## 🔎 システム構成
 
@@ -251,6 +253,7 @@ $ bash ./entrypoint.sh
 
 ## 📚 ドキュメンテーション
 
+- [Quickstart](./docs/quickstart.md)
 - [FAQ](./docs/faq.md)
 
 ## 📜 ロードマップ

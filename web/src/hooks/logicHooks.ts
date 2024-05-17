@@ -1,9 +1,15 @@
+import { Authorization } from '@/constants/authorization';
 import { LanguageTranslationMap } from '@/constants/common';
 import { Pagination } from '@/interfaces/common';
+import { IAnswer } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import api from '@/utils/api';
+import { getAuthorization } from '@/utils/authorizationUtil';
 import { PaginationProps } from 'antd';
-import { useCallback, useMemo, useState } from 'react';
+import axios from 'axios';
+import { EventSourceParserStream } from 'eventsource-parser/stream';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
 import { useSetModalState, useTranslate } from './commonHooks';
@@ -112,4 +118,81 @@ export const useSetPagination = (namespace: string) => {
   );
 
   return setPagination;
+};
+
+export interface AppConf {
+  appName: string;
+}
+
+export const useFetchAppConf = () => {
+  const [appConf, setAppConf] = useState<AppConf>({} as AppConf);
+  const fetchAppConf = useCallback(async () => {
+    const ret = await axios.get('/conf.json');
+
+    setAppConf(ret.data);
+  }, []);
+
+  useEffect(() => {
+    fetchAppConf();
+  }, [fetchAppConf]);
+
+  return appConf;
+};
+
+export const useSendMessageWithSse = (
+  url: string = api.completeConversation,
+) => {
+  const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
+  const [done, setDone] = useState(true);
+
+  const send = useCallback(
+    async (body: any) => {
+      try {
+        setDone(false);
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            [Authorization]: getAuthorization(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+
+        const reader = response?.body
+          ?.pipeThrough(new TextDecoderStream())
+          .pipeThrough(new EventSourceParserStream())
+          .getReader();
+
+        while (true) {
+          const x = await reader?.read();
+          if (x) {
+            const { done, value } = x;
+            try {
+              const val = JSON.parse(value?.data || '');
+              const d = val?.data;
+              if (typeof d !== 'boolean') {
+                console.info('data:', d);
+                setAnswer(d);
+              }
+            } catch (e) {
+              console.warn(e);
+            }
+            if (done) {
+              console.info('done');
+              break;
+            }
+          }
+        }
+        console.info('done?');
+        setDone(true);
+        return response;
+      } catch (e) {
+        setDone(true);
+        console.warn(e);
+      }
+    },
+    [url],
+  );
+
+  return { send, answer, done };
 };

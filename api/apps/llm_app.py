@@ -175,7 +175,7 @@ def my_llms():
 
 @manager.route('/list', methods=['GET'])
 @login_required
-def list():
+def list_app():
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
@@ -194,7 +194,7 @@ def list():
 
         res = {}
         for m in llms:
-            if model_type and m["model_type"] != model_type:
+            if model_type and m["model_type"].find(model_type)<0:
                 continue
             if m["fid"] not in res:
                 res[m["fid"]] = []

@@ -25,7 +25,6 @@ from flask import (
 from werkzeug.http import HTTP_STATUS_CODES
 
 from api.utils import json_dumps
-from api.versions import get_rag_version
 from api.settings import RetCode
 from api.settings import (
     REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC,
@@ -82,9 +81,6 @@ def request(**kwargs):
         })
 
     return sess.send(prepped, stream=stream, timeout=timeout)
-
-
-rag_version = get_rag_version() or ''
 
 
 def get_exponential_backoff_interval(retries, full_jitter=False):

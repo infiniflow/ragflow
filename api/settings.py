@@ -86,6 +86,12 @@ default_llm = {
         "embedding_model": "",
         "image2text_model": "",
         "asr_model": "",
+    },
+    "DeepSeek": {
+        "chat_model": "deepseek-chat",
+        "embedding_model": "BAAI/bge-large-zh-v1.5",
+        "image2text_model": "",
+        "asr_model": "",
     }
 }
 LLM = get_base_config("user_default_llm", {})
@@ -155,6 +161,7 @@ CLIENT_AUTHENTICATION = AUTHENTICATION_CONF.get(
         "switch", False)
 HTTP_APP_KEY = AUTHENTICATION_CONF.get("client", {}).get("http_app_key")
 GITHUB_OAUTH = get_base_config("oauth", {}).get("github")
+FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
 WECHAT_OAUTH = get_base_config("oauth", {}).get("wechat")
 
 # site

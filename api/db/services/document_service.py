@@ -16,6 +16,7 @@
 import random
 from datetime import datetime
 from elasticsearch_dsl import Q
+from peewee import fn
 
 from api.settings import stat_logger
 from api.utils import current_timestamp, get_format_time
@@ -40,8 +41,9 @@ class DocumentService(CommonService):
                      orderby, desc, keywords):
         if keywords:
             docs = cls.model.select().where(
-                cls.model.kb_id == kb_id,
-                cls.model.name.like(f"%%{keywords}%%"))
+                (cls.model.kb_id == kb_id),
+                (fn.LOWER(cls.model.name).contains(keywords.lower()))
+            )
         else:
             docs = cls.model.select().where(cls.model.kb_id == kb_id)
         count = docs.count()
@@ -70,25 +72,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def delete(cls, doc):
-        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-        if not KnowledgebaseService.update_by_id(
-                kb.id, {"doc_num": kb.doc_num - 1}):
-            raise RuntimeError("Database error (Knowledgebase)!")
-        return cls.delete_by_id(doc.id)
-
-    @classmethod
-    @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
         ELASTICSEARCH.deleteByQuery(
-            Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-
-        cls.increment_chunk_num(
-            doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-        if not cls.delete(doc):
-            raise RuntimeError("Database error (Document removal)!")
-
-        MINIO.rm(doc.kb_id, doc.location)
+                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+        cls.clear_chunk_num(doc.id)
         return cls.delete_by_id(doc.id)
 
     @classmethod
@@ -152,12 +139,41 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def clear_chunk_num(cls, doc_id):
+        doc = cls.model.get_by_id(doc_id)
+        assert doc, "Can't fine document in database."
+
+        num = Knowledgebase.update(
+            token_num=Knowledgebase.token_num -
+            doc.token_num,
+            chunk_num=Knowledgebase.chunk_num -
+            doc.chunk_num,
+            doc_num=Knowledgebase.doc_num-1
+        ).where(
+            Knowledgebase.id == doc.kb_id).execute()
+        return num
+
+    @classmethod
+    @DB.connection_context()
     def get_tenant_id(cls, doc_id):
         docs = cls.model.select(
             Knowledgebase.tenant_id).join(
             Knowledgebase, on=(
                 Knowledgebase.id == cls.model.kb_id)).where(
                 cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
+        docs = docs.dicts()
+        if not docs:
+            return
+        return docs[0]["tenant_id"]
+
+    @classmethod
+    @DB.connection_context()
+    def get_tenant_id_by_name(cls, name):
+        docs = cls.model.select(
+            Knowledgebase.tenant_id).join(
+            Knowledgebase, on=(
+                    Knowledgebase.id == cls.model.kb_id)).where(
+            cls.model.name == name, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
             return

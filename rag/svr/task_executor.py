@@ -80,7 +80,7 @@ def set_progress(task_id, from_page=0, to_page=-1,
 
     if to_page > 0:
         if msg:
-            msg = f"Page({from_page+1}~{to_page+1}): " + msg
+            msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
     d = {"progress_msg": msg}
     if prog is not None:
         d["progress"] = prog
@@ -109,6 +109,7 @@ def collect():
     if not msg: return pd.DataFrame()
 
     if TaskService.do_cancel(msg["id"]):
+        cron_logger.info("Task {} has been canceled.".format(msg["id"]))
         return pd.DataFrame()
     tasks = TaskService.get_tasks(msg["id"])
     assert tasks, "{} empty task!".format(msg["id"])
@@ -123,7 +124,7 @@ def get_minio_binary(bucket, name):
 def build(row):
     if row["size"] > DOC_MAXIMUM_SIZE:
         set_progress(row["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
-                     (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
+                                             (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
     callback = partial(
@@ -137,12 +138,12 @@ def build(row):
         bucket, name = File2DocumentService.get_minio_address(doc_id=row["doc_id"])
         binary = get_minio_binary(bucket, name)
         cron_logger.info(
-            "From minio({}) {}/{}".format(timer()-st, row["location"], row["name"]))
+            "From minio({}) {}/{}".format(timer() - st, row["location"], row["name"]))
         cks = chunker.chunk(row["name"], binary=binary, from_page=row["from_page"],
                             to_page=row["to_page"], lang=row["language"], callback=callback,
                             kb_id=row["kb_id"], parser_config=row["parser_config"], tenant_id=row["tenant_id"])
         cron_logger.info(
-            "Chunkking({}) {}/{}".format(timer()-st, row["location"], row["name"]))
+            "Chunkking({}) {}/{}".format(timer() - st, row["location"], row["name"]))
     except TimeoutError as e:
         callback(-1, f"Internal server error: Fetch file timeout. Could you try it again.")
         cron_logger.error(
@@ -172,7 +173,7 @@ def build(row):
         d.update(ck)
         md5 = hashlib.md5()
         md5.update((ck["content_with_weight"] +
-                   str(d["doc_id"])).encode("utf-8"))
+                    str(d["doc_id"])).encode("utf-8"))
         d["_id"] = md5.hexdigest()
         d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
@@ -260,7 +261,7 @@ def main():
 
         st = timer()
         cks = build(r)
-        cron_logger.info("Build chunks({}): {}".format(r["name"], timer()-st))
+        cron_logger.info("Build chunks({}): {}".format(r["name"], timer() - st))
         if cks is None:
             continue
         if not cks:
@@ -270,7 +271,7 @@ def main():
         ## set_progress(r["did"], -1, "ERROR: ")
         callback(
             msg="Finished slicing files(%d). Start to embedding the content." %
-            len(cks))
+                len(cks))
         st = timer()
         try:
             tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
@@ -278,14 +279,19 @@ def main():
             callback(-1, "Embedding error:{}".format(str(e)))
             cron_logger.error(str(e))
             tk_count = 0
-        cron_logger.info("Embedding elapsed({}): {}".format(r["name"], timer()-st))
+        cron_logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
 
-        callback(msg="Finished embedding({})! Start to build index!".format(timer()-st))
+        callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer() - st))
         init_kb(r)
         chunk_count = len(set([c["_id"] for c in cks]))
         st = timer()
-        es_r = ELASTICSEARCH.bulk(cks, search.index_name(r["tenant_id"]))
-        cron_logger.info("Indexing elapsed({}): {}".format(r["name"], timer()-st))
+        es_r = ""
+        for b in range(0, len(cks), 32):
+            es_r = ELASTICSEARCH.bulk(cks[b:b + 32], search.index_name(r["tenant_id"]))
+            if b % 128 == 0:
+                callback(prog=0.8 + 0.1 * (b + 1) / len(cks), msg="")
+
+        cron_logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
         if es_r:
             callback(-1, "Index failure!")
             ELASTICSEARCH.deleteByQuery(
@@ -300,9 +306,8 @@ def main():
             DocumentService.increment_chunk_num(
                 r["doc_id"], r["kb_id"], tk_count, chunk_count, 0)
             cron_logger.info(
-                "Chunk doc({}), token({}), chunks({}), elapsed:{}".format(
-                    r["id"], tk_count, len(cks), timer()-st))
-
+                "Chunk doc({}), token({}), chunks({}), elapsed:{:.2f}".format(
+                    r["id"], tk_count, len(cks), timer() - st))
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@
 import os
 import time
 import uuid
+from copy import deepcopy
 
 from api.db import LLMType, UserTenantRole
 from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM
@@ -144,6 +145,12 @@ def init_llm_factory():
         # ---------------------- OpenAI ------------------------
         {
             "fid": factory_infos[0]["name"],
+            "llm_name": "gpt-4o",
+            "tags": "LLM,CHAT,128K",
+            "max_tokens": 128000,
+            "model_type": LLMType.CHAT.value + "," + LLMType.IMAGE2TEXT.value
+        }, {
+            "fid": factory_infos[0]["name"],
             "llm_name": "gpt-3.5-turbo",
             "tags": "LLM,CHAT,4K",
             "max_tokens": 4096,
@@ -157,6 +164,18 @@ def init_llm_factory():
         }, {
             "fid": factory_infos[0]["name"],
             "llm_name": "text-embedding-ada-002",
+            "tags": "TEXT EMBEDDING,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[0]["name"],
+            "llm_name": "text-embedding-3-small",
+            "tags": "TEXT EMBEDDING,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[0]["name"],
+            "llm_name": "text-embedding-3-large",
             "tags": "TEXT EMBEDDING,8K",
             "max_tokens": 8191,
             "model_type": LLMType.EMBEDDING.value
@@ -370,6 +389,23 @@ def init_llm_factory():
     LLMFactoriesService.filter_delete([LLMFactoriesService.model.name == "QAnything"])
     LLMService.filter_delete([LLMService.model.fid == "QAnything"])
     TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
+    ## insert openai two embedding models to the current openai user.
+    print("Start to insert 2 OpenAI embedding models...")
+    tenant_ids = set([row["tenant_id"] for row in TenantLLMService.get_openai_models()])
+    for tid in tenant_ids:
+        for row in TenantLLMService.query(llm_factory="OpenAI", tenant_id=tid):
+            row = row.to_dict()
+            row["model_type"] = LLMType.EMBEDDING.value
+            row["llm_name"] = "text-embedding-3-small"
+            row["used_tokens"] = 0
+            try:
+                TenantLLMService.save(**row)
+                row = deepcopy(row)
+                row["llm_name"] = "text-embedding-3-large"
+                TenantLLMService.save(**row)
+            except Exception as e:
+                pass
+            break
     """
     drop table llm;
     drop table llm_factories;

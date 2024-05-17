@@ -156,7 +156,7 @@ def filename_type(filename):
         return FileType.PDF.value
 
     if re.match(
-            r".*\.(doc|docx|ppt|pptx|yml|xml|htm|json|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md)$", filename):
+            r".*\.(doc|docx|ppt|pptx|yml|xml|htm|json|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt)$", filename):
         return FileType.DOC.value
 
     if re.match(
@@ -174,7 +174,7 @@ def thumbnail(filename, blob):
     if re.match(r".*\.pdf$", filename):
         pdf = pdfplumber.open(BytesIO(blob))
         buffered = BytesIO()
-        pdf.pages[0].to_image().annotated.save(buffered, format="png")
+        pdf.pages[0].to_image(resolution=32).annotated.save(buffered, format="png")
         return "data:image/png;base64," + \
             base64.b64encode(buffered.getvalue()).decode("utf-8")
 
