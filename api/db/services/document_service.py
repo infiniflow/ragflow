@@ -265,3 +265,9 @@ class DocumentService(CommonService):
             except Exception as e:
                 stat_logger.error("fetch task exception:" + str(e))
 
+    @classmethod
+    @DB.connection_context()
+    def get_kb_doc_count(cls, kb_id):
+        return len(cls.model.select(cls.model.id).where(
+            cls.model.kb_id == kb_id).dicts())
+
