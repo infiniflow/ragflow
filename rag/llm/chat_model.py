@@ -193,10 +193,11 @@ class ZhipuChat(Base):
                 if not resp.choices[0].delta.content:continue
                 delta = resp.choices[0].delta.content
                 ans += delta
-                tk_count = resp.usage.total_tokens if response.usage else 0
-                if resp.output.choices[0].finish_reason == "length":
+                if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                         [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    tk_count = resp.usage.total_tokens
+                if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
