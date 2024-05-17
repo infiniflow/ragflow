@@ -174,7 +174,7 @@ def thumbnail(filename, blob):
     if re.match(r".*\.pdf$", filename):
         pdf = pdfplumber.open(BytesIO(blob))
         buffered = BytesIO()
-        pdf.pages[0].to_image().annotated.save(buffered, format="png")
+        pdf.pages[0].to_image(resolution=32).annotated.save(buffered, format="png")
         return "data:image/png;base64," + \
             base64.b64encode(buffered.getvalue()).decode("utf-8")
 
