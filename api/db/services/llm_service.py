@@ -135,6 +135,16 @@ class TenantLLMService(CommonService):
                 .execute()
         return num
 
+    @classmethod
+    @DB.connection_context()
+    def get_openai_models(cls):
+        objs = cls.model.select().where(
+            (cls.model.llm_factory == "OpenAI"),
+            ~(cls.model.llm_name == "text-embedding-3-small"),
+            ~(cls.model.llm_name == "text-embedding-3-large")
+        ).dicts()
+        return list(objs)
+
 
 class LLMBundle(object):
     def __init__(self, tenant_id, llm_type, llm_name=None, lang="Chinese"):
