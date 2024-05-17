@@ -1,0 +1,45 @@
+ragflow:
+  host: 0.0.0.0
+  http_port: 9380
+mysql:
+  name: 'rag_flow'
+  user: 'root'
+  password: ''
+  host: '159.138.86.213'
+  port: 5455
+  max_connections: 100
+  stale_timeout: 30
+minio:
+  user: 'rag_flow'
+  password: ''
+  host: '159.138.86.213:9000'
+es:
+  hosts: 'https://159.138.86.213:9200'
+  user: 'elastic'
+  password: ''
+redis:
+  db: 1
+  password: ''
+  host: '159.138.86.213:6379'
+user_default_llm:
+  factory: 'ZHIPU-AI'
+  api_key: ''
+  base_url: ''
+pocketbase:
+  host: 'https://luban.ticosdev.cc'
+oauth:
+  github:
+    client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
+    secret_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    url: https://github.com/login/oauth/access_token
+authentication:
+  client:
+    switch: false
+    http_app_key:
+    http_secret_key:
+  site:
+    switch: false
+permission:
+  switch: false
+  component: false
+  dataset: false
