@@ -375,8 +375,8 @@ Get the chunks of the document based on doc_name or doc_id.
 
 | name     | type   | optional | description                     |
 |----------|--------|----------|---------------------------------|
-| doc_name | string | Yes      | The doc name in knowledge base. |
-| doc_id   | string | Yes      | The doc_id of doc.              |
+| doc_name | string | Yes      | The doc name in knowledge. It can not be empty without doc_id.|
+| doc_id   | string | Yes      | The doc_id of doc. It can not be empty without doc_name.|
 
 
 ### Response 
