@@ -112,3 +112,8 @@ class KnowledgebaseService(CommonService):
         if kb:
             return True, kb[0]
         return False, None
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_ids(cls):
+        return [m["id"] for m in cls.model.select(cls.model.id).dicts()]
