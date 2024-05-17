@@ -28,6 +28,12 @@ oauth:
     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
     secret_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
     url: https://github.com/login/oauth/access_token
+  feishu:
+    app_id: cli_xxxxxxxxxxxxxxxxxxx
+    app_secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    app_access_token_url: https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal
+    user_access_token_url: https://open.feishu.cn/open-apis/authen/v1/oidc/access_token
+    grant_type: 'authorization_code'
 authentication:
   client:
     switch: false
