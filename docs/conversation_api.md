@@ -373,10 +373,10 @@ Get the chunks of the document based on doc_name or doc_id.
 
 ### Parameter:
 
-| name     | type   | optional | description                     |
+| Name     | Type   | Optional | Description                     |
 |----------|--------|----------|---------------------------------|
-| doc_name | string | Yes      | The doc name in knowledge. It can not be empty without doc_id.|
-| doc_id   | string | Yes      | The doc_id of doc. It can not be empty without doc_name.|
+| `doc_name` | string | Yes      | The name of the document in the knowledge base. It must not be empty if `doc_id` is not set.|
+| `doc_id`   | string | Yes      | The ID of the document in the knowledge base. It must not be empty if `doc_name` is not set.|
 
 
 ### Response 
