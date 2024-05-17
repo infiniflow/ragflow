@@ -180,7 +180,7 @@ class DocumentService(CommonService):
         if not docs:
             return
         return docs[0]["tenant_id"]
-	
+
 	@classmethod
     @DB.connection_context()
     def get_tenant_id_by_name(cls, name):
