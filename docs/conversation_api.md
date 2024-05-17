@@ -220,7 +220,7 @@ This will be called to get the answer to users' questions.
 | name | type | optional | description|
 |------|-------|----|----|
 | conversation_id| string | No | This is from calling /new_conversation.|
-| messages| json | No | The latest user's question, like `[{"role": "user", "content": "How are you doing!"}]`|
+| messages| json | No | The latest question, such as `[{"role": "user", "content": "How are you doing!"}]`|
 | quote | bool | Yes | Default: true |
 | stream | bool | Yes | Default: true |
 | doc_ids | string | Yes | Document IDs which is delimited by comma, like `c790da40ea8911ee928e0242ac180005,c790da40ea8911ee928e0242ac180005`. The retrieved content is limited in these documents. |
