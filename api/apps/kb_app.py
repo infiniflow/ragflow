@@ -19,12 +19,14 @@ from flask_login import login_required, current_user
 
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid, get_format_time
-from api.db import StatusEnum, UserTenantRole
+from api.db import StatusEnum, UserTenantRole, FileSource
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.db_models import Knowledgebase
+from api.db.db_models import Knowledgebase, File
 from api.settings import stat_logger, RetCode
 from api.utils.api_utils import get_json_result
 from rag.nlp import search
@@ -139,9 +141,11 @@ def rm():
             if not DocumentService.remove_document(doc, kbs[0].tenant_id):
                 return get_data_error_result(
                     retmsg="Database error (Document removal)!")
+            f2d = File2DocumentService.get_by_document_id(doc.id)
+            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+            File2DocumentService.delete_by_document_id(doc.id)
 
-        if not KnowledgebaseService.update_by_id(
-                req["kb_id"], {"status": StatusEnum.INVALID.value}):
+        if not KnowledgebaseService.delete_by_id(req["kb_id"]):
             return get_data_error_result(
                 retmsg="Database error (Knowledgebase removal)!")
         return get_json_result(data=True)
