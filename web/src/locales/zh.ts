@@ -380,6 +380,7 @@ export default {
       model: '模型提供商',
       modelDescription: '在此设置模型参数和 API Key。',
       team: '团队',
+      system: '系统',
       logout: '登出',
       username: '用户名',
       usernameMessage: '请输入用户名',

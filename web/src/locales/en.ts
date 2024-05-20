@@ -393,6 +393,7 @@ export default {
       model: 'Model Providers',
       modelDescription: 'Set the model parameter and API Key here.',
       team: 'Team',
+      system: 'System',
       logout: 'Log out',
       username: 'Username',
       usernameMessage: 'Please input your username!',

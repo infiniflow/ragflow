@@ -1,7 +1,8 @@
 import { ITenantInfo } from '@/interfaces/database/knowledge';
-import { IUserInfo } from '@/interfaces/database/userSetting';
+import { ISystemStatus, IUserInfo } from '@/interfaces/database/userSetting';
+import userService from '@/services/userService';
 import authorizationUtil from '@/utils/authorizationUtil';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { history, useDispatch, useSelector } from 'umi';
 
 export const useFetchUserInfo = () => {
@@ -91,4 +92,42 @@ export const useSaveSetting = () => {
   );
 
   return saveSetting;
+};
+
+export const useFetchSystemVersion = () => {
+  const [version, setVersion] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const fetchSystemVersion = useCallback(async () => {
+    setLoading(true);
+    const { data } = await userService.getSystemVersion();
+    if (data.retcode === 0) {
+      setVersion(data.data);
+      setLoading(false);
+    }
+  }, []);
+
+  return { fetchSystemVersion, version, loading };
+};
+
+export const useFetchSystemStatus = () => {
+  const [systemStatus, setSystemStatus] = useState<ISystemStatus>(
+    {} as ISystemStatus,
+  );
+  const [loading, setLoading] = useState(false);
+
+  const fetchSystemStatus = useCallback(async () => {
+    setLoading(true);
+    const { data } = await userService.getSystemStatus();
+    if (data.retcode === 0) {
+      setSystemStatus(data.data);
+      setLoading(false);
+    }
+  }, []);
+
+  return {
+    systemStatus,
+    fetchSystemStatus,
+    loading,
+  };
 };

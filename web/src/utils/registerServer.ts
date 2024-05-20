@@ -9,7 +9,7 @@ const registerServer = <T extends string>(
 ) => {
   const server: Service<T> = {} as Service<T>;
   for (let key in opt) {
-    server[key] = (params: any, urlAppendix?: string) => {
+    server[key] = (params?: any, urlAppendix?: string) => {
       let url = opt[key].url;
       const requestOptions = opt[key];
       if (urlAppendix) {
