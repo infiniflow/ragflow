@@ -2,9 +2,10 @@ import argparse
 import pickle
 import random
 import time
+from copy import deepcopy
 from multiprocessing.connection import Listener
 from threading import Thread
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
 
 
 def torch_gc():
@@ -95,6 +96,32 @@ def chat(messages, gen_conf):
         return str(e)
 
 
+def chat_streamly(messages, gen_conf):
+    global tokenizer
+    model = Model()
+    try:
+        torch_gc()
+        conf = deepcopy(gen_conf)
+        print(messages, conf)
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+        streamer = TextStreamer(tokenizer)
+        conf["inputs"] = model_inputs.input_ids
+        conf["streamer"] = streamer
+        conf["max_new_tokens"] = conf["max_tokens"]
+        del conf["max_tokens"]
+        thread = Thread(target=model.generate, kwargs=conf)
+        thread.start()
+        for _, new_text in enumerate(streamer):
+            yield new_text
+    except Exception as e:
+        yield "**ERROR**: " + str(e)
+
+
 def Model():
     global models
     random.seed(time.time())
@@ -113,6 +140,7 @@ if __name__ == "__main__":
 
     handler = RPCHandler()
     handler.register_function(chat)
+    handler.register_function(chat_streamly)
 
     models = []
     for _ in range(1):

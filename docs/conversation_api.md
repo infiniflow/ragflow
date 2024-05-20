@@ -220,8 +220,10 @@ This will be called to get the answer to users' questions.
 | name | type | optional | description|
 |------|-------|----|----|
 | conversation_id| string | No | This is from calling /new_conversation.|
-| messages| json | No | All the conversation history stored here including the latest user's question.|
+| messages| json | No | The latest question, such as `[{"role": "user", "content": "How are you doing!"}]`|
 | quote | bool | Yes | Default: true |
+| stream | bool | Yes | Default: true |
+| doc_ids | string | Yes | Document IDs which is delimited by comma, like `c790da40ea8911ee928e0242ac180005,c790da40ea8911ee928e0242ac180005`. The retrieved content is limited in these documents. |
 
 ### Response 
 ```json
@@ -359,6 +361,41 @@ This is usually used when upload a file to.
         "update_date": "Thu, 25 Apr 2024 14:30:06 GMT",
         "update_time": 1714026606921
     },
+    "retcode": 0,
+    "retmsg": "success"
+}
+
+```
+
+## Get document chunks
+
+Get the chunks of the document based on doc_name or doc_id.
+### Path: /api/list_chunks/
+### Method: POST
+
+### Parameter:
+
+| Name     | Type   | Optional | Description                     |
+|----------|--------|----------|---------------------------------|
+| `doc_name` | string | Yes      | The name of the document in the knowledge base. It must not be empty if `doc_id` is not set.|
+| `doc_id`   | string | Yes      | The ID of the document in the knowledge base. It must not be empty if `doc_name` is not set.|
+
+
+### Response 
+```json
+{
+    "data": [
+        {
+            "content": "Figure 14: Per-request neural-net processingof RL-Cache.\n103\n(sn)\nCPU\n 102\nGPU\n8101\n100\n8\n16 64 256 1K\n4K",
+            "doc_name": "RL-Cache.pdf",
+            "img_id": "0335167613f011ef91240242ac120006-b46c3524952f82dbe061ce9b123f2211"
+        },
+        {
+            "content": "4.3 ProcessingOverheadof RL-CacheACKNOWLEDGMENTSThis section evaluates how e￿ectively our RL-Cache implemen-tation leverages modern multi-core CPUs and GPUs to keep the per-request neural-net processing overhead low. Figure 14 depictsThis researchwas supported inpart by the Regional Government of Madrid (grant P2018/TCS-4499, EdgeData-CM)andU.S. National Science Foundation (grants CNS-1763617 andCNS-1717179).REFERENCES",
+            "doc_name": "RL-Cache.pdf",
+            "img_id": "0335167613f011ef91240242ac120006-d4c12c43938eb55d2d8278eea0d7e6d7"
+        }
+    ],
     "retcode": 0,
     "retmsg": "success"
 }

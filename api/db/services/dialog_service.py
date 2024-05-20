@@ -84,8 +84,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
     embd_nms = list(set([kb.embd_id for kb in kbs]))
     if len(embd_nms) != 1:
-        if stream:
-            yield {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
+        yield {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
         return {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
 
     questions = [m["content"] for m in messages if m["role"] == "user"]
@@ -118,14 +117,15 @@ def chat(dialog, messages, stream=True, **kwargs):
     else:
         kbinfos = retrievaler.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
                                         dialog.similarity_threshold,
-                                        dialog.vector_similarity_weight, top=1024, aggs=False)
+                                        dialog.vector_similarity_weight,
+                                        doc_ids=kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None,
+                                        top=1024, aggs=False)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
     chat_logger.info(
         "{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     if not knowledges and prompt_config.get("empty_response"):
-        if stream:
-            yield {"answer": prompt_config["empty_response"], "reference": kbinfos}
+        yield {"answer": prompt_config["empty_response"], "reference": kbinfos}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n".join(knowledges)
@@ -175,7 +175,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                 **kwargs), msg, gen_conf)
         chat_logger.info("User: {}|Assistant: {}".format(
             msg[-1]["content"], answer))
-        return decorate_answer(answer)
+        yield decorate_answer(answer)
 
 
 def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):

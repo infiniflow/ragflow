@@ -6,6 +6,7 @@ import {
   useSubmitKnowledgeConfiguration,
 } from './hooks';
 
+import LayoutRecognize from '@/components/layout-recognize';
 import MaxTokenNumber from '@/components/max-token-number';
 import { useTranslate } from '@/hooks/commonHooks';
 import { FormInstance } from 'antd/lib';
@@ -99,11 +100,17 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
           const parserId = getFieldValue('parser_id');
 
           if (parserId === 'naive') {
-            return <MaxTokenNumber></MaxTokenNumber>;
+            return (
+              <>
+                <MaxTokenNumber></MaxTokenNumber>
+                <LayoutRecognize></LayoutRecognize>
+              </>
+            );
           }
           return null;
         }}
       </Form.Item>
+
       <Form.Item>
         <div className={styles.buttonWrapper}>
           <Space>

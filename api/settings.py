@@ -158,6 +158,7 @@ CLIENT_AUTHENTICATION = AUTHENTICATION_CONF.get(
         "switch", False)
 HTTP_APP_KEY = AUTHENTICATION_CONF.get("client", {}).get("http_app_key")
 GITHUB_OAUTH = get_base_config("oauth", {}).get("github")
+FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
 WECHAT_OAUTH = get_base_config("oauth", {}).get("wechat")
 
 # site
