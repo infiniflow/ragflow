@@ -186,12 +186,14 @@ Parsing requests have to wait in queue due to limited server resources. We are c
 
 If your RAGFlow is deployed *locally*, try the following: 
 
-1. Check the log of your RAGFlow server to see if it is running properly:
-```bash
-docker logs -f ragflow-server
-```
-2. Check if the **task_executor.py** process exists.
-3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
+1. Click the red cross icon next to **Parsing Status** and refresh the file parsing process. 
+2. If the issue still persists, try the following: 
+   - check the log of your RAGFlow server to see if it is running properly:
+   ```bash
+   docker logs -f ragflow-server
+   ```
+   - Check if the **task_executor.py** process exists.
+   - Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
 
 #### 4.5 Why does my pdf parsing stall near completion, while the log does not show any error?
 
@@ -264,7 +266,7 @@ This is because you forgot to update the `vm.max_map_count` value in **/etc/sysc
 
 #### 4.11 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
 
-Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
+Your IP address or port number may be incorrect. If you are using the default configurations, enter `http://<IP_OF_YOUR_MACHINE>` (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
 #### 4.12 `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
 
