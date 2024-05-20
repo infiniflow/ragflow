@@ -19,3 +19,31 @@ export interface IUserInfo {
   update_date: string;
   update_time: number;
 }
+
+export interface ISystemStatus {
+  es: Es;
+  minio: Minio;
+  mysql: Minio;
+  redis: Redis;
+}
+
+interface Redis {
+  status: string;
+  elapsed: number;
+  error: string;
+  pending: number;
+}
+
+export interface Minio {
+  status: string;
+  elapsed: number;
+  error: string;
+}
+
+interface Es {
+  status: string;
+  elapsed: number;
+  error: string;
+  number_of_nodes: number;
+  active_shards: number;
+}
