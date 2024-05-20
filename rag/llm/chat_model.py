@@ -20,6 +20,7 @@ from openai import OpenAI
 import openai
 from ollama import Client
 from rag.nlp import is_english
+from rag.utils import num_tokens_from_string
 
 
 class Base(ABC):
@@ -255,3 +256,61 @@ class OllamaChat(Base):
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
         yield 0
+
+
+class LocalLLM(Base):
+    class RPCProxy:
+        def __init__(self, host, port):
+            self.host = host
+            self.port = int(port)
+            self.__conn()
+
+        def __conn(self):
+            from multiprocessing.connection import Client
+            self._connection = Client(
+                (self.host, self.port), authkey=b'infiniflow-token4kevinhu')
+
+        def __getattr__(self, name):
+            import pickle
+
+            def do_rpc(*args, **kwargs):
+                for _ in range(3):
+                    try:
+                        self._connection.send(
+                            pickle.dumps((name, args, kwargs)))
+                        return pickle.loads(self._connection.recv())
+                    except Exception as e:
+                        self.__conn()
+                raise Exception("RPC connection lost!")
+
+            return do_rpc
+
+    def __init__(self, key, model_name="glm-3-turbo"):
+        self.client = LocalLLM.RPCProxy("127.0.0.1", 7860)
+
+    def chat(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        try:
+            ans = self.client.chat(
+                history,
+                gen_conf
+            )
+            return ans, num_tokens_from_string(ans)
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        token_count = 0
+        answer = ""
+        try:
+            for ans in self.client.chat_streamly(history, gen_conf):
+                answer += ans
+                token_count += 1
+                yield answer
+        except Exception as e:
+            yield answer + "\n**ERROR**: " + str(e)
+
+        yield token_count

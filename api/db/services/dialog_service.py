@@ -118,7 +118,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         kbinfos = retrievaler.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
                                         dialog.similarity_threshold,
                                         dialog.vector_similarity_weight,
-                                        doc_ids=kwargs.get("doc_ids", "").split(","),
+                                        doc_ids=kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None,
                                         top=1024, aggs=False)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
     chat_logger.info(
