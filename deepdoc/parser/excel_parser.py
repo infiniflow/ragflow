@@ -7,7 +7,7 @@ from rag.nlp import find_codec
 
 
 class RAGFlowExcelParser:
-    def html(self, fnm,chunk_rows=256):
+    def html(self, fnm, chunk_rows=256):
         if isinstance(fnm, str):
             wb = load_workbook(fnm)
         else:

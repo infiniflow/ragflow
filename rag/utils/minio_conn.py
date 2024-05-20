@@ -35,7 +35,7 @@ class RAGFlowMinio(object):
         self.conn = None
 
     def health(self):
-        bucket, fnm, binary = "_t@@@1", "_t@@@1", b"_t@@@1"
+        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
         if not self.conn.bucket_exists(bucket):
             self.conn.make_bucket(bucket)
         r = self.conn.put_object(bucket, fnm,
