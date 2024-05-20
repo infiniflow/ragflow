@@ -1,7 +1,7 @@
 import SvgIcon from '@/components/svg-icon';
 import { useFetchSystemStatus } from '@/hooks/userSettingHook';
 import { ISystemStatus, Minio } from '@/interfaces/database/userSetting';
-import { Badge, Card, Flex, Spin } from 'antd';
+import { Badge, Card, Flex, Spin, Typography } from 'antd';
 import classNames from 'classnames';
 import lowerCase from 'lodash/lowerCase';
 import upperFirst from 'lodash/upperFirst';
@@ -9,6 +9,8 @@ import { useEffect } from 'react';
 
 import { toFixed } from '@/utils/commonUtil';
 import styles from './index.less';
+
+const { Text } = Typography;
 
 enum Status {
   'green' = 'success',
@@ -69,14 +71,14 @@ const SystemInfo = () => {
                         className={styles.text}
                       >
                         <b>{upperFirst(lowerCase(x))}:</b>
-                        <span
+                        <Text
                           className={classNames({
                             [styles.error]: x === 'error',
                           })}
                         >
                           {toFixed(info[x as keyof Minio]) as any}
                           {x === 'elapsed' && ' ms'}
-                        </span>
+                        </Text>
                       </Flex>
                     );
                   })}
