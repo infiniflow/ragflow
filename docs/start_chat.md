@@ -6,11 +6,9 @@ Knowledge base, hallucination-free chat, and file management are three pillars o
 
 You start an AI conversation by creating an assistant. 
 
-> You can create as many assistants as you wish. 
-
 1. Click the **Chat** tab in the middle top of the page **>** **Create an assistant** to show the **Chat Configuration** dialogue *of your next dialogue*.
 
-   > RAGFlow offer the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
+   > RAGFlow offers you the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
 2. Update **Assistant Setting**: 
 
@@ -34,7 +32,7 @@ You start an AI conversation by creating an assistant.
    - In **Model**: you select the chat model. Though you have selected the default chat model in **System Model Settings**, RAGFlow allows you to choose an alternative chat model for your dialogue. 
    - **Freedom** refers to the level that the LLM improvises. From **Improvise**, **Precise**, to **Balance**, each freedom level corresponds to a unique combination of **Temperature**, **Top P**, **Presence Penalty**, and **Frequency Penalty**.
    - **Temperature**: Level of the prediction randomness of the LLM. The higher the value, the more creative the LLM is. 
-   - **Top P** is also known as "nucleus sampling".
+   - **Top P** is also known as "nucleus sampling". See [here](https://en.wikipedia.org/wiki/Top-p_sampling) for more information. 
    - **Max Tokens**: The maximum length of the LLM's responses. Note that the responses may be curtailed if this value is set too low. 
 
 5. Now, let's start the show:
