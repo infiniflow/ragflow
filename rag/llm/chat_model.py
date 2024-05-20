@@ -299,3 +299,18 @@ class LocalLLM(Base):
             return ans, num_tokens_from_string(ans)
         except Exception as e:
             return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        token_count = 0
+        answer = ""
+        try:
+            for ans in self.client.chat_streamly(history, gen_conf):
+                answer += ans
+                token_count += 1
+                yield answer
+        except Exception as e:
+            yield answer + "\n**ERROR**: " + str(e)
+
+        yield token_count
