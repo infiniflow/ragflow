@@ -3,7 +3,7 @@ sidebar_position: 1
 slug: /api
 ---
 
-# Conversation API Instruction
+# API reference
 
 ![](https://github.com/infiniflow/ragflow/assets/12318111/df0dcc3d-789a-44f7-89f1-7a5f044ab729)
 

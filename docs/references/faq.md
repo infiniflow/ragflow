@@ -3,7 +3,7 @@ sidebar_position: 3
 slug: /faq
 ---
 
-# Frequently Asked Questions
+# Frequently asked questions
 
 ## General
 
