@@ -386,7 +386,7 @@ class User(DataBaseModel, UserMixin):
         max_length=32,
         null=True,
         help_text="English|Chinese",
-        default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English")     
+        default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English")
     color_schema = CharField(
         max_length=32,
         null=True,
