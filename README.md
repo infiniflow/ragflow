@@ -190,9 +190,9 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🛠️ Launch RAGFlow service without Docker
+## 🛠️ Launch service from source
 
-To launch the RAGFlow service without Docker:
+To launch the service from source:
 
 1. Clone the repository: 
 
@@ -208,8 +208,9 @@ To launch the RAGFlow service without Docker:
    $ conda activate ragflow
    $ pip install -r requirements.txt
    ```
-   If CUDA version is higher than 12.0, run the following additional commands:
+   
    ```bash
+   # If your CUDA version is higher than 12.0, run the following additional commands:
    $ pip uninstall -y onnxruntime-gpu
    $ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
    ```
