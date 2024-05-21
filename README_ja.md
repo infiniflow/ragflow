@@ -34,12 +34,12 @@
 - 2024-05-15 OpenAI GPT-4oを統合しました。
 - 2024-05-08 LLM DeepSeek-V2を統合しました。
 - 2024-04-26 「ファイル管理」機能を追加しました。
-- 2024-04-19 会話 API をサポートします ([詳細](./docs/conversation_api.md))。
+- 2024-04-19 会話 API をサポートします ([詳細](./docs/references/api.md))。
 - 2024-04-16 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) から埋め込みモデル「bce-embedding-base_v1」を追加します。
 - 2024-04-16 [FastEmbed](https://github.com/qdrant/fastembed) は、軽量かつ高速な埋め込み用に設計されています。
-- 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/xinference.md) をサポートします。
+- 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/guides/deploy_local_llm.md) をサポートします。
 - 2024-04-10 メソッド「Laws」に新しいレイアウト認識モデルを追加します。
-- 2024-04-08 [Ollama](./docs/ollama.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
+- 2024-04-08 [Ollama](./docs/guides/deploy_local_llm.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
 - 2024-04-07 中国語インターフェースをサポートします。
 
 
@@ -89,7 +89,7 @@
 
 ### 🚀 サーバーを起動
 
-1. `vm.max_map_count` >= 262144 であることを確認する【[もっと](./docs/max_map_count.md)】:
+1. `vm.max_map_count` >= 262144 であることを確認する【[もっと](./docs/guides/max_map_count.md)】:
 
    > `vm.max_map_count` の値をチェックするには:
    >
@@ -155,7 +155,7 @@
    > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
 6. [service_conf.yaml](./docker/service_conf.yaml) で、`user_default_llm` で希望の LLM ファクトリを選択し、`API_KEY` フィールドを対応する API キーで更新する。
 
-   > 詳しくは [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) を参照してください。
+   > 詳しくは [./docs/guides/llm_api_key_setup.md](./docs/guides/llm_api_key_setup.md) を参照してください。
 
    _これで初期設定完了！ショーの開幕です！_
 
@@ -255,7 +255,7 @@ $ bash ./entrypoint.sh
 ## 📚 ドキュメンテーション
 
 - [Quickstart](./docs/quickstart.md)
-- [FAQ](./docs/faq.md)
+- [FAQ](./docs/references/faq.md)
 
 ## 📜 ロードマップ
 
@@ -268,4 +268,4 @@ $ bash ./entrypoint.sh
 
 ## 🙌 コントリビュート
 
-RAGFlow はオープンソースのコラボレーションによって発展してきました。この精神に基づき、私たちはコミュニティからの多様なコントリビュートを受け入れています。 参加を希望される方は、まず[コントリビューションガイド](https://github.com/infiniflow/ragflow/blob/main/docs/CONTRIBUTING.md)をご覧ください。
+RAGFlow はオープンソースのコラボレーションによって発展してきました。この精神に基づき、私たちはコミュニティからの多様なコントリビュートを受け入れています。 参加を希望される方は、まず[コントリビューションガイド](./docs/references/CONTRIBUTING.md)をご覧ください。
