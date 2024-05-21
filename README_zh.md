@@ -17,8 +17,8 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.5.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.5.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.6.0-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.6.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=1570EF" alt="license">
   </a>
@@ -30,6 +30,7 @@
 
 ## 📌 近期更新
 
+- 2024-05-21 支持流式结果输出和文本块获取API。
 - 2024-05-15 集成大模型 OpenAI GPT-4o。
 - 2024-05-08 集成大模型 DeepSeek。
 - 2024-04-26 增添了'文件管理'功能。
@@ -121,7 +122,7 @@
    $ docker compose -f docker-compose-CN.yml up -d
    ```
 
-   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_VERSION 变量，将其改为对应版本。例如 RAGFLOW_VERSION=v0.5.0，然后运行上述命令。
+   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_VERSION 变量，将其改为对应版本。例如 RAGFLOW_VERSION=v0.6.0，然后运行上述命令。
 
    > 核心镜像文件大约 9 GB，可能需要一定时间拉取。请耐心等待。
 
@@ -183,7 +184,7 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.5.0 .
+$ docker build -t infiniflow/ragflow:v0.6.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
