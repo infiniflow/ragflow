@@ -17,8 +17,8 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.5.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.5.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.6.0-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.6.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=1570EF" alt="license">
   </a>
@@ -30,6 +30,7 @@
 
 ## 📌 Latest Updates
 
+- 2024-05-21 Supports streaming output and text chunk retrieval API. 
 - 2024-05-15 Integrates OpenAI GPT-4o.
 - 2024-05-08 Integrates LLM DeepSeek-V2.
 - 2024-04-26 Adds file management.
@@ -115,7 +116,7 @@
 
 3. Build the pre-built Docker images and start up the server:
 
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.5.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.6.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
