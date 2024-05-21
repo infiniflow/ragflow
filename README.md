@@ -190,9 +190,9 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🛠️ Launch service from source
+## 🛠️ Launch RAGFlow service without Docker
 
-To launch the service from source:
+To launch the RAGFlow service without Docker:
 
 1. Clone the repository: 
 
@@ -215,11 +215,6 @@ To launch the service from source:
    ```
 
 3. Copy the entry script and configure environment variables:
-   
-   ```bash
-   $ cp docker/entrypoint.sh .
-   $ vi entrypoint.sh
-   ```
 
    ```bash
    # Get the Python path:
@@ -227,21 +222,24 @@ To launch the service from source:
    # Get the ragflow project path:
    $ pwd
    ```
+   
+   ```bash
+   $ cp docker/entrypoint.sh .
+   $ vi entrypoint.sh
+   ```
 
+   ```bash
+   # Adjust configurations according to your actual situation (the following two export commands are newly added):
+   # - Assign the result of `which python` to `PY`.
+   # - Assign the result of `pwd` to `PYTHONPATH`.
+   # - Comment out `LD_LIBRARY_PATH`, if it is configured.
+   # - Optional: Add Hugging Face mirror.
+   PY=${PY}
+   export PYTHONPATH=${PYTHONPATH}
+   export HF_ENDPOINT=https://hf-mirror.com
+   ```
 
-
-```bash
-# Assign the result of `which python` to `PY`.
-# Assign the result of `pwd` to `PYTHONPATH`.
-# Comment out `LD_LIBRARY_PATH`, if it is configured.
-# Adjust configurations according to your actual situation; the two export commands are newly added.
-PY=${PY}
-export PYTHONPATH=${PYTHONPATH}
-# Optional: Add Hugging Face mirror
-export HF_ENDPOINT=https://hf-mirror.com
-```
-
-4. Launch the third-party services:
+4. Launch the third-party services (MinIO, Elasticsearch, Redis, and MySQL):
 
    ```bash
    $ cd docker
