@@ -1,4 +1,9 @@
-# Frequently Asked Questions
+---
+sidebar_position: 3
+slug: /faq
+---
+
+# Frequently asked questions
 
 ## General
 
@@ -31,7 +36,7 @@ Currently, we only support x86 CPU and Nvidia GPU.
 
 ### 2. Do you offer an API for integration with third-party applications?
 
-The corresponding APIs are now available. See the [Conversation API](./conversation_api.md) for more information. 
+The corresponding APIs are now available. See the [RAGFlow API Reference](./api.md) for more information. 
 
 ### 3. Do you support stream output?
 
@@ -186,14 +191,12 @@ Parsing requests have to wait in queue due to limited server resources. We are c
 
 If your RAGFlow is deployed *locally*, try the following: 
 
-1. Click the red cross icon next to **Parsing Status** and refresh the file parsing process. 
-2. If the issue still persists, try the following: 
-   - check the log of your RAGFlow server to see if it is running properly:
-   ```bash
-   docker logs -f ragflow-server
-   ```
-   - Check if the **task_executor.py** process exists.
-   - Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
+1. Check the log of your RAGFlow server to see if it is running properly:
+```bash
+docker logs -f ragflow-server
+```
+2. Check if the **task_executor.py** process exists.
+3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
 
 #### 4.5 Why does my pdf parsing stall near completion, while the log does not show any error?
 
@@ -356,7 +359,7 @@ You limit what the system responds to what you specify in **Empty response** if 
 
 ### 4. How to run RAGFlow with a locally deployed LLM?
 
-You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow/ragflow/blob/main/docs/ollama.md) for more information. 
+You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.md) for more information. 
 
 ### 5. How to link up ragflow and ollama servers?
 
