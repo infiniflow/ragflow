@@ -3,7 +3,11 @@ sidebar_position: 4
 slug: /llm_api_key_setup
 ---
 
-# Set Before Starting The System
+# Set your LLM API key
+
+You have two ways to input your LLM API key. 
+
+## Before Starting The System
 
 In **user_default_llm** of [service_conf.yaml](./docker/service_conf.yaml), you need to specify LLM factory and your own _API_KEY_. 
 RagFlow supports the flowing LLM factory, and with more coming in the pipeline:
