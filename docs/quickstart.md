@@ -3,7 +3,7 @@ sidebar_position: 1
 slug: /
 ---
 
-# Quickstart
+# Quick start
 
 RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. When integrated with LLMs, it is capable of providing truthful question-answering capabilities, backed by well-founded citations from various complex formatted data.
 
