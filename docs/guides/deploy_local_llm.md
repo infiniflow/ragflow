@@ -56,7 +56,7 @@ $ xinference-local --host 0.0.0.0 --port 9997
 ### Launch Xinference
 
 Decide which LLM you want to deploy ([here's a list for supported LLM](https://inference.readthedocs.io/en/latest/models/builtin/)), say, **mistral**.
-Execute the following command to launch the model, remember to replace ${quantization} with your chosen quantization method from the options listed above:
+Execute the following command to launch the model, remember to replace `${quantization}` with your chosen quantization method from the options listed above:
 ```bash
 $ xinference launch -u mistral --model-name mistral-v0.1 --size-in-billions 7 --model-format pytorch --quantization ${quantization}
 ```
