@@ -97,8 +97,8 @@ def set_api_key():
 def add_llm():
     req = request.json
     factory = req["llm_factory"]
-    # 针对火山模型，由于其鉴权方式特殊
-    # 将 volc_ak、volc_sk、endpoint_id 组装为api_key，
+    # For VolcEngine, due to its special authentication method
+    # Assemble volc_ak, volc_sk, endpoint_id into api_key
     if factory == "VolcEngine":
         temp = list(eval(req["llm_name"]).items())[0]
         llm_name = temp[0]

@@ -320,9 +320,9 @@ class LocalLLM(Base):
 class VolcEngineChat(Base):
     def __init__(self, key, model_name, base_url):
         """
-        由于火山引擎鉴权方式比较特殊，将 ak与 sk 组装为 api_key 存储为字典，并进行解析使用
-        由于不想修改原始数据库字段，将 火山鉴权的 ENDPOINT_ID 存储到 api_base 字段
-        model_name 只做展示使用
+        Since do not want to modify the original database fields, and the VolcEngine authentication method is quite special,
+        Assemble ak, sk, ep_id into api_key, store it as a dictionary type, and parse it for use
+        model_name is for display only
         """
         self.client = MaasService('maas-api.ml-platform-cn-beijing.volces.com', 'cn-beijing')
         self.volc_ak = eval(key).get('volc_ak', '')
