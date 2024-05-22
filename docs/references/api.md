@@ -404,3 +404,43 @@ Get the chunks of the document based on doc_name or doc_id.
 }
 
 ```
+
+## Get document list from knowledge base
+
+Get document list based on the knowledge base name and corresponding parameters.
+### Path: /api/list_kb_docs/
+### Method: POST
+
+### Parameter:
+
+| Name        | Type   | Optional | Description                                                          |
+|-------------|--------|----------|----------------------------------------------------------------------|
+| `kb_name`   | string | No       | The name of the knowledge base, from which you get the document list. |
+| `page`      | int    | Yes      | The number of pages, default:1.                                      |
+| `page_size` | int    | Yes      | The number of docs for each page, default:15.                        |
+| `orderby`   | string | Yes      | `chunk_num`, `create_time`, or `size`, default:`create_time`         |
+| `desc`      | bool   | Yes      | Default:True.                                                        |
+| `keywords`  | string | Yes      | Keyword of the document name.                                        |
+
+
+### Response 
+```json
+{
+    "data": {
+        "docs": [
+            {
+                "doc_id": "bad89a84168c11ef9ce40242ac120006",
+                "doc_name": "test.xlsx"
+            },
+            {
+                "doc_id": "641a9b4013f111efb53f0242ac120006",
+                "doc_name": "1111.pdf"
+            }
+        ],
+        "total": 2
+    },
+    "retcode": 0,
+    "retmsg": "success"
+}
+
+```
