@@ -244,7 +244,7 @@ export default {
       promptMessage: '提示詞是必填項',
       promptText: `请請總結以下段落。 小心數字，不要編造。 段落如下：
       {集群內容}
-      以上就是你需要總結的內容。`,
+以上就是你需要總結的內容。`,
       maxToken: '最大token數',
       maxTokenMessage: '最大token數是必填項',
       threshold: '臨界點',

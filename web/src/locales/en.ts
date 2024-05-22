@@ -273,7 +273,7 @@ export default {
       promptMessage: 'Prompt is required',
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
       {cluster_content}
-      The above is the content you need to summarize.`,
+The above is the content you need to summarize.`,
       maxToken: 'Max token',
       maxTokenTip: 'Maximum token number for summarization.',
       maxTokenMessage: 'Max token is required',
