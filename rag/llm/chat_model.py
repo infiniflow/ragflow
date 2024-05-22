@@ -56,6 +56,7 @@ class Base(ABC):
                 stream=True,
                 **gen_conf)
             for resp in response:
+                if len(resp.choices) == 0:continue
                 if not resp.choices[0].delta.content:continue
                 ans += resp.choices[0].delta.content
                 total_tokens += 1
