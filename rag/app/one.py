@@ -78,7 +78,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
-        sections = [excel_parser.html(binary)]
+        sections = excel_parser.html(binary, 1000000000)
 
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

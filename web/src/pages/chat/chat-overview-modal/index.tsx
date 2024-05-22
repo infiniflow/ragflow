@@ -1,5 +1,4 @@
 import LineChart from '@/components/line-chart';
-import { Domain } from '@/constants/common';
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
 import { IDialog, IStats } from '@/interfaces/database/chat';
@@ -81,8 +80,7 @@ const ChatOverviewModal = ({
             <Flex gap={8} vertical>
               {t('serviceApiEndpoint')}
               <Paragraph copyable className={styles.linkText}>
-                https://
-                {location.hostname === Domain ? Domain : '<YOUR_MACHINE_IP>'}
+                {location.origin}
                 /v1/api/
               </Paragraph>
             </Flex>
@@ -90,7 +88,7 @@ const ChatOverviewModal = ({
               <Button onClick={showApiKeyModal}>{t('apiKey')}</Button>
               <a
                 href={
-                  'https://github.com/infiniflow/ragflow/blob/main/docs/conversation_api.md'
+                  'https://github.com/infiniflow/ragflow/blob/main/docs/references/api.md'
                 }
                 target="_blank"
                 rel="noreferrer"

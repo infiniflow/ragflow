@@ -364,6 +364,7 @@ export default {
       modelDescription: '在此設置模型參數和 API Key。',
       team: '團隊',
       logout: '登出',
+      system: '系統',
       username: '使用者名稱',
       usernameMessage: '請輸入用戶名',
       photo: '頭像',

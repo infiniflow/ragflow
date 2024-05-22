@@ -1,4 +1,9 @@
-# Quickstart
+---
+sidebar_position: 1
+slug: /
+---
+
+# Quick start
 
 RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. When integrated with LLMs, it is capable of providing truthful question-answering capabilities, backed by well-founded citations from various complex formatted data.
 
@@ -20,7 +25,7 @@ This quick start guide describes a general process from:
 
 ## Start up the server
 
-1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/max_map_count.md)):
+1. Ensure `vm.max_map_count` >= 262144:
 
    > To check the value of `vm.max_map_count`:
    >
@@ -49,7 +54,7 @@ This quick start guide describes a general process from:
 
 3. Build the pre-built Docker images and start up the server:
 
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.5.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.6.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker

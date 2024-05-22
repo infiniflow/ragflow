@@ -17,8 +17,8 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.5.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.5.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.6.0-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.6.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=1570EF" alt="license">
   </a>
@@ -30,14 +30,15 @@
 
 ## 📌 Latest Updates
 
+- 2024-05-21 Supports streaming output and text chunk retrieval API. 
 - 2024-05-15 Integrates OpenAI GPT-4o.
 - 2024-05-08 Integrates LLM DeepSeek-V2.
 - 2024-04-26 Adds file management.
-- 2024-04-19 Supports conversation API ([detail](./docs/conversation_api.md)).
+- 2024-04-19 Supports conversation API ([detail](./docs/references/api.md)).
 - 2024-04-16 Integrates an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding), and [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
-- 2024-04-11 Supports [Xinference](./docs/xinference.md) for local LLM deployment.
+- 2024-04-11 Supports [Xinference](./docs/guides/deploy_local_llm.md) for local LLM deployment.
 - 2024-04-10 Adds a new layout recognition model for analyzing legal documents.
-- 2024-04-08 Supports [Ollama](./docs/ollama.md) for local LLM deployment.
+- 2024-04-08 Supports [Ollama](./docs/guides/deploy_local_llm.md) for local LLM deployment.
 - 2024-04-07 Supports Chinese UI.
 
 ## 🌟 Key Features
@@ -86,7 +87,7 @@
 
 ### 🚀 Start up the server
 
-1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/max_map_count.md)):
+1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/guides/max_map_count.md)):
 
    > To check the value of `vm.max_map_count`:
    >
@@ -115,7 +116,7 @@
 
 3. Build the pre-built Docker images and start up the server:
 
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.5.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.6.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
@@ -153,7 +154,7 @@
    > With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
-   > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
+   > See [./docs/guides/llm_api_key_setup.md](./docs/guides/llm_api_key_setup.md) for more information.
 
    _The show is now on!_
 
@@ -190,93 +191,104 @@ $ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
-## 🛠️ Launch Service from Source
+## 🛠️ Launch service from source
 
-To launch the service from source, please follow these steps:
+To launch the service from source:
 
-1. Clone the repository
-```bash
-$ git clone https://github.com/infiniflow/ragflow.git
-$ cd ragflow/
-```
+1. Clone the repository: 
 
-2. Create a virtual environment (ensure Anaconda or Miniconda is installed)
-```bash
-$ conda create -n ragflow python=3.11.0
-$ conda activate ragflow
-$ pip install -r requirements.txt
-```
-If CUDA version is greater than 12.0, execute the following additional commands:
-```bash
-$ pip uninstall -y onnxruntime-gpu
-$ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
-```
+   ```bash
+   $ git clone https://github.com/infiniflow/ragflow.git
+   $ cd ragflow/
+   ```
 
-3. Copy the entry script and configure environment variables
-```bash
-$ cp docker/entrypoint.sh .
-$ vi entrypoint.sh
-```
-Use the following commands to obtain the Python path and the ragflow project path:
-```bash
-$ which python
-$ pwd
-```
+2. Create a virtual environment, ensuring that Anaconda or Miniconda is installed:
 
-Set the output of `which python` as the value for `PY` and the output of `pwd` as the value for `PYTHONPATH`.
+   ```bash
+   $ conda create -n ragflow python=3.11.0
+   $ conda activate ragflow
+   $ pip install -r requirements.txt
+   ```
+   
+   ```bash
+   # If your CUDA version is higher than 12.0, run the following additional commands:
+   $ pip uninstall -y onnxruntime-gpu
+   $ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+   ```
 
-If `LD_LIBRARY_PATH` is already configured, it can be commented out.
+3. Copy the entry script and configure environment variables:
 
-```bash
-# Adjust configurations according to your actual situation; the two export commands are newly added.
-PY=${PY}
-export PYTHONPATH=${PYTHONPATH}
-# Optional: Add Hugging Face mirror
-export HF_ENDPOINT=https://hf-mirror.com
-```
+   ```bash
+   # Get the Python path:
+   $ which python
+   # Get the ragflow project path:
+   $ pwd
+   ```
+   
+   ```bash
+   $ cp docker/entrypoint.sh .
+   $ vi entrypoint.sh
+   ```
 
-4. Start the base services
-```bash
-$ cd docker
-$ docker compose -f docker-compose-base.yml up -d 
-```
+   ```bash
+   # Adjust configurations according to your actual situation (the following two export commands are newly added):
+   # - Assign the result of `which python` to `PY`.
+   # - Assign the result of `pwd` to `PYTHONPATH`.
+   # - Comment out `LD_LIBRARY_PATH`, if it is configured.
+   # - Optional: Add Hugging Face mirror.
+   PY=${PY}
+   export PYTHONPATH=${PYTHONPATH}
+   export HF_ENDPOINT=https://hf-mirror.com
+   ```
 
-5. Check the configuration files
-Ensure that the settings in **docker/.env** match those in **conf/service_conf.yaml**. The IP addresses and ports for related services in **service_conf.yaml** should be changed to the local machine IP and ports exposed by the container.
+4. Launch the third-party services (MinIO, Elasticsearch, Redis, and MySQL):
 
-6. Launch the service
-```bash
-$ chmod +x ./entrypoint.sh
-$ bash ./entrypoint.sh
-```
+   ```bash
+   $ cd docker
+   $ docker compose -f docker-compose-base.yml up -d 
+   ```
 
-7. Start the WebUI service
-```bash
-$ cd web
-$ npm install --registry=https://registry.npmmirror.com --force
-$ vim .umirc.ts
-# Modify proxy.target to 127.0.0.1:9380
-$ npm run dev 
-```
+5. Check the configuration files, ensuring that:
 
-8. Deploy the WebUI service
-```bash
-$ cd web
-$ npm install --registry=https://registry.npmmirror.com --force
-$ umi build
-$ mkdir -p /ragflow/web
-$ cp -r dist /ragflow/web
-$ apt install nginx -y
-$ cp ../docker/nginx/proxy.conf /etc/nginx
-$ cp ../docker/nginx/nginx.conf /etc/nginx
-$ cp ../docker/nginx/ragflow.conf /etc/nginx/conf.d
-$ systemctl start nginx
-```
+   - The settings in **docker/.env** match those in **conf/service_conf.yaml**. 
+   - The IP addresses and ports for related services in **service_conf.yaml** match the local machine IP and ports exposed by the container.
+
+6. Launch the RAGFlow backend service:
+
+   ```bash
+   $ chmod +x ./entrypoint.sh
+   $ bash ./entrypoint.sh
+   ```
+
+7. Launch the frontend service:
+
+   ```bash
+   $ cd web
+   $ npm install --registry=https://registry.npmmirror.com --force
+   $ vim .umirc.ts
+   # Update proxy.target to 127.0.0.1:9380
+   $ npm run dev 
+   ```
+
+8. Deploy the frontend service:
+
+   ```bash
+   $ cd web
+   $ npm install --registry=https://registry.npmmirror.com --force
+   $ umi build
+   $ mkdir -p /ragflow/web
+   $ cp -r dist /ragflow/web
+   $ apt install nginx -y
+   $ cp ../docker/nginx/proxy.conf /etc/nginx
+   $ cp ../docker/nginx/nginx.conf /etc/nginx
+   $ cp ../docker/nginx/ragflow.conf /etc/nginx/conf.d
+   $ systemctl start nginx
+   ```
 
 ## 📚 Documentation
 
 - [Quickstart](./docs/quickstart.md)
-- [FAQ](./docs/faq.md)
+- [FAQ](./docs/references/faq.md)
 
 ## 📜 Roadmap
 
@@ -289,4 +301,4 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🙌 Contributing
 
-RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/docs/CONTRIBUTING.md) first.
+RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](./docs/references/CONTRIBUTING.md) first.

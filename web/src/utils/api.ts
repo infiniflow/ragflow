@@ -77,4 +77,8 @@ export default {
   createFolder: `${api_host}/file/create`,
   connectFileToKnowledge: `${api_host}/file2document/convert`,
   getFile: `${api_host}/file/get`,
+
+  // system
+  getSystemVersion: `${api_host}/system/version`,
+  getSystemStatus: `${api_host}/system/status`,
 };
