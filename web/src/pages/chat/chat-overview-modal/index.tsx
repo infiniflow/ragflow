@@ -88,7 +88,7 @@ const ChatOverviewModal = ({
               <Button onClick={showApiKeyModal}>{t('apiKey')}</Button>
               <a
                 href={
-                  'https://github.com/infiniflow/ragflow/blob/main/docs/conversation_api.md'
+                  'https://github.com/infiniflow/ragflow/blob/main/docs/references/api.md'
                 }
                 target="_blank"
                 rel="noreferrer"

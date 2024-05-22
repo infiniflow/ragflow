@@ -1,3 +1,8 @@
+---
+sidebar_position: 3
+slug: /manage_files
+---
+
 #  Manage files
 
 Knowledge base, hallucination-free chat, and file management are three pillars of RAGFlow. RAGFlow's file management allows you to upload files individually or in bulk. You can then link an uploaded file to multiple target knowledge bases. This guide showcases some basic usages of the file management feature. 
@@ -40,11 +45,11 @@ You can link your file to one knowledge base or multiple knowledge bases at one 
 
 ## Move file to specified folder
 
-As of RAGFlow v0.5.0, this feature is *not* available.
+As of RAGFlow v0.6.0, this feature is *not* available.
 
 ## Search files or folders
 
-As of RAGFlow v0.5.0, the search feature is still in a rudimentary form, supporting only file and folder search in the current directory by name (files or folders in the child directory will not be retrieved).
+As of RAGFlow v0.6.0, the search feature is still in a rudimentary form, supporting only file and folder search in the current directory by name (files or folders in the child directory will not be retrieved).
 
 ![search file](https://github.com/infiniflow/ragflow/assets/93570324/77ffc2e5-bd80-4ed1-841f-068e664efffe)
 
@@ -76,4 +81,4 @@ RAGFlow's file management allows you to download an uploaded file:
 
 ![download_file](https://github.com/infiniflow/ragflow/assets/93570324/cf3b297f-7d9b-4522-bf5f-4f45743e4ed5)
 
-> As of RAGFlow v0.5.0, bulk download is not supported, nor can you download an entire folder. 
+> As of RAGFlow v0.6.0, bulk download is not supported, nor can you download an entire folder. 

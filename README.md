@@ -34,11 +34,11 @@
 - 2024-05-15 Integrates OpenAI GPT-4o.
 - 2024-05-08 Integrates LLM DeepSeek-V2.
 - 2024-04-26 Adds file management.
-- 2024-04-19 Supports conversation API ([detail](./docs/conversation_api.md)).
+- 2024-04-19 Supports conversation API ([detail](./docs/references/api.md)).
 - 2024-04-16 Integrates an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding), and [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
-- 2024-04-11 Supports [Xinference](./docs/xinference.md) for local LLM deployment.
+- 2024-04-11 Supports [Xinference](./docs/guides/deploy_local_llm.md) for local LLM deployment.
 - 2024-04-10 Adds a new layout recognition model for analyzing legal documents.
-- 2024-04-08 Supports [Ollama](./docs/ollama.md) for local LLM deployment.
+- 2024-04-08 Supports [Ollama](./docs/guides/deploy_local_llm.md) for local LLM deployment.
 - 2024-04-07 Supports Chinese UI.
 
 ## 🌟 Key Features
@@ -87,7 +87,7 @@
 
 ### 🚀 Start up the server
 
-1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/max_map_count.md)):
+1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/guides/max_map_count.md)):
 
    > To check the value of `vm.max_map_count`:
    >
@@ -154,7 +154,7 @@
    > With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
-   > See [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md) for more information.
+   > See [./docs/guides/llm_api_key_setup.md](./docs/guides/llm_api_key_setup.md) for more information.
 
    _The show is now on!_
 
@@ -288,7 +288,7 @@ To launch the service from source:
 ## 📚 Documentation
 
 - [Quickstart](./docs/quickstart.md)
-- [FAQ](./docs/faq.md)
+- [FAQ](./docs/references/faq.md)
 
 ## 📜 Roadmap
 
@@ -301,4 +301,4 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🙌 Contributing
 
-RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://github.com/infiniflow/ragflow/blob/main/docs/CONTRIBUTING.md) first.
+RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](./docs/references/CONTRIBUTING.md) first.
