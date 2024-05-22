@@ -407,3 +407,13 @@ class Dealer:
         except Exception as e:
             chat_logger.error(f"SQL failure: {sql} =>" + str(e))
             return {"error": str(e)}
+
+    def chunk_list(self, doc_id, tenant_id, max_count=1024, fields=["docnm_kwd", "content_with_weight", "img_id"]):
+        s = Search()
+        s = s.query(Q("match", doc_id=doc_id))[0:max_count]
+        s = s.to_dict()
+        es_res = self.es.search(s, idxnm=index_name(tenant_id), timeout="600s", src=fields)
+        res = []
+        for index, chunk in enumerate(es_res['hits']['hits']):
+            res.append({fld: chunk['_source'].get(fld) for fld in fields})
+        return res
