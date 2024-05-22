@@ -62,7 +62,7 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
         'embd_id',
         'parser_id',
         'language',
-        'parser_config.chunk_token_num',
+        'parser_config',
       ]),
       avatar: fileList,
     });

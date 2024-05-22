@@ -265,6 +265,26 @@ export default {
     </p><p>
     If you want to summarize something that needs all the context of an article and the selected LLM's context length covers the document length, you can try this method.
     </p>`,
+      useRaptor: 'Use RAPTOR to enhance retrieval',
+      useRaptorTip:
+        'Recursive Abstractive Processing for Tree-Organized Retrieval, please refer to https://huggingface.co/papers/2401.18059',
+      prompt: 'Prompt',
+      promptTip: 'LLM prompt used for summarization.',
+      promptMessage: 'Prompt is required',
+      promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
+      {cluster_content}
+      The above is the content you need to summarize.`,
+      maxToken: 'Max token',
+      maxTokenTip: 'Maximum token number for summarization.',
+      maxTokenMessage: 'Max token is required',
+      threshold: 'Threshold',
+      thresholdTip: 'The bigger the threshold is the less cluster will be.',
+      thresholdMessage: 'Threshold is required',
+      maxCluster: 'Max cluster',
+      maxClusterTip: 'Maximum cluster number.',
+      maxClusterMessage: 'Max cluster is required',
+      randomSeed: 'Random seed',
+      randomSeedMessage: 'Random seed is required',
     },
     chunk: {
       chunk: 'Chunk',
