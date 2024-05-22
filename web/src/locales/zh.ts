@@ -439,6 +439,11 @@ export default {
       modelTypeMessage: '请输入模型类型！',
       baseUrlNameMessage: '请输入基础 Url！',
       ollamaLink: '如何集成 {{name}}',
+      volcModelNameMessage: '请输入模型名称！格式：{"模型名称":"EndpointID"}',
+      addVolcEngineAK: '火山 ACCESS_KEY',
+      volcAKMessage: '请输入VOLC_ACCESS_KEY',
+      addVolcEngineSK: '火山 SECRET_KEY',
+      volcSKMessage: '请输入VOLC_SECRET_KEY',
     },
     message: {
       registered: '注册成功',

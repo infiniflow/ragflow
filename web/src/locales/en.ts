@@ -457,6 +457,11 @@ export default {
       baseUrlNameMessage: 'Please input your base url!',
       vision: 'Does it support Vision?',
       ollamaLink: 'How to integrate {{name}}',
+      volcModelNameMessage: 'Please input your model name! Format: {"ModelName":"EndpointID"}',
+      addVolcEngineAK: 'VOLC ACCESS_KEY',
+      volcAKMessage: 'Please input your VOLC_ACCESS_KEY',
+      addVolcEngineSK: 'VOLC SECRET_KEY',
+      volcSKMessage: 'Please input your SECRET_KEY',
     },
     message: {
       registered: 'Registered!',

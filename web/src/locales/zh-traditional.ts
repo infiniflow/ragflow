@@ -421,7 +421,12 @@ export default {
       modelNameMessage: '請輸入模型名稱！',
       modelTypeMessage: '請輸入模型類型！',
       baseUrlNameMessage: '請輸入基礎 Url！',
-      ollamaLink: '如何集成Ollama',
+      ollamaLink: '如何集成 {{name}}',
+      volcModelNameMessage: '請輸入模型名稱！格式：{"模型名稱":"EndpointID"}',
+      addVolcEngineAK: '火山 ACCESS_KEY',
+      volcAKMessage: '請輸入VOLC_ACCESS_KEY',
+      addVolcEngineSK: '火山 SECRET_KEY',
+      volcSKMessage: '請輸入VOLC_SECRET_KEY',
     },
     message: {
       registered: '註冊成功',
