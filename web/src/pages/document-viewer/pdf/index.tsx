@@ -1,12 +1,14 @@
 import { Skeleton } from 'antd';
 import { PdfHighlighter, PdfLoader } from 'react-pdf-highlighter';
 import FileError from '../file-error';
+import { useCatchError } from '../hooks';
 
 interface IProps {
   url: string;
 }
 
-const DocumentPreviewer = ({ url }: IProps) => {
+const PdfPreviewer = ({ url }: IProps) => {
+  const { error } = useCatchError(url);
   const resetHash = () => {};
 
   return (
@@ -15,7 +17,7 @@ const DocumentPreviewer = ({ url }: IProps) => {
         url={url}
         beforeLoad={<Skeleton active />}
         workerSrc="/pdfjs-dist/pdf.worker.min.js"
-        errorMessage={<FileError></FileError>}
+        errorMessage={<FileError>{error}</FileError>}
         onError={(e) => {
           console.warn(e);
         }}
@@ -40,4 +42,4 @@ const DocumentPreviewer = ({ url }: IProps) => {
   );
 };
 
-export default DocumentPreviewer;
+export default PdfPreviewer;

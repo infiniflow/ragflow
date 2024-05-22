@@ -5,7 +5,7 @@ import { useFetchDocx } from '../hooks';
 import styles from './index.less';
 
 const Docx = ({ filePath }: { filePath: string }) => {
-  const { succeed, containerRef } = useFetchDocx(filePath);
+  const { succeed, containerRef, error } = useFetchDocx(filePath);
 
   return (
     <>
@@ -16,7 +16,7 @@ const Docx = ({ filePath }: { filePath: string }) => {
           </div>
         </section>
       ) : (
-        <FileError></FileError>
+        <FileError>{error}</FileError>
       )}
     </>
   );
