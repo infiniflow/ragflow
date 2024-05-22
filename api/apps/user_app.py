@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import re
 from datetime import datetime
 
@@ -25,7 +26,7 @@ from api.db.services.llm_service import TenantLLMService, LLMService
 from api.utils.api_utils import server_error_response, validate_request
 from api.utils import get_uuid, get_format_time, decrypt, download_img, current_timestamp, datetime_format
 from api.db import UserTenantRole, LLMType, FileType
-from api.settings import RetCode, GITHUB_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, API_KEY, \
+from api.settings import RetCode, GITHUB_OAUTH, FEISHU_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, API_KEY, \
     LLM_FACTORY, LLM_BASE_URL
 from api.db.services.user_service import UserService, TenantService, UserTenantService
 from api.db.services.file_service import FileService
