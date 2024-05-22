@@ -181,6 +181,17 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_doc_id_by_doc_name(cls, doc_name):
+        fields = [cls.model.id]
+        doc_id = cls.model.select(*fields) \
+            .where(cls.model.name == doc_name)
+        doc_id = doc_id.dicts()
+        if not doc_id:
+            return
+        return doc_id[0]["id"]
+
+    @classmethod
+    @DB.connection_context()
     def get_thumbnails(cls, docids):
         fields = [cls.model.id, cls.model.thumbnail]
         return list(cls.model.select(
