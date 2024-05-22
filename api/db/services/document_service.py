@@ -72,25 +72,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def delete(cls, doc):
-        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-        if not KnowledgebaseService.update_by_id(
-                kb.id, {"doc_num": max(0, kb.doc_num - 1)}):
-            raise RuntimeError("Database error (Knowledgebase)!")
-        return cls.delete_by_id(doc.id)
-
-    @classmethod
-    @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
         ELASTICSEARCH.deleteByQuery(
-            Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-
-        cls.increment_chunk_num(
-            doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, 0)
-        if not cls.delete(doc):
-            raise RuntimeError("Database error (Document removal)!")
-
-        MINIO.rm(doc.kb_id, doc.location)
+                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+        cls.clear_chunk_num(doc.id)
         return cls.delete_by_id(doc.id)
 
     @classmethod
@@ -183,6 +168,19 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_tenant_id_by_name(cls, name):
+        docs = cls.model.select(
+            Knowledgebase.tenant_id).join(
+            Knowledgebase, on=(
+                    Knowledgebase.id == cls.model.kb_id)).where(
+            cls.model.name == name, Knowledgebase.status == StatusEnum.VALID.value)
+        docs = docs.dicts()
+        if not docs:
+            return
+        return docs[0]["tenant_id"]
+
+    @classmethod
+    @DB.connection_context()
     def get_thumbnails(cls, docids):
         fields = [cls.model.id, cls.model.thumbnail]
         return list(cls.model.select(
@@ -266,4 +264,10 @@ class DocumentService(CommonService):
                 cls.update_by_id(d["id"], info)
             except Exception as e:
                 stat_logger.error("fetch task exception:" + str(e))
+
+    @classmethod
+    @DB.connection_context()
+    def get_kb_doc_count(cls, kb_id):
+        return len(cls.model.select(cls.model.id).where(
+            cls.model.kb_id == kb_id).dicts())
 

@@ -5,6 +5,9 @@
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
 
 PY=python3
+if [[ -z "$WS" || $WS -lt 1 ]]; then
+  WS=1
+fi
 
 function task_exe(){
     while [ 1 -eq 1 ];do
@@ -12,7 +15,6 @@ function task_exe(){
     done
 }
 
-WS=1
 for ((i=0;i<WS;i++))
 do
   task_exe  &

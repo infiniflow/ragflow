@@ -250,13 +250,9 @@ def rm():
             if not tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
 
-            ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
-
-            DocumentService.clear_chunk_num(doc_id)
             b, n = File2DocumentService.get_minio_address(doc_id=doc_id)
 
-            if not DocumentService.delete(doc):
+            if not DocumentService.remove_document(doc, tenant_id):
                 return get_data_error_result(
                     retmsg="Database error (Document removal)!")
 

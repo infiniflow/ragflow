@@ -1,6 +1,5 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import HightLightMarkdown from '@/components/highlight-markdown';
-import { Domain } from '@/constants/common';
 import { useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
 import { Card, Modal, Tabs, TabsProps } from 'antd';
@@ -16,7 +15,7 @@ const EmbedModal = ({
   const text = `
   ~~~ html
   <iframe
-  src="https://${Domain}/chat/share?shared_id=${token}"
+  src="${location.origin}/chat/share?shared_id=${token}"
   style="width: 100%; height: 100%; min-height: 600px"
   frameborder="0"
 >

@@ -386,7 +386,7 @@ class User(DataBaseModel, UserMixin):
         max_length=32,
         null=True,
         help_text="English|Chinese",
-        default="English")
+        default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English")
     color_schema = CharField(
         max_length=32,
         null=True,
@@ -578,7 +578,7 @@ class Knowledgebase(DataBaseModel):
     language = CharField(
         max_length=32,
         null=True,
-        default="English",
+        default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English",
         help_text="English|Chinese")
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(
@@ -755,11 +755,11 @@ class Dialog(DataBaseModel):
     language = CharField(
         max_length=32,
         null=True,
-        default="Chinese",
+        default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English",
         help_text="English|Chinese")
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7,
-                                                 "presence_penalty": 0.4, "max_tokens": 215})
+                                                 "presence_penalty": 0.4, "max_tokens": 512})
     prompt_type = CharField(
         max_length=16,
         null=False,

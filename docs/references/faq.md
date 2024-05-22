@@ -1,4 +1,9 @@
-# Frequently Asked Questions
+---
+sidebar_position: 3
+slug: /faq
+---
+
+# Frequently asked questions
 
 ## General
 
@@ -31,7 +36,7 @@ Currently, we only support x86 CPU and Nvidia GPU.
 
 ### 2. Do you offer an API for integration with third-party applications?
 
-The corresponding APIs are now available. See the [Conversation API](./conversation_api.md) for more information. 
+The corresponding APIs are now available. See the [RAGFlow API Reference](./api.md) for more information. 
 
 ### 3. Do you support stream output?
 
@@ -264,7 +269,7 @@ This is because you forgot to update the `vm.max_map_count` value in **/etc/sysc
 
 #### 4.11 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
 
-Your IP address or port number may be incorrect. If you are using the default configurations, enter http://<IP_OF_YOUR_MACHINE> (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
+Your IP address or port number may be incorrect. If you are using the default configurations, enter `http://<IP_OF_YOUR_MACHINE>` (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
 #### 4.12 `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
 
@@ -354,7 +359,7 @@ You limit what the system responds to what you specify in **Empty response** if 
 
 ### 4. How to run RAGFlow with a locally deployed LLM?
 
-You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow/ragflow/blob/main/docs/ollama.md) for more information. 
+You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.md) for more information. 
 
 ### 5. How to link up ragflow and ollama servers?
 

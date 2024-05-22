@@ -17,8 +17,8 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.5.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.5.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.6.0-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.6.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=1570EF" alt="license">
   </a>
@@ -30,14 +30,15 @@
 
 ## 📌 近期更新
 
+- 2024-05-21 支持流式结果输出和文本块获取API。
 - 2024-05-15 集成大模型 OpenAI GPT-4o。
 - 2024-05-08 集成大模型 DeepSeek。
 - 2024-04-26 增添了'文件管理'功能。
-- 2024-04-19 支持对话 API ([更多](./docs/conversation_api.md))。
+- 2024-04-19 支持对话 API ([更多](./docs/references/api.md))。
 - 2024-04-16 集成嵌入模型 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) 和 专为轻型和高速嵌入而设计的 [FastEmbed](https://github.com/qdrant/fastembed)。
-- 2024-04-11 支持用 [Xinference](./docs/xinference.md) 本地化部署大模型。
+- 2024-04-11 支持用 [Xinference](./docs/guides/deploy_local_llm.md) 本地化部署大模型。
 - 2024-04-10 为‘Laws’版面分析增加了底层模型。
-- 2024-04-08 支持用 [Ollama](./docs/ollama.md) 本地化部署大模型。
+- 2024-04-08 支持用 [Ollama](./docs/guides/deploy_local_llm.md) 本地化部署大模型。
 - 2024-04-07 支持中文界面。
 
 ## 🌟 主要功能
@@ -86,7 +87,7 @@
 
 ### 🚀 启动服务器
 
-1. 确保 `vm.max_map_count` 不小于 262144 【[更多](./docs/max_map_count.md)】：
+1. 确保 `vm.max_map_count` 不小于 262144 【[更多](./docs/guides/max_map_count.md)】：
 
    > 如需确认 `vm.max_map_count` 的大小：
    >
@@ -121,7 +122,7 @@
    $ docker compose -f docker-compose-CN.yml up -d
    ```
 
-   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_VERSION 变量，将其改为对应版本。例如 RAGFLOW_VERSION=v0.5.0，然后运行上述命令。
+   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_VERSION 变量，将其改为对应版本。例如 RAGFLOW_VERSION=v0.6.0，然后运行上述命令。
 
    > 核心镜像文件大约 9 GB，可能需要一定时间拉取。请耐心等待。
 
@@ -152,7 +153,7 @@
    > 上面这个例子中，您只需输入 http://IP_OF_YOUR_MACHINE 即可：未改动过配置则无需输入端口（默认的 HTTP 服务端口 80）。
 6. 在 [service_conf.yaml](./docker/service_conf.yaml) 文件的 `user_default_llm` 栏配置 LLM factory，并在 `API_KEY` 栏填写和你选择的大模型相对应的 API key。
 
-   > 详见 [./docs/llm_api_key_setup.md](./docs/llm_api_key_setup.md)。
+   > 详见 [./docs/guides/llm_api_key_setup.md](./docs/guides/llm_api_key_setup.md)。
 
    _好戏开始，接着奏乐接着舞！_
 
@@ -183,7 +184,7 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.5.0 .
+$ docker build -t infiniflow/ragflow:v0.6.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
@@ -273,7 +274,7 @@ $ systemctl start nginx
 ## 📚 技术文档
 
 - [Quickstart](./docs/quickstart.md)
-- [FAQ](./docs/faq.md)
+- [FAQ](./docs/references/faq.md)
 
 ## 📜 路线图
 
@@ -286,7 +287,7 @@ $ systemctl start nginx
 
 ## 🙌 贡献指南
 
-RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的[贡献者指南](https://github.com/infiniflow/ragflow/blob/main/docs/CONTRIBUTING.md) 。
+RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的[贡献者指南](./docs/references/CONTRIBUTING.md) 。
 
 ## 👥 加入社区
 

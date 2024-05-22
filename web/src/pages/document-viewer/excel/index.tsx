@@ -3,7 +3,7 @@ import FileError from '../file-error';
 import { useFetchExcel } from '../hooks';
 
 const Excel = ({ filePath }: { filePath: string }) => {
-  const { status, containerRef } = useFetchExcel(filePath);
+  const { status, containerRef, error } = useFetchExcel(filePath);
 
   return (
     <div
@@ -11,7 +11,7 @@ const Excel = ({ filePath }: { filePath: string }) => {
       ref={containerRef}
       style={{ height: '100%', width: '100%' }}
     >
-      {status || <FileError></FileError>}
+      {status || <FileError>{error}</FileError>}
     </div>
   );
 };
