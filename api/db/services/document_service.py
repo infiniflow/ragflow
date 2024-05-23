@@ -18,8 +18,10 @@ from datetime import datetime
 from elasticsearch_dsl import Q
 from peewee import fn
 
+from api.db.db_utils import bulk_insert_into_db
 from api.settings import stat_logger
-from api.utils import current_timestamp, get_format_time
+from api.utils import current_timestamp, get_format_time, get_uuid
+from rag.settings import SVR_QUEUE_NAME
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 from rag.nlp import search
@@ -30,6 +32,7 @@ from api.db.db_models import Document
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db import StatusEnum
+from rag.utils.redis_conn import REDIS_CONN
 
 
 class DocumentService(CommonService):
@@ -110,7 +113,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_unfinished_docs(cls):
-        fields = [cls.model.id, cls.model.process_begin_at]
+        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg]
         docs = cls.model.select(*fields) \
             .where(
                 cls.model.status == StatusEnum.VALID.value,
@@ -260,7 +263,12 @@ class DocumentService(CommonService):
                     prg = -1
                     status = TaskStatus.FAIL.value
                 elif finished:
-                    status = TaskStatus.DONE.value
+                    if d["parser_config"].get("raptor") and d["progress_msg"].lower().find(" raptor")<0:
+                        queue_raptor_tasks(d)
+                        prg *= 0.98
+                        msg.append("------ RAPTOR -------")
+                    else:
+                        status = TaskStatus.DONE.value
 
                 msg = "\n".join(msg)
                 info = {
@@ -282,3 +290,19 @@ class DocumentService(CommonService):
         return len(cls.model.select(cls.model.id).where(
             cls.model.kb_id == kb_id).dicts())
 
+
+def queue_raptor_tasks(doc):
+    def new_task():
+        nonlocal doc
+        return {
+            "id": get_uuid(),
+            "doc_id": doc["id"],
+            "from_page": 0,
+            "to_page": -1,
+            "progress_msg": "Start to do RAPTOR (Recursive Abstractive Processing For Tree-Organized Retrieval)."
+        }
+
+    task = new_task()
+    bulk_insert_into_db(Task, [task], True)
+    task["type"] = "raptor"
+    assert REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=task), "Can't access Redis. Please check the Redis' status."
