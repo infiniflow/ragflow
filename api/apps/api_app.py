@@ -432,7 +432,7 @@ def list_kb_docs():
 
 @manager.route('/document/rm', methods=['POST'])
 # @login_required
-def rm():
+def document_rm():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
