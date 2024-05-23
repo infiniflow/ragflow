@@ -1,16 +1,19 @@
 import { Avatar, Card, Flex, Layout, Space } from 'antd';
 import classNames from 'classnames';
-import { useState } from 'react';
 import { componentList } from '../mock';
 
-import { useHandleDrag } from '../hooks';
+import { useHandleDragNext } from '../hooks';
 import styles from './index.less';
 
 const { Sider } = Layout;
 
-const FlowSider = () => {
-  const [collapsed, setCollapsed] = useState(true);
-  const { handleDrag } = useHandleDrag();
+interface IProps {
+  setCollapsed: (width: boolean) => void;
+  collapsed: boolean;
+}
+
+const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
+  const { handleDragStart } = useHandleDragNext();
 
   return (
     <Sider
@@ -27,7 +30,7 @@ const FlowSider = () => {
             hoverable
             draggable
             className={classNames(styles.operatorCard)}
-            onDragStart={handleDrag(x.name)}
+            onDragStart={handleDragStart(x.name)}
           >
             <Flex justify="space-between" align="center">
               <Space size={15}>
@@ -45,4 +48,4 @@ const FlowSider = () => {
   );
 };
 
-export default FlowSider;
+export default FlowSide;
