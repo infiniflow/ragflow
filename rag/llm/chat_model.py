@@ -57,8 +57,7 @@ class Base(ABC):
                 stream=True,
                 **gen_conf)
             for resp in response:
-                if len(resp.choices) == 0:continue
-                if not resp.choices[0].delta.content:continue
+                if not resp.choices or not resp.choices[0].delta.content:continue
                 ans += resp.choices[0].delta.content
                 total_tokens += 1
                 if resp.choices[0].finish_reason == "length":
@@ -379,7 +378,7 @@ class VolcEngineChat(Base):
                 ans += resp.choices[0].message.content
                 yield ans
                 if resp.choices[0].finish_reason == "stop":
-                    return resp.usage.total_tokens
+                    yield resp.usage.total_tokens
 
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
