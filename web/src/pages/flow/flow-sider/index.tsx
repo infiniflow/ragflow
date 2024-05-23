@@ -2,7 +2,7 @@ import { Avatar, Card, Flex, Layout, Space } from 'antd';
 import classNames from 'classnames';
 import { componentList } from '../mock';
 
-import { useHandleDragNext } from '../hooks';
+import { useHandleDrag } from '../hooks';
 import styles from './index.less';
 
 const { Sider } = Layout;
@@ -13,7 +13,7 @@ interface IProps {
 }
 
 const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
-  const { handleDragStart } = useHandleDragNext();
+  const { handleDragStart } = useHandleDrag();
 
   return (
     <Sider

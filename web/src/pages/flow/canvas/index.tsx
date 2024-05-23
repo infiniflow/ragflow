@@ -4,6 +4,7 @@ import ReactFlow, {
   Controls,
   Edge,
   Node,
+  NodeMouseHandler,
   OnConnect,
   OnEdgesChange,
   OnNodesChange,
@@ -15,7 +16,8 @@ import 'reactflow/dist/style.css';
 
 import { NodeContextMenu, useHandleNodeContextMenu } from './context-menu';
 
-import { useHandleDropNext } from '../hooks';
+import FlowDrawer from '../flow-drawer';
+import { useHandleDrop, useShowDrawer } from '../hooks';
 import { TextUpdaterNode } from './node';
 
 const nodeTypes = { textUpdater: TextUpdaterNode };
@@ -46,6 +48,7 @@ const initialEdges = [
 
 interface IProps {
   sideWidth: number;
+  showDrawer(): void;
 }
 
 function FlowCanvas({ sideWidth }: IProps) {
@@ -53,6 +56,7 @@ function FlowCanvas({ sideWidth }: IProps) {
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const { ref, menu, onNodeContextMenu, onPaneClick } =
     useHandleNodeContextMenu(sideWidth);
+  const { drawerVisible, hideDrawer, showDrawer } = useShowDrawer();
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -68,8 +72,11 @@ function FlowCanvas({ sideWidth }: IProps) {
     [],
   );
 
-  const { onDrop, onDragOver, setReactFlowInstance } =
-    useHandleDropNext(setNodes);
+  const onNodeClick: NodeMouseHandler = useCallback(() => {
+    showDrawer();
+  }, [showDrawer]);
+
+  const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop(setNodes);
 
   useEffect(() => {
     console.info('nodes:', nodes);
@@ -91,6 +98,7 @@ function FlowCanvas({ sideWidth }: IProps) {
         onPaneClick={onPaneClick}
         onDrop={onDrop}
         onDragOver={onDragOver}
+        onNodeClick={onNodeClick}
         onInit={setReactFlowInstance}
       >
         <Background />
@@ -99,6 +107,7 @@ function FlowCanvas({ sideWidth }: IProps) {
           <NodeContextMenu onClick={onPaneClick} {...(menu as any)} />
         )}
       </ReactFlow>
+      <FlowDrawer visible={drawerVisible} hideModal={hideDrawer}></FlowDrawer>
     </div>
   );
 }
