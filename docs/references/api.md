@@ -453,3 +453,27 @@ Get document list based on the knowledge base name and corresponding parameters.
 }
 
 ```
+
+## Delete document 
+
+Delete document by document id or document name.
+### Path: /api/document/rm/
+### Method: POST
+
+### Parameter:
+
+| Name        | Type   | Optional | Description                |
+|-------------|--------|----------|----------------------------|
+| `doc_names` | List   | Yes      | The list of document name. |
+| `doc_ids`   | List   | Yes      | The list of document id.   |
+
+
+### Response 
+```json
+{
+    "data": true,
+    "retcode": 0,
+    "retmsg": "success"
+}
+
+```

@@ -243,7 +243,7 @@ export default {
       prompt: '提示詞',
       promptMessage: '提示詞是必填項',
       promptText: `请請總結以下段落。 小心數字，不要編造。 段落如下：
-      {集群內容}
+      {cluster_content}
 以上就是你需要總結的內容。`,
       maxToken: '最大token數',
       maxTokenMessage: '最大token數是必填項',
@@ -440,7 +440,12 @@ export default {
       modelNameMessage: '請輸入模型名稱！',
       modelTypeMessage: '請輸入模型類型！',
       baseUrlNameMessage: '請輸入基礎 Url！',
-      ollamaLink: '如何集成Ollama',
+      ollamaLink: '如何集成 {{name}}',
+      volcModelNameMessage: '請輸入模型名稱！格式：{"模型名稱":"EndpointID"}',
+      addVolcEngineAK: '火山 ACCESS_KEY',
+      volcAKMessage: '請輸入VOLC_ACCESS_KEY',
+      addVolcEngineSK: '火山 SECRET_KEY',
+      volcSKMessage: '請輸入VOLC_SECRET_KEY',
     },
     message: {
       registered: '註冊成功',

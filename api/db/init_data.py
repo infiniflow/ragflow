@@ -132,7 +132,12 @@ factory_infos = [{
     "logo": "",
     "tags": "LLM",
     "status": "1",
-},
+},{
+    "name": "VolcEngine",
+    "logo": "",
+    "tags": "LLM, TEXT EMBEDDING",
+    "status": "1",
+}
     # {
     #     "name": "文心一言",
     #     "logo": "",
@@ -370,6 +375,21 @@ def init_llm_factory():
             "llm_name": "deepseek-coder",
             "tags": "LLM,CHAT,",
             "max_tokens": 16385,
+            "model_type": LLMType.CHAT.value
+        },
+        # ------------------------ VolcEngine -----------------------
+        {
+            "fid": factory_infos[9]["name"],
+            "llm_name": "Skylark2-pro-32k",
+            "tags": "LLM,CHAT,32k",
+            "max_tokens": 32768,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[9]["name"],
+            "llm_name": "Skylark2-pro-4k",
+            "tags": "LLM,CHAT,4k",
+            "max_tokens": 4096,
             "model_type": LLMType.CHAT.value
         },
     ]

@@ -37,10 +37,12 @@ import {
   useSelectModelProvidersLoading,
   useSubmitApiKey,
   useSubmitOllama,
+  useSubmitVolcEngine,
   useSubmitSystemModelSetting,
 } from './hooks';
 import styles from './index.less';
 import OllamaModal from './ollama-modal';
+import VolcEngineModal from "./volcengine-model";
 import SystemModelSettingModal from './system-model-setting-modal';
 
 const IconMap = {
@@ -52,6 +54,7 @@ const IconMap = {
   Ollama: 'ollama',
   Xinference: 'xinference',
   DeepSeek: 'deepseek',
+  VolcEngine: 'volc_engine',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
@@ -165,6 +168,15 @@ const UserSettingModel = () => {
     selectedLlmFactory,
   } = useSubmitOllama();
 
+  const {
+    volcAddingVisible,
+    hideVolcAddingModal,
+    showVolcAddingModal,
+    onVolcAddingOk,
+    volcAddingLoading,
+    selectedVolcFactory,
+  } = useSubmitVolcEngine();
+
   const handleApiKeyClick = useCallback(
     (llmFactory: string) => {
       if (isLocalLlmFactory(llmFactory)) {
@@ -179,6 +191,8 @@ const UserSettingModel = () => {
   const handleAddModel = (llmFactory: string) => () => {
     if (isLocalLlmFactory(llmFactory)) {
       showLlmAddingModal(llmFactory);
+    } else if (llmFactory === 'VolcEngine') {
+      showVolcAddingModal('VolcEngine');
     } else {
       handleApiKeyClick(llmFactory);
     }
@@ -270,6 +284,13 @@ const UserSettingModel = () => {
         loading={llmAddingLoading}
         llmFactory={selectedLlmFactory}
       ></OllamaModal>
+      <VolcEngineModal
+        visible={volcAddingVisible}
+        hideModal={hideVolcAddingModal}
+        onOk={onVolcAddingOk}
+        loading={volcAddingLoading}
+        llmFactory={selectedVolcFactory}
+      ></VolcEngineModal>
     </section>
   );
 };

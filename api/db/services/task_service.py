@@ -53,6 +53,7 @@ class TaskService(CommonService):
             Knowledgebase.embd_id,
             Tenant.img2txt_id,
             Tenant.asr_id,
+            Tenant.llm_id,
             cls.model.update_time]
         docs = cls.model.select(*fields) \
             .join(Document, on=(cls.model.doc_id == Document.id)) \
