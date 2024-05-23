@@ -396,7 +396,7 @@ class RAGFlowPdfParser:
             ]
             # features for not concating
             feats = [
-                b.get("layoutno", 0) != b.get("layoutno", 0),
+                b.get("layoutno", 0) != b_.get("layoutno", 0),
                 b["text"].strip()[-1] in "。？！?",
                 self.is_english and b["text"].strip()[-1] in ".!?",
                 b["page_number"] == b_["page_number"] and b_["top"] -
