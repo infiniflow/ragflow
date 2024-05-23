@@ -29,14 +29,14 @@ Authorization: Bearer {API_KEY}
 This method creates a conversation for a specific user. 
 
 :::note
-You are required to save the `id` returned in the response data, which is the conversation ID for all upcoming conversations.
+You are *required* to save the `id` returned in the response data, which is the conversation ID for all upcoming conversations.
 :::
 
-### Parameter:
+### Parameter
 
-| Name     |  Type  | Optional |        Description                                          |
+| Name     |  Type  | Required |        Description                                          |
 |----------|--------|----------|-------------------------------------------------------------|
-| `user_id`| string |   No     | The unique identifier assigned to the user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />10 digits (0-9)<br />"_", "-", "." |
+| `user_id`| string |   Yes    | The unique identifier assigned to each user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />- 10 digits (0-9)<br />- "_", "-", "." |
 
 ### Response 
 ```json
@@ -68,7 +68,7 @@ You are required to save the `id` returned in the response data, which is the co
 
 ## Get conversation history
 
-- Path: `/api/conversation/<id>`
+- Path: **/api/conversation/<id>**
 - Method: GET
 
 This method retrieves the history of a conversation. 
@@ -83,17 +83,17 @@ This method retrieves the history of a conversation.
 - **user_id**: This is set by the caller.
 - **reference**: Every item in it refer to the corresponding message in data.message whose role is assistant. 
     - chunks
-        - content_with_weight: The content of chunk.
-        - docnm_kwd: The document name.
-        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by 'GET' /document/get/\<id\>.
+        - `content_with_weight`: The content of chunk.
+        - `docnm_kwd`: The document name.
+        - `img_id`: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by `'GET' /document/get/<id>`.
         - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - similarity: The hybrid similarity.
         - term_similarity: The keyword simimlarity
         - vector_similarity: The embedding similarity
     - `doc_aggs`:
-        - `doc_id`: the document can be accessed by 'GET' /document/get/\<id\>
-        - `doc_name`: the file name
-        - `count`: the chunk number hit in this document.
+        - `doc_id`: the document can be accessed by `'GET' /document/get/<id>`
+        - `doc_name`: The file name
+        - `count`: The chunk number hit in this document.
 
 ```json
 {
@@ -234,15 +234,15 @@ This method retrieves the history of a conversation.
 
 This method retrieves the answer to the user's questions.
 
-### Parameter:
+### Parameter
 
-| name           | type | optional | description|
-|----------------|-------|----|----|
-| conversation_id| string | No | This is from calling /new_conversation.|
-| messages       | json | No | The latest question, such as `[{"role": "user", "content": "How are you doing!"}]`|
-| quote          | bool | Yes | Default: true |
-| stream         | bool | Yes | Default: true |
-| doc_ids        | string | Yes | Document IDs which is delimited by comma, like `c790da40ea8911ee928e0242ac180005,c790da40ea8911ee928e0242ac180005`. The retrieved content is limited in these documents. |
+|   Name           |  Type  | Required | Description   |
+|------------------|--------|----------|---------------|
+| `conversation_id`| string | Yes      | This is from calling /new_conversation.|
+| `messages`       |  json  | Yes      | The latest question, such as `[{"role": "user", "content": "How are you doing!"}]`|
+| `quote`          |  bool  |  No      | Default: true |
+| `stream`         |  bool  |  No      | Default: true |
+| `doc_ids`        | string |  No      | Document IDs delimited by comma, like `c790da40ea8911ee928e0242ac180005,c790da40ea8911ee928e0242ac180005`. The retrieved content is limited in these documents. |
 
 ### Response 
 
@@ -251,7 +251,7 @@ This method retrieves the answer to the user's questions.
     - chunks: Every item in it refer to the corresponding message in answer. 
         - content_with_weight: The content of chunk.
         - docnm_kwd: the document name.
-        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by 'GET' /document/get/\<id\>.
+        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by `'GET' /document/get/<id>`.
         - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - similarity: the hybrid similarity.
         - term_similarity: keyword simimlarity
@@ -325,7 +325,7 @@ This method retrieves the answer to the user's questions.
     
 ## Get document content or image
 
-- Path: /api/document/get/\<id\>
+- Path: `/api/document/get/<id>`
 - Method: GET
 
 This method retrieves the content or a specific image in a document. Used when displaying the content of a citation.
@@ -333,20 +333,20 @@ This method retrieves the content or a specific image in a document. Used when d
 
 ## Upload file
 
-- Path: /api/document/upload/
+- Path: `/api/document/upload/`
 - Method: POST
 
 This method uploads a file to a specific knowledge base.
 
 
-### Parameter:
+### Parameter
 
-|   Name      | Type   | Optional | Description                                             |
+|   Name      | Type   | Required | Description                                             |
 |-------------|--------|----------|---------------------------------------------------------|
-| `file`      | file   | No       | The file to upload.                                     |
-| `kb_name`   | string | No       | The name of the knowledge base to upload the file to.   |
-| `parser_id` | string | Yes      | The parsing method to use.                              |
-| `run`       | string | Yes      |- 1: Automatically start file parsing. |
+| `file`      | file   | Yes      | The file to upload.                                     |
+| `kb_name`   | string | Yes      | The name of the knowledge base to upload the file to.   |
+| `parser_id` | string |  No      | The parsing method to use.                              |
+| `run`       | string |  No      | - 1: Automatically start file parsing.                  |
 
 ### Response 
 ```json
@@ -393,19 +393,19 @@ This method uploads a file to a specific knowledge base.
 
 ## Get document chunks
 
-- Path: /api/list_chunks/
+- Path: `/api/list_chunks/`
 - Method: POST
 
 This method retrieves the chunks of a document by `doc_name` or `doc_id`.
 
 
 
-### Parameter:
+### Parameter
 
-|   Name     | Type   | Optional |                        Description                                                          |
+|   Name     | Type   | Required |                        Description                                                          |
 |------------|--------|----------|---------------------------------------------------------------------------------------------|
-| `doc_name` | string | Yes      | The name of the document in the knowledge base. It must not be empty if `doc_id` is not set.|
-| `doc_id`   | string | Yes      | The ID of the document in the knowledge base. It must not be empty if `doc_name` is not set.|
+| `doc_name` | string |  No      | The name of the document in the knowledge base. It must not be empty if `doc_id` is not set.|
+| `doc_id`   | string |  No      | The ID of the document in the knowledge base. It must not be empty if `doc_name` is not set.|
 
 
 ### Response 
@@ -431,22 +431,22 @@ This method retrieves the chunks of a document by `doc_name` or `doc_id`.
 
 ## Get document list from knowledge base
 
-- Path: /api/list_kb_docs/
+- Path: `/api/list_kb_docs/`
 - Method: POST
 
-Get document list based on the knowledge base name and corresponding parameters.
+This method retrieves a document list from a the knowledge base name and corresponding parameters.
 
 
-### Parameter:
+### Parameter
 
-| Name        | Type   | Optional |  Description                                                          |
+| Name        | Type   | Required |  Description                                                          |
 |-------------|--------|----------|-----------------------------------------------------------------------|
-| `kb_name`   | string | No       | The name of the knowledge base, from which you get the document list. |
-| `page`      | int    | Yes      | The number of pages, default:1.                                       |
-| `page_size` | int    | Yes      | The number of docs for each page, default:15.                         |
-| `orderby`   | string | Yes      | `chunk_num`, `create_time`, or `size`, default:`create_time`          |
-| `desc`      | bool   | Yes      | Default:True.                                                         |
-| `keywords`  | string | Yes      | Keyword of the document name.                                         |
+| `kb_name`   | string | Yes      | The name of the knowledge base, from which you get the document list. |
+| `page`      | int    |  No      | The number of pages, default:1.                                       |
+| `page_size` | int    |  No      | The number of docs for each page, default:15.                         |
+| `orderby`   | string |  No      | `chunk_num`, `create_time`, or `size`, default:`create_time`          |
+| `desc`      | bool   |  No      | Default:True.                                                         |
+| `keywords`  | string |  No      | Keyword of the document name.                                         |
 
 
 ### Response 
@@ -473,7 +473,7 @@ Get document list based on the knowledge base name and corresponding parameters.
 
 ## Delete documents 
 
-- Path: /api/document/rm/
+- Path: `/api/document/rm/`
 - Method: POST
 
 This method deletes documents by document ID or name.
@@ -481,10 +481,10 @@ This method deletes documents by document ID or name.
 
 ### Parameter:
 
-| Name        | Type   | Optional | Description                |
+| Name        | Type   | Required | Description                |
 |-------------|--------|----------|----------------------------|
-| `doc_names` | List   | Yes      | A list of document names.  |
-| `doc_ids`   | List   | Yes      | A list of document IDs.    |
+| `doc_names` | List   |  No      | A list of document names.  |
+| `doc_ids`   | List   |  No      | A list of document IDs.    |
 
 
 ### Response 
