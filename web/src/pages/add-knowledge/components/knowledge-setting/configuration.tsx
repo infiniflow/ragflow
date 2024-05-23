@@ -8,6 +8,9 @@ import {
 
 import LayoutRecognize from '@/components/layout-recognize';
 import MaxTokenNumber from '@/components/max-token-number';
+import ParseConfiguration, {
+  showRaptorParseConfiguration,
+} from '@/components/parse-configuration';
 import { useTranslate } from '@/hooks/commonHooks';
 import { FormInstance } from 'antd/lib';
 import styles from './index.less';
@@ -99,15 +102,19 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
         {({ getFieldValue }) => {
           const parserId = getFieldValue('parser_id');
 
-          if (parserId === 'naive') {
-            return (
-              <>
-                <MaxTokenNumber></MaxTokenNumber>
-                <LayoutRecognize></LayoutRecognize>
-              </>
-            );
-          }
-          return null;
+          return (
+            <>
+              {parserId === 'naive' && (
+                <>
+                  <MaxTokenNumber></MaxTokenNumber>
+                  <LayoutRecognize></LayoutRecognize>
+                </>
+              )}
+              {showRaptorParseConfiguration(parserId) && (
+                <ParseConfiguration></ParseConfiguration>
+              )}
+            </>
+          );
         }}
       </Form.Item>
 

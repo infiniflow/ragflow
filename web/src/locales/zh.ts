@@ -255,6 +255,25 @@ export default {
       </p><p>
       如果你要总结的东西需要一篇文章的全部上下文，并且所选LLM的上下文长度覆盖了文档长度，你可以尝试这种方法。
       </p>`,
+      useRaptor: '使用召回增强RAPTOR策略',
+      useRaptorTip: '请参考 https://huggingface.co/papers/2401.18059',
+      prompt: '提示词',
+      promptMessage: '提示词是必填项',
+      promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
+      {集群内容}
+以上就是你需要总结的内容。`,
+      maxToken: '最大token数',
+      maxTokenMessage: '最大token数是必填项',
+      threshold: '临界点',
+      thresholdMessage: '临界点是必填项',
+      maxCluster: '最大聚类数',
+      maxClusterMessage: '最大聚类数是必填项',
+      randomSeed: '随机种子',
+      randomSeedMessage: '随机种子是必填项',
+      promptTip: 'LLM提示用于总结。',
+      maxTokenTip: '用于汇总的最大token数。',
+      thresholdTip: '阈值越大，聚类越少。',
+      maxClusterTip: '最大聚类数。',
     },
     chunk: {
       chunk: '解析块',
