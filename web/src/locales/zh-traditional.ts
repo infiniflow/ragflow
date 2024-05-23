@@ -238,6 +238,25 @@ export default {
         </p><p>
         如果你要總結的東西需要一篇文章的全部上下文，並且所選LLM的上下文長度覆蓋了文檔長度，你可以嘗試這種方法。
         </p>`,
+      useRaptor: '使用RAPTOR文件增強策略',
+      useRaptorTip: '請參考 https://huggingface.co/papers/2401.18059',
+      prompt: '提示詞',
+      promptMessage: '提示詞是必填項',
+      promptText: `请請總結以下段落。 小心數字，不要編造。 段落如下：
+      {集群內容}
+以上就是你需要總結的內容。`,
+      maxToken: '最大token數',
+      maxTokenMessage: '最大token數是必填項',
+      threshold: '臨界點',
+      thresholdMessage: '臨界點是必填項',
+      maxCluster: '最大聚類數',
+      maxClusterMessage: '最大聚類數是必填項',
+      randomSeed: '隨機種子',
+      randomSeedMessage: '隨機種子是必填項',
+      promptTip: 'LLM提示用於總結。',
+      maxTokenTip: '用於匯總的最大token數。',
+      thresholdTip: '閾值越大，聚類越少。',
+      maxClusterTip: '最大聚類數。',
     },
     chunk: {
       chunk: '解析塊',

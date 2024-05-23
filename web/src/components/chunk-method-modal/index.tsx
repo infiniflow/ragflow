@@ -23,6 +23,9 @@ import { useFetchParserListOnMount } from './hooks';
 
 import { useTranslate } from '@/hooks/commonHooks';
 import LayoutRecognize from '../layout-recognize';
+import ParseConfiguration, {
+  showRaptorParseConfiguration,
+} from '../parse-configuration';
 import styles from './index.less';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
@@ -111,6 +114,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
       onCancel={hideModal}
       afterClose={afterClose}
       confirmLoading={loading}
+      width={700}
     >
       <Space size={[0, 8]} wrap>
         <Form.Item label={t('chunkMethod')} className={styles.chunkMethod}>
@@ -255,6 +259,9 @@ const ChunkMethodModal: React.FC<IProps> = ({
           </Form.Item>
         )}
         {showMaxTokenNumber && <MaxTokenNumber></MaxTokenNumber>}
+        {showRaptorParseConfiguration(selectedTag) && (
+          <ParseConfiguration></ParseConfiguration>
+        )}
       </Form>
     </Modal>
   );
