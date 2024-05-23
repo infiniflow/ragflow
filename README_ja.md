@@ -20,7 +20,7 @@
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.6.0-brightgreen"
             alt="docker pull infiniflow/ragflow:v0.6.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
-    <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=1570EF" alt="license">
+    <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
 </p>
 

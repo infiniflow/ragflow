@@ -127,7 +127,7 @@ To add and configure an LLM:
 
    ![system model settings](https://github.com/infiniflow/ragflow/assets/93570324/cdcc1da5-4494-44cd-ad5b-1222ed6acc3f)
 
-> Some of the models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a particular LLM. And you may need to update your API key accordingly to use these models. 
+> Some models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a specific LLM. And you may need to update your API key to access these models. 
 
 ## Create your first knowledge base
 

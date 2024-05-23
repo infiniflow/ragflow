@@ -14,8 +14,9 @@ https://demo.ragflow.io/v1/
 
 ## Authorization
 
-All the APIs are authorized with API-Key. Please keep it safe and private. Don't reveal it in any way from the front-end. 
-The API-Key should put in the header of request:
+All the APIs are authorized with API-Key. Please keep it safe and private. Do not reveal it in any way from the front-end. 
+The API-Key should put in the header of the request:
+
 ```buildoutcfg
 Authorization: Bearer {API_KEY}
 ```
@@ -27,9 +28,9 @@ This should be called whenever there's new user coming to chat.
 ### Method: GET
 ### Parameter:
 
-| name | type | optional | description|
-|------|-------|----|----|
-| user_id| string | No | It's for identifying user in order to search and calculate statistics.|
+| Name   |  Type  | Optional |     Description    |
+|--------|--------|----------|--------------------|
+| `user_id`| string | No | The unique identifier assigned to the user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />10 digits (0-9)<br />"_", "-", "." |
 
 ### Response 
 ```json
@@ -42,7 +43,7 @@ This should be called whenever there's new user coming to chat.
         "id": "b9b2e098f8ae11ee9f45fa163e197198",
         "message": [
             {
-                "content": "Hi, I'm your assistant, can I help you?",
+                "content": "Hi, I'm your assistant, what can I do for you?",
                 "role": "assistant"
             }
         ],
@@ -50,19 +51,43 @@ This should be called whenever there's new user coming to chat.
         "tokens": 0,
         "update_date": "Fri, 12 Apr 2024 17:26:21 GMT",
         "update_time": 1712913981857,
-        "user_id": "kevinhu"
+        "user_id": "kevin"
     },
     "retcode": 0,
     "retmsg": "success"
 }
-```
-> data['id'] in response should be stored and will be used in every round of following conversation.
 
-## Get history of a conversation
+```
+:::note
+You are required to save the `id` in the response  because it will be used in subsequent conversations.
+:::
+
+## Get conversation history
+
+This method gets the history of a conversation. 
 
 ### Path: /api/conversation/\<id\>
 ### Method: GET
 ### Response 
+
+- **message**: All the chat history in it.
+    - role: user or assistant
+    - content: the text content of user or assistant. The citations are in format like: ##0$$. The number in the middle indicate which part in data.reference.chunks it refers to.
+    
+- **user_id**: This is set by the caller.
+- **reference**: Every item in it refer to the corresponding message in data.message whose role is assistant. 
+    - chunks
+        - content_with_weight: The content of chunk.
+        - docnm_kwd: the document name.
+        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by 'GET' /document/get/\<id\>.
+        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
+        - similarity: the hybrid similarity.
+        - term_similarity: keyword simimlarity
+        - vector_similarity: embedding similarity
+    - doc_aggs:
+        - doc_id: the document can be accessed by 'GET' /document/get/\<id\>
+        - doc_name: the file name
+        - count: the chunk number hit in this document.
 ```json
 {
     "data": {
@@ -193,24 +218,7 @@ This should be called whenever there's new user coming to chat.
 }
 ```
 
-- **message**: All the chat history in it.
-    - role: user or assistant
-    - content: the text content of user or assistant. The citations are in format like: ##0$$. The number in the middle indicate which part in data.reference.chunks it refers to.
-    
-- **user_id**: This is set by the caller.
-- **reference**: Every item in it refer to the corresponding message in data.message whose role is assistant. 
-    - chunks
-        - content_with_weight: The content of chunk.
-        - docnm_kwd: the document name.
-        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by 'GET' /document/get/\<id\>.
-        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
-        - similarity: the hybrid similarity.
-        - term_similarity: keyword simimlarity
-        - vector_similarity: embedding similarity
-    - doc_aggs:
-        - doc_id: the document can be accessed by 'GET' /document/get/\<id\>
-        - doc_name: the file name
-        - count: the chunk number hit in this document.
+
     
 ## Chat
 
@@ -229,6 +237,22 @@ This will be called to get the answer to users' questions.
 | doc_ids | string | Yes | Document IDs which is delimited by comma, like `c790da40ea8911ee928e0242ac180005,c790da40ea8911ee928e0242ac180005`. The retrieved content is limited in these documents. |
 
 ### Response 
+
+- **answer**: The replay of the chat bot.
+- **reference**: 
+    - chunks: Every item in it refer to the corresponding message in answer. 
+        - content_with_weight: The content of chunk.
+        - docnm_kwd: the document name.
+        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by 'GET' /document/get/\<id\>.
+        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
+        - similarity: the hybrid similarity.
+        - term_similarity: keyword simimlarity
+        - vector_similarity: embedding similarity
+    - doc_aggs:
+        - doc_id: the document can be accessed by 'GET' /document/get/\<id\>
+        - doc_name: the file name
+        - count: the chunk number hit in this document.
+
 ```json
 {
     "data": {
@@ -290,21 +314,6 @@ This will be called to get the answer to users' questions.
     "retmsg": "success"
 }
 ```
-
-- **answer**: The replay of the chat bot.
-- **reference**: 
-    - chunks: Every item in it refer to the corresponding message in answer. 
-        - content_with_weight: The content of chunk.
-        - docnm_kwd: the document name.
-        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by 'GET' /document/get/\<id\>.
-        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
-        - similarity: the hybrid similarity.
-        - term_similarity: keyword simimlarity
-        - vector_similarity: embedding similarity
-    - doc_aggs:
-        - doc_id: the document can be accessed by 'GET' /document/get/\<id\>
-        - doc_name: the file name
-        - count: the chunk number hit in this document.
     
 ## Get document content or image
 
