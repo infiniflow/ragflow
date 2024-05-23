@@ -260,7 +260,7 @@ export default {
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
-      {集群内容}
+      {cluster_content}
 以上就是你需要总结的内容。`,
       maxToken: '最大token数',
       maxTokenMessage: '最大token数是必填项',

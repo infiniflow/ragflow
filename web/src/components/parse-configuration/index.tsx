@@ -12,7 +12,7 @@ import {
 } from 'antd';
 import random from 'lodash/random';
 
-export const excludedParseMethods = ['table', 'resume', 'one'];
+export const excludedParseMethods = ['table', 'resume', 'one',"picture"];
 
 export const showRaptorParseConfiguration = (parserId: string) => {
   return !excludedParseMethods.includes(parserId);
@@ -78,7 +78,7 @@ const ParseConfiguration = () => {
                       <Form.Item
                         name={['parser_config', 'raptor', 'max_token']}
                         noStyle
-                        initialValue={128}
+                        initialValue={256}
                         rules={[
                           {
                             required: true,
