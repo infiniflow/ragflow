@@ -96,16 +96,29 @@ def set_api_key():
 @validate_request("llm_factory", "llm_name", "model_type")
 def add_llm():
     req = request.json
+    factory = req["llm_factory"]
+    # For VolcEngine, due to its special authentication method
+    # Assemble volc_ak, volc_sk, endpoint_id into api_key
+    if factory == "VolcEngine":
+        temp = list(eval(req["llm_name"]).items())[0]
+        llm_name = temp[0]
+        endpoint_id = temp[1]
+        api_key = '{' + f'"volc_ak": "{req.get("volc_ak", "")}", ' \
+                        f'"volc_sk": "{req.get("volc_sk", "")}", ' \
+                        f'"ep_id": "{endpoint_id}", ' + '}'
+    else:
+        llm_name = req["llm_name"]
+        api_key = "xxxxxxxxxxxxxxx"
+
     llm = {
         "tenant_id": current_user.id,
-        "llm_factory": req["llm_factory"],
+        "llm_factory": factory,
         "model_type": req["model_type"],
-        "llm_name": req["llm_name"],
+        "llm_name": llm_name,
         "api_base": req.get("api_base", ""),
-        "api_key": "xxxxxxxxxxxxxxx"
+        "api_key": api_key
     }
 
-    factory = req["llm_factory"]
     msg = ""
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
@@ -118,7 +131,10 @@ def add_llm():
             msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
-            key=None, model_name=llm["llm_name"], base_url=llm["api_base"])
+            key=llm['api_key'] if factory == "VolcEngine" else None,
+            model_name=llm["llm_name"],
+            base_url=llm["api_base"]
+        )
         try:
             m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
                              "temperature": 0.9})
@@ -133,7 +149,6 @@ def add_llm():
 
     if msg:
         return get_data_error_result(retmsg=msg)
-
 
     if not TenantLLMService.filter_update(
             [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory, TenantLLM.llm_name == llm["llm_name"]], llm):
