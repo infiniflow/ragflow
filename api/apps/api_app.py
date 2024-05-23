@@ -443,15 +443,14 @@ def rm():
     req = request.json
     doc_ids = []
     try:
-        if "doc_names" in request.json.keys():
-            doc_ids = [DocumentService.get_doc_id_by_doc_name(doc_name) for doc_name in req['doc_names']]
-        elif "doc_ids" in request.json.keys():
-            for doc_id in req['doc_ids']:
-                if doc_id not in doc_ids:
-                    doc_ids.append(doc_id)
-        else:
+        doc_ids = [DocumentService.get_doc_id_by_doc_name(doc_name) for doc_name in req.get("doc_names", [])]
+        for doc_id in req.get("doc_ids", []):
+            if doc_id not in doc_ids:
+                doc_ids.append(doc_id)
+
+        if not doc_ids:
             return get_json_result(
-                data=False,retmsg="Can't find doc_name or doc_ids"
+                data=False, retmsg="Can't find doc_names or doc_ids"
             )
 
     except Exception as e:
