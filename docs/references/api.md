@@ -29,7 +29,7 @@ Authorization: Bearer {API_KEY}
 This method creates a conversation for a specific user. 
 
 :::note
-You are *required* to save the `id` returned in the response data, which is the conversation ID for all upcoming conversations.
+You are *required* to save `data.id` returned in the response data, which is the session ID for all upcoming conversations.
 :::
 
 ### Parameter
@@ -71,7 +71,7 @@ You are *required* to save the `id` returned in the response data, which is the 
 - Path: **/api/conversation/<id>**
 - Method: GET
 
-This method retrieves the history of a conversation. 
+This method retrieves the history of a specified conversation. 
 
 
 ### Response 
