@@ -102,7 +102,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
           <Col span={12} className={styles.factoryOperationWrapper}>
             <Space size={'middle'}>
               <Button onClick={handleApiKeyClick}>
-                {isLocalLlmFactory(item.name) ? t('addTheModel') : 'API-Key'}
+                {isLocalLlmFactory(item.name) || item.name === 'VolcEngine' ? t('addTheModel') : 'API-Key'}
                 <SettingOutlined />
               </Button>
               <Button onClick={handleShowMoreClick}>
@@ -181,11 +181,13 @@ const UserSettingModel = () => {
     (llmFactory: string) => {
       if (isLocalLlmFactory(llmFactory)) {
         showLlmAddingModal(llmFactory);
+      } else if (llmFactory === 'VolcEngine') {
+        showVolcAddingModal('VolcEngine');
       } else {
         showApiKeyModal({ llm_factory: llmFactory });
       }
     },
-    [showApiKeyModal, showLlmAddingModal],
+    [showApiKeyModal, showLlmAddingModal, showVolcAddingModal],
   );
 
   const handleAddModel = (llmFactory: string) => () => {
