@@ -1,6 +1,6 @@
 import { useSetModalState } from '@/hooks/commonHooks';
 import React, { Dispatch, SetStateAction, useCallback, useState } from 'react';
-import { Node, ReactFlowInstance } from 'reactflow';
+import { Node, Position, ReactFlowInstance } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 
 export const useHandleDrag = () => {
@@ -44,12 +44,14 @@ export const useHandleDrop = (setNodes: Dispatch<SetStateAction<Node[]>>) => {
       });
       const newNode = {
         id: uuidv4(),
-        type,
+        type: 'textUpdater',
         position: position || {
           x: 0,
           y: 0,
         },
-        data: { label: `${type} node` },
+        data: { label: `${type}` },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
       };
 
       setNodes((nds) => nds.concat(newNode));
