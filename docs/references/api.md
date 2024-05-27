@@ -30,22 +30,28 @@ To get your API key:
 
 ## Create conversation
 
-- Path: `/api/new_conversation`
-- Method: GET
-
 This method creates (news) a conversation for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| GET      | `/api/new_conversation`                                     |
 
 :::note
 You are *required* to save the `data.id` value returned in the response data, which is the session ID for all upcoming conversations.
 :::
 
-### Parameter
+#### Request parameter
 
 | Name     |  Type  | Required |        Description                                          |
 |----------|--------|----------|-------------------------------------------------------------|
 | `user_id`| string |   Yes    | The unique identifier assigned to each user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />- 10 digits (0-9)<br />- "_", "-", "." |
 
 ### Response 
+
 <details>
   <summary>Response example</summary>
 <pre><code>
@@ -77,26 +83,33 @@ You are *required* to save the `data.id` value returned in the response data, wh
 
 ## Get conversation history
 
-- Path: `/api/conversation/<id>`
-- Method: GET
-
 This method retrieves the history of a specified conversation session. 
 
-### Parameter
+### Request
+
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| GET      | `/api/conversation/<id>`                                    |
+
+### Request parameter
 
 | Name     |  Type  | Required |        Description                                          |
 |----------|--------|----------|-------------------------------------------------------------|
-| `id`| string |   Yes    | The unique identifier assigned to a conversation session. `id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />- 10 digits (0-9)<br />- "_", "-", "." |
+| `id`     | string |   Yes    | The unique identifier assigned to a conversation session. `id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />- 10 digits (0-9)<br />- "_", "-", "." |
 
 ### Response 
 
-- **message**: All conversations in the specified conversation session.
-    - role: `"user"` or `"assistant"`.
-    - content: The text content of user or assistant. The citations are in a format like `##0$$`. The number in the middle, 0 in this case, indicates which part in data.reference.chunks it refers to.
+#### Response parameter
+
+- `message`: All conversations in the specified conversation session.
+    - `role`: `"user"` or `"assistant"`.
+    - `content`: The text content of user or assistant. The citations are in a format like `##0$$`. The number in the middle, 0 in this case, indicates which part in data.reference.chunks it refers to.
     
-- **user_id**: This is set by the caller.
-- **reference**: Each reference corresponds to one of the assistant's answers in `data.message`.
-    - chunks
+- `user_id`: This is set by the caller.
+- `reference`: Each reference corresponds to one of the assistant's answers in `data.message`.
+    - `chunks`
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
         - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
@@ -246,12 +259,17 @@ This method retrieves the history of a specified conversation session.
     
 ## Get answer
 
-- Path: `/api/completion`
-- Method: POST
-
 This method retrieves from RAGFlow the answer to the user's latest question.
 
-### Parameter
+### Request
+
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| POST     | `/api/completion`                                           |
+
+### Request parameter
 
 |   Name           |  Type  | Required | Description   |
 |------------------|--------|----------|---------------|
@@ -346,27 +364,39 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 
 ## Get document content or image
 
-- Path: `/api/document/get/<id>`
-- Method: GET
-
 This method retrieves the content or a specific image in a document. Used if you intend to display the content of a citation.
+
+### Request
+
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| GET      | `/api/document/get/<id>`                                    |
+
+### Response
 
 ## Upload file
 
-- Path: `/api/document/upload`
-- Method: POST
-
 This method uploads a specific file to a specified knowledge base.
 
+### Request
 
-### Parameter
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| POST     | `/api/document/upload`                                      |
+
+### Response parameter
 
 |   Name      | Type   | Required | Description                                             |
 |-------------|--------|----------|---------------------------------------------------------|
 | `file`      | file   | Yes      | The file to upload.                                     |
 | `kb_name`   | string | Yes      | The name of the knowledge base to upload the file to.   |
-| `parser_id` | string |  No      | The parsing method (chunk template) to use. <br />- "naive": General;<br />- "qa": Q&A;<br />- "manual": Manual;<br />- "table": Table;<br />- "paper": Paper;<br />- "laws": Laws;<br />- "presentation": Presentation;<br />- "picture": Picture;<br />- "one": One.                                                      |
+| `parser_id` | string |  No      | The parsing method (chunk template) to use. <br />- "naive": General;<br />- "qa": Q&A;<br />- "manual": Manual;<br />- "table": Table;<br />- "paper": Paper;<br />- "laws": Laws;<br />- "presentation": Presentation;<br />- "picture": Picture;<br />- "one": One. |
 | `run`       | string |  No      | 1: Automatically start file parsing. If `parser_id` is not set, RAGFlow uses the general template by default. |
+
 
 ### Response 
 
@@ -417,14 +447,17 @@ This method uploads a specific file to a specified knowledge base.
 
 ## Get document chunks
 
-- Path: `/api/list_chunks`
-- Method: POST
-
 This method retrieves the chunks of a specific document by `doc_name` or `doc_id`.
 
+### Request
 
+#### Request URI
 
-### Parameter
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| GET      | `/api/list_chunks`                                          |
+
+#### Request parameter
 
 |   Name     | Type   | Required |                        Description                                                          |
 |------------|--------|----------|---------------------------------------------------------------------------------------------|
@@ -459,13 +492,17 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
 
 ## Get document list
 
-- Path: `/api/list_kb_docs`
-- Method: POST
-
 This method retrieves a list of documents from a specified knowledge base.
 
+### Request
 
-### Parameter
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| POST     | `/api/list_kb_docs`                                         |
+
+#### Request parameter
 
 | Name        | Type   | Required |  Description                                                          |
 |-------------|--------|----------|-----------------------------------------------------------------------|
@@ -505,13 +542,17 @@ This method retrieves a list of documents from a specified knowledge base.
 
 ## Delete documents 
 
-- Path: `/api/document`
-- Method: DELETE
-
 This method deletes documents by document ID or name.
 
+### Request
 
-### Parameter
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| DELETE   | `/api/document`                                             |
+
+#### Request parameter
 
 | Name        | Type   | Required | Description                |
 |-------------|--------|----------|----------------------------|
@@ -520,6 +561,7 @@ This method deletes documents by document ID or name.
 
 
 ### Response
+
 <details>
   <summary>Response example</summary>
 <pre><code>
