@@ -456,6 +456,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
 
 </code></pre>
 </details>
+
 ## Get document list
 
 - Path: `/api/list_kb_docs`
