@@ -36,7 +36,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
 
 | Name     |  Type  | Required |        Description                                          |
 |----------|--------|----------|-------------------------------------------------------------|
-| `user_id`| string |   Yes    | The unique identifier assigned to each user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />- 10 digits (0-9)<br />- "_", "-", "." |
+| `user_id`| string |   Yes    | The unique identifier assigned to each user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br /><li> 26 lowercase English letters (a-z)</li><br /><li> 26 uppercase English letters (A-Z)</li><br /><li> 10 digits (0-9)</li><br /><li> "_", "-", "."</li> |
 
 ### Response 
 <details>
@@ -70,7 +70,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
 
 ## Get conversation history
 
-- Path: **/api/conversation/<id>**
+- Path: `/api/conversation/<id>`
 - Method: GET
 
 This method retrieves the history of a specified conversation session. 
@@ -239,7 +239,7 @@ This method retrieves the history of a specified conversation session.
     
 ## Get answer
 
-- Path: /api/completion
+- Path: `/api/completion`
 - Method: POST
 
 This method retrieves from RAGFlow the answer to the user's latest question.
@@ -261,7 +261,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
     - chunks: The retrieved chunks that contribute to the answer.  
         - content_with_weight: Content of the chunk.
         - doc_name: Name of the *hit* document.
-        - img_id: The image ID of the chunk. It is an optional field only for PDF/pptx/picture. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
+        - img_id: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
         - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - similarity: The hybrid similarity.
         - term_similarity: The keyword simimlarity.
@@ -346,7 +346,7 @@ This method retrieves the content or a specific image in a document. Used if you
 
 ## Upload file
 
-- Path: `/api/document/upload/`
+- Path: `/api/document/upload`
 - Method: POST
 
 This method uploads a specific file to a specified knowledge base.
@@ -410,7 +410,7 @@ This method uploads a specific file to a specified knowledge base.
 
 ## Get document chunks
 
-- Path: `/api/list_chunks/`
+- Path: `/api/list_chunks`
 - Method: POST
 
 This method retrieves the chunks of a specific document by `doc_name` or `doc_id`.
@@ -451,7 +451,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
 </details>
 ## Get document list
 
-- Path: `/api/list_kb_docs/`
+- Path: `/api/list_kb_docs`
 - Method: POST
 
 This method retrieves a list of documents from a specified knowledge base.
@@ -497,7 +497,7 @@ This method retrieves a list of documents from a specified knowledge base.
 
 ## Delete documents 
 
-- Path: `/api/document/`
+- Path: `/api/document`
 - Method: DELETE
 
 This method deletes documents by document ID or name.
