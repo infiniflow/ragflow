@@ -105,7 +105,7 @@ This method retrieves the history of a specified conversation session.
 <details>
   <summary>Response example</summary>
     
-```json
+<pre><code>
 {
     "data": {
         "create_date": "Mon, 01 Apr 2024 09:28:42 GMT",
@@ -233,7 +233,7 @@ This method retrieves the history of a specified conversation session.
     "retcode": 0,
     "retmsg": "success"
 }
-```
+</code></pre>
 </details>
 
     
@@ -274,7 +274,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 <details>
   <summary>Response example</summary>
     
-```json
+<pre><code>
 {
     "data": {
       "answer": "The ViT Score for GPT-4 in the zero-shot scenario is 0.5058, and in the few-shot scenario, it is 0.6480. ##0$$",
@@ -334,7 +334,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
     "retcode": 0,
     "retmsg": "success"
 }
-```
+</code></pre>
 </details>    
 ## Get document content or image
 
@@ -365,7 +365,7 @@ This method uploads a specific file to a specified knowledge base.
 
 <details>
   <summary>Response example</summary>
-```json
+<pre><code>
 {
     "data": {
         "chunk_num": 0,
@@ -405,7 +405,7 @@ This method uploads a specific file to a specified knowledge base.
     "retmsg": "success"
 }
 
-```
+</code></pre>
 </details>
 
 ## Get document chunks
@@ -429,7 +429,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
 
 <details>
   <summary>Response example</summary>
-```json
+<pre><code>
 {
     "data": [
         {
@@ -447,7 +447,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
     "retmsg": "success"
 }
 
-```
+</code></pre>
 </details>
 ## Get document list
 
@@ -473,7 +473,7 @@ This method retrieves a list of documents from a specified knowledge base.
 
 <details>
   <summary>Response example</summary>
-```json
+<pre><code>
 {
     "data": {
         "docs": [
@@ -492,7 +492,7 @@ This method retrieves a list of documents from a specified knowledge base.
     "retmsg": "success"
 }
 
-```
+</code></pre>
 </details>
 ## Delete documents 
 
@@ -513,12 +513,12 @@ This method deletes documents by document ID or name.
 ### Response
 <details>
   <summary>Response example</summary>
-```json
+<pre><code>
 {
     "data": true,
     "retcode": 0,
     "retmsg": "success"
 }
 
-```
+</code></pre>
 </details>
