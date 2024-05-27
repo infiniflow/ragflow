@@ -5,7 +5,7 @@ slug: /api
 
 # API reference
 
-![](https://github.com/infiniflow/ragflow/assets/12318111/df0dcc3d-789a-44f7-89f1-7a5f044ab729)
+RAGFlow offers RESTful APIs for you to integrate its capabilities into third-party applications. 
 
 ## Base URL
 ```
@@ -14,25 +14,47 @@ https://demo.ragflow.io/v1/
 
 ## Authorization
 
-All the APIs are authorized with API-Key. Please keep it safe and private. Don't reveal it in any way from the front-end. 
-The API-Key should put in the header of request:
+All of RAGFlow's RESTFul APIs use API key for authorization, so keep it safe and do not expose it to the front end. 
+Put your API key in the request header. 
+
 ```buildoutcfg
 Authorization: Bearer {API_KEY}
 ```
 
-## Start a conversation
+To get your API key:
 
-This should be called whenever there's new user coming to chat.
-### Path: /api/new_conversation
-### Method: GET
-### Parameter:
+1. In RAGFlow, click **Chat** tab in the middle top of the page.
+2. Hover over the corresponding dialogue **>** **Chat Bot API** to show the chatbot API configuration page.
+3. Click **Api Key** **>** **Create new key** to create your API key.
+4. Copy and keep your API key safe. 
 
-| name | type | optional | description|
-|------|-------|----|----|
-| user_id| string | No | It's for identifying user in order to search and calculate statistics.|
+## Create conversation
+
+This method creates (news) a conversation for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| GET      | `/api/new_conversation`                                     |
+
+:::note
+You are *required* to save the `data.id` value returned in the response data, which is the session ID for all upcoming conversations.
+:::
+
+#### Request parameter
+
+| Name     |  Type  | Required |        Description                                          |
+|----------|--------|----------|-------------------------------------------------------------|
+| `user_id`| string |   Yes    | The unique identifier assigned to each user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />- 10 digits (0-9)<br />- "_", "-", "." |
 
 ### Response 
-```json
+
+<details>
+  <summary>Response example</summary>
+<pre><code>
 {
     "data": {
         "create_date": "Fri, 12 Apr 2024 17:26:21 GMT",
@@ -42,7 +64,7 @@ This should be called whenever there's new user coming to chat.
         "id": "b9b2e098f8ae11ee9f45fa163e197198",
         "message": [
             {
-                "content": "Hi, I'm your assistant, can I help you?",
+                "content": "Hi, I'm your assistant, what can I do for you?",
                 "role": "assistant"
             }
         ],
@@ -50,20 +72,60 @@ This should be called whenever there's new user coming to chat.
         "tokens": 0,
         "update_date": "Fri, 12 Apr 2024 17:26:21 GMT",
         "update_time": 1712913981857,
-        "user_id": "kevinhu"
+        "user_id": "<USER_ID_SET_BY_THE_CALLER>"
     },
     "retcode": 0,
     "retmsg": "success"
 }
-```
-> data['id'] in response should be stored and will be used in every round of following conversation.
 
-## Get history of a conversation
+</code></pre>
+</details>
 
-### Path: /api/conversation/\<id\>
-### Method: GET
+## Get conversation history
+
+This method retrieves the history of a specified conversation session. 
+
+### Request
+
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| GET      | `/api/conversation/<id>`                                    |
+
+### Request parameter
+
+| Name     |  Type  | Required |        Description                                          |
+|----------|--------|----------|-------------------------------------------------------------|
+| `id`     | string |   Yes    | The unique identifier assigned to a conversation session. `id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />- 10 digits (0-9)<br />- "_", "-", "." |
+
 ### Response 
-```json
+
+#### Response parameter
+
+- `message`: All conversations in the specified conversation session.
+    - `role`: `"user"` or `"assistant"`.
+    - `content`: The text content of user or assistant. The citations are in a format like `##0$$`. The number in the middle, 0 in this case, indicates which part in data.reference.chunks it refers to.
+    
+- `user_id`: This is set by the caller.
+- `reference`: Each reference corresponds to one of the assistant's answers in `data.message`.
+    - `chunks`
+        - `content_with_weight`: Content of the chunk.
+        - `doc_name`: Name of the *hit* document.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
+        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
+        - similarity: The hybrid similarity.
+        - term_similarity: The keyword simimlarity.
+        - vector_similarity: The embedding similarity.
+    - `doc_aggs`:
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the document.
+        - `doc_name`: Name of the *hit* document.
+        - `count`: The number of *hit* chunks in this document.
+
+<details>
+  <summary>Response example</summary>
+    
+<pre><code>
 {
     "data": {
         "create_date": "Mon, 01 Apr 2024 09:28:42 GMT",
@@ -92,7 +154,7 @@ This should be called whenever there's new user coming to chat.
                 "role": "assistant"
             }
         ],
-        "user_id": "user name",
+        "user_id": "<USER_ID_SET_BY_THE_CALLER>",
         "reference": [
             {
                 "chunks": [
@@ -101,7 +163,7 @@ This should be called whenever there's new user coming to chat.
                         "content_ltks": "tabl 1:openagi task-solv perform under differ set for three closed-sourc llm . boldfac denot the highest score under each learn schema . metric gpt-3.5-turbo claude-2 gpt-4 zero few zero few zero few clip score 0.0 0.0 0.0 0.2543 0.0 0.3055 bert score 0.1914 0.3820 0.2111 0.5038 0.2076 0.6307 vit score 0.2437 0.7497 0.4082 0.5416 0.5058 0.6480 overal 0.1450 0.3772 0.2064 0.4332 0.2378 0.5281",
                         "content_with_weight": "<table><caption>Table 1: OpenAGI task-solving performances under different settings for three closed-source LLMs. Boldface denotes the highest score under each learning schema.</caption>\n<tr><th  rowspan=2 >Metrics</th><th  >GPT-3.5-turbo</th><th></th><th  >Claude-2</th><th  >GPT-4</th></tr>\n<tr><th  >Zero</th><th  >Few</th><th  >Zero Few</th><th  >Zero Few</th></tr>\n<tr><td  >CLIP Score</td><td  >0.0</td><td  >0.0</td><td  >0.0 0.2543</td><td  >0.0 0.3055</td></tr>\n<tr><td  >BERT Score</td><td  >0.1914</td><td  >0.3820</td><td  >0.2111 0.5038</td><td  >0.2076 0.6307</td></tr>\n<tr><td  >ViT Score</td><td  >0.2437</td><td  >0.7497</td><td  >0.4082 0.5416</td><td  >0.5058 0.6480</td></tr>\n<tr><td  >Overall</td><td  >0.1450</td><td  >0.3772</td><td  >0.2064 0.4332</td><td  >0.2378 0.5281</td></tr>\n</table>",
                         "doc_id": "c790da40ea8911ee928e0242ac180005",
-                        "docnm_kwd": "OpenAGI When LLM Meets Domain Experts.pdf",
+                        "doc_name": "OpenAGI When LLM Meets Domain Experts.pdf",
                         "img_id": "afab9fdad6e511eebdb20242ac180006-d0bc7892c3ec4aeac071544fd56730a8",
                         "important_kwd": [],
                         "kb_id": "afab9fdad6e511eebdb20242ac180006",
@@ -123,7 +185,7 @@ This should be called whenever there's new user coming to chat.
                         "content_ltks": "5.5 experiment analysi the main experiment result are tabul in tab . 1 and 2 , showcas the result for closed-sourc and open-sourc llm , respect . the overal perform is calcul a the averag of cllp 8 bert and vit score . here , onli the task descript of the benchmark task are fed into llm(addit inform , such a the input prompt and llm\u2019output , is provid in fig . a.4 and a.5 in supplementari). broadli speak , closed-sourc llm demonstr superior perform on openagi task , with gpt-4 lead the pack under both zero-and few-shot scenario . in the open-sourc categori , llama-2-13b take the lead , consist post top result across variou learn schema--the perform possibl influenc by it larger model size . notabl , open-sourc llm significantli benefit from the tune method , particularli fine-tun and\u2019rltf . these method mark notic enhanc for flan-t5-larg , vicuna-7b , and llama-2-13b when compar with zero-shot and few-shot learn schema . in fact , each of these open-sourc model hit it pinnacl under the rltf approach . conclus , with rltf tune , the perform of llama-2-13b approach that of gpt-3.5 , illustr it potenti .",
                         "content_with_weight": "5.5 Experimental Analysis\nThe main experimental results are tabulated in Tab. 1 and 2, showcasing the results for closed-source and open-source LLMs, respectively. The overall performance is calculated as the average of CLlP\n8\nBERT and ViT scores. Here, only the task descriptions of the benchmark tasks are fed into LLMs (additional information, such as the input prompt and LLMs\u2019 outputs, is provided in Fig. A.4 and A.5 in supplementary). Broadly speaking, closed-source LLMs demonstrate superior performance on OpenAGI tasks, with GPT-4 leading the pack under both zero- and few-shot scenarios. In the open-source category, LLaMA-2-13B takes the lead, consistently posting top results across various learning schema--the performance possibly influenced by its larger model size. Notably, open-source LLMs significantly benefit from the tuning methods, particularly Fine-tuning and\u2019 RLTF. These methods mark noticeable enhancements for Flan-T5-Large, Vicuna-7B, and LLaMA-2-13B when compared with zero-shot and few-shot learning schema. In fact, each of these open-source models hits its pinnacle under the RLTF approach. Conclusively, with RLTF tuning, the performance of LLaMA-2-13B approaches that of GPT-3.5, illustrating its potential.",
                         "doc_id": "c790da40ea8911ee928e0242ac180005",
-                        "docnm_kwd": "OpenAGI When LLM Meets Domain Experts.pdf",
+                        "doc_name": "OpenAGI When LLM Meets Domain Experts.pdf",
                         "img_id": "afab9fdad6e511eebdb20242ac180006-7e2345d440383b756670e1b0f43a7007",
                         "important_kwd": [],
                         "kb_id": "afab9fdad6e511eebdb20242ac180006",
@@ -157,7 +219,7 @@ This should be called whenever there's new user coming to chat.
                         "content_ltks": "nvlink bridg support nvidia\u00aenvlink\u00aei a high-spe point-to-point peer transfer connect , where one gpu can transfer data to and receiv data from one other gpu . the nvidia a100 card support nvlink bridg connect with a singl adjac a100 card . each of the three attach bridg span two pcie slot . to function correctli a well a to provid peak bridg bandwidth , bridg connect with an adjac a100 card must incorpor all three nvlink bridg . wherev an adjac pair of a100 card exist in the server , for best bridg perform and balanc bridg topolog , the a100 pair should be bridg . figur 4 illustr correct and incorrect a100 nvlink connect topolog . nvlink topolog\u2013top view figur 4. correct incorrect correct incorrect for system that featur multipl cpu , both a100 card of a bridg card pair should be within the same cpu domain\u2014that is , under the same cpu\u2019s topolog . ensur thi benefit workload applic perform . the onli except is for dual cpu system wherein each cpu ha a singl a100 pcie card under it;in that case , the two a100 pcie card in the system may be bridg togeth . a100 nvlink speed and bandwidth are given in the follow tabl . tabl 5. a100 nvlink speed and bandwidth paramet valu total nvlink bridg support by nvidia a100 3 total nvlink rx and tx lane support 96 data rate per nvidia a100 nvlink lane(each direct)50 gbp total maximum nvlink bandwidth 600 gbyte per second pb-10137-001_v03|8 nvidia a100 40gb pcie gpu acceler",
                         "content_with_weight": "NVLink Bridge Support\nNVIDIA\u00aeNVLink\u00aeis a high-speed point-to-point peer transfer connection, where one GPU can transfer data to and receive data from one other GPU. The NVIDIA A100 card supports NVLink bridge connection with a single adjacent A100 card.\nEach of the three attached bridges spans two PCIe slots. To function correctly as well as to provide peak bridge bandwidth, bridge connection with an adjacent A100 card must incorporate all three NVLink bridges. Wherever an adjacent pair of A100 cards exists in the server, for best bridging performance and balanced bridge topology, the A100 pair should be bridged. Figure 4 illustrates correct and incorrect A100 NVLink connection topologies.\nNVLink Topology \u2013Top Views \nFigure 4. \nCORRECT \nINCORRECT \nCORRECT \nINCORRECT \nFor systems that feature multiple CPUs, both A100 cards of a bridged card pair should be within the same CPU domain\u2014that is, under the same CPU\u2019s topology. Ensuring this benefits workload application performance. The only exception is for dual CPU systems wherein each CPU has a single A100 PCIe card under it; in that case, the two A100 PCIe cards in the system may be bridged together.\nA100 NVLink speed and bandwidth are given in the following table.\n<table><caption>Table 5. A100 NVLink Speed and Bandwidth </caption>\n<tr><th  >Parameter </th><th  >Value </th></tr>\n<tr><td  >Total NVLink bridges supported by NVIDIA A100 </td><td  >3 </td></tr>\n<tr><td  >Total NVLink Rx and Tx lanes supported </td><td  >96 </td></tr>\n<tr><td  >Data rate per NVIDIA A100 NVLink lane (each direction)</td><td  >50 Gbps </td></tr>\n<tr><td  >Total maximum NVLink bandwidth</td><td  >600 Gbytes per second </td></tr>\n</table>\nPB-10137-001_v03 |8\nNVIDIA A100 40GB PCIe GPU Accelerator",
                         "doc_id": "806d1ed0ea9311ee860a0242ac180005",
-                        "docnm_kwd": "A100-PCIE-Prduct-Brief.pdf",
+                        "doc_name": "A100-PCIE-Prduct-Brief.pdf",
                         "img_id": "afab9fdad6e511eebdb20242ac180006-8c11a1edddb21ad2ae0c43b4a5dcfa62",
                         "important_kwd": [],
                         "kb_id": "afab9fdad6e511eebdb20242ac180006",
@@ -191,45 +253,53 @@ This should be called whenever there's new user coming to chat.
     "retcode": 0,
     "retmsg": "success"
 }
-```
+</code></pre>
+</details>
 
-- **message**: All the chat history in it.
-    - role: user or assistant
-    - content: the text content of user or assistant. The citations are in format like: ##0$$. The number in the middle indicate which part in data.reference.chunks it refers to.
     
-- **user_id**: This is set by the caller.
-- **reference**: Every item in it refer to the corresponding message in data.message whose role is assistant. 
-    - chunks
-        - content_with_weight: The content of chunk.
-        - docnm_kwd: the document name.
-        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by 'GET' /document/get/\<id\>.
-        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
-        - similarity: the hybrid similarity.
-        - term_similarity: keyword simimlarity
-        - vector_similarity: embedding similarity
-    - doc_aggs:
-        - doc_id: the document can be accessed by 'GET' /document/get/\<id\>
-        - doc_name: the file name
-        - count: the chunk number hit in this document.
-    
-## Chat
+## Get answer
 
-This will be called to get the answer to users' questions.
+This method retrieves from RAGFlow the answer to the user's latest question.
 
-### Path: /api/completion
-### Method: POST
-### Parameter:
+### Request
 
-| name | type | optional | description|
-|------|-------|----|----|
-| conversation_id| string | No | This is from calling /new_conversation.|
-| messages| json | No | The latest question, such as `[{"role": "user", "content": "How are you doing!"}]`|
-| quote | bool | Yes | Default: true |
-| stream | bool | Yes | Default: true |
-| doc_ids | string | Yes | Document IDs which is delimited by comma, like `c790da40ea8911ee928e0242ac180005,c790da40ea8911ee928e0242ac180005`. The retrieved content is limited in these documents. |
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| POST     | `/api/completion`                                           |
+
+### Request parameter
+
+|   Name           |  Type  | Required | Description   |
+|------------------|--------|----------|---------------|
+| `conversation_id`| string | Yes      | The ID of the conversation session. Call ['GET' /new_conversation](#create-conversation) to retrieve the ID.|
+| `messages`       |  json  | Yes      | The latest question in a JSON form, such as `[{"role": "user", "content": "How are you doing!"}]`|
+| `quote`          |  bool  |  No      | Default: true |
+| `stream`         |  bool  |  No      | Default: true |
+| `doc_ids`        | string |  No      | Document IDs delimited by comma, like `c790da40ea8911ee928e0242ac180005,23dsf34ree928e0242ac180005`. The retrieved contents will be confined to these documents. |
 
 ### Response 
-```json
+
+- `answer`: The answer to the user's latest question.
+- `reference`: 
+    - `chunks`: The retrieved chunks that contribute to the answer.  
+        - `content_with_weight`: Content of the chunk.
+        - `doc_name`: Name of the *hit* document.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
+        - `positions`: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
+        - `similarity`: The hybrid similarity.
+        - `term_similarity`: The keyword simimlarity.
+        - `vector_similarity`: The embedding similarity.
+    - `doc_aggs`:
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the document.
+        - `doc_name`: Name of the *hit* document. 
+        - `count`: The number of *hit* chunks in this document.
+
+<details>
+  <summary>Response example</summary>
+    
+<pre><code>
 {
     "data": {
       "answer": "The ViT Score for GPT-4 in the zero-shot scenario is 0.5058, and in the few-shot scenario, it is 0.6480. ##0$$",
@@ -240,7 +310,7 @@ This will be called to get the answer to users' questions.
             "content_ltks": "tabl 1:openagi task-solv perform under differ set for three closed-sourc llm . boldfac denot the highest score under each learn schema . metric gpt-3.5-turbo claude-2 gpt-4 zero few zero few zero few clip score 0.0 0.0 0.0 0.2543 0.0 0.3055 bert score 0.1914 0.3820 0.2111 0.5038 0.2076 0.6307 vit score 0.2437 0.7497 0.4082 0.5416 0.5058 0.6480 overal 0.1450 0.3772 0.2064 0.4332 0.2378 0.5281",
             "content_with_weight": "<table><caption>Table 1: OpenAGI task-solving performances under different settings for three closed-source LLMs. Boldface denotes the highest score under each learning schema.</caption>\n<tr><th  rowspan=2 >Metrics</th><th  >GPT-3.5-turbo</th><th></th><th  >Claude-2</th><th  >GPT-4</th></tr>\n<tr><th  >Zero</th><th  >Few</th><th  >Zero Few</th><th  >Zero Few</th></tr>\n<tr><td  >CLIP Score</td><td  >0.0</td><td  >0.0</td><td  >0.0 0.2543</td><td  >0.0 0.3055</td></tr>\n<tr><td  >BERT Score</td><td  >0.1914</td><td  >0.3820</td><td  >0.2111 0.5038</td><td  >0.2076 0.6307</td></tr>\n<tr><td  >ViT Score</td><td  >0.2437</td><td  >0.7497</td><td  >0.4082 0.5416</td><td  >0.5058 0.6480</td></tr>\n<tr><td  >Overall</td><td  >0.1450</td><td  >0.3772</td><td  >0.2064 0.4332</td><td  >0.2378 0.5281</td></tr>\n</table>",
             "doc_id": "c790da40ea8911ee928e0242ac180005",
-            "docnm_kwd": "OpenAGI When LLM Meets Domain Experts.pdf",
+            "doc_name": "OpenAGI When LLM Meets Domain Experts.pdf",
             "img_id": "afab9fdad6e511eebdb20242ac180006-d0bc7892c3ec4aeac071544fd56730a8",
             "important_kwd": [],
             "kb_id": "afab9fdad6e511eebdb20242ac180006",
@@ -262,7 +332,7 @@ This will be called to get the answer to users' questions.
             "content_ltks": "5.5 experiment analysi the main experiment result are tabul in tab . 1 and 2 , showcas the result for closed-sourc and open-sourc llm , respect . the overal perform is calcul a the averag of cllp 8 bert and vit score . here , onli the task descript of the benchmark task are fed into llm(addit inform , such a the input prompt and llm\u2019output , is provid in fig . a.4 and a.5 in supplementari). broadli speak , closed-sourc llm demonstr superior perform on openagi task , with gpt-4 lead the pack under both zero-and few-shot scenario . in the open-sourc categori , llama-2-13b take the lead , consist post top result across variou learn schema--the perform possibl influenc by it larger model size . notabl , open-sourc llm significantli benefit from the tune method , particularli fine-tun and\u2019rltf . these method mark notic enhanc for flan-t5-larg , vicuna-7b , and llama-2-13b when compar with zero-shot and few-shot learn schema . in fact , each of these open-sourc model hit it pinnacl under the rltf approach . conclus , with rltf tune , the perform of llama-2-13b approach that of gpt-3.5 , illustr it potenti .",
             "content_with_weight": "5.5 Experimental Analysis\nThe main experimental results are tabulated in Tab. 1 and 2, showcasing the results for closed-source and open-source LLMs, respectively. The overall performance is calculated as the average of CLlP\n8\nBERT and ViT scores. Here, only the task descriptions of the benchmark tasks are fed into LLMs (additional information, such as the input prompt and LLMs\u2019 outputs, is provided in Fig. A.4 and A.5 in supplementary). Broadly speaking, closed-source LLMs demonstrate superior performance on OpenAGI tasks, with GPT-4 leading the pack under both zero- and few-shot scenarios. In the open-source category, LLaMA-2-13B takes the lead, consistently posting top results across various learning schema--the performance possibly influenced by its larger model size. Notably, open-source LLMs significantly benefit from the tuning methods, particularly Fine-tuning and\u2019 RLTF. These methods mark noticeable enhancements for Flan-T5-Large, Vicuna-7B, and LLaMA-2-13B when compared with zero-shot and few-shot learning schema. In fact, each of these open-source models hits its pinnacle under the RLTF approach. Conclusively, with RLTF tuning, the performance of LLaMA-2-13B approaches that of GPT-3.5, illustrating its potential.",
             "doc_id": "c790da40ea8911ee928e0242ac180005",
-            "docnm_kwd": "OpenAGI When LLM Meets Domain Experts.pdf",
+            "doc_name": "OpenAGI When LLM Meets Domain Experts.pdf",
             "img_id": "afab9fdad6e511eebdb20242ac180006-7e2345d440383b756670e1b0f43a7007",
             "important_kwd": [],
             "kb_id": "afab9fdad6e511eebdb20242ac180006",
@@ -289,46 +359,50 @@ This will be called to get the answer to users' questions.
     "retcode": 0,
     "retmsg": "success"
 }
-```
+</code></pre>
+</details>    
 
-- **answer**: The replay of the chat bot.
-- **reference**: 
-    - chunks: Every item in it refer to the corresponding message in answer. 
-        - content_with_weight: The content of chunk.
-        - docnm_kwd: the document name.
-        - img_id: the image id of the chunk. It is an optional field only for PDF/pptx/picture. And accessed by 'GET' /document/get/\<id\>.
-        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
-        - similarity: the hybrid similarity.
-        - term_similarity: keyword simimlarity
-        - vector_similarity: embedding similarity
-    - doc_aggs:
-        - doc_id: the document can be accessed by 'GET' /document/get/\<id\>
-        - doc_name: the file name
-        - count: the chunk number hit in this document.
-    
 ## Get document content or image
 
-This is usually used when display content of citation.
-### Path: /api/document/get/\<id\>
-### Method: GET
+This method retrieves the content or a specific image in a document. Used if you intend to display the content of a citation.
+
+### Request
+
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| GET      | `/api/document/get/<id>`                                    |
+
+### Response
 
 ## Upload file
 
-This is usually used when upload a file to.
-### Path: /api/document/upload/
-### Method: POST
+This method uploads a specific file to a specified knowledge base.
 
-### Parameter:
+### Request
 
-| name      | type   | optional | description                                             |
-|-----------|--------|----------|---------------------------------------------------------|
-| file      | file   | No       | Upload file.                                            |
-| kb_name   | string | No       | Choose the upload knowledge base name.                  |
-| parser_id | string | Yes      | Choose the parsing method.                              |
-| run       | string | Yes      | Parsing will start automatically when the value is "1". |
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| POST     | `/api/document/upload`                                      |
+
+### Response parameter
+
+|   Name      | Type   | Required | Description                                             |
+|-------------|--------|----------|---------------------------------------------------------|
+| `file`      | file   | Yes      | The file to upload.                                     |
+| `kb_name`   | string | Yes      | The name of the knowledge base to upload the file to.   |
+| `parser_id` | string |  No      | The parsing method (chunk template) to use. <br />- "naive": General;<br />- "qa": Q&A;<br />- "manual": Manual;<br />- "table": Table;<br />- "paper": Paper;<br />- "laws": Laws;<br />- "presentation": Presentation;<br />- "picture": Picture;<br />- "one": One. |
+| `run`       | string |  No      | 1: Automatically start file parsing. If `parser_id` is not set, RAGFlow uses the general template by default. |
+
 
 ### Response 
-```json
+
+<details>
+  <summary>Response example</summary>
+<pre><code>
 {
     "data": {
         "chunk_num": 0,
@@ -368,24 +442,34 @@ This is usually used when upload a file to.
     "retmsg": "success"
 }
 
-```
+</code></pre>
+</details>
 
 ## Get document chunks
 
-Get the chunks of the document based on doc_name or doc_id.
-### Path: /api/list_chunks/
-### Method: POST
+This method retrieves the chunks of a specific document by `doc_name` or `doc_id`.
 
-### Parameter:
+### Request
 
-| Name     | Type   | Optional | Description                     |
-|----------|--------|----------|---------------------------------|
-| `doc_name` | string | Yes      | The name of the document in the knowledge base. It must not be empty if `doc_id` is not set.|
-| `doc_id`   | string | Yes      | The ID of the document in the knowledge base. It must not be empty if `doc_name` is not set.|
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| GET      | `/api/list_chunks`                                          |
+
+#### Request parameter
+
+|   Name     | Type   | Required |                        Description                                                          |
+|------------|--------|----------|---------------------------------------------------------------------------------------------|
+| `doc_name` | string |  No      | The name of the document in the knowledge base. It must not be empty if `doc_id` is not set.|
+| `doc_id`   | string |  No      | The ID of the document in the knowledge base. It must not be empty if `doc_name` is not set.|
 
 
-### Response 
-```json
+### Response
+
+<details>
+  <summary>Response example</summary>
+<pre><code>
 {
     "data": [
         {
@@ -394,7 +478,7 @@ Get the chunks of the document based on doc_name or doc_id.
             "img_id": "0335167613f011ef91240242ac120006-b46c3524952f82dbe061ce9b123f2211"
         },
         {
-            "content": "4.3 ProcessingOverheadof RL-CacheACKNOWLEDGMENTSThis section evaluates how e￿ectively our RL-Cache implemen-tation leverages modern multi-core CPUs and GPUs to keep the per-request neural-net processing overhead low. Figure 14 depictsThis researchwas supported inpart by the Regional Government of Madrid (grant P2018/TCS-4499, EdgeData-CM)andU.S. National Science Foundation (grants CNS-1763617 andCNS-1717179).REFERENCES",
+            "content": "4.3 ProcessingOverheadof RL-CacheACKNOWLEDGMENTSThis section evaluates how effectively our RL-Cache implemen-tation leverages modern multi-core CPUs and GPUs to keep the per-request neural-net processing overhead low. Figure 14 depictsThis researchwas supported inpart by the Regional Government of Madrid (grant P2018/TCS-4499, EdgeData-CM)andU.S. National Science Foundation (grants CNS-1763617 andCNS-1717179).REFERENCES",
             "doc_name": "RL-Cache.pdf",
             "img_id": "0335167613f011ef91240242ac120006-d4c12c43938eb55d2d8278eea0d7e6d7"
         }
@@ -403,28 +487,38 @@ Get the chunks of the document based on doc_name or doc_id.
     "retmsg": "success"
 }
 
-```
+</code></pre>
+</details>
 
-## Get document list from knowledge base
+## Get document list
 
-Get document list based on the knowledge base name and corresponding parameters.
-### Path: /api/list_kb_docs/
-### Method: POST
+This method retrieves a list of documents from a specified knowledge base.
 
-### Parameter:
+### Request
 
-| Name        | Type   | Optional | Description                                                          |
-|-------------|--------|----------|----------------------------------------------------------------------|
-| `kb_name`   | string | No       | The name of the knowledge base, from which you get the document list. |
-| `page`      | int    | Yes      | The number of pages, default:1.                                      |
-| `page_size` | int    | Yes      | The number of docs for each page, default:15.                        |
-| `orderby`   | string | Yes      | `chunk_num`, `create_time`, or `size`, default:`create_time`         |
-| `desc`      | bool   | Yes      | Default:True.                                                        |
-| `keywords`  | string | Yes      | Keyword of the document name.                                        |
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| POST     | `/api/list_kb_docs`                                         |
+
+#### Request parameter
+
+| Name        | Type   | Required |  Description                                                          |
+|-------------|--------|----------|-----------------------------------------------------------------------|
+| `kb_name`   | string | Yes      | The name of the knowledge base, from which you get the document list. |
+| `page`      | int    |  No      | The number of pages, default:1.                                       |
+| `page_size` | int    |  No      | The number of docs for each page, default:15.                         |
+| `orderby`   | string |  No      | `chunk_num`, `create_time`, or `size`, default:`create_time`          |
+| `desc`      | bool   |  No      | Default:True.                                                         |
+| `keywords`  | string |  No      | Keyword of the document name.                                         |
 
 
 ### Response 
-```json
+
+<details>
+  <summary>Response example</summary>
+<pre><code>
 {
     "data": {
         "docs": [
@@ -443,28 +537,39 @@ Get document list based on the knowledge base name and corresponding parameters.
     "retmsg": "success"
 }
 
-```
+</code></pre>
+</details>
 
-## Delete document 
+## Delete documents 
 
-Delete document by document id or document name.
-### Path: /api/document/rm/
-### Method: POST
+This method deletes documents by document ID or name.
 
-### Parameter:
+### Request
 
-| Name        | Type   | Optional | Description                |
+#### Request URI
+
+| Method   |        Request URI                                          |
+|----------|-------------------------------------------------------------|
+| DELETE   | `/api/document`                                             |
+
+#### Request parameter
+
+| Name        | Type   | Required | Description                |
 |-------------|--------|----------|----------------------------|
-| `doc_names` | List   | Yes      | The list of document name. |
-| `doc_ids`   | List   | Yes      | The list of document id.   |
+| `doc_names` | List   |  No      | A list of document names. It must not be empty if `doc_ids` is not set.  |
+| `doc_ids`   | List   |  No      | A list of document IDs. It must not be empty if `doc_names` is not set.  |
 
 
-### Response 
-```json
+### Response
+
+<details>
+  <summary>Response example</summary>
+<pre><code>
 {
     "data": true,
     "retcode": 0,
     "retmsg": "success"
 }
 
-```
+</code></pre>
+</details>
