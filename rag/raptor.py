@@ -95,6 +95,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 gm.fit(reduced_embeddings)
                 probs = gm.predict_proba(reduced_embeddings)
                 lbls = [np.where(prob > self._threshold)[0] for prob in probs]
+                lbls = [lbl[0] if isinstance(lbl, np.ndarray) else lbl for lbl in lbls]
             lock = Lock()
             with ThreadPoolExecutor(max_workers=12) as executor:
                 threads = []

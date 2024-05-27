@@ -488,3 +488,77 @@ def document_rm():
         return get_json_result(data=False, retmsg=errors, retcode=RetCode.SERVER_ERROR)
 
     return get_json_result(data=True)
+
+
+@manager.route('/completion_aibotk', methods=['POST'])
+@validate_request("Authorization", "conversation_id", "word")
+def completion_faq():
+    import base64
+    req = request.json
+
+    token = req["Authorization"]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+
+    e, conv = API4ConversationService.get_by_id(req["conversation_id"])
+    if not e:
+        return get_data_error_result(retmsg="Conversation not found!")
+    if "quote" not in req: req["quote"] = True
+
+    msg = []
+    msg.append({"role": "user", "content": req["word"]})
+
+    try:
+        conv.message.append(msg[-1])
+        e, dia = DialogService.get_by_id(conv.dialog_id)
+        if not e:
+            return get_data_error_result(retmsg="Dialog not found!")
+        del req["conversation_id"]
+
+        if not conv.reference:
+            conv.reference = []
+        conv.message.append({"role": "assistant", "content": ""})
+        conv.reference.append({"chunks": [], "doc_aggs": []})
+
+        def fillin_conv(ans):
+            nonlocal conv
+            if not conv.reference:
+                conv.reference.append(ans["reference"])
+            else: conv.reference[-1] = ans["reference"]
+            conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+
+        data_type_picture = {
+            "type": 3,
+            "url": "base64 content"
+        }
+        data = [
+            {
+                "type": 1,
+                "content": ""
+            }
+        ]
+        for ans in chat(dia, msg, stream=False, **req):
+            # answer = ans
+            data[0]["content"] += re.sub(r'##\d\$\$', '', ans["answer"])
+            fillin_conv(ans)
+            API4ConversationService.append_message(conv.id, conv.to_dict())
+
+            chunk_idxs = [int(match[2]) for match in re.findall(r'##\d\$\$', ans["answer"])]
+            for chunk_idx in chunk_idxs[:1]:
+                if ans["reference"]["chunks"][chunk_idx]["img_id"]:
+                    try:
+                        bkt, nm = ans["reference"]["chunks"][chunk_idx]["img_id"].split("-")
+                        response = MINIO.get(bkt, nm)
+                        data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
+                        data.append(data_type_picture)
+                    except Exception as e:
+                        return server_error_response(e)
+            break
+
+        response = {"code": 200, "msg": "success", "data": data}
+        return response
+
+    except Exception as e:
+        return server_error_response(e)
