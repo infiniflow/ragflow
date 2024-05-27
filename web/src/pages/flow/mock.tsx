@@ -3,11 +3,45 @@ import {
   RocketOutlined,
   SendOutlined,
 } from '@ant-design/icons';
+import { Position } from 'reactflow';
 
 export const componentList = [
   { name: 'Begin', icon: <SendOutlined />, description: '' },
   { name: 'Retrieval', icon: <RocketOutlined />, description: '' },
   { name: 'Generate', icon: <MergeCellsOutlined />, description: '' },
+];
+
+export const initialNodes = [
+  {
+    sourcePosition: Position.Left,
+    targetPosition: Position.Right,
+    id: 'node-1',
+    type: 'textUpdater',
+    position: { x: 0, y: 0 },
+    // position: { x: 400, y: 100 },
+    data: { label: 123 },
+  },
+  {
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+    id: '1',
+    data: { label: 'Hello' },
+    position: { x: 0, y: 0 },
+    // position: { x: 0, y: 50 },
+    type: 'input',
+  },
+  {
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+    id: '2',
+    data: { label: 'World' },
+    position: { x: 0, y: 0 },
+    // position: { x: 200, y: 50 },
+  },
+];
+
+export const initialEdges = [
+  { id: '1-2', source: '1', target: '2', label: 'to the', type: 'step' },
 ];
 
 export const dsl = {
@@ -17,8 +51,8 @@ export const dsl = {
         component_name: 'Begin',
         params: {},
       },
-      downstream: ['Answer:China'],
-      upstream: [],
+      downstream: ['Answer:China'], // other edge target is downstream, edge source is current node id
+      upstream: [], // edge source is upstream, edge target is current node id
     },
     'Answer:China': {
       obj: {
