@@ -1,4 +1,4 @@
-![image](https://github.com/writinwaters/ragflow/assets/93570324/f688fd1d-7286-4694-a973-d9cc07f23166)---
+---
 sidebar_position: 1
 slug: /api
 ---
@@ -41,7 +41,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
 ### Response 
 <details>
   <summary>Response example</summary>
-```json
+<pre><code>
 {
     "data": {
         "create_date": "Fri, 12 Apr 2024 17:26:21 GMT",
@@ -65,7 +65,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
     "retmsg": "success"
 }
 
-```
+</code></pre>
 </details>
 
 ## Get conversation history
