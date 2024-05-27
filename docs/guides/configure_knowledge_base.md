@@ -62,6 +62,7 @@ An embedding model builds vector index on file chunks. Once you have chosen an e
 
 The following embedding models can be deployed locally:
 
+- BAAI/bge-large-zh-v1.5
 - BAAI/bge-base-en-v1.5
 - BAAI/bge-large-en-v1.5
 - BAAI/bge-small-en-v1.5
