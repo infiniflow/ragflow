@@ -203,6 +203,9 @@ def completion():
             try:
                 for ans in chat(dia, msg, True, **req):
                     fillin_conv(ans)
+                    for chunk_i in ans['reference'].get('chunks', ''):
+                        chunk_i['doc_name'] = chunk_i['docnm_kwd']
+                        chunk_i.pop('docnm_kwd')
                     yield "data:"+json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
                 API4ConversationService.append_message(conv.id, conv.to_dict())
             except Exception as e:
@@ -225,6 +228,11 @@ def completion():
                 fillin_conv(ans)
                 API4ConversationService.append_message(conv.id, conv.to_dict())
                 break
+
+            for chunk_i in answer['reference'].get('chunks',''):
+                chunk_i['doc_name'] = chunk_i['docnm_kwd']
+                chunk_i.pop('docnm_kwd')
+
             return get_json_result(data=answer)
 
     except Exception as e:
@@ -239,7 +247,13 @@ def get(conversation_id):
         if not e:
             return get_data_error_result(retmsg="Conversation not found!")
 
-        return get_json_result(data=conv.to_dict())
+        conv = conv.to_dict()
+        for referenct_i in conv['reference']:
+            for chunk_i in referenct_i['chunks']:
+                if 'docnm_kwd' in chunk_i.keys():
+                    chunk_i['doc_name'] = chunk_i['docnm_kwd']
+                    chunk_i.pop('docnm_kwd')
+        return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
 
@@ -430,7 +444,7 @@ def list_kb_docs():
         return server_error_response(e)
 
 
-@manager.route('/document/rm', methods=['POST'])
+@manager.route('/document', methods=['DELETE'])
 # @login_required
 def document_rm():
     token = request.headers.get('Authorization').split()[1]
