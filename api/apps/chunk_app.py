@@ -150,7 +150,7 @@ def set():
             if len(arr) != 2:
                 return get_data_error_result(
                     retmsg="Q&A must be separated by TAB/ENTER key.")
-            q, a = rmPrefix(arr[0]), rmPrefix[arr[1]]
+            q, a = rmPrefix(arr[0]), rmPrefix(arr[1])
             d = beAdoc(d, arr[0], arr[1], not any(
                 [rag_tokenizer.is_chinese(t) for t in q + a]))
 
