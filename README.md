@@ -30,7 +30,7 @@
 
 ## 🎮 Demo
 
-Visit our demo at [https://demo.ragflow.io](https://demo.ragflow.io)
+Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 📌 Latest Updates
 

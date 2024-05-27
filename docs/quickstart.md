@@ -25,6 +25,8 @@ This quick start guide describes a general process from:
 
 ## Start up the server
 
+This section provides instructions on setting up the RAGFlow server on Linux. If you are on a different operating system, no worries. Most steps are alike. 
+
 1. Ensure `vm.max_map_count` >= 262144:
 
    > To check the value of `vm.max_map_count`:
@@ -45,6 +47,7 @@ This quick start guide describes a general process from:
    > ```bash
    > vm.max_map_count=262144
    > ```
+   > See [this guide](./guides/max_map_count.md) for instructions on permanently setting `vm.max_map_count` on an operating system other than Linux. 
 
 2. Clone the repo:
 
