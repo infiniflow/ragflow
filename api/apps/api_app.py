@@ -203,7 +203,7 @@ def completion():
             try:
                 for ans in chat(dia, msg, True, **req):
                     fillin_conv(ans)
-                    for chunk_i in ans['reference'].get('chunks', ''):
+                    for chunk_i in ans['reference'].get('chunks', []):
                         chunk_i['doc_name'] = chunk_i['docnm_kwd']
                         chunk_i.pop('docnm_kwd')
                     yield "data:"+json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
@@ -229,7 +229,7 @@ def completion():
                 API4ConversationService.append_message(conv.id, conv.to_dict())
                 break
 
-            for chunk_i in answer['reference'].get('chunks',''):
+            for chunk_i in answer['reference'].get('chunks',[]):
                 chunk_i['doc_name'] = chunk_i['docnm_kwd']
                 chunk_i.pop('docnm_kwd')
 
