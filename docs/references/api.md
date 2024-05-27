@@ -5,7 +5,7 @@ slug: /api
 
 # API reference
 
-![](https://github.com/infiniflow/ragflow/assets/12318111/df0dcc3d-789a-44f7-89f1-7a5f044ab729)
+RAGFlow offers RESTful APIs for you to integrate its capabilities into third-party applications. 
 
 ## Base URL
 ```
@@ -20,6 +20,13 @@ Put your API key in the request header.
 ```buildoutcfg
 Authorization: Bearer {API_KEY}
 ```
+
+To get your API key:
+
+1. In RAGFlow, click **Chat** tab in the middle top of the page.
+2. Hover over the corresponding dialogue **>** **Chat Bot API** to show the chatbot API configuration page.
+3. Click **Api Key** **>** **Create new key** to create your API key.
+4. Copy and keep your API key safe. 
 
 ## Create conversation
 
@@ -36,7 +43,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
 
 | Name     |  Type  | Required |        Description                                          |
 |----------|--------|----------|-------------------------------------------------------------|
-| `user_id`| string |   Yes    | The unique identifier assigned to each user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br /><li> 26 lowercase English letters (a-z)</li><br /><li> 26 uppercase English letters (A-Z)</li><br /><li> 10 digits (0-9)</li><br /><li> "_", "-", "."</li> |
+| `user_id`| string |   Yes    | The unique identifier assigned to each user. `user_id` must be less than 32 characters and cannot be empty. The following character sets are supported: <br />- 26 lowercase English letters (a-z)<br />- 26 uppercase English letters (A-Z)<br />- 10 digits (0-9)<br />- "_", "-", "." |
 
 ### Response 
 <details>
