@@ -8,6 +8,7 @@ import ReactFlow, {
   OnConnect,
   OnEdgesChange,
   OnNodesChange,
+  Position,
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
@@ -24,21 +25,27 @@ const nodeTypes = { textUpdater: TextUpdaterNode };
 
 const initialNodes = [
   {
+    sourcePosition: Position.Left,
+    targetPosition: Position.Right,
     id: 'node-1',
     type: 'textUpdater',
-    position: { x: 200, y: 50 },
-    data: { value: 123 },
+    position: { x: 400, y: 100 },
+    data: { label: 123 },
   },
   {
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
     id: '1',
     data: { label: 'Hello' },
-    position: { x: 0, y: 0 },
+    position: { x: 0, y: 50 },
     type: 'input',
   },
   {
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
     id: '2',
     data: { label: 'World' },
-    position: { x: 100, y: 100 },
+    position: { x: 200, y: 50 },
   },
 ];
 
@@ -48,7 +55,6 @@ const initialEdges = [
 
 interface IProps {
   sideWidth: number;
-  showDrawer(): void;
 }
 
 function FlowCanvas({ sideWidth }: IProps) {
