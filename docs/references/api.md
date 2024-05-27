@@ -343,7 +343,6 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 
 This method retrieves the content or a specific image in a document. Used if you intend to display the content of a citation.
 
-
 ## Upload file
 
 - Path: `/api/document/upload/`
@@ -494,6 +493,7 @@ This method retrieves a list of documents from a specified knowledge base.
 
 </code></pre>
 </details>
+
 ## Delete documents 
 
 - Path: `/api/document/`
