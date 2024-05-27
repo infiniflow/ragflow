@@ -28,6 +28,10 @@
 
 [RAGFlow](https://ragflow.io/) 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。
 
+## 🎮 Demo 试用
+
+请登录网址 [https://demo.ragflow.io](https://demo.ragflow.io) 试用 demo。
+
 ## 📌 近期更新
 
 - 2024-05-23 实现 [RAPTOR](https://arxiv.org/html/2401.18059v1) 提供更好的文本检索。
