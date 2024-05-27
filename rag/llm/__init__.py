@@ -26,7 +26,8 @@ EmbeddingModel = {
     "ZHIPU-AI": ZhipuEmbed,
     "FastEmbed": FastEmbed,
     "Youdao": YoudaoEmbed,
-    "DeepSeek": DefaultEmbedding
+    "DeepSeek": DefaultEmbedding,
+    "BaiChuan": BaiChuanEmbed
 }
 
 
@@ -47,6 +48,7 @@ ChatModel = {
     "Ollama": OllamaChat,
     "Xinference": XinferenceChat,
     "Moonshot": MoonshotChat,
-    "DeepSeek": DeepSeekChat
+    "DeepSeek": DeepSeekChat,
+    "BaiChuan": BaiChuanChat
 }
 
