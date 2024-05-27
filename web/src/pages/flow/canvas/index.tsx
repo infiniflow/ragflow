@@ -4,37 +4,48 @@ import ReactFlow, {
   Controls,
   Edge,
   Node,
+  NodeMouseHandler,
   OnConnect,
   OnEdgesChange,
   OnNodesChange,
+  Position,
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { useHandleDrop } from '../hooks';
+import { NodeContextMenu, useHandleNodeContextMenu } from './context-menu';
+
+import FlowDrawer from '../flow-drawer';
+import { useHandleDrop, useShowDrawer } from '../hooks';
 import { TextUpdaterNode } from './node';
 
 const nodeTypes = { textUpdater: TextUpdaterNode };
 
 const initialNodes = [
   {
+    sourcePosition: Position.Left,
+    targetPosition: Position.Right,
     id: 'node-1',
     type: 'textUpdater',
-    position: { x: 200, y: 50 },
-    data: { value: 123 },
+    position: { x: 400, y: 100 },
+    data: { label: 123 },
   },
   {
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
     id: '1',
     data: { label: 'Hello' },
-    position: { x: 0, y: 0 },
+    position: { x: 0, y: 50 },
     type: 'input',
   },
   {
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
     id: '2',
     data: { label: 'World' },
-    position: { x: 100, y: 100 },
+    position: { x: 200, y: 50 },
   },
 ];
 
@@ -42,9 +53,16 @@ const initialEdges = [
   { id: '1-2', source: '1', target: '2', label: 'to the', type: 'step' },
 ];
 
-function FlowCanvas() {
+interface IProps {
+  sideWidth: number;
+}
+
+function FlowCanvas({ sideWidth }: IProps) {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
+  const { ref, menu, onNodeContextMenu, onPaneClick } =
+    useHandleNodeContextMenu(sideWidth);
+  const { drawerVisible, hideDrawer, showDrawer } = useShowDrawer();
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -60,7 +78,11 @@ function FlowCanvas() {
     [],
   );
 
-  const { handleDrop, allowDrop } = useHandleDrop(setNodes);
+  const onNodeClick: NodeMouseHandler = useCallback(() => {
+    showDrawer();
+  }, [showDrawer]);
+
+  const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop(setNodes);
 
   useEffect(() => {
     console.info('nodes:', nodes);
@@ -68,23 +90,30 @@ function FlowCanvas() {
   }, [nodes, edges]);
 
   return (
-    <div
-      style={{ height: '100%', width: '100%' }}
-      onDrop={handleDrop}
-      onDragOver={allowDrop}
-    >
+    <div style={{ height: '100%', width: '100%' }}>
       <ReactFlow
+        ref={ref}
         nodes={nodes}
         onNodesChange={onNodesChange}
+        onNodeContextMenu={onNodeContextMenu}
         edges={edges}
         onEdgesChange={onEdgesChange}
-        // fitView
+        fitView
         onConnect={onConnect}
         nodeTypes={nodeTypes}
+        onPaneClick={onPaneClick}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
+        onNodeClick={onNodeClick}
+        onInit={setReactFlowInstance}
       >
         <Background />
         <Controls />
+        {Object.keys(menu).length > 0 && (
+          <NodeContextMenu onClick={onPaneClick} {...(menu as any)} />
+        )}
       </ReactFlow>
+      <FlowDrawer visible={drawerVisible} hideModal={hideDrawer}></FlowDrawer>
     </div>
   );
 }

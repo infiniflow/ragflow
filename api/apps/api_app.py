@@ -20,8 +20,8 @@ from datetime import datetime, timedelta
 from flask import request, Response
 from flask_login import login_required, current_user
 
-from api.db import FileType, ParserType
-from api.db.db_models import APIToken, API4Conversation, Task
+from api.db import FileType, ParserType, FileSource
+from api.db.db_models import APIToken, API4Conversation, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.dialog_service import DialogService, chat
@@ -428,3 +428,63 @@ def list_kb_docs():
     
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/document/rm', methods=['POST'])
+# @login_required
+def document_rm():
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+
+    tenant_id = objs[0].tenant_id
+    req = request.json
+    doc_ids = []
+    try:
+        doc_ids = [DocumentService.get_doc_id_by_doc_name(doc_name) for doc_name in req.get("doc_names", [])]
+        for doc_id in req.get("doc_ids", []):
+            if doc_id not in doc_ids:
+                doc_ids.append(doc_id)
+
+        if not doc_ids:
+            return get_json_result(
+                data=False, retmsg="Can't find doc_names or doc_ids"
+            )
+
+    except Exception as e:
+        return server_error_response(e)
+
+    root_folder = FileService.get_root_folder(tenant_id)
+    pf_id = root_folder["id"]
+    FileService.init_knowledgebase_docs(pf_id, tenant_id)
+
+    errors = ""
+    for doc_id in doc_ids:
+        try:
+            e, doc = DocumentService.get_by_id(doc_id)
+            if not e:
+                return get_data_error_result(retmsg="Document not found!")
+            tenant_id = DocumentService.get_tenant_id(doc_id)
+            if not tenant_id:
+                return get_data_error_result(retmsg="Tenant not found!")
+
+            b, n = File2DocumentService.get_minio_address(doc_id=doc_id)
+
+            if not DocumentService.remove_document(doc, tenant_id):
+                return get_data_error_result(
+                    retmsg="Database error (Document removal)!")
+
+            f2d = File2DocumentService.get_by_document_id(doc_id)
+            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+            File2DocumentService.delete_by_document_id(doc_id)
+
+            MINIO.rm(b, n)
+        except Exception as e:
+            errors += str(e)
+
+    if errors:
+        return get_json_result(data=False, retmsg=errors, retcode=RetCode.SERVER_ERROR)
+
+    return get_json_result(data=True)
