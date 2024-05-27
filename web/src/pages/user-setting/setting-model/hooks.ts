@@ -166,6 +166,41 @@ export const useSubmitOllama = () => {
   };
 };
 
+export const useSubmitVolcEngine = () => {
+  const loading = useOneNamespaceEffectsLoading('settingModel', ['add_llm']);
+  const [selectedVolcFactory, setSelectedVolcFactory] = useState<string>('');
+  const addLlm = useAddLlm();
+  const {
+    visible: volcAddingVisible,
+    hideModal: hideVolcAddingModal,
+    showModal: showVolcAddingModal,
+  } = useSetModalState();
+
+  const onVolcAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideVolcAddingModal();
+      }
+    },
+    [hideVolcAddingModal, addLlm],
+  );
+
+  const handleShowVolcAddingModal = (llmFactory: string) => {
+    setSelectedVolcFactory(llmFactory);
+    showVolcAddingModal();
+  };
+
+  return {
+    volcAddingLoading: loading,
+    onVolcAddingOk,
+    volcAddingVisible,
+    hideVolcAddingModal,
+    showVolcAddingModal: handleShowVolcAddingModal,
+    selectedVolcFactory,
+  };
+};
+
 export const useHandleDeleteLlm = (llmFactory: string) => {
   const deleteLlm = useDeleteLlm();
   const showDeleteConfirm = useShowDeleteConfirm();

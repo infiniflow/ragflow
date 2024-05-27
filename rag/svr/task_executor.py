@@ -26,20 +26,22 @@ import traceback
 from functools import partial
 
 from api.db.services.file2document_service import File2DocumentService
+from api.settings import retrievaler
+from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from rag.utils.minio_conn import MINIO
 from api.db.db_models import close_connection
 from rag.settings import database_logger, SVR_QUEUE_NAME
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 from multiprocessing import Pool
 import numpy as np
-from elasticsearch_dsl import Q
+from elasticsearch_dsl import Q, Search
 from multiprocessing.context import TimeoutError
 from api.db.services.task_service import TaskService
 from rag.utils.es_conn import ELASTICSEARCH
 from timeit import default_timer as timer
-from rag.utils import rmSpace, findMaxTm
+from rag.utils import rmSpace, findMaxTm, num_tokens_from_string
 
-from rag.nlp import search
+from rag.nlp import search, rag_tokenizer
 from io import BytesIO
 import pandas as pd
 
@@ -114,6 +116,8 @@ def collect():
     tasks = TaskService.get_tasks(msg["id"])
     assert tasks, "{} empty task!".format(msg["id"])
     tasks = pd.DataFrame(tasks)
+    if msg.get("type", "") == "raptor":
+        tasks["task_type"] = "raptor"
     return tasks
 
 
@@ -245,6 +249,47 @@ def embedding(docs, mdl, parser_config={}, callback=None):
     return tk_count
 
 
+def run_raptor(row, chat_mdl, embd_mdl, callback=None):
+    vts, _ = embd_mdl.encode(["ok"])
+    vctr_nm = "q_%d_vec"%len(vts[0])
+    chunks = []
+    for d in retrievaler.chunk_list(row["doc_id"], row["tenant_id"], fields=["content_with_weight", vctr_nm]):
+        chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+
+    raptor = Raptor(
+        row["parser_config"]["raptor"].get("max_cluster", 64),
+        chat_mdl,
+        embd_mdl,
+        row["parser_config"]["raptor"]["prompt"],
+        row["parser_config"]["raptor"]["max_token"],
+        row["parser_config"]["raptor"]["threshold"]
+    )
+    original_length = len(chunks)
+    raptor(chunks, row["parser_config"]["raptor"]["random_seed"], callback)
+    doc = {
+        "doc_id": row["doc_id"],
+        "kb_id": [str(row["kb_id"])],
+        "docnm_kwd": row["name"],
+        "title_tks": rag_tokenizer.tokenize(row["name"])
+    }
+    res = []
+    tk_count = 0
+    for content, vctr in chunks[original_length:]:
+        d = copy.deepcopy(doc)
+        md5 = hashlib.md5()
+        md5.update((content + str(d["doc_id"])).encode("utf-8"))
+        d["_id"] = md5.hexdigest()
+        d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
+        d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+        d[vctr_nm] = vctr.tolist()
+        d["content_with_weight"] = content
+        d["content_ltks"] = rag_tokenizer.tokenize(content)
+        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+        res.append(d)
+        tk_count += num_tokens_from_string(content)
+    return res, tk_count
+
+
 def main():
     rows = collect()
     if len(rows) == 0:
@@ -259,35 +304,45 @@ def main():
             cron_logger.error(str(e))
             continue
 
-        st = timer()
-        cks = build(r)
-        cron_logger.info("Build chunks({}): {}".format(r["name"], timer() - st))
-        if cks is None:
-            continue
-        if not cks:
-            callback(1., "No chunk! Done!")
-            continue
-        # TODO: exception handler
-        ## set_progress(r["did"], -1, "ERROR: ")
-        callback(
-            msg="Finished slicing files(%d). Start to embedding the content." %
-                len(cks))
-        st = timer()
-        try:
-            tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
-        except Exception as e:
-            callback(-1, "Embedding error:{}".format(str(e)))
-            cron_logger.error(str(e))
-            tk_count = 0
-        cron_logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
+        if r.get("task_type", "") == "raptor":
+            try:
+                chat_mdl = LLMBundle(r["tenant_id"], LLMType.CHAT, llm_name=r["llm_id"], lang=r["language"])
+                cks, tk_count = run_raptor(r, chat_mdl, embd_mdl, callback)
+            except Exception as e:
+                callback(-1, msg=str(e))
+                cron_logger.error(str(e))
+                continue
+        else:
+            st = timer()
+            cks = build(r)
+            cron_logger.info("Build chunks({}): {}".format(r["name"], timer() - st))
+            if cks is None:
+                continue
+            if not cks:
+                callback(1., "No chunk! Done!")
+                continue
+            # TODO: exception handler
+            ## set_progress(r["did"], -1, "ERROR: ")
+            callback(
+                msg="Finished slicing files(%d). Start to embedding the content." %
+                    len(cks))
+            st = timer()
+            try:
+                tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
+            except Exception as e:
+                callback(-1, "Embedding error:{}".format(str(e)))
+                cron_logger.error(str(e))
+                tk_count = 0
+            cron_logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
+            callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer() - st))
 
-        callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer() - st))
         init_kb(r)
         chunk_count = len(set([c["_id"] for c in cks]))
         st = timer()
         es_r = ""
-        for b in range(0, len(cks), 32):
-            es_r = ELASTICSEARCH.bulk(cks[b:b + 32], search.index_name(r["tenant_id"]))
+        es_bulk_size = 16
+        for b in range(0, len(cks), es_bulk_size):
+            es_r = ELASTICSEARCH.bulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]))
             if b % 128 == 0:
                 callback(prog=0.8 + 0.1 * (b + 1) / len(cks), msg="")
 

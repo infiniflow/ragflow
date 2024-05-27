@@ -19,6 +19,7 @@ from abc import ABC
 from openai import OpenAI
 import openai
 from ollama import Client
+from volcengine.maas.v2 import MaasService
 from rag.nlp import is_english
 from rag.utils import num_tokens_from_string
 
@@ -56,8 +57,7 @@ class Base(ABC):
                 stream=True,
                 **gen_conf)
             for resp in response:
-                if len(resp.choices) == 0:continue
-                if not resp.choices[0].delta.content:continue
+                if not resp.choices or not resp.choices[0].delta.content:continue
                 ans += resp.choices[0].delta.content
                 total_tokens += 1
                 if resp.choices[0].finish_reason == "length":
@@ -315,3 +315,71 @@ class LocalLLM(Base):
             yield answer + "\n**ERROR**: " + str(e)
 
         yield token_count
+
+
+class VolcEngineChat(Base):
+    def __init__(self, key, model_name, base_url):
+        """
+        Since do not want to modify the original database fields, and the VolcEngine authentication method is quite special,
+        Assemble ak, sk, ep_id into api_key, store it as a dictionary type, and parse it for use
+        model_name is for display only
+        """
+        self.client = MaasService('maas-api.ml-platform-cn-beijing.volces.com', 'cn-beijing')
+        self.volc_ak = eval(key).get('volc_ak', '')
+        self.volc_sk = eval(key).get('volc_sk', '')
+        self.client.set_ak(self.volc_ak)
+        self.client.set_sk(self.volc_sk)
+        self.model_name = eval(key).get('ep_id', '')
+
+    def chat(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        try:
+            req = {
+                "parameters": {
+                    "min_new_tokens": gen_conf.get("min_new_tokens", 1),
+                    "top_k": gen_conf.get("top_k", 0),
+                    "max_prompt_tokens": gen_conf.get("max_prompt_tokens", 30000),
+                    "temperature": gen_conf.get("temperature", 0.1),
+                    "max_new_tokens": gen_conf.get("max_tokens", 1000),
+                    "top_p": gen_conf.get("top_p", 0.3),
+                },
+                "messages": history
+            }
+            response = self.client.chat(self.model_name, req)
+            ans = response.choices[0].message.content.strip()
+            if response.choices[0].finish_reason == "length":
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            return ans, response.usage.total_tokens
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        ans = ""
+        tk_count = 0
+        try:
+            req = {
+                "parameters": {
+                    "min_new_tokens": gen_conf.get("min_new_tokens", 1),
+                    "top_k": gen_conf.get("top_k", 0),
+                    "max_prompt_tokens": gen_conf.get("max_prompt_tokens", 30000),
+                    "temperature": gen_conf.get("temperature", 0.1),
+                    "max_new_tokens": gen_conf.get("max_tokens", 1000),
+                    "top_p": gen_conf.get("top_p", 0.3),
+                },
+                "messages": history
+            }
+            stream = self.client.stream_chat(self.model_name, req)
+            for resp in stream:
+                if not resp.choices[0].message.content:
+                    continue
+                ans += resp.choices[0].message.content
+                if resp.choices[0].finish_reason == "stop":
+                    tk_count = resp.usage.total_tokens
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+        yield tk_count

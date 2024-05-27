@@ -97,15 +97,17 @@ class RedisDB:
         return False
 
     def queue_product(self, queue, message, exp=settings.SVR_QUEUE_RETENTION) -> bool:
-        try:
-            payload = {"message": json.dumps(message)}
-            pipeline = self.REDIS.pipeline()
-            pipeline.xadd(queue, payload)
-            pipeline.expire(queue, exp)
-            pipeline.execute()
-            return True
-        except Exception as e:
-            logging.warning("[EXCEPTION]producer" + str(queue) + "||" + str(e))
+        for _ in range(3):
+            try:
+                payload = {"message": json.dumps(message)}
+                pipeline = self.REDIS.pipeline()
+                pipeline.xadd(queue, payload)
+                pipeline.expire(queue, exp)
+                pipeline.execute()
+                return True
+            except Exception as e:
+                print(e)
+                logging.warning("[EXCEPTION]producer" + str(queue) + "||" + str(e))
         return False
 
     def queue_consumer(self, queue_name, group_name, consumer_name, msg_id=b">") -> Payload:
