@@ -2,7 +2,7 @@ import { DSLComponents } from '@/interfaces/database/flow';
 import { Edge, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 
-export const buildNodesFromDSLComponents = (data: DSLComponents) => {
+export const buildNodesAndEdgesFromDSLComponents = (data: DSLComponents) => {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
@@ -41,4 +41,6 @@ export const buildNodesFromDSLComponents = (data: DSLComponents) => {
       }
     }
   });
+
+  return { nodes, edges };
 };

@@ -17,8 +17,8 @@ export const dsl = {
         component_name: 'Begin',
         params: {},
       },
-      downstream: ['Answer:China'],
-      upstream: [],
+      downstream: ['Answer:China'], // edge source
+      upstream: [], // edge target
     },
     'Answer:China': {
       obj: {
