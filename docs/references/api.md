@@ -281,20 +281,20 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 
 ### Response 
 
-- **answer**: The answer to the user's latest question.
-- **reference**: 
-    - chunks: The retrieved chunks that contribute to the answer.  
-        - content_with_weight: Content of the chunk.
-        - doc_name: Name of the *hit* document.
-        - img_id: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
-        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
-        - similarity: The hybrid similarity.
-        - term_similarity: The keyword simimlarity.
-        - vector_similarity: The embedding similarity.
-    - doc_aggs:
-        - doc_id: ID of the *hit* document. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the document.
-        - doc_name: Name of the *hit* document. 
-        - count: The number of *hit* chunks in this document.
+- `answer`: The answer to the user's latest question.
+- `reference`: 
+    - `chunks`: The retrieved chunks that contribute to the answer.  
+        - `content_with_weight`: Content of the chunk.
+        - `doc_name`: Name of the *hit* document.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
+        - `positions`: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
+        - `similarity`: The hybrid similarity.
+        - `term_similarity`: The keyword simimlarity.
+        - `vector_similarity`: The embedding similarity.
+    - `doc_aggs`:
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the document.
+        - `doc_name`: Name of the *hit* document. 
+        - `count`: The number of *hit* chunks in this document.
 
 <details>
   <summary>Response example</summary>
@@ -478,7 +478,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
             "img_id": "0335167613f011ef91240242ac120006-b46c3524952f82dbe061ce9b123f2211"
         },
         {
-            "content": "4.3 ProcessingOverheadof RL-CacheACKNOWLEDGMENTSThis section evaluates how e￿ectively our RL-Cache implemen-tation leverages modern multi-core CPUs and GPUs to keep the per-request neural-net processing overhead low. Figure 14 depictsThis researchwas supported inpart by the Regional Government of Madrid (grant P2018/TCS-4499, EdgeData-CM)andU.S. National Science Foundation (grants CNS-1763617 andCNS-1717179).REFERENCES",
+            "content": "4.3 ProcessingOverheadof RL-CacheACKNOWLEDGMENTSThis section evaluates how effectively our RL-Cache implemen-tation leverages modern multi-core CPUs and GPUs to keep the per-request neural-net processing overhead low. Figure 14 depictsThis researchwas supported inpart by the Regional Government of Madrid (grant P2018/TCS-4499, EdgeData-CM)andU.S. National Science Foundation (grants CNS-1763617 andCNS-1717179).REFERENCES",
             "doc_name": "RL-Cache.pdf",
             "img_id": "0335167613f011ef91240242ac120006-d4c12c43938eb55d2d8278eea0d7e6d7"
         }
