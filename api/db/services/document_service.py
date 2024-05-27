@@ -263,7 +263,7 @@ class DocumentService(CommonService):
                     prg = -1
                     status = TaskStatus.FAIL.value
                 elif finished:
-                    if d["parser_config"].get("raptor") and d["progress_msg"].lower().find(" raptor")<0:
+                    if d["parser_config"].get("raptor", {}).get("use_raptor") and d["progress_msg"].lower().find(" raptor")<0:
                         queue_raptor_tasks(d)
                         prg *= 0.98
                         msg.append("------ RAPTOR -------")

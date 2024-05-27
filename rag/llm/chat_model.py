@@ -359,7 +359,6 @@ class VolcEngineChat(Base):
         if system:
             history.insert(0, {"role": "system", "content": system})
         ans = ""
-        tk_count = 0
         try:
             req = {
                 "parameters": {
@@ -380,6 +379,7 @@ class VolcEngineChat(Base):
                 if resp.choices[0].finish_reason == "stop":
                     tk_count = resp.usage.total_tokens
                 yield ans
+
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
         yield tk_count
