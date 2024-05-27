@@ -336,6 +336,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 }
 </code></pre>
 </details>    
+
 ## Get document content or image
 
 - Path: `/api/document/get/<id>`
