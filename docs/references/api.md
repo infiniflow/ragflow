@@ -252,7 +252,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 | `messages`       |  json  | Yes      | The latest question in a JSON form, such as `[{"role": "user", "content": "How are you doing!"}]`|
 | `quote`          |  bool  |  No      | Default: true |
 | `stream`         |  bool  |  No      | Default: true |
-| `doc_ids`        | string |  No      | Document IDs delimited by comma, like `c790da40ea8911ee928e0242ac180005,c790da40ea8911ee928e0242ac180005`. The retrieved contents will be confined to these documents. |
+| `doc_ids`        | string |  No      | Document IDs delimited by comma, like `c790da40ea8911ee928e0242ac180005,23dsf34ree928e0242ac180005`. The retrieved contents will be confined to these documents. |
 
 ### Response 
 
@@ -358,8 +358,8 @@ This method uploads a specific file to a specified knowledge base.
 |-------------|--------|----------|---------------------------------------------------------|
 | `file`      | file   | Yes      | The file to upload.                                     |
 | `kb_name`   | string | Yes      | The name of the knowledge base to upload the file to.   |
-| `parser_id` | string |  No      | The parsing method (chunk template) to use.             |
-| `run`       | string |  No      | - 1: Automatically start file parsing.                  |
+| `parser_id` | string |  No      | The parsing method (chunk template) to use. <br />- "naive": General;<br />- "qa": Q&A;<br />- "manual": Manual;<br />- "table": Table;<br />- "paper": Paper;<br />- "laws": Laws;<br />- "presentation": Presentation;<br />- "picture": Picture;<br />- "one": One.                                                      |
+| `run`       | string |  No      | 1: Automatically start file parsing. If `parser_id` is not set, RAGFlow uses the general template by default. |
 
 ### Response 
 
