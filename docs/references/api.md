@@ -108,13 +108,13 @@ This method retrieves the history of a specified conversation session.
     - `chunks`
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
-        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the image.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content) to retrieve the image.
         - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - similarity: The hybrid similarity.
         - term_similarity: The keyword simimlarity.
         - vector_similarity: The embedding similarity.
     - `doc_aggs`:
-        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the document.
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content) to retrieve the document.
         - `doc_name`: Name of the *hit* document.
         - `count`: The number of *hit* chunks in this document.
 
@@ -235,13 +235,13 @@ This method retrieves from RAGFlow the answer to the user's latest question.
     - `chunks`: The retrieved chunks that contribute to the answer.  
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
-        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the image.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content) to retrieve the image.
         - `positions`: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - `similarity`: The hybrid similarity.
         - `term_similarity`: The keyword simimlarity.
         - `vector_similarity`: The embedding similarity.
     - `doc_aggs`:
-        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the document.
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content) to retrieve the document.
         - `doc_name`: Name of the *hit* document. 
         - `count`: The number of *hit* chunks in this document.
 
