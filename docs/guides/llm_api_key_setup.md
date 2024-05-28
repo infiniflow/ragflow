@@ -10,10 +10,15 @@ You have two ways to input your LLM API key.
 ## Before Starting The System
 
 In **user_default_llm** of [service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml), you need to specify LLM factory and your own _API_KEY_. 
-RagFlow supports the flowing LLM factory, and with more coming in the pipeline:
+RAGFlow supports the flowing LLMs, with more coming in the pipeline:
 
-> [OpenAI](https://platform.openai.com/login?launch), [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model), 
-> [ZHIPU-AI](https://open.bigmodel.cn/), [Moonshot](https://platform.moonshot.cn/docs)
+- [OpenAI](https://platform.openai.com/login?launch)
+- [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model), 
+- [ZHIPU-AI](https://open.bigmodel.cn/), 
+- [Moonshot](https://platform.moonshot.cn/docs)
+- [DeepSeek](https://platform.deepseek.com/api-docs/)
+- [Baichuan](https://www.baichuan-ai.com/home)
+- [VolcEngine](https://www.volcengine.com/docs/82379)
 
 After sign in these LLM suppliers, create your own API-Key, they all have a certain amount of free quota.
 
