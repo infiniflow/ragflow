@@ -52,9 +52,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
 
 ### Response 
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": {
         "create_date": "Fri, 12 Apr 2024 17:26:21 GMT",
@@ -77,9 +75,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
 
 ## Get conversation history
 
@@ -112,20 +108,17 @@ This method retrieves the history of a specified conversation session.
     - `chunks`
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
-        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the image.
         - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - similarity: The hybrid similarity.
         - term_similarity: The keyword simimlarity.
         - vector_similarity: The embedding similarity.
     - `doc_aggs`:
-        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the document.
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the document.
         - `doc_name`: Name of the *hit* document.
         - `count`: The number of *hit* chunks in this document.
 
-<details>
-  <summary>Response example</summary>
-    
-<pre><code>
+```json
 {
     "data": {
         "create_date": "Mon, 01 Apr 2024 09:28:42 GMT",
@@ -253,9 +246,7 @@ This method retrieves the history of a specified conversation session.
     "retcode": 0,
     "retmsg": "success"
 }
-</code></pre>
-</details>
-
+```
     
 ## Get answer
 
@@ -286,20 +277,17 @@ This method retrieves from RAGFlow the answer to the user's latest question.
     - `chunks`: The retrieved chunks that contribute to the answer.  
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
-        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the image.
         - `positions`: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - `similarity`: The hybrid similarity.
         - `term_similarity`: The keyword simimlarity.
         - `vector_similarity`: The embedding similarity.
     - `doc_aggs`:
-        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the document.
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the document.
         - `doc_name`: Name of the *hit* document. 
         - `count`: The number of *hit* chunks in this document.
 
-<details>
-  <summary>Response example</summary>
-    
-<pre><code>
+```json
 {
     "data": {
       "answer": "The ViT Score for GPT-4 in the zero-shot scenario is 0.5058, and in the few-shot scenario, it is 0.6480. ##0$$",
@@ -359,8 +347,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
     "retcode": 0,
     "retmsg": "success"
 }
-</code></pre>
-</details>    
+```  
 
 ## Get document content or image
 
@@ -400,9 +387,7 @@ This method uploads a specific file to a specified knowledge base.
 
 ### Response 
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": {
         "chunk_num": 0,
@@ -441,9 +426,7 @@ This method uploads a specific file to a specified knowledge base.
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
 
 ## Get document chunks
 
@@ -467,9 +450,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
 
 ### Response
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": [
         {
@@ -486,9 +467,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
 
 ## Get document list
 
@@ -516,9 +495,7 @@ This method retrieves a list of documents from a specified knowledge base.
 
 ### Response 
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": {
         "docs": [
@@ -536,9 +513,7 @@ This method retrieves a list of documents from a specified knowledge base.
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
 
 ## Delete documents 
 
@@ -562,14 +537,10 @@ This method deletes documents by document ID or name.
 
 ### Response
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": true,
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
