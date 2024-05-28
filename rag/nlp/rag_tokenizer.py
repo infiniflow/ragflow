@@ -24,7 +24,7 @@ class RagTokenizer:
     def loadDict_(self, fnm):
         print("[HUQIE]:Build trie", fnm, file=sys.stderr)
         try:
-            of = open(fnm, "r")
+            of = open(fnm, "r", encoding='utf-8')
             while True:
                 line = of.readline()
                 if not line:
