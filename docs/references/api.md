@@ -307,9 +307,9 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 }
 ```  
 
-## Get document content or image
+## Get document content
 
-This method retrieves the content or a specific image in a document. Used if you intend to display the content of a citation.
+This method retrieves the content of a document.
 
 ### Request
 
@@ -317,7 +317,7 @@ This method retrieves the content or a specific image in a document. Used if you
 
 | Method   |        Request URI                                          |
 |----------|-------------------------------------------------------------|
-| GET      | `/api/document/get/<id>`                                    |
+| GET      | `/document/get/<id>`                                        |
 
 ### Response
 
