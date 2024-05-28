@@ -78,7 +78,7 @@ export interface IChunk {
   chunk_id: string;
   content_with_weight: string;
   doc_id: string;
-  docnm_kwd: string;
+  doc_name: string;
   img_id: string;
   important_kwd: any[];
   positions: number[][];
@@ -89,7 +89,7 @@ export interface ITestingChunk {
   content_ltks: string;
   content_with_weight: string;
   doc_id: string;
-  docnm_kwd: string;
+  doc_name: string;
   img_id: string;
   important_kwd: any[];
   kb_id: string;
