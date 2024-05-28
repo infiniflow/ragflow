@@ -52,9 +52,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
 
 ### Response 
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": {
         "create_date": "Fri, 12 Apr 2024 17:26:21 GMT",
@@ -77,9 +75,7 @@ You are *required* to save the `data.id` value returned in the response data, wh
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
 
 ## Get conversation history
 
@@ -93,7 +89,7 @@ This method retrieves the history of a specified conversation session.
 |----------|-------------------------------------------------------------|
 | GET      | `/api/conversation/<id>`                                    |
 
-### Request parameter
+#### Request parameter
 
 | Name     |  Type  | Required |        Description                                          |
 |----------|--------|----------|-------------------------------------------------------------|
@@ -112,20 +108,17 @@ This method retrieves the history of a specified conversation session.
     - `chunks`
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
-        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the image.
         - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - similarity: The hybrid similarity.
         - term_similarity: The keyword simimlarity.
         - vector_similarity: The embedding similarity.
     - `doc_aggs`:
-        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the document.
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the document.
         - `doc_name`: Name of the *hit* document.
         - `count`: The number of *hit* chunks in this document.
 
-<details>
-  <summary>Response example</summary>
-    
-<pre><code>
+```json
 {
     "data": {
         "create_date": "Mon, 01 Apr 2024 09:28:42 GMT",
@@ -143,14 +136,6 @@ This method retrieves the history of a specified conversation session.
             },
             {
                 "content": "The ViT Score for GPT-4 in the zero-shot scenario is 0.5058, and in the few-shot scenario, it is 0.6480. ##0$$",
-                "role": "assistant"
-            },
-            {
-                "content": "How is the nvlink topology like?",
-                "role": "user"
-            },
-            {
-                "content": "NVLink topology refers to the arrangement of connections between GPUs using NVIDIA's NVLink technology. Correct NVLink topology for NVIDIA A100 cards involves connecting one GPU to another through a series of NVLink bridges ##0$$. Each of the three attached bridges spans two PCIe slots, and for optimal performance and balanced bridge topology, all three NVLink bridges should be used when connecting two adjacent A100 cards.\n\nHere's a summary of the correct and incorrect topologies:\n\n- **Correct**: Both GPUs are connected via all three NVLink bridges, ensuring full bandwidth and proper communication.\n- **Incorrect**: Not using all three bridges or having an uneven connection configuration would result in suboptimal performance.\n\nIt's also important to note that for multi-CPU systems, both A100 cards in a bridged pair should be within the same CPU domain, unless each CPU has a single A100 PCIe card, in which case they can be bridged together.",
                 "role": "assistant"
             }
         ],
@@ -182,8 +167,8 @@ This method retrieves the history of a specified conversation session.
                     },
                     {
                         "chunk_id": "7e2345d440383b756670e1b0f43a7007",
-                        "content_ltks": "5.5 experiment analysi the main experiment result are tabul in tab . 1 and 2 , showcas the result for closed-sourc and open-sourc llm , respect . the overal perform is calcul a the averag of cllp 8 bert and vit score . here , onli the task descript of the benchmark task are fed into llm(addit inform , such a the input prompt and llm\u2019output , is provid in fig . a.4 and a.5 in supplementari). broadli speak , closed-sourc llm demonstr superior perform on openagi task , with gpt-4 lead the pack under both zero-and few-shot scenario . in the open-sourc categori , llama-2-13b take the lead , consist post top result across variou learn schema--the perform possibl influenc by it larger model size . notabl , open-sourc llm significantli benefit from the tune method , particularli fine-tun and\u2019rltf . these method mark notic enhanc for flan-t5-larg , vicuna-7b , and llama-2-13b when compar with zero-shot and few-shot learn schema . in fact , each of these open-sourc model hit it pinnacl under the rltf approach . conclus , with rltf tune , the perform of llama-2-13b approach that of gpt-3.5 , illustr it potenti .",
-                        "content_with_weight": "5.5 Experimental Analysis\nThe main experimental results are tabulated in Tab. 1 and 2, showcasing the results for closed-source and open-source LLMs, respectively. The overall performance is calculated as the average of CLlP\n8\nBERT and ViT scores. Here, only the task descriptions of the benchmark tasks are fed into LLMs (additional information, such as the input prompt and LLMs\u2019 outputs, is provided in Fig. A.4 and A.5 in supplementary). Broadly speaking, closed-source LLMs demonstrate superior performance on OpenAGI tasks, with GPT-4 leading the pack under both zero- and few-shot scenarios. In the open-source category, LLaMA-2-13B takes the lead, consistently posting top results across various learning schema--the performance possibly influenced by its larger model size. Notably, open-source LLMs significantly benefit from the tuning methods, particularly Fine-tuning and\u2019 RLTF. These methods mark noticeable enhancements for Flan-T5-Large, Vicuna-7B, and LLaMA-2-13B when compared with zero-shot and few-shot learning schema. In fact, each of these open-source models hits its pinnacle under the RLTF approach. Conclusively, with RLTF tuning, the performance of LLaMA-2-13B approaches that of GPT-3.5, illustrating its potential.",
+                        "content_ltks": "5.5 experiment analysi the main experiment result are tabul in tab . 1 and 2 , showcas the result for closed-sourc and open-sourc llm , respect . the overal perform is calcul a the averag of cllp 8 bert and vit score . ",
+                        "content_with_weight": "5.5 Experimental Analysis\nThe main experimental results are tabulated in Tab. 1 and 2, showcasing the results for closed-source and open-source LLMs, respectively. The overall performance is calculated as the average of CLlP\n8\nBERT and ViT scores.",
                         "doc_id": "c790da40ea8911ee928e0242ac180005",
                         "doc_name": "OpenAGI When LLM Meets Domain Experts.pdf",
                         "img_id": "afab9fdad6e511eebdb20242ac180006-7e2345d440383b756670e1b0f43a7007",
@@ -212,40 +197,6 @@ This method retrieves the history of a specified conversation session.
                 ],
                 "total": 8
             },
-            {
-                "chunks": [
-                    {
-                        "chunk_id": "8c11a1edddb21ad2ae0c43b4a5dcfa62",
-                        "content_ltks": "nvlink bridg support nvidia\u00aenvlink\u00aei a high-spe point-to-point peer transfer connect , where one gpu can transfer data to and receiv data from one other gpu . the nvidia a100 card support nvlink bridg connect with a singl adjac a100 card . each of the three attach bridg span two pcie slot . to function correctli a well a to provid peak bridg bandwidth , bridg connect with an adjac a100 card must incorpor all three nvlink bridg . wherev an adjac pair of a100 card exist in the server , for best bridg perform and balanc bridg topolog , the a100 pair should be bridg . figur 4 illustr correct and incorrect a100 nvlink connect topolog . nvlink topolog\u2013top view figur 4. correct incorrect correct incorrect for system that featur multipl cpu , both a100 card of a bridg card pair should be within the same cpu domain\u2014that is , under the same cpu\u2019s topolog . ensur thi benefit workload applic perform . the onli except is for dual cpu system wherein each cpu ha a singl a100 pcie card under it;in that case , the two a100 pcie card in the system may be bridg togeth . a100 nvlink speed and bandwidth are given in the follow tabl . tabl 5. a100 nvlink speed and bandwidth paramet valu total nvlink bridg support by nvidia a100 3 total nvlink rx and tx lane support 96 data rate per nvidia a100 nvlink lane(each direct)50 gbp total maximum nvlink bandwidth 600 gbyte per second pb-10137-001_v03|8 nvidia a100 40gb pcie gpu acceler",
-                        "content_with_weight": "NVLink Bridge Support\nNVIDIA\u00aeNVLink\u00aeis a high-speed point-to-point peer transfer connection, where one GPU can transfer data to and receive data from one other GPU. The NVIDIA A100 card supports NVLink bridge connection with a single adjacent A100 card.\nEach of the three attached bridges spans two PCIe slots. To function correctly as well as to provide peak bridge bandwidth, bridge connection with an adjacent A100 card must incorporate all three NVLink bridges. Wherever an adjacent pair of A100 cards exists in the server, for best bridging performance and balanced bridge topology, the A100 pair should be bridged. Figure 4 illustrates correct and incorrect A100 NVLink connection topologies.\nNVLink Topology \u2013Top Views \nFigure 4. \nCORRECT \nINCORRECT \nCORRECT \nINCORRECT \nFor systems that feature multiple CPUs, both A100 cards of a bridged card pair should be within the same CPU domain\u2014that is, under the same CPU\u2019s topology. Ensuring this benefits workload application performance. The only exception is for dual CPU systems wherein each CPU has a single A100 PCIe card under it; in that case, the two A100 PCIe cards in the system may be bridged together.\nA100 NVLink speed and bandwidth are given in the following table.\n<table><caption>Table 5. A100 NVLink Speed and Bandwidth </caption>\n<tr><th  >Parameter </th><th  >Value </th></tr>\n<tr><td  >Total NVLink bridges supported by NVIDIA A100 </td><td  >3 </td></tr>\n<tr><td  >Total NVLink Rx and Tx lanes supported </td><td  >96 </td></tr>\n<tr><td  >Data rate per NVIDIA A100 NVLink lane (each direction)</td><td  >50 Gbps </td></tr>\n<tr><td  >Total maximum NVLink bandwidth</td><td  >600 Gbytes per second </td></tr>\n</table>\nPB-10137-001_v03 |8\nNVIDIA A100 40GB PCIe GPU Accelerator",
-                        "doc_id": "806d1ed0ea9311ee860a0242ac180005",
-                        "doc_name": "A100-PCIE-Prduct-Brief.pdf",
-                        "img_id": "afab9fdad6e511eebdb20242ac180006-8c11a1edddb21ad2ae0c43b4a5dcfa62",
-                        "important_kwd": [],
-                        "kb_id": "afab9fdad6e511eebdb20242ac180006",
-                        "positions": [
-                            [
-                                12.0,
-                                84.0,
-                                541.3,
-                                76.7,
-                                96.7
-                            ],
-                        ],
-                        "similarity": 0.3200748779905588,
-                        "term_similarity": 0.3082244010114718,
-                        "vector_similarity": 0.42672917080234146
-                    },
-                ],
-                "doc_aggs": [
-                    {
-                        "count": 1,
-                        "doc_id": "806d1ed0ea9311ee860a0242ac180005",
-                        "doc_name": "A100-PCIE-Prduct-Brief.pdf"
-                    }
-                ],
-                "total": 3
-            }
         ],
         "update_date": "Tue, 02 Apr 2024 09:07:49 GMT",
         "update_time": 1712020069421
@@ -253,9 +204,7 @@ This method retrieves the history of a specified conversation session.
     "retcode": 0,
     "retmsg": "success"
 }
-</code></pre>
-</details>
-
+```
     
 ## Get answer
 
@@ -269,7 +218,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 |----------|-------------------------------------------------------------|
 | POST     | `/api/completion`                                           |
 
-### Request parameter
+#### Request parameter
 
 |   Name           |  Type  | Required | Description   |
 |------------------|--------|----------|---------------|
@@ -286,20 +235,17 @@ This method retrieves from RAGFlow the answer to the user's latest question.
     - `chunks`: The retrieved chunks that contribute to the answer.  
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
-        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the image.
+        - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the image.
         - `positions`: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
         - `similarity`: The hybrid similarity.
         - `term_similarity`: The keyword simimlarity.
         - `vector_similarity`: The embedding similarity.
     - `doc_aggs`:
-        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/<id>](#get-document-content-or-image) to retrieve the document.
+        - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content-or-image) to retrieve the document.
         - `doc_name`: Name of the *hit* document. 
         - `count`: The number of *hit* chunks in this document.
 
-<details>
-  <summary>Response example</summary>
-    
-<pre><code>
+```json
 {
     "data": {
       "answer": "The ViT Score for GPT-4 in the zero-shot scenario is 0.5058, and in the few-shot scenario, it is 0.6480. ##0$$",
@@ -359,12 +305,11 @@ This method retrieves from RAGFlow the answer to the user's latest question.
     "retcode": 0,
     "retmsg": "success"
 }
-</code></pre>
-</details>    
+```  
 
-## Get document content or image
+## Get document content
 
-This method retrieves the content or a specific image in a document. Used if you intend to display the content of a citation.
+This method retrieves the content of a document.
 
 ### Request
 
@@ -372,9 +317,11 @@ This method retrieves the content or a specific image in a document. Used if you
 
 | Method   |        Request URI                                          |
 |----------|-------------------------------------------------------------|
-| GET      | `/api/document/get/<id>`                                    |
+| GET      | `/document/get/<id>`                                        |
 
 ### Response
+
+A binary file. 
 
 ## Upload file
 
@@ -388,7 +335,7 @@ This method uploads a specific file to a specified knowledge base.
 |----------|-------------------------------------------------------------|
 | POST     | `/api/document/upload`                                      |
 
-### Response parameter
+#### Response parameter
 
 |   Name      | Type   | Required | Description                                             |
 |-------------|--------|----------|---------------------------------------------------------|
@@ -400,9 +347,7 @@ This method uploads a specific file to a specified knowledge base.
 
 ### Response 
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": {
         "chunk_num": 0,
@@ -441,9 +386,7 @@ This method uploads a specific file to a specified knowledge base.
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
 
 ## Get document chunks
 
@@ -467,9 +410,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
 
 ### Response
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": [
         {
@@ -486,9 +427,7 @@ This method retrieves the chunks of a specific document by `doc_name` or `doc_id
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
 
 ## Get document list
 
@@ -516,9 +455,7 @@ This method retrieves a list of documents from a specified knowledge base.
 
 ### Response 
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": {
         "docs": [
@@ -536,9 +473,7 @@ This method retrieves a list of documents from a specified knowledge base.
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
 
 ## Delete documents 
 
@@ -562,14 +497,10 @@ This method deletes documents by document ID or name.
 
 ### Response
 
-<details>
-  <summary>Response example</summary>
-<pre><code>
+```json
 {
     "data": true,
     "retcode": 0,
     "retmsg": "success"
 }
-
-</code></pre>
-</details>
+```
