@@ -18,7 +18,7 @@ RagFlow supports the flowing LLMs, with more coming in the pipeline:
 - [Moonshot](https://platform.moonshot.cn/docs)
 - [DeepSeek](https://platform.deepseek.com/api-docs/)
 - [Baichuan](https://www.baichuan-ai.com/home)
-- [Volcano Ark](https://www.volcengine.com/docs/82379)
+- [VolcEngine](https://www.volcengine.com/docs/82379)
 
 After sign in these LLM suppliers, create your own API-Key, they all have a certain amount of free quota.
 

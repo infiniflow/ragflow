@@ -105,7 +105,7 @@ RAGFlow is a RAG engine, and it needs to work with an LLM to offer grounded, hal
 - Moonshot
 - DeepSeek-V2
 - Baichuan
-- Volcano Ark
+- VolcEngine
 
 >  RAGFlow also supports deploying LLMs locally using Ollama or Xinference, but this part is not covered in this quick start guide. 
 
