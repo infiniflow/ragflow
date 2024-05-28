@@ -24,7 +24,7 @@ export default {
       copied: '複製成功',
       comingSoon: '即將推出',
       download: '下載',
-      close: '关闭',
+      close: '關閉',
       preview: '預覽',
     },
     login: {

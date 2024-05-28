@@ -1,6 +1,18 @@
 import { useSetModalState } from '@/hooks/commonHooks';
-import React, { Dispatch, SetStateAction, useCallback, useState } from 'react';
-import { Node, Position, ReactFlowInstance } from 'reactflow';
+import React, {
+  Dispatch,
+  KeyboardEventHandler,
+  SetStateAction,
+  useCallback,
+  useState,
+} from 'react';
+import {
+  Node,
+  Position,
+  ReactFlowInstance,
+  useOnSelectionChange,
+  useReactFlow,
+} from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 
 export const useHandleDrag = () => {
@@ -74,4 +86,47 @@ export const useShowDrawer = () => {
     hideDrawer,
     showDrawer,
   };
+};
+
+export const useHandleSelectionChange = () => {
+  const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
+  const [selectedEdges, setSelectedEdges] = useState<string[]>([]);
+
+  useOnSelectionChange({
+    onChange: ({ nodes, edges }) => {
+      setSelectedNodes(nodes.map((node) => node.id));
+      setSelectedEdges(edges.map((edge) => edge.id));
+    },
+  });
+
+  return { selectedEdges, selectedNodes };
+};
+
+export const useDeleteEdge = (selectedEdges: string[]) => {
+  const { setEdges } = useReactFlow();
+
+  const deleteEdge = useCallback(() => {
+    setEdges((edges) =>
+      edges.filter((edge) => selectedEdges.every((x) => x !== edge.id)),
+    );
+  }, [setEdges, selectedEdges]);
+
+  return deleteEdge;
+};
+
+export const useHandleKeyUp = (
+  selectedEdges: string[],
+  selectedNodes: string[],
+) => {
+  const deleteEdge = useDeleteEdge(selectedEdges);
+  const handleKeyUp: KeyboardEventHandler = useCallback(
+    (e) => {
+      if (e.code === 'Delete') {
+        deleteEdge();
+      }
+    },
+    [deleteEdge],
+  );
+
+  return { handleKeyUp };
 };

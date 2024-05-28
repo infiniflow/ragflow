@@ -1,6 +1,6 @@
 import { DSLComponents } from '@/interfaces/database/flow';
 import dagre from 'dagre';
-import { Edge, Node, Position } from 'reactflow';
+import { Edge, MarkerType, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 
 const buildEdges = (
@@ -16,9 +16,12 @@ const buildEdges = (
       allEdges.push({
         id: uuidv4(),
         label: '',
-        type: 'step',
+        // type: 'step',
         source: source,
         target: target,
+        markerEnd: {
+          type: MarkerType.Arrow,
+        },
       });
     }
   });

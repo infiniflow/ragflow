@@ -45,6 +45,100 @@ export const initialEdges = [
 ];
 
 export const dsl = {
+  graph: {
+    nodes: [
+      {
+        id: 'begin',
+        type: 'textUpdater',
+        position: {
+          x: 50,
+          y: 200,
+        },
+        data: {
+          label: 'Begin',
+        },
+        sourcePosition: 'left',
+        targetPosition: 'right',
+      },
+      {
+        id: 'Answer:China',
+        type: 'textUpdater',
+        position: {
+          x: 150,
+          y: 200,
+        },
+        data: {
+          label: 'Answer',
+        },
+        sourcePosition: 'left',
+        targetPosition: 'right',
+      },
+      {
+        id: 'Retrieval:China',
+        type: 'textUpdater',
+        position: {
+          x: 250,
+          y: 200,
+        },
+        data: {
+          label: 'Retrieval',
+        },
+        sourcePosition: 'left',
+        targetPosition: 'right',
+      },
+      {
+        id: 'Generate:China',
+        type: 'textUpdater',
+        position: {
+          x: 100,
+          y: 100,
+        },
+        data: {
+          label: 'Generate',
+        },
+        sourcePosition: 'left',
+        targetPosition: 'right',
+      },
+    ],
+    edges: [
+      {
+        id: '7facb53d-65c9-43b3-ac55-339c445d3891',
+        label: '',
+        source: 'begin',
+        target: 'Answer:China',
+        markerEnd: {
+          type: 'arrow',
+        },
+      },
+      {
+        id: '7ac83631-502d-410f-a6e7-bec6866a5e99',
+        label: '',
+        source: 'Generate:China',
+        target: 'Answer:China',
+        markerEnd: {
+          type: 'arrow',
+        },
+      },
+      {
+        id: '0aaab297-5779-43ed-9281-2c4d3741566f',
+        label: '',
+        source: 'Answer:China',
+        target: 'Retrieval:China',
+        markerEnd: {
+          type: 'arrow',
+        },
+      },
+      {
+        id: '3477f9f3-0a7d-400e-af96-a11ea7673183',
+        label: '',
+        source: 'Retrieval:China',
+        target: 'Generate:China',
+        markerEnd: {
+          type: 'arrow',
+        },
+      },
+    ],
+  },
   components: {
     begin: {
       obj: {
