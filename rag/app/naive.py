@@ -19,6 +19,8 @@ from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from rag.settings import cron_logger
+from rag.utils import num_tokens_from_string
+
 
 class Docx(DocxParser):
     def __init__(self):
@@ -149,8 +151,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                     if not l:
                         break
                     txt += l
-        sections = txt.split("\n")
-        sections = [(l, "") for l in sections if l]
+        sections = []
+        for sec in txt.split("\n"):
+            if num_tokens_from_string(sec) > 10 * parser_config.get("chunk_token_num", 128):
+                sections.append((sec[:int(len(sec)/2)], ""))
+                sections.append((sec[int(len(sec)/2):], ""))
+            else:
+                sections.append((sec, ""))
+
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
@@ -163,7 +171,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     else:
         raise NotImplementedError(
-            "file type not supported yet(doc, docx, pdf, txt supported)")
+            "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
     chunks = naive_merge(
