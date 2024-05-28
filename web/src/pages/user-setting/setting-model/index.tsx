@@ -55,6 +55,7 @@ const IconMap = {
   Xinference: 'xinference',
   DeepSeek: 'deepseek',
   VolcEngine: 'volc_engine',
+  BaiChuan: 'baichuan',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {

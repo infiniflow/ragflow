@@ -137,7 +137,12 @@ factory_infos = [{
     "logo": "",
     "tags": "LLM, TEXT EMBEDDING",
     "status": "1",
-}
+},{
+    "name": "BaiChuan",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING",
+    "status": "1",
+},
     # {
     #     "name": "文心一言",
     #     "logo": "",
@@ -391,6 +396,49 @@ def init_llm_factory():
             "tags": "LLM,CHAT,4k",
             "max_tokens": 4096,
             "model_type": LLMType.CHAT.value
+        },
+        # ------------------------ BaiChuan -----------------------
+        {
+            "fid": factory_infos[10]["name"],
+            "llm_name": "Baichuan2-Turbo",
+            "tags": "LLM,CHAT,32K",
+            "max_tokens": 32768,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[10]["name"],
+            "llm_name": "Baichuan2-Turbo-192k",
+            "tags": "LLM,CHAT,192K",
+            "max_tokens": 196608,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[10]["name"],
+            "llm_name": "Baichuan3-Turbo",
+            "tags": "LLM,CHAT,32K",
+            "max_tokens": 32768,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[10]["name"],
+            "llm_name": "Baichuan3-Turbo-128k",
+            "tags": "LLM,CHAT,128K",
+            "max_tokens": 131072,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[10]["name"],
+            "llm_name": "Baichuan4",
+            "tags": "LLM,CHAT,128K",
+            "max_tokens": 131072,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[10]["name"],
+            "llm_name": "Baichuan-Text-Embedding",
+            "tags": "TEXT EMBEDDING",
+            "max_tokens": 512,
+            "model_type": LLMType.EMBEDDING.value
         },
     ]
     for info in factory_infos:
