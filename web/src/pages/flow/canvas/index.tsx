@@ -33,13 +33,6 @@ interface IProps {
 }
 
 function FlowCanvas({ sideWidth }: IProps) {
-  // const { nodes: initialNodes, edges: initialEdges } =
-  //   buildNodesAndEdgesFromDSLComponents(dsl.components);
-  // const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-  //   initialNodes,
-  //   initialEdges,
-  //   'LR',
-  // );
   const [nodes, setNodes] = useState<Node[]>(dsl.graph.nodes);
   const [edges, setEdges] = useState<Edge[]>(dsl.graph.edges);
 
@@ -48,7 +41,6 @@ function FlowCanvas({ sideWidth }: IProps) {
   const { ref, menu, onNodeContextMenu, onPaneClick } =
     useHandleNodeContextMenu(sideWidth);
   const { drawerVisible, hideDrawer, showDrawer } = useShowDrawer();
-  // useLayoutGraph(initialNodes, initialEdges, setNodes, setEdges);
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -94,13 +86,7 @@ function FlowCanvas({ sideWidth }: IProps) {
         onDragOver={onDragOver}
         onNodeClick={onNodeClick}
         onInit={setReactFlowInstance}
-        onEdgeClick={(e, edge) => {
-          console.info(e, edge);
-        }}
         onKeyUp={handleKeyUp}
-        onEdgesDelete={() => {
-          console.info('onEdgesDelete');
-        }}
       >
         <Background />
         <Controls />

@@ -130,3 +130,9 @@ export const useHandleKeyUp = (
 
   return { handleKeyUp };
 };
+
+export const useSaveGraph = () => {
+  const saveGraph = useCallback(() => {}, []);
+
+  return { saveGraph };
+};
