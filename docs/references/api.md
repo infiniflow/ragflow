@@ -89,7 +89,7 @@ This method retrieves the history of a specified conversation session.
 |----------|-------------------------------------------------------------|
 | GET      | `/api/conversation/<id>`                                    |
 
-### Request parameter
+#### Request parameter
 
 | Name     |  Type  | Required |        Description                                          |
 |----------|--------|----------|-------------------------------------------------------------|
@@ -218,7 +218,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 |----------|-------------------------------------------------------------|
 | POST     | `/api/completion`                                           |
 
-### Request parameter
+#### Request parameter
 
 |   Name           |  Type  | Required | Description   |
 |------------------|--------|----------|---------------|
@@ -321,6 +321,8 @@ This method retrieves the content of a document.
 
 ### Response
 
+A binary file. 
+
 ## Upload file
 
 This method uploads a specific file to a specified knowledge base.
@@ -333,7 +335,7 @@ This method uploads a specific file to a specified knowledge base.
 |----------|-------------------------------------------------------------|
 | POST     | `/api/document/upload`                                      |
 
-### Response parameter
+#### Response parameter
 
 |   Name      | Type   | Required | Description                                             |
 |-------------|--------|----------|---------------------------------------------------------|
