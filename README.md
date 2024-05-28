@@ -34,6 +34,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 📌 Latest Updates
 
+- 2024-05-28 Supports LLM Baichuan and VolcanoArk.
 - 2024-05-23 Supports [RAPTOR](https://arxiv.org/html/2401.18059v1) for better text retrieval.
 - 2024-05-21 Supports streaming output and text chunk retrieval API. 
 - 2024-05-15 Integrates OpenAI GPT-4o.
