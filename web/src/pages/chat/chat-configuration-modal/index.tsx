@@ -92,6 +92,7 @@ const ChatConfigurationModal = ({
     const finalValues = {
       dialog_id: initialDialog.id,
       ...nextValues,
+      vector_similarity_weight: 1 - nextValues.vector_similarity_weight,
       prompt_config: {
         ...nextValues.prompt_config,
         parameters: promptEngineRef.current,
@@ -142,6 +143,7 @@ const ChatConfigurationModal = ({
           settledModelVariableMap[ModelVariableType.Precise],
         icon: fileList,
         llm_id: initialDialog.llm_id ?? modelId,
+        vector_similarity_weight: 1 - initialDialog.vector_similarity_weight,
       });
     }
   }, [initialDialog, form, visible, modelId]);
