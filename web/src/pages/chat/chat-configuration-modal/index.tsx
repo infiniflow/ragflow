@@ -14,7 +14,7 @@ import { variableEnabledFieldMap } from '../constants';
 import { IPromptConfigParameters } from '../interface';
 import { excludeUnEnabledVariables } from '../utils';
 import AssistantSetting from './assistant-setting';
-import { useFetchModelId } from './hooks';
+import { useFetchLlmModelOnVisible, useFetchModelId } from './hooks';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
@@ -115,6 +115,8 @@ const ChatConfigurationModal = ({
     clearDialog();
     form.resetFields();
   };
+
+  useFetchLlmModelOnVisible(visible);
 
   const title = (
     <Flex gap={16}>

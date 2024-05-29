@@ -91,15 +91,12 @@ export default {
       processDuration: '过程持续时间',
       progressMsg: '进度消息',
       testingDescription: '最后一步！ 成功后，剩下的就交给Infiniflow AI吧。',
-      topK: 'Top K',
-      topKTip:
-        '对于计算成本，并非所有检索到的块都会计算与查询的向量余弦相似度。 Top K越大，召回率越高，检索速度越慢。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
-      vectorSimilarityWeight: '向量相似度权重',
+      vectorSimilarityWeight: '关键字相似度权重',
       vectorSimilarityWeightTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 两个权重之和为 1.0。',
+        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       testText: '测试文本',
       testTextPlaceholder: '请输入您的问题！',
       testingLabel: '测试',
@@ -140,6 +137,11 @@ export default {
       chunk: '解析块',
       bulk: '批量',
       cancel: '取消',
+      rerankModel: 'Rerank模型',
+      rerankPlaceholder: '请选择',
+      rerankTip: `如果是空的。它使用查询和块的嵌入来构成矢量余弦相似性。否则，它使用rerank评分代替矢量余弦相似性。`,
+      topK: 'Top-K',
+      topKTip: `K块将被送入Rerank型号。`,
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
@@ -446,6 +448,8 @@ export default {
       sequence2txtModel: 'Sequence2txt模型',
       sequence2txtModelTip:
         '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。',
+      rerankModel: 'Rerank模型',
+      rerankModelTip: `默认的重读模型用于用户问题检索到重读块。`,
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',

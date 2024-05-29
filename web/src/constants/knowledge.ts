@@ -47,6 +47,7 @@ export enum LlmModelType {
   Chat = 'chat',
   Image2text = 'image2text',
   Speech2text = 'speech2text',
+  Rerank = 'rerank',
 }
 
 export enum KnowledgeSearchParams {
