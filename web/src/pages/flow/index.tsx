@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ReactFlowProvider } from 'reactflow';
 import FlowCanvas from './canvas';
 import Sider from './flow-sider';
+import FlowHeader from './header';
 
 const { Content } = Layout;
 
@@ -14,6 +15,7 @@ function RagFlow() {
       <ReactFlowProvider>
         <Sider setCollapsed={setCollapsed} collapsed={collapsed}></Sider>
         <Layout>
+          <FlowHeader></FlowHeader>
           <Content style={{ margin: '0 16px' }}>
             <FlowCanvas sideWidth={collapsed ? 0 : 200}></FlowCanvas>
           </Content>

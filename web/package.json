@@ -21,6 +21,7 @@
     "classnames": "^2.5.1",
     "dagre": "^0.8.5",
     "dayjs": "^1.11.10",
+    "elkjs": "^0.9.3",
     "eventsource-parser": "^1.1.2",
     "i18next": "^23.7.16",
     "i18next-browser-languagedetector": "^8.0.0",
