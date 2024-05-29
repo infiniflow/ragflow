@@ -344,7 +344,8 @@ class Dealer:
             return ranks
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": page_size,
                "question": question, "vector": True, "topk": top,
-               "similarity": similarity_threshold}
+               "similarity": similarity_threshold,
+               "available_int": 1}
         sres = self.search(req, index_name(tenant_id), embd_mdl)
 
         if rerank_mdl:
