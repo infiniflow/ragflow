@@ -47,6 +47,8 @@ export interface IDialog {
   tenant_id: string;
   update_date: string;
   update_time: number;
+  vector_similarity_weight: number;
+  similarity_threshold: number;
 }
 
 export interface IConversation {

@@ -10,7 +10,7 @@ import { useEffect } from 'react';
 import { ISegmentedContentProps } from '../interface';
 
 import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
+import { useSelectLlmOptionsByModelType } from '@/hooks/llmHooks';
 import { Variable } from '@/interfaces/database/chat';
 import { variableEnabledFieldMap } from '../constants';
 import styles from './index.less';
@@ -30,7 +30,7 @@ const ModelSetting = ({
     value: x,
   }));
 
-  const modelOptions = useSelectLlmOptions();
+  const modelOptions = useSelectLlmOptionsByModelType();
 
   const handleParametersChange = (value: ModelVariableType) => {
     const variable = settledModelVariableMap[value];
@@ -56,8 +56,6 @@ const ModelSetting = ({
     }
   }, [form, initialLlmSetting, visible]);
 
-  useFetchLlmList(LlmModelType.Chat);
-
   return (
     <section
       className={classNames({
@@ -70,7 +68,7 @@ const ModelSetting = ({
         tooltip={t('modelTip')}
         rules={[{ required: true, message: t('modelMessage') }]}
       >
-        <Select options={modelOptions} showSearch />
+        <Select options={modelOptions[LlmModelType.Chat]} showSearch />
       </Form.Item>
       <Divider></Divider>
       <Form.Item

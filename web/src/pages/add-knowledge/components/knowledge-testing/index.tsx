@@ -15,7 +15,10 @@ const KnowledgeTesting = () => {
 
   const handleTesting = async () => {
     const values = await form.validateFields();
-    testChunk(values);
+    testChunk({
+      ...values,
+      vector_similarity_weight: 1 - values.vector_similarity_weight,
+    });
   };
 
   useEffect(() => {

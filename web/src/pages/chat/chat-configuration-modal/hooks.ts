@@ -1,3 +1,4 @@
+import { useFetchLlmList } from '@/hooks/llmHooks';
 import {
   useFetchTenantInfo,
   useSelectTenantInfo,
@@ -15,4 +16,14 @@ export const useFetchModelId = (visible: boolean) => {
   }, [visible, fetchTenantInfo]);
 
   return tenantInfo?.llm_id ?? '';
+};
+
+export const useFetchLlmModelOnVisible = (visible: boolean) => {
+  const fetchLlmList = useFetchLlmList();
+
+  useEffect(() => {
+    if (visible) {
+      fetchLlmList();
+    }
+  }, [fetchLlmList, visible]);
 };

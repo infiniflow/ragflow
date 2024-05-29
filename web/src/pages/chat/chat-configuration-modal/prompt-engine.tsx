@@ -29,6 +29,7 @@ import {
 } from '../interface';
 import { EditableCell, EditableRow } from './editable-cell';
 
+import Rerank from '@/components/rerank';
 import { useTranslate } from '@/hooks/commonHooks';
 import { useSelectPromptConfigParameters } from '../hooks';
 import styles from './index.less';
@@ -172,7 +173,7 @@ const PromptEngine = (
       >
         <Slider max={30} />
       </Form.Item>
-
+      <Rerank></Rerank>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
           <Col span={7} className={styles.variableAlign}>

@@ -26,7 +26,7 @@ const SimilaritySlider = ({ isTooltipShown = false }: IProps) => {
       <Form.Item<FieldType>
         label={t('vectorSimilarityWeight')}
         name={'vector_similarity_weight'}
-        initialValue={0.3}
+        initialValue={1 - 0.3}
         tooltip={isTooltipShown && t('vectorSimilarityWeightTip')}
       >
         <Slider max={1} step={0.01} />

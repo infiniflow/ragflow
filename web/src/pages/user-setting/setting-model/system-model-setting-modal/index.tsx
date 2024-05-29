@@ -76,6 +76,13 @@ const SystemModelSettingModal = ({
         >
           <Select options={allOptions[LlmModelType.Speech2text]} />
         </Form.Item>
+        <Form.Item
+          label={t('rerankModel')}
+          name="rerank_id"
+          tooltip={t('rerankModelTip')}
+        >
+          <Select options={allOptions[LlmModelType.Rerank]} />
+        </Form.Item>
       </Form>
     </Modal>
   );
