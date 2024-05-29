@@ -71,8 +71,8 @@ class Dealer:
 
         s = Search()
         pg = int(req.get("page", 1)) - 1
-        ps = int(req.get("size", 1000))
         topk = int(req.get("topk", 1024))
+        ps = int(req.get("size", topk))
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
                                  "image_id", "doc_id", "q_512_vec", "q_768_vec", "position_int",
                                  "q_1024_vec", "q_1536_vec", "available_int", "content_with_weight"])
@@ -311,6 +311,26 @@ class Dealer:
                                                         ins_tw, tkweight, vtweight)
         return sim, tksim, vtsim
 
+    def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
+               vtweight=0.7, cfield="content_ltks"):
+        _, keywords = self.qryr.question(query)
+
+        for i in sres.ids:
+            if isinstance(sres.field[i].get("important_kwd", []), str):
+                sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
+        ins_tw = []
+        for i in sres.ids:
+            content_ltks = sres.field[i][cfield].split(" ")
+            title_tks = [t for t in sres.field[i].get("title_tks", "").split(" ") if t]
+            important_kwd = sres.field[i].get("important_kwd", [])
+            tks = content_ltks + title_tks + important_kwd
+            ins_tw.append(tks)
+
+        tksim = self.qryr.token_similarity(keywords, ins_tw)
+        vtsim,_ = rerank_mdl.similarity(" ".join(keywords), [rmSpace(" ".join(tks)) for tks in ins_tw])
+
+        return tkweight*np.array(tksim) + vtweight*vtsim, tksim, vtsim
+
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd,
                                            ins_embd,
@@ -318,17 +338,22 @@ class Dealer:
                                            rag_tokenizer.tokenize(inst).split(" "))
 
     def retrieval(self, question, embd_mdl, tenant_id, kb_ids, page, page_size, similarity_threshold=0.2,
-                  vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True):
+                  vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True, rerank_mdl=None):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": page_size,
                "question": question, "vector": True, "topk": top,
-               "similarity": similarity_threshold}
+               "similarity": similarity_threshold,
+               "available_int": 1}
         sres = self.search(req, index_name(tenant_id), embd_mdl)
 
-        sim, tsim, vsim = self.rerank(
-            sres, question, 1 - vector_similarity_weight, vector_similarity_weight)
+        if rerank_mdl:
+            sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
+                sres, question, 1 - vector_similarity_weight, vector_similarity_weight)
+        else:
+            sim, tsim, vsim = self.rerank(
+                sres, question, 1 - vector_similarity_weight, vector_similarity_weight)
         idx = np.argsort(sim * -1)
 
         dim = len(sres.query_vector)

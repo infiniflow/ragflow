@@ -15,7 +15,7 @@
 #
 from api.db.services.user_service import TenantService
 from api.settings import database_logger
-from rag.llm import EmbeddingModel, CvModel, ChatModel
+from rag.llm import EmbeddingModel, CvModel, ChatModel, RerankModel
 from api.db import LLMType
 from api.db.db_models import DB, UserTenant
 from api.db.db_models import LLMFactories, LLM, TenantLLM
@@ -73,27 +73,37 @@ class TenantLLMService(CommonService):
             mdlnm = tenant.img2txt_id
         elif llm_type == LLMType.CHAT.value:
             mdlnm = tenant.llm_id if not llm_name else llm_name
+        elif llm_type == LLMType.RERANK:
+            mdlnm = tenant.rerank_id if not llm_name else llm_name
         else:
             assert False, "LLM type error"
 
         model_config = cls.get_api_key(tenant_id, mdlnm)
         if model_config: model_config = model_config.to_dict()
         if not model_config:
-            if llm_type == LLMType.EMBEDDING.value:
+            if llm_type in [LLMType.EMBEDDING, LLMType.RERANK]:
                 llm = LLMService.query(llm_name=llm_name)
-                if llm and llm[0].fid in ["Youdao", "FastEmbed", "DeepSeek"]:
+                if llm and llm[0].fid in ["Youdao", "FastEmbed", "BAAI"]:
                     model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": llm_name, "api_base": ""}
             if not model_config:
                 if llm_name == "flag-embedding":
                     model_config = {"llm_factory": "Tongyi-Qianwen", "api_key": "",
                                 "llm_name": llm_name, "api_base": ""}
                 else:
+                    if not mdlnm:
+                        raise LookupError(f"Type of {llm_type} model is not set.")
                     raise LookupError("Model({}) not authorized".format(mdlnm))
 
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return
             return EmbeddingModel[model_config["llm_factory"]](
+                model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
+
+        if llm_type == LLMType.RERANK:
+            if model_config["llm_factory"] not in RerankModel:
+                return
+            return RerankModel[model_config["llm_factory"]](
                 model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
 
         if llm_type == LLMType.IMAGE2TEXT.value:
@@ -125,14 +135,20 @@ class TenantLLMService(CommonService):
             mdlnm = tenant.img2txt_id
         elif llm_type == LLMType.CHAT.value:
             mdlnm = tenant.llm_id if not llm_name else llm_name
+        elif llm_type == LLMType.RERANK:
+            mdlnm = tenant.llm_id if not llm_name else llm_name
         else:
             assert False, "LLM type error"
 
         num = 0
-        for u in cls.query(tenant_id = tenant_id, llm_name=mdlnm):
-            num += cls.model.update(used_tokens = u.used_tokens + used_tokens)\
-                .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
-                .execute()
+        try:
+            for u in cls.query(tenant_id = tenant_id, llm_name=mdlnm):
+                num += cls.model.update(used_tokens = u.used_tokens + used_tokens)\
+                    .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
+                    .execute()
+        except Exception as e:
+            print(e)
+            pass
         return num
 
     @classmethod
@@ -175,6 +191,14 @@ class LLMBundle(object):
             database_logger.error(
                 "Can't update token usage for {}/EMBEDDING".format(self.tenant_id))
         return emd, used_tokens
+
+    def similarity(self, query: str, texts: list):
+        sim, used_tokens = self.mdl.similarity(query, texts)
+        if not TenantLLMService.increase_usage(
+                self.tenant_id, self.llm_type, used_tokens):
+            database_logger.error(
+                "Can't update token usage for {}/RERANK".format(self.tenant_id))
+        return sim, used_tokens
 
     def describe(self, image, max_tokens=300):
         txt, used_tokens = self.mdl.describe(image, max_tokens)

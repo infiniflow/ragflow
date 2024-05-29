@@ -142,7 +142,17 @@ factory_infos = [{
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
-},
+},{
+    "name": "Jina",
+    "logo": "",
+    "tags": "TEXT EMBEDDING, TEXT RE-RANK",
+    "status": "1",
+},{
+    "name": "BAAI",
+    "logo": "",
+    "tags": "TEXT EMBEDDING, TEXT RE-RANK",
+    "status": "1",
+}
     # {
     #     "name": "文心一言",
     #     "logo": "",
@@ -367,6 +377,13 @@ def init_llm_factory():
             "max_tokens": 512,
             "model_type": LLMType.EMBEDDING.value
         },
+        {
+            "fid": factory_infos[7]["name"],
+            "llm_name": "maidalun1020/bce-reranker-base_v1",
+            "tags": "RE-RANK, 8K",
+            "max_tokens": 8196,
+            "model_type": LLMType.RERANK.value
+        },
         # ------------------------ DeepSeek -----------------------
         {
             "fid": factory_infos[8]["name"],
@@ -439,6 +456,85 @@ def init_llm_factory():
             "tags": "TEXT EMBEDDING",
             "max_tokens": 512,
             "model_type": LLMType.EMBEDDING.value
+        },
+        # ------------------------ Jina -----------------------
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-reranker-v1-base-en",
+            "tags": "RE-RANK,8k",
+            "max_tokens": 8196,
+            "model_type": LLMType.RERANK.value
+        },
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-reranker-v1-turbo-en",
+            "tags": "RE-RANK,8k",
+            "max_tokens": 8196,
+            "model_type": LLMType.RERANK.value
+        },
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-reranker-v1-tiny-en",
+            "tags": "RE-RANK,8k",
+            "max_tokens": 8196,
+            "model_type": LLMType.RERANK.value
+        },
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-colbert-v1-en",
+            "tags": "RE-RANK,8k",
+            "max_tokens": 8196,
+            "model_type": LLMType.RERANK.value
+        },
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-embeddings-v2-base-en",
+            "tags": "TEXT EMBEDDING",
+            "max_tokens": 8196,
+            "model_type": LLMType.EMBEDDING.value
+        },
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-embeddings-v2-base-de",
+            "tags": "TEXT EMBEDDING",
+            "max_tokens": 8196,
+            "model_type": LLMType.EMBEDDING.value
+        },
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-embeddings-v2-base-es",
+            "tags": "TEXT EMBEDDING",
+            "max_tokens": 8196,
+            "model_type": LLMType.EMBEDDING.value
+        },
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-embeddings-v2-base-code",
+            "tags": "TEXT EMBEDDING",
+            "max_tokens": 8196,
+            "model_type": LLMType.EMBEDDING.value
+        },
+        {
+            "fid": factory_infos[11]["name"],
+            "llm_name": "jina-embeddings-v2-base-zh",
+            "tags": "TEXT EMBEDDING",
+            "max_tokens": 8196,
+            "model_type": LLMType.EMBEDDING.value
+        },
+        # ------------------------ BAAI -----------------------
+        {
+            "fid": factory_infos[12]["name"],
+            "llm_name": "BAAI/bge-large-zh-v1.5",
+            "tags": "TEXT EMBEDDING,",
+            "max_tokens": 1024,
+            "model_type": LLMType.EMBEDDING.value
+        },
+        {
+            "fid": factory_infos[12]["name"],
+            "llm_name": "BAAI/bge-reranker-v2-m3",
+            "tags": "LLM,CHAT,",
+            "max_tokens": 16385,
+            "model_type": LLMType.RERANK.value
         },
     ]
     for info in factory_infos:
