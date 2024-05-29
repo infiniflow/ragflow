@@ -17,6 +17,7 @@ import {
   Space,
   Spin,
   Tag,
+  Typography,
 } from 'antd';
 import { MenuItemProps } from 'antd/lib/menu/MenuItem';
 import classNames from 'classnames';
@@ -45,6 +46,8 @@ import { useSetSelectedRecord } from '@/hooks/logicHooks';
 import { IDialog } from '@/interfaces/database/chat';
 import ChatOverviewModal from './chat-overview-modal';
 import styles from './index.less';
+
+const { Text } = Typography;
 
 const Chat = () => {
   const dialogList = useSelectFirstDialogOnMount();
@@ -260,7 +263,14 @@ const Chat = () => {
                     <Space size={15}>
                       <Avatar src={x.icon} shape={'square'} />
                       <section>
-                        <b>{x.name}</b>
+                        <b>
+                          <Text
+                            ellipsis={{ tooltip: x.name }}
+                            style={{ width: 130 }}
+                          >
+                            {x.name}
+                          </Text>
+                        </b>
                         <div>{x.description}</div>
                       </section>
                     </Space>
@@ -315,7 +325,14 @@ const Chat = () => {
                   })}
                 >
                   <Flex justify="space-between" align="center">
-                    <div>{x.name}</div>
+                    <div>
+                      <Text
+                        ellipsis={{ tooltip: x.name }}
+                        style={{ width: 150 }}
+                      >
+                        {x.name}
+                      </Text>
+                    </div>
                     {conversationActivated === x.id && x.id !== '' && (
                       <section>
                         <Dropdown
