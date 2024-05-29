@@ -176,7 +176,7 @@ const PromptEngine = (
       <Rerank></Rerank>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
-          <Col span={7} className={styles.variableAlign}>
+          <Col span={9} className={styles.variableAlign}>
             <label className={styles.variableLabel}>
               {t('variable')}
               <Tooltip title={t('variableTip')}>
@@ -184,7 +184,7 @@ const PromptEngine = (
               </Tooltip>
             </label>
           </Col>
-          <Col span={17} className={styles.variableAlign}>
+          <Col span={15} className={styles.variableAlign}>
             <Button size="small" onClick={handleAdd}>
               {t('add')}
             </Button>
