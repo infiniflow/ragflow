@@ -93,6 +93,7 @@ class TenantService(CommonService):
             cls.model.name,
             cls.model.llm_id,
             cls.model.embd_id,
+            cls.model.rerank_id,
             cls.model.asr_id,
             cls.model.img2txt_id,
             cls.model.parser_ids,

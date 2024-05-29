@@ -16,18 +16,19 @@
 from .embedding_model import *
 from .chat_model import *
 from .cv_model import *
+from .rerank_model import *
 
 
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
     "OpenAI": OpenAIEmbed,
     "Xinference": XinferenceEmbed,
-    "Tongyi-Qianwen": DefaultEmbedding, #QWenEmbed,
+    "Tongyi-Qianwen": DefaultEmbedding,#QWenEmbed,
     "ZHIPU-AI": ZhipuEmbed,
     "FastEmbed": FastEmbed,
     "Youdao": YoudaoEmbed,
-    "DeepSeek": DefaultEmbedding,
-    "BaiChuan": BaiChuanEmbed
+    "BaiChuan": BaiChuanEmbed,
+    "BAAI": DefaultEmbedding
 }
 
 
@@ -52,3 +53,9 @@ ChatModel = {
     "BaiChuan": BaiChuanChat
 }
 
+
+RerankModel = {
+    "BAAI": DefaultRerank,
+    "Jina": JinaRerank,
+    "Youdao": YoudaoRerank,
+}

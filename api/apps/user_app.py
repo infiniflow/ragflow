@@ -26,8 +26,9 @@ from api.db.services.llm_service import TenantLLMService, LLMService
 from api.utils.api_utils import server_error_response, validate_request
 from api.utils import get_uuid, get_format_time, decrypt, download_img, current_timestamp, datetime_format
 from api.db import UserTenantRole, LLMType, FileType
-from api.settings import RetCode, GITHUB_OAUTH, FEISHU_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, API_KEY, \
-    LLM_FACTORY, LLM_BASE_URL
+from api.settings import RetCode, GITHUB_OAUTH, FEISHU_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, \
+    API_KEY, \
+    LLM_FACTORY, LLM_BASE_URL, RERANK_MDL
 from api.db.services.user_service import UserService, TenantService, UserTenantService
 from api.db.services.file_service import FileService
 from api.settings import stat_logger
@@ -288,7 +289,8 @@ def user_register(user_id, user):
         "embd_id": EMBEDDING_MDL,
         "asr_id": ASR_MDL,
         "parser_ids": PARSERS,
-        "img2txt_id": IMAGE2TEXT_MDL
+        "img2txt_id": IMAGE2TEXT_MDL,
+        "rerank_id": RERANK_MDL
     }
     usr_tenant = {
         "tenant_id": user_id,

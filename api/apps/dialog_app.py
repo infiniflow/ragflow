@@ -33,6 +33,9 @@ def set_dialog():
     name = req.get("name", "New Dialog")
     description = req.get("description", "A helpful Dialog")
     top_n = req.get("top_n", 6)
+    top_k = req.get("top_k", 1024)
+    rerank_id = req.get("rerank_id", "")
+    if not rerank_id: req["rerank_id"] = ""
     similarity_threshold = req.get("similarity_threshold", 0.1)
     vector_similarity_weight = req.get("vector_similarity_weight", 0.3)
     llm_setting = req.get("llm_setting", {})
@@ -83,6 +86,8 @@ def set_dialog():
                 "llm_setting": llm_setting,
                 "prompt_config": prompt_config,
                 "top_n": top_n,
+                "top_k": top_k,
+                "rerank_id": rerank_id,
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight
             }
