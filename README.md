@@ -27,19 +27,19 @@
 <details open>
 <summary></b>📕 Table of Contents</b></summary>
   
-- [💡 What is RAGFlow?](#what-is-ragflow)
-- [🎮 Demo](#demo)
-- [📌 Latest Updates](#latest-updates)
-- [🌟 Key Features](#key-features)
-- [🔎 System Architecture](#system-architecture)
-- [🎬 Get Started](#get-started)
-- [🔧 Configurations](#configurations)
-- [🛠️ Build from source](#build-from-source)
-- [🛠️ Launch service from source](#launch-service-from-source)
-- [📚 Documentation](#documentation)
-- [📜 Roadmap](#roadmap)
-- [🏄 Community](#community)
-- [🙌 Contributing](#contributing)
+- [What is RAGFlow?](#what-is-ragflow)
+- [Demo](#demo)
+- [Latest Updates](#latest-updates)
+- [Key Features](#key-features)
+- [System Architecture](#system-architecture)
+- [Get Started](#get-started)
+- [Configurations](#configurations)
+- [Build from source](#build-from-source)
+- [Launch service from source](#launch-service-from-source)
+- [Documentation](#documentation)
+- [Roadmap](#roadmap)
+- [Community](#community)
+- [Contributing](#contributing)
 
 </details>
 
