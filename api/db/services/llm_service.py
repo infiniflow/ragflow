@@ -147,7 +147,6 @@ class TenantLLMService(CommonService):
                     .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
                     .execute()
         except Exception as e:
-            print(e)
             pass
         return num
 

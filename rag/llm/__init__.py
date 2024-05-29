@@ -28,6 +28,7 @@ EmbeddingModel = {
     "FastEmbed": FastEmbed,
     "Youdao": YoudaoEmbed,
     "BaiChuan": BaiChuanEmbed,
+    "Jina": JinaEmbed,
     "BAAI": DefaultEmbedding
 }
 
