@@ -37,13 +37,13 @@ import {
   useSelectModelProvidersLoading,
   useSubmitApiKey,
   useSubmitOllama,
-  useSubmitVolcEngine,
   useSubmitSystemModelSetting,
+  useSubmitVolcEngine,
 } from './hooks';
 import styles from './index.less';
 import OllamaModal from './ollama-modal';
-import VolcEngineModal from "./volcengine-model";
 import SystemModelSettingModal from './system-model-setting-modal';
+import VolcEngineModal from './volcengine-model';
 
 const IconMap = {
   'Tongyi-Qianwen': 'tongyi',
@@ -56,6 +56,7 @@ const IconMap = {
   DeepSeek: 'deepseek',
   VolcEngine: 'volc_engine',
   BaiChuan: 'baichuan',
+  Jina: 'jina',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
@@ -103,7 +104,9 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
           <Col span={12} className={styles.factoryOperationWrapper}>
             <Space size={'middle'}>
               <Button onClick={handleApiKeyClick}>
-                {isLocalLlmFactory(item.name) || item.name === 'VolcEngine' ? t('addTheModel') : 'API-Key'}
+                {isLocalLlmFactory(item.name) || item.name === 'VolcEngine'
+                  ? t('addTheModel')
+                  : 'API-Key'}
                 <SettingOutlined />
               </Button>
               <Button onClick={handleShowMoreClick}>

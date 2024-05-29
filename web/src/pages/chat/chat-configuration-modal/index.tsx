@@ -22,8 +22,8 @@ import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const layout = {
-  labelCol: { span: 7 },
-  wrapperCol: { span: 17 },
+  labelCol: { span: 9 },
+  wrapperCol: { span: 15 },
 };
 
 const validateMessages = {
