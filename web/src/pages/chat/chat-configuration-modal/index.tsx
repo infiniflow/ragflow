@@ -14,7 +14,7 @@ import { variableEnabledFieldMap } from '../constants';
 import { IPromptConfigParameters } from '../interface';
 import { excludeUnEnabledVariables } from '../utils';
 import AssistantSetting from './assistant-setting';
-import { useFetchModelId } from './hooks';
+import { useFetchLlmModelOnVisible, useFetchModelId } from './hooks';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
@@ -22,8 +22,8 @@ import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const layout = {
-  labelCol: { span: 7 },
-  wrapperCol: { span: 17 },
+  labelCol: { span: 9 },
+  wrapperCol: { span: 15 },
 };
 
 const validateMessages = {
@@ -92,6 +92,7 @@ const ChatConfigurationModal = ({
     const finalValues = {
       dialog_id: initialDialog.id,
       ...nextValues,
+      vector_similarity_weight: 1 - nextValues.vector_similarity_weight,
       prompt_config: {
         ...nextValues.prompt_config,
         parameters: promptEngineRef.current,
@@ -114,6 +115,8 @@ const ChatConfigurationModal = ({
     clearDialog();
     form.resetFields();
   };
+
+  useFetchLlmModelOnVisible(visible);
 
   const title = (
     <Flex gap={16}>
@@ -142,6 +145,7 @@ const ChatConfigurationModal = ({
           settledModelVariableMap[ModelVariableType.Precise],
         icon: fileList,
         llm_id: initialDialog.llm_id ?? modelId,
+        vector_similarity_weight: 1 - initialDialog.vector_similarity_weight,
       });
     }
   }, [initialDialog, form, visible, modelId]);

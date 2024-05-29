@@ -67,7 +67,7 @@ The serving IP and port inside the docker container. This is not updating until 
 Newly signed-up users use LLM configured by this part. Otherwise, user need to configure his own LLM in *setting*.
   
 ### factory
-The LLM suppliers. 'Tongyi-Qianwen', "OpenAI"， "Moonshot" and "ZHIPU-AI" are supported.
+The LLM suppliers. "OpenAI"， "Tongyi-Qianwen", "ZHIPU-AI", "Moonshot", "DeepSeek", "Baichuan", and "VolcEngine" are supported.
 
 ### api_key
 The corresponding API key of your assigned LLM vendor.

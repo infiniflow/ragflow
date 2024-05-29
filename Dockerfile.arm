@@ -1,0 +1,32 @@
+FROM python:3.11
+USER  root
+
+WORKDIR /ragflow
+
+COPY requirements_arm.txt /ragflow/requirements.txt
+RUN pip install -i https://mirrors.aliyun.com/pypi/simple/ --default-timeout=1000 -r requirements.txt &&\
+python -c "import nltk;nltk.download('punkt');nltk.download('wordnet')"
+
+RUN apt-get update && \
+    apt-get install -y curl gnupg && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN curl -sL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs nginx ffmpeg libsm6 libxext6 libgl1
+
+ADD ./web ./web
+RUN cd ./web && npm i --force && npm run build
+
+ADD ./api ./api
+ADD ./conf ./conf
+ADD ./deepdoc ./deepdoc
+ADD ./rag ./rag
+
+ENV PYTHONPATH=/ragflow/
+ENV HF_ENDPOINT=https://hf-mirror.com
+
+ADD docker/entrypoint.sh ./entrypoint.sh
+ADD docker/.env ./
+RUN chmod +x ./entrypoint.sh
+
+ENTRYPOINT ["./entrypoint.sh"]

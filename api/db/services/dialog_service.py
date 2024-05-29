@@ -115,11 +115,14 @@ def chat(dialog, messages, stream=True, **kwargs):
     if "knowledge" not in [p["key"] for p in prompt_config["parameters"]]:
         kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
     else:
+        rerank_mdl = None
+        if dialog.rerank_id:
+            rerank_mdl = LLMBundle(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
         kbinfos = retrievaler.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
                                         dialog.similarity_threshold,
                                         dialog.vector_similarity_weight,
                                         doc_ids=kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None,
-                                        top=1024, aggs=False)
+                                        top=1024, aggs=False, rerank_mdl=rerank_mdl)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
     chat_logger.info(
         "{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
@@ -130,9 +133,13 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     kwargs["knowledge"] = "\n".join(knowledges)
     gen_conf = dialog.llm_setting
-    msg = [{"role": m["role"], "content": m["content"]}
-           for m in messages if m["role"] != "system"]
+
+    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
+    msg.extend([{"role": m["role"], "content": m["content"]}
+           for m in messages if m["role"] != "system"])
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.97))
+    assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
+
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(
             gen_conf["max_tokens"],
@@ -165,14 +172,13 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     if stream:
         answer = ""
-        for ans in chat_mdl.chat_streamly(prompt_config["system"].format(**kwargs), msg, gen_conf):
+        for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], gen_conf):
             answer = ans
             yield {"answer": answer, "reference": {}}
         yield decorate_answer(answer)
     else:
         answer = chat_mdl.chat(
-            prompt_config["system"].format(
-                **kwargs), msg, gen_conf)
+            msg[0]["content"], msg[1:], gen_conf)
         chat_logger.info("User: {}|Assistant: {}".format(
             msg[-1]["content"], answer))
         yield decorate_answer(answer)

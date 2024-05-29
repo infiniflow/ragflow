@@ -1,3 +1,4 @@
+import { Domain } from '@/constants/common';
 import { useSecondPathName } from '@/hooks/routeHook';
 import type { MenuProps } from 'antd';
 import { Flex, Menu } from 'antd';
@@ -23,7 +24,9 @@ const SideBar = () => {
   const { version, fetchSystemVersion } = useFetchSystemVersion();
 
   useEffect(() => {
-    fetchSystemVersion();
+    if (location.host !== Domain) {
+      fetchSystemVersion();
+    }
   }, [fetchSystemVersion]);
 
   function getItem(

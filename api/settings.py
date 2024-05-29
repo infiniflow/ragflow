@@ -89,9 +89,22 @@ default_llm = {
     },
     "DeepSeek": {
         "chat_model": "deepseek-chat",
+        "embedding_model": "",
+        "image2text_model": "",
+        "asr_model": "",
+    },
+    "VolcEngine": {
+        "chat_model": "",
+        "embedding_model": "",
+        "image2text_model": "",
+        "asr_model": "",
+    },
+    "BAAI": {
+        "chat_model": "",
         "embedding_model": "BAAI/bge-large-zh-v1.5",
         "image2text_model": "",
         "asr_model": "",
+        "rerank_model": "BAAI/bge-reranker-v2-m3",
     }
 }
 LLM = get_base_config("user_default_llm", {})
@@ -104,7 +117,8 @@ if LLM_FACTORY not in default_llm:
         f"LLM factory {LLM_FACTORY} has not supported yet, switch to 'Tongyi-Qianwen/QWen' automatically, and please check the API_KEY in service_conf.yaml.")
     LLM_FACTORY = "Tongyi-Qianwen"
 CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"]
-EMBEDDING_MDL = default_llm[LLM_FACTORY]["embedding_model"]
+EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"]
+RERANK_MDL = default_llm["BAAI"]["rerank_model"]
 ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
 IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
 

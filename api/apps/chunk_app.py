@@ -229,6 +229,9 @@ def create():
         v = 0.1 * v[0] + 0.9 * v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
         ELASTICSEARCH.upsert([d], search.index_name(tenant_id))
+
+        DocumentService.increment_chunk_num(
+            doc.id, doc.kb_id, c, 1, 0)
         return get_json_result(data={"chunk_id": chunck_id})
     except Exception as e:
         return server_error_response(e)
@@ -254,8 +257,15 @@ def retrieval_test():
 
         embd_mdl = TenantLLMService.model_instance(
             kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
-        ranks = retrievaler.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size, similarity_threshold,
-                                      vector_similarity_weight, top, doc_ids)
+
+        rerank_mdl = None
+        if req.get("rerank_id"):
+            rerank_mdl = TenantLLMService.model_instance(
+                kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+
+        ranks = retrievaler.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size,
+                                      similarity_threshold, vector_similarity_weight, top,
+                                      doc_ids, rerank_mdl=rerank_mdl)
         for c in ranks["chunks"]:
             if "vector" in c:
                 del c["vector"]

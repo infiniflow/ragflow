@@ -7,7 +7,8 @@
     "postinstall": "umi setup",
     "lint": "umi lint --eslint-only",
     "setup": "umi setup",
-    "start": "npm run dev"
+    "start": "npm run dev",
+    "test": "jest --no-cache --coverage"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
@@ -18,7 +19,9 @@
     "antd": "^5.12.7",
     "axios": "^1.6.3",
     "classnames": "^2.5.1",
+    "dagre": "^0.8.5",
     "dayjs": "^1.11.10",
+    "elkjs": "^0.9.3",
     "eventsource-parser": "^1.1.2",
     "i18next": "^23.7.16",
     "i18next-browser-languagedetector": "^8.0.0",
@@ -45,20 +48,28 @@
   },
   "devDependencies": {
     "@react-dev-inspector/umi4-plugin": "^2.0.1",
+    "@testing-library/jest-dom": "^6.4.5",
+    "@testing-library/react": "^15.0.7",
+    "@types/dagre": "^0.7.52",
+    "@types/jest": "^29.5.12",
     "@types/lodash": "^4.14.202",
     "@types/react": "^18.0.33",
     "@types/react-copy-to-clipboard": "^5.0.7",
     "@types/react-dom": "^18.0.11",
     "@types/react-syntax-highlighter": "^15.5.11",
+    "@types/testing-library__jest-dom": "^6.0.0",
     "@types/uuid": "^9.0.8",
     "@types/webpack-env": "^1.18.4",
     "@umijs/lint": "^4.1.1",
     "@umijs/plugins": "^4.1.0",
     "cross-env": "^7.0.3",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "prettier": "^3.2.4",
     "prettier-plugin-organize-imports": "^3.2.4",
     "prettier-plugin-packagejson": "^2.4.9",
     "react-dev-inspector": "^2.0.1",
+    "ts-node": "^10.9.2",
     "typescript": "^5.0.3",
     "umi-plugin-icons": "^0.1.1"
   }

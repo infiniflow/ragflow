@@ -2,8 +2,11 @@ import SimilaritySlider from '@/components/similarity-slider';
 import { Button, Card, Divider, Flex, Form, Input } from 'antd';
 import { FormInstance } from 'antd/lib';
 
+import Rerank from '@/components/rerank';
 import { useTranslate } from '@/hooks/commonHooks';
+import { useFetchLlmList } from '@/hooks/llmHooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { useEffect } from 'react';
 import styles from './index.less';
 
 type FieldType = {
@@ -23,6 +26,11 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
     'testDocumentChunk',
   ]);
   const { t } = useTranslate('knowledgeDetails');
+  const fetchLlmList = useFetchLlmList();
+
+  useEffect(() => {
+    fetchLlmList();
+  }, [fetchLlmList]);
 
   const buttonDisabled =
     !question || (typeof question === 'string' && question.trim() === '');
@@ -37,6 +45,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
       <section>
         <Form name="testing" layout="vertical" form={form}>
           <SimilaritySlider isTooltipShown></SimilaritySlider>
+          <Rerank></Rerank>
           <Card size="small" title={t('testText')}>
             <Form.Item<FieldType>
               name={'question'}

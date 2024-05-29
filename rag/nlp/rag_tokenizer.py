@@ -24,7 +24,7 @@ class RagTokenizer:
     def loadDict_(self, fnm):
         print("[HUQIE]:Build trie", fnm, file=sys.stderr)
         try:
-            of = open(fnm, "r")
+            of = open(fnm, "r", encoding='utf-8')
             while True:
                 line = of.readline()
                 if not line:
@@ -241,11 +241,14 @@ class RagTokenizer:
 
         return self.score_(res[::-1])
 
+    def english_normalize_(self, tks):
+        return [self.stemmer.stem(self.lemmatizer.lemmatize(t)) if re.match(r"[a-zA-Z_-]+$", t) else t for t in tks]
+
     def tokenize(self, line):
         line = self._strQ2B(line).lower()
         line = self._tradi2simp(line)
         zh_num = len([1 for c in line if is_chinese(c)])
-        if zh_num < len(line) * 0.2:
+        if zh_num == 0:
             return " ".join([self.stemmer.stem(self.lemmatizer.lemmatize(t)) for t in word_tokenize(line)])
 
         arr = re.split(self.SPLIT_CHAR, line)
@@ -293,7 +296,7 @@ class RagTokenizer:
 
                 i = e + 1
 
-        res = " ".join(res)
+        res = " ".join(self.english_normalize_(res))
         if self.DEBUG:
             print("[TKS]", self.merge_(res))
         return self.merge_(res)
@@ -336,7 +339,7 @@ class RagTokenizer:
 
             res.append(stk)
 
-        return " ".join(res)
+        return " ".join(self.english_normalize_(res))
 
 
 def is_chinese(s):
