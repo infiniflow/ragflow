@@ -1,4 +1,4 @@
-export type DSLComponents = Record<string, Operator>;
+export type DSLComponents = Record<string, IOperator>;
 
 export interface DSL {
   components: DSLComponents;
@@ -7,13 +7,13 @@ export interface DSL {
   answer: any[];
 }
 
-export interface Operator {
-  obj: OperatorNode;
+export interface IOperator {
+  obj: IOperatorNode;
   downstream: string[];
   upstream: string[];
 }
 
-export interface OperatorNode {
+export interface IOperatorNode {
   component_name: string;
   params: Record<string, unknown>;
 }

@@ -16,7 +16,7 @@ function RagFlow() {
         <Sider setCollapsed={setCollapsed} collapsed={collapsed}></Sider>
         <Layout>
           <FlowHeader></FlowHeader>
-          <Content style={{ margin: '0 16px' }}>
+          <Content style={{ margin: 0 }}>
             <FlowCanvas sideWidth={collapsed ? 0 : 200}></FlowCanvas>
           </Content>
         </Layout>

@@ -75,16 +75,26 @@ export const useHandleDrop = (setNodes: Dispatch<SetStateAction<Node[]>>) => {
 };
 
 export const useShowDrawer = () => {
+  const [clickedNode, setClickedNode] = useState<Node>();
   const {
     visible: drawerVisible,
     hideModal: hideDrawer,
     showModal: showDrawer,
   } = useSetModalState();
 
+  const handleShow = useCallback(
+    (node: Node) => {
+      setClickedNode(node);
+      showDrawer();
+    },
+    [showDrawer],
+  );
+
   return {
     drawerVisible,
     hideDrawer,
-    showDrawer,
+    showDrawer: handleShow,
+    clickedNode,
   };
 };
 

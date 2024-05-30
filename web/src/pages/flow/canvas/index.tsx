@@ -26,6 +26,8 @@ import {
 import { dsl } from '../mock';
 import { TextUpdaterNode } from './node';
 
+import styles from './index.less';
+
 const nodeTypes = { textUpdater: TextUpdaterNode };
 
 interface IProps {
@@ -40,7 +42,8 @@ function FlowCanvas({ sideWidth }: IProps) {
 
   const { ref, menu, onNodeContextMenu, onPaneClick } =
     useHandleNodeContextMenu(sideWidth);
-  const { drawerVisible, hideDrawer, showDrawer } = useShowDrawer();
+  const { drawerVisible, hideDrawer, showDrawer, clickedNode } =
+    useShowDrawer();
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -56,9 +59,12 @@ function FlowCanvas({ sideWidth }: IProps) {
     [],
   );
 
-  const onNodeClick: NodeMouseHandler = useCallback(() => {
-    showDrawer();
-  }, [showDrawer]);
+  const onNodeClick: NodeMouseHandler = useCallback(
+    (e, node) => {
+      showDrawer(node);
+    },
+    [showDrawer],
+  );
 
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop(setNodes);
 
@@ -70,7 +76,7 @@ function FlowCanvas({ sideWidth }: IProps) {
   }, [nodes, edges]);
 
   return (
-    <div style={{ height: '100%', width: '100%' }}>
+    <div className={styles.canvasWrapper}>
       <ReactFlow
         ref={ref}
         nodes={nodes}
@@ -94,7 +100,11 @@ function FlowCanvas({ sideWidth }: IProps) {
           <NodeContextMenu onClick={onPaneClick} {...(menu as any)} />
         )}
       </ReactFlow>
-      <FlowDrawer visible={drawerVisible} hideModal={hideDrawer}></FlowDrawer>
+      <FlowDrawer
+        node={clickedNode}
+        visible={drawerVisible}
+        hideModal={hideDrawer}
+      ></FlowDrawer>
     </div>
   );
 }
