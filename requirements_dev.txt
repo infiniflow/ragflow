@@ -125,3 +125,5 @@ redis==5.0.4
 fasttext==0.9.2
 umap-learn
 volcengine
+readability-lxml==0.8.1
+html_text==0.6.2

@@ -19,7 +19,7 @@ from rag.nlp import bullets_category, is_english, tokenize, remove_contents_tabl
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, add_positions, \
     tokenize_chunks, find_codec
 from rag.nlp import rag_tokenizer
-from deepdoc.parser import PdfParser, DocxParser, PlainParser
+from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
 
 
 class Pdf(PdfParser):
@@ -100,6 +100,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                         break
                     txt += l
         sections = txt.split("\n")
+        sections = [(l, "") for l in sections if l]
+        remove_contents_table(sections, eng=is_english(
+            random_choices([t for t, _ in sections], k=200)))
+        callback(0.8, "Finish parsing.")
+
+    elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        sections = HtmlParser()(filename, binary)
         sections = [(l, "") for l in sections if l]
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
