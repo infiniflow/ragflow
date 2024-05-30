@@ -58,17 +58,17 @@ def message_fit_in(msg, max_length=4000):
     if c < max_length:
         return c, msg
 
-    ll = num_tokens_from_string(msg_[0].content)
-    l = num_tokens_from_string(msg_[-1].content)
+    ll = num_tokens_from_string(msg_[0]["content"])
+    l = num_tokens_from_string(msg_[-1]["content"])
     if ll / (ll + l) > 0.8:
-        m = msg_[0].content
+        m = msg_[0]["content"]
         m = encoder.decode(encoder.encode(m)[:max_length - l])
-        msg[0].content = m
+        msg[0]["content"] = m
         return max_length, msg
 
-    m = msg_[1].content
+    m = msg_[1]["content"]
     m = encoder.decode(encoder.encode(m)[:max_length - l])
-    msg[1].content = m
+    msg[1]["content"] = m
     return max_length, msg
 
 
