@@ -532,8 +532,8 @@ def init_llm_factory():
         {
             "fid": factory_infos[12]["name"],
             "llm_name": "BAAI/bge-reranker-v2-m3",
-            "tags": "LLM,CHAT,",
-            "max_tokens": 16385,
+            "tags": "RE-RANK,2k",
+            "max_tokens": 2048,
             "model_type": LLMType.RERANK.value
         },
     ]
