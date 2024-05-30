@@ -135,7 +135,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                   for ck in hierarchical_merge(bull, sections, 5)]
     else:
         sections = [s.split("@") for s, _ in sections]
-        sections = [(pr[0], "@" + pr[1]) for pr in sections if len(pr) == 2]
+        sections = [(pr[0], "@" + pr[1]) if len(pr) == 2 else (pr[0], '') for pr in sections ]
         chunks = naive_merge(
             sections, kwargs.get(
                 "chunk_token_num", 256), kwargs.get(
