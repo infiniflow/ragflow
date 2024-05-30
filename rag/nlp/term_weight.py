@@ -104,7 +104,7 @@ class Dealer:
         while i < len(tks):
             j = i
             if i == 0 and oneTerm(tks[i]) and len(
-                    tks) > 1 and len(tks[i + 1]) > 1:  # 多 工位
+                    tks) > 1 and (len(tks[i + 1]) > 1 and not re.match(r"[0-9a-zA-Z]", tks[i + 1])):  # 多 工位
                 res.append(" ".join(tks[0:2]))
                 i = 2
                 continue

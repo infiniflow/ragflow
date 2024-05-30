@@ -117,7 +117,7 @@ class RedisDB:
                 self.REDIS.xgroup_create(
                     queue_name,
                     group_name,
-                    id="$",
+                    id="0",
                     mkstream=True
                 )
             args = {

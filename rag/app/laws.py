@@ -20,7 +20,7 @@ from api.db import ParserType
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
     make_colon_as_title, add_positions, tokenize_chunks, find_codec
 from rag.nlp import rag_tokenizer
-from deepdoc.parser import PdfParser, DocxParser, PlainParser
+from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
 from rag.settings import cron_logger
 
 
@@ -122,6 +122,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                         break
                     txt += l
         sections = txt.split("\n")
+        sections = [l for l in sections if l]
+        callback(0.8, "Finish parsing.")
+
+    elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        sections = HtmlParser()(filename, binary)
         sections = [l for l in sections if l]
         callback(0.8, "Finish parsing.")
 
