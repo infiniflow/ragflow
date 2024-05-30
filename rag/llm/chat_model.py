@@ -206,6 +206,7 @@ class QWenChat(Base):
         if system:
             history.insert(0, {"role": "system", "content": system})
         ans = ""
+        tk_count = 0
         try:
             response = Generation.call(
                 self.model_name,
@@ -261,6 +262,7 @@ class ZhipuChat(Base):
         if "presence_penalty" in gen_conf: del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf: del gen_conf["frequency_penalty"]
         ans = ""
+        tk_count = 0
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -439,6 +441,7 @@ class VolcEngineChat(Base):
         if system:
             history.insert(0, {"role": "system", "content": system})
         ans = ""
+        tk_count = 0
         try:
             req = {
                 "parameters": {
