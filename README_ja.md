@@ -34,7 +34,7 @@
 
 ## 📌 最新情報
 
-- 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding)、[BGE](https://github.com/FlagOpen/FlagEmbedding)、[Colbert](https://github.com/stanford-futuredata/ColBERT) reranker を統合。
+- 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding)、[BGE](https://github.com/FlagOpen/FlagEmbedding) reranker を統合。
 - 2024-05-28 LLM BaichuanとVolcanoArkを統合しました。
 - 2024-05-23 より良いテキスト検索のために[RAPTOR](https://arxiv.org/html/2401.18059v1)をサポート。
 - 2024-05-21 ストリーミング出力とテキストチャンク取得APIをサポート。
