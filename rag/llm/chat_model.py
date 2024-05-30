@@ -206,6 +206,7 @@ class QWenChat(Base):
         if system:
             history.insert(0, {"role": "system", "content": system})
         ans = ""
+        tk_count = 0
         try:
             response = Generation.call(
                 self.model_name,
@@ -214,7 +215,6 @@ class QWenChat(Base):
                 stream=True,
                 **gen_conf
             )
-            tk_count = 0
             for resp in response:
                 if resp.status_code == HTTPStatus.OK:
                     ans = resp.output.choices[0]['message']['content']
@@ -261,6 +261,7 @@ class ZhipuChat(Base):
         if "presence_penalty" in gen_conf: del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf: del gen_conf["frequency_penalty"]
         ans = ""
+        tk_count = 0
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -268,7 +269,6 @@ class ZhipuChat(Base):
                 stream=True,
                 **gen_conf
             )
-            tk_count = 0
             for resp in response:
                 if not resp.choices[0].delta.content:continue
                 delta = resp.choices[0].delta.content
@@ -439,6 +439,7 @@ class VolcEngineChat(Base):
         if system:
             history.insert(0, {"role": "system", "content": system})
         ans = ""
+        tk_count = 0
         try:
             req = {
                 "parameters": {
