@@ -17,9 +17,8 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.6.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.6.0"></a>
-      <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.7.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.7.0"></a>
+    <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
 </p>
@@ -53,6 +52,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 📌 Latest Updates
 
+- 2024-05-30 Integrates [BCE](https://github.com/netease-youdao/BCEmbedding), [BGE](https://github.com/FlagOpen/FlagEmbedding), and [Colbert](https://github.com/stanford-futuredata/ColBERT) reranker models.
 - 2024-05-28 Supports LLM Baichuan and VolcanoArk.
 - 2024-05-23 Supports [RAPTOR](https://arxiv.org/html/2401.18059v1) for better text retrieval.
 - 2024-05-21 Supports streaming output and text chunk retrieval API. 
@@ -141,7 +141,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3. Build the pre-built Docker images and start up the server:
 
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.6.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.7.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
