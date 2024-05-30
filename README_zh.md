@@ -33,7 +33,7 @@
 
 ## 📌 近期更新
 
-- 2024-05-30 集成 [BCE](https://github.com/netease-youdao/BCEmbedding), [BGE](https://github.com/FlagOpen/FlagEmbedding) 和 [Colbert](https://github.com/stanford-futuredata/ColBERT) reranker。
+- 2024-05-30 集成 [BCE](https://github.com/netease-youdao/BCEmbedding), [BGE](https://github.com/FlagOpen/FlagEmbedding) 和 [Colbert](https://github.com/stanford-futuredata/ColBERT) 重排序模型。
 - 2024-05-28 集成大模型 Baichuan 和火山方舟。
 - 2024-05-23 实现 [RAPTOR](https://arxiv.org/html/2401.18059v1) 提供更好的文本检索。
 - 2024-05-21 支持流式结果输出和文本块获取API。
