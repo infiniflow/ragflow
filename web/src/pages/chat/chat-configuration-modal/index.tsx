@@ -145,7 +145,8 @@ const ChatConfigurationModal = ({
           settledModelVariableMap[ModelVariableType.Precise],
         icon: fileList,
         llm_id: initialDialog.llm_id ?? modelId,
-        vector_similarity_weight: 1 - initialDialog.vector_similarity_weight,
+        vector_similarity_weight:
+          1 - (initialDialog.vector_similarity_weight ?? 0.3),
       });
     }
   }, [initialDialog, form, visible, modelId]);
