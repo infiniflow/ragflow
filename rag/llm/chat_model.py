@@ -303,7 +303,8 @@ class OllamaChat(Base):
             response = self.client.chat(
                 model=self.model_name,
                 messages=history,
-                options=options
+                options=options,
+                keep_alive=-1
             )
             ans = response["message"]["content"].strip()
             return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
@@ -325,7 +326,8 @@ class OllamaChat(Base):
                 model=self.model_name,
                 messages=history,
                 stream=True,
-                options=options
+                options=options,
+                keep_alive=-1
             )
             for resp in response:
                 if resp["done"]:
