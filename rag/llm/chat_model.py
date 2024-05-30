@@ -215,7 +215,6 @@ class QWenChat(Base):
                 stream=True,
                 **gen_conf
             )
-            tk_count = 0
             for resp in response:
                 if resp.status_code == HTTPStatus.OK:
                     ans = resp.output.choices[0]['message']['content']
@@ -270,7 +269,6 @@ class ZhipuChat(Base):
                 stream=True,
                 **gen_conf
             )
-            tk_count = 0
             for resp in response:
                 if not resp.choices[0].delta.content:continue
                 delta = resp.choices[0].delta.content
