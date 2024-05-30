@@ -1,3 +1,4 @@
+import { useFetchLlmList } from '@/hooks/llmHooks';
 import { Layout } from 'antd';
 import { useState } from 'react';
 import { ReactFlowProvider } from 'reactflow';
@@ -9,6 +10,8 @@ const { Content } = Layout;
 
 function RagFlow() {
   const [collapsed, setCollapsed] = useState(false);
+
+  useFetchLlmList();
 
   return (
     <Layout>

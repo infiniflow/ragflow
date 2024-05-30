@@ -33,7 +33,7 @@ const FlowDrawer = ({
       open={visible}
       getContainer={false}
       mask={false}
-      width={500}
+      width={470}
     >
       <OperatorForm></OperatorForm>
     </Drawer>
