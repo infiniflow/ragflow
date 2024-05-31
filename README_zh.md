@@ -23,6 +23,14 @@
   </a>
 </p>
 
+<h4 align="center">
+  <a href="https://ragflow.io/docs/dev/">Document</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
+  <a href="https://twitter.com/infiniflowai">Twitter</a> |
+  <a href="https://discord.gg/jEfRUwEYEV">Discord</a> |
+  <a href="https://demo.ragflow.io">Demo</a>
+</h4>
+
 ## 💡 RAGFlow 是什么？
 
 [RAGFlow](https://ragflow.io/) 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。
@@ -39,13 +47,6 @@
 - 2024-05-21 支持流式结果输出和文本块获取API。
 - 2024-05-15 集成大模型 OpenAI GPT-4o。
 - 2024-05-08 集成大模型 DeepSeek。
-- 2024-04-26 增添了'文件管理'功能。
-- 2024-04-19 支持对话 API ([更多](./docs/references/api.md))。
-- 2024-04-16 集成嵌入模型 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) 和 专为轻型和高速嵌入而设计的 [FastEmbed](https://github.com/qdrant/fastembed)。
-- 2024-04-11 支持用 [Xinference](./docs/guides/deploy_local_llm.md) 本地化部署大模型。
-- 2024-04-10 为‘Laws’版面分析增加了底层模型。
-- 2024-04-08 支持用 [Ollama](./docs/guides/deploy_local_llm.md) 本地化部署大模型。
-- 2024-04-07 支持中文界面。
 
 ## 🌟 主要功能
 
@@ -279,8 +280,10 @@ $ systemctl start nginx
 ```
 ## 📚 技术文档
 
-- [Quickstart](./docs/quickstart.md)
-- [FAQ](./docs/references/faq.md)
+- [Quickstart](https://ragflow.io/docs/dev/)
+- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [Reference](https://ragflow.io/docs/dev/category/references)
+- [FAQ](https://ragflow.io/docs/dev/faq)
 
 ## 📜 路线图
 
@@ -290,6 +293,7 @@ $ systemctl start nginx
 
 - [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
+- [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 贡献指南
 
