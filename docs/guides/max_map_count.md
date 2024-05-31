@@ -30,7 +30,7 @@ vm.max_map_count=262144
 
 ## Windows and macOS with Docker Desktop
 
-You must set via docker-machine:
+You must set `vm.max_map_count` via docker-machine:
 
 ```bash
 $ docker-machine ssh
@@ -38,7 +38,6 @@ $ sudo sysctl -w vm.max_map_count=262144
 ```
 
 ## Windows with Docker Desktop WSL 2 backend
-
 
 "Windows Subsystem for Linux (WSL) 2 is a full Linux kernel built by Microsoft, which lets Linux distributions run without managing virtual machines. With Docker Desktop running on WSL 2, users can leverage Linux workspaces and avoid maintaining both Linux and Windows build scripts."
 
@@ -54,7 +53,7 @@ If you are on these versions of WSL and you do not wish to have to run those com
 [wsl2]
 kernelCommandLine = "sysctl.vm.max_map_count=262144"
 ```
-This will cause all WSL2 virtual machines to have that setting assigned when they start.
+*This causes all WSL2 virtual machines to have that setting assigned when they start.*
 
 If you are on Windows 11, or Windows 10 version 22H2 and have installed the Microsoft Store version of WSL, you can modify the /etc/sysctl.conf within the "docker-desktop" WSL distribution as follows:
 
