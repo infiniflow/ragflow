@@ -326,6 +326,7 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 - [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
+- [GitHub Discussions](https://github.com/infiniflow/infinity/discussions)
 
 ## 🙌 Contributing
 
