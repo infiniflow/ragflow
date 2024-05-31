@@ -161,7 +161,7 @@
    > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
 6. [service_conf.yaml](./docker/service_conf.yaml) で、`user_default_llm` で希望の LLM ファクトリを選択し、`API_KEY` フィールドを対応する API キーで更新する。
 
-   > 詳しくは [./docs/guides/llm_api_key_setup.md](./docs/guides/llm_api_key_setup.md) を参照してください。
+   > 詳しくは [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
 
    _これで初期設定完了！ショーの開幕です！_
 
