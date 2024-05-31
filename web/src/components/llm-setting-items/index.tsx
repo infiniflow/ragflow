@@ -1,29 +1,27 @@
-import {
-  LlmModelType,
-  ModelVariableType,
-  settledModelVariableMap,
-} from '@/constants/knowledge';
+import { LlmModelType, ModelVariableType } from '@/constants/knowledge';
 import { Divider, Flex, Form, InputNumber, Select, Slider, Switch } from 'antd';
 import camelCase from 'lodash/camelCase';
 
 import { useTranslate } from '@/hooks/commonHooks';
 import { useSelectLlmOptionsByModelType } from '@/hooks/llmHooks';
+import { useMemo } from 'react';
 import styles from './index.less';
 
-const LlmSettingItems = () => {
-  const form = Form.useFormInstance();
+interface IProps {
+  prefix?: string;
+  handleParametersChange(value: ModelVariableType): void;
+}
+
+const LlmSettingItems = ({ prefix, handleParametersChange }: IProps) => {
   const { t } = useTranslate('chat');
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
     label: t(camelCase(x)),
     value: x,
   }));
 
-  const modelOptions = useSelectLlmOptionsByModelType();
+  const memorizedPrefix = useMemo(() => (prefix ? [prefix] : []), [prefix]);
 
-  const handleParametersChange = (value: ModelVariableType) => {
-    const variable = settledModelVariableMap[value];
-    form.setFieldsValue({ llm_setting: variable });
-  };
+  const modelOptions = useSelectLlmOptionsByModelType();
 
   return (
     <>
@@ -62,7 +60,10 @@ const LlmSettingItems = () => {
               return (
                 <>
                   <Flex flex={1}>
-                    <Form.Item name={['llm_setting', 'temperature']} noStyle>
+                    <Form.Item
+                      name={[...memorizedPrefix, 'temperature']}
+                      noStyle
+                    >
                       <Slider
                         className={styles.variableSlider}
                         max={1}
@@ -71,7 +72,7 @@ const LlmSettingItems = () => {
                       />
                     </Form.Item>
                   </Flex>
-                  <Form.Item name={['llm_setting', 'temperature']} noStyle>
+                  <Form.Item name={[...memorizedPrefix, 'temperature']} noStyle>
                     <InputNumber
                       className={styles.sliderInputNumber}
                       max={1}
@@ -97,7 +98,7 @@ const LlmSettingItems = () => {
               return (
                 <>
                   <Flex flex={1}>
-                    <Form.Item name={['llm_setting', 'top_p']} noStyle>
+                    <Form.Item name={[...memorizedPrefix, 'top_p']} noStyle>
                       <Slider
                         className={styles.variableSlider}
                         max={1}
@@ -106,7 +107,7 @@ const LlmSettingItems = () => {
                       />
                     </Form.Item>
                   </Flex>
-                  <Form.Item name={['llm_setting', 'top_p']} noStyle>
+                  <Form.Item name={[...memorizedPrefix, 'top_p']} noStyle>
                     <InputNumber
                       className={styles.sliderInputNumber}
                       max={1}
@@ -137,7 +138,7 @@ const LlmSettingItems = () => {
                 <>
                   <Flex flex={1}>
                     <Form.Item
-                      name={['llm_setting', 'presence_penalty']}
+                      name={[...memorizedPrefix, 'presence_penalty']}
                       noStyle
                     >
                       <Slider
@@ -148,7 +149,10 @@ const LlmSettingItems = () => {
                       />
                     </Form.Item>
                   </Flex>
-                  <Form.Item name={['llm_setting', 'presence_penalty']} noStyle>
+                  <Form.Item
+                    name={[...memorizedPrefix, 'presence_penalty']}
+                    noStyle
+                  >
                     <InputNumber
                       className={styles.sliderInputNumber}
                       max={1}
@@ -182,7 +186,7 @@ const LlmSettingItems = () => {
                 <>
                   <Flex flex={1}>
                     <Form.Item
-                      name={['llm_setting', 'frequency_penalty']}
+                      name={[...memorizedPrefix, 'frequency_penalty']}
                       noStyle
                     >
                       <Slider
@@ -194,7 +198,7 @@ const LlmSettingItems = () => {
                     </Form.Item>
                   </Flex>
                   <Form.Item
-                    name={['llm_setting', 'frequency_penalty']}
+                    name={[...memorizedPrefix, 'frequency_penalty']}
                     noStyle
                   >
                     <InputNumber
@@ -223,7 +227,10 @@ const LlmSettingItems = () => {
               return (
                 <>
                   <Flex flex={1}>
-                    <Form.Item name={['llm_setting', 'max_tokens']} noStyle>
+                    <Form.Item
+                      name={[...memorizedPrefix, 'max_tokens']}
+                      noStyle
+                    >
                       <Slider
                         className={styles.variableSlider}
                         max={2048}
@@ -231,7 +238,7 @@ const LlmSettingItems = () => {
                       />
                     </Form.Item>
                   </Flex>
-                  <Form.Item name={['llm_setting', 'max_tokens']} noStyle>
+                  <Form.Item name={[...memorizedPrefix, 'max_tokens']} noStyle>
                     <InputNumber
                       disabled={disabled}
                       className={styles.sliderInputNumber}

@@ -18,6 +18,8 @@ const onFinishFailed: FormProps<FieldType>['onFinishFailed'] = (errorInfo) => {
 };
 
 const RetrievalForm = () => {
+  const [form] = Form.useForm();
+
   return (
     <Form
       name="basic"
@@ -26,6 +28,7 @@ const RetrievalForm = () => {
       onFinish={onFinish}
       onFinishFailed={onFinishFailed}
       autoComplete="off"
+      form={form}
     >
       <SimilaritySlider isTooltipShown></SimilaritySlider>
       <TopNItem></TopNItem>

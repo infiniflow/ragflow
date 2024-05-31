@@ -61,14 +61,14 @@ export const dsl = {
         targetPosition: 'right',
       },
       {
-        id: 'Cite:China',
+        id: 'Answer:China',
         type: 'textUpdater',
         position: {
           x: 150,
           y: 200,
         },
         data: {
-          label: 'Cite',
+          label: 'Answer',
         },
         sourcePosition: 'left',
         targetPosition: 'right',
@@ -105,7 +105,7 @@ export const dsl = {
         id: '7facb53d-65c9-43b3-ac55-339c445d3891',
         label: '',
         source: 'begin',
-        target: 'Cite:China',
+        target: 'Answer:China',
         markerEnd: {
           type: 'arrow',
         },
@@ -114,7 +114,7 @@ export const dsl = {
         id: '7ac83631-502d-410f-a6e7-bec6866a5e99',
         label: '',
         source: 'Generate:China',
-        target: 'Cite:China',
+        target: 'Answer:China',
         markerEnd: {
           type: 'arrow',
         },
@@ -122,7 +122,7 @@ export const dsl = {
       {
         id: '0aaab297-5779-43ed-9281-2c4d3741566f',
         label: '',
-        source: 'Cite:China',
+        source: 'Answer:China',
         target: 'Retrieval:China',
         markerEnd: {
           type: 'arrow',
@@ -145,12 +145,12 @@ export const dsl = {
         component_name: 'Begin',
         params: {},
       },
-      downstream: ['Cite:China'], // other edge target is downstream, edge source is current node id
+      downstream: ['Answer:China'], // other edge target is downstream, edge source is current node id
       upstream: [], // edge source is upstream, edge target is current node id
     },
-    'Cite:China': {
+    'Answer:China': {
       obj: {
-        component_name: 'Cite',
+        component_name: 'Answer',
         params: {},
       },
       downstream: ['Retrieval:China'],
@@ -162,18 +162,18 @@ export const dsl = {
         params: {},
       },
       downstream: ['Generate:China'],
-      upstream: ['Cite:China'],
+      upstream: ['Answer:China'],
     },
     'Generate:China': {
       obj: {
         component_name: 'Generate',
         params: {},
       },
-      downstream: ['Cite:China'],
+      downstream: ['Answer:China'],
       upstream: ['Retrieval:China'],
     },
   },
   history: [],
   path: ['begin'],
-  Cite: [],
+  Answer: [],
 };

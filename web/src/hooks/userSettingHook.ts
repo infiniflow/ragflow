@@ -99,10 +99,14 @@ export const useFetchSystemVersion = () => {
   const [loading, setLoading] = useState(false);
 
   const fetchSystemVersion = useCallback(async () => {
-    setLoading(true);
-    const { data } = await userService.getSystemVersion();
-    if (data.retcode === 0) {
-      setVersion(data.data);
+    try {
+      setLoading(true);
+      const { data } = await userService.getSystemVersion();
+      if (data.retcode === 0) {
+        setVersion(data.data);
+        setLoading(false);
+      }
+    } catch (error) {
       setLoading(false);
     }
   }, []);

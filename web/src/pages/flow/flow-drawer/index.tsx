@@ -1,8 +1,8 @@
 import { IModalProps } from '@/interfaces/common';
 import { Drawer } from 'antd';
 import { Node } from 'reactflow';
+import AnswerForm from '../answer-form';
 import BeginForm from '../begin-form';
-import CiteForm from '../cite-form';
 import { Operator } from '../constant';
 import GenerateForm from '../generate-form';
 import RetrievalForm from '../retrieval-form';
@@ -15,7 +15,7 @@ const FormMap = {
   [Operator.Begin]: BeginForm,
   [Operator.Retrieval]: RetrievalForm,
   [Operator.Generate]: GenerateForm,
-  [Operator.Cite]: CiteForm,
+  [Operator.Answer]: AnswerForm,
 };
 
 const FlowDrawer = ({
@@ -35,7 +35,7 @@ const FlowDrawer = ({
       mask={false}
       width={470}
     >
-      <OperatorForm></OperatorForm>
+      {visible && <OperatorForm></OperatorForm>}
     </Drawer>
   );
 };
