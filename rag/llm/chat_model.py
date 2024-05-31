@@ -467,7 +467,7 @@ class VolcEngineChat(Base):
 
 
 class MiniMaxChat(Base):
-    def __init__(self, key, model_name="ChatCompletion v2",
+    def __init__(self, key, model_name="abab6.5s-chat",
                  base_url="https://api.minimax.chat/v1/text/chatcompletion_v2"):
         if not base_url:
             base_url="https://api.minimax.chat/v1/text/chatcompletion_v2"
