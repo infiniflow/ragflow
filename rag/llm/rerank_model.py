@@ -71,7 +71,7 @@ class DefaultRerank(Base):
         res = []
         for i in range(0, len(pairs), batch_size):
             scores = self._model.compute_score(pairs[i:i + batch_size], max_length=2048)
-            scores = sigmoid(np.array(scores))
+            scores = sigmoid(np.array(scores)).tolist()
             res.extend(scores)
         return np.array(res), token_count
 
