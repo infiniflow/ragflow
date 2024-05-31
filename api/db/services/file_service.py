@@ -164,12 +164,11 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_kb_folder(cls, tenant_id):
-        for root in cls.model.select().where(cls.model.tenant_id == tenant_id and
-                                             cls.model.parent_id == cls.model.id):
-            for folder in cls.model.select().where(cls.model.tenant_id == tenant_id and
-                                     cls.model.parent_id == root.id and
-                                     cls.model.name == KNOWLEDGEBASE_FOLDER_NAME
-                                     ):
+        for root in cls.model.select().where(
+                (cls.model.tenant_id == tenant_id), (cls.model.parent_id == cls.model.id)):
+            for folder in cls.model.select().where(
+                    (cls.model.tenant_id == tenant_id), (cls.model.parent_id == root.id),
+                    (cls.model.name == KNOWLEDGEBASE_FOLDER_NAME)):
                 return folder.to_dict()
         assert False, "Can't find the KB folder. Database init error."
 

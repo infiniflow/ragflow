@@ -385,7 +385,7 @@ def init_llm_factory():
         {
             "fid": factory_infos[7]["name"],
             "llm_name": "maidalun1020/bce-reranker-base_v1",
-            "tags": "RE-RANK, 8K",
+            "tags": "RE-RANK, 512",
             "max_tokens": 512,
             "model_type": LLMType.RERANK.value
         },
