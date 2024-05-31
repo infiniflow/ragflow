@@ -543,42 +543,42 @@ def init_llm_factory():
         },
         # ------------------------ Minimax -----------------------
         {
-            "fid": factory_infos[11]["name"],
+            "fid": factory_infos[13]["name"],
             "llm_name": "abab6.5-chat",
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
             "model_type": LLMType.CHAT.value
         },
         {
-            "fid": factory_infos[11]["name"],
+            "fid": factory_infos[13]["name"],
             "llm_name": "abab6.5s-chat",
             "tags": "LLM,CHAT,245k",
             "max_tokens": 245760,
             "model_type": LLMType.CHAT.value
         },
         {
-            "fid": factory_infos[11]["name"],
+            "fid": factory_infos[13]["name"],
             "llm_name": "abab6.5t-chat",
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
             "model_type": LLMType.CHAT.value
         },
         {
-            "fid": factory_infos[11]["name"],
+            "fid": factory_infos[13]["name"],
             "llm_name": "abab6.5g-chat",
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
             "model_type": LLMType.CHAT.value
         },
         {
-            "fid": factory_infos[11]["name"],
+            "fid": factory_infos[13]["name"],
             "llm_name": "abab5.5-chat",
             "tags": "LLM,CHAT,16k",
             "max_tokens": 16384,
             "model_type": LLMType.CHAT.value
         },
         {
-            "fid": factory_infos[11]["name"],
+            "fid": factory_infos[13]["name"],
             "llm_name": "abab5.5s-chat",
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
