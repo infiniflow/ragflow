@@ -15,6 +15,7 @@
     "@ant-design/pro-components": "^2.6.46",
     "@ant-design/pro-layout": "^7.17.16",
     "@js-preview/excel": "^1.7.8",
+    "@tanstack/react-query": "^5.40.0",
     "ahooks": "^3.7.10",
     "antd": "^5.12.7",
     "axios": "^1.6.3",

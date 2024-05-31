@@ -1,5 +1,6 @@
 import { IModalProps } from '@/interfaces/common';
 import { Drawer } from 'antd';
+import { useCallback } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
 import BeginForm from '../begin-form';
@@ -25,6 +26,11 @@ const FlowDrawer = ({
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label;
   const OperatorForm = FormMap[operatorName];
+
+  const onValuesChange = useCallback(() => {
+    console.info(node?.id);
+  }, [node]);
+
   return (
     <Drawer
       title={node?.data.label}
@@ -35,7 +41,7 @@ const FlowDrawer = ({
       mask={false}
       width={470}
     >
-      {visible && <OperatorForm></OperatorForm>}
+      {visible && <OperatorForm onValuesChange={onValuesChange}></OperatorForm>}
     </Drawer>
   );
 };

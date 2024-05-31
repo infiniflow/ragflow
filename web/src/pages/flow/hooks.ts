@@ -1,4 +1,6 @@
 import { useSetModalState } from '@/hooks/commonHooks';
+import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
+import { useFetchLlmList } from '@/hooks/llmHooks';
 import React, {
   Dispatch,
   KeyboardEventHandler,
@@ -145,4 +147,17 @@ export const useSaveGraph = () => {
   const saveGraph = useCallback(() => {}, []);
 
   return { saveGraph };
+};
+
+export const useHandleFormValuesChange = () => {
+  const handleValuesChange = (changedValues: any, values: any) => {
+    console.info(changedValues, values);
+  };
+
+  return { handleValuesChange };
+};
+
+export const useFetchDataOnMount = () => {
+  useFetchFlowTemplates();
+  useFetchLlmList();
 };

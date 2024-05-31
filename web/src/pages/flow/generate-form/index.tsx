@@ -8,8 +8,9 @@ import { Variable } from '@/interfaces/database/chat';
 import { variableEnabledFieldMap } from '@/pages/chat/constants';
 import { Form, Input, Switch } from 'antd';
 import { useCallback, useEffect } from 'react';
+import { IOperatorForm } from '../interface';
 
-const GenerateForm = () => {
+const GenerateForm = ({ onValuesChange }: IOperatorForm) => {
   const { t } = useTranslate('flow');
   const [form] = Form.useForm();
   const initialLlmSetting = undefined;
@@ -46,9 +47,7 @@ const GenerateForm = () => {
       wrapperCol={{ span: 15 }}
       autoComplete="off"
       form={form}
-      onValuesChange={(changedValues, values) => {
-        console.info(changedValues, values);
-      }}
+      onValuesChange={onValuesChange}
     >
       <LlmSettingItems
         handleParametersChange={handleParametersChange}

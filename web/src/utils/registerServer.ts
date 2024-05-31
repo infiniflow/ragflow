@@ -1,7 +1,7 @@
 import omit from 'lodash/omit';
 import { RequestMethod } from 'umi-request';
 
-type Service<T extends string> = Record<T, (params: any) => any>;
+type Service<T extends string> = Record<T, (params?: any) => any>;
 
 const registerServer = <T extends string>(
   opt: Record<T, { url: string; method: string }>,
