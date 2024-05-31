@@ -23,6 +23,14 @@
   </a>
 </p>
 
+<h4 align="center">
+  <a href="https://ragflow.io/docs/dev/">Document</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
+  <a href="https://twitter.com/infiniflowai">Twitter</a> |
+  <a href="https://discord.gg/jEfRUwEYEV">Discord</a> |
+  <a href="https://demo.ragflow.io">Demo</a>
+</h4>
+
 <details open>
 <summary></b>📕 Table of Contents</b></summary>
   
@@ -58,13 +66,6 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 - 2024-05-21 Supports streaming output and text chunk retrieval API. 
 - 2024-05-15 Integrates OpenAI GPT-4o.
 - 2024-05-08 Integrates LLM DeepSeek-V2.
-- 2024-04-26 Adds file management.
-- 2024-04-19 Supports conversation API ([detail](./docs/references/api.md)).
-- 2024-04-16 Integrates an embedding model 'bce-embedding-base_v1' from [BCEmbedding](https://github.com/netease-youdao/BCEmbedding), and [FastEmbed](https://github.com/qdrant/fastembed), which is designed specifically for light and speedy embedding.
-- 2024-04-11 Supports [Xinference](./docs/guides/deploy_local_llm.md) for local LLM deployment.
-- 2024-04-10 Adds a new layout recognition model for analyzing legal documents.
-- 2024-04-08 Supports [Ollama](./docs/guides/deploy_local_llm.md) for local LLM deployment.
-- 2024-04-07 Supports Chinese UI.
 
 ## 🌟 Key Features
 
@@ -312,8 +313,10 @@ To launch the service from source:
 
 ## 📚 Documentation
 
-- [Quickstart](./docs/quickstart.md)
-- [FAQ](./docs/references/faq.md)
+- [Quickstart](https://ragflow.io/docs/dev/)
+- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [Reference](https://ragflow.io/docs/dev/category/references)
+- [FAQ](https://ragflow.io/docs/dev/faq)
 
 ## 📜 Roadmap
 
