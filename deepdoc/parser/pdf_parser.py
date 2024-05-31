@@ -392,7 +392,7 @@ class RAGFlowPdfParser:
                 b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
                 len(b["text"].strip()) > 1 and b["text"].strip(
                 )[-2] in ",;:'\"，‘“、；：",
-                b_["text"].strip()[0] in "。；？！?”）),，、：",
+                b_["text"].strip() and b_["text"].strip()[0] in "。；？！?”）),，、：",
             ]
             # features for not concating
             feats = [
