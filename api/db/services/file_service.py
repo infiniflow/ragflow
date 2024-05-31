@@ -305,3 +305,12 @@ class FileService(CommonService):
         }
         cls.save(**file)
         File2DocumentService.save(**{"id": get_uuid(), "file_id": file["id"], "document_id": doc["id"]})
+    
+    @classmethod
+    @DB.connection_context()
+    def move_file(cls, file_ids, folder_id):
+        try:
+            cls.filter_update((cls.model.id << file_ids, ), { 'parent_id': folder_id })
+        except Exception as e:
+            print(e)
+            raise RuntimeError("Database error (File move)!")
