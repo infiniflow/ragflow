@@ -180,7 +180,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    > With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
-   > See [./docs/guides/llm_api_key_setup.md](./docs/guides/llm_api_key_setup.md) for more information.
+   > See [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) for more information.
 
    _The show is now on!_
 
@@ -326,6 +326,7 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 - [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
+- [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 Contributing
 
