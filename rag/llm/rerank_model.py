@@ -115,7 +115,7 @@ class YoudaoRerank(DefaultRerank):
                         "maidalun1020", "InfiniFlow"))
     
     def similarity(self, query: str, texts: list):
-        pairs = [(query,truncate(t, self._model.max_length)) for t in texts]
+        pairs = [(query, truncate(t, self._model.max_length)) for t in texts]
         token_count = 0
         for _, t in pairs:
             token_count += num_tokens_from_string(t)
