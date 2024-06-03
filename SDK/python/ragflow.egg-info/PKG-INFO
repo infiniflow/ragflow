@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: ragflow
+Version: 0.8.0.dev1
+Summary: ragflow
+Author-email: The RAGFlow Development Team <author@example.com>
+Project-URL: Homepage, https://github.com/pypa/sampleproject
+Project-URL: Bug Tracker, https://github.com/pypa/sampleproject/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License2
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pytest~=8.2.0
+
+# infinity 
