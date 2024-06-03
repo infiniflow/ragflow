@@ -1,0 +1,24 @@
+[project]
+name = "ragflow"
+version = "0.8.0.dev1"
+authors = [
+  { name = "The RAGFlow Development Team", email = "author@example.com" },
+] # TODO: email
+dependencies = ["pytest~=8.2.0"]
+description = "ragflow"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache License2",
+    "Operating System :: OS Independent",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+"Homepage" = "https://github.com/pypa/sampleproject"
+"Bug Tracker" = "https://github.com/pypa/sampleproject/issues"
+# TODO
