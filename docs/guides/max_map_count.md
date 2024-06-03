@@ -3,7 +3,7 @@ sidebar_position: 7
 slug: /max_map_count
 ---
 
-# Update maximum memory map areas
+# Update `vm.max_map_count`
 
 This guide describes how to update `vm.max_map_count`. This value sets the the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abmornal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation. 
 
