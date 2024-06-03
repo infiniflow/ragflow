@@ -113,7 +113,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ### 🚀 Start up the server
 
-1. Ensure `vm.max_map_count` >= 262144 ([more](./docs/guides/max_map_count.md)):
+1. Ensure `vm.max_map_count` >= 262144:
 
    > To check the value of `vm.max_map_count`:
    >
