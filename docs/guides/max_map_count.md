@@ -5,64 +5,90 @@ slug: /max_map_count
 
 # Update maximum memory map areas
 
-`vm.max_map_count` sets the the maximum number of memory map areas a process may have. The default value is 65530. Raising the limit may increase the memory consumption on the server. most applications need less than a thousand maps. Lowering the value can lead to problematic application behavior because the system will return out-of-memory errors when a process reaches the limit.
+This guide describes how to update `vm.max_map_count`. This value sets the the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abmornal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation. 
+
+RAGFlow v0.7.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning the Elasticsearch component.
 
 ## Linux
 
-To check the value of `vm.max_map_count`:
+This section describes how to update `vm.max_map_count` on Linux:
 
-```bash
-$ sysctl vm.max_map_count
-```
+1. Check the value of `vm.max_map_count`:
 
-Reset `vm.max_map_count` to a value at least 262144 if it is not.
+   ```bash
+   $ sysctl vm.max_map_count
+   ```
 
-```bash
-# In this case, we set it to 262144:
-$ sudo sysctl -w vm.max_map_count=262144
-```
+2. Reset `vm.max_map_count` to a value at least 262144 if it is not.
 
-This change will be reset after a system reboot. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
+   ```bash
+   # In this case, we set it to 262144:
+   $ sudo sysctl -w vm.max_map_count=262144
+   ```
 
-```bash
-vm.max_map_count=262144
-```
+   :::caution WARNING
+   This change will be reset after a system reboot. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
+   :::
+   
+3. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
 
-## Windows and macOS with Docker Desktop
+   ```bash
+   vm.max_map_count=262144
+   ```
 
-You must set `vm.max_map_count` via docker-machine:
+## macOS
+
+If you are on macOS with Docker Desktop, then you *must* use docker-machine to update `vm.max_map_count`:
 
 ```bash
 $ docker-machine ssh
 $ sudo sysctl -w vm.max_map_count=262144
 ```
 
-## Windows with Docker Desktop WSL 2 backend
+:::caution WARNING
+This change will be reset after a system reboot. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
+:::
 
-"Windows Subsystem for Linux (WSL) 2 is a full Linux kernel built by Microsoft, which lets Linux distributions run without managing virtual machines. With Docker Desktop running on WSL 2, users can leverage Linux workspaces and avoid maintaining both Linux and Windows build scripts."
+## Windows
 
-To manually set it every time you reboot, you must run the following commands in a command prompt or PowerShell window every time you restart Docker:
+This section provides guidance on updating `vm.max_map_count` on Windows. 
 
-```bash
-$ wsl -d docker-desktop -u root
-$ sysctl -w vm.max_map_count=262144
-```
-If you are on these versions of WSL and you do not wish to have to run those commands each time you restart Docker, you can globally change every WSL distribution with this setting by modifying your %USERPROFILE%\.wslconfig as follows:
+- If you are on Windows with Docker Desktop, then you *must* use docker-machine to set `vm.max_map_count`:
 
-```bash
-[wsl2]
-kernelCommandLine = "sysctl.vm.max_map_count=262144"
-```
-*This causes all WSL2 virtual machines to have that setting assigned when they start.*
+   ```bash
+   $ docker-machine ssh
+   $ sudo sysctl -w vm.max_map_count=262144
+   ```
+- If you are on Windows with Docker Desktop WSL 2 backend, then use docker-desktop to set `vm.max_map_count`:
 
-If you are on Windows 11, or Windows 10 version 22H2 and have installed the Microsoft Store version of WSL, you can modify the /etc/sysctl.conf within the "docker-desktop" WSL distribution as follows:
+   1. Run the following in WSL: 
+   ```bash
+   $ wsl -d docker-desktop -u root
+   $ sysctl -w vm.max_map_count=262144
+   ```
 
-```bash
-$ wsl -d docker-desktop -u root
-$ vi /etc/sysctl.conf
-```
-and appending a line which reads:
+   :::caution WARNING
+   This change will be reset after you restart Docker. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
+   :::
 
-```bash
-vm.max_map_count = 262144
-```
+   2. If you do not wish to have to run those commands each time you restart Docker, you can update your `%USERPROFILE%\.wslconfig` as follows to keep your change permanent and globally for all WSL distributions:
+
+   ```bash
+   [wsl2]
+    kernelCommandLine = "sysctl.vm.max_map_count=262144"
+   ```
+   *This causes all WSL2 virtual machines to have that setting assigned when they start.*
+
+   :::note
+   If you are on Windows 11 or Windows 10 version 22H2, and have installed the Microsoft Store version of WSL, you can also update the **/etc/sysctl.conf** within the docker-desktop WSL distribution to keep your change permanent:
+
+   ```bash
+   $ wsl -d docker-desktop -u root
+   $ vi /etc/sysctl.conf
+   ```
+
+   ```bash
+   # Append a line, which reads: 
+   vm.max_map_count = 262144
+   ```
+   :::

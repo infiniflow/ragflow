@@ -194,11 +194,7 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ![](https://github.com/infiniflow/ragflow/assets/93570324/ef5a6194-084a-4fe3-bdd5-1c025b40865c)
 
-#### 4.3 Why does it take so long to parse a 2MB document?
-
-Parsing requests have to wait in queue due to limited server resources. We are currently enhancing our algorithms and increasing computing power.
-
-#### 4.4 Why does my document parsing stall at under one percent?
+#### 4.3 Why does my document parsing stall at under one percent?
 
 ![stall](https://github.com/infiniflow/ragflow/assets/93570324/3589cc25-c733-47d5-bbfc-fedb74a3da50)
 
@@ -211,7 +207,7 @@ docker logs -f ragflow-server
 2. Check if the **task_executor.py** process exists.
 3. Check if your RAGFlow server can access hf-mirror.com or huggingface.com.
 
-#### 4.5 Why does my pdf parsing stall near completion, while the log does not show any error?
+#### 4.4 Why does my pdf parsing stall near completion, while the log does not show any error?
 
 If your RAGFlow is deployed *locally*, the parsing process is likely killed due to insufficient RAM. Try increasing your memory allocation by increasing the `MEM_LIMIT` value in **docker/.env**.
 
@@ -225,17 +221,17 @@ If your RAGFlow is deployed *locally*, the parsing process is likely killed due 
 
 ![nearcompletion](https://github.com/infiniflow/ragflow/assets/93570324/563974c3-f8bb-4ec8-b241-adcda8929cbb)
 
-#### 4.6 `Index failure`
+#### 4.5 `Index failure`
 
 An index failure usually indicates an unavailable Elasticsearch service.
 
-#### 4.7 How to check the log of RAGFlow?
+#### 4.6 How to check the log of RAGFlow?
 
 ```bash
 tail -f path_to_ragflow/docker/ragflow-logs/rag/*.log
 ```
 
-#### 4.8 How to check the status of each component in RAGFlow?
+#### 4.7 How to check the status of each component in RAGFlow?
 
 ```bash
 $ docker ps
@@ -249,7 +245,7 @@ d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 
 cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
 ```
 
-#### 4.9 `Exception: Can't connect to ES cluster`
+#### 4.8 `Exception: Can't connect to ES cluster`
 
 1. Check the status of your Elasticsearch component:
 
@@ -276,26 +272,26 @@ $ docker ps
     curl http://<IP_OF_ES>:<PORT_OF_ES>
     ```
 
-#### 4.10 Can't start ES container and get `Elasticsearch did not exit normally`
+#### 4.9 Can't start ES container and get `Elasticsearch did not exit normally`
 
 This is because you forgot to update the `vm.max_map_count` value in **/etc/sysctl.conf** and your change to this value was reset after a system reboot. 
 
-#### 4.11 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
+#### 4.10 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
 
 Your IP address or port number may be incorrect. If you are using the default configurations, enter `http://<IP_OF_YOUR_MACHINE>` (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
-#### 4.12 `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
+#### 4.11 `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
 
 A correct Ollama IP address and port is crucial to adding models to Ollama:
 
 - If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address.Note that 127.0.0.1 is not a publicly accessible IP address.
 - If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can comunicate with each other.
 
-#### 4.13 Do you offer examples of using deepdoc to parse PDF or other files?
+#### 4.12 Do you offer examples of using deepdoc to parse PDF or other files?
 
 Yes, we do. See the Python files under the **rag/app** folder. 
 
-#### 4.14 Why did I fail to upload a 10MB+ file to my locally deployed RAGFlow?
+#### 4.13 Why did I fail to upload a 10MB+ file to my locally deployed RAGFlow?
 
 You probably forgot to update the **MAX_CONTENT_LENGTH** environment variable:
 
@@ -314,7 +310,7 @@ docker compose up ragflow -d
 ```
    *Now you should be able to upload files of sizes less than 100MB.*
 
-#### 4.15 `Table 'rag_flow.document' doesn't exist`
+#### 4.14 `Table 'rag_flow.document' doesn't exist`
 
 This exception occurs when starting up the RAGFlow server. Try the following: 
 
@@ -337,7 +333,7 @@ This exception occurs when starting up the RAGFlow server. Try the following:
   docker compose up
   ```
 
-#### 4.16 `hint : 102  Fail to access model  Connection error`
+#### 4.15 `hint : 102  Fail to access model  Connection error`
 
 ![hint102](https://github.com/infiniflow/ragflow/assets/93570324/6633d892-b4f8-49b5-9a0a-37a0a8fba3d2)
 
@@ -345,7 +341,7 @@ This exception occurs when starting up the RAGFlow server. Try the following:
 2. Do not forget to append **/v1/** to **http://IP:port**: 
    **http://IP:port/v1/**
 
-#### 4.17 `FileNotFoundError: [Errno 2] No such file or directory`
+#### 4.16 `FileNotFoundError: [Errno 2] No such file or directory`
 
 1. Check if the status of your minio container is healthy:
    ```bash
