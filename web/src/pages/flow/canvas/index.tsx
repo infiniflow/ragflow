@@ -1,17 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import ReactFlow, {
-  Background,
-  Controls,
-  Edge,
-  Node,
-  NodeMouseHandler,
-  OnConnect,
-  OnEdgesChange,
-  OnNodesChange,
-  addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
-} from 'reactflow';
+import { useCallback } from 'react';
+import ReactFlow, { Background, Controls, NodeMouseHandler } from 'reactflow';
 import 'reactflow/dist/style.css';
 
 import { NodeContextMenu, useHandleNodeContextMenu } from './context-menu';
@@ -20,10 +8,9 @@ import FlowDrawer from '../flow-drawer';
 import {
   useHandleDrop,
   useHandleKeyUp,
-  useHandleSelectionChange,
+  useSelectCanvasData,
   useShowDrawer,
 } from '../hooks';
-import { dsl } from '../mock';
 import { TextUpdaterNode } from './node';
 
 import styles from './index.less';
@@ -35,29 +22,19 @@ interface IProps {
 }
 
 function FlowCanvas({ sideWidth }: IProps) {
-  const [nodes, setNodes] = useState<Node[]>(dsl.graph.nodes);
-  const [edges, setEdges] = useState<Edge[]>(dsl.graph.edges);
-
-  const { selectedEdges, selectedNodes } = useHandleSelectionChange();
+  const {
+    nodes,
+    edges,
+    onConnect,
+    onEdgesChange,
+    onNodesChange,
+    onSelectionChange,
+  } = useSelectCanvasData();
 
   const { ref, menu, onNodeContextMenu, onPaneClick } =
     useHandleNodeContextMenu(sideWidth);
   const { drawerVisible, hideDrawer, showDrawer, clickedNode } =
     useShowDrawer();
-
-  const onNodesChange: OnNodesChange = useCallback(
-    (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
-    [],
-  );
-  const onEdgesChange: OnEdgesChange = useCallback(
-    (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
-    [],
-  );
-
-  const onConnect: OnConnect = useCallback(
-    (params) => setEdges((eds) => addEdge(params, eds)),
-    [],
-  );
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (e, node) => {
@@ -66,14 +43,9 @@ function FlowCanvas({ sideWidth }: IProps) {
     [showDrawer],
   );
 
-  const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop(setNodes);
+  const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
 
-  const { handleKeyUp } = useHandleKeyUp(selectedEdges, selectedNodes);
-
-  useEffect(() => {
-    console.info('nodes:', nodes);
-    console.info('edges:', edges);
-  }, [nodes, edges]);
+  const { handleKeyUp } = useHandleKeyUp();
 
   return (
     <div className={styles.canvasWrapper}>
@@ -93,6 +65,7 @@ function FlowCanvas({ sideWidth }: IProps) {
         onNodeClick={onNodeClick}
         onInit={setReactFlowInstance}
         onKeyUp={handleKeyUp}
+        onSelectionChange={onSelectionChange}
       >
         <Background />
         <Controls />

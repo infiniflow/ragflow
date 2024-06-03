@@ -45,7 +45,8 @@
     "umi": "^4.0.90",
     "umi-request": "^1.4.0",
     "unist-util-visit-parents": "^6.0.1",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@react-dev-inspector/umi4-plugin": "^2.0.1",

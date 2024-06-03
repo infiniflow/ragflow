@@ -1,21 +1,25 @@
 import { useSetModalState } from '@/hooks/commonHooks';
 import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
 import { useFetchLlmList } from '@/hooks/llmHooks';
-import React, {
-  Dispatch,
-  KeyboardEventHandler,
-  SetStateAction,
-  useCallback,
-  useState,
-} from 'react';
-import {
-  Node,
-  Position,
-  ReactFlowInstance,
-  useOnSelectionChange,
-  useReactFlow,
-} from 'reactflow';
+import React, { KeyboardEventHandler, useCallback, useState } from 'react';
+import { Node, Position, ReactFlowInstance, useReactFlow } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
+import useStore, { RFState } from './store';
+
+const selector = (state: RFState) => ({
+  nodes: state.nodes,
+  edges: state.edges,
+  onNodesChange: state.onNodesChange,
+  onEdgesChange: state.onEdgesChange,
+  onConnect: state.onConnect,
+  setNodes: state.setNodes,
+  onSelectionChange: state.onSelectionChange,
+});
+
+export const useSelectCanvasData = () => {
+  // return useStore(useShallow(selector)); throw error
+  return useStore(selector);
+};
 
 export const useHandleDrag = () => {
   const handleDragStart = useCallback(
@@ -29,7 +33,8 @@ export const useHandleDrag = () => {
   return { handleDragStart };
 };
 
-export const useHandleDrop = (setNodes: Dispatch<SetStateAction<Node[]>>) => {
+export const useHandleDrop = () => {
+  const addNode = useStore((state) => state.addNode);
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<any, any>>();
 
@@ -68,9 +73,9 @@ export const useHandleDrop = (setNodes: Dispatch<SetStateAction<Node[]>>) => {
         targetPosition: Position.Left,
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      addNode(newNode);
     },
-    [reactFlowInstance, setNodes],
+    [reactFlowInstance, addNode],
   );
 
   return { onDrop, onDragOver, setReactFlowInstance };
@@ -100,37 +105,21 @@ export const useShowDrawer = () => {
   };
 };
 
-export const useHandleSelectionChange = () => {
-  const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
-  const [selectedEdges, setSelectedEdges] = useState<string[]>([]);
-
-  useOnSelectionChange({
-    onChange: ({ nodes, edges }) => {
-      setSelectedNodes(nodes.map((node) => node.id));
-      setSelectedEdges(edges.map((edge) => edge.id));
-    },
-  });
-
-  return { selectedEdges, selectedNodes };
-};
-
-export const useDeleteEdge = (selectedEdges: string[]) => {
+export const useDeleteEdge = () => {
   const { setEdges } = useReactFlow();
+  const selectedEdgeIds = useStore((state) => state.selectedEdgeIds);
 
   const deleteEdge = useCallback(() => {
     setEdges((edges) =>
-      edges.filter((edge) => selectedEdges.every((x) => x !== edge.id)),
+      edges.filter((edge) => selectedEdgeIds.every((x) => x !== edge.id)),
     );
-  }, [setEdges, selectedEdges]);
+  }, [setEdges, selectedEdgeIds]);
 
   return deleteEdge;
 };
 
-export const useHandleKeyUp = (
-  selectedEdges: string[],
-  selectedNodes: string[],
-) => {
-  const deleteEdge = useDeleteEdge(selectedEdges);
+export const useHandleKeyUp = () => {
+  const deleteEdge = useDeleteEdge();
   const handleKeyUp: KeyboardEventHandler = useCallback(
     (e) => {
       if (e.code === 'Delete') {
