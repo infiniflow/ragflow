@@ -159,7 +159,14 @@ export const dsl = {
     'Retrieval:China': {
       obj: {
         component_name: 'Retrieval',
-        params: {},
+        params: {
+          similarity_threshold: 0.2,
+          keywords_similarity_weight: 0.3,
+          top_n: 6,
+          top_k: 1024,
+          rerank_id: 'BAAI/bge-reranker-v2-m3',
+          kb_ids: ['568aa82603b611efa9d9fa163e197198'],
+        },
       },
       downstream: ['Generate:China'],
       upstream: ['Answer:China'],
@@ -167,7 +174,12 @@ export const dsl = {
     'Generate:China': {
       obj: {
         component_name: 'Generate',
-        params: {},
+        params: {
+          llm_id: 'deepseek-chat',
+          prompt:
+            'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {input}\n      The above is the knowledge base.',
+          temperature: 0.2,
+        },
       },
       downstream: ['Answer:China'],
       upstream: ['Retrieval:China'],
