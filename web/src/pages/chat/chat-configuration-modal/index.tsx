@@ -19,6 +19,7 @@ import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
 import { useTranslate } from '@/hooks/commonHooks';
+import { getBase64FromUploadFileList } from '@/utils/fileUtil';
 import styles from './index.less';
 
 const layout = {
@@ -82,12 +83,7 @@ const ChatConfigurationModal = ({
     ]);
     const emptyResponse = nextValues.prompt_config?.empty_response ?? '';
 
-    const fileList = values.icon;
-    let icon;
-
-    if (Array.isArray(fileList) && fileList.length > 0) {
-      icon = fileList[0].thumbUrl;
-    }
+    const icon = await getBase64FromUploadFileList(values.icon);
 
     const finalValues = {
       dialog_id: initialDialog.id,
