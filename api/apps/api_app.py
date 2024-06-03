@@ -375,19 +375,19 @@ def list_chunks():
         return get_json_result(
             data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
 
-    form_data = request.form
+    req = request.json
 
     try:
-        if "doc_name" in form_data.keys():
-            tenant_id = DocumentService.get_tenant_id_by_name(form_data['doc_name'])
-            doc_id = DocumentService.get_doc_id_by_doc_name(form_data['doc_name'])
+        if "doc_name" in req.keys():
+            tenant_id = DocumentService.get_tenant_id_by_name(req['doc_name'])
+            doc_id = DocumentService.get_doc_id_by_doc_name(req['doc_name'])
 
-        elif "doc_id" in form_data.keys():
-            tenant_id = DocumentService.get_tenant_id(form_data['doc_id'])
-            doc_id = form_data['doc_id']
+        elif "doc_id" in req.keys():
+            tenant_id = DocumentService.get_tenant_id(req['doc_id'])
+            doc_id = req['doc_id']
         else:
             return get_json_result(
-                data=False,retmsg="Can't find doc_name or doc_id"
+                data=False, retmsg="Can't find doc_name or doc_id"
             )
 
         res = retrievaler.chunk_list(doc_id=doc_id, tenant_id=tenant_id)
@@ -414,8 +414,9 @@ def list_kb_docs():
         return get_json_result(
             data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
 
+    req = request.json
     tenant_id = objs[0].tenant_id
-    kb_name = request.form.get("kb_name").strip()
+    kb_name = req.get("kb_name", "").strip()
 
     try:
         e, kb = KnowledgebaseService.get_by_name(kb_name, tenant_id)
@@ -427,11 +428,11 @@ def list_kb_docs():
     except Exception as e:
         return server_error_response(e)
 
-    page_number = int(request.form.get("page", 1))
-    items_per_page = int(request.form.get("page_size", 15))
-    orderby = request.form.get("orderby", "create_time")
-    desc = request.form.get("desc", True)
-    keywords = request.form.get("keywords", "")
+    page_number = int(req.get("page", 1))
+    items_per_page = int(req.get("page_size", 15))
+    orderby = req.get("orderby", "create_time")
+    desc = req.get("desc", True)
+    keywords = req.get("keywords", "")
 
     try:
         docs, tol = DocumentService.get_by_kb_id(

@@ -51,7 +51,8 @@ ChatModel = {
     "Xinference": XinferenceChat,
     "Moonshot": MoonshotChat,
     "DeepSeek": DeepSeekChat,
-    "BaiChuan": BaiChuanChat
+    "BaiChuan": BaiChuanChat,
+    "MiniMax": MiniMaxChat
 }
 
 
