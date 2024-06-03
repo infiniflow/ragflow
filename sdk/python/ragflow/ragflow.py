@@ -14,15 +14,14 @@
 #  limitations under the License.
 #
 import os
-import dotenv
-import typing
-from api.utils.file_utils import get_project_base_directory
+from abc import ABC
 
 
-def get_versions() -> typing.Mapping[str, typing.Any]:
-    dotenv.load_dotenv(dotenv.find_dotenv())
-    return dotenv.dotenv_values()
+class RAGFLow(ABC):
+    def __init__(self, user_key, base_url):
+        self.user_key = user_key
+        self.base_url = base_url
 
+    def create_dataset(self, name):
+        return name
 
-def get_rag_version() -> typing.Optional[str]:
-    return get_versions().get("RAGFLOW_VERSION", "dev")
