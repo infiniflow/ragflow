@@ -32,7 +32,7 @@ docker/ragflow-logs/
 rag/res/deepdoc
 
 # Exclude sdk generated files
-SDK/python/ragflow.egg-info/
-SDK/python/build/
-SDK/python/dist/
-SDK/python/ragflow_sdk.egg-info/
+sdk/python/ragflow.egg-info/
+sdk/python/build/
+sdk/python/dist/
+sdk/python/ragflow_sdk.egg-info/
