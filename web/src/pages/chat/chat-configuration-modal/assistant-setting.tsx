@@ -24,12 +24,10 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
 
   const uploadButtion = (
     <button style={{ border: 0, background: 'none' }} type="button">
-            <PlusOutlined />
-            <div style={{ marginTop: 8 }}>
-              {t('upload', { keyPrefix: 'common' })}
-            </div>
-          </button>
-  )
+      <PlusOutlined />
+      <div style={{ marginTop: 8 }}>{t('upload', { keyPrefix: 'common' })}</div>
+    </button>
+  );
 
   return (
     <section
@@ -53,6 +51,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         <Upload
           listType="picture-card"
           maxCount={1}
+          beforeUpload={() => false}
           showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
         >
           {show ? uploadButtion : null}
