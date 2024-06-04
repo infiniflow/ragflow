@@ -1,3 +1,4 @@
+import type {} from '@redux-devtools/extension';
 import {
   Connection,
   Edge,
@@ -14,14 +15,11 @@ import {
   applyNodeChanges,
 } from 'reactflow';
 import { create } from 'zustand';
-
+import { devtools } from 'zustand/middleware';
+import { NodeData } from './interface';
 import { dsl } from './mock';
 
 const { nodes: initialNodes, edges: initialEdges } = dsl.graph;
-
-export type NodeData = {
-  color: string;
-};
 
 export type RFState = {
   nodes: Node<NodeData>[];
@@ -33,59 +31,76 @@ export type RFState = {
   onConnect: OnConnect;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
-  updateNodeColor: (nodeId: string, color: string) => void;
+  updateNodeForm: (nodeId: string, values: any) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
+  deleteEdge: () => void;
+  deleteEdgeById: (id: string) => void;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
-const useStore = create<RFState>((set, get) => ({
-  nodes: initialNodes as Node[],
-  edges: initialEdges as Edge[],
-  selectedNodeIds: [],
-  selectedEdgeIds: [],
-  onNodesChange: (changes: NodeChange[]) => {
-    set({
-      nodes: applyNodeChanges(changes, get().nodes),
-    });
-  },
-  onEdgesChange: (changes: EdgeChange[]) => {
-    set({
-      edges: applyEdgeChanges(changes, get().edges),
-    });
-  },
-  onConnect: (connection: Connection) => {
-    set({
-      edges: addEdge(connection, get().edges),
-    });
-  },
-  onSelectionChange: ({ nodes, edges }: OnSelectionChangeParams) => {
-    set({
-      selectedEdgeIds: edges.map((x) => x.id),
-      selectedNodeIds: nodes.map((x) => x.id),
-    });
-  },
-  setNodes: (nodes: Node[]) => {
-    set({ nodes });
-  },
-  setEdges: (edges: Edge[]) => {
-    set({ edges });
-  },
-  addNode: (node: Node) => {
-    set({ nodes: get().nodes.concat(node) });
-  },
-  updateNodeColor: (nodeId: string, color: string) => {
-    set({
-      nodes: get().nodes.map((node) => {
-        if (node.id === nodeId) {
-          // it's important to create a new object here, to inform React Flow about the changes
-          node.data = { ...node.data, color };
-        }
+const useStore = create<RFState>()(
+  devtools((set, get) => ({
+    nodes: initialNodes as Node[],
+    edges: initialEdges as Edge[],
+    selectedNodeIds: [],
+    selectedEdgeIds: [],
+    onNodesChange: (changes: NodeChange[]) => {
+      set({
+        nodes: applyNodeChanges(changes, get().nodes),
+      });
+    },
+    onEdgesChange: (changes: EdgeChange[]) => {
+      set({
+        edges: applyEdgeChanges(changes, get().edges),
+      });
+    },
+    onConnect: (connection: Connection) => {
+      set({
+        edges: addEdge(connection, get().edges),
+      });
+    },
+    onSelectionChange: ({ nodes, edges }: OnSelectionChangeParams) => {
+      set({
+        selectedEdgeIds: edges.map((x) => x.id),
+        selectedNodeIds: nodes.map((x) => x.id),
+      });
+    },
+    setNodes: (nodes: Node[]) => {
+      set({ nodes });
+    },
+    setEdges: (edges: Edge[]) => {
+      set({ edges });
+    },
+    addNode: (node: Node) => {
+      set({ nodes: get().nodes.concat(node) });
+    },
+    deleteEdge: () => {
+      const { edges, selectedEdgeIds } = get();
+      set({
+        edges: edges.filter((edge) =>
+          selectedEdgeIds.every((x) => x !== edge.id),
+        ),
+      });
+    },
+    deleteEdgeById: (id: string) => {
+      const { edges } = get();
+      set({
+        edges: edges.filter((edge) => edge.id !== id),
+      });
+    },
+    updateNodeForm: (nodeId: string, values: any) => {
+      set({
+        nodes: get().nodes.map((node) => {
+          if (node.id === nodeId) {
+            node.data = { ...node.data, form: values };
+          }
 
-        return node;
-      }),
-    });
-  },
-}));
+          return node;
+        }),
+      });
+    },
+  })),
+);
 
 export default useStore;

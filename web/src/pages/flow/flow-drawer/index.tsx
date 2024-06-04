@@ -1,11 +1,11 @@
 import { IModalProps } from '@/interfaces/common';
 import { Drawer } from 'antd';
-import { useCallback } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
 import BeginForm from '../begin-form';
 import { Operator } from '../constant';
 import GenerateForm from '../generate-form';
+import { useHandleFormValuesChange } from '../hooks';
 import RetrievalForm from '../retrieval-form';
 
 interface IProps {
@@ -26,10 +26,7 @@ const FlowDrawer = ({
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label;
   const OperatorForm = FormMap[operatorName];
-
-  const onValuesChange = useCallback(() => {
-    console.info(node?.id);
-  }, [node]);
+  const { handleValuesChange } = useHandleFormValuesChange(node?.id);
 
   return (
     <Drawer
@@ -41,7 +38,9 @@ const FlowDrawer = ({
       mask={false}
       width={470}
     >
-      {visible && <OperatorForm onValuesChange={onValuesChange}></OperatorForm>}
+      {visible && (
+        <OperatorForm onValuesChange={handleValuesChange}></OperatorForm>
+      )}
     </Drawer>
   );
 };

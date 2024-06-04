@@ -1,8 +1,14 @@
 import { useCallback } from 'react';
-import ReactFlow, { Background, Controls, NodeMouseHandler } from 'reactflow';
+import ReactFlow, {
+  Background,
+  Controls,
+  MarkerType,
+  NodeMouseHandler,
+} from 'reactflow';
 import 'reactflow/dist/style.css';
 
 import { NodeContextMenu, useHandleNodeContextMenu } from './context-menu';
+import { ButtonEdge } from './edge';
 
 import FlowDrawer from '../flow-drawer';
 import {
@@ -16,6 +22,10 @@ import { TextUpdaterNode } from './node';
 import styles from './index.less';
 
 const nodeTypes = { textUpdater: TextUpdaterNode };
+
+const edgeTypes = {
+  buttonEdge: ButtonEdge,
+};
 
 interface IProps {
   sideWidth: number;
@@ -59,6 +69,7 @@ function FlowCanvas({ sideWidth }: IProps) {
         fitView
         onConnect={onConnect}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onPaneClick={onPaneClick}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -66,6 +77,12 @@ function FlowCanvas({ sideWidth }: IProps) {
         onInit={setReactFlowInstance}
         onKeyUp={handleKeyUp}
         onSelectionChange={onSelectionChange}
+        defaultEdgeOptions={{
+          type: 'buttonEdge',
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+          },
+        }}
       >
         <Background />
         <Controls />

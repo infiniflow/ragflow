@@ -2,9 +2,10 @@ import { useSetModalState } from '@/hooks/commonHooks';
 import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
 import { useFetchLlmList } from '@/hooks/llmHooks';
 import React, { KeyboardEventHandler, useCallback, useState } from 'react';
-import { Node, Position, ReactFlowInstance, useReactFlow } from 'reactflow';
+import { Node, Position, ReactFlowInstance } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import useStore, { RFState } from './store';
+import { buildDslComponentsByGraph } from './utils';
 
 const selector = (state: RFState) => ({
   nodes: state.nodes,
@@ -105,21 +106,8 @@ export const useShowDrawer = () => {
   };
 };
 
-export const useDeleteEdge = () => {
-  const { setEdges } = useReactFlow();
-  const selectedEdgeIds = useStore((state) => state.selectedEdgeIds);
-
-  const deleteEdge = useCallback(() => {
-    setEdges((edges) =>
-      edges.filter((edge) => selectedEdgeIds.every((x) => x !== edge.id)),
-    );
-  }, [setEdges, selectedEdgeIds]);
-
-  return deleteEdge;
-};
-
 export const useHandleKeyUp = () => {
-  const deleteEdge = useDeleteEdge();
+  const deleteEdge = useStore((state) => state.deleteEdge);
   const handleKeyUp: KeyboardEventHandler = useCallback(
     (e) => {
       if (e.code === 'Delete') {
@@ -133,15 +121,26 @@ export const useHandleKeyUp = () => {
 };
 
 export const useSaveGraph = () => {
-  const saveGraph = useCallback(() => {}, []);
+  const { nodes, edges } = useStore((state) => state);
+  const saveGraph = useCallback(() => {
+    const x = buildDslComponentsByGraph(nodes, edges);
+    console.info('components:', x);
+  }, [nodes, edges]);
 
   return { saveGraph };
 };
 
-export const useHandleFormValuesChange = () => {
-  const handleValuesChange = (changedValues: any, values: any) => {
-    console.info(changedValues, values);
-  };
+export const useHandleFormValuesChange = (id?: string) => {
+  const updateNodeForm = useStore((state) => state.updateNodeForm);
+  const handleValuesChange = useCallback(
+    (changedValues: any, values: any) => {
+      console.info(changedValues, values);
+      if (id) {
+        updateNodeForm(id, values);
+      }
+    },
+    [updateNodeForm, id],
+  );
 
   return { handleValuesChange };
 };
