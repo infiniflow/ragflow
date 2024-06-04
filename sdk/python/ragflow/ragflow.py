@@ -15,6 +15,7 @@
 #
 import os
 from abc import ABC
+import requests
 
 
 class RAGFLow(ABC):
@@ -27,3 +28,27 @@ class RAGFLow(ABC):
 
     def delete_dataset(self, name):
         return name
+
+    def list_dataset(self):
+        endpoint = f"{self.base_url}/api/v1/dataset"
+        response = requests.get(endpoint)
+        if response.status_code == 200:
+            return response.json()['datasets']
+        else:
+            return None
+
+    def get_dataset(self, dataset_id):
+        endpoint = f"{self.base_url}/api/v1/dataset/{dataset_id}"
+        response = requests.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+
+    def update_dataset(self, dataset_id, params):
+        endpoint = f"{self.base_url}/api/v1/dataset/{dataset_id}"
+        response = requests.put(endpoint, json=params)
+        if response.status_code == 200:
+            return True
+        else:
+            return False
