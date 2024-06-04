@@ -25,3 +25,5 @@ class RAGFLow(ABC):
     def create_dataset(self, name):
         return name
 
+    def delete_dataset(self, name):
+        return name
