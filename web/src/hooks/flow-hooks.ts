@@ -1,5 +1,5 @@
 import flowService from '@/services/flow-service';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const useFetchFlowTemplates = () => {
   const { data } = useQuery({
@@ -30,18 +30,41 @@ export const useFetchFlowList = () => {
 };
 
 export const useSetFlow = () => {
+  const queryClient = useQueryClient();
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['fetchFlowList'],
+    mutationKey: ['setFlow'],
     mutationFn: async (params: any) => {
       const { data } = await flowService.setCanvas(params);
-
-      return data?.data ?? [];
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
+      }
+      return data?.retcode;
     },
   });
 
   return { data, loading, setFlow: mutateAsync };
+};
+
+export const useDeleteFlow = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteFlow'],
+    mutationFn: async (canvasIds: string[]) => {
+      const { data } = await flowService.removeCanvas({ canvasIds });
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, deleteFlow: mutateAsync };
 };

@@ -1,12 +1,7 @@
-import {
-  MergeCellsOutlined,
-  RocketOutlined,
-  SendOutlined,
-} from '@ant-design/icons';
+import { MergeCellsOutlined, RocketOutlined } from '@ant-design/icons';
 import { Position } from 'reactflow';
 
 export const componentList = [
-  { name: 'Begin', icon: <SendOutlined />, description: '' },
   { name: 'Retrieval', icon: <RocketOutlined />, description: '' },
   { name: 'Generate', icon: <MergeCellsOutlined />, description: '' },
 ];
@@ -187,5 +182,5 @@ export const dsl = {
   },
   history: [],
   path: ['begin'],
-  Answer: [],
+  answer: [],
 };

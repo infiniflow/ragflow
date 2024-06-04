@@ -24,7 +24,7 @@ const GenerateForm = ({ onValuesChange }: IOperatorForm) => {
   );
 
   useEffect(() => {
-    const values = Object.keys(variableEnabledFieldMap).reduce<
+    const switchBoxValues = Object.keys(variableEnabledFieldMap).reduce<
       Record<string, boolean>
     >((pre, field) => {
       pre[field] =
@@ -37,7 +37,8 @@ const GenerateForm = ({ onValuesChange }: IOperatorForm) => {
             ];
       return pre;
     }, {});
-    form.setFieldsValue(values);
+    const otherValues = settledModelVariableMap[ModelVariableType.Precise];
+    form.setFieldsValue({ ...switchBoxValues, ...otherValues });
   }, [form, initialLlmSetting]);
 
   return (

@@ -77,6 +77,7 @@ function FlowCanvas({ sideWidth }: IProps) {
         onInit={setReactFlowInstance}
         onKeyUp={handleKeyUp}
         onSelectionChange={onSelectionChange}
+        nodeOrigin={[0.5, 0]}
         defaultEdgeOptions={{
           type: 'buttonEdge',
           markerEnd: {

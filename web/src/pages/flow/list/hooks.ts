@@ -5,7 +5,8 @@ import { dsl } from '../mock';
 
 export const useFetchDataOnMount = () => {
   const { data, loading } = useFetchFlowList();
-  console.info(data, loading);
+
+  return { list: data, loading };
 };
 
 export const useSaveFlow = () => {

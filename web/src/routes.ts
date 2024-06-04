@@ -89,11 +89,11 @@ const routes = [
         component: '@/pages/file-manager',
       },
       {
-        path: '/flow/list',
+        path: '/flow',
         component: '@/pages/flow/list',
       },
       {
-        path: '/flow',
+        path: '/flow/:id',
         component: '@/pages/flow',
       },
     ],
