@@ -1,4 +1,5 @@
 import { DSLComponents } from '@/interfaces/database/flow';
+import { removeUselessFieldsFromValues } from '@/utils/form';
 import dagre from 'dagre';
 import { Edge, MarkerType, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
@@ -108,6 +109,16 @@ const buildComponentDownstreamOrUpstream = (
     .map((y) => y[isBuildDownstream ? 'target' : 'source']);
 };
 
+const removeUselessDataInTheOperator = (
+  operatorName: string,
+  params: Record<string, unknown>,
+) => {
+  if (operatorName === 'Generate') {
+    return removeUselessFieldsFromValues(params, '');
+  }
+  return params;
+};
+
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
   nodes: Node<NodeData>[],
@@ -117,10 +128,15 @@ export const buildDslComponentsByGraph = (
 
   nodes.forEach((x) => {
     const id = x.id;
+    const operatorName = x.data.label;
     components[id] = {
       obj: {
-        component_name: x.data.label,
-        params: (x.data.form as Record<string, unknown>) ?? {},
+        component_name: operatorName,
+        params:
+          removeUselessDataInTheOperator(
+            operatorName,
+            x.data.form as Record<string, unknown>,
+          ) ?? {},
       },
       downstream: buildComponentDownstreamOrUpstream(edges, id, true),
       upstream: buildComponentDownstreamOrUpstream(edges, id, false),

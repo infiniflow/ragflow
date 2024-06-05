@@ -172,7 +172,6 @@ const useSetGraphInfo = () => {
   const setGraphInfo = useCallback(
     ({ nodes = [], edges = [] }: IGraph) => {
       if (nodes.length && edges.length) {
-        console.info('useSetGraphInfo');
         setNodes(nodes);
         setEdges(edges);
       }

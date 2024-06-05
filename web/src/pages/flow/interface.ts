@@ -1,3 +1,5 @@
+import { FormInstance } from 'antd';
+
 export interface DSLComponentList {
   id: string;
   name: string;
@@ -5,6 +7,7 @@ export interface DSLComponentList {
 
 export interface IOperatorForm {
   onValuesChange?(changedValues: any, values: any): void;
+  form?: FormInstance;
 }
 
 export interface IBeginForm {

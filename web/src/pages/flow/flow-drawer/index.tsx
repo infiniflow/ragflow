@@ -1,5 +1,6 @@
 import { IModalProps } from '@/interfaces/common';
-import { Drawer } from 'antd';
+import { Drawer, Form } from 'antd';
+import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
 import BeginForm from '../begin-form';
@@ -26,7 +27,15 @@ const FlowDrawer = ({
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label;
   const OperatorForm = FormMap[operatorName];
+  const [form] = Form.useForm();
+
   const { handleValuesChange } = useHandleFormValuesChange(node?.id);
+
+  useEffect(() => {
+    if (visible) {
+      form.setFieldsValue(node?.data?.form);
+    }
+  }, [visible, form, node?.data?.form]);
 
   return (
     <Drawer
@@ -39,7 +48,10 @@ const FlowDrawer = ({
       width={470}
     >
       {visible && (
-        <OperatorForm onValuesChange={handleValuesChange}></OperatorForm>
+        <OperatorForm
+          onValuesChange={handleValuesChange}
+          form={form}
+        ></OperatorForm>
       )}
     </Drawer>
   );

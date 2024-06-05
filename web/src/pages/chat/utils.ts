@@ -1,18 +1,7 @@
 import { MessageType } from '@/constants/chat';
 import { IConversation, IReference } from '@/interfaces/database/chat';
-import { EmptyConversationId, variableEnabledFieldMap } from './constants';
+import { EmptyConversationId } from './constants';
 import { IClientConversation, IMessage } from './interface';
-
-export const excludeUnEnabledVariables = (values: any) => {
-  const unEnabledFields: Array<keyof typeof variableEnabledFieldMap> =
-    Object.keys(variableEnabledFieldMap).filter((key) => !values[key]) as Array<
-      keyof typeof variableEnabledFieldMap
-    >;
-
-  return unEnabledFields.map(
-    (key) => `llm_setting.${variableEnabledFieldMap[key]}`,
-  );
-};
 
 export const isConversationIdExist = (conversationId: string) => {
   return conversationId !== EmptyConversationId && conversationId !== '';

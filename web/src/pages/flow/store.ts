@@ -17,9 +17,6 @@ import {
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { NodeData } from './interface';
-import { dsl } from './mock';
-
-const { nodes: initialNodes, edges: initialEdges } = dsl.graph;
 
 export type RFState = {
   nodes: Node<NodeData>[];

@@ -1,6 +1,8 @@
 import { DSL, IFlow } from '@/interfaces/database/flow';
+import i18n from '@/locales/config';
 import flowService from '@/services/flow-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { message } from 'antd';
 import { useParams } from 'umi';
 
 export const useFetchFlowTemplates = () => {
@@ -33,11 +35,7 @@ export const useFetchFlowList = (): { data: IFlow[]; loading: boolean } => {
 
 export const useFetchFlow = (): { data: IFlow; loading: boolean } => {
   const { id } = useParams();
-  const {
-    data,
-    isFetching: loading,
-    refetch,
-  } = useQuery({
+  const { data, isFetching: loading } = useQuery({
     queryKey: ['flowDetail'],
     initialData: {} as IFlow,
     queryFn: async () => {
@@ -61,6 +59,9 @@ export const useSetFlow = () => {
     mutationFn: async (params: { id?: string; title?: string; dsl?: DSL }) => {
       const { data } = await flowService.setCanvas(params);
       if (data.retcode === 0) {
+        message.success(
+          i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
+        );
         queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
       }
       return data?.retcode;

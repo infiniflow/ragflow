@@ -1,24 +1,23 @@
 import LlmSettingItems from '@/components/llm-setting-items';
+import { variableEnabledFieldMap } from '@/constants/chat';
 import {
   ModelVariableType,
   settledModelVariableMap,
 } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/commonHooks';
 import { Variable } from '@/interfaces/database/chat';
-import { variableEnabledFieldMap } from '@/pages/chat/constants';
 import { Form, Input, Switch } from 'antd';
 import { useCallback, useEffect } from 'react';
 import { IOperatorForm } from '../interface';
 
-const GenerateForm = ({ onValuesChange }: IOperatorForm) => {
+const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
-  const [form] = Form.useForm();
   const initialLlmSetting = undefined;
 
   const handleParametersChange = useCallback(
     (value: ModelVariableType) => {
       const variable = settledModelVariableMap[value];
-      form.setFieldsValue(variable);
+      form?.setFieldsValue(variable);
     },
     [form],
   );
@@ -38,7 +37,7 @@ const GenerateForm = ({ onValuesChange }: IOperatorForm) => {
       return pre;
     }, {});
     const otherValues = settledModelVariableMap[ModelVariableType.Precise];
-    form.setFieldsValue({ ...switchBoxValues, ...otherValues });
+    form?.setFieldsValue({ ...switchBoxValues, ...otherValues });
   }, [form, initialLlmSetting]);
 
   return (

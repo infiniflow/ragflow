@@ -7,8 +7,8 @@ import { useEffect } from 'react';
 import { ISegmentedContentProps } from '../interface';
 
 import LlmSettingItems from '@/components/llm-setting-items';
+import { variableEnabledFieldMap } from '@/constants/chat';
 import { Variable } from '@/interfaces/database/chat';
-import { variableEnabledFieldMap } from '../constants';
 import styles from './index.less';
 
 const ModelSetting = ({

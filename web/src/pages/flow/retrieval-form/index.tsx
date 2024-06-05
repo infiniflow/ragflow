@@ -18,9 +18,7 @@ const onFinishFailed: FormProps<FieldType>['onFinishFailed'] = (errorInfo) => {
   console.log('Failed:', errorInfo);
 };
 
-const RetrievalForm = ({ onValuesChange }: IOperatorForm) => {
-  const [form] = Form.useForm();
-
+const RetrievalForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"

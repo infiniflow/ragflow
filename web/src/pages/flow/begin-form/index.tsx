@@ -15,9 +15,8 @@ const onFinishFailed: FormProps<FieldType>['onFinishFailed'] = (errorInfo) => {
   console.log('Failed:', errorInfo);
 };
 
-const BeginForm = ({ onValuesChange }: IOperatorForm) => {
+const BeginForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('chat');
-  const [form] = Form.useForm();
 
   return (
     <Form
