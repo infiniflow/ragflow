@@ -7,7 +7,6 @@ import {
   Form,
   Input,
   Row,
-  Slider,
   Switch,
   Table,
   TableProps,
@@ -30,15 +29,10 @@ import {
 import { EditableCell, EditableRow } from './editable-cell';
 
 import Rerank from '@/components/rerank';
+import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/commonHooks';
 import { useSelectPromptConfigParameters } from '../hooks';
 import styles from './index.less';
-
-type FieldType = {
-  similarity_threshold?: number;
-  vector_similarity_weight?: number;
-  top_n?: number;
-};
 
 const PromptEngine = (
   { show }: ISegmentedContentProps,
@@ -165,14 +159,7 @@ const PromptEngine = (
       </Form.Item>
       <Divider></Divider>
       <SimilaritySlider isTooltipShown></SimilaritySlider>
-      <Form.Item<FieldType>
-        label={t('topN')}
-        name={'top_n'}
-        initialValue={8}
-        tooltip={t('topNTip')}
-      >
-        <Slider max={30} />
-      </Form.Item>
+      <TopNItem></TopNItem>
       <Rerank></Rerank>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">

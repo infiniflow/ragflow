@@ -1,76 +1,64 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import ReactFlow, {
   Background,
   Controls,
-  Edge,
-  Node,
+  MarkerType,
   NodeMouseHandler,
-  OnConnect,
-  OnEdgesChange,
-  OnNodesChange,
-  addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
 import { NodeContextMenu, useHandleNodeContextMenu } from './context-menu';
+import { ButtonEdge } from './edge';
 
 import FlowDrawer from '../flow-drawer';
 import {
   useHandleDrop,
   useHandleKeyUp,
-  useHandleSelectionChange,
+  useSelectCanvasData,
   useShowDrawer,
 } from '../hooks';
-import { dsl } from '../mock';
 import { TextUpdaterNode } from './node';
 
+import styles from './index.less';
+
 const nodeTypes = { textUpdater: TextUpdaterNode };
+
+const edgeTypes = {
+  buttonEdge: ButtonEdge,
+};
 
 interface IProps {
   sideWidth: number;
 }
 
 function FlowCanvas({ sideWidth }: IProps) {
-  const [nodes, setNodes] = useState<Node[]>(dsl.graph.nodes);
-  const [edges, setEdges] = useState<Edge[]>(dsl.graph.edges);
-
-  const { selectedEdges, selectedNodes } = useHandleSelectionChange();
+  const {
+    nodes,
+    edges,
+    onConnect,
+    onEdgesChange,
+    onNodesChange,
+    onSelectionChange,
+  } = useSelectCanvasData();
 
   const { ref, menu, onNodeContextMenu, onPaneClick } =
     useHandleNodeContextMenu(sideWidth);
-  const { drawerVisible, hideDrawer, showDrawer } = useShowDrawer();
+  const { drawerVisible, hideDrawer, showDrawer, clickedNode } =
+    useShowDrawer();
 
-  const onNodesChange: OnNodesChange = useCallback(
-    (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
-    [],
-  );
-  const onEdgesChange: OnEdgesChange = useCallback(
-    (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
-    [],
-  );
-
-  const onConnect: OnConnect = useCallback(
-    (params) => setEdges((eds) => addEdge(params, eds)),
-    [],
+  const onNodeClick: NodeMouseHandler = useCallback(
+    (e, node) => {
+      showDrawer(node);
+    },
+    [showDrawer],
   );
 
-  const onNodeClick: NodeMouseHandler = useCallback(() => {
-    showDrawer();
-  }, [showDrawer]);
+  const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
 
-  const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop(setNodes);
-
-  const { handleKeyUp } = useHandleKeyUp(selectedEdges, selectedNodes);
-
-  useEffect(() => {
-    console.info('nodes:', nodes);
-    console.info('edges:', edges);
-  }, [nodes, edges]);
+  const { handleKeyUp } = useHandleKeyUp();
 
   return (
-    <div style={{ height: '100%', width: '100%' }}>
+    <div className={styles.canvasWrapper}>
       <ReactFlow
         ref={ref}
         nodes={nodes}
@@ -81,12 +69,21 @@ function FlowCanvas({ sideWidth }: IProps) {
         fitView
         onConnect={onConnect}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onPaneClick={onPaneClick}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onNodeClick={onNodeClick}
         onInit={setReactFlowInstance}
         onKeyUp={handleKeyUp}
+        onSelectionChange={onSelectionChange}
+        nodeOrigin={[0.5, 0]}
+        defaultEdgeOptions={{
+          type: 'buttonEdge',
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+          },
+        }}
       >
         <Background />
         <Controls />
@@ -94,7 +91,11 @@ function FlowCanvas({ sideWidth }: IProps) {
           <NodeContextMenu onClick={onPaneClick} {...(menu as any)} />
         )}
       </ReactFlow>
-      <FlowDrawer visible={drawerVisible} hideModal={hideDrawer}></FlowDrawer>
+      <FlowDrawer
+        node={clickedNode}
+        visible={drawerVisible}
+        hideModal={hideDrawer}
+      ></FlowDrawer>
     </div>
   );
 }

@@ -1,19 +1,26 @@
 import { useSetModalState } from '@/hooks/commonHooks';
-import React, {
-  Dispatch,
-  KeyboardEventHandler,
-  SetStateAction,
-  useCallback,
-  useState,
-} from 'react';
-import {
-  Node,
-  Position,
-  ReactFlowInstance,
-  useOnSelectionChange,
-  useReactFlow,
-} from 'reactflow';
+import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
+import { useFetchLlmList } from '@/hooks/llmHooks';
+import React, { KeyboardEventHandler, useCallback, useState } from 'react';
+import { Node, Position, ReactFlowInstance } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
+import useStore, { RFState } from './store';
+import { buildDslComponentsByGraph } from './utils';
+
+const selector = (state: RFState) => ({
+  nodes: state.nodes,
+  edges: state.edges,
+  onNodesChange: state.onNodesChange,
+  onEdgesChange: state.onEdgesChange,
+  onConnect: state.onConnect,
+  setNodes: state.setNodes,
+  onSelectionChange: state.onSelectionChange,
+});
+
+export const useSelectCanvasData = () => {
+  // return useStore(useShallow(selector)); throw error
+  return useStore(selector);
+};
 
 export const useHandleDrag = () => {
   const handleDragStart = useCallback(
@@ -27,7 +34,8 @@ export const useHandleDrag = () => {
   return { handleDragStart };
 };
 
-export const useHandleDrop = (setNodes: Dispatch<SetStateAction<Node[]>>) => {
+export const useHandleDrop = () => {
+  const addNode = useStore((state) => state.addNode);
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<any, any>>();
 
@@ -66,59 +74,40 @@ export const useHandleDrop = (setNodes: Dispatch<SetStateAction<Node[]>>) => {
         targetPosition: Position.Left,
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      addNode(newNode);
     },
-    [reactFlowInstance, setNodes],
+    [reactFlowInstance, addNode],
   );
 
   return { onDrop, onDragOver, setReactFlowInstance };
 };
 
 export const useShowDrawer = () => {
+  const [clickedNode, setClickedNode] = useState<Node>();
   const {
     visible: drawerVisible,
     hideModal: hideDrawer,
     showModal: showDrawer,
   } = useSetModalState();
 
+  const handleShow = useCallback(
+    (node: Node) => {
+      setClickedNode(node);
+      showDrawer();
+    },
+    [showDrawer],
+  );
+
   return {
     drawerVisible,
     hideDrawer,
-    showDrawer,
+    showDrawer: handleShow,
+    clickedNode,
   };
 };
 
-export const useHandleSelectionChange = () => {
-  const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
-  const [selectedEdges, setSelectedEdges] = useState<string[]>([]);
-
-  useOnSelectionChange({
-    onChange: ({ nodes, edges }) => {
-      setSelectedNodes(nodes.map((node) => node.id));
-      setSelectedEdges(edges.map((edge) => edge.id));
-    },
-  });
-
-  return { selectedEdges, selectedNodes };
-};
-
-export const useDeleteEdge = (selectedEdges: string[]) => {
-  const { setEdges } = useReactFlow();
-
-  const deleteEdge = useCallback(() => {
-    setEdges((edges) =>
-      edges.filter((edge) => selectedEdges.every((x) => x !== edge.id)),
-    );
-  }, [setEdges, selectedEdges]);
-
-  return deleteEdge;
-};
-
-export const useHandleKeyUp = (
-  selectedEdges: string[],
-  selectedNodes: string[],
-) => {
-  const deleteEdge = useDeleteEdge(selectedEdges);
+export const useHandleKeyUp = () => {
+  const deleteEdge = useStore((state) => state.deleteEdge);
   const handleKeyUp: KeyboardEventHandler = useCallback(
     (e) => {
       if (e.code === 'Delete') {
@@ -132,7 +121,31 @@ export const useHandleKeyUp = (
 };
 
 export const useSaveGraph = () => {
-  const saveGraph = useCallback(() => {}, []);
+  const { nodes, edges } = useStore((state) => state);
+  const saveGraph = useCallback(() => {
+    const x = buildDslComponentsByGraph(nodes, edges);
+    console.info('components:', x);
+  }, [nodes, edges]);
 
   return { saveGraph };
+};
+
+export const useHandleFormValuesChange = (id?: string) => {
+  const updateNodeForm = useStore((state) => state.updateNodeForm);
+  const handleValuesChange = useCallback(
+    (changedValues: any, values: any) => {
+      console.info(changedValues, values);
+      if (id) {
+        updateNodeForm(id, values);
+      }
+    },
+    [updateNodeForm, id],
+  );
+
+  return { handleValuesChange };
+};
+
+export const useFetchDataOnMount = () => {
+  useFetchFlowTemplates();
+  useFetchLlmList();
 };

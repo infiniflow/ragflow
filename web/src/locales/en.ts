@@ -541,6 +541,7 @@ The above is the content you need to summarize.`,
       preview: 'Preview',
       fileError: 'File error',
     },
+    flow: { cite: 'Cite', citeTip: 'citeTip' },
     footer: {
       profile: 'All rights reserved @ React',
     },

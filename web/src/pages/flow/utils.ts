@@ -2,6 +2,7 @@ import { DSLComponents } from '@/interfaces/database/flow';
 import dagre from 'dagre';
 import { Edge, MarkerType, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
+import { NodeData } from './interface';
 
 const buildEdges = (
   operatorIds: string[],
@@ -95,4 +96,36 @@ export const getLayoutedElements = (
   });
 
   return { nodes, edges };
+};
+
+const buildComponentDownstreamOrUpstream = (
+  edges: Edge[],
+  nodeId: string,
+  isBuildDownstream = true,
+) => {
+  return edges
+    .filter((y) => y[isBuildDownstream ? 'source' : 'target'] === nodeId)
+    .map((y) => y[isBuildDownstream ? 'target' : 'source']);
+};
+
+// construct a dsl based on the node information of the graph
+export const buildDslComponentsByGraph = (
+  nodes: Node<NodeData>[],
+  edges: Edge[],
+): DSLComponents => {
+  const components: DSLComponents = {};
+
+  nodes.forEach((x) => {
+    const id = x.id;
+    components[id] = {
+      obj: {
+        component_name: x.data.label,
+        params: x.data.form as Record<string, unknown>,
+      },
+      downstream: buildComponentDownstreamOrUpstream(edges, id, true),
+      upstream: buildComponentDownstreamOrUpstream(edges, id, false),
+    };
+  });
+
+  return components;
 };
