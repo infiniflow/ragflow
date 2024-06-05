@@ -32,7 +32,10 @@ const RetrievalForm = ({ onValuesChange }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       form={form}
     >
-      <SimilaritySlider isTooltipShown></SimilaritySlider>
+      <SimilaritySlider
+        isTooltipShown
+        vectorSimilarityWeightName="keywords_similarity_weight"
+      ></SimilaritySlider>
       <TopNItem></TopNItem>
       <Rerank></Rerank>
       <KnowledgeBaseItem></KnowledgeBaseItem>

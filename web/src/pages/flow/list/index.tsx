@@ -31,8 +31,8 @@ const FlowList = () => {
       <Spin spinning={loading}>
         <Flex gap={'large'} wrap="wrap" className={styles.flowCardContainer}>
           {list.length > 0 ? (
-            list.map((item: any) => {
-              return <FlowCard item={item} key={item.name}></FlowCard>;
+            list.map((item) => {
+              return <FlowCard item={item} key={item.id}></FlowCard>;
             })
           ) : (
             <Empty className={styles.knowledgeEmpty}></Empty>

@@ -120,7 +120,7 @@ export const buildDslComponentsByGraph = (
     components[id] = {
       obj: {
         component_name: x.data.label,
-        params: x.data.form as Record<string, unknown>,
+        params: (x.data.form as Record<string, unknown>) ?? {},
       },
       downstream: buildComponentDownstreamOrUpstream(edges, id, true),
       upstream: buildComponentDownstreamOrUpstream(edges, id, false),

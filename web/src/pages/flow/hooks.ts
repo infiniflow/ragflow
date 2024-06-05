@@ -1,9 +1,22 @@
 import { useSetModalState } from '@/hooks/commonHooks';
-import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
+import {
+  useFetchFlow,
+  useFetchFlowTemplates,
+  useSetFlow,
+} from '@/hooks/flow-hooks';
 import { useFetchLlmList } from '@/hooks/llmHooks';
-import React, { KeyboardEventHandler, useCallback, useState } from 'react';
+import { IGraph } from '@/interfaces/database/flow';
+import { useIsFetching } from '@tanstack/react-query';
+import React, {
+  KeyboardEventHandler,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
 import { Node, Position, ReactFlowInstance } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
+// import { shallow } from 'zustand/shallow';
+import { useParams } from 'umi';
 import useStore, { RFState } from './store';
 import { buildDslComponentsByGraph } from './utils';
 
@@ -18,7 +31,8 @@ const selector = (state: RFState) => ({
 });
 
 export const useSelectCanvasData = () => {
-  // return useStore(useShallow(selector)); throw error
+  // return useStore(useShallow(selector)); // throw error
+  // return useStore(selector, shallow);
   return useStore(selector);
 };
 
@@ -121,11 +135,19 @@ export const useHandleKeyUp = () => {
 };
 
 export const useSaveGraph = () => {
+  const { data } = useFetchFlow();
+  const { setFlow } = useSetFlow();
+  const { id } = useParams();
   const { nodes, edges } = useStore((state) => state);
   const saveGraph = useCallback(() => {
-    const x = buildDslComponentsByGraph(nodes, edges);
-    console.info('components:', x);
-  }, [nodes, edges]);
+    const dslComponents = buildDslComponentsByGraph(nodes, edges);
+    console.info('components:', dslComponents);
+    setFlow({
+      id,
+      title: data.title,
+      dsl: { ...data.dsl, graph: { nodes, edges }, components: dslComponents },
+    });
+  }, [nodes, edges, setFlow, id, data]);
 
   return { saveGraph };
 };
@@ -145,7 +167,35 @@ export const useHandleFormValuesChange = (id?: string) => {
   return { handleValuesChange };
 };
 
+const useSetGraphInfo = () => {
+  const { setEdges, setNodes } = useStore((state) => state);
+  const setGraphInfo = useCallback(
+    ({ nodes = [], edges = [] }: IGraph) => {
+      if (nodes.length && edges.length) {
+        console.info('useSetGraphInfo');
+        setNodes(nodes);
+        setEdges(edges);
+      }
+    },
+    [setEdges, setNodes],
+  );
+  return setGraphInfo;
+};
+
 export const useFetchDataOnMount = () => {
+  const { loading, data } = useFetchFlow();
+  const setGraphInfo = useSetGraphInfo();
+
+  useEffect(() => {
+    setGraphInfo(data?.dsl?.graph ?? {});
+  }, [setGraphInfo, data?.dsl?.graph]);
+
   useFetchFlowTemplates();
   useFetchLlmList();
+
+  return { loading, flowDetail: data };
+};
+
+export const useFlowIsFetching = () => {
+  return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
 };

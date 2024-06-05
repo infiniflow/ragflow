@@ -1,5 +1,7 @@
+import { DSL, IFlow } from '@/interfaces/database/flow';
 import flowService from '@/services/flow-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useParams } from 'umi';
 
 export const useFetchFlowTemplates = () => {
   const { data } = useQuery({
@@ -15,7 +17,7 @@ export const useFetchFlowTemplates = () => {
   return data;
 };
 
-export const useFetchFlowList = () => {
+export const useFetchFlowList = (): { data: IFlow[]; loading: boolean } => {
   const { data, isFetching: loading } = useQuery({
     queryKey: ['fetchFlowList'],
     initialData: [],
@@ -23,6 +25,25 @@ export const useFetchFlowList = () => {
       const { data } = await flowService.listCanvas();
 
       return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchFlow = (): { data: IFlow; loading: boolean } => {
+  const { id } = useParams();
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ['flowDetail'],
+    initialData: {} as IFlow,
+    queryFn: async () => {
+      const { data } = await flowService.getCanvas({}, id);
+
+      return data?.data ?? {};
     },
   });
 
@@ -37,7 +58,7 @@ export const useSetFlow = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: ['setFlow'],
-    mutationFn: async (params: any) => {
+    mutationFn: async (params: { id?: string; title?: string; dsl?: DSL }) => {
       const { data } = await flowService.setCanvas(params);
       if (data.retcode === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });

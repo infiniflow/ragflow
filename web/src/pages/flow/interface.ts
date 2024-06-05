@@ -1,5 +1,3 @@
-import { Edge, Node } from 'reactflow';
-
 export interface DSLComponentList {
   id: string;
   name: string;
@@ -40,23 +38,3 @@ export type NodeData = {
   color: string;
   form: IBeginForm | IRetrievalForm | IGenerateForm;
 };
-
-export interface IFlow {
-  avatar: null;
-  canvas_type: null;
-  create_date: string;
-  create_time: number;
-  description: null;
-  dsl: {
-    answer: any[];
-    components: DSLComponentList;
-    graph: { nodes: Node[]; edges: Edge[] };
-    history: any[];
-    path: string[];
-  };
-  id: string;
-  title: string;
-  update_date: string;
-  update_time: number;
-  user_id: string;
-}
