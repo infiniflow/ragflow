@@ -17,12 +17,20 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.6.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.6.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.7.0-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.7.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
 </p>
+
+<h4 align="center">
+  <a href="https://ragflow.io/docs/dev/">Document</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
+  <a href="https://twitter.com/infiniflowai">Twitter</a> |
+  <a href="https://discord.gg/jEfRUwEYEV">Discord</a> |
+  <a href="https://demo.ragflow.io">Demo</a>
+</h4>
 
 ## 💡 RAGFlow とは？
 
@@ -34,20 +42,12 @@
 
 ## 📌 最新情報
 
+- 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding)、[BGE](https://github.com/FlagOpen/FlagEmbedding) reranker を統合。
 - 2024-05-28 LLM BaichuanとVolcanoArkを統合しました。
 - 2024-05-23 より良いテキスト検索のために[RAPTOR](https://arxiv.org/html/2401.18059v1)をサポート。
 - 2024-05-21 ストリーミング出力とテキストチャンク取得APIをサポート。
 - 2024-05-15 OpenAI GPT-4oを統合しました。
 - 2024-05-08 LLM DeepSeek-V2を統合しました。
-- 2024-04-26 「ファイル管理」機能を追加しました。
-- 2024-04-19 会話 API をサポートします ([詳細](./docs/references/api.md))。
-- 2024-04-16 [BCEmbedding](https://github.com/netease-youdao/BCEmbedding) から埋め込みモデル「bce-embedding-base_v1」を追加します。
-- 2024-04-16 [FastEmbed](https://github.com/qdrant/fastembed) は、軽量かつ高速な埋め込み用に設計されています。
-- 2024-04-11 ローカル LLM デプロイメント用に [Xinference](./docs/guides/deploy_local_llm.md) をサポートします。
-- 2024-04-10 メソッド「Laws」に新しいレイアウト認識モデルを追加します。
-- 2024-04-08 [Ollama](./docs/guides/deploy_local_llm.md) を使用した大規模モデルのローカライズされたデプロイメントをサポートします。
-- 2024-04-07 中国語インターフェースをサポートします。
-
 
 ## 🌟 主な特徴
 
@@ -95,7 +95,7 @@
 
 ### 🚀 サーバーを起動
 
-1. `vm.max_map_count` >= 262144 であることを確認する【[もっと](./docs/guides/max_map_count.md)】:
+1. `vm.max_map_count` >= 262144 であることを確認する:
 
    > `vm.max_map_count` の値をチェックするには:
    >
@@ -130,7 +130,7 @@
    $ docker compose up -d
    ```
 
-   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_VERSION変数を見つけて、対応するバージョンに変更してください。 例えば、RAGFLOW_VERSION=v0.6.0として、上記のコマンドを実行してください。
+   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_VERSION変数を見つけて、対応するバージョンに変更してください。 例えば、RAGFLOW_VERSION=v0.7.0として、上記のコマンドを実行してください。
 
    > コアイメージのサイズは約 9 GB で、ロードに時間がかかる場合があります。
 
@@ -161,7 +161,7 @@
    > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
 6. [service_conf.yaml](./docker/service_conf.yaml) で、`user_default_llm` で希望の LLM ファクトリを選択し、`API_KEY` フィールドを対応する API キーで更新する。
 
-   > 詳しくは [./docs/guides/llm_api_key_setup.md](./docs/guides/llm_api_key_setup.md) を参照してください。
+   > 詳しくは [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
 
    _これで初期設定完了！ショーの開幕です！_
 
@@ -192,7 +192,7 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.6.0 .
+$ docker build -t infiniflow/ragflow:v0.7.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
@@ -260,8 +260,10 @@ $ bash ./entrypoint.sh
 
 ## 📚 ドキュメンテーション
 
-- [Quickstart](./docs/quickstart.md)
-- [FAQ](./docs/references/faq.md)
+- [Quickstart](https://ragflow.io/docs/dev/)
+- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [Reference](https://ragflow.io/docs/dev/category/references)
+- [FAQ](https://ragflow.io/docs/dev/faq)
 
 ## 📜 ロードマップ
 
@@ -271,6 +273,7 @@ $ bash ./entrypoint.sh
 
 - [Discord](https://discord.gg/4XxujFgUN7)
 - [Twitter](https://twitter.com/infiniflowai)
+- [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 コントリビュート
 

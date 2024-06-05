@@ -24,6 +24,8 @@ import numpy as np
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
 
 class Base(ABC):
     def __init__(self, key, model_name):
@@ -65,11 +67,12 @@ class DefaultRerank(Base):
         token_count = 0
         for _, t in pairs:
             token_count += num_tokens_from_string(t)
-        batch_size = 32
+        batch_size = 4096
         res = []
         for i in range(0, len(pairs), batch_size):
             scores = self._model.compute_score(pairs[i:i + batch_size], max_length=2048)
-            res.extend(scores)
+            if isinstance(scores, float): res.append(scores)
+            else:  res.extend(scores)
         return np.array(res), token_count
 
 
@@ -110,4 +113,20 @@ class YoudaoRerank(DefaultRerank):
                 YoudaoRerank._model = RerankerModel(
                     model_name_or_path=model_name.replace(
                         "maidalun1020", "InfiniFlow"))
+    
+    def similarity(self, query: str, texts: list):
+        pairs = [(query, truncate(t, self._model.max_length)) for t in texts]
+        token_count = 0
+        for _, t in pairs:
+            token_count += num_tokens_from_string(t)
+        batch_size = 32
+        res = []
+        for i in range(0, len(pairs), batch_size):
+            scores = self._model.compute_score(pairs[i:i + batch_size], max_length=self._model.max_length)
+            scores = sigmoid(np.array(scores)).tolist()
+            if isinstance(scores, float): res.append(scores)
+            res.extend(scores)
+        return np.array(res), token_count
+    
+
 

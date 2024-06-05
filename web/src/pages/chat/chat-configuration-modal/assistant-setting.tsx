@@ -46,6 +46,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         <Upload
           listType="picture-card"
           maxCount={1}
+          beforeUpload={() => false}
           showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
         >
           {show ? uploadButtion : null}

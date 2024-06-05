@@ -23,7 +23,7 @@ EmbeddingModel = {
     "Ollama": OllamaEmbed,
     "OpenAI": OpenAIEmbed,
     "Xinference": XinferenceEmbed,
-    "Tongyi-Qianwen": DefaultEmbedding,#QWenEmbed,
+    "Tongyi-Qianwen": QWenEmbed,
     "ZHIPU-AI": ZhipuEmbed,
     "FastEmbed": FastEmbed,
     "Youdao": YoudaoEmbed,
@@ -51,7 +51,8 @@ ChatModel = {
     "Xinference": XinferenceChat,
     "Moonshot": MoonshotChat,
     "DeepSeek": DeepSeekChat,
-    "BaiChuan": BaiChuanChat
+    "BaiChuan": BaiChuanChat,
+    "MiniMax": MiniMaxChat
 }
 
 
