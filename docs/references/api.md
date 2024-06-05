@@ -109,10 +109,10 @@ This method retrieves the history of a specified conversation session.
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
         - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content) to retrieve the image.
-        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
-        - similarity: The hybrid similarity.
-        - term_similarity: The keyword simimlarity.
-        - vector_similarity: The embedding similarity.
+        - `positions`: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
+        - `similarity`: The hybrid similarity.
+        - `term_similarity`: The keyword simimlarity.
+        - `vector_similarity`: The embedding similarity.
     - `doc_aggs`:
         - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content) to retrieve the document.
         - `doc_name`: Name of the *hit* document.
