@@ -76,13 +76,13 @@ In the popup window, complete basic settings for Ollama:
 :::
 
 :::danger WARNING
-If your Ollama runs on a different machine, you may also need to set the `OLLAMA_HOST`  in **ollama.service**:
+If your Ollama runs on a different machine, you may also need to set the `OLLAMA_HOST` environment variable to `0.0.0.0` in **ollama.service** (Note that this is *NOT* the base URL):
 
 ```bash
 Environment="OLLAMA_HOST=0.0.0.0"
 ```
 
-See [here](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server) for more information.
+See [this guide](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server) for more information.
 :::
 
 :::caution WARNING
