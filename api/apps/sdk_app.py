@@ -53,61 +53,64 @@ def contains_space(s):
 def create():
     # Check if Authorization header is present
     if 'Authorization' not in request.headers:
-        return get_json_result(data=False, retmsg="Authorization header is missing!",
-                               retcode=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="Authorization header is missing!",
+                               code=RetCode.AUTHENTICATION_ERROR)
 
     # Extract token from Authorization header
     try:
         token = request.headers.get('Authorization').split()[1]
     except IndexError:
-        return get_json_result(data=False, retmsg="Token is missing!", retcode=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="Token is missing!", code=RetCode.AUTHENTICATION_ERROR)
 
     objs = APIToken.query(token=token)
 
     # Authorization error
     if not objs:
         return get_json_result(
-            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Token is invalid!"', code=RetCode.AUTHENTICATION_ERROR)
 
     tenant_id = objs[0].tenant_id
-    req = request.json
+    request_body = request.json
 
-    # In case that there's space in the end or the start
-    req["name"] = req["name"].strip()
+    request_body_name = request_body["name"]
 
     # In case that there's no name
-    if not req["name"]:
-        return get_data_error_result(retmsg="Name cannot be empty!")
+    if not request_body_name:
+        return get_data_error_result(message="Name cannot be empty!")
+
+    # In case that there's space in the end or the start
+    request_body_name= request_body_name.strip()
 
     # In case that the length of the name exceeds the limit
-    if len(req["name"]) > LIMIT_LENGTH_OF_NAME:
-        return get_data_error_result(retmsg=f"The name of the dataset exceeds {LIMIT_LENGTH_OF_NAME}!")
+    if len(request_body_name) > LIMIT_LENGTH_OF_NAME:
+        return get_data_error_result(message=f"The name of the dataset exceeds {LIMIT_LENGTH_OF_NAME}!")
 
     # In case that there is space in the name
-    if contains_space(req["name"]):
-        return get_data_error_result(retmsg="There is space in this dataset's name. Please remove it.")
+    if contains_space(request_body_name):
+        return get_data_error_result(message="There is space in this dataset's name. Please remove it.")
 
     # In case that there are other fields in the data-binary
-    if len(req.keys()) > 1:
-        return get_data_error_result(retmsg="There is other fields in the data-binary. Please remove it.")
+    if len(request_body.keys()) > 1:
+        return get_data_error_result(
+            message="There is other fields in addition to the 'name' field in the data-binary. Please remove it.")
 
     # If there is a duplicate name, it will modify it to make it unique
-    req["name"] = duplicate_name(
+    request_body["name"] = duplicate_name(
         KnowledgebaseService.query,
-        name=req["name"],
+        name=request_body_name,
         tenant_id=tenant_id,
         status=StatusEnum.VALID.value)
     try:
-        req["id"] = get_uuid()
-        req["tenant_id"] = tenant_id
-        req["created_by"] = tenant_id
+        request_body["id"] = get_uuid()
+        request_body["tenant_id"] = tenant_id
+        request_body["created_by"] = tenant_id
         e, t = TenantService.get_by_id(tenant_id)
         if not e:
-            return get_data_error_result(retmsg="Tenant not found.")
-        req["embd_id"] = t.embd_id
-        if not KnowledgebaseService.save(**req):
+            return get_data_error_result(message="Tenant not found.")
+        request_body["embd_id"] = t.embd_id  # what's this
+        if not KnowledgebaseService.save(**request_body):
             return get_data_error_result()
-        return get_json_result(data={"kb_id": req["id"]})
+        return get_json_result(data={"dataset_id": request_body["id"]})
     except Exception as e:
         return server_error_response(e)
 
