@@ -90,6 +90,15 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
       >
         <Switch />
       </Form.Item>
+      <Form.Item
+        label={t('selfRag')}
+        valuePropName="checked"
+        name={['prompt_config', 'self_rag']}
+        tooltip={t('selfRagTip')}
+        initialValue={true}
+      >
+        <Switch />
+      </Form.Item>
       <KnowledgeBaseItem></KnowledgeBaseItem>
     </section>
   );
