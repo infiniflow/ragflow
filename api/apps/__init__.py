@@ -61,16 +61,16 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 
 
-
 def search_pages_path(pages_dir):
     return [path for path in pages_dir.glob('*_app.py') if not path.name.startswith('.')]
 
 
 def register_page(page_path):
     page_name = page_path.stem.rstrip('_app')
+    print('path_name', page_name)
+
     module_name = '.'.join(page_path.parts[page_path.parts.index('api'):-1] + (page_name, ))
 
-    print(page_name, module_name)
     spec = spec_from_file_location(module_name, page_path)
     page = module_from_spec(spec)
     page.app = app
@@ -80,6 +80,8 @@ def register_page(page_path):
 
     page_name = getattr(page, 'page_name', page_name)
     url_prefix = f'/{API_VERSION}/{page_name}'
+    # dataset_app.py
+    #
     if page_name == 'sdk':
         url_prefix = f'/api/{API_VERSION}'
 
