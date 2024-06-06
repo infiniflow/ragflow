@@ -79,15 +79,15 @@ def create():
         return get_data_error_result(message="Name cannot be empty!")
 
     # In case that there's space in the end or the start
-    request_body_name= request_body_name.strip()
+    request_body_name = request_body_name.strip()
 
     # In case that the length of the name exceeds the limit
     if len(request_body_name) > LIMIT_LENGTH_OF_NAME:
         return get_data_error_result(message=f"The name of the dataset exceeds {LIMIT_LENGTH_OF_NAME}!")
 
-    # In case that there is space in the name
+    # In case that there is space in the middle of the name
     if contains_space(request_body_name):
-        return get_data_error_result(message="There is space in this dataset's name. Please remove it.")
+        return get_data_error_result(message="There is space in the middle of this dataset's name. Please remove it.")
 
     # In case that there are other fields in the data-binary
     if len(request_body.keys()) > 1:
@@ -107,7 +107,7 @@ def create():
         e, t = TenantService.get_by_id(tenant_id)
         if not e:
             return get_data_error_result(message="Tenant not found.")
-        request_body["embd_id"] = t.embd_id  # what's this
+        request_body["embd_id"] = t.embd_id
         if not KnowledgebaseService.save(**request_body):
             return get_data_error_result()
         return get_json_result(data={"dataset_id": request_body["id"]})
