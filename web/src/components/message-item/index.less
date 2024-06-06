@@ -1,0 +1,40 @@
+.messageItem {
+  padding: 24px 0;
+  .messageItemSection {
+    display: inline-block;
+  }
+  .messageItemSectionLeft {
+    width: 70%;
+  }
+  .messageItemSectionRight {
+    width: 40%;
+  }
+  .messageItemContent {
+    display: inline-flex;
+    gap: 20px;
+  }
+  .messageItemContentReverse {
+    flex-direction: row-reverse;
+  }
+  .messageText {
+    .chunkText();
+    padding: 0 14px;
+    background-color: rgba(249, 250, 251, 1);
+    word-break: break-all;
+  }
+  .messageEmpty {
+    width: 300px;
+  }
+
+  .thumbnailImg {
+    max-width: 20px;
+  }
+}
+
+.messageItemLeft {
+  text-align: left;
+}
+
+.messageItemRight {
+  text-align: right;
+}

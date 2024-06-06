@@ -18,7 +18,7 @@ import { Node, Position, ReactFlowInstance } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 // import { shallow } from 'zustand/shallow';
 import { useParams } from 'umi';
-import useStore, { RFState } from './store';
+import useGraphStore, { RFState } from './store';
 import { buildDslComponentsByGraph } from './utils';
 
 const selector = (state: RFState) => ({
@@ -34,7 +34,7 @@ const selector = (state: RFState) => ({
 export const useSelectCanvasData = () => {
   // return useStore(useShallow(selector)); // throw error
   // return useStore(selector, shallow);
-  return useStore(selector);
+  return useGraphStore(selector);
 };
 
 export const useHandleDrag = () => {
@@ -50,7 +50,7 @@ export const useHandleDrag = () => {
 };
 
 export const useHandleDrop = () => {
-  const addNode = useStore((state) => state.addNode);
+  const addNode = useGraphStore((state) => state.addNode);
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<any, any>>();
 
@@ -124,7 +124,7 @@ export const useShowDrawer = () => {
 };
 
 export const useHandleKeyUp = () => {
-  const deleteEdge = useStore((state) => state.deleteEdge);
+  const deleteEdge = useGraphStore((state) => state.deleteEdge);
   const handleKeyUp: KeyboardEventHandler = useCallback(
     (e) => {
       if (e.code === 'Delete') {
@@ -141,7 +141,7 @@ export const useSaveGraph = () => {
   const { data } = useFetchFlow();
   const { setFlow } = useSetFlow();
   const { id } = useParams();
-  const { nodes, edges } = useStore((state) => state);
+  const { nodes, edges } = useGraphStore((state) => state);
   const saveGraph = useCallback(() => {
     const dslComponents = buildDslComponentsByGraph(nodes, edges);
     setFlow({
@@ -155,7 +155,7 @@ export const useSaveGraph = () => {
 };
 
 export const useHandleFormValuesChange = (id?: string) => {
-  const updateNodeForm = useStore((state) => state.updateNodeForm);
+  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
   const handleValuesChange = useCallback(
     (changedValues: any, values: any) => {
       console.info(changedValues, values);
@@ -170,7 +170,7 @@ export const useHandleFormValuesChange = (id?: string) => {
 };
 
 const useSetGraphInfo = () => {
-  const { setEdges, setNodes } = useStore((state) => state);
+  const { setEdges, setNodes } = useGraphStore((state) => state);
   const setGraphInfo = useCallback(
     ({ nodes = [], edges = [] }: IGraph) => {
       if (nodes.length && edges.length) {
@@ -205,7 +205,7 @@ export const useRunGraph = () => {
   const { data } = useFetchFlow();
   const { runFlow } = useRunFlow();
   const { id } = useParams();
-  const { nodes, edges } = useStore((state) => state);
+  const { nodes, edges } = useGraphStore((state) => state);
   const runGraph = useCallback(() => {
     const dslComponents = buildDslComponentsByGraph(nodes, edges);
     runFlow({
