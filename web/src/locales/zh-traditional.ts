@@ -350,7 +350,7 @@ export default {
         '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
       quote: '顯示引文',
       quoteTip: '是否應該顯示原文出處？',
-      selfRag: '自反令牌',
+      selfRag: 'Self-RAG',
       selfRagTip: '請參考: https://huggingface.co/papers/2310.11511',
       overview: '聊天 API',
       pv: '消息數',
