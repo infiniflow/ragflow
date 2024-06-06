@@ -129,4 +129,3 @@ class YoudaoRerank(DefaultRerank):
         return np.array(res), token_count
     
 
-

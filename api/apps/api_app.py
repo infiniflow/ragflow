@@ -198,15 +198,18 @@ def completion():
             else: conv.reference[-1] = ans["reference"]
             conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
 
+        def rename_field(ans):
+            for chunk_i in ans['reference'].get('chunks', []):
+                chunk_i['doc_name'] = chunk_i['docnm_kwd']
+                chunk_i.pop('docnm_kwd')
+
         def stream():
             nonlocal dia, msg, req, conv
             try:
                 for ans in chat(dia, msg, True, **req):
                     fillin_conv(ans)
-                    for chunk_i in ans['reference'].get('chunks', []):
-                        chunk_i['doc_name'] = chunk_i['docnm_kwd']
-                        chunk_i.pop('docnm_kwd')
-                    yield "data:"+json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
+                    rename_field(rename_field)
+                    yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
                 API4ConversationService.append_message(conv.id, conv.to_dict())
             except Exception as e:
                 yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
@@ -554,23 +557,24 @@ def completion_faq():
                 "content": ""
             }
         ]
-        for ans in chat(dia, msg, stream=False, **req):
-            # answer = ans
-            data[0]["content"] += re.sub(r'##\d\$\$', '', ans["answer"])
-            fillin_conv(ans)
-            API4ConversationService.append_message(conv.id, conv.to_dict())
-
-            chunk_idxs = [int(match[2]) for match in re.findall(r'##\d\$\$', ans["answer"])]
-            for chunk_idx in chunk_idxs[:1]:
-                if ans["reference"]["chunks"][chunk_idx]["img_id"]:
-                    try:
-                        bkt, nm = ans["reference"]["chunks"][chunk_idx]["img_id"].split("-")
-                        response = MINIO.get(bkt, nm)
-                        data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
-                        data.append(data_type_picture)
-                    except Exception as e:
-                        return server_error_response(e)
+        ans = ""
+        for a in chat(dia, msg, stream=False, **req):
+            ans = a
             break
+        data[0]["content"] += re.sub(r'##\d\$\$', '', ans["answer"])
+        fillin_conv(ans)
+        API4ConversationService.append_message(conv.id, conv.to_dict())
+
+        chunk_idxs = [int(match[2]) for match in re.findall(r'##\d\$\$', ans["answer"])]
+        for chunk_idx in chunk_idxs[:1]:
+            if ans["reference"]["chunks"][chunk_idx]["img_id"]:
+                try:
+                    bkt, nm = ans["reference"]["chunks"][chunk_idx]["img_id"].split("-")
+                    response = MINIO.get(bkt, nm)
+                    data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
+                    data.append(data_type_picture)
+                except Exception as e:
+                    return server_error_response(e)
 
         response = {"code": 200, "msg": "success", "data": data}
         return response
