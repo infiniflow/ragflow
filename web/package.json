@@ -1,6 +1,6 @@
 {
   "private": true,
-  "author": "zhaofengchao <13723060510@163.com>",
+  "author": "bill",
   "scripts": {
     "build": "umi build",
     "dev": "cross-env UMI_DEV_SERVER_COMPRESS=none umi dev",

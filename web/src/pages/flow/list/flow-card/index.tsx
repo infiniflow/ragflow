@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'umi';
 
 import { useDeleteFlow } from '@/hooks/flow-hooks';
-import { IFlow } from '../../interface';
+import { IFlow } from '@/interfaces/database/flow';
 import styles from './index.less';
 
 interface IProps {

@@ -18,9 +18,7 @@ const onFinishFailed: FormProps<FieldType>['onFinishFailed'] = (errorInfo) => {
   console.log('Failed:', errorInfo);
 };
 
-const RetrievalForm = ({ onValuesChange }: IOperatorForm) => {
-  const [form] = Form.useForm();
-
+const RetrievalForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
@@ -32,7 +30,10 @@ const RetrievalForm = ({ onValuesChange }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       form={form}
     >
-      <SimilaritySlider isTooltipShown></SimilaritySlider>
+      <SimilaritySlider
+        isTooltipShown
+        vectorSimilarityWeightName="keywords_similarity_weight"
+      ></SimilaritySlider>
       <TopNItem></TopNItem>
       <Rerank></Rerank>
       <KnowledgeBaseItem></KnowledgeBaseItem>
