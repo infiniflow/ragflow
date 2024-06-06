@@ -9,7 +9,14 @@ import { getAuthorization } from '@/utils/authorizationUtil';
 import { PaginationProps } from 'antd';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ChangeEventHandler,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
 import { useSetModalState, useTranslate } from './commonHooks';
@@ -196,3 +203,39 @@ export const useSendMessageWithSse = (
 
   return { send, answer, done };
 };
+
+//#region chat hooks
+
+export const useScrollToBottom = (id?: string) => {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback(() => {
+    if (id) {
+      ref.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, [id]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  return ref;
+};
+
+export const useHandleMessageInputChange = () => {
+  const [value, setValue] = useState('');
+
+  const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const value = e.target.value;
+    const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
+    setValue(nextValue);
+  };
+
+  return {
+    handleInputChange,
+    value,
+    setValue,
+  };
+};
+
+// #endregion

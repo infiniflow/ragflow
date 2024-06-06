@@ -4,7 +4,7 @@ import {
   EdgeProps,
   getBezierPath,
 } from 'reactflow';
-import useStore from '../../store';
+import useGraphStore from '../../store';
 
 import { useMemo } from 'react';
 import styles from './index.less';
@@ -21,7 +21,7 @@ export function ButtonEdge({
   markerEnd,
   selected,
 }: EdgeProps) {
-  const deleteEdgeById = useStore((state) => state.deleteEdgeById);
+  const deleteEdgeById = useGraphStore((state) => state.deleteEdgeById);
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,

@@ -16,6 +16,7 @@ import {
 } from 'reactflow';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { Operator } from './constant';
 import { NodeData } from './interface';
 
 export type RFState = {
@@ -33,10 +34,11 @@ export type RFState = {
   addNode: (nodes: Node) => void;
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
+  findNodeByName: (operatorName: Operator) => Node | undefined;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
-const useStore = create<RFState>()(
+const useGraphStore = create<RFState>()(
   devtools((set, get) => ({
     nodes: [] as Node[],
     edges: [] as Edge[],
@@ -86,6 +88,9 @@ const useStore = create<RFState>()(
         edges: edges.filter((edge) => edge.id !== id),
       });
     },
+    findNodeByName: (name: Operator) => {
+      return get().nodes.find((x) => x.data.label === name);
+    },
     updateNodeForm: (nodeId: string, values: any) => {
       set({
         nodes: get().nodes.map((node) => {
@@ -100,4 +105,4 @@ const useStore = create<RFState>()(
   })),
 );
 
-export default useStore;
+export default useGraphStore;

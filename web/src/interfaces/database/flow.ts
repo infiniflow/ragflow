@@ -4,7 +4,7 @@ export type DSLComponents = Record<string, IOperator>;
 
 export interface DSL {
   components: DSLComponents;
-  history?: any[];
+  history: any[];
   path?: string[];
   answer?: any[];
   graph?: IGraph;
