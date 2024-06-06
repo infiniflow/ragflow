@@ -76,11 +76,10 @@ In the popup window, complete basic settings for Ollama:
 :::
 
 :::danger WARNING
-If your Ollama runs on a different machine, you may also need to update the system environments in **ollama.service**:
+If your Ollama runs on a different machine, you may also need to set the `OLLAMA_HOST`  in **ollama.service**:
 
 ```bash
 Environment="OLLAMA_HOST=0.0.0.0"
-Environment="OLLAMA_MODELS=/APP/MODELS/OLLAMA"
 ```
 
 See [here](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server) for more information.
