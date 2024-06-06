@@ -116,14 +116,14 @@ def create():
 
 
 # -------------------------- show details of the specific dataset  -----------------------------------
-# @manager.route('/dataset/<kb_id>', methods=['GET'])
+# @manager.route('/dataset/<dataset_id>', methods=['GET'])
 # def detail():
-#     kb_id = request.args["kb_id"]
+#     dataset_id = request.args["kb_id"]
 #     try:
-#         kb = KnowledgebaseService.get_detail(kb_id)
+#         dataset = KnowledgebaseService.get_detail(dataset_id)
 #         if not kb:
 #             return get_data_error_result(
-#                 retmsg="Can't find this knowledgebase!")
+#                 message="Can't find this dataset!")
 #         return get_json_result(data=kb)
 #     except Exception as e:
 #         return server_error_response(e)
