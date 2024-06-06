@@ -1,8 +1,11 @@
 import { DSLComponents } from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import dagre from 'dagre';
+import { curry, isEmpty } from 'lodash';
+import pipe from 'lodash/fp/pipe';
 import { Edge, MarkerType, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
+import { Operator, initialFormValuesMap } from './constant';
 import { NodeData } from './interface';
 
 const buildEdges = (
@@ -109,15 +112,27 @@ const buildComponentDownstreamOrUpstream = (
     .map((y) => y[isBuildDownstream ? 'target' : 'source']);
 };
 
-const removeUselessDataInTheOperator = (
-  operatorName: string,
-  params: Record<string, unknown>,
-) => {
-  if (operatorName === 'Generate') {
-    return removeUselessFieldsFromValues(params, '');
+const removeUselessDataInTheOperator = curry(
+  (operatorName: string, params: Record<string, unknown>) => {
+    if (operatorName === Operator.Generate) {
+      return removeUselessFieldsFromValues(params, '');
+    }
+    return params;
+  },
+);
+// initialize data for operators without parameters
+const initializeOperatorParams = curry((operatorName: string, values: any) => {
+  if (isEmpty(values)) {
+    return initialFormValuesMap[operatorName as Operator];
   }
-  return params;
-};
+  return values;
+});
+
+const buildOperatorParams = (operatorName: string) =>
+  pipe(
+    removeUselessDataInTheOperator(operatorName),
+    initializeOperatorParams(operatorName), // Final processing, for guarantee
+  );
 
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
@@ -132,9 +147,13 @@ export const buildDslComponentsByGraph = (
     components[id] = {
       obj: {
         component_name: operatorName,
+        // params:
+        //   removeUselessDataInTheOperator(
+        //     operatorName,
+        //     x.data.form as Record<string, unknown>,
+        //   ) ?? {},
         params:
-          removeUselessDataInTheOperator(
-            operatorName,
+          buildOperatorParams(operatorName)(
             x.data.form as Record<string, unknown>,
           ) ?? {},
       },

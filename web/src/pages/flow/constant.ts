@@ -1,5 +1,3 @@
-import { ModelVariableType } from '@/constants/knowledge';
-
 export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
@@ -18,8 +16,8 @@ export const initialBeginValues = {
 };
 
 export const initialGenerateValues = {
-  parameters: ModelVariableType.Precise,
-  temperatureEnabled: false,
+  // parameters: ModelVariableType.Precise,
+  // temperatureEnabled: true,
   temperature: 0.1,
   top_p: 0.3,
   frequency_penalty: 0.7,
@@ -29,4 +27,11 @@ export const initialGenerateValues = {
   {cluster_content}
 The above is the content you need to summarize.`,
   cite: true,
+};
+
+export const initialFormValuesMap = {
+  [Operator.Begin]: initialBeginValues,
+  [Operator.Retrieval]: initialRetrievalValues,
+  [Operator.Generate]: initialGenerateValues,
+  [Operator.Answer]: {},
 };

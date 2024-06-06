@@ -2,6 +2,7 @@ import { useSetModalState } from '@/hooks/commonHooks';
 import {
   useFetchFlow,
   useFetchFlowTemplates,
+  useRunFlow,
   useSetFlow,
 } from '@/hooks/flow-hooks';
 import { useFetchLlmList } from '@/hooks/llmHooks';
@@ -83,7 +84,9 @@ export const useHandleDrop = () => {
           x: 0,
           y: 0,
         },
-        data: { label: `${type}` },
+        data: {
+          label: `${type}`,
+        },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       };
@@ -141,7 +144,6 @@ export const useSaveGraph = () => {
   const { nodes, edges } = useStore((state) => state);
   const saveGraph = useCallback(() => {
     const dslComponents = buildDslComponentsByGraph(nodes, edges);
-    console.info('components:', dslComponents);
     setFlow({
       id,
       title: data.title,
@@ -197,4 +199,20 @@ export const useFetchDataOnMount = () => {
 
 export const useFlowIsFetching = () => {
   return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
+};
+
+export const useRunGraph = () => {
+  const { data } = useFetchFlow();
+  const { runFlow } = useRunFlow();
+  const { id } = useParams();
+  const { nodes, edges } = useStore((state) => state);
+  const runGraph = useCallback(() => {
+    const dslComponents = buildDslComponentsByGraph(nodes, edges);
+    runFlow({
+      id: id!!,
+      dsl: { ...data.dsl, components: dslComponents },
+    });
+  }, [nodes, edges, runFlow, id, data]);
+
+  return { runGraph };
 };
