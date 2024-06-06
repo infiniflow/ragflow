@@ -181,6 +181,6 @@ export const dsl = {
     },
   },
   history: [],
-  path: ['begin'],
+  path: [],
   answer: [],
 };

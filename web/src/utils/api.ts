@@ -89,4 +89,5 @@ export default {
   removeCanvas: `${api_host}/canvas/rm`,
   setCanvas: `${api_host}/canvas/set`,
   resetCanvas: `${api_host}/canvas/reset`,
+  runCanvas: `${api_host}/canvas/run`,
 };

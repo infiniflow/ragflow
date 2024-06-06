@@ -1,10 +1,11 @@
 import { Button, Flex } from 'antd';
 
-import { useSaveGraph } from '../hooks';
+import { useRunGraph, useSaveGraph } from '../hooks';
 import styles from './index.less';
 
 const FlowHeader = () => {
   const { saveGraph } = useSaveGraph();
+  const { runGraph } = useRunGraph();
 
   return (
     <Flex
@@ -13,7 +14,7 @@ const FlowHeader = () => {
       gap={'large'}
       className={styles.flowHeader}
     >
-      <Button>
+      <Button onClick={runGraph}>
         <b>Debug</b>
       </Button>
       <Button type="primary" onClick={saveGraph}>

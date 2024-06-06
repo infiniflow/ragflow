@@ -3,7 +3,7 @@ import omit from 'lodash/omit';
 
 // chat model setting and generate operator
 export const excludeUnEnabledVariables = (
-  values: any,
+  values: any = {},
   prefix = 'llm_setting.',
 ) => {
   const unEnabledFields: Array<keyof typeof variableEnabledFieldMap> =

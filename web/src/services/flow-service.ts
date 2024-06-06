@@ -8,6 +8,7 @@ const {
   listCanvas,
   resetCanvas,
   removeCanvas,
+  runCanvas,
   listTemplates,
 } = api;
 
@@ -30,6 +31,10 @@ const methods = {
   },
   removeCanvas: {
     url: removeCanvas,
+    method: 'post',
+  },
+  runCanvas: {
+    url: runCanvas,
     method: 'post',
   },
   listTemplates: {

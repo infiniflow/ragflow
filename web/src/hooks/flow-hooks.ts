@@ -90,3 +90,22 @@ export const useDeleteFlow = () => {
 
   return { data, loading, deleteFlow: mutateAsync };
 };
+
+export const useRunFlow = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['runFlow'],
+    mutationFn: async (params: { id: string; dsl: DSL }) => {
+      const { data } = await flowService.runCanvas(params);
+      if (data.retcode === 0) {
+        message.success(i18n.t(`message.modified`));
+      }
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, runFlow: mutateAsync };
+};
