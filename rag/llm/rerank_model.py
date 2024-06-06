@@ -125,7 +125,7 @@ class YoudaoRerank(DefaultRerank):
             scores = self._model.compute_score(pairs[i:i + batch_size], max_length=self._model.max_length)
             scores = sigmoid(np.array(scores)).tolist()
             if isinstance(scores, float): res.append(scores)
-            res.extend(scores)
+            else: res.extend(scores)
         return np.array(res), token_count
     
 
