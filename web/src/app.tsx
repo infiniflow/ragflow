@@ -6,13 +6,14 @@ import zh_HK from 'antd/locale/zh_HK';
 import React, { ReactNode, useEffect, useState } from 'react';
 import storage from './utils/authorizationUtil';
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import localeData from 'dayjs/plugin/localeData';
-import weekday from 'dayjs/plugin/weekday';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
+import weekday from 'dayjs/plugin/weekday';
 
 dayjs.extend(customParseFormat);
 dayjs.extend(advancedFormat);
@@ -26,6 +27,8 @@ const AntLanguageMap = {
   zh: zhCN,
   'zh-TRADITIONAL': zh_HK,
 };
+
+const queryClient = new QueryClient();
 
 type Locale = ConfigProviderProps['locale'];
 
@@ -49,16 +52,18 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
   }, []);
 
   return (
-    <ConfigProvider
-      theme={{
-        token: {
-          fontFamily: 'Inter',
-        },
-      }}
-      locale={locale}
-    >
-      <App> {children}</App>
-    </ConfigProvider>
+    <QueryClientProvider client={queryClient}>
+      <ConfigProvider
+        theme={{
+          token: {
+            fontFamily: 'Inter',
+          },
+        }}
+        locale={locale}
+      >
+        <App> {children}</App>
+      </ConfigProvider>
+    </QueryClientProvider>
   );
 };
 

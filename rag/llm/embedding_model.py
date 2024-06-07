@@ -140,7 +140,7 @@ class QWenEmbed(Base):
                 token_count += resp["usage"]["total_tokens"]
             return np.array(res), token_count
         except Exception as e:
-            raise Exception("Account abnormal. Please ensure it's on good standing.")
+            raise Exception("Account abnormal. Please ensure it's on good standing to use QWen's "+self.model_name)
         return np.array([]), 0
 
     def encode_queries(self, text):
@@ -153,7 +153,7 @@ class QWenEmbed(Base):
             return np.array(resp["output"]["embeddings"][0]
                             ["embedding"]), resp["usage"]["total_tokens"]
         except Exception as e:
-            raise Exception("Account abnormal. Please ensure it's on good standing.")
+            raise Exception("Account abnormal. Please ensure it's on good standing to use QWen's "+self.model_name)
         return np.array([]), 0
 
 

@@ -109,10 +109,10 @@ This method retrieves the history of a specified conversation session.
         - `content_with_weight`: Content of the chunk.
         - `doc_name`: Name of the *hit* document.
         - `img_id`: The image ID of the chunk. It is an optional field only for PDF, PPTX, and images. Call ['GET' /document/get/\<id\>](#get-document-content) to retrieve the image.
-        - positions: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
-        - similarity: The hybrid similarity.
-        - term_similarity: The keyword simimlarity.
-        - vector_similarity: The embedding similarity.
+        - `positions`: [page_number, [upleft corner(x, y)], [right bottom(x, y)]], the chunk position, only for PDF.
+        - `similarity`: The hybrid similarity.
+        - `term_similarity`: The keyword simimlarity.
+        - `vector_similarity`: The embedding similarity.
     - `doc_aggs`:
         - `doc_id`: ID of the *hit* document. Call ['GET' /document/get/\<id\>](#get-document-content) to retrieve the document.
         - `doc_name`: Name of the *hit* document.
@@ -224,7 +224,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 |------------------|--------|----------|---------------|
 | `conversation_id`| string | Yes      | The ID of the conversation session. Call ['GET' /new_conversation](#create-conversation) to retrieve the ID.|
 | `messages`       |  json  | Yes      | The latest question in a JSON form, such as `[{"role": "user", "content": "How are you doing!"}]`|
-| `quote`          |  bool  |  No      | Default: true |
+| `quote`          |  bool  |  No      | Default: false|
 | `stream`         |  bool  |  No      | Default: true |
 | `doc_ids`        | string |  No      | Document IDs delimited by comma, like `c790da40ea8911ee928e0242ac180005,23dsf34ree928e0242ac180005`. The retrieved contents will be confined to these documents. |
 

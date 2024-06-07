@@ -1,6 +1,6 @@
 {
   "private": true,
-  "author": "zhaofengchao <13723060510@163.com>",
+  "author": "bill",
   "scripts": {
     "build": "umi build",
     "dev": "cross-env UMI_DEV_SERVER_COMPRESS=none umi dev",
@@ -15,6 +15,7 @@
     "@ant-design/pro-components": "^2.6.46",
     "@ant-design/pro-layout": "^7.17.16",
     "@js-preview/excel": "^1.7.8",
+    "@tanstack/react-query": "^5.40.0",
     "ahooks": "^3.7.10",
     "antd": "^5.12.7",
     "axios": "^1.6.3",
@@ -44,10 +45,12 @@
     "umi": "^4.0.90",
     "umi-request": "^1.4.0",
     "unist-util-visit-parents": "^6.0.1",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@react-dev-inspector/umi4-plugin": "^2.0.1",
+    "@redux-devtools/extension": "^3.3.0",
     "@testing-library/jest-dom": "^6.4.5",
     "@testing-library/react": "^15.0.7",
     "@types/dagre": "^0.7.52",

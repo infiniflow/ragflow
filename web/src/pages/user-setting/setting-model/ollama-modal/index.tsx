@@ -47,7 +47,7 @@ const OllamaModal = ({
         return (
           <Flex justify={'space-between'}>
             <a
-              href={`https://github.com/infiniflow/ragflow/blob/main/docs/${llmFactory.toLowerCase()}.md`}
+              href={`https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.md`}
               target="_blank"
               rel="noreferrer"
             >

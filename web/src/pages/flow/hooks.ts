@@ -1,19 +1,42 @@
 import { useSetModalState } from '@/hooks/commonHooks';
+import {
+  useFetchFlow,
+  useFetchFlowTemplates,
+  useRunFlow,
+  useSetFlow,
+} from '@/hooks/flow-hooks';
+import { useFetchLlmList } from '@/hooks/llmHooks';
+import { IGraph } from '@/interfaces/database/flow';
+import { useIsFetching } from '@tanstack/react-query';
 import React, {
-  Dispatch,
   KeyboardEventHandler,
-  SetStateAction,
   useCallback,
+  useEffect,
   useState,
 } from 'react';
-import {
-  Node,
-  Position,
-  ReactFlowInstance,
-  useOnSelectionChange,
-  useReactFlow,
-} from 'reactflow';
+import { Node, Position, ReactFlowInstance } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
+// import { shallow } from 'zustand/shallow';
+import { useDebounceEffect } from 'ahooks';
+import { useParams } from 'umi';
+import useGraphStore, { RFState } from './store';
+import { buildDslComponentsByGraph } from './utils';
+
+const selector = (state: RFState) => ({
+  nodes: state.nodes,
+  edges: state.edges,
+  onNodesChange: state.onNodesChange,
+  onEdgesChange: state.onEdgesChange,
+  onConnect: state.onConnect,
+  setNodes: state.setNodes,
+  onSelectionChange: state.onSelectionChange,
+});
+
+export const useSelectCanvasData = () => {
+  // return useStore(useShallow(selector)); // throw error
+  // return useStore(selector, shallow);
+  return useGraphStore(selector);
+};
 
 export const useHandleDrag = () => {
   const handleDragStart = useCallback(
@@ -27,7 +50,8 @@ export const useHandleDrag = () => {
   return { handleDragStart };
 };
 
-export const useHandleDrop = (setNodes: Dispatch<SetStateAction<Node[]>>) => {
+export const useHandleDrop = () => {
+  const addNode = useGraphStore((state) => state.addNode);
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<any, any>>();
 
@@ -61,64 +85,47 @@ export const useHandleDrop = (setNodes: Dispatch<SetStateAction<Node[]>>) => {
           x: 0,
           y: 0,
         },
-        data: { label: `${type}` },
+        data: {
+          label: `${type}`,
+        },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      addNode(newNode);
     },
-    [reactFlowInstance, setNodes],
+    [reactFlowInstance, addNode],
   );
 
   return { onDrop, onDragOver, setReactFlowInstance };
 };
 
 export const useShowDrawer = () => {
+  const [clickedNode, setClickedNode] = useState<Node>();
   const {
     visible: drawerVisible,
     hideModal: hideDrawer,
     showModal: showDrawer,
   } = useSetModalState();
 
+  const handleShow = useCallback(
+    (node: Node) => {
+      setClickedNode(node);
+      showDrawer();
+    },
+    [showDrawer],
+  );
+
   return {
     drawerVisible,
     hideDrawer,
-    showDrawer,
+    showDrawer: handleShow,
+    clickedNode,
   };
 };
 
-export const useHandleSelectionChange = () => {
-  const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
-  const [selectedEdges, setSelectedEdges] = useState<string[]>([]);
-
-  useOnSelectionChange({
-    onChange: ({ nodes, edges }) => {
-      setSelectedNodes(nodes.map((node) => node.id));
-      setSelectedEdges(edges.map((edge) => edge.id));
-    },
-  });
-
-  return { selectedEdges, selectedNodes };
-};
-
-export const useDeleteEdge = (selectedEdges: string[]) => {
-  const { setEdges } = useReactFlow();
-
-  const deleteEdge = useCallback(() => {
-    setEdges((edges) =>
-      edges.filter((edge) => selectedEdges.every((x) => x !== edge.id)),
-    );
-  }, [setEdges, selectedEdges]);
-
-  return deleteEdge;
-};
-
-export const useHandleKeyUp = (
-  selectedEdges: string[],
-  selectedNodes: string[],
-) => {
-  const deleteEdge = useDeleteEdge(selectedEdges);
+export const useHandleKeyUp = () => {
+  const deleteEdge = useGraphStore((state) => state.deleteEdge);
   const handleKeyUp: KeyboardEventHandler = useCallback(
     (e) => {
       if (e.code === 'Delete') {
@@ -132,7 +139,96 @@ export const useHandleKeyUp = (
 };
 
 export const useSaveGraph = () => {
-  const saveGraph = useCallback(() => {}, []);
+  const { data } = useFetchFlow();
+  const { setFlow } = useSetFlow();
+  const { id } = useParams();
+  const { nodes, edges } = useGraphStore((state) => state);
+  const saveGraph = useCallback(() => {
+    const dslComponents = buildDslComponentsByGraph(nodes, edges);
+    setFlow({
+      id,
+      title: data.title,
+      dsl: { ...data.dsl, graph: { nodes, edges }, components: dslComponents },
+    });
+  }, [nodes, edges, setFlow, id, data]);
 
   return { saveGraph };
+};
+
+export const useWatchGraphChange = () => {
+  const nodes = useGraphStore((state) => state.nodes);
+  const edges = useGraphStore((state) => state.edges);
+  useDebounceEffect(
+    () => {
+      console.info('useDebounceEffect');
+    },
+    [nodes, edges],
+    {
+      wait: 1000,
+    },
+  );
+};
+
+export const useHandleFormValuesChange = (id?: string) => {
+  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
+  const handleValuesChange = useCallback(
+    (changedValues: any, values: any) => {
+      if (id) {
+        updateNodeForm(id, values);
+      }
+    },
+    [updateNodeForm, id],
+  );
+
+  return { handleValuesChange };
+};
+
+const useSetGraphInfo = () => {
+  const { setEdges, setNodes } = useGraphStore((state) => state);
+  const setGraphInfo = useCallback(
+    ({ nodes = [], edges = [] }: IGraph) => {
+      if (nodes.length && edges.length) {
+        setNodes(nodes);
+        setEdges(edges);
+      }
+    },
+    [setEdges, setNodes],
+  );
+  return setGraphInfo;
+};
+
+export const useFetchDataOnMount = () => {
+  const { loading, data } = useFetchFlow();
+  const setGraphInfo = useSetGraphInfo();
+
+  useEffect(() => {
+    setGraphInfo(data?.dsl?.graph ?? {});
+  }, [setGraphInfo, data?.dsl?.graph]);
+
+  useWatchGraphChange();
+
+  useFetchFlowTemplates();
+  useFetchLlmList();
+
+  return { loading, flowDetail: data };
+};
+
+export const useFlowIsFetching = () => {
+  return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
+};
+
+export const useRunGraph = () => {
+  const { data } = useFetchFlow();
+  const { runFlow } = useRunFlow();
+  const { id } = useParams();
+  const { nodes, edges } = useGraphStore((state) => state);
+  const runGraph = useCallback(() => {
+    const dslComponents = buildDslComponentsByGraph(nodes, edges);
+    runFlow({
+      id: id!!,
+      dsl: { ...data.dsl, components: dslComponents },
+    });
+  }, [nodes, edges, runFlow, id, data]);
+
+  return { runGraph };
 };

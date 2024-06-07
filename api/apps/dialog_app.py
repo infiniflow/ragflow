@@ -32,6 +32,7 @@ def set_dialog():
     dialog_id = req.get("dialog_id")
     name = req.get("name", "New Dialog")
     description = req.get("description", "A helpful Dialog")
+    icon = req.get("icon", "")
     top_n = req.get("top_n", 6)
     top_k = req.get("top_k", 1024)
     rerank_id = req.get("rerank_id", "")
@@ -90,7 +91,8 @@ def set_dialog():
                 "top_k": top_k,
                 "rerank_id": rerank_id,
                 "similarity_threshold": similarity_threshold,
-                "vector_similarity_weight": vector_similarity_weight
+                "vector_similarity_weight": vector_similarity_weight,
+                "icon": icon
             }
             if not DialogService.save(**dia):
                 return get_data_error_result(retmsg="Fail to new a dialog!")

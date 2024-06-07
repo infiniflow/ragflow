@@ -67,12 +67,12 @@ class DefaultRerank(Base):
         token_count = 0
         for _, t in pairs:
             token_count += num_tokens_from_string(t)
-        batch_size = 32
+        batch_size = 4096
         res = []
         for i in range(0, len(pairs), batch_size):
             scores = self._model.compute_score(pairs[i:i + batch_size], max_length=2048)
-            scores = sigmoid(np.array(scores)).tolist()
-            res.extend(scores)
+            if isinstance(scores, float): res.append(scores)
+            else:  res.extend(scores)
         return np.array(res), token_count
 
 
@@ -113,4 +113,19 @@ class YoudaoRerank(DefaultRerank):
                 YoudaoRerank._model = RerankerModel(
                     model_name_or_path=model_name.replace(
                         "maidalun1020", "InfiniFlow"))
+    
+    def similarity(self, query: str, texts: list):
+        pairs = [(query, truncate(t, self._model.max_length)) for t in texts]
+        token_count = 0
+        for _, t in pairs:
+            token_count += num_tokens_from_string(t)
+        batch_size = 32
+        res = []
+        for i in range(0, len(pairs), batch_size):
+            scores = self._model.compute_score(pairs[i:i + batch_size], max_length=self._model.max_length)
+            scores = sigmoid(np.array(scores)).tolist()
+            if isinstance(scores, float): res.append(scores)
+            else: res.extend(scores)
+        return np.array(res), token_count
+    
 

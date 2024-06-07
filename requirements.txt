@@ -136,6 +136,6 @@ BCEmbedding
 loguru==0.7.2
 umap-learn
 fasttext==0.9.2
-volcengine
+volcengine==1.0.141
 readability-lxml==0.8.1
 html_text==0.6.2

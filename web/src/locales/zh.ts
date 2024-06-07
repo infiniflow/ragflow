@@ -367,6 +367,8 @@ export default {
         '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
       quote: '显示引文',
       quoteTip: '是否应该显示原文出处？',
+      selfRag: 'Self-RAG',
+      selfRagTip: '请参考: https://huggingface.co/papers/2310.11511',
       overview: '聊天 API',
       pv: '消息数',
       uv: '活跃用户数',

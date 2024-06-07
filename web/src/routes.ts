@@ -90,6 +90,10 @@ const routes = [
       },
       {
         path: '/flow',
+        component: '@/pages/flow/list',
+      },
+      {
+        path: '/flow/:id',
         component: '@/pages/flow',
       },
     ],

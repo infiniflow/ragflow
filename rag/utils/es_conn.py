@@ -28,6 +28,8 @@ class ESConnection:
             try:
                 self.es = Elasticsearch(
                     settings.ES["hosts"].split(","),
+                    basic_auth=(settings.ES["username"], settings.ES["password"]) if "username" in settings.ES and "password" in settings.ES else None,
+                    verify_certs=False,
                     timeout=600
                 )
                 if self.es:
