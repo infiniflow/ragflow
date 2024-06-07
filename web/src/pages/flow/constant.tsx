@@ -1,9 +1,21 @@
+import {
+  MergeCellsOutlined,
+  RocketOutlined,
+  SendOutlined,
+} from '@ant-design/icons';
+
 export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
   Generate = 'Generate',
   Answer = 'Answer',
 }
+
+export const componentList = [
+  { name: Operator.Retrieval, icon: <RocketOutlined />, description: '' },
+  { name: Operator.Generate, icon: <MergeCellsOutlined />, description: '' },
+  { name: Operator.Answer, icon: <SendOutlined />, description: '' },
+];
 
 export const initialRetrievalValues = {
   similarity_threshold: 0.2,

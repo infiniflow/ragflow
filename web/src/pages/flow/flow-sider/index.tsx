@@ -1,7 +1,7 @@
 import { Avatar, Card, Flex, Layout, Space } from 'antd';
 import classNames from 'classnames';
-import { componentList } from '../mock';
 
+import { componentList } from '../constant';
 import { useHandleDrag } from '../hooks';
 import styles from './index.less';
 

@@ -1,10 +1,4 @@
-import { MergeCellsOutlined, RocketOutlined } from '@ant-design/icons';
 import { Position } from 'reactflow';
-
-export const componentList = [
-  { name: 'Retrieval', icon: <RocketOutlined />, description: '' },
-  { name: 'Generate', icon: <MergeCellsOutlined />, description: '' },
-];
 
 export const initialNodes = [
   {

@@ -17,6 +17,7 @@ import React, {
 import { Node, Position, ReactFlowInstance } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 // import { shallow } from 'zustand/shallow';
+import { useDebounceEffect } from 'ahooks';
 import { useParams } from 'umi';
 import useGraphStore, { RFState } from './store';
 import { buildDslComponentsByGraph } from './utils';
@@ -154,11 +155,24 @@ export const useSaveGraph = () => {
   return { saveGraph };
 };
 
+export const useWatchGraphChange = () => {
+  const nodes = useGraphStore((state) => state.nodes);
+  const edges = useGraphStore((state) => state.edges);
+  useDebounceEffect(
+    () => {
+      console.info('useDebounceEffect');
+    },
+    [nodes, edges],
+    {
+      wait: 1000,
+    },
+  );
+};
+
 export const useHandleFormValuesChange = (id?: string) => {
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
   const handleValuesChange = useCallback(
     (changedValues: any, values: any) => {
-      console.info(changedValues, values);
       if (id) {
         updateNodeForm(id, values);
       }
@@ -190,6 +204,8 @@ export const useFetchDataOnMount = () => {
   useEffect(() => {
     setGraphInfo(data?.dsl?.graph ?? {});
   }, [setGraphInfo, data?.dsl?.graph]);
+
+  useWatchGraphChange();
 
   useFetchFlowTemplates();
   useFetchLlmList();
