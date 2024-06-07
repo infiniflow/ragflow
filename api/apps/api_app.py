@@ -208,7 +208,7 @@ def completion():
             try:
                 for ans in chat(dia, msg, True, **req):
                     fillin_conv(ans)
-                    rename_field(rename_field)
+                    rename_field(ans)
                     yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
                 API4ConversationService.append_message(conv.id, conv.to_dict())
             except Exception as e:
