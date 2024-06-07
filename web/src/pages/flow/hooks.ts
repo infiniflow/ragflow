@@ -187,7 +187,7 @@ const useSetGraphInfo = () => {
   const { setEdges, setNodes } = useGraphStore((state) => state);
   const setGraphInfo = useCallback(
     ({ nodes = [], edges = [] }: IGraph) => {
-      if (nodes.length && edges.length) {
+      if (nodes.length || edges.length) {
         setNodes(nodes);
         setEdges(edges);
       }

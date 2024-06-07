@@ -11,23 +11,16 @@ import api from '@/utils/api';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
-import { Operator, initialBeginValues } from '../constant';
-import useGraphStore from '../store';
 
 export const useSelectCurrentMessages = () => {
   const { id: id } = useParams();
-  const findNodeByName = useGraphStore((state) => state.findNodeByName);
   const [currentMessages, setCurrentMessages] = useState<IMessage[]>([]);
 
-  const { data: flowDetail } = useFetchFlow();
+  const { data: flowDetail, loading } = useFetchFlow();
   const messages = flowDetail.dsl.messages;
   const reference = flowDetail.dsl.reference;
 
   const ref = useScrollToBottom(currentMessages);
-
-  const prologue =
-    findNodeByName(Operator.Begin)?.data?.form?.prologue ??
-    initialBeginValues.prologue;
 
   const addNewestQuestion = useCallback(
     (message: string, answer: string = '') => {
@@ -71,39 +64,17 @@ export const useSelectCurrentMessages = () => {
   const removeLatestMessage = useCallback(() => {
     setCurrentMessages((pre) => {
       const nextMessages = pre?.slice(0, -2) ?? [];
+      return nextMessages;
       return [...pre, ...nextMessages];
     });
   }, []);
 
-  // const addPrologue = useCallback(() => {
-  //   if (messages.length === 0) {
-  //     const nextMessage = {
-  //       role: MessageType.Assistant,
-  //       content: prologue,
-  //       id: uuid(),
-  //     } as IMessage;
-
-  //     setCurrentMessages([nextMessage]);
-  //   }
-  // }, [prologue, messages]);
-
-  // useEffect(() => {
-  //   addPrologue();
-  // }, [addPrologue]);
-
   useEffect(() => {
     if (id) {
       const nextMessages = messages.map((x) => ({ ...x, id: uuid() }));
-      if (messages.length === 0) {
-        nextMessages.unshift({
-          role: MessageType.Assistant,
-          content: prologue,
-          id: uuid(),
-        });
-      }
       setCurrentMessages(nextMessages);
     }
-  }, [messages, id, prologue]);
+  }, [messages, id]);
 
   return {
     currentMessages,
@@ -112,6 +83,7 @@ export const useSelectCurrentMessages = () => {
     removeLatestMessage,
     addNewestAnswer,
     ref,
+    loading,
   };
 };
 
@@ -122,12 +94,20 @@ export const useSendMessage = (
 ) => {
   const { id: flowId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
+  const { data: flowDetail } = useFetchFlow();
+  const messages = flowDetail.dsl.messages;
 
   const { send, answer, done } = useSendMessageWithSse(api.runCanvas);
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
-      const res: Response | undefined = await send({ id: flowId, message });
+      const params: Record<string, unknown> = {
+        id: flowId,
+      };
+      if (message) {
+        params.message = message;
+      }
+      const res: Response | undefined = await send(params);
 
       if (res?.status !== 200) {
         // cancel loading
@@ -150,6 +130,13 @@ export const useSendMessage = (
       addNewestAnswer(answer);
     }
   }, [answer, addNewestAnswer]);
+
+  useEffect(() => {
+    // fetch prologue
+    if (messages.length === 0) {
+      sendMessage('');
+    }
+  }, [sendMessage, messages]);
 
   const handlePressEnter = useCallback(() => {
     if (done) {

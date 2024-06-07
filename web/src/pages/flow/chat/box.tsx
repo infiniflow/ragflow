@@ -2,11 +2,7 @@ import MessageItem from '@/components/message-item';
 import DocumentPreviewer from '@/components/pdf-previewer';
 import { MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/commonHooks';
-import {
-  useClickDrawer,
-  useGetFileIcon,
-  useSelectConversationLoading,
-} from '@/pages/chat/hooks';
+import { useClickDrawer, useGetFileIcon } from '@/pages/chat/hooks';
 import { buildMessageItemReference } from '@/pages/chat/utils';
 import { Button, Drawer, Flex, Input, Spin } from 'antd';
 
@@ -22,6 +18,7 @@ const FlowChatBox = () => {
     addNewestAnswer,
     addNewestQuestion,
     removeLatestMessage,
+    loading,
   } = useSelectCurrentMessages();
 
   const {
@@ -33,7 +30,6 @@ const FlowChatBox = () => {
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   useGetFileIcon();
-  const loading = useSelectConversationLoading();
   const { t } = useTranslate('chat');
 
   return (
