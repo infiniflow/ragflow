@@ -115,34 +115,38 @@ Xorbits Inference([Xinference](https://github.com/xorbitsai/inference)) enables 
 - For a complete list of supported models, see the [Builtin Models](https://inference.readthedocs.io/en/latest/models/builtin/).
 :::
 
-To deploy a local model, e.g., **Llama3**, using Xinference:
+To deploy a local model, e.g., **Mistral**, using Xinference:
 
-### 1. Start an Xinference instance
+### 1. Check firewall settings
+
+Ensure that your host machine's firewall allows inbound connections on port 9997. 
+
+### 2. Start an Xinference instance
 
 ```bash
 $ xinference-local --host 0.0.0.0 --port 9997
 ```
 
-### 2. Launch your local model
+### 3. Launch your local model
 
 Launch your local model (**Mistral**), ensuring that you replace `${quantization}` with your chosen quantization method
 :
 ```bash
 $ xinference launch -u mistral --model-name mistral-v0.1 --size-in-billions 7 --model-format pytorch --quantization ${quantization}
 ```
-### 3. Add Xinference
+### 4. Add Xinference
 
 In RAGFlow, click on your logo on the top right of the page **>** **Model Providers** and add Xinference to RAGFlow: 
 
 ![add xinference](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
-### 4. Complete basic Xinference settings
+### 5. Complete basic Xinference settings
 
 Enter an accessible base URL, such as `http://<your-xinference-endpoint-domain>:9997/v1`. 
 
-### 5. Update System Model Settings
+### 6. Update System Model Settings
 
-Click on your logo **>** **Model Providers** **>** **System Model Settings** to update your model: 
+Click on your logo **>** **Model Providers** **>** **System Model Settings** to update your model.
    
 *You should now be able to find **mistral** from the dropdown list under **Chat model**.*
 
