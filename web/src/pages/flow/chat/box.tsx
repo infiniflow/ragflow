@@ -2,43 +2,34 @@ import MessageItem from '@/components/message-item';
 import DocumentPreviewer from '@/components/pdf-previewer';
 import { MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/commonHooks';
-import {
-  useClickDrawer,
-  useFetchConversationOnMount,
-  useGetFileIcon,
-  useGetSendButtonDisabled,
-  useSelectConversationLoading,
-  useSendMessage,
-} from '@/pages/chat/hooks';
+import { useClickDrawer, useGetFileIcon } from '@/pages/chat/hooks';
 import { buildMessageItemReference } from '@/pages/chat/utils';
 import { Button, Drawer, Flex, Input, Spin } from 'antd';
+
+import { useSelectCurrentMessages, useSendMessage } from './hooks';
 
 import styles from './index.less';
 
 const FlowChatBox = () => {
   const {
     ref,
-    currentConversation: conversation,
-    addNewestConversation,
-    removeLatestMessage,
+    currentMessages,
+    reference,
     addNewestAnswer,
-  } = useFetchConversationOnMount();
+    addNewestQuestion,
+    removeLatestMessage,
+    loading,
+  } = useSelectCurrentMessages();
+
   const {
     handleInputChange,
     handlePressEnter,
     value,
     loading: sendLoading,
-  } = useSendMessage(
-    conversation,
-    addNewestConversation,
-    removeLatestMessage,
-    addNewestAnswer,
-  );
+  } = useSendMessage(addNewestQuestion, removeLatestMessage, addNewestAnswer);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
-  const disabled = useGetSendButtonDisabled();
   useGetFileIcon();
-  const loading = useSelectConversationLoading();
   const { t } = useTranslate('chat');
 
   return (
@@ -47,17 +38,20 @@ const FlowChatBox = () => {
         <Flex flex={1} vertical className={styles.messageContainer}>
           <div>
             <Spin spinning={loading}>
-              {conversation?.message?.map((message, i) => {
+              {currentMessages?.map((message, i) => {
                 return (
                   <MessageItem
                     loading={
                       message.role === MessageType.Assistant &&
                       sendLoading &&
-                      conversation?.message.length - 1 === i
+                      currentMessages.length - 1 === i
                     }
                     key={message.id}
                     item={message}
-                    reference={buildMessageItemReference(conversation, message)}
+                    reference={buildMessageItemReference(
+                      { message: currentMessages, reference },
+                      message,
+                    )}
                     clickDocumentButton={clickDocumentButton}
                   ></MessageItem>
                 );
@@ -70,13 +64,11 @@ const FlowChatBox = () => {
           size="large"
           placeholder={t('sendPlaceholder')}
           value={value}
-          disabled={disabled}
           suffix={
             <Button
               type="primary"
               onClick={handlePressEnter}
               loading={sendLoading}
-              disabled={disabled}
             >
               {t('send')}
             </Button>

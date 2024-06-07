@@ -147,11 +147,6 @@ export const buildDslComponentsByGraph = (
     components[id] = {
       obj: {
         component_name: operatorName,
-        // params:
-        //   removeUselessDataInTheOperator(
-        //     operatorName,
-        //     x.data.form as Record<string, unknown>,
-        //   ) ?? {},
         params:
           buildOperatorParams(operatorName)(
             x.data.form as Record<string, unknown>,
