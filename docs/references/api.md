@@ -224,7 +224,7 @@ This method retrieves from RAGFlow the answer to the user's latest question.
 |------------------|--------|----------|---------------|
 | `conversation_id`| string | Yes      | The ID of the conversation session. Call ['GET' /new_conversation](#create-conversation) to retrieve the ID.|
 | `messages`       |  json  | Yes      | The latest question in a JSON form, such as `[{"role": "user", "content": "How are you doing!"}]`|
-| `quote`          |  bool  |  No      | Default: true |
+| `quote`          |  bool  |  No      | Default: false|
 | `stream`         |  bool  |  No      | Default: true |
 | `doc_ids`        | string |  No      | Document IDs delimited by comma, like `c790da40ea8911ee928e0242ac180005,23dsf34ree928e0242ac180005`. The retrieved contents will be confined to these documents. |
 
