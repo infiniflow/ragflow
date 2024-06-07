@@ -1,7 +1,7 @@
 import { MessageType } from '@/constants/chat';
 import { IConversation, IReference } from '@/interfaces/database/chat';
 import { EmptyConversationId } from './constants';
-import { IClientConversation, IMessage } from './interface';
+import { IMessage } from './interface';
 
 export const isConversationIdExist = (conversationId: string) => {
   return conversationId !== EmptyConversationId && conversationId !== '';
@@ -25,7 +25,7 @@ export const getDocumentIdsFromConversionReference = (data: IConversation) => {
 };
 
 export const buildMessageItemReference = (
-  conversation: IClientConversation,
+  conversation: { message: IMessage[]; reference: IReference[] },
   message: IMessage,
 ) => {
   const assistantMessages = conversation.message

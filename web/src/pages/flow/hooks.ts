@@ -202,7 +202,7 @@ export const useFetchDataOnMount = () => {
   const setGraphInfo = useSetGraphInfo();
 
   useEffect(() => {
-    setGraphInfo(data?.dsl?.graph ?? {});
+    setGraphInfo(data?.dsl?.graph ?? ({} as IGraph));
   }, [setGraphInfo, data?.dsl?.graph]);
 
   useWatchGraphChange();

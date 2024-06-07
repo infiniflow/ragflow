@@ -174,6 +174,8 @@ export const dsl = {
       upstream: ['Retrieval:China'],
     },
   },
+  messages: [],
+  reference: [],
   history: [],
   path: [],
   answer: [],

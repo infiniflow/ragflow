@@ -206,14 +206,14 @@ export const useSendMessageWithSse = (
 
 //#region chat hooks
 
-export const useScrollToBottom = (id?: string) => {
+export const useScrollToBottom = (messages?: unknown) => {
   const ref = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
-    if (id) {
+    if (messages) {
       ref.current?.scrollIntoView({ behavior: 'instant' });
     }
-  }, [id]);
+  }, [messages]); // If the message changes, scroll to the bottom
 
   useEffect(() => {
     scrollToBottom();
