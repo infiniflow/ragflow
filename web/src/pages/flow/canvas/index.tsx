@@ -78,6 +78,9 @@ function FlowCanvas({ sideWidth }: IProps) {
         onKeyUp={handleKeyUp}
         onSelectionChange={onSelectionChange}
         nodeOrigin={[0.5, 0]}
+        onChange={(...params) => {
+          console.info('params:', ...params);
+        }}
         defaultEdgeOptions={{
           type: 'buttonEdge',
           markerEnd: {
