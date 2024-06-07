@@ -38,6 +38,10 @@
 ## 🎮 Demo 试用
 
 请登录网址 [https://demo.ragflow.io](https://demo.ragflow.io) 试用 demo。
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/infiniflow/ragflow/assets/12318111/d5968191-2e77-4432-b667-285842541ade" width="1200"/>
+</div>
+
 
 ## 📌 近期更新
 
