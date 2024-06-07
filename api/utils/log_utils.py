@@ -154,6 +154,11 @@ class LoggerFactory(object):
                                                delay=True)
         if level:
             handler.level = level
+        else:
+            handler.level = LoggerFactory.LEVEL
+
+        formatter = logging.Formatter(LoggerFactory.LOG_FORMAT)
+        handler.setFormatter(formatter)
 
         return handler
 
