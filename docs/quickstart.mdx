@@ -18,10 +18,10 @@ This quick start guide describes a general process from:
 
 ## Prerequisites
 
-- CPU >= 4 cores
-- RAM >= 16 GB
-- Disk >= 50 GB
-- Docker >= 24.0.0 & Docker Compose >= v2.26.1
+- CPU &ge; 4 cores
+- RAM &ge; 16 GB
+- Disk &ge; 50 GB
+- Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
 
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
@@ -30,11 +30,11 @@ This quick start guide describes a general process from:
 This section provides instructions on setting up the RAGFlow server on Linux. If you are on a different operating system, no worries. Most steps are alike.
 
 <details>
-  <summary>1. Ensure <code>vm.max_map_count</code> >= 262144:</summary>
+  <summary>1. Ensure <code>vm.max_map_count</code> &ge; 262144:</summary>
 
    `vm.max_map_count`. This value sets the the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abmornal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation. 
 
-   RAGFlow v0.7.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning the Elasticsearch component.
+   RAGFlow v0.7.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -168,7 +168,9 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
-   > - With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+:::caution WARNING
+With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+:::
 
 ## Configure LLMs
 
@@ -188,7 +190,7 @@ To add and configure an LLM:
 
 1. Click on your logo on the top right of the page **>** **Model Providers**:
 
-   ![2 add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
+   ![add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
    > Each RAGFlow account is able to use **text-embedding-v2** for free, a embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
 
@@ -286,4 +288,5 @@ Conversations in RAGFlow are based on a particular knowledge base or multiple kn
 
    ![question1](https://github.com/infiniflow/ragflow/assets/93570324/bb72dd67-b35e-4b2a-87e9-4e4edbd6e677)
 
-   ![question2](https://github.com/infiniflow/ragflow/assets/93570324/7cc585ae-88d0-4aa2-817d-0370b2ad7230)
+   ![question2](https://github.com/infiniflow/ragflow/assets/93570324/7cc585ae-88d0-4aa2-817d-0370b2ad7230)import { resetWarningCache } from 'prop-types';
+

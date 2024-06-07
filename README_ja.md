@@ -20,7 +20,7 @@
         <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.7.0-brightgreen"
             alt="docker pull infiniflow/ragflow:v0.7.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
-    <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?style=flat-square&labelColor=d4eaf7&color=2e6cc4" alt="license">
+    <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
 </p>
 
@@ -263,7 +263,7 @@ $ bash ./entrypoint.sh
 
 - [Quickstart](https://ragflow.io/docs/dev/)
 - [User guide](https://ragflow.io/docs/dev/category/user-guides)
-- [Reference](https://ragflow.io/docs/dev/category/references)
+- [References](https://ragflow.io/docs/dev/category/references)
 - [FAQ](https://ragflow.io/docs/dev/faq)
 
 ## 📜 ロードマップ
