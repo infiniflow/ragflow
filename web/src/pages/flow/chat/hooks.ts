@@ -11,7 +11,7 @@ import api from '@/utils/api';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
-import { Operator } from '../constant';
+import { Operator, initialBeginValues } from '../constant';
 import useGraphStore from '../store';
 
 export const useSelectCurrentMessages = () => {
@@ -25,7 +25,9 @@ export const useSelectCurrentMessages = () => {
 
   const ref = useScrollToBottom(currentMessages);
 
-  const prologue = findNodeByName(Operator.Begin)?.data?.form?.prologue;
+  const prologue =
+    findNodeByName(Operator.Begin)?.data?.form?.prologue ??
+    initialBeginValues.prologue;
 
   const addNewestQuestion = useCallback(
     (message: string, answer: string = '') => {
@@ -73,31 +75,35 @@ export const useSelectCurrentMessages = () => {
     });
   }, []);
 
-  const addPrologue = useCallback(() => {
-    if (id === '') {
-      const nextMessage = {
-        role: MessageType.Assistant,
-        content: prologue,
-        id: uuid(),
-      } as IMessage;
+  // const addPrologue = useCallback(() => {
+  //   if (messages.length === 0) {
+  //     const nextMessage = {
+  //       role: MessageType.Assistant,
+  //       content: prologue,
+  //       id: uuid(),
+  //     } as IMessage;
 
-      setCurrentMessages({
-        id: '',
-        reference: [],
-        message: [nextMessage],
-      } as any);
-    }
-  }, [id, prologue]);
+  //     setCurrentMessages([nextMessage]);
+  //   }
+  // }, [prologue, messages]);
 
-  useEffect(() => {
-    addPrologue();
-  }, [addPrologue]);
+  // useEffect(() => {
+  //   addPrologue();
+  // }, [addPrologue]);
 
   useEffect(() => {
     if (id) {
-      setCurrentMessages(messages.map((x) => ({ ...x, id: uuid() })));
+      const nextMessages = messages.map((x) => ({ ...x, id: uuid() }));
+      if (messages.length === 0) {
+        nextMessages.unshift({
+          role: MessageType.Assistant,
+          content: prologue,
+          id: uuid(),
+        });
+      }
+      setCurrentMessages(nextMessages);
     }
-  }, [messages, id]);
+  }, [messages, id, prologue]);
 
   return {
     currentMessages,

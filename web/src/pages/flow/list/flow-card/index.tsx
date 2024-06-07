@@ -1,17 +1,12 @@
-import { ReactComponent as MoreIcon } from '@/assets/svg/more.svg';
-import { useShowDeleteConfirm } from '@/hooks/commonHooks';
 import { formatDate } from '@/utils/date';
-import {
-  CalendarOutlined,
-  DeleteOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
-import { Avatar, Card, Dropdown, MenuProps, Space } from 'antd';
-import { useTranslation } from 'react-i18next';
+import { CalendarOutlined, UserOutlined } from '@ant-design/icons';
+import { Avatar, Card } from 'antd';
 import { useNavigate } from 'umi';
 
+import OperateDropdown from '@/components/operate-dropdown';
 import { useDeleteFlow } from '@/hooks/flow-hooks';
 import { IFlow } from '@/interfaces/database/flow';
+import { useCallback } from 'react';
 import styles from './index.less';
 
 interface IProps {
@@ -20,37 +15,11 @@ interface IProps {
 
 const FlowCard = ({ item }: IProps) => {
   const navigate = useNavigate();
-  const showDeleteConfirm = useShowDeleteConfirm();
-  const { t } = useTranslation();
   const { deleteFlow } = useDeleteFlow();
 
-  const removeKnowledge = () => {
+  const removeFlow = useCallback(() => {
     return deleteFlow([item.id]);
-  };
-
-  const handleDelete = () => {
-    showDeleteConfirm({ onOk: removeKnowledge });
-  };
-
-  const items: MenuProps['items'] = [
-    {
-      key: '1',
-      label: (
-        <Space>
-          {t('common.delete')}
-          <DeleteOutlined />
-        </Space>
-      ),
-    },
-  ];
-
-  const handleDropdownMenuClick: MenuProps['onClick'] = ({ domEvent, key }) => {
-    domEvent.preventDefault();
-    domEvent.stopPropagation();
-    if (key === '1') {
-      handleDelete();
-    }
-  };
+  }, [deleteFlow, item]);
 
   const handleCardClick = () => {
     navigate(`/flow/${item.id}`);
@@ -61,16 +30,7 @@ const FlowCard = ({ item }: IProps) => {
       <div className={styles.container}>
         <div className={styles.content}>
           <Avatar size={34} icon={<UserOutlined />} src={item.avatar} />
-          <Dropdown
-            menu={{
-              items,
-              onClick: handleDropdownMenuClick,
-            }}
-          >
-            <span className={styles.delete}>
-              <MoreIcon />
-            </span>
-          </Dropdown>
+          <OperateDropdown deleteItem={removeFlow}></OperateDropdown>
         </div>
         <div className={styles.titleWrapper}>
           <span className={styles.title}>{item.title}</span>
