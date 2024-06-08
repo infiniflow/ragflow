@@ -297,7 +297,7 @@ To launch the service from source:
    $ cd web
    $ npm install --registry=https://registry.npmmirror.com --force
    $ vim .umirc.ts
-   # Update proxy.target to 127.0.0.1:9380
+   # Update proxy.target to http://127.0.0.1:9380
    $ npm run dev 
    ```
 

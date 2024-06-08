@@ -266,7 +266,7 @@ $ bash ./entrypoint.sh
 $ cd web
 $ npm install --registry=https://registry.npmmirror.com --force
 $ vim .umirc.ts
-# 修改proxy.target为127.0.0.1:9380
+# 修改proxy.target为http://127.0.0.1:9380
 $ npm run dev 
 ```
 
