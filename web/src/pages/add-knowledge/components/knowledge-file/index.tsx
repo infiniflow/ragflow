@@ -12,6 +12,7 @@ import { Divider, Flex, Switch, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 import CreateFileModal from './create-file-modal';
+import WebCrawlModal from './web-crawl-modal';
 import DocumentToolbar from './document-toolbar';
 import {
   useChangeDocumentParser,
@@ -19,7 +20,7 @@ import {
   useFetchDocumentListOnMount,
   useGetPagination,
   useGetRowSelection,
-  useHandleUploadDocument,
+  useHandleUploadDocument, useHandleWebCrawl,
   useNavigateToOtherPage,
   useRenameDocument,
 } from './hooks';
@@ -69,6 +70,13 @@ const KnowledgeFile = () => {
     onDocumentUploadOk,
     documentUploadLoading,
   } = useHandleUploadDocument();
+  const {
+    webCrawlUploadVisible,
+    hideWebCrawlUploadModal,
+    showWebCrawlUploadModal,
+    onWebCrawlUploadOk,
+    webCrawlUploadLoading,
+  } = useHandleWebCrawl();
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
@@ -170,6 +178,7 @@ const KnowledgeFile = () => {
       <DocumentToolbar
         selectedRowKeys={rowSelection.selectedRowKeys as string[]}
         showCreateModal={showCreateModal}
+        showWebCrawlModal={showWebCrawlUploadModal}
         showDocumentUploadModal={showDocumentUploadModal}
       ></DocumentToolbar>
       <Table
@@ -211,6 +220,12 @@ const KnowledgeFile = () => {
         loading={documentUploadLoading}
         onOk={onDocumentUploadOk}
       ></FileUploadModal>
+      <WebCrawlModal
+        visible={webCrawlUploadVisible}
+        hideModal={hideWebCrawlUploadModal}
+        loading={webCrawlUploadLoading}
+        onOk={onWebCrawlUploadOk}
+      ></WebCrawlModal>
     </div>
   );
 };

@@ -139,3 +139,5 @@ fasttext==0.9.2
 volcengine==1.0.141
 readability-lxml==0.8.1
 html_text==0.6.2
+selenium==4.21.0
+webdriver-manager==4.0.1
