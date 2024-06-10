@@ -37,7 +37,7 @@ You have two options for configuring your API key:
    - Update `factory` with your chosen LLM.
    - Update `api_key` with yours.
    - Update `base_url` if you use a proxy to connect to the remote service.
-3. Resboot your system for your changes to take effect.
+3. Reboot your system for your changes to take effect.
 4. Log into RAGFlow.
    _After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model Providers** page._
 
