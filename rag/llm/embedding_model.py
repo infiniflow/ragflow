@@ -308,7 +308,7 @@ class JinaEmbed(Base):
         return np.array(embds[0]), cnt
 
 
-class InfinityEmbed():
+class InfinityEmbed(Base):
     _model = None
 
     def __init__(
