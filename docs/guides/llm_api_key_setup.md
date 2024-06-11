@@ -40,7 +40,7 @@ You have two options for configuring your API key:
 3. Reboot your system for your changes to take effect.
 4. Log into RAGFlow.
    
-   *After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model Providers** page.**
+   *After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model Providers** page.*
 
 ### Configure API key after logging into RAGFlow
 
