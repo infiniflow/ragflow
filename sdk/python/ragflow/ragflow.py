@@ -12,33 +12,43 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-#
+
 import os
-from abc import ABC
 import requests
+import json
 
-
-class RAGFLow(ABC):
-    def __init__(self, user_key, base_url):
+class RAGFLow:
+    def __init__(self, user_key, base_url, version = 'v1'):
+        '''
+        api_url: http://<host_address>/api/v1
+        dataset_url: http://<host_address>/api/v1/dataset
+        '''
         self.user_key = user_key
-        self.base_url = base_url
+        self.api_url = f"{base_url}/api/{version}"
+        self.dataset_url = f"{self.api_url}/dataset"
+        self.authorization_header = {"Authorization": "{}".format(self.user_key)}
 
-    def create_dataset(self, name):
-        return name
+    def create_dataset(self, dataset_name):
+        """
+        name: dataset name
+        """
+        res = requests.post(url=self.dataset_url, json={"name": dataset_name}, headers=self.authorization_header)
+        result_dict = json.loads(res.text)
+        return result_dict
 
-    def delete_dataset(self, name):
-        return name
+    def delete_dataset(self, dataset_name = None, dataset_id = None):
+        return dataset_name
 
     def list_dataset(self):
-        endpoint = f"{self.base_url}/api/v1/dataset"
-        response = requests.get(endpoint)
+        response = requests.get(self.dataset_url)
+        print(response)
         if response.status_code == 200:
             return response.json()['datasets']
         else:
             return None
 
     def get_dataset(self, dataset_id):
-        endpoint = f"{self.base_url}/api/v1/dataset/{dataset_id}"
+        endpoint = f"{self.dataset_url}/{dataset_id}"
         response = requests.get(endpoint)
         if response.status_code == 200:
             return response.json()
@@ -46,7 +56,7 @@ class RAGFLow(ABC):
             return None
 
     def update_dataset(self, dataset_id, params):
-        endpoint = f"{self.base_url}/api/v1/dataset/{dataset_id}"
+        endpoint = f"{self.dataset_url}/{dataset_id}"
         response = requests.put(endpoint, json=params)
         if response.status_code == 200:
             return True

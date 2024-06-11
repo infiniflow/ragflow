@@ -38,7 +38,6 @@ from base64 import b64encode
 from hmac import HMAC
 from urllib.parse import quote, urlencode
 
-
 requests.models.complexjson.dumps = functools.partial(
     json.dumps, cls=CustomJSONEncoder)
 
@@ -235,3 +234,35 @@ def cors_reponse(retcode=RetCode.SUCCESS,
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Expose-Headers"] = "Authorization"
     return response
+
+def construct_result(code=RetCode.DATA_ERROR, message='data is missing'):
+    import re
+    result_dict = {"code": code, "message": re.sub(r"rag", "seceum", message, flags=re.IGNORECASE)}
+    response = {}
+    for key, value in result_dict.items():
+        if value is None and key != "code":
+            continue
+        else:
+            response[key] = value
+    return jsonify(response)
+
+
+def construct_json_result(code=RetCode.SUCCESS, message='success', data=None):
+    if data == None:
+        return jsonify({"code": code, "message": message})
+    else:
+        return jsonify({"code": code, "message": message, "data": data})
+
+def construct_error_response(e):
+    stat_logger.exception(e)
+    try:
+        if e.code == 401:
+            return construct_json_result(code=RetCode.UNAUTHORIZED, message=repr(e))
+    except BaseException:
+        pass
+    if len(e.args) > 1:
+        return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+    if repr(e).find("index_not_found_exception") >=0:
+        return construct_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
+
+    return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
