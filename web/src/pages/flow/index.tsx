@@ -1,3 +1,4 @@
+import { useSetModalState } from '@/hooks/commonHooks';
 import { Layout } from 'antd';
 import { useState } from 'react';
 import { ReactFlowProvider } from 'reactflow';
@@ -10,6 +11,11 @@ const { Content } = Layout;
 
 function RagFlow() {
   const [collapsed, setCollapsed] = useState(false);
+  const {
+    visible: chatDrawerVisible,
+    hideModal: hideChatDrawer,
+    showModal: showChatDrawer,
+  } = useSetModalState();
 
   useFetchDataOnMount();
 
@@ -18,9 +24,13 @@ function RagFlow() {
       <ReactFlowProvider>
         <Sider setCollapsed={setCollapsed} collapsed={collapsed}></Sider>
         <Layout>
-          <FlowHeader></FlowHeader>
+          <FlowHeader showChatDrawer={showChatDrawer}></FlowHeader>
           <Content style={{ margin: 0 }}>
-            <FlowCanvas sideWidth={collapsed ? 0 : 200}></FlowCanvas>
+            <FlowCanvas
+              sideWidth={collapsed ? 0 : 200}
+              chatDrawerVisible={chatDrawerVisible}
+              hideChatDrawer={hideChatDrawer}
+            ></FlowCanvas>
           </Content>
         </Layout>
       </ReactFlowProvider>

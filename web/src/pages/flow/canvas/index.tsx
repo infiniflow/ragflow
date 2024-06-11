@@ -19,6 +19,7 @@ import {
 } from '../hooks';
 import { TextUpdaterNode } from './node';
 
+import ChatDrawer from '../chat/drawer';
 import styles from './index.less';
 
 const nodeTypes = { textUpdater: TextUpdaterNode };
@@ -29,9 +30,11 @@ const edgeTypes = {
 
 interface IProps {
   sideWidth: number;
+  chatDrawerVisible: boolean;
+  hideChatDrawer(): void;
 }
 
-function FlowCanvas({ sideWidth }: IProps) {
+function FlowCanvas({ sideWidth, chatDrawerVisible, hideChatDrawer }: IProps) {
   const {
     nodes,
     edges,
@@ -99,6 +102,10 @@ function FlowCanvas({ sideWidth }: IProps) {
         visible={drawerVisible}
         hideModal={hideDrawer}
       ></FlowDrawer>
+      <ChatDrawer
+        visible={chatDrawerVisible}
+        hideModal={hideChatDrawer}
+      ></ChatDrawer>
     </div>
   );
 }

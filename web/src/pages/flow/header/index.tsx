@@ -1,21 +1,19 @@
 import { Button, Flex, Space } from 'antd';
 
-import { useSetModalState } from '@/hooks/commonHooks';
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { Link } from 'umi';
-import ChatDrawer from '../chat/drawer';
-import { useRunGraph, useSaveGraph } from '../hooks';
+import { useSaveGraph } from '../hooks';
+
 import styles from './index.less';
 
-const FlowHeader = () => {
+interface IProps {
+  showChatDrawer(): void;
+}
+
+const FlowHeader = ({ showChatDrawer }: IProps) => {
   const { saveGraph } = useSaveGraph();
-  const { runGraph } = useRunGraph();
-  const {
-    visible: chatDrawerVisible,
-    hideModal: hideChatDrawer,
-    showModal: showChatDrawer,
-  } = useSetModalState();
+
   const { data } = useFetchFlow();
 
   return (
@@ -41,10 +39,6 @@ const FlowHeader = () => {
           </Button>
         </Space>
       </Flex>
-      <ChatDrawer
-        visible={chatDrawerVisible}
-        hideModal={hideChatDrawer}
-      ></ChatDrawer>
     </>
   );
 };

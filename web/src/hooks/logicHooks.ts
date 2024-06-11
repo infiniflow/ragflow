@@ -1,6 +1,7 @@
 import { Authorization } from '@/constants/authorization';
 import { LanguageTranslationMap } from '@/constants/common';
 import { Pagination } from '@/interfaces/common';
+import { ResponseType } from '@/interfaces/database/base';
 import { IAnswer } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
@@ -153,7 +154,9 @@ export const useSendMessageWithSse = (
   const [done, setDone] = useState(true);
 
   const send = useCallback(
-    async (body: any) => {
+    async (
+      body: any,
+    ): Promise<{ response: Response; data: ResponseType } | undefined> => {
       try {
         setDone(false);
         const response = await fetch(url, {
@@ -164,6 +167,8 @@ export const useSendMessageWithSse = (
           },
           body: JSON.stringify(body),
         });
+
+        const res = response.clone().json();
 
         const reader = response?.body
           ?.pipeThrough(new TextDecoderStream())
@@ -192,7 +197,7 @@ export const useSendMessageWithSse = (
         }
         console.info('done?');
         setDone(true);
-        return response;
+        return { data: await res, response };
       } catch (e) {
         setDone(true);
         console.warn(e);

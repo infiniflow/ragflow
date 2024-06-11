@@ -2,7 +2,6 @@ import { useSetModalState } from '@/hooks/commonHooks';
 import {
   useFetchFlow,
   useFetchFlowTemplates,
-  useRunFlow,
   useSetFlow,
 } from '@/hooks/flow-hooks';
 import { useFetchLlmList } from '@/hooks/llmHooks';
@@ -215,20 +214,4 @@ export const useFetchDataOnMount = () => {
 
 export const useFlowIsFetching = () => {
   return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
-};
-
-export const useRunGraph = () => {
-  const { data } = useFetchFlow();
-  const { runFlow } = useRunFlow();
-  const { id } = useParams();
-  const { nodes, edges } = useGraphStore((state) => state);
-  const runGraph = useCallback(() => {
-    const dslComponents = buildDslComponentsByGraph(nodes, edges);
-    runFlow({
-      id: id!!,
-      dsl: { ...data.dsl, components: dslComponents },
-    });
-  }, [nodes, edges, runFlow, id, data]);
-
-  return { runGraph };
 };

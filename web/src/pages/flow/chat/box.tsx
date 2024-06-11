@@ -82,6 +82,7 @@ const FlowChatBox = () => {
         onClose={hideModal}
         open={visible}
         width={'50vw'}
+        mask={false}
       >
         <DocumentPreviewer
           documentId={documentId}
