@@ -81,6 +81,7 @@ export default {
       searchFiles: 'Search your files',
       localFiles: 'Local files',
       emptyFiles: 'Create empty file',
+      webCrawl: 'Web Crawl',
       chunkNumber: 'Chunk Number',
       uploadDate: 'Upload Date',
       chunkMethod: 'Chunk Method',

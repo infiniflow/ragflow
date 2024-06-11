@@ -29,13 +29,15 @@ import styles from './index.less';
 interface IProps {
   selectedRowKeys: string[];
   showCreateModal(): void;
+  showWebCrawlModal(): void;
   showDocumentUploadModal(): void;
 }
 
 const DocumentToolbar = ({
-  selectedRowKeys,
-  showCreateModal,
-  showDocumentUploadModal,
+                           selectedRowKeys,
+                           showCreateModal,
+                           showWebCrawlModal,
+                           showDocumentUploadModal,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const { fetchDocumentList } = useFetchDocumentListOnMount();
@@ -66,6 +68,19 @@ const DocumentToolbar = ({
       { type: 'divider' },
       {
         key: '2',
+        onClick: showWebCrawlModal,
+        label: (
+          <div>
+            <Button type="link">
+              <FileTextOutlined />
+              {t('webCrawl')}
+            </Button>
+          </div>
+        ),
+      },
+      { type: 'divider' },
+      {
+        key: '3',
         onClick: showCreateModal,
         label: (
           <div>
@@ -77,7 +92,7 @@ const DocumentToolbar = ({
         ),
       },
     ];
-  }, [showDocumentUploadModal, showCreateModal, t]);
+  }, [showDocumentUploadModal, showWebCrawlModal, showCreateModal, t]);
 
   const handleDelete = useCallback(() => {
     showDeleteConfirm({

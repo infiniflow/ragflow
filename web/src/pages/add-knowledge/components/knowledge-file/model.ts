@@ -232,6 +232,27 @@ const model: DvaModel<KFModelState> = {
       }
       return data;
     },
+    *web_crawl({ payload = {} }, { call, put }) {
+      const formData = new FormData();
+      formData.append('name', payload.name);
+      formData.append('url', payload.url);
+      formData.append('kb_id', payload.kb_id);
+
+      const { data } = yield call(kbService.web_crawl, formData);
+
+      const succeed = data.retcode === 0;
+
+      if (succeed) {
+        message.success(i18n.t('message.uploaded'));
+      }
+      if (succeed || data.retcode === 500) {
+        yield put({
+          type: 'getKfList',
+          payload: { kb_id: payload.kb_id },
+        });
+      }
+      return data.retcode;
+    },
   },
   subscriptions: {
     setup({ dispatch, history }) {

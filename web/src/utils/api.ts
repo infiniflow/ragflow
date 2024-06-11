@@ -48,6 +48,7 @@ export default {
   document_thumbnails: `${api_host}/document/thumbnails`,
   get_document_file: `${api_host}/document/get`,
   document_upload: `${api_host}/document/upload`,
+  web_crawl: `${api_host}/document/web_crawl`,
 
   // chat
   setDialog: `${api_host}/dialog/set`,

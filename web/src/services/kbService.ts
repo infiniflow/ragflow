@@ -26,6 +26,7 @@ const {
   document_run,
   get_document_file,
   document_upload,
+  web_crawl,
 } = api;
 
 const methods = {
@@ -85,6 +86,10 @@ const methods = {
   },
   document_upload: {
     url: document_upload,
+    method: 'post',
+  },
+  web_crawl: {
+    url: web_crawl,
     method: 'post',
   },
   // chunk管理

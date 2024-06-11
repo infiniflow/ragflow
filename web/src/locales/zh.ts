@@ -80,6 +80,7 @@ export default {
       searchFiles: '搜索文件',
       localFiles: '本地文件',
       emptyFiles: '新建空文件',
+      webCrawl: '网页抓取',
       chunkNumber: '分块数',
       uploadDate: '上传日期',
       chunkMethod: '解析方法',
