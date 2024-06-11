@@ -34,10 +34,10 @@ interface IProps {
 }
 
 const DocumentToolbar = ({
-                           selectedRowKeys,
-                           showCreateModal,
-                           showWebCrawlModal,
-                           showDocumentUploadModal,
+  selectedRowKeys,
+  showCreateModal,
+  showWebCrawlModal,
+  showDocumentUploadModal,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const { fetchDocumentList } = useFetchDocumentListOnMount();
@@ -66,18 +66,18 @@ const DocumentToolbar = ({
         ),
       },
       { type: 'divider' },
-      {
-        key: '2',
-        onClick: showWebCrawlModal,
-        label: (
-          <div>
-            <Button type="link">
-              <FileTextOutlined />
-              {t('webCrawl')}
-            </Button>
-          </div>
-        ),
-      },
+      // {
+      //   key: '2',
+      //   onClick: showWebCrawlModal,
+      //   label: (
+      //     <div>
+      //       <Button type="link">
+      //         <FileTextOutlined />
+      //         {t('webCrawl')}
+      //       </Button>
+      //     </div>
+      //   ),
+      // },
       { type: 'divider' },
       {
         key: '3',
@@ -92,7 +92,7 @@ const DocumentToolbar = ({
         ),
       },
     ];
-  }, [showDocumentUploadModal, showWebCrawlModal, showCreateModal, t]);
+  }, [showDocumentUploadModal, showCreateModal, t]);
 
   const handleDelete = useCallback(() => {
     showDeleteConfirm({
