@@ -72,40 +72,21 @@ def search_pages_path(pages_dir):
 def register_page(page_path):
     path = f'{page_path}'
 
-    if "_api" in path:
-        page_name = page_path.stem.rstrip('_api')
-        module_name = '.'.join(page_path.parts[page_path.parts.index('api'):-1] + (page_name, ))
+    page_name = page_path.stem.rstrip('_api') if "_api" in path else page_path.stem.rstrip('_app')
+    module_name = '.'.join(page_path.parts[page_path.parts.index('api'):-1] + (page_name,))
 
-        spec = spec_from_file_location(module_name, page_path)
-        page = module_from_spec(spec)
-        page.app = app
-        page.manager = Blueprint(page_name, module_name)
-        sys.modules[module_name] = page
-        spec.loader.exec_module(page)
-        page_name = getattr(page, 'page_name', page_name)
-        url_prefix = f'/api/{API_VERSION}/{page_name}'
+    spec = spec_from_file_location(module_name, page_path)
+    page = module_from_spec(spec)
+    page.app = app
+    page.manager = Blueprint(page_name, module_name)
+    sys.modules[module_name] = page
+    spec.loader.exec_module(page)
+    page_name = getattr(page, 'page_name', page_name)
+    url_prefix = f'/api/{API_VERSION}/{page_name}' if "_api" in path else f'/{API_VERSION}/{page_name}'
 
-        app.register_blueprint(page.manager, url_prefix=url_prefix)
-
-        print(f'API file: {page_path}, URL: {url_prefix}')
-        return url_prefix
-    else:
-        page_name = page_path.stem.rstrip('_app')
-        module_name = '.'.join(page_path.parts[page_path.parts.index('api'):-1] + (page_name, ))
-
-        spec = spec_from_file_location(module_name, page_path)
-        page = module_from_spec(spec)
-        page.app = app
-        page.manager = Blueprint(page_name, module_name)
-        sys.modules[module_name] = page
-        spec.loader.exec_module(page)
-
-        page_name = getattr(page, 'page_name', page_name)
-        url_prefix = f'/{API_VERSION}/{page_name}'
-
-        app.register_blueprint(page.manager, url_prefix=url_prefix)
-        print(f'API file: {page_path}, URL: {url_prefix}')
-        return url_prefix
+    app.register_blueprint(page.manager, url_prefix=url_prefix)
+    print(f'API file: {page_path}, URL: {url_prefix}')
+    return url_prefix
 
 
 pages_dir = [
