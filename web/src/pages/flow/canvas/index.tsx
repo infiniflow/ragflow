@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import ReactFlow, {
   Background,
+  ConnectionMode,
   Controls,
   MarkerType,
   NodeMouseHandler,
@@ -64,6 +65,7 @@ function FlowCanvas({ sideWidth, chatDrawerVisible, hideChatDrawer }: IProps) {
     <div className={styles.canvasWrapper}>
       <ReactFlow
         ref={ref}
+        connectionMode={ConnectionMode.Loose}
         nodes={nodes}
         onNodesChange={onNodesChange}
         onNodeContextMenu={onNodeContextMenu}
