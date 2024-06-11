@@ -1,6 +1,9 @@
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
 
+import { Space } from 'antd';
+import { Operator } from '../../constant';
+import OperatorIcon from '../../operator-icon';
 import styles from './index.less';
 
 export function TextUpdaterNode({
@@ -9,7 +12,7 @@ export function TextUpdaterNode({
   selected,
 }: NodeProps<{ label: string }>) {
   return (
-    <div
+    <section
       className={classNames(styles.textUpdaterNode, {
         [styles.selectedNode]: selected,
       })}
@@ -30,7 +33,15 @@ export function TextUpdaterNode({
       >
         {/* <PlusCircleOutlined style={{ fontSize: 10 }} /> */}
       </Handle>
-      <div>{data.label}</div>
-    </div>
+      <div>
+        <Space>
+          <OperatorIcon
+            name={data.label as Operator}
+            fontSize={12}
+          ></OperatorIcon>
+          {data.label}
+        </Space>
+      </div>
+    </section>
   );
 }

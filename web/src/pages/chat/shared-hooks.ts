@@ -150,7 +150,7 @@ export const useSendSharedMessage = (
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
-      const res: Response = await send({
+      const res = await send({
         conversation_id: id ?? conversationId,
         quote: false,
         messages: [
@@ -162,12 +162,7 @@ export const useSendSharedMessage = (
         ],
       });
 
-      if (res?.status === 200) {
-        // const data = await fetchConversation(conversationId);
-        // if (data.retcode === 0) {
-        //   setCurrentConversation(data.data);
-        // }
-      } else {
+      if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
         // cancel loading
         setValue(message);
         removeLatestMessage();

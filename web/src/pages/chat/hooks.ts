@@ -552,14 +552,12 @@ export const useSendMessage = (
   const { conversationId } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
-  const fetchConversation = useFetchConversation();
-
   const { handleClickConversation } = useClickConversationCard();
   const { send, answer, done } = useSendMessageWithSse();
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
-      const res: Response = await send({
+      const res = await send({
         conversation_id: id ?? conversationId,
         messages: [
           ...(conversation?.message ?? []).map((x: IMessage) => omit(x, 'id')),
@@ -570,7 +568,12 @@ export const useSendMessage = (
         ],
       });
 
-      if (res.status === 200) {
+      if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
+        // cancel loading
+        setValue(message);
+        console.info('removeLatestMessage111');
+        removeLatestMessage();
+      } else {
         if (id) {
           console.info('111');
           // new conversation
@@ -579,15 +582,7 @@ export const useSendMessage = (
           console.info('222');
           // fetchConversation(conversationId);
         }
-      } else {
-        console.info('333');
-
-        // cancel loading
-        setValue(message);
-        console.info('removeLatestMessage111');
-        removeLatestMessage();
       }
-      console.info('false');
     },
     [
       conversation?.message,
