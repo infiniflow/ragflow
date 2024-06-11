@@ -112,7 +112,7 @@ export const useSendMessage = (
       }
       const res = await send(params);
 
-      if (res?.response.status !== 200 || res?.data?.retcode !== 0) {
+      if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
         antMessage.error(res?.data?.retmsg);
 
         // cancel loading

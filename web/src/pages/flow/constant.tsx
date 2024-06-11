@@ -2,6 +2,7 @@ import {
   MergeCellsOutlined,
   RocketOutlined,
   SendOutlined,
+  SlidersOutlined,
 } from '@ant-design/icons';
 
 export enum Operator {
@@ -11,10 +12,26 @@ export enum Operator {
   Answer = 'Answer',
 }
 
+export const operatorIconMap = {
+  [Operator.Retrieval]: RocketOutlined,
+  [Operator.Generate]: MergeCellsOutlined,
+  [Operator.Answer]: SendOutlined,
+  [Operator.Begin]: SlidersOutlined,
+};
+
 export const componentList = [
-  { name: Operator.Retrieval, icon: <RocketOutlined />, description: '' },
-  { name: Operator.Generate, icon: <MergeCellsOutlined />, description: '' },
-  { name: Operator.Answer, icon: <SendOutlined />, description: '' },
+  {
+    name: Operator.Retrieval,
+    description: '',
+  },
+  {
+    name: Operator.Generate,
+    description: '',
+  },
+  {
+    name: Operator.Answer,
+    description: '',
+  },
 ];
 
 export const initialRetrievalValues = {
