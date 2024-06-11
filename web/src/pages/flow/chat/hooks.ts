@@ -8,9 +8,12 @@ import {
 import { IAnswer } from '@/interfaces/database/chat';
 import { IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';
+import { message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
+
+const antMessage = message;
 
 export const useSelectCurrentMessages = () => {
   const { id: id } = useParams();
@@ -107,9 +110,11 @@ export const useSendMessage = (
       if (message) {
         params.message = message;
       }
-      const res: Response | undefined = await send(params);
+      const res = await send(params);
 
-      if (res?.status !== 200) {
+      if (res?.response.status !== 200 || res?.data?.retcode !== 0) {
+        antMessage.error(res?.data?.retmsg);
+
         // cancel loading
         setValue(message);
         removeLatestMessage();

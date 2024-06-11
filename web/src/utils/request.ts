@@ -1,4 +1,5 @@
 import { Authorization } from '@/constants/authorization';
+import { ResponseType } from '@/interfaces/database/base';
 import i18n from '@/locales/config';
 import authorizationUtil, { getAuthorization } from '@/utils/authorizationUtil';
 import { message, notification } from 'antd';
@@ -42,12 +43,6 @@ type ResultCode =
   | 503
   | 504;
 
-interface ResponseType {
-  retcode: number;
-  data: any;
-  retmsg: string;
-  status: number;
-}
 const errorHandler = (error: {
   response: Response;
   message: string;
