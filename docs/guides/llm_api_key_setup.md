@@ -9,7 +9,7 @@ An API key is required for RAGFlow to interact with an online AI model. This gui
 
 ## Get your API key
 
-For now, RAGFlow supports the following online LLMs. Clik the corresponding link to apply for your API key. Most LLM providers grant newly-created accounts trial credit, which will expire in a couple of months, or a promotional amount of free quota.
+For now, RAGFlow supports the following online LLMs. Click the corresponding link to apply for your API key. Most LLM providers grant newly-created accounts trial credit, which will expire in a couple of months, or a promotional amount of free quota.
 
 - [OpenAI](https://platform.openai.com/login?launch),
 - [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model),
@@ -39,7 +39,8 @@ You have two options for configuring your API key:
    - Update `base_url` if you use a proxy to connect to the remote service.
 3. Reboot your system for your changes to take effect.
 4. Log into RAGFlow.
-   _After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model Providers** page._
+   
+   *After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model Providers** page.*
 
 ### Configure API key after logging into RAGFlow
 
@@ -47,14 +48,14 @@ You have two options for configuring your API key:
 After logging into RAGFlow, configuring API key through the **service_conf.yaml** file will no longer take effect.
 :::
 
-After logging into RAGFlow, you You can *only* configure API Key on the **Model Providers** page:
+After logging into RAGFlow, you can *only* configure API Key on the **Model Providers** page:
 
 1. Click on your logo on the top right of the page **>** **Model Providers**.
 2. Find your model card under **Models to be added** and click **Add the model**:
    ![add model](https://github.com/infiniflow/ragflow/assets/93570324/07e43f63-367c-4c9c-8ed3-8a3a24703f4e)
 3. Paste your API key.
 4. Fill in your base URL if you use a proxy to connect to the remote service.
-5. Click OK to confirm your changes.
+5. Click **OK** to confirm your changes.
 
 :::note
 If you wish to update an existing API key at a later point:
