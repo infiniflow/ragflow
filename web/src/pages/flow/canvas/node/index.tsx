@@ -18,21 +18,25 @@ export function TextUpdaterNode({
       })}
     >
       <Handle
-        type="target"
+        id="c"
+        type="source"
         position={Position.Left}
         isConnectable={isConnectable}
         className={styles.handle}
       >
         {/* <PlusCircleOutlined style={{ fontSize: 10 }} /> */}
       </Handle>
+      <Handle type="source" position={Position.Top} id="d" isConnectable />
       <Handle
         type="source"
         position={Position.Right}
         isConnectable={isConnectable}
         className={styles.handle}
+        id="b"
       >
         {/* <PlusCircleOutlined style={{ fontSize: 10 }} /> */}
       </Handle>
+      <Handle type="source" position={Position.Bottom} id="a" isConnectable />
       <div>
         <Space>
           <OperatorIcon
