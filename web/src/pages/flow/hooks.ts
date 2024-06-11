@@ -15,9 +15,9 @@ import React, {
   useState,
 } from 'react';
 import { Node, Position, ReactFlowInstance } from 'reactflow';
-import { v4 as uuidv4 } from 'uuid';
 // import { shallow } from 'zustand/shallow';
 import { useDebounceEffect } from 'ahooks';
+import { humanId } from 'human-id';
 import { useParams } from 'umi';
 import useGraphStore, { RFState } from './store';
 import { buildDslComponentsByGraph } from './utils';
@@ -79,7 +79,7 @@ export const useHandleDrop = () => {
         y: event.clientY,
       });
       const newNode = {
-        id: uuidv4(),
+        id: `${type}:${humanId()}`,
         type: 'textUpdater',
         position: position || {
           x: 0,
