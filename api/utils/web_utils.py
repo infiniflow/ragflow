@@ -78,5 +78,3 @@ def __get_pdf_from_html(
 
 def is_valid_url(url: str) -> bool:
     return bool(re.match(r"(https?|ftp|file)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]", url))
-
-
