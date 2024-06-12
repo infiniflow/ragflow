@@ -18,6 +18,7 @@ import { Node, Position, ReactFlowInstance } from 'reactflow';
 import { useDebounceEffect } from 'ahooks';
 import { humanId } from 'human-id';
 import { useParams } from 'umi';
+import { Operator } from './constant';
 import useGraphStore, { RFState } from './store';
 import { buildDslComponentsByGraph } from './utils';
 
@@ -79,7 +80,7 @@ export const useHandleDrop = () => {
       });
       const newNode = {
         id: `${type}:${humanId()}`,
-        type: 'textUpdater',
+        type: 'ragNode',
         position: position || {
           x: 0,
           y: 0,
@@ -110,7 +111,9 @@ export const useShowDrawer = () => {
   const handleShow = useCallback(
     (node: Node) => {
       setClickedNode(node);
-      showDrawer();
+      if (node.data.label !== Operator.Answer) {
+        showDrawer();
+      }
     },
     [showDrawer],
   );

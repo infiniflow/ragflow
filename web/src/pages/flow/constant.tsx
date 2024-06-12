@@ -19,18 +19,27 @@ export const operatorIconMap = {
   [Operator.Begin]: SlidersOutlined,
 };
 
-export const componentList = [
+export const operatorMap = {
+  [Operator.Retrieval]: {
+    description: 'Retrieval description drjlftglrthjftl',
+  },
+  [Operator.Generate]: { description: 'Generate description' },
+  [Operator.Answer]: { description: 'Answer description' },
+  [Operator.Begin]: { description: 'Begin description' },
+};
+
+export const componentMenuList = [
   {
     name: Operator.Retrieval,
-    description: '',
+    description: operatorMap[Operator.Retrieval].description,
   },
   {
     name: Operator.Generate,
-    description: '',
+    description: operatorMap[Operator.Generate].description,
   },
   {
     name: Operator.Answer,
-    description: '',
+    description: operatorMap[Operator.Answer].description,
   },
 ];
 

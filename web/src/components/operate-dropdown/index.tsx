@@ -1,6 +1,5 @@
-import { ReactComponent as MoreIcon } from '@/assets/svg/more.svg';
 import { useShowDeleteConfirm } from '@/hooks/commonHooks';
-import { DeleteOutlined } from '@ant-design/icons';
+import { DeleteOutlined, MoreOutlined } from '@ant-design/icons';
 import { Dropdown, MenuProps, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 
@@ -8,12 +7,14 @@ import React from 'react';
 import styles from './index.less';
 
 interface IProps {
-  deleteItem: () => Promise<any>;
+  deleteItem: () => Promise<any> | void;
+  iconFontSize?: number;
 }
 
 const OperateDropdown = ({
   deleteItem,
   children,
+  iconFontSize = 30,
 }: React.PropsWithChildren<IProps>) => {
   const { t } = useTranslation();
   const showDeleteConfirm = useShowDeleteConfirm();
@@ -51,7 +52,10 @@ const OperateDropdown = ({
     >
       {children || (
         <span className={styles.delete}>
-          <MoreIcon />
+          <MoreOutlined
+            rotate={90}
+            style={{ fontSize: iconFontSize, color: 'gray', cursor: 'pointer' }}
+          />
         </span>
       )}
     </Dropdown>

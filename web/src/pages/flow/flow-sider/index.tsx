@@ -1,12 +1,14 @@
-import { Card, Flex, Layout, Space } from 'antd';
+import { Card, Flex, Layout, Space, Typography } from 'antd';
 import classNames from 'classnames';
 
-import { componentList } from '../constant';
+import { componentMenuList } from '../constant';
 import { useHandleDrag } from '../hooks';
 import OperatorIcon from '../operator-icon';
 import styles from './index.less';
 
 const { Sider } = Layout;
+
+const { Text } = Typography;
 
 interface IProps {
   setCollapsed: (width: boolean) => void;
@@ -25,7 +27,7 @@ const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
       onCollapse={(value) => setCollapsed(value)}
     >
       <Flex vertical gap={10} className={styles.siderContent}>
-        {componentList.map((x) => {
+        {componentMenuList.map((x) => {
           return (
             <Card
               key={x.name}
@@ -37,13 +39,14 @@ const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
               <Flex justify="space-between" align="center">
                 <Space size={15}>
                   <OperatorIcon name={x.name}></OperatorIcon>
-                  {/* <Avatar
-                    icon={<OperatorIcon name={x.name}></OperatorIcon>}
-                    shape={'square'}
-                  /> */}
                   <section>
                     <b>{x.name}</b>
-                    <div>{x.description}</div>
+                    <Text
+                      ellipsis={{ tooltip: x.description }}
+                      style={{ width: 130 }}
+                    >
+                      {x.description}
+                    </Text>
                   </section>
                 </Space>
               </Flex>
