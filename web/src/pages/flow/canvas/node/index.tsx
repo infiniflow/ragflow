@@ -38,7 +38,7 @@ export function TextUpdaterNode({
       </Handle>
       <Handle type="source" position={Position.Bottom} id="a" isConnectable />
       <div>
-        <Space>
+        <Space size={4}>
           <OperatorIcon
             name={data.label as Operator}
             fontSize={12}
