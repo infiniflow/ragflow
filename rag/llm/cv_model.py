@@ -75,10 +75,14 @@ class GptV4(Base):
 
     def describe(self, image, max_tokens=300):
         b64 = self.image2base64(image)
+        prompt = self.prompt(b64)
+        for i in range(len(prompt)):
+            for c in prompt[i]["content"]:
+                if "type" in c: del c["type"]
 
         res = self.client.chat.completions.create(
             model=self.model_name,
-            messages=self.prompt(b64),
+            messages=prompt,
             max_tokens=max_tokens,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
