@@ -27,7 +27,6 @@ function RagFlow() {
           <FlowHeader showChatDrawer={showChatDrawer}></FlowHeader>
           <Content style={{ margin: 0 }}>
             <FlowCanvas
-              sideWidth={collapsed ? 0 : 200}
               chatDrawerVisible={chatDrawerVisible}
               hideChatDrawer={hideChatDrawer}
             ></FlowCanvas>
