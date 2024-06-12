@@ -26,9 +26,8 @@ import dashscope
 from openai import OpenAI
 from FlagEmbedding import FlagModel
 import torch
-import asyncio
 import numpy as np
-
+import asyncio
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 
@@ -317,12 +316,12 @@ class InfinityEmbed(Base):
             engine_kwargs: dict = {},
             key = None,
     ):
-        
+
         from infinity_emb import EngineArgs
         from infinity_emb.engine import AsyncEngineArray
-        
+
         self._default_model = model_names[0]
-        self.engine_array = AsyncEngineArray.from_args([EngineArgs(model_name_or_path = model_name, **engine_kwargs) for model_name in model_names])  
+        self.engine_array = AsyncEngineArray.from_args([EngineArgs(model_name_or_path = model_name, **engine_kwargs) for model_name in model_names])
 
     async def _embed(self, sentences: list[str], model_name: str = ""):
         if not model_name:

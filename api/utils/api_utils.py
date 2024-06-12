@@ -248,10 +248,11 @@ def construct_result(code=RetCode.DATA_ERROR, message='data is missing'):
 
 
 def construct_json_result(code=RetCode.SUCCESS, message='success', data=None):
-    if data == None:
+    if data is None:
         return jsonify({"code": code, "message": message})
     else:
         return jsonify({"code": code, "message": message, "data": data})
+
 
 def construct_error_response(e):
     stat_logger.exception(e)
