@@ -5,7 +5,7 @@ export const initialNodes = [
     sourcePosition: Position.Left,
     targetPosition: Position.Right,
     id: 'node-1',
-    type: 'textUpdater',
+    type: 'ragNode',
     position: { x: 0, y: 0 },
     // position: { x: 400, y: 100 },
     data: { label: 123 },
@@ -38,7 +38,7 @@ export const dsl = {
     nodes: [
       {
         id: 'begin',
-        type: 'textUpdater',
+        type: 'ragNode',
         position: {
           x: 50,
           y: 200,
@@ -51,7 +51,7 @@ export const dsl = {
       },
       // {
       //   id: 'Answer:China',
-      //   type: 'textUpdater',
+      //   type: 'ragNode',
       //   position: {
       //     x: 150,
       //     y: 200,
@@ -64,7 +64,7 @@ export const dsl = {
       // },
       // {
       //   id: 'Retrieval:China',
-      //   type: 'textUpdater',
+      //   type: 'ragNode',
       //   position: {
       //     x: 250,
       //     y: 200,
@@ -77,7 +77,7 @@ export const dsl = {
       // },
       // {
       //   id: 'Generate:China',
-      //   type: 'textUpdater',
+      //   type: 'ragNode',
       //   position: {
       //     x: 100,
       //     y: 100,

@@ -18,12 +18,12 @@ import {
   useSelectCanvasData,
   useShowDrawer,
 } from '../hooks';
-import { TextUpdaterNode } from './node';
+import { RagNode } from './node';
 
 import ChatDrawer from '../chat/drawer';
 import styles from './index.less';
 
-const nodeTypes = { textUpdater: TextUpdaterNode };
+const nodeTypes = { ragNode: RagNode };
 
 const edgeTypes = {
   buttonEdge: ButtonEdge,

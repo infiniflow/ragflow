@@ -41,7 +41,7 @@ export const buildNodesAndEdgesFromDSLComponents = (data: DSLComponents) => {
     const upstream = [...value.upstream];
     nodes.push({
       id: key,
-      type: 'textUpdater',
+      type: 'ragNode',
       position: { x: 0, y: 0 },
       data: {
         label: value.obj.component_name,
