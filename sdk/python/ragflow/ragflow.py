@@ -17,7 +17,10 @@ import os
 import requests
 import json
 
-class RAGFLow:
+from httpx import HTTPError
+
+
+class RAGFlow:
     def __init__(self, user_key, base_url, version = 'v1'):
         '''
         api_url: http://<host_address>/api/v1
@@ -36,16 +39,48 @@ class RAGFLow:
         result_dict = json.loads(res.text)
         return result_dict
 
-    def delete_dataset(self, dataset_name = None, dataset_id = None):
+    def delete_dataset(self, dataset_name=None, dataset_id=None):
         return dataset_name
 
-    def list_dataset(self):
-        response = requests.get(self.dataset_url)
-        print(response)
-        if response.status_code == 200:
-            return response.json()['datasets']
-        else:
-            return None
+    # def list_dataset(self):
+    #     print("here ------------------------")
+    #     response = requests.get(self.dataset_url)
+    #     print(response)
+    #     if response.status_code == 200:
+    #         return response.json()['datasets']
+    #     else:
+    #         return None
+
+    def list_dataset(self, page_number=1, items_per_page=150, orderby="create_time", desc=True):
+        params = {
+            "page": page_number,
+            "page_size": items_per_page,
+            "orderby": orderby,
+            "desc": desc
+        }
+        try:
+            response = requests.get(url=self.dataset_url, params=params, headers=self.authorization_header)
+            response.raise_for_status()  # if it is not 200
+            original_data = response.json()
+            # TODO: format the data
+            # print(original_data)
+            # # Process the original data into the desired format
+            # formatted_data = {
+            #     "datasets": [
+            #         {
+            #             "id": dataset["id"],
+            #             "created": dataset["create_time"],  # Adjust the key based on the actual response
+            #             "fileCount": dataset["doc_num"],  # Adjust the key based on the actual response
+            #             "name": dataset["name"]
+            #         }
+            #         for dataset in original_data
+            #     ]
+            # }
+            return response.status_code, original_data
+        except HTTPError as http_err:
+            print(f"HTTP error occurred: {http_err}")
+        except Exception as err:
+            print(f"An error occurred: {err}")
 
     def get_dataset(self, dataset_id):
         endpoint = f"{self.dataset_url}/{dataset_id}"

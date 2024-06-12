@@ -46,7 +46,7 @@ from api.contants import NAME_LENGTH_LIMIT
 
 # ------------------------------ create a dataset ---------------------------------------
 @manager.route('/', methods=['POST'])
-@login_required # use login
+@login_required  # use login
 @validate_request("name")  # check name key
 def create_dataset():
     # Check if Authorization header is present
@@ -115,6 +115,22 @@ def create_dataset():
     except Exception as e:
         return construct_error_response(e)
 
+# -----------------------------list a datasets-------------------------------------------------------
+@manager.route('/', methods=['GET'])
+@login_required
+def list_datasets():
+    page_number = request.args.get("page", 1)
+    items_per_page = request.args.get("page_size", 150)
+    orderby = request.args.get("orderby", "create_time")
+    desc = request.args.get("desc", True)
+    try:
+        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        kbs = KnowledgebaseService.get_by_tenant_ids(
+            [m["tenant_id"] for m in tenants], current_user.id, int(page_number), int(items_per_page), orderby, desc)
+        return construct_json_result(data=kbs, code=RetCode.DATA_ERROR, message=f"attempt to list datasets")
+    except Exception as e:
+        return construct_error_response(e)
+
 
 @manager.route('/<dataset_id>', methods=['DELETE'])
 @login_required
@@ -135,8 +151,5 @@ def get_dataset(dataset_id):
     return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to get detail of dataset: {dataset_id}")
 
 
-@manager.route('/', methods=['GET'])
-@login_required
-def list_datasets():
-    return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to list datasets")
+
 
