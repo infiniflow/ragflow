@@ -1,4 +1,5 @@
 import type {} from '@redux-devtools/extension';
+import { humanId } from 'human-id';
 import {
   Connection,
   Edge,
@@ -32,6 +33,8 @@ export type RFState = {
   updateNodeForm: (nodeId: string, values: any) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
+  getNode: (id: string) => Node | undefined;
+  duplicateNode: (id: string) => void;
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
   deleteNodeById: (id: string) => void;
@@ -75,6 +78,26 @@ const useGraphStore = create<RFState>()(
       },
       addNode: (node: Node) => {
         set({ nodes: get().nodes.concat(node) });
+      },
+      getNode: (id: string) => {
+        return get().nodes.find((x) => x.id === id);
+      },
+      duplicateNode: (id: string) => {
+        const { getNode, addNode } = get();
+        const node = getNode(id);
+        const position = {
+          x: (node?.position?.x || 0) + 30,
+          y: (node?.position?.y || 0) + 20,
+        };
+
+        addNode({
+          ...(node || {}),
+          data: node?.data,
+          selected: false,
+          dragging: false,
+          id: `${node?.data?.label}:${humanId()}`,
+          position,
+        });
       },
       deleteEdge: () => {
         const { edges, selectedEdgeIds } = get();
