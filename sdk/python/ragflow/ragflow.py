@@ -42,19 +42,10 @@ class RAGFlow:
     def delete_dataset(self, dataset_name=None, dataset_id=None):
         return dataset_name
 
-    # def list_dataset(self):
-    #     print("here ------------------------")
-    #     response = requests.get(self.dataset_url)
-    #     print(response)
-    #     if response.status_code == 200:
-    #         return response.json()['datasets']
-    #     else:
-    #         return None
-
-    def list_dataset(self, page_number=1, items_per_page=150, orderby="create_time", desc=True):
+    def list_dataset(self, offset=0, count=-1, orderby="create_time", desc=True):
         params = {
-            "page": page_number,
-            "page_size": items_per_page,
+            "offset": offset,
+            "count": count,
             "orderby": orderby,
             "desc": desc
         }

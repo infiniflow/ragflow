@@ -20,37 +20,48 @@ class TestDataset(TestSdk):
 
         # create a kb
         res = ragflow.create_dataset("kb1")
+        print(res)
         assert res['code'] == 0 and res['message'] == 'success'
-        dataset_id = res['data']['dataset_id']
-        print(dataset_id)
+        dataset_name = res['data']['dataset_name']
+        print(dataset_name)
 
     def test_list_dataset_success(self):
         # Call the list_datasets method
         response = ragflow.list_dataset()
-        print(response)
 
-        # Check if the response is a dictionary and has the 'message' key
-        if isinstance(response, dict) and 'message' in response:
-            # Access the message using the 'message' key
-            assert response['message'] == "attempt to list datasets"
-        else:
-            print("Unexpected response format:", response)
+        code, datasets = response
+        assert len(datasets) > 0
 
-        # If the response is a dictionary with a 'data' key, proceed with the test
-        if 'data' in response:
-            datasets = response['data']
-            assert len(datasets) > 0
-            print(datasets)
-        else:
-            print("Expected 'data' key in response")
+        assert code == 200
 
-        # Assuming the response dictionary also contains a 'code' key with the status code
-        if 'code' in response:
-            status_code = response['code']
-            assert status_code == 200
-        else:
-            print("Expected 'code' key in response")
+    def test_list_dataset_with_checking_size_and_name(self):
+        datasets_to_create = ["dataset1", "dataset2", "dataset3"]
+        created_response = [ragflow.create_dataset(name) for name in datasets_to_create]
 
+        real_name_to_create = set()
+        for response in created_response:
+            assert 'data' in response, "Response is missing 'data' key"
+            dataset_name = response['data']['dataset_name']
+            real_name_to_create.add(dataset_name)
+
+        status_code, listed_data = ragflow.list_dataset(0, 3)
+        listed_data = listed_data['data']
+
+        listed_names = {d['name'] for d in listed_data}
+        assert listed_names == real_name_to_create
+        assert status_code == 200
+        assert len(listed_data) == len(datasets_to_create)
+
+    def test_list_dataset_with_showing_one_dataset(self):
+        response = ragflow.list_dataset(0, 1)
+        code, response = response
+        datasets = response['data']
+        assert len(datasets) == 1
+
+    def test_list_dataset_failure(self):
+        response = ragflow.list_dataset(-1, -1)
+        _, res = response
+        assert "IndexError" in res['message']
 
 
 
