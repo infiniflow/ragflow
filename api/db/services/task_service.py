@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 import random
 
 from api.db.db_utils import bulk_insert_into_db
@@ -102,6 +103,15 @@ class TaskService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_progress(cls, id, info):
+        if os.environ.get("MACOS"):
+            if info["progress_msg"]:
+                cls.model.update(progress_msg=cls.model.progress_msg + "\n" + info["progress_msg"]).where(
+                    cls.model.id == id).execute()
+            if "progress" in info:
+                cls.model.update(progress=info["progress"]).where(
+                    cls.model.id == id).execute()
+            return
+
         with DB.lock("update_progress", -1):
             if info["progress_msg"]:
                 cls.model.update(progress_msg=cls.model.progress_msg + "\n" + info["progress_msg"]).where(
