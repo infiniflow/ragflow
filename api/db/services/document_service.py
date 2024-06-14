@@ -184,6 +184,19 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_embd_id(cls, doc_id):
+        docs = cls.model.select(
+            Knowledgebase.embd_id).join(
+            Knowledgebase, on=(
+                Knowledgebase.id == cls.model.kb_id)).where(
+                cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
+        docs = docs.dicts()
+        if not docs:
+            return
+        return docs[0]["embd_id"]
+    
+    @classmethod
+    @DB.connection_context()
     def get_doc_id_by_doc_name(cls, doc_name):
         fields = [cls.model.id]
         doc_id = cls.model.select(*fields) \
