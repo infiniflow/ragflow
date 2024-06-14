@@ -141,3 +141,6 @@ readability-lxml==0.8.1
 html_text==0.6.2
 selenium==4.21.0
 webdriver-manager==4.0.1
+cn2an==0.5.22
+roman-numbers==1.0.2
+word2number==1.1

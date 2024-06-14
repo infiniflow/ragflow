@@ -21,6 +21,9 @@ from rag.utils import num_tokens_from_string
 from . import rag_tokenizer
 import re
 import copy
+import roman_numbers as r
+from word2number import w2n
+from cn2an import cn2an
 
 all_codecs = [
     'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
@@ -57,6 +60,95 @@ def find_codec(blob):
 
     return "utf-8"
 
+QUESTION_PATTERN = [
+    r"第([零一二三四五六七八九十百0-9]+)问",
+    r"第([零一二三四五六七八九十百0-9]+)条",
+    r"[\(（]([零一二三四五六七八九十百]+)[\)）]",
+    r"第([0-9]+)问",
+    r"第([0-9]+)条",
+    r"([0-9]{1,2})[\. 、]",
+    r"([零一二三四五六七八九十百]+)[ 、]",
+    r"[\(（]([0-9]{1,2})[\)）]",
+    r"QUESTION (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)",
+    r"QUESTION (I+V?|VI*|XI|IX|X)",
+    r"QUESTION ([0-9]+)",
+]
+
+def has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list):
+    section, last_section = box['text'], last_box['text']
+    q_reg = r'(\w|\W)*?(?:？|\?|\n|$)+'
+    full_reg = reg + q_reg
+    has_bull = re.match(full_reg, section)
+    index_str = None
+    if has_bull:
+        if 'x0' not in last_box:
+            last_box['x0'] = box['x0']
+        if 'top' not in last_box:
+            last_box['top'] = box['top']
+        if last_bull and box['x0']-last_box['x0']>10:
+            return None, last_index
+        if not last_bull and box['x0'] >= last_box['x0'] and box['top'] - last_box['top'] < 20:
+            return None, last_index
+        avg_bull_x0 = 0
+        if bull_x0_list:
+            avg_bull_x0 = sum(bull_x0_list) / len(bull_x0_list)
+        else:
+            avg_bull_x0 = box['x0']
+        if box['x0'] - avg_bull_x0 > 10:
+            return None, last_index
+        index_str = has_bull.group(1)
+        index = index_int(index_str)
+        if last_section[-1] == ':' or last_section[-1] == '：':
+            return None, last_index
+        if not last_index or index >= last_index:
+            bull_x0_list.append(box['x0'])
+            return has_bull, index
+        if section[-1] == '?' or section[-1] == '？':
+            bull_x0_list.append(box['x0'])
+            return has_bull, index
+        if box['layout_type'] == 'title':
+            bull_x0_list.append(box['x0'])
+            return has_bull, index
+        pure_section = section.lstrip(re.match(reg, section).group()).lower()
+        ask_reg = r'(what|when|where|how|why|which|who|whose|为什么|为啥|哪)'
+        if re.match(ask_reg, pure_section):
+            bull_x0_list.append(box['x0'])
+            return has_bull, index
+    return None, last_index
+
+def index_int(index_str):
+    res = -1
+    try:
+        res=int(index_str)
+    except ValueError:
+        try:
+            res=w2n.word_to_num(index_str)
+        except ValueError:
+            try:
+                res = cn2an(index_str)
+            except ValueError:
+                try:
+                    res = r.number(index_str)
+                except ValueError:
+                    return -1
+    return res
+
+def qbullets_category(sections):
+    global QUESTION_PATTERN
+    hits = [0] * len(QUESTION_PATTERN)
+    for i, pro in enumerate(QUESTION_PATTERN):
+        for sec in sections:
+            if re.match(pro, sec) and not not_bullet(sec):
+                hits[i] += 1
+                break
+    maxium = 0
+    res = -1
+    for i, h in enumerate(hits):
+        if h <= maxium:
+            continue
+        res = i
+        maxium = h
+    return res, QUESTION_PATTERN[res]
 
 BULLET_PATTERN = [[
     r"第[零一二三四五六七八九十百0-9]+(分?编|部分)",
