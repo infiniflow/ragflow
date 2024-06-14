@@ -15,7 +15,6 @@
 #
 import re
 from typing import Optional
-
 import requests
 from huggingface_hub import snapshot_download
 from zhipuai import ZhipuAI
