@@ -157,6 +157,11 @@ factory_infos = [{
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
+},{
+    "name": "Mistral",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING",
+    "status": "1",
 }
     # {
     #     "name": "文心一言",
@@ -583,6 +588,63 @@ def init_llm_factory():
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
             "model_type": LLMType.CHAT.value
+        },
+        # ------------------------ Mistral -----------------------
+        {
+            "fid": factory_infos[14]["name"],
+            "llm_name": "open-mixtral-8x22b",
+            "tags": "LLM,CHAT,64k",
+            "max_tokens": 64000,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[14]["name"],
+            "llm_name": "open-mixtral-8x7b",
+            "tags": "LLM,CHAT,32k",
+            "max_tokens": 32000,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[14]["name"],
+            "llm_name": "open-mistral-7b",
+            "tags": "LLM,CHAT,32k",
+            "max_tokens": 32000,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[14]["name"],
+            "llm_name": "mistral-large-latest",
+            "tags": "LLM,CHAT,32k",
+            "max_tokens": 32000,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[14]["name"],
+            "llm_name": "mistral-small-latest",
+            "tags": "LLM,CHAT,32k",
+            "max_tokens": 32000,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[14]["name"],
+            "llm_name": "mistral-medium-latest",
+            "tags": "LLM,CHAT,32k",
+            "max_tokens": 32000,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[14]["name"],
+            "llm_name": "codestral-latest",
+            "tags": "LLM,CHAT,32k",
+            "max_tokens": 32000,
+            "model_type": LLMType.CHAT.value
+        },
+        {
+            "fid": factory_infos[14]["name"],
+            "llm_name": "mistral-embed",
+            "tags": "LLM,CHAT,8k",
+            "max_tokens": 8192,
+            "model_type": LLMType.EMBEDDING
         },
     ]
     for info in factory_infos:
