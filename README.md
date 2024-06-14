@@ -64,7 +64,8 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 📌 Latest Updates
 
-- 2024-06-14 Q&A parsing method supports PDF format file.
+- 2024-06-14 Supports PDF in the Q&A parsing method.
+
 - 2024-06-06 Supports [Self-RAG](https://huggingface.co/papers/2310.11511), which is enabled by default in dialog settings.
 - 2024-05-30 Integrates [BCE](https://github.com/netease-youdao/BCEmbedding) and [BGE](https://github.com/FlagOpen/FlagEmbedding) reranker models.
 - 2024-05-28 Supports LLM Baichuan and VolcanoArk.
