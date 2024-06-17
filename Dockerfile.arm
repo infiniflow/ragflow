@@ -12,7 +12,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl -sL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs nginx ffmpeg libsm6 libxext6 libgl1
+    apt-get install -y --fix-missing nodejs nginx ffmpeg libsm6 libxext6 libgl1
 
 ADD ./web ./web
 RUN cd ./web && npm i --force && npm run build
@@ -21,6 +21,7 @@ ADD ./api ./api
 ADD ./conf ./conf
 ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
+ADD ./graph ./graph
 
 ENV PYTHONPATH=/ragflow/
 ENV HF_ENDPOINT=https://hf-mirror.com
