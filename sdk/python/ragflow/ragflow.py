@@ -22,10 +22,10 @@ from httpx import HTTPError
 
 class RAGFlow:
     def __init__(self, user_key, base_url, version = 'v1'):
-        '''
+        """
         api_url: http://<host_address>/api/v1
         dataset_url: http://<host_address>/api/v1/dataset
-        '''
+        """
         self.user_key = user_key
         self.api_url = f"{base_url}/api/{version}"
         self.dataset_url = f"{self.api_url}/dataset"
@@ -39,8 +39,23 @@ class RAGFlow:
         result_dict = json.loads(res.text)
         return result_dict
 
-    def delete_dataset(self, dataset_name=None, dataset_id=None):
-        return dataset_name
+    def delete_dataset(self, dataset_name):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
+        if not dataset_id:
+            return {"success": False, "message": "Dataset not found."}
+
+        res = requests.delete(f"{self.dataset_url}/{dataset_id}", headers=self.authorization_header)
+        if res.status_code == 200:
+            return {"success": True, "message": "Dataset deleted successfully!"}
+        else:
+            return {"success": False, "message": f"Other status code: {res.status_code}"}
+
+    def find_dataset_id_by_name(self, dataset_name):
+        res = requests.get(self.dataset_url, headers=self.authorization_header)
+        for dataset in res.json()['data']:
+            if dataset['name'] == dataset_name:
+                return dataset['id']
+        return None
 
     def list_dataset(self, offset=0, count=-1, orderby="create_time", desc=True):
         params = {
@@ -73,7 +88,8 @@ class RAGFlow:
         except Exception as err:
             print(f"An error occurred: {err}")
 
-    def get_dataset(self, dataset_id):
+    def get_dataset(self, dataset_name):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
         endpoint = f"{self.dataset_url}/{dataset_id}"
         response = requests.get(endpoint)
         if response.status_code == 200:

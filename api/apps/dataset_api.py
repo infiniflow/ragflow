@@ -132,13 +132,50 @@ def list_datasets():
         return construct_error_response(e)
 
 # ---------------------------------delete a dataset ----------------------------
-
 @manager.route('/<dataset_id>', methods=['DELETE'])
 @login_required
+@validate_request("dataset_id")
 def remove_dataset(dataset_id):
-    return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to remove dataset: {dataset_id}")
+    req = request.json
+    try:
+        kbs = KnowledgebaseService.query(
+            created_by=current_user.id, id=req["dataset_id"])
+        if not kbs:
+            return construct_json_result(
+                data=False, message=f'Only owner of knowledgebase authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
 
+        for doc in DocumentService.query(kb_id=req["dataset_id"]):
+            if not DocumentService.remove_document(doc, kbs[0].tenant_id):
+                return construct_json_result(
+                    message="Database error (Document removal)!")
+            f2d = File2DocumentService.get_by_document_id(doc.id)
+            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+            File2DocumentService.delete_by_document_id(doc.id)
 
+        if not KnowledgebaseService.delete_by_id(req["dataset_id"]):
+            return construct_json_result(
+                message="Database error (Knowledgebase removal)!")
+        return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to remove dataset: {dataset_id}")
+    except Exception as e:
+        return construct_error_response(e)
+
+# ------------------------------ get details of a dataset ----------------------------------------
+@manager.route('/<dataset_id>', methods=['GET'])
+@login_required
+@validate_request("dataset_id")
+def get_dataset():
+    dataset_id = request.args["dataset_id"]
+    try:
+        dataset = KnowledgebaseService.get_detail(dataset_id)
+        if not dataset:
+            return construct_json_result(
+                message="Can't find this knowledgebase!")
+        return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to get detail of dataset: {dataset_id}")
+    except Exception as e:
+        return construct_json_result(e)
+
+# ------------------------------ update a dataset --------------------------------------------
 @manager.route('/<dataset_id>', methods=['PUT'])
 @login_required
 @validate_request("name")
@@ -146,10 +183,6 @@ def update_dataset(dataset_id):
     return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to update dataset: {dataset_id}")
 
 
-@manager.route('/<dataset_id>', methods=['GET'])
-@login_required
-def get_dataset(dataset_id):
-    return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to get detail of dataset: {dataset_id}")
 
 
 
