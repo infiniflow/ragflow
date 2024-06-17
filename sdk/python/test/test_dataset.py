@@ -101,6 +101,21 @@ class TestDataset(TestSdk):
         _, res = response
         assert "IndexError" in res['message']
 
+    def test_delete_one_dataset_with_success(self):
+        # get the real name of the created dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        res = ragflow.create_dataset("kb0")
+        real_dataset_name = res['data']['dataset_name']
+        print("name", real_dataset_name)
+        # delete this dataset
+        result = ragflow.delete_dataset(real_dataset_name)
+        print(result)
+        assert result["success"] is True
+
+    def test_delete_dataset_with_not_existing_dataset(self):
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        res = ragflow.delete_dataset("weird_dataset")
+        assert res["success"] is False
 
 
 
