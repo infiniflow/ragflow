@@ -14,12 +14,16 @@ https://demo.ragflow.io/v1/
 
 ## Authorization
 
-All of RAGFlow's RESTFul APIs use API key for authorization, so keep it safe and do not expose it to the front end. 
+All of RAGFlow's RESTful APIs use API key for authorization, so keep it safe and do not expose it to the front end. 
 Put your API key in the request header. 
 
 ```buildoutcfg
 Authorization: Bearer {API_KEY}
 ```
+
+:::note
+In the current design, the RESTful API key you get from RAGFlow does not expire.
+:::
 
 To get your API key:
 
