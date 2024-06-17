@@ -20,7 +20,7 @@ For now, RAGFlow supports the following online LLMs. Click the corresponding lin
 - [VolcEngine](https://www.volcengine.com/docs/82379).
 
 :::note
-If you find your online LLM is not on the list, don't feel disheartened. The list is expanding, and you can [file a feature request](https://github.com/infiniflow/ragflow/issues/new?assignees=&labels=feature+request&projects=&template=feature_request.yml&title=%5BFeature+Request%5D%3A+) with us! Alternatively, if you have customized models or have locally-deployed models, you can [bind them to RAGFlow using Ollama or Xinference](./deploy_local_llm.md).
+If you find your online LLM is not on the list, don't feel disheartened. The list is expanding, and you can [file a feature request](https://github.com/infiniflow/ragflow/issues/new?assignees=&labels=feature+request&projects=&template=feature_request.yml&title=%5BFeature+Request%5D%3A+) with us! Alternatively, if you have customized or locally-deployed models, you can [bind them to RAGFlow using Ollama or Xinference](./deploy_local_llm.md).
 :::
 
 ## Configure your API key
