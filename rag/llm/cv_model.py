@@ -78,7 +78,7 @@ class GptV4(Base):
         prompt = self.prompt(b64)
         for i in range(len(prompt)):
             for c in prompt[i]["content"]:
-                if "type" in c: del c["type"]
+                if "text" in c: c["type"] = "text"
 
         res = self.client.chat.completions.create(
             model=self.model_name,

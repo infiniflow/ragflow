@@ -24,6 +24,7 @@ services:
     environment:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=https://hf-mirror.com
+      - MACOS=${MACOS}
     networks:
       - ragflow
     restart: always

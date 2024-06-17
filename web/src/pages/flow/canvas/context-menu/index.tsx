@@ -63,6 +63,8 @@ export function NodeContextMenu({
   );
 }
 
+/*  @deprecated
+ */
 export const useHandleNodeContextMenu = (sideWidth: number) => {
   const [menu, setMenu] = useState<INodeContextMenu>({} as INodeContextMenu);
   const ref = useRef<any>(null);

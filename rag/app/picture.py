@@ -24,11 +24,6 @@ ocr = OCR()
 
 
 def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
-    try:
-        cv_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, lang=lang)
-    except Exception as e:
-        callback(prog=-1, msg=str(e))
-        return []
     img = Image.open(io.BytesIO(binary)).convert('RGB')
     doc = {
         "docnm_kwd": filename,
@@ -45,6 +40,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
     try:
         callback(0.4, "Use CV LLM to describe the picture.")
+        cv_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, lang=lang)
         ans = cv_mdl.describe(binary)
         callback(0.8, "CV LLM respoond: %s ..." % ans[:32])
         txt += "\n" + ans
