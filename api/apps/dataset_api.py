@@ -82,8 +82,8 @@ def create_dataset():
     # In case that the length of the name exceeds the limit
     dataset_name_length = len(dataset_name)
     if dataset_name_length > NAME_LENGTH_LIMIT:
-        return construct_json_result(
-            message=f"Dataset name: {dataset_name} with length {dataset_name_length} exceeds {NAME_LENGTH_LIMIT}!")
+        return construct_json_result(code=RetCode.DATA_ERROR,
+                                     message=f"Dataset name: {dataset_name} with length {dataset_name_length} exceeds {NAME_LENGTH_LIMIT}!")
 
     # In case that there are other fields in the data-binary
     if len(request_body.keys()) > 1:
@@ -177,11 +177,6 @@ def get_dataset():
         return construct_json_result(e)
 
 # ------------------------------ update a dataset --------------------------------------------
-@manager.route('/<dataset_id>', methods=['GET'])
-@login_required
-def get_dataset(dataset_id):
-    return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to get detail of dataset: {dataset_id}")
-
 @manager.route('/<dataset_id>', methods=['PUT'])
 @login_required
 @validate_request("name")
