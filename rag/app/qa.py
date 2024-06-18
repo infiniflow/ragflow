@@ -145,6 +145,10 @@ def beAdoc(d, q, a, eng):
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     return d
 
+def mdQuestionLevel(s):
+    match = re.match(r'#*', s)
+    return (len(match.group(0)), s.lstrip('#').lstrip()) if match else (0, s)
+
 
 def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """
@@ -214,6 +218,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
 
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
         count = 0
         qai_list, tbls = pdf_parser(filename if not binary else binary,
@@ -225,10 +230,58 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
             count += 1
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res
+    elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        txt = ""
+        if binary:
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding, errors="ignore")
+        else:
+            with open(filename, "r") as f:
+                while True:
+                    l = f.readline()
+                    if not l:
+                        break
+                    txt += l
+        lines = txt.split("\n")
+        comma, tab = 0, 0
+        last_question, last_answer = "", ""
+        question_stack, level_stack = [], []
+        code_block = False
+        level_index = [-1] * 7
+        for index, l in enumerate(lines):
+            if not l.strip():
+                continue
+            if l.strip().startswith('```'):
+                code_block = not code_block
+            question_level, question = 0, ''
+            if not code_block:
+                question_level, question = mdQuestionLevel(l)
+
+            if not question_level or question_level > 6: # not a question
+                last_answer = f'{last_answer}\n{l}'
+            else:   # is a question
+                if last_answer:
+                    sum_question = ('\n').join(question_stack)
+                    if sum_question:
+                        res.append(beAdoc(deepcopy(doc), sum_question, last_answer, eng))
+                    last_answer = ''
+
+                i = question_level
+                while question_stack and i <= level_stack[-1]:
+                    question_stack.pop()
+                    level_stack.pop()
+                question_stack.append(question)
+                level_stack.append(question_level)
+        if last_answer:
+            sum_question = ('\n').join(question_stack)
+            if sum_question:
+                res.append(beAdoc(deepcopy(doc), sum_question, last_answer, eng))
+        return res
 
 
     raise NotImplementedError(
-        "Excel and csv(txt) format files are supported.")
+        "Excel, csv(txt), pdf and markdown format files are supported.")
 
 
 if __name__ == "__main__":
@@ -236,6 +289,4 @@ if __name__ == "__main__":
 
     def dummy(prog=None, msg=""):
         pass
-    import json
-
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
