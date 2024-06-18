@@ -1,3 +1,6 @@
+---
+sidebar_class_name: hidden
+---
 
 # API reference
 
