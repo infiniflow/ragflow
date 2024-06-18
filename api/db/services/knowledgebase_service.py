@@ -42,8 +42,7 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
-                          offset, count, orderby, desc):
+    def get_by_tenant_ids_by_offset(cls, joined_tenant_ids, user_id, offset, count, orderby, desc):
         kbs = cls.model.select().where(
             ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission ==
                                                             TenantPermission.TEAM.value)) | (

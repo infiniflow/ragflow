@@ -127,7 +127,7 @@ def list_datasets():
     desc = request.args.get("desc", True)
     try:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        kbs = KnowledgebaseService.get_by_tenant_ids(
+        kbs = KnowledgebaseService.get_by_tenant_ids_by_offset(
             [m["tenant_id"] for m in tenants], current_user.id, int(offset), int(count), orderby, desc)
         return construct_json_result(data=kbs, code=RetCode.DATA_ERROR, message=f"attempt to list datasets")
     except Exception as e:
