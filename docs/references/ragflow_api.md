@@ -55,7 +55,8 @@ You are *required* to save the `data.id` value returned in the response data, wh
 {
   "code": 0, 
   "data": {
-    "dataset_name": "kb1"
+    "dataset_name": "kb1",
+    "id": "375e8ada2d3c11ef98f93043d7ee537e"
   }, 
   "message": "success"
 }

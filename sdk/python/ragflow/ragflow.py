@@ -41,14 +41,13 @@ class RAGFlow:
 
     def delete_dataset(self, dataset_name):
         dataset_id = self.find_dataset_id_by_name(dataset_name)
-        if not dataset_id:
-            return {"success": False, "message": "Dataset not found."}
 
-        res = requests.delete(f"{self.dataset_url}/{dataset_id}", headers=self.authorization_header)
+        endpoint = f"{self.dataset_url}/{dataset_id}"
+        res = requests.delete(endpoint, headers=self.authorization_header)
         if res.status_code == 200:
-            return {"success": True, "message": "Dataset deleted successfully!"}
+            return res.json()
         else:
-            return {"success": False, "message": f"Other status code: {res.status_code}"}
+            return {'message': 'Wrong status code'}
 
     def find_dataset_id_by_name(self, dataset_name):
         res = requests.get(self.dataset_url, headers=self.authorization_header)
@@ -88,18 +87,23 @@ class RAGFlow:
         except Exception as err:
             print(f"An error occurred: {err}")
 
-    def get_dataset(self, dataset_id):
+    def get_dataset(self, dataset_name):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
         endpoint = f"{self.dataset_url}/{dataset_id}"
-        response = requests.get(endpoint)
+        response = requests.get(endpoint, headers=self.authorization_header)
         if response.status_code == 200:
             return response.json()
         else:
             return None
 
-    def update_dataset(self, dataset_id, params):
+    def update_dataset(self, dataset_name, params):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
+        if not dataset_id:
+            return None
+
         endpoint = f"{self.dataset_url}/{dataset_id}"
-        response = requests.put(endpoint, json=params)
+        response = requests.put(endpoint, json=params, headers=self.authorization_header)
         if response.status_code == 200:
-            return True
+            return response.json()
         else:
-            return False
+            return None

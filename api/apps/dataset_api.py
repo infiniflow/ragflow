@@ -45,6 +45,7 @@ from api.utils.api_utils import construct_json_result, construct_result, constru
 from api.contants import NAME_LENGTH_LIMIT
 
 # ------------------------------ create a dataset ---------------------------------------
+
 @manager.route('/', methods=['POST'])
 @login_required  # use login
 @validate_request("name")  # check name key
@@ -111,11 +112,12 @@ def create_dataset():
         if not KnowledgebaseService.save(**request_body):
             # failed to create new dataset
             return construct_result()
-        return construct_json_result(data={"dataset_name": request_body["name"]})
+        return construct_json_result(data={"dataset_name": request_body["name"], "id": request_body["id"]})
     except Exception as e:
         return construct_error_response(e)
 
 # -----------------------------list datasets-------------------------------------------------------
+
 @manager.route('/', methods=['GET'])
 @login_required
 def list_datasets():
@@ -135,53 +137,83 @@ def list_datasets():
 
 @manager.route('/<dataset_id>', methods=['DELETE'])
 @login_required
-@validate_request("dataset_id")
 def remove_dataset(dataset_id):
     req = request.json
     try:
-        kbs = KnowledgebaseService.query(
-            created_by=current_user.id, id=req["dataset_id"])
-        if not kbs:
+        datasets = KnowledgebaseService.query(
+            created_by=current_user.id, id=dataset_id)
+        if not datasets:
             return construct_json_result(
                 data=False, message=f'Only owner of knowledgebase authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
 
-        for doc in DocumentService.query(kb_id=req["dataset_id"]):
-            if not DocumentService.remove_document(doc, kbs[0].tenant_id):
+        for doc in DocumentService.query(kb_id=dataset_id):
+            if not DocumentService.remove_document(doc, datasets[0].tenant_id):
                 return construct_json_result(
                     message="Database error (Document removal)!")
             f2d = File2DocumentService.get_by_document_id(doc.id)
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
             File2DocumentService.delete_by_document_id(doc.id)
 
-        if not KnowledgebaseService.delete_by_id(req["dataset_id"]):
+        if not KnowledgebaseService.delete_by_id(dataset_id):
             return construct_json_result(
                 message="Database error (Knowledgebase removal)!")
-        return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to remove dataset: {dataset_id}")
+        return construct_json_result(code=RetCode.SUCCESS, message=f"Remove dataset: {dataset_id} successfully")
     except Exception as e:
         return construct_error_response(e)
 
 # ------------------------------ get details of a dataset ----------------------------------------
+
 @manager.route('/<dataset_id>', methods=['GET'])
 @login_required
-@validate_request("dataset_id")
-def get_dataset():
-    dataset_id = request.args["dataset_id"]
+def get_dataset(dataset_id):
     try:
         dataset = KnowledgebaseService.get_detail(dataset_id)
         if not dataset:
-            return construct_json_result(
-                message="Can't find this knowledgebase!")
-        return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to get detail of dataset: {dataset_id}")
+            return construct_json_result(message="Can't find this knowledgebase!")
+        return construct_json_result(data=dataset, code=RetCode.DATA_ERROR,
+                                     message=f"attempt to get detail of dataset: {dataset_id}")
     except Exception as e:
         return construct_json_result(e)
 
 # ------------------------------ update a dataset --------------------------------------------
+
 @manager.route('/<dataset_id>', methods=['PUT'])
 @login_required
-@validate_request("name")
+@validate_request("name", "dataset_id", "description", "permission", "parser_id", "language",
+                  "embd_id")
 def update_dataset(dataset_id):
-    return construct_json_result(code=RetCode.DATA_ERROR, message=f"attempt to update dataset: {dataset_id}")
+    req = request.json
+    req["name"] = req["name"].strip()
+    try:
+        # check whether the user is authorized to update
+        if not KnowledgebaseService.query(created_by=current_user.id, id=dataset_id):
+            return construct_json_result(
+                data=False, message=f'Only owner of knowledgebase authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+
+        e, dataset = KnowledgebaseService.get_by_id(dataset_id)
+        # check whether there is this dataset
+        if not e:
+            return construct_json_result(message="Can't find this dataset!")
+
+        if req["name"].lower() != dataset.name.lower() \
+                and len(KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id,
+                                                   status=StatusEnum.VALID.value)) > 1:
+            return construct_json_result(message="Duplicated dataset name.")
+
+        del req["dataset_id"]
+        if not KnowledgebaseService.update_by_id(dataset.id, req):
+            return construct_json_result()
+
+        e, dataset = KnowledgebaseService.get_by_id(dataset.id)
+        if not e:
+            return construct_json_result(message="Database error (Dataset rename)!")
+
+        return construct_json_result(data=dataset.to_json(),
+                                     message=f"Update dataset: {dataset_id} successfully!")
+    except Exception as e:
+        return construct_error_response(e)
 
 
 
