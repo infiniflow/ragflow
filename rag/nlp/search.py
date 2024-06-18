@@ -98,7 +98,7 @@ class Dealer:
         if not qst:
             if not req.get("sort"):
                 s = s.sort(
-                    {"create_time": {"order": "desc", "unmapped_type": "date"}},
+                    #{"create_time": {"order": "desc", "unmapped_type": "date"}},
                     {"create_timestamp_flt": {
                         "order": "desc", "unmapped_type": "float"}}
                 )
@@ -108,7 +108,7 @@ class Dealer:
                                       "mode": "avg", "numeric_type": "double"}},
                     {"top_int": {"order": "asc", "unmapped_type": "float",
                                  "mode": "avg", "numeric_type": "double"}},
-                    {"create_time": {"order": "desc", "unmapped_type": "date"}},
+                    #{"create_time": {"order": "desc", "unmapped_type": "date"}},
                     {"create_timestamp_flt": {
                         "order": "desc", "unmapped_type": "float"}}
                 )
