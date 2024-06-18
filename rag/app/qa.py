@@ -145,6 +145,7 @@ def beAdoc(d, q, a, eng):
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     return d
 
+
 def mdQuestionLevel(s):
     match = re.match(r'#*', s)
     return (len(match.group(0)), s.lstrip('#').lstrip()) if match else (0, s)
@@ -244,7 +245,6 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                         break
                     txt += l
         lines = txt.split("\n")
-        comma, tab = 0, 0
         last_question, last_answer = "", ""
         question_stack, level_stack = [], []
         code_block = False
@@ -262,7 +262,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 last_answer = f'{last_answer}\n{l}'
             else:   # is a question
                 if last_answer:
-                    sum_question = ('\n').join(question_stack)
+                    sum_question = '\n'.join(question_stack)
                     if sum_question:
                         res.append(beAdoc(deepcopy(doc), sum_question, last_answer, eng))
                     last_answer = ''
@@ -274,11 +274,10 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 question_stack.append(question)
                 level_stack.append(question_level)
         if last_answer:
-            sum_question = ('\n').join(question_stack)
+            sum_question = '\n'.join(question_stack)
             if sum_question:
                 res.append(beAdoc(deepcopy(doc), sum_question, last_answer, eng))
         return res
-
 
     raise NotImplementedError(
         "Excel, csv(txt), pdf and markdown format files are supported.")
