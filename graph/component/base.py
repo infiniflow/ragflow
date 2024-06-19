@@ -24,7 +24,7 @@ from typing import List, Dict
 import pandas as pd
 
 from graph import settings
-from graph.settings import flow_logger
+from graph.settings import flow_logger, DEBUG
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
@@ -428,7 +428,7 @@ class ComponentBase(ABC):
             reversed_cpnts.extend(self._canvas.path[-2])
         reversed_cpnts.extend(self._canvas.path[-1])
 
-        print(self.component_name, reversed_cpnts[::-1])
+        if DEBUG: print(self.component_name, reversed_cpnts[::-1])
         for u in reversed_cpnts[::-1]:
             if self.get_component_name(u) in ["switch"]: continue
             if self.component_name.lower().find("switch") < 0 \

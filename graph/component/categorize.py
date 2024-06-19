@@ -20,6 +20,7 @@ import pandas as pd
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from graph.component import GenerateParam, Generate
+from graph.settings import DEBUG
 
 
 class CategorizeParam(GenerateParam):
@@ -72,12 +73,11 @@ class Categorize(Generate, ABC):
 
     def _run(self, history, **kwargs):
         input = self.get_input()
-        print(input, "DDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
         input = "Question: " + ("; ".join(input["content"]) if "content" in input else "") + "Category: "
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": input}],
                             self._param.gen_conf())
-        print(ans, ":::::::::::::::::::::::::::::::::")
+        if DEBUG: print(ans, ":::::::::::::::::::::::::::::::::", input)
         for c in self._param.category_description.keys():
             if ans.lower().find(c.lower()) >= 0:
                 return Categorize.be_output(self._param.category_description[c]["to"])
