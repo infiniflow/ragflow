@@ -17,7 +17,7 @@ from timeit import default_timer as timer
 import re
 from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec
-from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser
+from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser
 from rag.settings import cron_logger
 from rag.utils import num_tokens_from_string
 
@@ -164,6 +164,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
+        sections = [(l, "") for l in sections if l]
+        callback(0.8, "Finish parsing.")
+
+    elif re.search(r"\.json$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        sections = JsonParser(parser_config.get("chunk_token_num", 128))(binary)
         sections = [(l, "") for l in sections if l]
         callback(0.8, "Finish parsing.")
 
