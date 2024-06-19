@@ -136,8 +136,11 @@ def set():
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
         if not tenant_id:
             return get_data_error_result(retmsg="Tenant not found!")
+        
+        embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = TenantLLMService.model_instance(
-            tenant_id, LLMType.EMBEDDING.value)
+            tenant_id, LLMType.EMBEDDING.value, embd_id)
+        
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
