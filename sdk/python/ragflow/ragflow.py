@@ -60,29 +60,23 @@ class RAGFlow:
             "orderby": orderby,
             "desc": desc
         }
-        try:
-            response = requests.get(url=self.dataset_url, params=params, headers=self.authorization_header)
-            response.raise_for_status()  # if it is not 200
-            original_data = response.json()
-            # TODO: format the data
-            # print(original_data)
-            # # Process the original data into the desired format
-            # formatted_data = {
-            #     "datasets": [
-            #         {
-            #             "id": dataset["id"],
-            #             "created": dataset["create_time"],  # Adjust the key based on the actual response
-            #             "fileCount": dataset["doc_num"],  # Adjust the key based on the actual response
-            #             "name": dataset["name"]
-            #         }
-            #         for dataset in original_data
-            #     ]
-            # }
-            return response.status_code, original_data
-        except HTTPError as http_err:
-            return f"HTTP error occurred: {http_err}"
-        except Exception as err:
-            return f"An error occurred: {err}"
+        response = requests.get(url=self.dataset_url, params=params, headers=self.authorization_header)
+        original_data = response.json()
+        # TODO: format the data
+        # print(original_data)
+        # # Process the original data into the desired format
+        # formatted_data = {
+        #     "datasets": [
+        #         {
+        #             "id": dataset["id"],
+        #             "created": dataset["create_time"],  # Adjust the key based on the actual response
+        #             "fileCount": dataset["doc_num"],  # Adjust the key based on the actual response
+        #             "name": dataset["name"]
+        #         }
+        #         for dataset in original_data
+        #     ]
+        # }
+        return response.status_code, original_data
 
     def get_dataset(self, dataset_name):
         dataset_id = self.find_dataset_id_by_name(dataset_name)

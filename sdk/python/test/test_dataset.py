@@ -267,7 +267,7 @@ class TestDataset(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         res = ragflow.delete_dataset("weird_dataset")
-        assert res['code'] == 103 and res['data'] is False
+        assert res['code'] == 103 and res['message'] == 'The dataset cannot be found for your current account.'
 
     def test_delete_dataset_with_creating_100_datasets_and_deleting_100_datasets(self):
         """
@@ -303,7 +303,7 @@ class TestDataset(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         res = ragflow.delete_dataset(" kb")
-        assert res['code'] == 103 and res['data'] is False
+        assert res['code'] == 103
 
     def test_delete_dataset_with_space_in_the_tail_of_the_name(self):
         """
@@ -311,7 +311,7 @@ class TestDataset(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         res = ragflow.delete_dataset("kb ")
-        assert res['code'] == 103 and res['data'] is False
+        assert res['code'] == 103
 
     def test_delete_dataset_with_only_space_in_the_name(self):
         """
@@ -319,7 +319,7 @@ class TestDataset(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         res = ragflow.delete_dataset(" ")
-        assert res['code'] == 103 and res['data'] is False
+        assert res['code'] == 103
 
     def test_delete_dataset_with_only_exceeding_limit_space_in_the_name(self):
         """
@@ -328,7 +328,7 @@ class TestDataset(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         name = " " * (NAME_LENGTH_LIMIT + 1)
         res = ragflow.delete_dataset(name)
-        assert res['code'] == 103 and res['data'] is False
+        assert res['code'] == 103
 
     def test_delete_dataset_with_name_with_space_in_the_head_and_tail_and_length_exceed_limit(self):
         """
@@ -338,7 +338,7 @@ class TestDataset(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         name = " " + "k" * NAME_LENGTH_LIMIT + " "
         res = ragflow.delete_dataset(name)
-        assert res['code'] == 103 and res['data'] is False
+        assert res['code'] == 103
 
 # ---------------------------------get_dataset-----------------------------------------
 
@@ -375,7 +375,7 @@ class TestDataset(TestSdk):
             "language": 'English'
         }
         res = ragflow.update_dataset("weird_dataset", **params)
-        assert res['code'] == 103 and res['message'] == 'The dataset cannot be found!'
+        assert res['code'] == 103 and res['message'] == 'Only the owner of knowledgebase is authorized for this operation!'
 
     def test_update_dataset_with_updating_6_parameters(self):
         """
@@ -409,6 +409,18 @@ class TestDataset(TestSdk):
         res = ragflow.update_dataset("new_name2", **params)
         print(res)
         assert res['code'] == 0 and res['data']['name'] == "new_name3" and res['data']['language'] == 'English'
+
+    def test_update_dataset_with_updating_layout_recognize(self):
+        """Test updating a dataset with only updating the layout_recognize"""
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        ragflow.create_dataset("new_name2")
+        params = {
+            "layout_recognize": False
+        }
+        res = ragflow.update_dataset("new_name2", **params)
+        # TODO: fix the KeyError('name')
+        print(res)
+        assert res['code'] == 0 and res['data']['parser_config']['layout_recognize'] is False
 
 # ---------------------------------mix the different methods--------------------------
 

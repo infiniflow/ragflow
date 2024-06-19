@@ -20,6 +20,7 @@ import re
 from datetime import datetime, timedelta
 from flask import request, Response
 from flask_login import login_required, current_user
+from httpx import HTTPError
 
 from api.db import FileType, ParserType, FileSource, StatusEnum
 from api.db.db_models import APIToken, API4Conversation, Task, File
@@ -133,6 +134,8 @@ def list_datasets():
         return construct_json_result(data=datasets, code=RetCode.SUCCESS, message=f"List datasets successfully!")
     except Exception as e:
         return construct_error_response(e)
+    except HTTPError as http_err:
+        return construct_json_result(http_err)
 
 # ---------------------------------delete a dataset ----------------------------
 
@@ -152,18 +155,18 @@ def remove_dataset(dataset_id):
             if not DocumentService.remove_document(doc, datasets[0].tenant_id):
                 # the process of deleting failed
                 return construct_json_result(code=RetCode.DATA_ERROR,
-                                             message="Database error (Document removal)! "
-                                                     "Please check the status of "
-                                                     "the ragflow_server and remove again!")
+                                             message="There was an error during the document removal process. "
+                                                     "Please check the status of the RAGFlow server and try the removal again.")
             # delete the other files
             f2d = File2DocumentService.get_by_document_id(doc.id)
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
             File2DocumentService.delete_by_document_id(doc.id)
 
+        # delete the dataset
         if not KnowledgebaseService.delete_by_id(dataset_id):
-            return construct_json_result(code=RetCode.DATA_ERROR, message="Database error (Knowledgebase removal)!"
-                                                                          "Please check the status of "
-                                                                          "the ragflow_server and remove again!")
+            return construct_json_result(code=RetCode.DATA_ERROR, message="There was an error during the dataset removal process. "
+                                                                          "Please check the status of the RAGFlow server and try the removal again.")
+        # success
         return construct_json_result(code=RetCode.SUCCESS, message=f"Remove dataset: {dataset_id} successfully")
     except Exception as e:
         return construct_error_response(e)
@@ -187,11 +190,11 @@ def get_dataset(dataset_id):
 @login_required
 def update_dataset(dataset_id):
     req = request.json
-    req["name"] = req["name"].strip()
+    name = req["name"].strip()
     try:
         # check whether the dataset can be found
         if not KnowledgebaseService.query(created_by=current_user.id, id=dataset_id):
-            return construct_json_result(message=f'Only owner of knowledgebase authorized for this operation!',
+            return construct_json_result(message=f'Only the owner of knowledgebase is authorized for this operation!',
                                          code=RetCode.OPERATING_ERROR)
 
         e, dataset = KnowledgebaseService.get_by_id(dataset_id)
@@ -199,39 +202,57 @@ def update_dataset(dataset_id):
         if not e:
             return construct_json_result(code=RetCode.DATA_ERROR, message="This dataset cannot be found!")
 
-        if req["name"].lower() != dataset.name.lower() \
-                and len(KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id,
+        if name.lower() != dataset.name.lower() \
+                and len(KnowledgebaseService.query(name=name, tenant_id=current_user.id,
                                                    status=StatusEnum.VALID.value)) > 1:
-            return construct_json_result(code=RetCode.DATA_ERROR, message="Duplicated dataset name.")
+            return construct_json_result(code=RetCode.DATA_ERROR, message=f"The name: {name} is already used by other "
+                                                                          f"datasets. Please choose a different name.")
 
         dataset_updating_data = {}
         chunk_num = req.get("chunk_num")
-        for key in ['name', 'language', 'description']:
-            if key == 'embedding_model_id':
+        # modify the value of 11 parameters
+
+        # 2 parameters: embedding id and chunk method
+        for key in ['embedding_model_id', 'chunk_method']:
+            # only if chunk_num is 0, the user can update the embedding_model_id
+            if key == 'embedding_model_id' and req.get(key):
                 if chunk_num == 0:
-                    dataset_updating_data['embd_id'] = req.get(key)
+                    dataset_updating_data['embd_id'] = req[key]
                 else:
                     construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document "
                                                                            "in this dataset, so you cannot "
                                                                            "change the embedding model.")
-                if key == 'chunk_method':
-                    dataset_updating_data['parser_id'] = req.get(key)
+            # only if chunk_num is 0, the user can update the chunk_method
+            if key == 'chunk_method' and req.get(key):
+                if chunk_num == 0:
+                    dataset_updating_data['parser_id'] = req[key]
                 else:
                     construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document "
                                                                            "in this dataset, so you cannot "
                                                                            "change the chunk method.")
+        # TODO: use_raptor needs to construct a class
+        # 6 parameters
+        for key in ['name', 'language', 'description', 'permission', 'id', 'token_num', 'photo', 'layout_recognize']:
+            # convert the photo parameter to avatar
+            if key == 'photo' and req.get(key):
+                dataset_updating_data['avatar'] = req[key]
+
+            if key == 'layout_recognize' and req.get(key):
+                dataset_updating_data['parser_config'][key] = req[key]
+
             if key in req:
                 dataset_updating_data[key] = req.get(key)
 
         # update
         if not KnowledgebaseService.update_by_id(dataset.id, dataset_updating_data):
             return construct_json_result(code=RetCode.OPERATING_ERROR, message="Failed to update! "
-                                                                               "Please check the status of ragflow_api "
-                                                                               "and try again!")
+                                                                               "Please check the status of RAGFlow "
+                                                                               "server and try again!")
 
         e, dataset = KnowledgebaseService.get_by_id(dataset.id)
         if not e:
-            return construct_json_result(code=RetCode.DATA_ERROR, message="Database error (Dataset rename)!")
+            return construct_json_result(code=RetCode.DATA_ERROR, message="Failed to get the dataset "
+                                                                          "using the dataset ID.")
 
         return construct_json_result(data=dataset.to_json(), code=RetCode.SUCCESS)
     except Exception as e:
