@@ -88,10 +88,7 @@ class RAGFlow:
         dataset_id = self.find_dataset_id_by_name(dataset_name)
         endpoint = f"{self.dataset_url}/{dataset_id}"
         response = requests.get(endpoint, headers=self.authorization_header)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return None
+        return response.json()
 
     def update_dataset(self, dataset_name, **params):
         dataset_id = self.find_dataset_id_by_name(dataset_name)
