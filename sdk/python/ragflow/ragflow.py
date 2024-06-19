@@ -44,10 +44,7 @@ class RAGFlow:
 
         endpoint = f"{self.dataset_url}/{dataset_id}"
         res = requests.delete(endpoint, headers=self.authorization_header)
-        if res.status_code == 200:
-            return res.json()
-        else:
-            return {'message': 'Wrong status code'}
+        return res.json()
 
     def find_dataset_id_by_name(self, dataset_name):
         res = requests.get(self.dataset_url, headers=self.authorization_header)
@@ -83,9 +80,9 @@ class RAGFlow:
             # }
             return response.status_code, original_data
         except HTTPError as http_err:
-            print(f"HTTP error occurred: {http_err}")
+            return f"HTTP error occurred: {http_err}"
         except Exception as err:
-            print(f"An error occurred: {err}")
+            return f"An error occurred: {err}"
 
     def get_dataset(self, dataset_name):
         dataset_id = self.find_dataset_id_by_name(dataset_name)
@@ -96,14 +93,9 @@ class RAGFlow:
         else:
             return None
 
-    def update_dataset(self, dataset_name, params):
+    def update_dataset(self, dataset_name, **params):
         dataset_id = self.find_dataset_id_by_name(dataset_name)
-        if not dataset_id:
-            return None
 
         endpoint = f"{self.dataset_url}/{dataset_id}"
         response = requests.put(endpoint, json=params, headers=self.authorization_header)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return None
+        return response.json()

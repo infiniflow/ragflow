@@ -15,6 +15,19 @@ class TestDataset(TestSdk):
         4. update the kb
         5. delete the kb
     """
+
+    def setup_method(self):
+        """
+        Delete all the datasets.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        status_code, listed_data = ragflow.list_dataset()
+        listed_data = listed_data['data']
+
+        listed_names = {d['name'] for d in listed_data}
+        for name in listed_names:
+            ragflow.delete_dataset(name)
+
     # -----------------------create_dataset---------------------------------
     def test_create_dataset_with_success(self):
         """
@@ -248,15 +261,6 @@ class TestDataset(TestSdk):
         res = ragflow.delete_dataset(real_dataset_name)
         assert res['code'] == 0 and 'successfully' in res['message']
 
-
-    def test_delete_one_dataset_with_success(self):
-        """
-        Test deleting an existing dataset with only deleting from the datasets.
-        """
-        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        res = ragflow.delete_dataset("new_dataset(14)")
-        assert res['code'] == 0 and 'successfully' in res['message']
-
     def test_delete_dataset_with_not_existing_dataset(self):
         """
         Test deleting a dataset that does not exist with failure.
@@ -289,6 +293,7 @@ class TestDataset(TestSdk):
         Test deleting a dataset when its name has space in the middle.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        ragflow.create_dataset("k b")
         res = ragflow.delete_dataset("k b")
         assert res['code'] == 0 and 'successfully' in res['message']
 
@@ -342,8 +347,10 @@ class TestDataset(TestSdk):
         Test getting a dataset which exists.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        res = ragflow.get_dataset("test")
-        assert res['code'] == 102 and res['data']['name'] == "test"
+        response = ragflow.create_dataset("test")
+        dataset_name = response['data']['dataset_name']
+        res = ragflow.get_dataset(dataset_name)
+        assert res['code'] == 0 and res['data']['name'] == dataset_name
 
     def test_get_dataset_with_failure(self):
         """
@@ -351,29 +358,9 @@ class TestDataset(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         res = ragflow.get_dataset("weird_dataset")
-        assert res['code'] == 0 and res['message'] == "Can't find this knowledgebase!"
+        assert res['code'] == 102 and res['message'] == "Can't find this dataset!"
 
 # ---------------------------------update a dataset-----------------------------------
-    def test_update_dataset_with_success(self):
-        """
-        Test updating a dataset which exists.
-        """
-        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        params = {
-            'name': 'new_name3',
-            'description': 'new_description',
-            "dataset_id": '123',
-            "permission": 'me',
-            "parser_id": 'naive',
-            "language": 'English',
-            "embd_id": 'BAAI/bge-large-zh-v1.5'
-        }
-        res = ragflow.update_dataset("new_name2", params)
-        assert res['code'] == 0
-        assert (res['data']['description'] == 'new_description'
-                and res['data']['embd_id'] == 'BAAI/bge-large-zh-v1.5' and res['data']['name'] == 'new_name3'
-                and res['data']['permission'] == 'me' and res['data']['language'] == 'English' and
-                res['data']['parser_id'] == 'naive')
 
     def test_update_dataset_without_existing_dataset(self):
         """
@@ -383,31 +370,45 @@ class TestDataset(TestSdk):
         params = {
             'name': 'new_name3',
             'description': 'new_description',
-            "dataset_id": '123',
             "permission": 'me',
             "parser_id": 'naive',
-            "language": 'English',
-            "embd_id": 'BAAI/bge-large-zh-v1.5'
+            "language": 'English'
         }
-        res = ragflow.update_dataset("weird_dataset", params)
-        assert res is None
+        res = ragflow.update_dataset("weird_dataset", **params)
+        assert res['code'] == 103 and res['message'] == 'The dataset cannot be found!'
 
-    def test_update_dataset_with_duplicate_name(self):
+    def test_update_dataset_with_updating_6_parameters(self):
         """
-        Test updating a dataset when the name has occupied by other dataset.
+        Test updating a dataset when updating 6 parameters.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        ragflow.create_dataset("new_name1")
         params = {
             'name': 'new_name',
-            'description': 'new_description',
-            "dataset_id": '123',
+            'description': 'new_description1',
             "permission": 'me',
             "parser_id": 'naive',
-            "language": 'English',
-            "embd_id": 'BAAI/bge-large-zh-v1.5'
+            "language": 'English'
         }
-        res = ragflow.update_dataset("new_name3", params)
-        assert res['message'] == 'Duplicated dataset name.'
+        res = ragflow.update_dataset("new_name1", **params)
+        assert res['code'] == 0
+        assert (res['data']['description'] == 'new_description1'
+                and res['data']['name'] == 'new_name' and res['data']['permission'] == 'me'
+                and res['data']['language'] == 'English' and res['data']['parser_id'] == 'naive')
+
+    def test_update_dataset_with_updating_2_parameters(self):
+        """
+        Test updating a dataset when updating 2 parameters.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        ragflow.create_dataset("new_name2")
+        params = {
+            "name": "new_name3",
+            "language": 'English'
+        }
+        res = ragflow.update_dataset("new_name2", **params)
+        print(res)
+        assert res['code'] == 0 and res['data']['name'] == "new_name3" and res['data']['language'] == 'English'
 
 # ---------------------------------mix the different methods--------------------------
 
