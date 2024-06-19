@@ -17,11 +17,9 @@ import os
 import requests
 import json
 
-from httpx import HTTPError
-
 
 class RAGFlow:
-    def __init__(self, user_key, base_url, version = 'v1'):
+    def __init__(self, user_key, base_url, version='v1'):
         '''
         api_url: http://<host_address>/api/v1
         dataset_url: http://<host_address>/api/v1/dataset
@@ -61,22 +59,7 @@ class RAGFlow:
             "desc": desc
         }
         response = requests.get(url=self.dataset_url, params=params, headers=self.authorization_header)
-        original_data = response.json()
-        # TODO: format the data
-        # print(original_data)
-        # # Process the original data into the desired format
-        # formatted_data = {
-        #     "datasets": [
-        #         {
-        #             "id": dataset["id"],
-        #             "created": dataset["create_time"],  # Adjust the key based on the actual response
-        #             "fileCount": dataset["doc_num"],  # Adjust the key based on the actual response
-        #             "name": dataset["name"]
-        #         }
-        #         for dataset in original_data
-        #     ]
-        # }
-        return response.status_code, original_data
+        return response.json()
 
     def get_dataset(self, dataset_name):
         dataset_id = self.find_dataset_id_by_name(dataset_name)

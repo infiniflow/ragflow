@@ -106,8 +106,8 @@ def create_dataset():
         request_body["id"] = get_uuid()
         request_body["tenant_id"] = tenant_id
         request_body["created_by"] = tenant_id
-        e, t = TenantService.get_by_id(tenant_id)
-        if not e:
+        exist, t = TenantService.get_by_id(tenant_id)
+        if not exist:
             return construct_result(code=RetCode.AUTHENTICATION_ERROR, message="Tenant not found.")
         request_body["embd_id"] = t.embd_id
         if not KnowledgebaseService.save(**request_body):
@@ -190,56 +190,65 @@ def get_dataset(dataset_id):
 @login_required
 def update_dataset(dataset_id):
     req = request.json
-    name = req["name"].strip()
     try:
+        # the request cannot be empty
+        if not req:
+            return construct_json_result(code=RetCode.DATA_ERROR, message="Please input at least one parameter that "
+                                                                          "you want to update!")
         # check whether the dataset can be found
         if not KnowledgebaseService.query(created_by=current_user.id, id=dataset_id):
             return construct_json_result(message=f'Only the owner of knowledgebase is authorized for this operation!',
                                          code=RetCode.OPERATING_ERROR)
 
-        e, dataset = KnowledgebaseService.get_by_id(dataset_id)
+        exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
         # check whether there is this dataset
-        if not e:
+        if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR, message="This dataset cannot be found!")
 
-        if name.lower() != dataset.name.lower() \
-                and len(KnowledgebaseService.query(name=name, tenant_id=current_user.id,
-                                                   status=StatusEnum.VALID.value)) > 1:
-            return construct_json_result(code=RetCode.DATA_ERROR, message=f"The name: {name} is already used by other "
-                                                                          f"datasets. Please choose a different name.")
+        if 'name' in req:
+            name = req["name"].strip()
+            # check whether there is duplicate name
+            if name.lower() != dataset.name.lower() \
+                    and len(KnowledgebaseService.query(name=name, tenant_id=current_user.id,
+                                                       status=StatusEnum.VALID.value)) > 1:
+                return construct_json_result(code=RetCode.DATA_ERROR, message=f"The name: {name.lower()} is already used by other "
+                                                                              f"datasets. Please choose a different name.")
 
         dataset_updating_data = {}
         chunk_num = req.get("chunk_num")
         # modify the value of 11 parameters
 
         # 2 parameters: embedding id and chunk method
-        for key in ['embedding_model_id', 'chunk_method']:
-            # only if chunk_num is 0, the user can update the embedding_model_id
-            if key == 'embedding_model_id' and req.get(key):
-                if chunk_num == 0:
-                    dataset_updating_data['embd_id'] = req[key]
-                else:
-                    construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document "
-                                                                           "in this dataset, so you cannot "
-                                                                           "change the embedding model.")
-            # only if chunk_num is 0, the user can update the chunk_method
-            if key == 'chunk_method' and req.get(key):
-                if chunk_num == 0:
-                    dataset_updating_data['parser_id'] = req[key]
-                else:
-                    construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document "
-                                                                           "in this dataset, so you cannot "
-                                                                           "change the chunk method.")
-        # TODO: use_raptor needs to construct a class
+        # only if chunk_num is 0, the user can update the embedding id
+        if req.get('embedding_model_id'):
+            if chunk_num == 0:
+                dataset_updating_data['embd_id'] = req['embedding_model_id']
+            else:
+                construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document in this "
+                                                                       "dataset, so you cannot change the embedding "
+                                                                       "model.")
+        # only if chunk_num is 0, the user can update the chunk_method
+        if req.get("chunk_method"):
+            if chunk_num == 0:
+                dataset_updating_data['parser_id'] = req["chunk_method"]
+            else:
+                construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document "
+                                                                       "in this dataset, so you cannot "
+                                                                       "change the chunk method.")
+        # convert the photo parameter to avatar
+        if req.get("photo"):
+            dataset_updating_data['avatar'] = req["photo"]
+
+        # layout_recognize
+        if 'layout_recognize' in req:
+            if 'parser_config' not in dataset_updating_data:
+                dataset_updating_data['parser_config'] = {}
+            dataset_updating_data['parser_config']['layout_recognize'] = req['layout_recognize']
+
+        # TODO: updating use_raptor needs to construct a class
+
         # 6 parameters
-        for key in ['name', 'language', 'description', 'permission', 'id', 'token_num', 'photo', 'layout_recognize']:
-            # convert the photo parameter to avatar
-            if key == 'photo' and req.get(key):
-                dataset_updating_data['avatar'] = req[key]
-
-            if key == 'layout_recognize' and req.get(key):
-                dataset_updating_data['parser_config'][key] = req[key]
-
+        for key in ['name', 'language', 'description', 'permission', 'id', 'token_num']:
             if key in req:
                 dataset_updating_data[key] = req.get(key)
 
@@ -249,8 +258,8 @@ def update_dataset(dataset_id):
                                                                                "Please check the status of RAGFlow "
                                                                                "server and try again!")
 
-        e, dataset = KnowledgebaseService.get_by_id(dataset.id)
-        if not e:
+        exist, dataset = KnowledgebaseService.get_by_id(dataset.id)
+        if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR, message="Failed to get the dataset "
                                                                           "using the dataset ID.")
 
