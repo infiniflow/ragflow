@@ -54,6 +54,7 @@ import {
 } from './interface';
 import { ChatModelState } from './model';
 import { isConversationIdExist } from './utils';
+import {public_path} from "@/utils/api";
 
 export const useSelectCurrentDialog = () => {
   const currentDialog: IDialog = useSelector(
@@ -630,6 +631,7 @@ export const useSendMessage = (
     handlePressEnter,
     handleInputChange,
     value,
+    setValue,
     loading: !done,
   };
 };
@@ -761,6 +763,10 @@ export const useGetSendButtonDisabled = () => {
   const { dialogId, conversationId } = useGetChatSearchParams();
 
   return dialogId === '' && conversationId === '';
+};
+
+export const useSendButtonDisabled = (value: string) => {
+  return value === '';
 };
 //#endregion
 

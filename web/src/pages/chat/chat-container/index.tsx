@@ -14,7 +14,7 @@ import {
   useFetchConversationOnMount,
   useGetFileIcon,
   useGetSendButtonDisabled,
-  useSelectConversationLoading,
+  useSelectConversationLoading, useSendButtonDisabled,
   useSendMessage,
 } from '../hooks';
 import MarkdownContent from '../markdown-content';
@@ -87,7 +87,7 @@ const MessageItem = ({
           )}
           <Flex vertical gap={8} flex={1}>
             <b>{isAssistant ? '' : userInfo.nickname}</b>
-            <div className={styles.messageText}>
+            <div className={isAssistant ? styles.messageText : styles.messageUserText}>
               <MarkdownContent
                 content={content}
                 reference={reference}
@@ -157,6 +157,7 @@ const ChatContainer = () => {
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   const disabled = useGetSendButtonDisabled();
+  const sendDisabled = useSendButtonDisabled(value);
   useGetFileIcon();
   const loading = useSelectConversationLoading();
   const { t } = useTranslate('chat');
@@ -196,7 +197,7 @@ const ChatContainer = () => {
               type="primary"
               onClick={handlePressEnter}
               loading={sendLoading}
-              disabled={disabled}
+              disabled={sendDisabled}
             >
               {t('send')}
             </Button>

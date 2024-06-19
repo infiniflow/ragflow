@@ -133,6 +133,10 @@ export const useSelectCurrentSharedConversation = (conversationId: string) => {
   };
 };
 
+export const useSendButtonDisabled = (value: string) => {
+  return value === '';
+};
+
 export const useSendSharedMessage = (
   conversation: IClientConversation,
   addNewestConversation: (message: string) => void,
