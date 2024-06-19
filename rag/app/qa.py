@@ -19,7 +19,9 @@ from openpyxl import load_workbook
 from rag.nlp import is_english, random_choices, find_codec, qbullets_category, add_positions, has_qbullet
 from rag.nlp import rag_tokenizer, tokenize_table
 from rag.settings import cron_logger
-from deepdoc.parser import PdfParser, ExcelParser
+from deepdoc.parser import PdfParser, ExcelParser, DocxParser
+from docx import Document
+from PIL import Image
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
         if not binary:
@@ -119,7 +121,99 @@ class Pdf(PdfParser):
         if last_q:
             qai_list.append((last_q, last_a, *self.crop(last_tag, need_position=True)))
         return qai_list, tbls
-    
+class Docx(DocxParser):
+    def __init__(self):
+        pass
+    def get_picture(self, document, paragraph):
+        img = paragraph._element.xpath('.//pic:pic')
+        if not img:
+            return None
+        img = img[0]
+        embed = img.xpath('.//a:blip/@r:embed')[0]
+        related_part = document.part.related_parts[embed]
+        image = related_part.image
+        image = Image.open(BytesIO(image.blob))
+        return image
+    def concat_img(self, img1, img2):
+        if img1 and not img2:
+            return img1
+        if not img1 and img2:
+            return img2
+        if not img1 and not img2:
+            return None
+        width1, height1 = img1.size
+        width2, height2 = img2.size
+
+        new_width = max(width1, width2)
+        new_height = height1 + height2
+        new_image = Image.new('RGB', (new_width, new_height))
+
+        new_image.paste(img1, (0, 0))
+        new_image.paste(img2, (0, height1))
+
+        return new_image
+
+    def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
+        self.doc = Document(
+            filename) if not binary else Document(BytesIO(binary))
+        pn = 0
+        last_answer, last_image = "", None
+        question_stack, level_stack = [], []
+        qai_list = []
+        for p in self.doc.paragraphs:
+            if pn > to_page:
+                break
+            question_level, p_text = 0, ''
+            if from_page <= pn < to_page and p.text.strip():
+                question_level, p_text = docxQuestionLevel(p)
+            if not question_level or question_level > 6: # not a question
+                last_answer = f'{last_answer}\n{p_text}'
+                current_image = self.get_picture(self.doc, p)
+                last_image = self.concat_img(last_image, current_image)
+            else:   # is a question
+                if last_answer or last_image:
+                    sum_question = '\n'.join(question_stack)
+                    if sum_question:
+                        qai_list.append((sum_question, last_answer, last_image))
+                    last_answer, last_image = '', None
+
+                i = question_level
+                while question_stack and i <= level_stack[-1]:
+                    question_stack.pop()
+                    level_stack.pop()
+                question_stack.append(p_text)
+                level_stack.append(question_level)
+            for run in p.runs:
+                if 'lastRenderedPageBreak' in run._element.xml:
+                    pn += 1
+                    continue
+                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
+                    pn += 1
+        if last_answer:
+            sum_question = '\n'.join(question_stack)
+            if sum_question:
+                qai_list.append((sum_question, last_answer, last_image))
+                
+        tbls = []
+        for tb in self.doc.tables:
+            html= "<table>"
+            for r in tb.rows:
+                html += "<tr>"
+                i = 0
+                while i < len(r.cells):
+                    span = 1
+                    c = r.cells[i]
+                    for j in range(i+1, len(r.cells)):
+                        if c.text == r.cells[j].text:
+                            span += 1
+                            i = j
+                    i += 1
+                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                html += "</tr>"
+            html += "</table>"
+            tbls.append(((None, html), ""))
+        return qai_list, tbls
+
 def rmPrefix(txt):
     return re.sub(
         r"^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+", "", txt.strip(), flags=re.IGNORECASE)
@@ -136,6 +230,16 @@ def beAdocPdf(d, q, a, eng, image, poss):
     add_positions(d, poss)
     return d
 
+def beAdocDocx(d, q, a, eng, image):
+    qprefix = "Question: " if eng else "问题："
+    aprefix = "Answer: " if eng else "回答："
+    d["content_with_weight"] = "\t".join(
+        [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
+    d["content_ltks"] = rag_tokenizer.tokenize(q)
+    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+    d["image"] = image
+    return d
+
 def beAdoc(d, q, a, eng):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
@@ -150,6 +254,11 @@ def mdQuestionLevel(s):
     match = re.match(r'#*', s)
     return (len(match.group(0)), s.lstrip('#').lstrip()) if match else (0, s)
 
+def docxQuestionLevel(p):
+    if p.style.name.startswith('Heading'):
+        return int(p.style.name.split(' ')[-1]), re.sub(r"\u3000", " ", p.text).strip()
+    else:
+        return 0, re.sub(r"\u3000", " ", p.text).strip()
 
 def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """
@@ -278,9 +387,17 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
             if sum_question:
                 res.append(beAdoc(deepcopy(doc), sum_question, last_answer, eng))
         return res
+    elif re.search(r"\.docx$", filename, re.IGNORECASE):
+        docx_parser = Docx()
+        qai_list, tbls = docx_parser(filename, binary,
+                                    from_page=0, to_page=10000, callback=callback)
+        res = tokenize_table(tbls, doc, eng)
+        for q, a, image in qai_list:
+            res.append(beAdocDocx(deepcopy(doc), q, a, eng, image))
+        return res
 
     raise NotImplementedError(
-        "Excel, csv(txt), pdf and markdown format files are supported.")
+        "Excel, csv(txt), pdf, markdown and docx format files are supported.")
 
 
 if __name__ == "__main__":
