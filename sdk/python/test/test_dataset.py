@@ -432,7 +432,6 @@ class TestDataset(TestSdk):
         ragflow.create_dataset("test_update_dataset_with_empty_parameter")
         params = {}
         res = ragflow.update_dataset("test_update_dataset_with_empty_parameter", **params)
-        print(res)
         assert (res['code'] == RetCode.DATA_ERROR
                 and res['message'] == 'Please input at least one parameter that you want to update!')
 
