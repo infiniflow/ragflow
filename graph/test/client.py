@@ -18,6 +18,7 @@ import os
 from functools import partial
 import readline
 from graph.canvas import Canvas
+from graph.settings import DEBUG
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -28,21 +29,21 @@ if __name__ == '__main__':
     )
     parser.add_argument('-s', '--dsl', default=dsl_default_path, help="input dsl", action='store', required=True)
     parser.add_argument('-t', '--tenant_id', default=False, help="Tenant ID", action='store', required=True)
-    parser.add_argument('-m', '--stream', default=False, help="Stream output", action='store_true', required=True)
+    parser.add_argument('-m', '--stream', default=False, help="Stream output", action='store_true', required=False)
     args = parser.parse_args()
 
     canvas = Canvas(open(args.dsl, "r").read(), args.tenant_id)
     while True:
         ans = canvas.run(stream=args.stream)
-        print("==================== Bot =====================\n>    ")
+        print("==================== Bot =====================\n>    ", end='')
         if args.stream and isinstance(ans, partial):
             cont = ""
             for an in ans():
-                print(an["content"][len(cont):], end='')
+                print(an["content"][len(cont):], end='', flush=True)
                 cont = an["content"]
         else:
             print(ans["content"])
 
-        print(canvas.path)
-        question = input("==================== User =====================\n> ")
+        if DEBUG: print(canvas.path)
+        question = input("\n==================== User =====================\n> ")
         canvas.add_user_input(question)

@@ -4,7 +4,7 @@
                 "obj":{
                     "component_name": "Begin",
                     "params": {
-                      "prologue": "Hi there!"
+                      "prologue": "Hi! How can I help you?"
                     }
                 },
                 "downstream": ["answer:0"],

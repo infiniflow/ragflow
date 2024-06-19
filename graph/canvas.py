@@ -24,7 +24,7 @@ import pandas as pd
 
 from graph.component import component_class
 from graph.component.base import ComponentBase
-from graph.settings import flow_logger
+from graph.settings import flow_logger, DEBUG
 
 
 class Canvas(ABC):
@@ -170,14 +170,14 @@ class Canvas(ABC):
                 if cpn.component_name == "Answer":
                     self.answer.append(c)
                 else:
-                    print("RUN: ", c)
+                    if DEBUG: print("RUN: ", c)
                     ans = cpn.run(self.history, **kwargs)
                     self.path[-1].append(c)
                 ran += 1
 
         prepare2run(self.components[self.path[-2][-1]]["downstream"])
         while ran < len(self.path[-1]):
-            print(ran, self.path)
+            if DEBUG: print(ran, self.path)
             cpn_id = self.path[-1][ran]
             cpn = self.get_component(cpn_id)
             if not cpn["downstream"]: break
