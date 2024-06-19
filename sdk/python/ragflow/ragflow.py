@@ -17,11 +17,9 @@ import os
 import requests
 import json
 
-from httpx import HTTPError
-
 
 class RAGFlow:
-    def __init__(self, user_key, base_url, version = 'v1'):
+    def __init__(self, user_key, base_url, version='v1'):
         '''
         api_url: http://<host_address>/api/v1
         dataset_url: http://<host_address>/api/v1/dataset
@@ -41,14 +39,10 @@ class RAGFlow:
 
     def delete_dataset(self, dataset_name):
         dataset_id = self.find_dataset_id_by_name(dataset_name)
-        if not dataset_id:
-            return {"success": False, "message": "Dataset not found."}
 
-        res = requests.delete(f"{self.dataset_url}/{dataset_id}", headers=self.authorization_header)
-        if res.status_code == 200:
-            return {"success": True, "message": "Dataset deleted successfully!"}
-        else:
-            return {"success": False, "message": f"Other status code: {res.status_code}"}
+        endpoint = f"{self.dataset_url}/{dataset_id}"
+        res = requests.delete(endpoint, headers=self.authorization_header)
+        return res.json()
 
     def find_dataset_id_by_name(self, dataset_name):
         res = requests.get(self.dataset_url, headers=self.authorization_header)
@@ -64,42 +58,18 @@ class RAGFlow:
             "orderby": orderby,
             "desc": desc
         }
-        try:
-            response = requests.get(url=self.dataset_url, params=params, headers=self.authorization_header)
-            response.raise_for_status()  # if it is not 200
-            original_data = response.json()
-            # TODO: format the data
-            # print(original_data)
-            # # Process the original data into the desired format
-            # formatted_data = {
-            #     "datasets": [
-            #         {
-            #             "id": dataset["id"],
-            #             "created": dataset["create_time"],  # Adjust the key based on the actual response
-            #             "fileCount": dataset["doc_num"],  # Adjust the key based on the actual response
-            #             "name": dataset["name"]
-            #         }
-            #         for dataset in original_data
-            #     ]
-            # }
-            return response.status_code, original_data
-        except HTTPError as http_err:
-            print(f"HTTP error occurred: {http_err}")
-        except Exception as err:
-            print(f"An error occurred: {err}")
+        response = requests.get(url=self.dataset_url, params=params, headers=self.authorization_header)
+        return response.json()
 
-    def get_dataset(self, dataset_id):
+    def get_dataset(self, dataset_name):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
         endpoint = f"{self.dataset_url}/{dataset_id}"
-        response = requests.get(endpoint)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return None
+        response = requests.get(endpoint, headers=self.authorization_header)
+        return response.json()
 
-    def update_dataset(self, dataset_id, params):
+    def update_dataset(self, dataset_name, **params):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
+
         endpoint = f"{self.dataset_url}/{dataset_id}"
-        response = requests.put(endpoint, json=params)
-        if response.status_code == 200:
-            return True
-        else:
-            return False
+        response = requests.put(endpoint, json=params, headers=self.authorization_header)
+        return response.json()
