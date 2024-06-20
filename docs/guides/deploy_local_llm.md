@@ -157,3 +157,7 @@ Click on your logo **>** **Model Providers** **>** **System Model Settings** to 
 Update your chat model accordingly in **Chat Configuration**:
 
 > If your local model is an embedding model, update it on the configruation page of your knowledge base.
+
+## Deploy a local model using IPEX-LLM
+
+IPEX-LLM([IPEX-LLM](https://github.com/intel-analytics/ipex-llm)) is a PyTorch library for running LLM on Intel CPU and GPU (e.g., local PC with iGPU, discrete GPU such as Arc, Flex and Max) with very low latency
