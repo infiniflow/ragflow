@@ -19,7 +19,7 @@ import re
 
 from api.db import ParserType
 from io import BytesIO
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, docx_question_level
 from deepdoc.parser import PdfParser, PlainParser
 from rag.utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
@@ -111,7 +111,7 @@ class Docx(DocxParser):
                 break
             question_level, p_text = 0, ''
             if from_page <= pn < to_page and p.text.strip():
-                question_level, p_text = docxQuestionLevel(p)
+                question_level, p_text = docx_question_level(p)
             if not question_level or question_level > 6: # not a question
                 last_answer = f'{last_answer}\n{p_text}'
                 current_image = self.get_picture(self.doc, p)
@@ -159,12 +159,6 @@ class Docx(DocxParser):
             html += "</table>"
             tbls.append(((None, html), ""))
         return ti_list, tbls
-
-def docxQuestionLevel(p):
-    if p.style.name.startswith('Heading'):
-        return int(p.style.name.split(' ')[-1]), re.sub(r"\u3000", " ", p.text).strip()
-    else:
-        return 0, re.sub(r"\u3000", " ", p.text).strip()
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):

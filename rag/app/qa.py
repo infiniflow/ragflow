@@ -16,7 +16,7 @@ from io import BytesIO
 from timeit import default_timer as timer
 from nltk import word_tokenize
 from openpyxl import load_workbook
-from rag.nlp import is_english, random_choices, find_codec, qbullets_category, add_positions, has_qbullet
+from rag.nlp import is_english, random_choices, find_codec, qbullets_category, add_positions, has_qbullet, docx_question_level
 from rag.nlp import rag_tokenizer, tokenize_table
 from rag.settings import cron_logger
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
@@ -165,7 +165,7 @@ class Docx(DocxParser):
                 break
             question_level, p_text = 0, ''
             if from_page <= pn < to_page and p.text.strip():
-                question_level, p_text = docxQuestionLevel(p)
+                question_level, p_text = docx_question_level(p)
             if not question_level or question_level > 6: # not a question
                 last_answer = f'{last_answer}\n{p_text}'
                 current_image = self.get_picture(self.doc, p)
@@ -253,12 +253,6 @@ def beAdoc(d, q, a, eng):
 def mdQuestionLevel(s):
     match = re.match(r'#*', s)
     return (len(match.group(0)), s.lstrip('#').lstrip()) if match else (0, s)
-
-def docxQuestionLevel(p):
-    if p.style.name.startswith('Heading'):
-        return int(p.style.name.split(' ')[-1]), re.sub(r"\u3000", " ", p.text).strip()
-    else:
-        return 0, re.sub(r"\u3000", " ", p.text).strip()
 
 def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """
