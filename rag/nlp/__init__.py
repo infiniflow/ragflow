@@ -497,3 +497,9 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
             add_chunk(sec[s: e], pos)
 
     return cks
+
+def docx_question_level(p):
+    if p.style.name.startswith('Heading'):
+        return int(p.style.name.split(' ')[-1]), re.sub(r"\u3000", " ", p.text).strip()
+    else:
+        return 0, re.sub(r"\u3000", " ", p.text).strip()
