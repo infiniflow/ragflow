@@ -116,8 +116,7 @@ This method lists the created datasets for a specific user.
             "update_date": "Mon, 17 Jun 2024 16:00:05 GMT",
             "update_time": 1718611205876,
             "vector_similarity_weight": 0.3
-        },
-        # ... additional datasets ...
+        }
     ],
     "message": "List datasets successfully!"
 }
@@ -172,26 +171,25 @@ This method gets the details of the specific dataset.
 
 ```json
 {
-  "code": 0,
-  "data": 
-  {
-    "avatar": null,
-    "chunk_num": 0, 
-    "description": null,
-    "doc_num": 0,
-    "embd_id": "BAAI/bge-large-zh-v1.5",
-    "id": "060323022e3511efa8263043d7ee537e", 
-    "language": "Chinese", 
-    "name": "test(1)", 
-    "parser_config": 
-    {
-      "pages": [[1, 1000000]]
-    }, 
-    "parser_id": "naive", 
-    "permission": "me", 
-    "token_num": 0
+    "code": 0,
+    "data": {
+        "avatar": null,
+        "chunk_num": 0, 
+        "description": null,
+        "doc_num": 0,
+        "embd_id": "BAAI/bge-large-zh-v1.5",
+        "id": "060323022e3511efa8263043d7ee537e", 
+        "language": "Chinese", 
+        "name": "test(1)", 
+        "parser_config": 
+        {
+            "pages": [[1, 1000000]]
+        }, 
+        "parser_id": "naive", 
+        "permission": "me", 
+        "token_num": 0
   }, 
-  "message": "success"
+    "message": "success"
 }
 ```
 
@@ -226,36 +224,54 @@ You are required to input at least one parameter.
 
 ### Response 
 
+### Successful response
+
 ```json
 {
-  "code": 0,
-  "data": {
-    "avatar": null,
-    "chunk_num": 0,
-    "create_date": "Wed, 19 Jun 2024 20:33:34 GMT",
-    "create_time": 1718800414518, 
-    "created_by": "b48110a0286411ef994a3043d7ee537e", 
-    "description": "new_description1", 
-    "doc_num": 0, 
-    "embd_id": "BAAI/bge-large-zh-v1.5", 
-    "id": "24f9f17a2e3811ef820e3043d7ee537e", 
-    "language": "English", 
-    "name": "new_name", 
-    "parser_config": {
-      "pages": [
-        [1, 1000000]
-      ], 
-    },
-    "parser_id": "naive", 
-    "permission": "me", 
-    "similarity_threshold": 0.2, 
-    "status": "1", 
-    "tenant_id": "b48110a0286411ef994a3043d7ee537e", 
-    "token_num": 0, 
-    "update_date": "Wed, 19 Jun 2024 20:33:34 GMT", 
-    "update_time": 1718800414529, 
-    "vector_similarity_weight": 0.3
+    "code": 0,
+    "data": {
+        "avatar": null,
+        "chunk_num": 0,
+        "create_date": "Wed, 19 Jun 2024 20:33:34 GMT",
+        "create_time": 1718800414518, 
+        "created_by": "b48110a0286411ef994a3043d7ee537e", 
+        "description": "new_description1", 
+        "doc_num": 0, 
+        "embd_id": "BAAI/bge-large-zh-v1.5", 
+        "id": "24f9f17a2e3811ef820e3043d7ee537e", 
+        "language": "English", 
+        "name": "new_name", 
+        "parser_config": 
+        {
+            "pages": [[1, 1000000]]
+        },
+        "parser_id": "naive", 
+        "permission": "me", 
+        "similarity_threshold": 0.2, 
+        "status": "1", 
+        "tenant_id": "b48110a0286411ef994a3043d7ee537e", 
+        "token_num": 0, 
+        "update_date": "Wed, 19 Jun 2024 20:33:34 GMT", 
+        "update_time": 1718800414529, 
+        "vector_similarity_weight": 0.3
   }, 
-  "message": "success"
+    "message": "success"
+}
+```
+
+### Response for the operating error
+
+```json
+{
+    "code": 103, 
+    "message": "Only the owner of knowledgebase is authorized for this operation!"
+}
+```
+
+### Response for no parameter
+```json
+{ 
+    "code": 102, 
+    "message": "Please input at least one parameter that you want to update!"
 }
 ```
