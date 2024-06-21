@@ -471,7 +471,9 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
         tnum = num_tokens_from_string(t)
         if tnum < 8:
             pos = ""
+        # Ensure that the length of the merged chunk does not exceed chunk_token_num  
         if tk_nums[-1] > chunk_token_num:
+
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
