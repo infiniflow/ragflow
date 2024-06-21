@@ -274,6 +274,14 @@ Keep the Ollama service on and open another terminal and run `./ollama pull <mod
   ```cmd
   ollama run qwen2:latest
   ```
-### 4 Configure RAGflow to use IPEX-LLM accelerated Ollama
+### 4. Configure RAGflow to use IPEX-LLM accelerated Ollama
 
-The confiugraiton follows the steps in Ollama section 4 
+The confiugraiton follows the steps in 
+
+Ollama Section 4 [Add Ollama](#4-add-ollama), 
+
+Section 5 [Complete basic Ollama settings](#5-complete-basic-ollama-settings), 
+
+Section 6 [Update System Model Settings](#6-update-system-model-settings), 
+
+Section 7 [Update Chat Configuration](#7-update-chat-configuration)
