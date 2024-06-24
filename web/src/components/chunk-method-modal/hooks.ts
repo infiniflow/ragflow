@@ -16,11 +16,12 @@ const ParserListMap = new Map([
       'laws',
       'presentation',
       'one',
+      'qa',
     ],
   ],
   [
     ['doc', 'docx'],
-    ['naive', 'resume', 'book', 'laws', 'one'],
+    ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'manual'],
   ],
   [
     ['xlsx', 'xls'],
@@ -33,6 +34,8 @@ const ParserListMap = new Map([
   ],
   [['txt'], ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'table']],
   [['csv'], ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'table']],
+  [['md'], ['naive', 'qa']],
+  [['json'], ['naive']],
 ]);
 
 const getParserList = (
