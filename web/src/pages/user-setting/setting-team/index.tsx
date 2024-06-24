@@ -15,7 +15,9 @@ const UserSettingTeam = () => {
           <span>
             {userInfo.nickname} {t('workspace')}
           </span>
-          <Button type="primary">{t('upgrade')}</Button>
+          <Button type="primary" disabled>
+            {t('upgrade')}
+          </Button>
         </Flex>
       </Card>
     </div>
