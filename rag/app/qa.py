@@ -100,27 +100,69 @@ class Pdf(PdfParser):
         last_index = -1
         last_box = {'text':''}
         last_bull = None
+        def sort_key(element):
+            tbls_pn = element[1][0][0]
+            tbls_top = element[1][0][3]
+            return tbls_pn, tbls_top
+        tbls.sort(key=sort_key)
+        tbl_index = 0
+        last_pn, last_bottom = 0, 0
+        tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = 1, 0, 0, 0, 0, '@@0\t0\t0\t0\t0##', ''
         for box in self.boxes:
             section, line_tag = box['text'], self._line_tag(box, zoomin)
             has_bull, index = has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list)
             last_box, last_index, last_bull = box, index, has_bull
+            line_pn = float(line_tag.lstrip('@@').split('\t')[0])
+            line_top = float(line_tag.rstrip('##').split('\t')[3])
+            tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
             if not has_bull:  # No question bullet
                 if not last_q:
+                    if tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top):    # image passed
+                        tbls_index += 1
                     continue
                 else:
-                    last_a = f'{last_a}{section}'
-                    last_tag = f'{last_tag}{line_tag}'
+                    sum_tag = line_tag
+                    sum_section = section
+                    while ((tbl_pn == last_pn and tbl_top>= last_bottom) or (tbl_pn > last_pn)) \
+                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)):    # add image at the middle of current answer
+                        sum_tag = f'{tbl_tag}{sum_tag}'
+                        sum_section = f'{tbl_text}{sum_section}'
+                        tbl_index += 1
+                        tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
+                    last_a = f'{last_a}{sum_section}'
+                    last_tag = f'{last_tag}{sum_tag}'
             else:
                 if last_q:
-                    qai_list.append((last_q, last_a, *self.crop(last_tag, need_position=True)))
+                    while ((tbl_pn == last_pn and tbl_top>= last_bottom) or (tbl_pn > last_pn)) \
+                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)):    # add image at the end of last answer
+                        last_tag = f'{last_tag}{tbl_tag}'
+                        last_a = f'{last_a}{tbl_text}'
+                        tbl_index += 1
+                        tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
+                    image, poss = self.crop(last_tag, need_position=True)
+                    qai_list.append((last_q, last_a, image, poss))
                     last_q, last_a, last_tag = '', '', ''
                 last_q = has_bull.group()
                 _, end = has_bull.span()
                 last_a = section[end:]
                 last_tag = line_tag
+            last_bottom = float(line_tag.rstrip('##').split('\t')[4])
+            last_pn = line_pn
         if last_q:
             qai_list.append((last_q, last_a, *self.crop(last_tag, need_position=True)))
         return qai_list, tbls
+    def get_tbls_info(self, tbls, tbl_index):
+        if tbl_index >= len(tbls):
+            return 1, 0, 0, 0, 0, '@@0\t0\t0\t0\t0##', ''
+        tbl_pn = tbls[tbl_index][1][0][0]+1
+        tbl_left = tbls[tbl_index][1][0][1]
+        tbl_right = tbls[tbl_index][1][0][2]
+        tbl_top = tbls[tbl_index][1][0][3]
+        tbl_bottom = tbls[tbl_index][1][0][4]
+        tbl_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
+            .format(tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom)
+        tbl_text = ''.join(tbls[tbl_index][0][1])
+        return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text
 class Docx(DocxParser):
     def __init__(self):
         pass
@@ -324,14 +366,11 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
-        count = 0
         qai_list, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=0, to_page=10000, callback=callback)
         
-        res = tokenize_table(tbls, doc, eng)
 
         for q, a, image, poss in qai_list:
-            count += 1
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
