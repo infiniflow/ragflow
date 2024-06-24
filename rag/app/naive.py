@@ -17,7 +17,7 @@ from timeit import default_timer as timer
 import re
 from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec
-from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser
+from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser
 from rag.settings import cron_logger
 from rag.utils import num_tokens_from_string
 
@@ -153,7 +153,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                     txt += l
         sections = []
         for sec in txt.split("\n"):
-            if num_tokens_from_string(sec) > 10 * parser_config.get("chunk_token_num", 128):
+            if num_tokens_from_string(sec) > 10 * int(parser_config.get("chunk_token_num", 128)):
                 sections.append((sec[:int(len(sec)/2)], ""))
                 sections.append((sec[int(len(sec)/2):], ""))
             else:
@@ -164,6 +164,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
+        sections = [(l, "") for l in sections if l]
+        callback(0.8, "Finish parsing.")
+
+    elif re.search(r"\.json$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        sections = JsonParser(int(parser_config.get("chunk_token_num", 128)))(binary)
         sections = [(l, "") for l in sections if l]
         callback(0.8, "Finish parsing.")
 
@@ -181,8 +187,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     st = timer()
     chunks = naive_merge(
-        sections, parser_config.get(
-            "chunk_token_num", 128), parser_config.get(
+        sections, int(parser_config.get(
+            "chunk_token_num", 128)), parser_config.get(
             "delimiter", "\n!?。；！？"))
 
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))

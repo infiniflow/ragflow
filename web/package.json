@@ -24,6 +24,7 @@
     "dayjs": "^1.11.10",
     "elkjs": "^0.9.3",
     "eventsource-parser": "^1.1.2",
+    "human-id": "^4.1.1",
     "i18next": "^23.7.16",
     "i18next-browser-languagedetector": "^8.0.0",
     "js-base64": "^3.7.5",

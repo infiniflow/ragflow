@@ -27,7 +27,7 @@
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/jEfRUwEYEV">Discord</a> |
+  <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
@@ -38,9 +38,14 @@
 ## 🎮 Demo 试用
 
 请登录网址 [https://demo.ragflow.io](https://demo.ragflow.io) 试用 demo。
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
+</div>
+
 
 ## 📌 近期更新
 
+- 2024-06-14 Q&A 解析方式支持 PDF 文件。
 - 2024-06-06 支持 [Self-RAG](https://huggingface.co/papers/2310.11511) ，在对话设置里面默认勾选。
 - 2024-05-30 集成 [BCE](https://github.com/netease-youdao/BCEmbedding) 和 [BGE](https://github.com/FlagOpen/FlagEmbedding) 重排序模型。
 - 2024-05-28 集成大模型 Baichuan 和火山方舟。
@@ -262,7 +267,7 @@ $ bash ./entrypoint.sh
 $ cd web
 $ npm install --registry=https://registry.npmmirror.com --force
 $ vim .umirc.ts
-# 修改proxy.target为127.0.0.1:9380
+# 修改proxy.target为http://127.0.0.1:9380
 $ npm run dev 
 ```
 

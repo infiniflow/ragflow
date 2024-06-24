@@ -29,7 +29,8 @@ EmbeddingModel = {
     "Youdao": YoudaoEmbed,
     "BaiChuan": BaiChuanEmbed,
     "Jina": JinaEmbed,
-    "BAAI": DefaultEmbedding
+    "BAAI": DefaultEmbedding,
+    "Mistral": MistralEmbed
 }
 
 
@@ -51,8 +52,10 @@ ChatModel = {
     "Xinference": XinferenceChat,
     "Moonshot": MoonshotChat,
     "DeepSeek": DeepSeekChat,
+    "VolcEngine": VolcEngineChat,
     "BaiChuan": BaiChuanChat,
-    "MiniMax": MiniMaxChat
+    "MiniMax": MiniMaxChat,
+    "Mistral": MistralChat
 }
 
 

@@ -1,0 +1,4 @@
+
+
+API_KEY = 'ImFhMmJhZmUwMmQxNzExZWZhZDdmMzA0M2Q3ZWU1MzdlIg.ZnDsIQ.u-0-_qCRU6a4WICxyAPsjaafyOo'
+HOST_ADDRESS = 'http://127.0.0.1:9380'

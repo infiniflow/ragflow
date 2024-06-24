@@ -7,6 +7,7 @@ import {
   useSelectRunDocumentLoading,
   useSetDocumentParser,
   useUploadDocument,
+  useWebCrawl,
 } from '@/hooks/documentHooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
@@ -283,6 +284,37 @@ export const useHandleUploadDocument = () => {
     documentUploadVisible,
     hideDocumentUploadModal,
     showDocumentUploadModal,
+  };
+};
+
+export const useHandleWebCrawl = () => {
+  const {
+    visible: webCrawlUploadVisible,
+    hideModal: hideWebCrawlUploadModal,
+    showModal: showWebCrawlUploadModal,
+  } = useSetModalState();
+  const webCrawl = useWebCrawl();
+
+  const onWebCrawlUploadOk = useCallback(
+    async (name: string, url: string ) => {
+      const ret = await webCrawl(name, url);
+      if (ret === 0) {
+        hideWebCrawlUploadModal();
+        return 0
+      }
+      return -1
+    },
+    [webCrawl, hideWebCrawlUploadModal],
+  );
+
+  const loading = useOneNamespaceEffectsLoading('kFModel', ['web_crawl']);
+
+  return {
+    webCrawlUploadLoading: loading,
+    onWebCrawlUploadOk,
+    webCrawlUploadVisible,
+    hideWebCrawlUploadModal,
+    showWebCrawlUploadModal,
   };
 };
 

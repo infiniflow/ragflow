@@ -1,18 +1,16 @@
-import { ReactComponent as MoreIcon } from '@/assets/svg/more.svg';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
-import { useShowDeleteConfirm } from '@/hooks/commonHooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { formatDate } from '@/utils/date';
 import {
   CalendarOutlined,
-  DeleteOutlined,
   FileTextOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Card, Dropdown, MenuProps, Space } from 'antd';
+import { Avatar, Card, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useNavigate } from 'umi';
 
+import OperateDropdown from '@/components/operate-dropdown';
 import styles from './index.less';
 
 interface IProps {
@@ -22,40 +20,15 @@ interface IProps {
 const KnowledgeCard = ({ item }: IProps) => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const showDeleteConfirm = useShowDeleteConfirm();
   const { t } = useTranslation();
 
-  const removeKnowledge = () => {
+  const removeKnowledge = async () => {
     return dispatch({
       type: 'knowledgeModel/rmKb',
       payload: {
         kb_id: item.id,
       },
     });
-  };
-
-  const handleDelete = () => {
-    showDeleteConfirm({ onOk: removeKnowledge });
-  };
-
-  const items: MenuProps['items'] = [
-    {
-      key: '1',
-      label: (
-        <Space>
-          {t('common.delete')}
-          <DeleteOutlined />
-        </Space>
-      ),
-    },
-  ];
-
-  const handleDropdownMenuClick: MenuProps['onClick'] = ({ domEvent, key }) => {
-    domEvent.preventDefault();
-    domEvent.stopPropagation();
-    if (key === '1') {
-      handleDelete();
-    }
   };
 
   const handleCardClick = () => {
@@ -69,16 +42,7 @@ const KnowledgeCard = ({ item }: IProps) => {
       <div className={styles.container}>
         <div className={styles.content}>
           <Avatar size={34} icon={<UserOutlined />} src={item.avatar} />
-          <Dropdown
-            menu={{
-              items,
-              onClick: handleDropdownMenuClick,
-            }}
-          >
-            <span className={styles.delete}>
-              <MoreIcon />
-            </span>
-          </Dropdown>
+          <OperateDropdown deleteItem={removeKnowledge}></OperateDropdown>
         </div>
         <div className={styles.titleWrapper}>
           <span className={styles.title}>{item.name}</span>

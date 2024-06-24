@@ -12,43 +12,64 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-#
+
 import os
-from abc import ABC
 import requests
+import json
 
 
-class RAGFLow(ABC):
-    def __init__(self, user_key, base_url):
+class RAGFlow:
+    def __init__(self, user_key, base_url, version='v1'):
+        '''
+        api_url: http://<host_address>/api/v1
+        dataset_url: http://<host_address>/api/v1/dataset
+        '''
         self.user_key = user_key
-        self.base_url = base_url
+        self.api_url = f"{base_url}/api/{version}"
+        self.dataset_url = f"{self.api_url}/dataset"
+        self.authorization_header = {"Authorization": "{}".format(self.user_key)}
 
-    def create_dataset(self, name):
-        return name
+    def create_dataset(self, dataset_name):
+        """
+        name: dataset name
+        """
+        res = requests.post(url=self.dataset_url, json={"name": dataset_name}, headers=self.authorization_header)
+        result_dict = json.loads(res.text)
+        return result_dict
 
-    def delete_dataset(self, name):
-        return name
+    def delete_dataset(self, dataset_name):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
 
-    def list_dataset(self):
-        endpoint = f"{self.base_url}/api/v1/dataset"
-        response = requests.get(endpoint)
-        if response.status_code == 200:
-            return response.json()['datasets']
-        else:
-            return None
+        endpoint = f"{self.dataset_url}/{dataset_id}"
+        res = requests.delete(endpoint, headers=self.authorization_header)
+        return res.json()
 
-    def get_dataset(self, dataset_id):
-        endpoint = f"{self.base_url}/api/v1/dataset/{dataset_id}"
-        response = requests.get(endpoint)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return None
+    def find_dataset_id_by_name(self, dataset_name):
+        res = requests.get(self.dataset_url, headers=self.authorization_header)
+        for dataset in res.json()['data']:
+            if dataset['name'] == dataset_name:
+                return dataset['id']
+        return None
 
-    def update_dataset(self, dataset_id, params):
-        endpoint = f"{self.base_url}/api/v1/dataset/{dataset_id}"
-        response = requests.put(endpoint, json=params)
-        if response.status_code == 200:
-            return True
-        else:
-            return False
+    def list_dataset(self, offset=0, count=-1, orderby="create_time", desc=True):
+        params = {
+            "offset": offset,
+            "count": count,
+            "orderby": orderby,
+            "desc": desc
+        }
+        response = requests.get(url=self.dataset_url, params=params, headers=self.authorization_header)
+        return response.json()
+
+    def get_dataset(self, dataset_name):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
+        endpoint = f"{self.dataset_url}/{dataset_id}"
+        response = requests.get(endpoint, headers=self.authorization_header)
+        return response.json()
+
+    def update_dataset(self, dataset_name, **params):
+        dataset_id = self.find_dataset_id_by_name(dataset_name)
+
+        endpoint = f"{self.dataset_url}/{dataset_id}"
+        response = requests.put(endpoint, json=params, headers=self.authorization_header)
+        return response.json()

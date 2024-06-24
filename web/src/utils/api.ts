@@ -48,6 +48,7 @@ export default {
   document_thumbnails: `${api_host}/document/thumbnails`,
   get_document_file: `${api_host}/document/get`,
   document_upload: `${api_host}/document/upload`,
+  web_crawl: `${api_host}/document/web_crawl`,
 
   // chat
   setDialog: `${api_host}/dialog/set`,
@@ -89,5 +90,5 @@ export default {
   removeCanvas: `${api_host}/canvas/rm`,
   setCanvas: `${api_host}/canvas/set`,
   resetCanvas: `${api_host}/canvas/reset`,
-  runCanvas: `${api_host}/canvas/run`,
+  runCanvas: `${api_host}/canvas/completion`,
 };

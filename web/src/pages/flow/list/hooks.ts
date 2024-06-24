@@ -1,6 +1,7 @@
 import { useSetModalState } from '@/hooks/commonHooks';
 import { useFetchFlowList, useSetFlow } from '@/hooks/flow-hooks';
 import { useCallback, useState } from 'react';
+import { useNavigate } from 'umi';
 import { dsl } from '../mock';
 
 export const useFetchDataOnMount = () => {
@@ -17,16 +18,18 @@ export const useSaveFlow = () => {
     showModal: showFileRenameModal,
   } = useSetModalState();
   const { loading, setFlow } = useSetFlow();
+  const navigate = useNavigate();
 
   const onFlowOk = useCallback(
     async (title: string) => {
       const ret = await setFlow({ title, dsl });
 
-      if (ret === 0) {
+      if (ret?.retcode === 0) {
         hideFlowSettingModal();
+        navigate(`/flow/${ret.data.id}`);
       }
     },
-    [setFlow, hideFlowSettingModal],
+    [setFlow, hideFlowSettingModal, navigate],
   );
 
   const handleShowFlowSettingModal = useCallback(

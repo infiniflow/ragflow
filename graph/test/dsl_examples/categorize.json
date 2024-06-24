@@ -1,0 +1,45 @@
+{
+  "components": {
+            "begin": {
+                "obj":{
+                    "component_name": "Begin",
+                    "params": {
+                      "prologue": "Hi there!"
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": []
+            },
+            "answer:0": {
+                "obj": {
+                    "component_name": "Answer",
+                    "params": {}
+                },
+                "downstream": ["categorize:0"],
+                "upstream": ["begin"]
+            },
+            "categorize:0": {
+                "obj": {
+                    "component_name": "Categorize",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "category_description": {
+                        "product_related": {
+                          "description": "The question is about the product usage, appearance and how it works.",
+                          "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?"
+                        },
+                        "others": {
+                          "description": "The question is not about the product usage, appearance and how it works.",
+                          "examples": "How are you doing?\nWhat is your name?\nAre you a robot?\nWhat's the weather?\nWill it rain?"
+                        }
+                      }
+                    }
+                },
+                "downstream": [],
+                "upstream": ["answer:0"]
+            }
+  },
+  "history": [],
+  "path": [],
+  "answer": []
+}

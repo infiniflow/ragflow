@@ -136,8 +136,11 @@ def set():
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
         if not tenant_id:
             return get_data_error_result(retmsg="Tenant not found!")
+        
+        embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = TenantLLMService.model_instance(
-            tenant_id, LLMType.EMBEDDING.value)
+            tenant_id, LLMType.EMBEDDING.value, embd_id)
+        
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
@@ -221,9 +224,11 @@ def create():
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
         if not tenant_id:
             return get_data_error_result(retmsg="Tenant not found!")
-
+        
+        embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = TenantLLMService.model_instance(
-            tenant_id, LLMType.EMBEDDING.value)
+            tenant_id, LLMType.EMBEDDING.value, embd_id)
+        
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         DocumentService.increment_chunk_num(req["doc_id"], doc.kb_id, c, 1, 0)
         v = 0.1 * v[0] + 0.9 * v[1]

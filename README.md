@@ -27,7 +27,7 @@
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/jEfRUwEYEV">Discord</a> |
+  <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
@@ -57,8 +57,14 @@
 ## 🎮 Demo
 
 Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
+</div>
+
 
 ## 📌 Latest Updates
+
+- 2024-06-14 Supports PDF in the Q&A parsing method.
 
 - 2024-06-06 Supports [Self-RAG](https://huggingface.co/papers/2310.11511), which is enabled by default in dialog settings.
 - 2024-05-30 Integrates [BCE](https://github.com/netease-youdao/BCEmbedding) and [BGE](https://github.com/FlagOpen/FlagEmbedding) reranker models.
@@ -178,7 +184,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.  
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
-   > With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update the `API_KEY` field with the corresponding API key.
 
    > See [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) for more information.
@@ -293,7 +299,7 @@ To launch the service from source:
    $ cd web
    $ npm install --registry=https://registry.npmmirror.com --force
    $ vim .umirc.ts
-   # Update proxy.target to 127.0.0.1:9380
+   # Update proxy.target to http://127.0.0.1:9380
    $ npm run dev 
    ```
 

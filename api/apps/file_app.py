@@ -331,8 +331,8 @@ def get(file_id):
         e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(retmsg="Document not found!")
-
-        response = flask.make_response(MINIO.get(file.parent_id, file.location))
+        b, n = File2DocumentService.get_minio_address(file_id=file_id)
+        response = flask.make_response(MINIO.get(b, n))
         ext = re.search(r"\.([^.]+)$", file.name)
         if ext:
             if file.type == FileType.VISUAL.value:
@@ -345,7 +345,8 @@ def get(file_id):
         return response
     except Exception as e:
         return server_error_response(e)
-    
+
+
 @manager.route('/mv', methods=['POST'])
 @login_required
 @validate_request("src_file_ids", "dest_file_id")

@@ -64,7 +64,7 @@ export const useSetFlow = () => {
         );
         queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
       }
-      return data?.retcode;
+      return data;
     },
   });
 

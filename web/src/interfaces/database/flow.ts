@@ -1,4 +1,5 @@
 import { Edge, Node } from 'reactflow';
+import { IReference, Message } from './chat';
 
 export type DSLComponents = Record<string, IOperator>;
 
@@ -8,6 +9,8 @@ export interface DSL {
   path?: string[];
   answer?: any[];
   graph?: IGraph;
+  messages: Message[];
+  reference: IReference[];
 }
 
 export interface IOperator {
@@ -32,13 +35,7 @@ export interface IFlow {
   create_date: string;
   create_time: number;
   description: null;
-  dsl: {
-    answer: any[];
-    components: DSLComponents;
-    graph: IGraph;
-    history: any[];
-    path: string[];
-  };
+  dsl: DSL;
   id: string;
   title: string;
   update_date: string;

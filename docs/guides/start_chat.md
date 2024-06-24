@@ -5,7 +5,7 @@ slug: /start_chat
 
 # Start an AI chat
 
-Knowledge base, hallucination-free chat, and file management are three pillars of RAGFlow. Chats in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base and finished file parsing, you can go ahead and start an AI conversation. 
+Knowledge base, hallucination-free chat, and file management are the three pillars of RAGFlow. Chats in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base and finished file parsing, you can go ahead and start an AI conversation. 
 
 ## Start an AI chat
 

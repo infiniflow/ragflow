@@ -29,12 +29,14 @@ import styles from './index.less';
 interface IProps {
   selectedRowKeys: string[];
   showCreateModal(): void;
+  showWebCrawlModal(): void;
   showDocumentUploadModal(): void;
 }
 
 const DocumentToolbar = ({
   selectedRowKeys,
   showCreateModal,
+  showWebCrawlModal,
   showDocumentUploadModal,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
@@ -64,8 +66,21 @@ const DocumentToolbar = ({
         ),
       },
       { type: 'divider' },
+      // {
+      //   key: '2',
+      //   onClick: showWebCrawlModal,
+      //   label: (
+      //     <div>
+      //       <Button type="link">
+      //         <FileTextOutlined />
+      //         {t('webCrawl')}
+      //       </Button>
+      //     </div>
+      //   ),
+      // },
+      { type: 'divider' },
       {
-        key: '2',
+        key: '3',
         onClick: showCreateModal,
         label: (
           <div>

@@ -113,19 +113,24 @@ class RAGFlowDocxParser:
     def __call__(self, fnm, from_page=0, to_page=100000):
         self.doc = Document(fnm) if isinstance(
             fnm, str) else Document(BytesIO(fnm))
-        pn = 0
-        secs = []
+        pn = 0 # parsed page
+        secs = [] # parsed contents
         for p in self.doc.paragraphs:
             if pn > to_page:
                 break
-            if from_page <= pn < to_page and p.text.strip():
-                secs.append((p.text, p.style.name))
+
+            runs_within_single_paragraph = [] # save runs within the range of pages
             for run in p.runs:
-                if 'lastRenderedPageBreak' in run._element.xml:
+                if pn > to_page:
+                    break
+                if from_page <= pn < to_page and p.text.strip():
+                    runs_within_single_paragraph.append(run.text) # append run.text first
+
+                # wrap page break checker into a static method
+                if RAGFlowDocxParser.has_page_break(run._element.xml):
                     pn += 1
-                    continue
-                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
-                    pn += 1
+
+            secs.append(("".join(runs_within_single_paragraph), p.style.name)) # then concat run.text as part of the paragraph
 
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls

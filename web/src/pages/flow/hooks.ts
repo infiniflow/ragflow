@@ -2,7 +2,6 @@ import { useSetModalState } from '@/hooks/commonHooks';
 import {
   useFetchFlow,
   useFetchFlowTemplates,
-  useRunFlow,
   useSetFlow,
 } from '@/hooks/flow-hooks';
 import { useFetchLlmList } from '@/hooks/llmHooks';
@@ -15,10 +14,11 @@ import React, {
   useState,
 } from 'react';
 import { Node, Position, ReactFlowInstance } from 'reactflow';
-import { v4 as uuidv4 } from 'uuid';
 // import { shallow } from 'zustand/shallow';
 import { useDebounceEffect } from 'ahooks';
+import { humanId } from 'human-id';
 import { useParams } from 'umi';
+import { Operator } from './constant';
 import useGraphStore, { RFState } from './store';
 import { buildDslComponentsByGraph } from './utils';
 
@@ -79,8 +79,8 @@ export const useHandleDrop = () => {
         y: event.clientY,
       });
       const newNode = {
-        id: uuidv4(),
-        type: 'textUpdater',
+        id: `${type}:${humanId()}`,
+        type: 'ragNode',
         position: position || {
           x: 0,
           y: 0,
@@ -111,7 +111,9 @@ export const useShowDrawer = () => {
   const handleShow = useCallback(
     (node: Node) => {
       setClickedNode(node);
-      showDrawer();
+      if (node.data.label !== Operator.Answer) {
+        showDrawer();
+      }
     },
     [showDrawer],
   );
@@ -187,7 +189,7 @@ const useSetGraphInfo = () => {
   const { setEdges, setNodes } = useGraphStore((state) => state);
   const setGraphInfo = useCallback(
     ({ nodes = [], edges = [] }: IGraph) => {
-      if (nodes.length && edges.length) {
+      if (nodes.length || edges.length) {
         setNodes(nodes);
         setEdges(edges);
       }
@@ -202,7 +204,7 @@ export const useFetchDataOnMount = () => {
   const setGraphInfo = useSetGraphInfo();
 
   useEffect(() => {
-    setGraphInfo(data?.dsl?.graph ?? {});
+    setGraphInfo(data?.dsl?.graph ?? ({} as IGraph));
   }, [setGraphInfo, data?.dsl?.graph]);
 
   useWatchGraphChange();
@@ -215,20 +217,4 @@ export const useFetchDataOnMount = () => {
 
 export const useFlowIsFetching = () => {
   return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
-};
-
-export const useRunGraph = () => {
-  const { data } = useFetchFlow();
-  const { runFlow } = useRunFlow();
-  const { id } = useParams();
-  const { nodes, edges } = useGraphStore((state) => state);
-  const runGraph = useCallback(() => {
-    const dslComponents = buildDslComponentsByGraph(nodes, edges);
-    runFlow({
-      id: id!!,
-      dsl: { ...data.dsl, components: dslComponents },
-    });
-  }, [nodes, edges, runFlow, id, data]);
-
-  return { runGraph };
 };

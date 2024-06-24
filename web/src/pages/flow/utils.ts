@@ -41,7 +41,7 @@ export const buildNodesAndEdgesFromDSLComponents = (data: DSLComponents) => {
     const upstream = [...value.upstream];
     nodes.push({
       id: key,
-      type: 'textUpdater',
+      type: 'ragNode',
       position: { x: 0, y: 0 },
       data: {
         label: value.obj.component_name,
@@ -147,11 +147,6 @@ export const buildDslComponentsByGraph = (
     components[id] = {
       obj: {
         component_name: operatorName,
-        // params:
-        //   removeUselessDataInTheOperator(
-        //     operatorName,
-        //     x.data.form as Record<string, unknown>,
-        //   ) ?? {},
         params:
           buildOperatorParams(operatorName)(
             x.data.form as Record<string, unknown>,

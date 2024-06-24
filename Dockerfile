@@ -10,6 +10,7 @@ ADD ./api ./api
 ADD ./conf ./conf
 ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
+ADD ./graph ./graph
 
 ENV PYTHONPATH=/ragflow/
 ENV HF_ENDPOINT=https://hf-mirror.com

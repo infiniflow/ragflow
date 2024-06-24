@@ -1,13 +1,13 @@
 import { useCallback } from 'react';
 import ReactFlow, {
   Background,
+  ConnectionMode,
   Controls,
   MarkerType,
   NodeMouseHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { NodeContextMenu, useHandleNodeContextMenu } from './context-menu';
 import { ButtonEdge } from './edge';
 
 import FlowDrawer from '../flow-drawer';
@@ -17,21 +17,23 @@ import {
   useSelectCanvasData,
   useShowDrawer,
 } from '../hooks';
-import { TextUpdaterNode } from './node';
+import { RagNode } from './node';
 
+import ChatDrawer from '../chat/drawer';
 import styles from './index.less';
 
-const nodeTypes = { textUpdater: TextUpdaterNode };
+const nodeTypes = { ragNode: RagNode };
 
 const edgeTypes = {
   buttonEdge: ButtonEdge,
 };
 
 interface IProps {
-  sideWidth: number;
+  chatDrawerVisible: boolean;
+  hideChatDrawer(): void;
 }
 
-function FlowCanvas({ sideWidth }: IProps) {
+function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
   const {
     nodes,
     edges,
@@ -41,8 +43,6 @@ function FlowCanvas({ sideWidth }: IProps) {
     onSelectionChange,
   } = useSelectCanvasData();
 
-  const { ref, menu, onNodeContextMenu, onPaneClick } =
-    useHandleNodeContextMenu(sideWidth);
   const { drawerVisible, hideDrawer, showDrawer, clickedNode } =
     useShowDrawer();
 
@@ -60,17 +60,15 @@ function FlowCanvas({ sideWidth }: IProps) {
   return (
     <div className={styles.canvasWrapper}>
       <ReactFlow
-        ref={ref}
+        connectionMode={ConnectionMode.Loose}
         nodes={nodes}
         onNodesChange={onNodesChange}
-        onNodeContextMenu={onNodeContextMenu}
         edges={edges}
         onEdgesChange={onEdgesChange}
         fitView
         onConnect={onConnect}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onPaneClick={onPaneClick}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onNodeClick={onNodeClick}
@@ -90,15 +88,16 @@ function FlowCanvas({ sideWidth }: IProps) {
       >
         <Background />
         <Controls />
-        {Object.keys(menu).length > 0 && (
-          <NodeContextMenu onClick={onPaneClick} {...(menu as any)} />
-        )}
       </ReactFlow>
       <FlowDrawer
         node={clickedNode}
         visible={drawerVisible}
         hideModal={hideDrawer}
       ></FlowDrawer>
+      <ChatDrawer
+        visible={chatDrawerVisible}
+        hideModal={hideChatDrawer}
+      ></ChatDrawer>
     </div>
   );
 }
