@@ -36,6 +36,7 @@ import { getFileExtension } from '@/utils';
 import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import omit from 'lodash/omit';
+import trim from 'lodash/trim';
 import {
   ChangeEventHandler,
   useCallback,
@@ -54,7 +55,6 @@ import {
 } from './interface';
 import { ChatModelState } from './model';
 import { isConversationIdExist } from './utils';
-import {public_path} from "@/utils/api";
 
 export const useSelectCurrentDialog = () => {
   const currentDialog: IDialog = useSelector(
@@ -533,7 +533,7 @@ export const useHandleMessageInputChange = () => {
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
     const value = e.target.value;
     const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
-    setValue(nextValue);
+    setValue(trim(nextValue));
   };
 
   return {
@@ -620,6 +620,8 @@ export const useSendMessage = (
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
+
     if (done) {
       setValue('');
       handleSendMessage(value.trim());
@@ -766,7 +768,7 @@ export const useGetSendButtonDisabled = () => {
 };
 
 export const useSendButtonDisabled = (value: string) => {
-  return value === '';
+  return trim(value) === '';
 };
 //#endregion
 
