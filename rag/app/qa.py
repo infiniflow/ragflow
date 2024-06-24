@@ -17,7 +17,7 @@ from timeit import default_timer as timer
 from nltk import word_tokenize
 from openpyxl import load_workbook
 from rag.nlp import is_english, random_choices, find_codec, qbullets_category, add_positions, has_qbullet, docx_question_level
-from rag.nlp import rag_tokenizer, tokenize_table
+from rag.nlp import rag_tokenizer, tokenize_table, concat_img
 from rag.settings import cron_logger
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from docx import Document
@@ -174,26 +174,8 @@ class Docx(DocxParser):
         embed = img.xpath('.//a:blip/@r:embed')[0]
         related_part = document.part.related_parts[embed]
         image = related_part.image
-        image = Image.open(BytesIO(image.blob))
+        image = Image.open(BytesIO(image.blob)).convert('RGB')
         return image
-    def concat_img(self, img1, img2):
-        if img1 and not img2:
-            return img1
-        if not img1 and img2:
-            return img2
-        if not img1 and not img2:
-            return None
-        width1, height1 = img1.size
-        width2, height2 = img2.size
-
-        new_width = max(width1, width2)
-        new_height = height1 + height2
-        new_image = Image.new('RGB', (new_width, new_height))
-
-        new_image.paste(img1, (0, 0))
-        new_image.paste(img2, (0, height1))
-
-        return new_image
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
         self.doc = Document(
@@ -211,7 +193,7 @@ class Docx(DocxParser):
             if not question_level or question_level > 6: # not a question
                 last_answer = f'{last_answer}\n{p_text}'
                 current_image = self.get_picture(self.doc, p)
-                last_image = self.concat_img(last_image, current_image)
+                last_image = concat_img(last_image, current_image)
             else:   # is a question
                 if last_answer or last_image:
                     sum_question = '\n'.join(question_stack)
