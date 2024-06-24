@@ -84,11 +84,11 @@ class RAGFlow:
 
     # ----------------------------upload local files-----------------------------------------------------
     def upload_local_file(self, dataset_id, file_paths):
-        files = {}
+        files = []
 
         for i, file_path in enumerate(file_paths):
             if os.path.isfile(file_path):
-                files[f'file{i}'] = open(file_path, 'rb')
+                files.append(('file', open(file_path, 'rb')))
             else:
                 return {'code': RetCode.DATA_ERROR, 'message': f"The file {file_path} does not exist"}
 

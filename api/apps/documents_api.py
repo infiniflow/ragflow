@@ -15,34 +15,24 @@
 #
 
 import os
-import pathlib
 import re
 
-import flask
-from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.db_models import Task, File
-from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
-from api.db.services.task_service import TaskService, queue_tasks
-from rag.nlp import search
-from rag.utils.es_conn import ELASTICSEARCH
+from api.db import FileType, ParserType
 from api.db.services import duplicate_name
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, construct_error_response, construct_json_result
-from api.utils import get_uuid
-from api.db import FileType, TaskStatus, ParserType, FileSource
 from api.db.services.document_service import DocumentService
+from api.db.services.file_service import FileService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.settings import RetCode
-from api.utils.api_utils import get_json_result
-from rag.utils.minio_conn import MINIO
+from api.utils import get_uuid
+from api.utils.api_utils import construct_json_result
 from api.utils.file_utils import filename_type, thumbnail
-from api.utils.web_utils import html2pdf, is_valid_url
-from api.utils.web_utils import html2pdf, is_valid_url
+from rag.utils.minio_conn import MINIO
 
-# ----------------------------upload a local file-----------------------------------------------------
+
+# ----------------------------upload local files-----------------------------------------------------
 @manager.route('/<dataset_id>', methods=['POST'])
 @login_required
 def upload(dataset_id):
@@ -51,13 +41,15 @@ def upload(dataset_id):
         return construct_json_result(
             message='Lack of "dataset ID"', code=RetCode.ARGUMENT_ERROR)
 
-    if 'file0' not in request.files:
+    if not request.files:
         return construct_json_result(
             message='No file part!', code=RetCode.ARGUMENT_ERROR)
 
     file_objs = request.files.getlist('file')
+    print("file_objs", file_objs)
 
     for file_obj in file_objs:
+        print("filename", file_obj.filename)
         if file_obj.filename == '':
             return construct_json_result(
                 message='No file selected!', code=RetCode.ARGUMENT_ERROR)
@@ -119,7 +111,7 @@ def upload(dataset_id):
             message="\n".join(err), code=RetCode.SERVER_ERROR)
     return construct_json_result(data=True, code=RetCode.SUCCESS)
 
-# ----------------------------upload a remote file------------------------------------------------
+# ----------------------------upload online files------------------------------------------------
 
 # ----------------------------download a file-----------------------------------------------------
 
