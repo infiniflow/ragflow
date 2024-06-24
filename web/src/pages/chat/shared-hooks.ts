@@ -8,6 +8,7 @@ import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IAnswer } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import omit from 'lodash/omit';
+import trim from 'lodash/trim';
 import {
   Dispatch,
   SetStateAction,
@@ -134,7 +135,7 @@ export const useSelectCurrentSharedConversation = (conversationId: string) => {
 };
 
 export const useSendButtonDisabled = (value: string) => {
-  return value === '';
+  return trim(value) === '';
 };
 
 export const useSendSharedMessage = (
@@ -205,6 +206,7 @@ export const useSendSharedMessage = (
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
     if (done) {
       setValue('');
       addNewestConversation(value);
