@@ -22,6 +22,7 @@ from rag.settings import cron_logger
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from docx import Document
 from PIL import Image
+from markdown import markdown
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
         if not binary:
@@ -374,8 +375,6 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         code_block = False
         level_index = [-1] * 7
         for index, l in enumerate(lines):
-            if not l.strip():
-                continue
             if l.strip().startswith('```'):
                 code_block = not code_block
             question_level, question = 0, ''
@@ -385,10 +384,10 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
             if not question_level or question_level > 6: # not a question
                 last_answer = f'{last_answer}\n{l}'
             else:   # is a question
-                if last_answer:
+                if last_answer.strip():
                     sum_question = '\n'.join(question_stack)
                     if sum_question:
-                        res.append(beAdoc(deepcopy(doc), sum_question, last_answer, eng))
+                        res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng))
                     last_answer = ''
 
                 i = question_level
@@ -397,10 +396,10 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                     level_stack.pop()
                 question_stack.append(question)
                 level_stack.append(question_level)
-        if last_answer:
+        if last_answer.strip():
             sum_question = '\n'.join(question_stack)
             if sum_question:
-                res.append(beAdoc(deepcopy(doc), sum_question, last_answer, eng))
+                res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng))
         return res
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
