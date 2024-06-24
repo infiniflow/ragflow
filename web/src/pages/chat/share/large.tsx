@@ -19,6 +19,7 @@ import {
 } from '../shared-hooks';
 import { buildMessageItemReference } from '../utils';
 import styles from './index.less';
+import {useSendButtonDisabled} from "@/pages/chat/hooks";
 
 const MessageItem = ({
   item,
@@ -76,7 +77,7 @@ const MessageItem = ({
           )}
           <Flex vertical gap={8} flex={1}>
             <b>{isAssistant ? '' : 'You'}</b>
-            <div className={styles.messageText}>
+            <div className={isAssistant ? styles.messageText : styles.messageUserText}>
               <MarkdownContent
                 reference={reference}
                 clickDocumentButton={() => {}}
@@ -149,6 +150,7 @@ const ChatContainer = () => {
     setCurrentConversation,
     addNewestAnswer,
   );
+  const sendDisabled = useSendButtonDisabled(value);
 
   return (
     <>
@@ -184,7 +186,7 @@ const ChatContainer = () => {
               type="primary"
               onClick={handlePressEnter}
               loading={sendLoading}
-              //   disabled={disabled}
+              disabled={sendDisabled}
             >
               {t('send')}
             </Button>
