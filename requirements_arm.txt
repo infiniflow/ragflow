@@ -144,3 +144,4 @@ webdriver-manager==4.0.1
 cn2an==0.5.22
 roman-numbers==1.0.2
 word2number==1.1
+markdown==3.6
