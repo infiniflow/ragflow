@@ -6,13 +6,15 @@
     "dev": "cross-env UMI_DEV_SERVER_COMPRESS=none umi dev",
     "postinstall": "umi setup",
     "lint": "umi lint --eslint-only",
-    "prepare": "husky",
+    "prepare": "cd .. && husky web/.husky",
     "setup": "umi setup",
     "start": "npm run dev",
     "test": "jest --no-cache --coverage"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,css,less,json}": "prettier --write --ignore-unknown"
+    "*.{js,jsx,ts,tsx,css,less,json}": [
+      "prettier --write --ignore-unknown"
+    ]
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",

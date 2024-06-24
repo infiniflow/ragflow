@@ -9,6 +9,8 @@ import {useDispatch, useSelector} from 'umi';
 import {useGetKnowledgeSearchParams} from './routeHook';
 import {useOneNamespaceEffectsLoading} from './storeHooks';
 
+console.info("xxx111")
+
 export const useGetDocumentUrl = (documentId?: string) => {
   const getDocumentUrl = useCallback(
     (id?: string) => {
