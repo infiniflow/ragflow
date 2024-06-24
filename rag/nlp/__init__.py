@@ -24,6 +24,7 @@ import copy
 import roman_numbers as r
 from word2number import w2n
 from cn2an import cn2an
+from PIL import Image
 
 all_codecs = [
     'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
@@ -241,6 +242,19 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser):
                 ck = pdf_parser.remove_tag(ck)
             except NotImplementedError as e:
                 pass
+        tokenize(d, ck, eng)
+        res.append(d)
+    return res
+
+
+def tokenize_chunks_docx(chunks, doc, eng, images):
+    res = []
+    # wrap up as es documents
+    for ck, image in zip(chunks, images):
+        if len(ck.strip()) == 0:continue
+        print("--", ck)
+        d = copy.deepcopy(doc)
+        d["image"] = image
         tokenize(d, ck, eng)
         res.append(d)
     return res
@@ -505,3 +519,53 @@ def docx_question_level(p):
         return int(p.style.name.split(' ')[-1]), re.sub(r"\u3000", " ", p.text).strip()
     else:
         return 0, re.sub(r"\u3000", " ", p.text).strip()
+    
+def concat_img(img1, img2):
+    if img1 and not img2:
+        return img1
+    if not img1 and img2:
+        return img2
+    if not img1 and not img2:
+        return None
+    width1, height1 = img1.size
+    width2, height2 = img2.size
+
+    new_width = max(width1, width2)
+    new_height = height1 + height2
+    new_image = Image.new('RGB', (new_width, new_height))
+
+    new_image.paste(img1, (0, 0))
+    new_image.paste(img2, (0, height1))
+
+    return new_image
+
+def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
+    if not sections:
+        return []
+
+    cks = [""]
+    images = [None]
+    tk_nums = [0]
+
+    def add_chunk(t, image, pos=""):
+        nonlocal cks, tk_nums, delimiter
+        tnum = num_tokens_from_string(t)
+        if tnum < 8:
+            pos = ""
+        if tk_nums[-1] > chunk_token_num:
+            if t.find(pos) < 0:
+                t += pos
+            cks.append(t)
+            images.append(image)
+            tk_nums.append(tnum)
+        else:
+            if cks[-1].find(pos) < 0:
+                t += pos
+            cks[-1] += t
+            images[-1] = concat_img(images[-1], image)
+            tk_nums[-1] += tnum
+
+    for sec, image in sections:
+        add_chunk(sec, image, '')
+
+    return cks, images
