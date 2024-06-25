@@ -10,8 +10,8 @@ class TestFile(TestSdk):
     """
     This class contains a suite of tests for the content management functionality within the dataset.
     It ensures that the following functionalities as expected:
-        1. upload a local file
-        2. upload a remote file
+        1. upload local files
+        2. upload remote files
         3. download a file
         4. delete a file
         5. enable rename
@@ -27,7 +27,7 @@ class TestFile(TestSdk):
         15. retrieval test
     """
 
-# ----------------------------upload a local file-----------------------------------------------------
+# ----------------------------upload local files-----------------------------------------------------
     def test_upload_two_files(self):
         """
         Test uploading two files with success.
@@ -35,7 +35,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_two_files")
         dataset_id = created_res['data']['dataset_id']
-        file_paths = ["test.txt", "test1.txt"]
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert res['code'] == RetCode.SUCCESS and res['data'] is True and res['message'] == 'success'
 
@@ -46,7 +46,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_one_file")
         dataset_id = created_res['data']['dataset_id']
-        file_paths = ["test.txt"]
+        file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert res['code'] == RetCode.SUCCESS and res['data'] is True and res['message'] == 'success'
 
@@ -57,7 +57,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_without_existing_file")
         dataset_id = created_res['data']['dataset_id']
-        file_paths = ["empty.txt"]
+        file_paths = ["test_data/imagination.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert res['code'] == RetCode.DATA_ERROR and "does not exist" in res['message']
 
@@ -66,10 +66,68 @@ class TestFile(TestSdk):
         Test uploading files if the dataset id does not exist.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        file_paths = ["test.txt"]
+        file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file("111", file_paths)
         assert res['code'] == RetCode.DATA_ERROR and res['message'] == "Can't find this dataset"
-# ----------------------------upload a remote file-----------------------------------------------------
+
+    def test_upload_file_without_name(self):
+        """
+        Test uploading files that do not have name.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_upload_file_without_name")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/.txt"]
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        assert res['code'] == RetCode.SUCCESS
+
+    def test_upload_file_without_name1(self):
+        """
+        Test uploading files that do not have name.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_upload_file_without_name")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/.txt", "test_data/empty.txt"]
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        assert res['code'] == RetCode.SUCCESS
+
+    def test_upload_files_exceeding_the_number_limit(self):
+        """
+        Test uploading files whose number exceeds the limit.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_upload_files_exceeding_the_number_limit")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"] * 256
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        assert (res['message'] ==
+                'You try to upload 512 files, which exceeds the maximum number of uploading files: 256'
+                and res['code'] == RetCode.DATA_ERROR)
+
+    def test_upload_files_without_files(self):
+        """
+        Test uploading files without files.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_upload_files_without_files")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = [None]
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        assert (res['message'] == 'None is not string.' and res['code'] == RetCode.ARGUMENT_ERROR)
+
+    def test_upload_files_with_two_files_with_same_name(self):
+        """
+        Test uploading files with the same name
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_upload_files_with_two_files_with_same_name")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ['test_data/test.txt'] * 2
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        assert (res['message'] == 'success' and res['code'] == RetCode.SUCCESS)
+
+# ----------------------------upload remote files-----------------------------------------------------
 
 # ----------------------------download a file-----------------------------------------------------
 

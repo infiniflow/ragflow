@@ -255,7 +255,6 @@ class TestDataset(TestSdk):
         real_dataset_name = res['data']['dataset_name']
         # delete this dataset
         res = ragflow.delete_dataset(real_dataset_name)
-        print(res)
         assert res['code'] == RetCode.SUCCESS and 'successfully' in res['message']
 
     def test_delete_dataset_with_not_existing_dataset(self):
@@ -357,7 +356,6 @@ class TestDataset(TestSdk):
         response = ragflow.create_dataset("test")
         dataset_name = response['data']['dataset_name']
         res = ragflow.get_dataset(dataset_name)
-        print(res)
         assert res['code'] == RetCode.SUCCESS and res['data']['name'] == dataset_name
 
     def test_get_dataset_with_failure(self):
@@ -383,7 +381,6 @@ class TestDataset(TestSdk):
             "language": 'English'
         }
         res = ragflow.update_dataset("weird_dataset", **params)
-        print(res)
         assert (res['code'] == RetCode.OPERATING_ERROR
                 and res['message'] == 'Only the owner of knowledgebase is authorized for this operation!')
 
@@ -401,7 +398,6 @@ class TestDataset(TestSdk):
             "language": 'English'
         }
         res = ragflow.update_dataset("new_name1", **params)
-        print(res)
         assert res['code'] == RetCode.SUCCESS
         assert (res['data']['description'] == 'new_description1'
                 and res['data']['name'] == 'new_name' and res['data']['permission'] == 'me'
@@ -436,7 +432,6 @@ class TestDataset(TestSdk):
         ragflow.create_dataset("test_update_dataset_with_empty_parameter")
         params = {}
         res = ragflow.update_dataset("test_update_dataset_with_empty_parameter", **params)
-        print(res)
         assert (res['code'] == RetCode.DATA_ERROR
                 and res['message'] == 'Please input at least one parameter that you want to update!')
 

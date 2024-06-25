@@ -14,36 +14,23 @@
 #  limitations under the License.
 
 
-import json
-import os
-import re
-from datetime import datetime, timedelta
-from flask import request, Response
+from flask import request
 from flask_login import login_required, current_user
 from httpx import HTTPError
 
-from api.db import FileType, ParserType, FileSource, StatusEnum
-from api.db.db_models import APIToken, API4Conversation, Task, File
+from api.contants import NAME_LENGTH_LIMIT
+from api.db import FileSource, StatusEnum
+from api.db.db_models import File
 from api.db.services import duplicate_name
-from api.db.services.api_service import APITokenService, API4ConversationService
-from api.db.services.dialog_service import DialogService, chat
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import queue_tasks, TaskService
-from api.db.services.user_service import UserTenantService, TenantService
-from api.settings import RetCode, retrievaler
-from api.utils import get_uuid, current_timestamp, datetime_format
-# from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request
-from itsdangerous import URLSafeTimedSerializer
-
-from api.utils.file_utils import filename_type, thumbnail
-from rag.utils.minio_conn import MINIO
-
-# import library
+from api.db.services.user_service import TenantService
+from api.settings import RetCode
+from api.utils import get_uuid
 from api.utils.api_utils import construct_json_result, construct_result, construct_error_response, validate_request
-from api.contants import NAME_LENGTH_LIMIT
+
 
 # ------------------------------ create a dataset ---------------------------------------
 

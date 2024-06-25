@@ -13,13 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import os
-import requests
 import json
-from requests_toolbelt.multipart.encoder import MultipartEncoder
+import os
+
+import requests
 
 from api.settings import RetCode
-from api.utils.api_utils import construct_json_result
 
 
 class RAGFlow:
@@ -86,7 +85,9 @@ class RAGFlow:
     def upload_local_file(self, dataset_id, file_paths):
         files = []
 
-        for i, file_path in enumerate(file_paths):
+        for file_path in file_paths:
+            if not isinstance(file_path, str):
+                return {'code': RetCode.ARGUMENT_ERROR, 'message': f"{file_path} is not string."}
             if os.path.isfile(file_path):
                 files.append(('file', open(file_path, 'rb')))
             else:
