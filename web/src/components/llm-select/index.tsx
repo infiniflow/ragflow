@@ -10,12 +10,7 @@ const LLMSelect = () => {
 
   return (
     <Popover content={content} trigger="click" placement="left" arrow={false}>
-      {/* <Button>Click me</Button> */}
-      <Select
-        defaultValue="lucy"
-        style={{ width: '100%' }}
-        dropdownStyle={{ display: 'none' }}
-      />
+      <Select style={{ width: '100%' }} dropdownStyle={{ display: 'none' }} />
     </Popover>
   );
 };

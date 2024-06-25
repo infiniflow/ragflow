@@ -523,6 +523,7 @@ export default {
       preview: '预览',
       fileError: '文件错误',
     },
+    flow: { cite: '引用', citeTip: 'citeTip' },
     footer: {
       profile: 'All rights reserved @ React',
     },

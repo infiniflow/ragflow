@@ -505,6 +505,7 @@ export default {
       preview: '預覽',
       fileError: '文件錯誤',
     },
+    flow: { cite: '引用', citeTip: 'citeTip' },
     footer: {
       profile: '“保留所有權利 @ react”',
     },

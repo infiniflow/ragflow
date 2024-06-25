@@ -25,7 +25,9 @@ const handleGithubCLick = () => {
 const RightToolBar = () => {
   const { t } = useTranslate('common');
   const changeLanguage = useChangeLanguage();
-  const { language = '' } = useSelector((state) => state.settingModel.userInfo);
+  const { language = 'en' } = useSelector(
+    (state) => state.settingModel.userInfo,
+  );
 
   const handleItemClick: MenuProps['onClick'] = ({ key }) => {
     changeLanguage(key);
