@@ -80,4 +80,5 @@ export const initialFormValuesMap = {
   [Operator.Retrieval]: initialRetrievalValues,
   [Operator.Generate]: initialGenerateValues,
   [Operator.Answer]: {},
+  [Operator.Categorize]: {},
 };

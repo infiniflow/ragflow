@@ -7,6 +7,7 @@ import { Flex, MenuProps, Space, Typography } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Operator, operatorMap } from '../../constant';
+import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import useGraphStore from '../../store';
 import styles from './index.less';
@@ -18,7 +19,7 @@ export function RagNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<{ label: string }>) {
+}: NodeProps<NodeData>) {
   const { t } = useTranslation();
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
   const duplicateNodeById = useGraphStore((store) => store.duplicateNode);
@@ -78,7 +79,7 @@ export function RagNode({
             name={data.label as Operator}
             fontSize={12}
           ></OperatorIcon>
-          <span>{data.label}</span>
+          <span>{id}</span>
         </Space>
         <OperateDropdown
           iconFontSize={14}
