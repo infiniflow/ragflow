@@ -13,9 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import os
-import requests
 import json
+import os
+
+import requests
+
+from api.settings import RetCode
 
 
 class RAGFlow:
@@ -23,10 +26,12 @@ class RAGFlow:
         '''
         api_url: http://<host_address>/api/v1
         dataset_url: http://<host_address>/api/v1/dataset
+        document_url: http://<host_address>/api/v1/documents
         '''
         self.user_key = user_key
         self.api_url = f"{base_url}/api/{version}"
         self.dataset_url = f"{self.api_url}/dataset"
+        self.document_url = f"{self.api_url}/documents"
         self.authorization_header = {"Authorization": "{}".format(self.user_key)}
 
     def create_dataset(self, dataset_name):
@@ -73,3 +78,54 @@ class RAGFlow:
         endpoint = f"{self.dataset_url}/{dataset_id}"
         response = requests.put(endpoint, json=params, headers=self.authorization_header)
         return response.json()
+
+# -------------------- content management -----------------------------------------------------
+
+    # ----------------------------upload local files-----------------------------------------------------
+    def upload_local_file(self, dataset_id, file_paths):
+        files = []
+
+        for file_path in file_paths:
+            if not isinstance(file_path, str):
+                return {'code': RetCode.ARGUMENT_ERROR, 'message': f"{file_path} is not string."}
+            if 'http' in file_path:
+                return {'code': RetCode.ARGUMENT_ERROR, 'message': "Remote files have not unsupported."}
+            if os.path.isfile(file_path):
+                files.append(('file', open(file_path, 'rb')))
+            else:
+                return {'code': RetCode.DATA_ERROR, 'message': f"The file {file_path} does not exist"}
+
+        res = requests.request('POST', url=f"{self.document_url}/{dataset_id}", files=files,
+                               headers=self.authorization_header)
+
+        result_dict = json.loads(res.text)
+        return result_dict
+
+    # ----------------------------upload remote files-----------------------------------------------------
+    # ----------------------------download a file-----------------------------------------------------
+
+    # ----------------------------delete a file-----------------------------------------------------
+
+    # ----------------------------enable rename-----------------------------------------------------
+
+    # ----------------------------list files-----------------------------------------------------
+
+    # ----------------------------start parsing-----------------------------------------------------
+
+    # ----------------------------stop parsing-----------------------------------------------------
+
+    # ----------------------------show the status of the file-----------------------------------------------------
+
+    # ----------------------------list the chunks of the file-----------------------------------------------------
+
+    # ----------------------------delete the chunk-----------------------------------------------------
+
+    # ----------------------------edit the status of the chunk-----------------------------------------------------
+
+    # ----------------------------insert a new chunk-----------------------------------------------------
+
+    # ----------------------------upload a file-----------------------------------------------------
+
+    # ----------------------------get a specific chunk-----------------------------------------------------
+
+    # ----------------------------retrieval test-----------------------------------------------------
