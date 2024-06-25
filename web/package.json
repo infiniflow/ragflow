@@ -6,9 +6,15 @@
     "dev": "cross-env UMI_DEV_SERVER_COMPRESS=none umi dev",
     "postinstall": "umi setup",
     "lint": "umi lint --eslint-only",
+    "prepare": "cd .. && husky web/.husky",
     "setup": "umi setup",
     "start": "npm run dev",
     "test": "jest --no-cache --coverage"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,css,less,json}": [
+      "prettier --write --ignore-unknown"
+    ]
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
@@ -67,8 +73,10 @@
     "@umijs/lint": "^4.1.1",
     "@umijs/plugins": "^4.1.0",
     "cross-env": "^7.0.3",
+    "husky": "^9.0.11",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
+    "lint-staged": "^15.2.7",
     "prettier": "^3.2.4",
     "prettier-plugin-organize-imports": "^3.2.4",
     "prettier-plugin-packagejson": "^2.4.9",
