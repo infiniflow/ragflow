@@ -1,4 +1,5 @@
 import {
+  DatabaseOutlined,
   MergeCellsOutlined,
   RocketOutlined,
   SendOutlined,
@@ -10,6 +11,7 @@ export enum Operator {
   Retrieval = 'Retrieval',
   Generate = 'Generate',
   Answer = 'Answer',
+  Categorize = 'Categorize',
 }
 
 export const operatorIconMap = {
@@ -17,6 +19,7 @@ export const operatorIconMap = {
   [Operator.Generate]: MergeCellsOutlined,
   [Operator.Answer]: SendOutlined,
   [Operator.Begin]: SlidersOutlined,
+  [Operator.Categorize]: DatabaseOutlined,
 };
 
 export const operatorMap = {
@@ -26,6 +29,7 @@ export const operatorMap = {
   [Operator.Generate]: { description: 'Generate description' },
   [Operator.Answer]: { description: 'Answer description' },
   [Operator.Begin]: { description: 'Begin description' },
+  [Operator.Categorize]: { description: 'Categorize description' },
 };
 
 export const componentMenuList = [
@@ -40,6 +44,10 @@ export const componentMenuList = [
   {
     name: Operator.Answer,
     description: operatorMap[Operator.Answer].description,
+  },
+  {
+    name: Operator.Categorize,
+    description: operatorMap[Operator.Categorize].description,
   },
 ];
 
