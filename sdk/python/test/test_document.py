@@ -50,12 +50,12 @@ class TestFile(TestSdk):
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert res['code'] == RetCode.SUCCESS and res['data'] is True and res['message'] == 'success'
 
-    def test_upload_without_existing_file(self):
+    def test_upload_nonexistent_files(self):
         """
         Test uploading a file which does not exist.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        created_res = ragflow.create_dataset("test_upload_without_existing_file")
+        created_res = ragflow.create_dataset("test_upload_nonexistent_files")
         dataset_id = created_res['data']['dataset_id']
         file_paths = ["test_data/imagination.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
@@ -118,7 +118,7 @@ class TestFile(TestSdk):
 
     def test_upload_files_with_two_files_with_same_name(self):
         """
-        Test uploading files with the same name
+        Test uploading files with the same name.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_files_with_two_files_with_same_name")
@@ -126,6 +126,28 @@ class TestFile(TestSdk):
         file_paths = ['test_data/test.txt'] * 2
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert (res['message'] == 'success' and res['code'] == RetCode.SUCCESS)
+
+    def test_upload_files_with_file_paths(self):
+        """
+        Test uploading files with only specifying the file path's repo.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_upload_files_with_file_paths")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ['test_data/']
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        assert (res['message'] == 'The file test_data/ does not exist' and res['code'] == RetCode.DATA_ERROR)
+
+    def test_upload_files_with_remote_file_path(self):
+        """
+        Test uploading files with remote files.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_upload_files_with_remote_file_path")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ['https://github.com/genostack/ragflow']
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        assert res['code'] == RetCode.ARGUMENT_ERROR and res['message'] == 'Remote files have not unsupported.'
 
 # ----------------------------upload remote files-----------------------------------------------------
 

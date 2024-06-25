@@ -61,6 +61,11 @@ def upload(dataset_id):
         if not file_name:
             return construct_json_result(
                 message='There is a file without name!', code=RetCode.ARGUMENT_ERROR)
+
+        # TODO: support the remote files
+        if 'http' in file_name:
+            return construct_json_result(code=RetCode.ARGUMENT_ERROR, message="Remote files have not unsupported.")
+
         # the content is empty, raising a warning
         if file_content == b'':
             warnings.warn(f"[WARNING]: The file {file_name} is empty.")

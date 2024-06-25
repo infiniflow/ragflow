@@ -88,6 +88,8 @@ class RAGFlow:
         for file_path in file_paths:
             if not isinstance(file_path, str):
                 return {'code': RetCode.ARGUMENT_ERROR, 'message': f"{file_path} is not string."}
+            if 'http' in file_path:
+                return {'code': RetCode.ARGUMENT_ERROR, 'message': "Remote files have not unsupported."}
             if os.path.isfile(file_path):
                 files.append(('file', open(file_path, 'rb')))
             else:
