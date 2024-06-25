@@ -52,16 +52,13 @@ def upload(dataset_id):
     if num_file_objs > MAXIMUM_OF_UPLOADING_FILES:
         return construct_json_result(code=RetCode.DATA_ERROR, message=f"You try to upload {num_file_objs} files, "
                                                                       f"which exceeds the maximum number of uploading files: {MAXIMUM_OF_UPLOADING_FILES}")
-    print("file_objs", file_objs)
 
     for file_obj in file_objs:
         # the content of the file
         file_content = file_obj.read()
         file_name = file_obj.filename
-        print("file_content", file_content)
-        print("filename", file_obj.filename)
         # no name
-        if file_name == '':  # ???
+        if not file_name:
             return construct_json_result(
                 message='There is a file without name!', code=RetCode.ARGUMENT_ERROR)
         # the content is empty, raising a warning
@@ -73,12 +70,15 @@ def upload(dataset_id):
     if not exist:
         return construct_json_result(message="Can't find this dataset", code=RetCode.DATA_ERROR)
 
+    # get the root_folder
     root_folder = FileService.get_root_folder(current_user.id)
-    print("---------------root_folder--------------", root_folder)
-    pf_id = root_folder["id"]
-    print("---------------pf_id--------------", pf_id)
-    FileService.init_knowledgebase_docs(pf_id, current_user.id)
+    # get the id of the root_folder
+    parent_file_id = root_folder["id"]  # document id
+    # this is for the new user, create '.knowledgebase' file
+    FileService.init_knowledgebase_docs(parent_file_id, current_user.id)
+    # go inside this folder, get the kb_root_folder
     kb_root_folder = FileService.get_kb_folder(current_user.id)
+    # link the file management to the kb_folder
     kb_folder = FileService.new_a_file_from_kb(dataset.tenant_id, dataset.name, kb_root_folder["id"])
 
     # grab all the errs
@@ -102,6 +102,7 @@ def upload(dataset_id):
                 return construct_json_result(code=RetCode.DATA_ERROR,
                                              message="This type of file has not been supported yet!")
 
+            # upload to the minio
             location = filename
             while MINIO.obj_exist(dataset_id, location):
                 location += "_"
