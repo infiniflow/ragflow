@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
 import BeginForm from '../begin-form';
+import CategorizeForm from '../categorize-form';
 import { Operator } from '../constant';
 import GenerateForm from '../generate-form';
 import { useHandleFormValuesChange } from '../hooks';
@@ -18,6 +19,7 @@ const FormMap = {
   [Operator.Retrieval]: RetrievalForm,
   [Operator.Generate]: GenerateForm,
   [Operator.Answer]: AnswerForm,
+  [Operator.Categorize]: CategorizeForm,
 };
 
 const FlowDrawer = ({
