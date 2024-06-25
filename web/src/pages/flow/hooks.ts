@@ -15,7 +15,14 @@ import React, {
 } from 'react';
 import { Node, Position, ReactFlowInstance } from 'reactflow';
 // import { shallow } from 'zustand/shallow';
+import { variableEnabledFieldMap } from '@/constants/chat';
+import {
+  ModelVariableType,
+  settledModelVariableMap,
+} from '@/constants/knowledge';
+import { Variable } from '@/interfaces/database/chat';
 import { useDebounceEffect } from 'ahooks';
+import { FormInstance } from 'antd';
 import { humanId } from 'human-id';
 import { useParams } from 'umi';
 import { Operator } from './constant';
@@ -217,4 +224,26 @@ export const useFetchDataOnMount = () => {
 
 export const useFlowIsFetching = () => {
   return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
+};
+
+export const useSetLlmSetting = (form?: FormInstance) => {
+  const initialLlmSetting = undefined;
+
+  useEffect(() => {
+    const switchBoxValues = Object.keys(variableEnabledFieldMap).reduce<
+      Record<string, boolean>
+    >((pre, field) => {
+      pre[field] =
+        initialLlmSetting === undefined
+          ? true
+          : !!initialLlmSetting[
+              variableEnabledFieldMap[
+                field as keyof typeof variableEnabledFieldMap
+              ] as keyof Variable
+            ];
+      return pre;
+    }, {});
+    const otherValues = settledModelVariableMap[ModelVariableType.Precise];
+    form?.setFieldsValue({ ...switchBoxValues, ...otherValues });
+  }, [form, initialLlmSetting]);
 };

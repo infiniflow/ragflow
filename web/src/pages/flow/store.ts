@@ -39,6 +39,7 @@ export type RFState = {
   deleteEdgeById: (id: string) => void;
   deleteNodeById: (id: string) => void;
   findNodeByName: (operatorName: Operator) => Node | undefined;
+  findNodeById: (id: string) => Node | undefined;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -124,6 +125,9 @@ const useGraphStore = create<RFState>()(
       },
       findNodeByName: (name: Operator) => {
         return get().nodes.find((x) => x.data.label === name);
+      },
+      findNodeById: (id: string) => {
+        return get().nodes.find((x) => x.id === id);
       },
       updateNodeForm: (nodeId: string, values: any) => {
         set({

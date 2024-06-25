@@ -53,6 +53,7 @@ const FlowDrawer = ({
         <OperatorForm
           onValuesChange={handleValuesChange}
           form={form}
+          node={node}
         ></OperatorForm>
       )}
     </Drawer>
