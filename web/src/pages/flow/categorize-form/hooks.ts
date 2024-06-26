@@ -1,6 +1,6 @@
 import get from 'lodash/get';
 import omit from 'lodash/omit';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Operator } from '../constant';
 import {
   ICategorizeItem,
@@ -72,6 +72,7 @@ export const useHandleFormValuesChange = ({
 }: IOperatorForm) => {
   const handleValuesChange = useCallback(
     (changedValues: any, values: any) => {
+      console.info(changedValues, values);
       onValuesChange?.(changedValues, {
         ...omit(values, 'items'),
         category_description: buildCategorizeObjectFromList(values.items),
@@ -89,4 +90,39 @@ export const useHandleFormValuesChange = ({
   }, [form, node]);
 
   return { handleValuesChange };
+};
+
+export const useHandleToSelectChange = (
+  opstionIds: string[],
+  nodeId?: string,
+) => {
+  // const [previousTarget, setPreviousTarget] = useState('');
+  const previousTarget = useRef('');
+  const { addEdge, deleteEdgeBySourceAndTarget } = useGraphStore(
+    (state) => state,
+  );
+  const handleSelectChange = useCallback(
+    (value?: string) => {
+      if (nodeId) {
+        if (previousTarget.current) {
+          // delete previous edge
+          deleteEdgeBySourceAndTarget(nodeId, previousTarget.current);
+        }
+        if (value) {
+          addEdge({
+            source: nodeId,
+            target: value,
+            sourceHandle: 'b',
+            targetHandle: 'd',
+          });
+        } else {
+          // if the value is empty, delete the edges between the current node and all nodes in the drop-down box.
+        }
+        previousTarget.current = value;
+      }
+    },
+    [addEdge, nodeId, deleteEdgeBySourceAndTarget],
+  );
+
+  return { handleSelectChange };
 };

@@ -34,10 +34,12 @@ export type RFState = {
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
   getNode: (id: string) => Node | undefined;
+  addEdge: (connection: Connection) => void;
   duplicateNode: (id: string) => void;
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
   deleteNodeById: (id: string) => void;
+  deleteEdgeBySourceAndTarget: (source: string, target: string) => void;
   findNodeByName: (operatorName: Operator) => Node | undefined;
   findNodeById: (id: string) => Node | undefined;
 };
@@ -83,6 +85,14 @@ const useGraphStore = create<RFState>()(
       getNode: (id: string) => {
         return get().nodes.find((x) => x.id === id);
       },
+      addEdge: (connection: Connection) => {
+        set({
+          edges: addEdge(connection, get().edges),
+        });
+      },
+      // addOnlyOneEdgeBetweenTwoNodes: (connection: Connection) => {
+
+      // },
       duplicateNode: (id: string) => {
         const { getNode, addNode } = get();
         const node = getNode(id);
@@ -112,6 +122,14 @@ const useGraphStore = create<RFState>()(
         const { edges } = get();
         set({
           edges: edges.filter((edge) => edge.id !== id),
+        });
+      },
+      deleteEdgeBySourceAndTarget: (source: string, target: string) => {
+        const { edges } = get();
+        set({
+          edges: edges.filter(
+            (edge) => edge.target !== target && edge.source !== source,
+          ),
         });
       },
       deleteNodeById: (id: string) => {

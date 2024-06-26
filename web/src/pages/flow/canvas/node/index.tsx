@@ -4,12 +4,14 @@ import { Handle, NodeProps, Position } from 'reactflow';
 import OperateDropdown from '@/components/operate-dropdown';
 import { CopyOutlined } from '@ant-design/icons';
 import { Flex, MenuProps, Space } from 'antd';
+import get from 'lodash/get';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Operator, operatorMap } from '../../constant';
+import { CategorizeAnchorPointPositions, Operator } from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import useGraphStore from '../../store';
+import CategorizeHandle from './categorize-handle';
 import styles from './index.less';
 
 export function RagNode({
@@ -30,7 +32,8 @@ export function RagNode({
     duplicateNodeById(id);
   }, [id, duplicateNodeById]);
 
-  const description = operatorMap[data.label as Operator].description;
+  const isCategorize = data.label === Operator.Categorize;
+  const categoryData = get(data, 'form.category_description') ?? {};
 
   const items: MenuProps['items'] = [
     {
@@ -57,9 +60,7 @@ export function RagNode({
         position={Position.Left}
         isConnectable={isConnectable}
         className={styles.handle}
-      >
-        {/* <PlusCircleOutlined style={{ fontSize: 10 }} /> */}
-      </Handle>
+      ></Handle>
       <Handle type="source" position={Position.Top} id="d" isConnectable />
       <Handle
         type="source"
@@ -67,34 +68,32 @@ export function RagNode({
         isConnectable={isConnectable}
         className={styles.handle}
         id="b"
-      >
-        {/* <PlusCircleOutlined style={{ fontSize: 10 }} /> */}
-      </Handle>
+      ></Handle>
       <Handle type="source" position={Position.Bottom} id="a" isConnectable />
+      {isCategorize &&
+        Object.keys(categoryData).map((x, idx) => (
+          <CategorizeHandle
+            top={CategorizeAnchorPointPositions[idx].top}
+            right={CategorizeAnchorPointPositions[idx].right}
+            key={idx}
+            text={x}
+            idx={idx}
+          ></CategorizeHandle>
+        ))}
       <Flex vertical align="center" justify="center">
         <Space size={6}>
           <OperatorIcon
             name={data.label as Operator}
             fontSize={16}
           ></OperatorIcon>
-          {/* {data.label} */}
           <OperateDropdown
             iconFontSize={14}
             deleteItem={deleteNode}
             items={items}
           ></OperateDropdown>
         </Space>
-        {/* <div className={styles.nodeName}>{id}</div> */}
       </Flex>
-      {/* <div>
-        <Text
-          ellipsis={{ tooltip: description }}
-          style={{ width: 130 }}
-          className={styles.description}
-        >
-          {description}
-        </Text>
-      </div> */}
+
       <section className={styles.bottomBox}>
         <div className={styles.nodeName}>{id}</div>
       </section>
