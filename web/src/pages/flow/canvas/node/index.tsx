@@ -3,7 +3,7 @@ import { Handle, NodeProps, Position } from 'reactflow';
 
 import OperateDropdown from '@/components/operate-dropdown';
 import { CopyOutlined } from '@ant-design/icons';
-import { Flex, MenuProps, Space, Typography } from 'antd';
+import { Flex, MenuProps, Space } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Operator, operatorMap } from '../../constant';
@@ -11,8 +11,6 @@ import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import useGraphStore from '../../store';
 import styles from './index.less';
-
-const { Text } = Typography;
 
 export function RagNode({
   id,
@@ -73,21 +71,22 @@ export function RagNode({
         {/* <PlusCircleOutlined style={{ fontSize: 10 }} /> */}
       </Handle>
       <Handle type="source" position={Position.Bottom} id="a" isConnectable />
-      <Flex gap={10} justify={'space-between'}>
+      <Flex vertical align="center" justify="center">
         <Space size={6}>
           <OperatorIcon
             name={data.label as Operator}
-            fontSize={12}
+            fontSize={16}
           ></OperatorIcon>
-          <span>{id}</span>
+          {/* {data.label} */}
+          <OperateDropdown
+            iconFontSize={14}
+            deleteItem={deleteNode}
+            items={items}
+          ></OperateDropdown>
         </Space>
-        <OperateDropdown
-          iconFontSize={14}
-          deleteItem={deleteNode}
-          items={items}
-        ></OperateDropdown>
+        {/* <div className={styles.nodeName}>{id}</div> */}
       </Flex>
-      <div>
+      {/* <div>
         <Text
           ellipsis={{ tooltip: description }}
           style={{ width: 130 }}
@@ -95,7 +94,10 @@ export function RagNode({
         >
           {description}
         </Text>
-      </div>
+      </div> */}
+      <section className={styles.bottomBox}>
+        <div className={styles.nodeName}>{id}</div>
+      </section>
     </section>
   );
 }

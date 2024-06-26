@@ -1,5 +1,4 @@
 .ragNode {
-  // height: 50px;
   position: relative;
   box-shadow:
     -6px 0 12px 0 rgba(179, 177, 177, 0.08),
@@ -9,6 +8,16 @@
   padding: 5px;
   border-radius: 5px;
   background: white;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  display: flex;
+  // align-items: center;
+  // justify-self: center;
+  justify-content: center;
+  .nodeName {
+    font-size: 8px;
+  }
   label {
     display: block;
     color: #777;
@@ -16,6 +25,17 @@
   }
   .description {
     font-size: 10px;
+  }
+  .bottomBox {
+    position: absolute;
+    bottom: -24px;
+    background: white;
+    padding: 2px 5px;
+    border-radius: 5px;
+    box-shadow:
+      -6px 0 12px 0 rgba(179, 177, 177, 0.08),
+      -3px 0 6px -4px rgba(0, 0, 0, 0.12),
+      -6px 0 16px 6px rgba(0, 0, 0, 0.05);
   }
 }
 .selectedNode {
