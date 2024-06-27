@@ -32,7 +32,7 @@ const CategorizeForm = ({ form, onValuesChange, node }: IOperatorForm) => {
       >
         <LLMSelect></LLMSelect>
       </Form.Item>
-      <DynamicCategorize></DynamicCategorize>
+      <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
     </Form>
   );
 };

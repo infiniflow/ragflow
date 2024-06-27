@@ -82,3 +82,18 @@ export const initialFormValuesMap = {
   [Operator.Answer]: {},
   [Operator.Categorize]: {},
 };
+
+export const CategorizeAnchorPointPositions = [
+  { top: 1, right: 34 },
+  { top: 8, right: 18 },
+  { top: 15, right: 10 },
+  { top: 24, right: 4 },
+  { top: 31, right: 1 },
+  { top: 38, right: -2 },
+  { top: 62, right: -2 }, //bottom
+  { top: 71, right: 1 },
+  { top: 79, right: 6 },
+  { top: 86, right: 12 },
+  { top: 91, right: 20 },
+  { top: 98, right: 34 },
+];
