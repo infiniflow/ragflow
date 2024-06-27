@@ -163,7 +163,7 @@ class TestFile(TestSdk):
         data = res['data'][0]
         doc_id = data['id']
         # delete the files
-        deleted_res = ragflow.delete_files(doc_id)
+        deleted_res = ragflow.delete_files(doc_id, dataset_id)
         # assert value
         assert deleted_res['code'] == RetCode.SUCCESS and deleted_res['data'] is True
 
@@ -172,7 +172,9 @@ class TestFile(TestSdk):
         Test deleting a document that does not exist with failure.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        res = ragflow.delete_files("111")
+        created_res = ragflow.create_dataset("test_delete_document_with_not_existing_document")
+        dataset_id = created_res['data']['dataset_id']
+        res = ragflow.delete_files("111", dataset_id)
         assert res['code'] == RetCode.DATA_ERROR and res['message'] == 'Document 111 not found!'
 
     def test_delete_document_with_creating_100_documents_and_deleting_100_documents(self):
@@ -191,9 +193,49 @@ class TestFile(TestSdk):
         for d in data:
             doc_id = d['id']
             # delete the files
-            deleted_res = ragflow.delete_files(doc_id)
+            deleted_res = ragflow.delete_files(doc_id, dataset_id)
             # assert value
             assert deleted_res['code'] == RetCode.SUCCESS and deleted_res['data'] is True
+
+    def test_delete_document_from_nonexistent_dataset(self):
+        """
+        Test deleting documents from a non-existent dataset
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_delete_one_file")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt"]
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        # get the doc_id
+        data = res['data'][0]
+        doc_id = data['id']
+        # delete the files
+        deleted_res = ragflow.delete_files(doc_id, "000")
+        # assert value
+        assert (deleted_res['code'] == RetCode.ARGUMENT_ERROR and deleted_res['message'] ==
+                f'The document {doc_id} is not in the dataset: 000, but in the dataset: {dataset_id}.')
+
+    def test_delete_document_which_is_located_in_other_dataset(self):
+        """
+        Test deleting a document which is located in other dataset.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        # upload a document
+        created_res = ragflow.create_dataset("test_delete_document_which_is_located_in_other_dataset")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt"]
+        res = ragflow.upload_local_file(created_res_id, file_paths)
+        # other dataset
+        other_res = ragflow.create_dataset("other_dataset")
+        other_dataset_id = other_res['data']['dataset_id']
+        # get the doc_id
+        data = res['data'][0]
+        doc_id = data['id']
+        # delete the files from the other dataset
+        deleted_res = ragflow.delete_files(doc_id, other_dataset_id)
+        # assert value
+        assert (deleted_res['code'] == RetCode.ARGUMENT_ERROR and deleted_res['message'] ==
+                f'The document {doc_id} is not in the dataset: {other_dataset_id}, but in the dataset: {created_res_id}.')
 
 # ----------------------------download a file-----------------------------------------------------
 

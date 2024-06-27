@@ -147,9 +147,9 @@ def upload(dataset_id):
     return construct_json_result(data=uploaded_docs_json, code=RetCode.SUCCESS)
 
 # ----------------------------delete a file-----------------------------------------------------
-@manager.route('/<document_id>', methods=['DELETE'])
+@manager.route('/<dataset_id>/<document_id>', methods=['DELETE'])
 @login_required
-def delete(document_id):  # string
+def delete(document_id, dataset_id):  # string
     # get the root folder
     root_folder = FileService.get_root_folder(current_user.id)
     # parent file's id
@@ -170,21 +170,28 @@ def delete(document_id):  # string
                                                  f" reason!", code=RetCode.AUTHENTICATION_ERROR)
 
         # get the doc's id and location
-        b, n = File2DocumentService.get_minio_address(doc_id=document_id)
+        real_dataset_id, location = File2DocumentService.get_minio_address(doc_id=document_id)
+
+        if real_dataset_id != dataset_id:
+            return construct_json_result(message=f"The document {document_id} is not in the dataset: {dataset_id}, "
+                                                 f"but in the dataset: {real_dataset_id}.", code=RetCode.ARGUMENT_ERROR)
 
         # there is an issue when removing
         if not DocumentService.remove_document(doc, tenant_id):
             return construct_json_result(
                 message="There was an error during the document removal process. Please check the status of the "
-                        "RAGFlow server and try the removal again.", code=RetCode.DATA_ERROR)
+                        "RAGFlow server and try the removal again.", code=RetCode.OPERATING_ERROR)
 
-        # delete the other files
-        f2d = File2DocumentService.get_by_document_id(document_id)
-        FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+        # fetch the File2Document record associated with the provided document ID.
+        file_to_doc = File2DocumentService.get_by_document_id(document_id)
+        # delete the associated File record.
+        FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == file_to_doc[0].file_id])
+        # delete the File2Document record itself using the document ID. This removes the
+        # association between the document and the file after the File record has been deleted.
         File2DocumentService.delete_by_document_id(document_id)
 
         # delete it from minio
-        MINIO.rm(b, n)
+        MINIO.rm(dataset_id, location)
     except Exception as e:
         errors += str(e)
     if errors:
