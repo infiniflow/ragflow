@@ -1,5 +1,6 @@
 import type {} from '@redux-devtools/extension';
 import { humanId } from 'human-id';
+import lodashSet from 'lodash/set';
 import {
   Connection,
   Edge,
@@ -36,6 +37,7 @@ export type RFState = {
   addNode: (nodes: Node) => void;
   getNode: (id: string) => Node | undefined;
   addEdge: (connection: Connection) => void;
+  getEdge: (id: string) => Edge | undefined;
   deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
   duplicateNode: (id: string) => void;
   deleteEdge: () => void;
@@ -43,7 +45,7 @@ export type RFState = {
   deleteNodeById: (id: string) => void;
   deleteEdgeBySourceAndTarget: (source: string, target: string) => void;
   findNodeByName: (operatorName: Operator) => Node | undefined;
-  findNodeById: (id: string) => Node | undefined;
+  updateMutableNodeFormItem: (id: string, field: string, value: any) => void;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -92,6 +94,10 @@ const useGraphStore = create<RFState>()(
         set({
           edges: addEdge(connection, get().edges),
         });
+        get().deletePreviousEdgeOfClassificationNode(connection);
+      },
+      getEdge: (id: string) => {
+        return get().edges.find((x) => x.id === id);
       },
       deletePreviousEdgeOfClassificationNode: (connection: Connection) => {
         // Delete the edge on the classification node anchor when the anchor is connected to other nodes
@@ -164,9 +170,6 @@ const useGraphStore = create<RFState>()(
       findNodeByName: (name: Operator) => {
         return get().nodes.find((x) => x.data.label === name);
       },
-      findNodeById: (id: string) => {
-        return get().nodes.find((x) => x.id === id);
-      },
       updateNodeForm: (nodeId: string, values: any) => {
         set({
           nodes: get().nodes.map((node) => {
@@ -177,6 +180,13 @@ const useGraphStore = create<RFState>()(
             return node;
           }),
         });
+      },
+      updateMutableNodeFormItem: (id: string, field: string, value: any) => {
+        const { nodes } = get();
+        const idx = nodes.findIndex((x) => x.id === id);
+        if (idx) {
+          lodashSet(nodes, [idx, 'data', 'form', field], value);
+        }
       },
     }),
     { name: 'graph' },

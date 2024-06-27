@@ -11,10 +11,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
   const form = Form.useFormInstance();
   const options = useBuildCategorizeToOptions();
-  const { handleSelectChange } = useHandleToSelectChange(
-    options.map((x) => x.value),
-    nodeId,
-  );
+  const { handleSelectChange } = useHandleToSelectChange(nodeId);
 
   return (
     <>
@@ -64,7 +61,9 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                     <Select
                       allowClear
                       options={options}
-                      onChange={handleSelectChange}
+                      onChange={handleSelectChange(
+                        form.getFieldValue(['items', field.name, 'name']),
+                      )}
                     />
                   </Form.Item>
                 </Card>

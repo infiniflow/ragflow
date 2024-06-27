@@ -169,7 +169,7 @@ export const useWatchGraphChange = () => {
   const edges = useGraphStore((state) => state.edges);
   useDebounceEffect(
     () => {
-      console.info('useDebounceEffect');
+      // console.info('useDebounceEffect');
     },
     [nodes, edges],
     {
