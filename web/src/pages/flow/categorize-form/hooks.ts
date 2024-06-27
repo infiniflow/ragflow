@@ -110,19 +110,29 @@ export const useHandleFormValuesChange = ({
 };
 
 export const useHandleToSelectChange = (nodeId?: string) => {
-  const { addEdge } = useGraphStore((state) => state);
+  const { addEdge, deleteEdgeBySourceAndSourceHandle } = useGraphStore(
+    (state) => state,
+  );
   const handleSelectChange = useCallback(
     (name?: string) => (value?: string) => {
-      if (nodeId && value && name) {
-        addEdge({
-          source: nodeId,
-          target: value,
-          sourceHandle: name,
-          targetHandle: null,
-        });
+      if (nodeId && name) {
+        if (value) {
+          addEdge({
+            source: nodeId,
+            target: value,
+            sourceHandle: name,
+            targetHandle: null,
+          });
+        } else {
+          // clear selected value
+          deleteEdgeBySourceAndSourceHandle({
+            source: nodeId,
+            sourceHandle: name,
+          });
+        }
       }
     },
-    [addEdge, nodeId],
+    [addEdge, nodeId, deleteEdgeBySourceAndSourceHandle],
   );
 
   return { handleSelectChange };

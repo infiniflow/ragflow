@@ -43,7 +43,7 @@ export type RFState = {
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
   deleteNodeById: (id: string) => void;
-  deleteEdgeBySourceAndTarget: (source: string, target: string) => void;
+  deleteEdgeBySourceAndSourceHandle: (connection: Partial<Connection>) => void;
   findNodeByName: (operatorName: Operator) => Node | undefined;
   updateMutableNodeFormItem: (id: string, field: string, value: any) => void;
 };
@@ -150,12 +150,17 @@ const useGraphStore = create<RFState>()(
           edges: edges.filter((edge) => edge.id !== id),
         });
       },
-      deleteEdgeBySourceAndTarget: (source: string, target: string) => {
+      deleteEdgeBySourceAndSourceHandle: ({
+        source,
+        sourceHandle,
+      }: Partial<Connection>) => {
         const { edges } = get();
+        const nextEdges = edges.filter(
+          (edge) =>
+            edge.source !== source || edge.sourceHandle !== sourceHandle,
+        );
         set({
-          edges: edges.filter(
-            (edge) => edge.target !== target && edge.source !== source,
-          ),
+          edges: nextEdges,
         });
       },
       deleteNodeById: (id: string) => {
