@@ -25,7 +25,7 @@ import { useDebounceEffect } from 'ahooks';
 import { FormInstance } from 'antd';
 import { humanId } from 'human-id';
 import { useParams } from 'umi';
-import { Operator } from './constant';
+import { NodeMap, Operator } from './constant';
 import useGraphStore, { RFState } from './store';
 import { buildDslComponentsByGraph } from './utils';
 
@@ -87,7 +87,7 @@ export const useHandleDrop = () => {
       });
       const newNode = {
         id: `${type}:${humanId()}`,
-        type: 'ragNode',
+        type: NodeMap[type as Operator] || 'ragNode',
         position: position || {
           x: 0,
           y: 0,
