@@ -32,7 +32,7 @@ options:
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/419d8588-87b1-4ab8-ac49-2d1f047a4b97" width="600"/>
 </div>
-💡 We plant to display it here in the near future.
+💡 We plan to display it here in the near future.
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/c97915de-0091-46a5-afd9-e278946e5fe3" width="600"/>
 </div>
