@@ -85,9 +85,9 @@ pyarrow==15.0.0
 pyarrow-hotfix==0.6
 pyclipper==1.3.0.post5
 pycparser==2.21
-pycryptodome==3.20.0
-pycryptodome-test-vectors==1.0.14
-pycryptodomex==3.20.0
+pycryptodome
+pycryptodome-test-vectors
+pycryptodomex
 pydantic==2.6.2
 pydantic_core==2.16.3
 PyJWT==2.8.0

@@ -17,12 +17,12 @@ from timeit import default_timer as timer
 import re
 from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, naive_merge_docx, tokenize_chunks_docx
-from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser
+from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser, MarkdownParser
 from rag.settings import cron_logger
 from rag.utils import num_tokens_from_string
 from PIL import Image
 from functools import reduce
-
+from markdown import markdown
 class Docx(DocxParser):
     def __init__(self):
         pass
@@ -135,6 +135,31 @@ class Pdf(PdfParser):
                 for b in self.boxes], tbls
 
 
+class Markdown(MarkdownParser):
+    def __call__(self, filename, binary=None):
+        txt = ""
+        tbls = []
+        if binary:
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding, errors="ignore")
+        else:
+            with open(filename, "r") as f:
+                txt = f.read()
+        remainder, tables = self.extract_tables_and_remainder(f'{txt}\n')
+        sections = []
+        tbls = []
+        for sec in remainder.split("\n"):
+            if num_tokens_from_string(sec) > 10 * self.chunk_token_num:
+                sections.append((sec[:int(len(sec)/2)], ""))
+                sections.append((sec[int(len(sec)/2):], ""))
+            else:
+                sections.append((sec, ""))
+        print(tables)
+        for table in tables:
+            tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
+        return sections, tbls
+
+
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     """
@@ -185,7 +210,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         excel_parser = ExcelParser()
         sections = [(l, "") for l in excel_parser.html(binary) if l]
 
-    elif re.search(r"\.(txt|md|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = ""
         if binary:
@@ -206,6 +231,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             else:
                 sections.append((sec, ""))
 
+        callback(0.8, "Finish parsing.")
+    
+    elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        sections, tbls = Markdown(int(parser_config.get("chunk_token_num", 128)))(filename, binary)
+        res = tokenize_table(tbls, doc, eng)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
