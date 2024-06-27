@@ -1,11 +1,13 @@
 import get from 'lodash/get';
 import omit from 'lodash/omit';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
+import { Edge, Node } from 'reactflow';
 import { Operator } from '../constant';
 import {
   ICategorizeItem,
   ICategorizeItemResult,
   IOperatorForm,
+  NodeData,
 } from '../interface';
 import useGraphStore from '../store';
 
@@ -33,10 +35,18 @@ export const useBuildCategorizeToOptions = () => {
 */
 const buildCategorizeListFromObject = (
   categorizeItem: ICategorizeItemResult,
+  edges: Edge[],
+  node?: Node<NodeData>,
 ) => {
+  // Categorize's to field has two data sources, with edges as the data source.
+  // Changes in the edge or to field need to be synchronized to the form field.
   return Object.keys(categorizeItem).reduce<Array<ICategorizeItem>>(
     (pre, cur) => {
-      pre.push({ name: cur, ...categorizeItem[cur] });
+      // synchronize edge data to the to field
+      const edge = edges.find(
+        (x) => x.source === node?.id && x.sourceHandle === cur,
+      );
+      pre.push({ name: cur, ...categorizeItem[cur], to: edge?.target });
       return pre;
     },
     [],
@@ -70,6 +80,8 @@ export const useHandleFormValuesChange = ({
   form,
   node,
 }: IOperatorForm) => {
+  const edges = useGraphStore((state) => state.edges);
+
   const handleValuesChange = useCallback(
     (changedValues: any, values: any) => {
       console.info(changedValues, values);
@@ -85,43 +97,29 @@ export const useHandleFormValuesChange = ({
     form?.setFieldsValue({
       items: buildCategorizeListFromObject(
         get(node, 'data.form.category_description', {}),
+        edges,
+        node,
       ),
     });
-  }, [form, node]);
+  }, [form, node, edges]);
 
   return { handleValuesChange };
 };
 
-export const useHandleToSelectChange = (
-  opstionIds: string[],
-  nodeId?: string,
-) => {
-  // const [previousTarget, setPreviousTarget] = useState('');
-  const previousTarget = useRef('');
-  const { addEdge, deleteEdgeBySourceAndTarget } = useGraphStore(
-    (state) => state,
-  );
+export const useHandleToSelectChange = (nodeId?: string) => {
+  const { addEdge } = useGraphStore((state) => state);
   const handleSelectChange = useCallback(
-    (value?: string) => {
-      if (nodeId) {
-        if (previousTarget.current) {
-          // delete previous edge
-          deleteEdgeBySourceAndTarget(nodeId, previousTarget.current);
-        }
-        if (value) {
-          addEdge({
-            source: nodeId,
-            target: value,
-            sourceHandle: 'b',
-            targetHandle: 'd',
-          });
-        } else {
-          // if the value is empty, delete the edges between the current node and all nodes in the drop-down box.
-        }
-        previousTarget.current = value;
+    (name?: string) => (value?: string) => {
+      if (nodeId && value && name) {
+        addEdge({
+          source: nodeId,
+          target: value,
+          sourceHandle: name,
+          targetHandle: null,
+        });
       }
     },
-    [addEdge, nodeId, deleteEdgeBySourceAndTarget],
+    [addEdge, nodeId],
   );
 
   return { handleSelectChange };

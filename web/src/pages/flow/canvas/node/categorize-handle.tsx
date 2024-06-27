@@ -22,7 +22,8 @@ const CategorizeHandle = ({ top, right, text, idx }: IProps) => {
     <Handle
       type="source"
       position={Position.Right}
-      id={`CategorizeHandle${idx}`}
+      // id={`CategorizeHandle${idx}`}
+      id={text}
       isConnectable
       style={{
         ...DEFAULT_HANDLE_STYLE,
