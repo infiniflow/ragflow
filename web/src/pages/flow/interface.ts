@@ -10,6 +10,7 @@ export interface IOperatorForm {
   onValuesChange?(changedValues: any, values: any): void;
   form?: FormInstance;
   node?: Node<NodeData>;
+  nodeId?: string;
 }
 
 export interface IBeginForm {

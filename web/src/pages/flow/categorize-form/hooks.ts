@@ -78,9 +78,11 @@ const buildCategorizeObjectFromList = (list: Array<ICategorizeItem>) => {
 export const useHandleFormValuesChange = ({
   onValuesChange,
   form,
-  node,
+  nodeId,
 }: IOperatorForm) => {
   const edges = useGraphStore((state) => state.edges);
+  const getNode = useGraphStore((state) => state.getNode);
+  const node = getNode(nodeId);
 
   const handleValuesChange = useCallback(
     (changedValues: any, values: any) => {
@@ -94,12 +96,13 @@ export const useHandleFormValuesChange = ({
   );
 
   useEffect(() => {
+    const items = buildCategorizeListFromObject(
+      get(node, 'data.form.category_description', {}),
+      edges,
+      node,
+    );
     form?.setFieldsValue({
-      items: buildCategorizeListFromObject(
-        get(node, 'data.form.category_description', {}),
-        edges,
-        node,
-      ),
+      items,
     });
   }, [form, node, edges]);
 

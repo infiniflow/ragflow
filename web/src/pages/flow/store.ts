@@ -35,7 +35,7 @@ export type RFState = {
   updateNodeForm: (nodeId: string, values: any) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
-  getNode: (id: string) => Node | undefined;
+  getNode: (id?: string) => Node | undefined;
   addEdge: (connection: Connection) => void;
   getEdge: (id: string) => Edge | undefined;
   deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
@@ -87,7 +87,7 @@ const useGraphStore = create<RFState>()(
       addNode: (node: Node) => {
         set({ nodes: get().nodes.concat(node) });
       },
-      getNode: (id: string) => {
+      getNode: (id?: string) => {
         return get().nodes.find((x) => x.id === id);
       },
       addEdge: (connection: Connection) => {
