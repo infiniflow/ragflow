@@ -149,11 +149,53 @@ class TestFile(TestSdk):
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert res['code'] == RetCode.ARGUMENT_ERROR and res['message'] == 'Remote files have not unsupported.'
 
-# ----------------------------upload remote files-----------------------------------------------------
+# ----------------------------delete a file-----------------------------------------------------
+    def test_delete_one_file(self):
+        """
+        Test deleting one file with success.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_delete_one_file")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt"]
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+        # get the doc_id
+        data = res['data'][0]
+        doc_id = data['id']
+        # delete the files
+        deleted_res = ragflow.delete_files(doc_id)
+        # assert value
+        assert deleted_res['code'] == RetCode.SUCCESS and deleted_res['data'] is True
+
+    def test_delete_document_with_not_existing_document(self):
+        """
+        Test deleting a document that does not exist with failure.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        res = ragflow.delete_files("111")
+        assert res['code'] == RetCode.DATA_ERROR and res['message'] == 'Document 111 not found!'
+
+    def test_delete_document_with_creating_100_documents_and_deleting_100_documents(self):
+        """
+        Test deleting documents when uploading 100 docs and deleting 100 docs.
+        """
+        # upload 100 docs
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_delete_one_file")
+        dataset_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt"] * 100
+        res = ragflow.upload_local_file(dataset_id, file_paths)
+
+        # get the doc_id
+        data = res['data']
+        for d in data:
+            doc_id = d['id']
+            # delete the files
+            deleted_res = ragflow.delete_files(doc_id)
+            # assert value
+            assert deleted_res['code'] == RetCode.SUCCESS and deleted_res['data'] is True
 
 # ----------------------------download a file-----------------------------------------------------
-
-# ----------------------------delete a file-----------------------------------------------------
 
 # ----------------------------enable rename-----------------------------------------------------
 
