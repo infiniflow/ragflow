@@ -167,13 +167,13 @@ export const buildDslComponentsByGraph = (
   return components;
 };
 
-export const getOperatorType = (id: string | null) => {
+export const getOperatorTypeFromId = (id: string | null) => {
   return id?.split(':')[0] as Operator | undefined;
 };
 
 // restricted lines cannot be connected successfully.
 export const isValidConnection = (connection: Connection) => {
   return RestrictedUpstreamMap[
-    getOperatorType(connection.source) as Operator
-  ]?.every((x) => x !== getOperatorType(connection.target));
+    getOperatorTypeFromId(connection.source) as Operator
+  ]?.every((x) => x !== getOperatorTypeFromId(connection.target));
 };

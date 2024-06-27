@@ -19,6 +19,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { Operator } from './constant';
 import { NodeData } from './interface';
+import { getOperatorTypeFromId } from './utils';
 
 export type RFState = {
   nodes: Node<NodeData>[];
@@ -35,6 +36,7 @@ export type RFState = {
   addNode: (nodes: Node) => void;
   getNode: (id: string) => Node | undefined;
   addEdge: (connection: Connection) => void;
+  deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
   duplicateNode: (id: string) => void;
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
@@ -66,6 +68,7 @@ const useGraphStore = create<RFState>()(
         set({
           edges: addEdge(connection, get().edges),
         });
+        get().deletePreviousEdgeOfClassificationNode(connection);
       },
       onSelectionChange: ({ nodes, edges }: OnSelectionChangeParams) => {
         set({
@@ -89,6 +92,23 @@ const useGraphStore = create<RFState>()(
         set({
           edges: addEdge(connection, get().edges),
         });
+      },
+      deletePreviousEdgeOfClassificationNode: (connection: Connection) => {
+        // Delete the edge on the classification node anchor when the anchor is connected to other nodes
+        const { edges } = get();
+        if (getOperatorTypeFromId(connection.source) === Operator.Categorize) {
+          const previousEdge = edges.find(
+            (x) =>
+              x.source === connection.source &&
+              x.sourceHandle === connection.sourceHandle &&
+              x.target !== connection.target,
+          );
+          if (previousEdge) {
+            set({
+              edges: edges.filter((edge) => edge !== previousEdge),
+            });
+          }
+        }
       },
       // addOnlyOneEdgeBetweenTwoNodes: (connection: Connection) => {
 
