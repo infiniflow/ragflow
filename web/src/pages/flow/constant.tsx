@@ -97,3 +97,27 @@ export const CategorizeAnchorPointPositions = [
   { top: 91, right: 20 },
   { top: 98, right: 34 },
 ];
+
+// key is the source of the edge, value is the target of the edge
+// no connection lines are allowed between key and value
+export const RestrictedUpstreamMap = {
+  [Operator.Begin]: [
+    Operator.Begin,
+    Operator.Answer,
+    Operator.Categorize,
+    Operator.Generate,
+    Operator.Retrieval,
+  ],
+  [Operator.Categorize]: [Operator.Begin, Operator.Categorize, Operator.Answer],
+  [Operator.Answer]: [],
+  [Operator.Retrieval]: [],
+  [Operator.Generate]: [],
+};
+
+export const NodeMap = {
+  [Operator.Begin]: 'beginNode',
+  [Operator.Categorize]: 'categorizeNode',
+  [Operator.Retrieval]: 'ragNode',
+  [Operator.Generate]: 'ragNode',
+  [Operator.Answer]: 'ragNode',
+};

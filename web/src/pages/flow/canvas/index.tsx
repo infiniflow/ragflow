@@ -20,9 +20,16 @@ import {
 import { RagNode } from './node';
 
 import ChatDrawer from '../chat/drawer';
+import { isValidConnection } from '../utils';
 import styles from './index.less';
+import { BeginNode } from './node/begin-node';
+import { CategorizeNode } from './node/categorize-node';
 
-const nodeTypes = { ragNode: RagNode };
+const nodeTypes = {
+  ragNode: RagNode,
+  categorizeNode: CategorizeNode,
+  beginNode: BeginNode,
+};
 
 const edgeTypes = {
   buttonEdge: ButtonEdge,
@@ -76,6 +83,7 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
         onKeyUp={handleKeyUp}
         onSelectionChange={onSelectionChange}
         nodeOrigin={[0.5, 0]}
+        isValidConnection={isValidConnection}
         onChange={(...params) => {
           console.info('params:', ...params);
         }}

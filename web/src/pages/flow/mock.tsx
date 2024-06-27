@@ -38,7 +38,7 @@ export const dsl = {
     nodes: [
       {
         id: 'begin',
-        type: 'ragNode',
+        type: 'beginNode',
         position: {
           x: 50,
           y: 200,

@@ -3,9 +3,13 @@ import { removeUselessFieldsFromValues } from '@/utils/form';
 import dagre from 'dagre';
 import { curry, isEmpty } from 'lodash';
 import pipe from 'lodash/fp/pipe';
-import { Edge, MarkerType, Node, Position } from 'reactflow';
+import { Connection, Edge, MarkerType, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
-import { Operator, initialFormValuesMap } from './constant';
+import {
+  Operator,
+  RestrictedUpstreamMap,
+  initialFormValuesMap,
+} from './constant';
 import { NodeData } from './interface';
 
 const buildEdges = (
@@ -161,4 +165,15 @@ export const buildDslComponentsByGraph = (
   });
 
   return components;
+};
+
+export const getOperatorType = (id: string | null) => {
+  return id?.split(':')[0] as Operator | undefined;
+};
+
+// restricted lines cannot be connected successfully.
+export const isValidConnection = (connection: Connection) => {
+  return RestrictedUpstreamMap[
+    getOperatorType(connection.source) as Operator
+  ]?.every((x) => x !== getOperatorType(connection.target));
 };
