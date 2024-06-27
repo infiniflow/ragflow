@@ -1,5 +1,6 @@
 import { CloseOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select, Typography } from 'antd';
+import { useUpdateNodeInternals } from 'reactflow';
 import { useBuildCategorizeToOptions, useHandleToSelectChange } from './hooks';
 
 interface IProps {
@@ -7,6 +8,7 @@ interface IProps {
 }
 
 const DynamicCategorize = ({ nodeId }: IProps) => {
+  const updateNodeInternals = useUpdateNodeInternals();
   const form = Form.useFormInstance();
   const options = useBuildCategorizeToOptions();
   const { handleSelectChange } = useHandleToSelectChange(
@@ -21,6 +23,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
           const handleAdd = () => {
             const idx = fields.length;
             add({ name: `Categorize ${idx + 1}` });
+            if (nodeId) updateNodeInternals(nodeId);
           };
           return (
             <div
