@@ -9,7 +9,9 @@ import { Operator } from '../constant';
 import GenerateForm from '../generate-form';
 import { useHandleFormValuesChange } from '../hooks';
 import MessageForm from '../message-form';
+import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
+import RewriteQuestionForm from '../rewrite-question-form';
 
 interface IProps {
   node?: Node;
@@ -22,6 +24,8 @@ const FormMap = {
   [Operator.Answer]: AnswerForm,
   [Operator.Categorize]: CategorizeForm,
   [Operator.Message]: MessageForm,
+  [Operator.Relevant]: RelevantForm,
+  [Operator.RewriteQuestion]: RewriteQuestionForm,
 };
 
 const FlowDrawer = ({

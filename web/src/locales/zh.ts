@@ -535,6 +535,7 @@ export default {
       messagePlaceholder: '消息',
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
+      loop: '环',
     },
     footer: {
       profile: 'All rights reserved @ React',
