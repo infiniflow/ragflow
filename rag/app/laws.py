@@ -76,6 +76,7 @@ class Docx(DocxParser):
                     point = new_node
                     last_question, last_answer, last_level = '', '', -1
                 last_level = question_level
+                last_answer = ''
                 last_question = p_text
             
             for run in p.runs:
@@ -95,7 +96,7 @@ class Docx(DocxParser):
         while traversal_queue:
             current_node: DocxNode = traversal_queue.pop()
             sum_text = f'{self.__clean(current_node.question)}\n{self.__clean(current_node.answer)}'
-            if not current_node.childs:
+            if not current_node.childs and not current_node.answer.strip():
                 continue
             for child in current_node.childs:
                 sum_text = f'{sum_text}\n{self.__clean(child.question)}'
