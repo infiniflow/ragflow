@@ -533,7 +533,7 @@ export const useHandleMessageInputChange = () => {
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
     const value = e.target.value;
     const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
-    setValue(trim(nextValue));
+    setValue(nextValue);
   };
 
   return {
