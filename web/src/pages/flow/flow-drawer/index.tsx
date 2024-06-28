@@ -8,6 +8,7 @@ import CategorizeForm from '../categorize-form';
 import { Operator } from '../constant';
 import GenerateForm from '../generate-form';
 import { useHandleFormValuesChange } from '../hooks';
+import MessageForm from '../message-form';
 import RetrievalForm from '../retrieval-form';
 
 interface IProps {
@@ -20,6 +21,7 @@ const FormMap = {
   [Operator.Generate]: GenerateForm,
   [Operator.Answer]: AnswerForm,
   [Operator.Categorize]: CategorizeForm,
+  [Operator.Message]: MessageForm,
 };
 
 const FlowDrawer = ({

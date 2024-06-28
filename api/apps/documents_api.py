@@ -24,6 +24,7 @@ from flask_login import login_required, current_user
 from api.db import FileType, ParserType
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.settings import RetCode
@@ -31,6 +32,8 @@ from api.utils import get_uuid
 from api.utils.api_utils import construct_json_result
 from api.utils.file_utils import filename_type, thumbnail
 from rag.utils.minio_conn import MINIO
+from api.db.db_models import Task, File
+from api.db import FileType, TaskStatus, ParserType, FileSource
 
 
 MAXIMUM_OF_UPLOADING_FILES = 256
@@ -89,6 +92,7 @@ def upload(dataset_id):
     # grab all the errs
     err = []
     MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
+    uploaded_docs_json = []
     for file in file_objs:
         try:
             # TODO: get this value from the database as some tenants have this limit while others don't
@@ -132,6 +136,7 @@ def upload(dataset_id):
             DocumentService.insert(doc)
 
             FileService.add_file_from_kb(doc, kb_folder["id"], dataset.tenant_id)
+            uploaded_docs_json.append(doc)
         except Exception as e:
             err.append(file.filename + ": " + str(e))
 
@@ -139,13 +144,64 @@ def upload(dataset_id):
         # return all the errors
         return construct_json_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
     # success
+    return construct_json_result(data=uploaded_docs_json, code=RetCode.SUCCESS)
+
+# ----------------------------delete a file-----------------------------------------------------
+@manager.route('/<dataset_id>/<document_id>', methods=['DELETE'])
+@login_required
+def delete(document_id, dataset_id):  # string
+    # get the root folder
+    root_folder = FileService.get_root_folder(current_user.id)
+    # parent file's id
+    parent_file_id = root_folder["id"]
+    # consider the new user
+    FileService.init_knowledgebase_docs(parent_file_id, current_user.id)
+    # store all the errors that may have
+    errors = ""
+    try:
+        # whether there is this document
+        exist, doc = DocumentService.get_by_id(document_id)
+        if not exist:
+            return construct_json_result(message=f"Document {document_id} not found!", code=RetCode.DATA_ERROR)
+        # whether this doc is authorized by this tenant
+        tenant_id = DocumentService.get_tenant_id(document_id)
+        if not tenant_id:
+            return construct_json_result(message=f"You cannot delete this document {document_id} due to the authorization"
+                                                 f" reason!", code=RetCode.AUTHENTICATION_ERROR)
+
+        # get the doc's id and location
+        real_dataset_id, location = File2DocumentService.get_minio_address(doc_id=document_id)
+
+        if real_dataset_id != dataset_id:
+            return construct_json_result(message=f"The document {document_id} is not in the dataset: {dataset_id}, "
+                                                 f"but in the dataset: {real_dataset_id}.", code=RetCode.ARGUMENT_ERROR)
+
+        # there is an issue when removing
+        if not DocumentService.remove_document(doc, tenant_id):
+            return construct_json_result(
+                message="There was an error during the document removal process. Please check the status of the "
+                        "RAGFlow server and try the removal again.", code=RetCode.OPERATING_ERROR)
+
+        # fetch the File2Document record associated with the provided document ID.
+        file_to_doc = File2DocumentService.get_by_document_id(document_id)
+        # delete the associated File record.
+        FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == file_to_doc[0].file_id])
+        # delete the File2Document record itself using the document ID. This removes the
+        # association between the document and the file after the File record has been deleted.
+        File2DocumentService.delete_by_document_id(document_id)
+
+        # delete it from minio
+        MINIO.rm(dataset_id, location)
+    except Exception as e:
+        errors += str(e)
+    if errors:
+        return construct_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
+
     return construct_json_result(data=True, code=RetCode.SUCCESS)
 
 # ----------------------------upload online files------------------------------------------------
 
 # ----------------------------download a file-----------------------------------------------------
-
-# ----------------------------delete a file-----------------------------------------------------
 
 # ----------------------------enable rename-----------------------------------------------------
 
