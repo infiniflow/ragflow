@@ -523,7 +523,15 @@ export default {
       preview: '预览',
       fileError: '文件错误',
     },
-    flow: { cite: '引用', citeTip: 'citeTip' },
+    flow: {
+      cite: '引用',
+      citeTip: 'citeTip',
+      name: '名称',
+      nameMessage: '请输入名称',
+      description: '描述',
+      examples: '示例',
+      to: '到',
+    },
     footer: {
       profile: 'All rights reserved @ React',
     },

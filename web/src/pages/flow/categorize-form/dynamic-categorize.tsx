@@ -1,3 +1,4 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { CloseOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select, Typography } from 'antd';
 import { useUpdateNodeInternals } from 'reactflow';
@@ -13,6 +14,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   const form = Form.useFormInstance();
   const buildCategorizeToOptions = useBuildCategorizeToOptions();
   const { handleSelectChange } = useHandleToSelectChange(nodeId);
+  const { t } = useTranslate('flow');
 
   return (
     <>
@@ -40,25 +42,25 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                   }
                 >
                   <Form.Item
-                    label="name"
+                    label={t('name')}
                     name={[field.name, 'name']}
-                    // initialValue={`Categorize ${field.name + 1}`}
-                    rules={[
-                      { required: true, message: 'Please input your name!' },
-                    ]}
+                    rules={[{ required: true, message: t('nameMessage') }]}
                   >
                     <Input />
                   </Form.Item>
                   <Form.Item
-                    label="description"
+                    label={t('description')}
                     name={[field.name, 'description']}
                   >
                     <Input.TextArea rows={3} />
                   </Form.Item>
-                  <Form.Item label="examples" name={[field.name, 'examples']}>
+                  <Form.Item
+                    label={t('examples')}
+                    name={[field.name, 'examples']}
+                  >
                     <Input.TextArea rows={3} />
                   </Form.Item>
-                  <Form.Item label="to" name={[field.name, 'to']}>
+                  <Form.Item label={t('to')} name={[field.name, 'to']}>
                     <Select
                       allowClear
                       options={buildCategorizeToOptions(
