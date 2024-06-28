@@ -101,10 +101,13 @@ class RAGFlow:
         result_dict = json.loads(res.text)
         return result_dict
 
-    # ----------------------------upload remote files-----------------------------------------------------
-    # ----------------------------download a file-----------------------------------------------------
-
     # ----------------------------delete a file-----------------------------------------------------
+    def delete_files(self, document_id, dataset_id):
+        endpoint = f"{self.document_url}/{dataset_id}/{document_id}"
+        res = requests.delete(endpoint, headers=self.authorization_header)
+        return res.json()
+
+    # ----------------------------download a file-----------------------------------------------------
 
     # ----------------------------enable rename-----------------------------------------------------
 
