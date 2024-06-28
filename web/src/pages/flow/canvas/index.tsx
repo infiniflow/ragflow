@@ -16,11 +16,11 @@ import {
   useHandleKeyUp,
   useSelectCanvasData,
   useShowDrawer,
+  useValidateConnection,
 } from '../hooks';
 import { RagNode } from './node';
 
 import ChatDrawer from '../chat/drawer';
-import { isValidConnection } from '../utils';
 import styles from './index.less';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
@@ -49,6 +49,7 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
     onNodesChange,
     onSelectionChange,
   } = useSelectCanvasData();
+  const isValidConnection = useValidateConnection();
 
   const { drawerVisible, hideDrawer, showDrawer, clickedNode } =
     useShowDrawer();
