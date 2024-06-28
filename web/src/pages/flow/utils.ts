@@ -173,7 +173,8 @@ export const getOperatorTypeFromId = (id: string | null) => {
 
 // restricted lines cannot be connected successfully.
 export const isValidConnection = (connection: Connection) => {
-  return RestrictedUpstreamMap[
+  const ret = RestrictedUpstreamMap[
     getOperatorTypeFromId(connection.source) as Operator
   ]?.every((x) => x !== getOperatorTypeFromId(connection.target));
+  return ret;
 };

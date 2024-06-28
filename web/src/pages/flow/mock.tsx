@@ -37,7 +37,7 @@ export const dsl = {
   graph: {
     nodes: [
       {
-        id: 'begin',
+        id: 'Begin',
         type: 'beginNode',
         position: {
           x: 50,

@@ -35,7 +35,7 @@ export type RFState = {
   updateNodeForm: (nodeId: string, values: any) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
-  getNode: (id: string) => Node | undefined;
+  getNode: (id?: string) => Node | undefined;
   addEdge: (connection: Connection) => void;
   getEdge: (id: string) => Edge | undefined;
   deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
@@ -43,7 +43,7 @@ export type RFState = {
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
   deleteNodeById: (id: string) => void;
-  deleteEdgeBySourceAndTarget: (source: string, target: string) => void;
+  deleteEdgeBySourceAndSourceHandle: (connection: Partial<Connection>) => void;
   findNodeByName: (operatorName: Operator) => Node | undefined;
   updateMutableNodeFormItem: (id: string, field: string, value: any) => void;
 };
@@ -87,7 +87,7 @@ const useGraphStore = create<RFState>()(
       addNode: (node: Node) => {
         set({ nodes: get().nodes.concat(node) });
       },
-      getNode: (id: string) => {
+      getNode: (id?: string) => {
         return get().nodes.find((x) => x.id === id);
       },
       addEdge: (connection: Connection) => {
@@ -150,12 +150,17 @@ const useGraphStore = create<RFState>()(
           edges: edges.filter((edge) => edge.id !== id),
         });
       },
-      deleteEdgeBySourceAndTarget: (source: string, target: string) => {
+      deleteEdgeBySourceAndSourceHandle: ({
+        source,
+        sourceHandle,
+      }: Partial<Connection>) => {
         const { edges } = get();
+        const nextEdges = edges.filter(
+          (edge) =>
+            edge.source !== source || edge.sourceHandle !== sourceHandle,
+        );
         set({
-          edges: edges.filter(
-            (edge) => edge.target !== target && edge.source !== source,
-          ),
+          edges: nextEdges,
         });
       },
       deleteNodeById: (id: string) => {

@@ -101,13 +101,7 @@ export const CategorizeAnchorPointPositions = [
 // key is the source of the edge, value is the target of the edge
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
-  [Operator.Begin]: [
-    Operator.Begin,
-    Operator.Answer,
-    Operator.Categorize,
-    Operator.Generate,
-    Operator.Retrieval,
-  ],
+  [Operator.Begin]: [],
   [Operator.Categorize]: [Operator.Begin, Operator.Categorize, Operator.Answer],
   [Operator.Answer]: [],
   [Operator.Retrieval]: [],
