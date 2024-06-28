@@ -513,6 +513,10 @@ export default {
       description: '描述',
       examples: '範例',
       to: '到',
+      message: '訊息',
+      messagePlaceholder: '訊息',
+      messageMsg: '請輸入訊息或刪除此欄位。',
+      addField: '新增字段',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

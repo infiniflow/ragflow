@@ -531,6 +531,10 @@ export default {
       description: '描述',
       examples: '示例',
       to: '到',
+      message: '消息',
+      messagePlaceholder: '消息',
+      messageMsg: '请输入消息或删除此字段。',
+      addField: '新增字段',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -1,44 +1,85 @@
 import { useTranslate } from '@/hooks/commonHooks';
-import type { FormProps } from 'antd';
-import { Form, Input } from 'antd';
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Form, Input } from 'antd';
 import { IOperatorForm } from '../interface';
 
-type FieldType = {
-  prologue?: string;
+import styles from './index.less';
+
+const formItemLayout = {
+  labelCol: {
+    sm: { span: 6 },
+  },
+  wrapperCol: {
+    sm: { span: 18 },
+  },
 };
 
-const onFinish: FormProps<FieldType>['onFinish'] = (values) => {
-  console.log('Success:', values);
-};
-
-const onFinishFailed: FormProps<FieldType>['onFinishFailed'] = (errorInfo) => {
-  console.log('Failed:', errorInfo);
+const formItemLayoutWithOutLabel = {
+  wrapperCol: {
+    sm: { span: 18, offset: 6 },
+  },
 };
 
 const MessageForm = ({ onValuesChange, form }: IOperatorForm) => {
-  const { t } = useTranslate('chat');
+  const { t } = useTranslate('flow');
 
   return (
     <Form
       name="basic"
-      labelCol={{ span: 8 }}
-      wrapperCol={{ span: 16 }}
-      style={{ maxWidth: 600 }}
+      {...formItemLayoutWithOutLabel}
       initialValues={{ remember: true }}
-      onFinish={onFinish}
-      onFinishFailed={onFinishFailed}
       onValuesChange={onValuesChange}
       autoComplete="off"
       form={form}
     >
-      <Form.Item<FieldType>
-        name={'prologue'}
-        label={t('setAnOpener')}
-        tooltip={t('setAnOpenerTip')}
-        initialValue={t('setAnOpenerInitial')}
-      >
-        <Input.TextArea autoSize={{ minRows: 5 }} />
-      </Form.Item>
+      <Form.List name="messages">
+        {(fields, { add, remove }, {}) => (
+          <>
+            {fields.map((field, index) => (
+              <Form.Item
+                {...(index === 0 ? formItemLayout : formItemLayoutWithOutLabel)}
+                label={index === 0 ? t('message') : ''}
+                required={false}
+                key={field.key}
+              >
+                <Form.Item
+                  {...field}
+                  validateTrigger={['onChange', 'onBlur']}
+                  rules={[
+                    {
+                      required: true,
+                      whitespace: true,
+                      message: t('messageMsg'),
+                    },
+                  ]}
+                  noStyle
+                >
+                  <Input
+                    placeholder={t('messagePlaceholder')}
+                    style={{ width: '80%' }}
+                  />
+                </Form.Item>
+                {fields.length > 1 ? (
+                  <MinusCircleOutlined
+                    className={styles.dynamicDeleteButton}
+                    onClick={() => remove(field.name)}
+                  />
+                ) : null}
+              </Form.Item>
+            ))}
+            <Form.Item>
+              <Button
+                type="dashed"
+                onClick={() => add()}
+                style={{ width: '80%' }}
+                icon={<PlusOutlined />}
+              >
+                {t('addField')}
+              </Button>
+            </Form.Item>
+          </>
+        )}
+      </Form.List>
     </Form>
   );
 };
