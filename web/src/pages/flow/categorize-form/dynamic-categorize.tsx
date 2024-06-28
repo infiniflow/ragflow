@@ -1,6 +1,7 @@
 import { CloseOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select, Typography } from 'antd';
 import { useUpdateNodeInternals } from 'reactflow';
+import { ICategorizeItem } from '../interface';
 import { useBuildCategorizeToOptions, useHandleToSelectChange } from './hooks';
 
 interface IProps {
@@ -10,7 +11,7 @@ interface IProps {
 const DynamicCategorize = ({ nodeId }: IProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
   const form = Form.useFormInstance();
-  const options = useBuildCategorizeToOptions();
+  const buildCategorizeToOptions = useBuildCategorizeToOptions();
   const { handleSelectChange } = useHandleToSelectChange(nodeId);
 
   return (
@@ -60,7 +61,15 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                   <Form.Item label="to" name={[field.name, 'to']}>
                     <Select
                       allowClear
-                      options={options}
+                      options={buildCategorizeToOptions(
+                        (form.getFieldValue(['items']) ?? [])
+                          .map((x: ICategorizeItem) => x.to)
+                          .filter(
+                            (x: string) =>
+                              x !==
+                              form.getFieldValue(['items', field.name, 'to']),
+                          ),
+                      )}
                       onChange={handleSelectChange(
                         form.getFieldValue(['items', field.name, 'name']),
                       )}
