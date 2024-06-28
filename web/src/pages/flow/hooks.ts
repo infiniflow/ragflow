@@ -13,7 +13,7 @@ import React, {
   useEffect,
   useState,
 } from 'react';
-import { Node, Position, ReactFlowInstance } from 'reactflow';
+import { Connection, Node, Position, ReactFlowInstance } from 'reactflow';
 // import { shallow } from 'zustand/shallow';
 import { variableEnabledFieldMap } from '@/constants/chat';
 import {
@@ -25,9 +25,9 @@ import { useDebounceEffect } from 'ahooks';
 import { FormInstance } from 'antd';
 import { humanId } from 'human-id';
 import { useParams } from 'umi';
-import { NodeMap, Operator } from './constant';
+import { NodeMap, Operator, RestrictedUpstreamMap } from './constant';
 import useGraphStore, { RFState } from './store';
-import { buildDslComponentsByGraph } from './utils';
+import { buildDslComponentsByGraph, getOperatorTypeFromId } from './utils';
 
 const selector = (state: RFState) => ({
   nodes: state.nodes,
@@ -246,4 +246,27 @@ export const useSetLlmSetting = (form?: FormInstance) => {
     const otherValues = settledModelVariableMap[ModelVariableType.Precise];
     form?.setFieldsValue({ ...switchBoxValues, ...otherValues });
   }, [form, initialLlmSetting]);
+};
+
+export const useValidateConnection = () => {
+  const edges = useGraphStore((state) => state.edges);
+  // restricted lines cannot be connected successfully.
+  const isValidConnection = useCallback(
+    (connection: Connection) => {
+      // limit there to be only one line between two nodes
+      const hasLine = edges.some(
+        (x) => x.source === connection.source && x.target === connection.target,
+      );
+
+      const ret =
+        !hasLine &&
+        RestrictedUpstreamMap[
+          getOperatorTypeFromId(connection.source) as Operator
+        ]?.every((x) => x !== getOperatorTypeFromId(connection.target));
+      return ret;
+    },
+    [edges],
+  );
+
+  return isValidConnection;
 };
