@@ -17,9 +17,20 @@ const excludedNodes = [Operator.Categorize, Operator.Answer, Operator.Begin];
 export const useBuildCategorizeToOptions = () => {
   const nodes = useGraphStore((state) => state.nodes);
 
-  return nodes
-    .filter((x) => excludedNodes.every((y) => y !== x.data.label))
-    .map((x) => ({ label: x.id, value: x.id }));
+  const buildCategorizeToOptions = useCallback(
+    (toList: string[]) => {
+      return nodes
+        .filter(
+          (x) =>
+            excludedNodes.every((y) => y !== x.data.label) &&
+            !toList.some((y) => y === x.id), // filter out selected values ​​in other to fields from the current drop-down box options
+        )
+        .map((x) => ({ label: x.id, value: x.id }));
+    },
+    [nodes],
+  );
+
+  return buildCategorizeToOptions;
 };
 
 /**
