@@ -3,6 +3,7 @@ import {
   DatabaseOutlined,
   MergeCellsOutlined,
   MessageOutlined,
+  QuestionOutlined,
   RocketOutlined,
   SendOutlined,
   SlidersOutlined,
@@ -16,6 +17,7 @@ export enum Operator {
   Categorize = 'Categorize',
   Message = 'Message',
   Relevant = 'Relevant',
+  RewriteQuestion = 'RewriteQuestion',
 }
 
 export const operatorIconMap = {
@@ -26,6 +28,7 @@ export const operatorIconMap = {
   [Operator.Categorize]: DatabaseOutlined,
   [Operator.Message]: MessageOutlined,
   [Operator.Relevant]: BranchesOutlined,
+  [Operator.RewriteQuestion]: QuestionOutlined,
 };
 
 export const operatorMap = {
@@ -38,6 +41,7 @@ export const operatorMap = {
   [Operator.Categorize]: { description: 'Categorize description' },
   [Operator.Message]: { description: 'Message description' },
   [Operator.Relevant]: { description: 'BranchesOutlined description' },
+  [Operator.RewriteQuestion]: { description: 'RewriteQuestion description' },
 };
 
 export const componentMenuList = [
@@ -64,6 +68,10 @@ export const componentMenuList = [
   {
     name: Operator.Relevant,
     description: operatorMap[Operator.Relevant].description,
+  },
+  {
+    name: Operator.RewriteQuestion,
+    description: operatorMap[Operator.RewriteQuestion].description,
   },
 ];
 
@@ -124,6 +132,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Generate]: [],
   [Operator.Message]: [],
   [Operator.Relevant]: [],
+  [Operator.RewriteQuestion]: [],
 };
 
 export const NodeMap = {
@@ -134,4 +143,5 @@ export const NodeMap = {
   [Operator.Answer]: 'ragNode',
   [Operator.Message]: 'ragNode',
   [Operator.Relevant]: 'ragNode',
+  [Operator.RewriteQuestion]: 'ragNode',
 };

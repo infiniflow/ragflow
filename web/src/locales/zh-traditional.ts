@@ -517,6 +517,7 @@ export default {
       messagePlaceholder: '訊息',
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
+      loop: '環',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

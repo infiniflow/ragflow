@@ -556,6 +556,7 @@ The above is the content you need to summarize.`,
       messagePlaceholder: 'message',
       messageMsg: 'Please input message or delete this field.',
       addField: 'Add field',
+      loop: 'Loop',
     },
     footer: {
       profile: 'All rights reserved @ React',
