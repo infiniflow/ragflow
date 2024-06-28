@@ -721,7 +721,7 @@ def init_llm_factory():
             "max_tokens": 32768,
             "model_type": LLMType.CHAT.value
         }, {
-            "fid": factory_infos[0]["name"],
+            "fid": factory_infos[15]["name"],
             "llm_name": "azure-gpt-4-vision-preview",
             "tags": "LLM,CHAT,IMAGE2TEXT",
             "max_tokens": 765,
