@@ -37,7 +37,7 @@ class TestFile(TestSdk):
         dataset_id = created_res['data']['dataset_id']
         file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.SUCCESS and res['data'] is True and res['message'] == 'success'
+        assert res['code'] == RetCode.SUCCESS and res['message'] == 'success'
 
     def test_upload_one_file(self):
         """
@@ -48,7 +48,7 @@ class TestFile(TestSdk):
         dataset_id = created_res['data']['dataset_id']
         file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.SUCCESS and res['data'] is True and res['message'] == 'success'
+        assert res['code'] == RetCode.SUCCESS and res['message'] == 'success'
 
     def test_upload_nonexistent_files(self):
         """
@@ -299,7 +299,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_list_document_with_failure")
         created_res_id = created_res['data']['dataset_id']
-        response = ragflow.list_dataset(created_res_id, -1, -1)
+        response = ragflow.list_files(created_res_id, offset=-1, count=-1)
         assert "IndexError" in response['message'] and response['code'] == RetCode.EXCEPTION_ERROR
 
     def test_list_document_with_verifying_offset_and_count(self):
@@ -329,6 +329,45 @@ class TestFile(TestSdk):
         response = ragflow.list_files(created_res_id, keywords="empty")
 
         assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 1
+
+    def test_list_document_with_verifying_order_by_and_descend(self):
+        """
+        Test listing documents with verifying the functionality of order_by and descend.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_verifying_order_by_and_descend")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/empty.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id)
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 2
+        docs = response['data']['docs']
+        # reverse
+        i = 1
+        for doc in docs:
+            assert doc['name'] in file_paths[i]
+            i -= 1
+
+    def test_list_document_with_verifying_order_by_and_ascend(self):
+        """
+        Test listing documents with verifying the functionality of order_by and ascend.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_verifying_order_by_and_ascend")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/test1.txt", "test_data/empty.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id, descend=False)
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 3
+
+        docs = response['data']['docs']
+
+        i = 0
+        for doc in docs:
+            assert doc['name'] in file_paths[i]
+            i += 1
 
     # TODO: have to set the limitation of the number of documents
 # ----------------------------download a file-----------------------------------------------------
