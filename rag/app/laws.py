@@ -18,7 +18,7 @@ from docx import Document
 
 from api.db import ParserType
 from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
-    make_colon_as_title, add_positions, tokenize_chunks, find_codec
+    make_colon_as_title, add_positions, tokenize_chunks, find_codec, docx_question_level
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
 from rag.settings import cron_logger
@@ -32,7 +32,7 @@ class Docx(DocxParser):
         line = re.sub(r"\u3000", " ", line).strip()
         return line
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000):
+    def old_call(self, filename, binary=None, from_page=0, to_page=100000):
         self.doc = Document(
             filename) if not binary else Document(BytesIO(binary))
         pn = 0
@@ -49,6 +49,74 @@ class Docx(DocxParser):
                 if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
         return [l for l in lines if l]
+
+    def __call__(self, filename, binary=None, from_page=0, to_page=100000):
+        self.doc = Document(
+            filename) if not binary else Document(BytesIO(binary))
+        pn = 0
+        last_question, last_answer, last_level = "", "", -1
+        lines = []
+        root = DocxNode()
+        point = root
+        bull = bullets_category([p.text for p in self.doc.paragraphs])
+        for p in self.doc.paragraphs:
+            if pn > to_page:
+                break
+            question_level, p_text = 0, ''
+            if from_page <= pn < to_page and p.text.strip():
+                question_level, p_text = docx_question_level(p, bull)
+            if not question_level or question_level > 6: # not a question
+                last_answer = f'{last_answer}\n{p_text}'
+            else:   # is a question
+                if last_question:
+                    while last_level <= point.level:
+                        point = point.parent
+                    new_node = DocxNode(last_question, last_answer, last_level, [], point)
+                    point.childs.append(new_node)
+                    point = new_node
+                    last_question, last_answer, last_level = '', '', -1
+                last_level = question_level
+                last_answer = ''
+                last_question = p_text
+            
+            for run in p.runs:
+                if 'lastRenderedPageBreak' in run._element.xml:
+                    pn += 1
+                    continue
+                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
+                    pn += 1
+        if last_question:
+            while last_level <= point.level:
+                point = point.parent
+            new_node = DocxNode(last_question, last_answer, last_level, [], point)
+            point.childs.append(new_node)
+            point = new_node
+            last_question, last_answer, last_level = '', '', -1
+        traversal_queue = [root]
+        while traversal_queue:
+            current_node: DocxNode = traversal_queue.pop()
+            sum_text = f'{self.__clean(current_node.question)}\n{self.__clean(current_node.answer)}'
+            if not current_node.childs and not current_node.answer.strip():
+                continue
+            for child in current_node.childs:
+                sum_text = f'{sum_text}\n{self.__clean(child.question)}'
+                traversal_queue.insert(0, child)
+            lines.append(self.__clean(sum_text))
+        return [l for l in lines if l]
+class DocxNode:
+    def __init__(self, question: str = '', answer: str = '', level: int = 0, childs: list = [], parent = None) -> None:
+        self.question = question
+        self.answer = answer
+        self.level = level
+        self.childs = childs
+        self.parent = parent
+    def __str__(self) -> str:
+        return f'''
+            question:{self.question},
+            answer:{self.answer},
+            level:{self.level},
+            childs:{self.childs}
+        '''
 
 
 class Pdf(PdfParser):
@@ -94,11 +162,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pdf_parser = None
     sections = []
+    # is it English
+    eng = lang.lower() == "english"  # is_english(sections)
+
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         for txt in Docx()(filename, binary):
             sections.append(txt)
         callback(0.8, "Finish parsing.")
+        chunks = sections
+        return tokenize_chunks(chunks, doc, eng, pdf_parser)
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf() if kwargs.get(
@@ -143,8 +216,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         raise NotImplementedError(
             "file type not supported yet(doc, docx, pdf, txt supported)")
 
-    # is it English
-    eng = lang.lower() == "english"  # is_english(sections)
+
     # Remove 'Contents' part
     remove_contents_table(sections, eng)
 
