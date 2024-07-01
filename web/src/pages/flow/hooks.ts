@@ -96,6 +96,7 @@ export const useHandleDrop = () => {
         },
         data: {
           label: `${type}`,
+          name: humanId(),
         },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
