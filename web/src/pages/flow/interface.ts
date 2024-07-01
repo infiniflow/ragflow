@@ -54,7 +54,8 @@ export interface ICategorizeForm extends IGenerateForm {
 }
 
 export type NodeData = {
-  label: string;
+  label: string; // operator type
+  name: string; // operator name
   color: string;
   form: IBeginForm | IRetrievalForm | IGenerateForm | ICategorizeForm;
 };

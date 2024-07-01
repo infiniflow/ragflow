@@ -1,5 +1,5 @@
 import { IModalProps } from '@/interfaces/common';
-import { Drawer, Form } from 'antd';
+import { Drawer, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
@@ -7,7 +7,7 @@ import BeginForm from '../begin-form';
 import CategorizeForm from '../categorize-form';
 import { Operator } from '../constant';
 import GenerateForm from '../generate-form';
-import { useHandleFormValuesChange } from '../hooks';
+import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import MessageForm from '../message-form';
 import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
@@ -36,6 +36,8 @@ const FlowDrawer = ({
   const operatorName: Operator = node?.data.label;
   const OperatorForm = FormMap[operatorName];
   const [form] = Form.useForm();
+  const { name, handleNameBlur, handleNameChange } =
+    useHandleNodeNameChange(node);
 
   const { handleValuesChange } = useHandleFormValuesChange(node?.id);
 
@@ -47,7 +49,13 @@ const FlowDrawer = ({
 
   return (
     <Drawer
-      title={node?.data.label}
+      title={
+        <Input
+          value={name}
+          onBlur={handleNameBlur}
+          onChange={handleNameChange}
+        ></Input>
+      }
       placement="right"
       onClose={hideModal}
       open={visible}

@@ -8,6 +8,7 @@ import { useFetchLlmList } from '@/hooks/llmHooks';
 import { IGraph } from '@/interfaces/database/flow';
 import { useIsFetching } from '@tanstack/react-query';
 import React, {
+  ChangeEvent,
   KeyboardEventHandler,
   useCallback,
   useEffect,
@@ -22,8 +23,9 @@ import {
 } from '@/constants/knowledge';
 import { Variable } from '@/interfaces/database/chat';
 import { useDebounceEffect } from 'ahooks';
-import { FormInstance } from 'antd';
+import { FormInstance, message } from 'antd';
 import { humanId } from 'human-id';
+import trim from 'lodash/trim';
 import { useParams } from 'umi';
 import { NodeMap, Operator, RestrictedUpstreamMap } from './constant';
 import useGraphStore, { RFState } from './store';
@@ -108,7 +110,11 @@ export const useHandleDrop = () => {
 };
 
 export const useShowDrawer = () => {
-  const [clickedNode, setClickedNode] = useState<Node>();
+  const {
+    clickedNodeId: clickNodeId,
+    setClickedNodeId,
+    getNode,
+  } = useGraphStore((state) => state);
   const {
     visible: drawerVisible,
     hideModal: hideDrawer,
@@ -117,19 +123,17 @@ export const useShowDrawer = () => {
 
   const handleShow = useCallback(
     (node: Node) => {
-      setClickedNode(node);
-      if (node.data.label !== Operator.Answer) {
-        showDrawer();
-      }
+      setClickedNodeId(node.id);
+      showDrawer();
     },
-    [showDrawer],
+    [showDrawer, setClickedNodeId],
   );
 
   return {
     drawerVisible,
     hideDrawer,
     showDrawer: handleShow,
-    clickedNode,
+    clickedNode: getNode(clickNodeId),
   };
 };
 
@@ -269,4 +273,36 @@ export const useValidateConnection = () => {
   );
 
   return isValidConnection;
+};
+
+export const useHandleNodeNameChange = (node?: Node) => {
+  const [name, setName] = useState<string>('');
+  const { updateNodeName, nodes } = useGraphStore((state) => state);
+  const previousName = node?.data.name;
+  const id = node?.id;
+
+  const handleNameBlur = useCallback(() => {
+    const existsSameName = nodes.some((x) => x.data.name === name);
+    if (trim(name) === '' || existsSameName) {
+      if (existsSameName && previousName !== name) {
+        message.error('The name cannot be repeated');
+      }
+      setName(previousName);
+      return;
+    }
+
+    if (id) {
+      updateNodeName(id, name);
+    }
+  }, [name, id, updateNodeName, previousName, nodes]);
+
+  const handleNameChange = useCallback((e: ChangeEvent<any>) => {
+    setName(e.target.value);
+  }, []);
+
+  useEffect(() => {
+    setName(previousName);
+  }, [previousName]);
+
+  return { name, handleNameBlur, handleNameChange };
 };

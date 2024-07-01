@@ -26,6 +26,7 @@ export type RFState = {
   edges: Edge[];
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
+  clickedNodeId: string; // currently selected node
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
@@ -46,6 +47,8 @@ export type RFState = {
   findNodeByName: (operatorName: Operator) => Node | undefined;
   updateMutableNodeFormItem: (id: string, field: string, value: any) => void;
   getOperatorTypeFromId: (id?: string | null) => string | undefined;
+  updateNodeName: (id: string, name: string) => void;
+  setClickedNodeId: (id?: string) => void;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -56,6 +59,7 @@ const useGraphStore = create<RFState>()(
       edges: [] as Edge[],
       selectedNodeIds: [] as string[],
       selectedEdgeIds: [] as string[],
+      clickedNodeId: '',
       onNodesChange: (changes: NodeChange[]) => {
         set({
           nodes: applyNodeChanges(changes, get().nodes),
@@ -119,9 +123,6 @@ const useGraphStore = create<RFState>()(
           }
         }
       },
-      // addOnlyOneEdgeBetweenTwoNodes: (connection: Connection) => {
-
-      // },
       duplicateNode: (id: string) => {
         const { getNode, addNode } = get();
         const node = getNode(id);
@@ -195,6 +196,22 @@ const useGraphStore = create<RFState>()(
         if (idx) {
           lodashSet(nodes, [idx, 'data', 'form', field], value);
         }
+      },
+      updateNodeName: (id, name) => {
+        if (id) {
+          set({
+            nodes: get().nodes.map((node) => {
+              if (node.id === id) {
+                node.data.name = name;
+              }
+
+              return node;
+            }),
+          });
+        }
+      },
+      setClickedNodeId: (id?: string) => {
+        set({ clickedNodeId: id });
       },
     }),
     { name: 'graph' },

@@ -25,7 +25,7 @@ export const useBuildCategorizeToOptions = () => {
             excludedNodes.every((y) => y !== x.data.label) &&
             !toList.some((y) => y === x.id), // filter out selected values ​​in other to fields from the current drop-down box options
         )
-        .map((x) => ({ label: x.id, value: x.id }));
+        .map((x) => ({ label: x.data.name, value: x.id }));
     },
     [nodes],
   );

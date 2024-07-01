@@ -42,7 +42,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                   }
                 >
                   <Form.Item
-                    label={t('name')}
+                    label={t('name')} // TODO: repeatability check
                     name={[field.name, 'name']}
                     rules={[{ required: true, message: t('nameMessage') }]}
                   >
