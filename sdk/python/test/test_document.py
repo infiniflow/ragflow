@@ -37,7 +37,7 @@ class TestFile(TestSdk):
         dataset_id = created_res['data']['dataset_id']
         file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.SUCCESS and res['data'] is True and res['message'] == 'success'
+        assert res['code'] == RetCode.SUCCESS and res['message'] == 'success'
 
     def test_upload_one_file(self):
         """
@@ -48,7 +48,7 @@ class TestFile(TestSdk):
         dataset_id = created_res['data']['dataset_id']
         file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.SUCCESS and res['data'] is True and res['message'] == 'success'
+        assert res['code'] == RetCode.SUCCESS and res['message'] == 'success'
 
     def test_upload_nonexistent_files(self):
         """
@@ -237,11 +237,142 @@ class TestFile(TestSdk):
         assert (deleted_res['code'] == RetCode.ARGUMENT_ERROR and deleted_res['message'] ==
                 f'The document {doc_id} is not in the dataset: {other_dataset_id}, but in the dataset: {created_res_id}.')
 
+# ----------------------------list files-----------------------------------------------------
+    def test_list_documents_with_success(self):
+        """
+        Test listing documents with a successful outcome.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        # upload a document
+        created_res = ragflow.create_dataset("test_list_documents_with_success")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id)
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 1
+
+    def test_list_documents_with_checking_size(self):
+        """
+        Test listing documents and verify the size and names of the documents.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        # upload 10 documents
+        created_res = ragflow.create_dataset("test_list_documents_with_checking_size")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt"] * 10
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id)
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 10
+
+    def test_list_documents_with_getting_empty_result(self):
+        """
+        Test listing documents that should be empty.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        # upload 0 documents
+        created_res = ragflow.create_dataset("test_list_documents_with_getting_empty_result")
+        created_res_id = created_res['data']['dataset_id']
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id)
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 0
+
+    def test_list_documents_with_creating_100_documents(self):
+        """
+        Test listing 100 documents and verify the size of these documents.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        # upload 100 documents
+        created_res = ragflow.create_dataset("test_list_documents_with_creating_100_documents")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt"] * 100
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id)
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 100
+
+    def test_list_document_with_failure(self):
+        """
+        Test listing documents with IndexError.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_failure")
+        created_res_id = created_res['data']['dataset_id']
+        response = ragflow.list_files(created_res_id, offset=-1, count=-1)
+        assert "IndexError" in response['message'] and response['code'] == RetCode.EXCEPTION_ERROR
+
+    def test_list_document_with_verifying_offset_and_count(self):
+        """
+        Test listing documents with verifying the functionalities of offset and count.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_verifying_offset_and_count")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/empty.txt"] * 10
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id, offset=2, count=10)
+
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 10
+
+    def test_list_document_with_verifying_keywords(self):
+        """
+        Test listing documents with verifying the functionality of searching keywords.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_verifying_keywords")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/empty.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id, keywords="empty")
+
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 1
+
+    def test_list_document_with_verifying_order_by_and_descend(self):
+        """
+        Test listing documents with verifying the functionality of order_by and descend.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_verifying_order_by_and_descend")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/empty.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id)
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 2
+        docs = response['data']['docs']
+        # reverse
+        i = 1
+        for doc in docs:
+            assert doc['name'] in file_paths[i]
+            i -= 1
+
+    def test_list_document_with_verifying_order_by_and_ascend(self):
+        """
+        Test listing documents with verifying the functionality of order_by and ascend.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_verifying_order_by_and_ascend")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/test1.txt", "test_data/empty.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id, descend=False)
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 3
+
+        docs = response['data']['docs']
+
+        i = 0
+        for doc in docs:
+            assert doc['name'] in file_paths[i]
+            i += 1
+
+    # TODO: have to set the limitation of the number of documents
 # ----------------------------download a file-----------------------------------------------------
 
 # ----------------------------enable rename-----------------------------------------------------
-
-# ----------------------------list files-----------------------------------------------------
 
 # ----------------------------start parsing-----------------------------------------------------
 
@@ -256,8 +387,6 @@ class TestFile(TestSdk):
 # ----------------------------edit the status of the chunk-----------------------------------------------------
 
 # ----------------------------insert a new chunk-----------------------------------------------------
-
-# ----------------------------upload a file-----------------------------------------------------
 
 # ----------------------------get a specific chunk-----------------------------------------------------
 

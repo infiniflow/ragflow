@@ -26,12 +26,11 @@ class RAGFlow:
         '''
         api_url: http://<host_address>/api/v1
         dataset_url: http://<host_address>/api/v1/dataset
-        document_url: http://<host_address>/api/v1/documents
+        document_url: http://<host_address>/api/v1/dataset/{dataset_id}/documents
         '''
         self.user_key = user_key
         self.api_url = f"{base_url}/api/{version}"
         self.dataset_url = f"{self.api_url}/dataset"
-        self.document_url = f"{self.api_url}/documents"
         self.authorization_header = {"Authorization": "{}".format(self.user_key)}
 
     def create_dataset(self, dataset_name):
@@ -79,7 +78,7 @@ class RAGFlow:
         response = requests.put(endpoint, json=params, headers=self.authorization_header)
         return response.json()
 
-# -------------------- content management -----------------------------------------------------
+    # -------------------- content management -----------------------------------------------------
 
     # ----------------------------upload local files-----------------------------------------------------
     def upload_local_file(self, dataset_id, file_paths):
@@ -95,7 +94,7 @@ class RAGFlow:
             else:
                 return {'code': RetCode.DATA_ERROR, 'message': f"The file {file_path} does not exist"}
 
-        res = requests.request('POST', url=f"{self.document_url}/{dataset_id}", files=files,
+        res = requests.request('POST', url=f"{self.dataset_url}/{dataset_id}/documents", files=files,
                                headers=self.authorization_header)
 
         result_dict = json.loads(res.text)
@@ -103,15 +102,26 @@ class RAGFlow:
 
     # ----------------------------delete a file-----------------------------------------------------
     def delete_files(self, document_id, dataset_id):
-        endpoint = f"{self.document_url}/{dataset_id}/{document_id}"
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}"
         res = requests.delete(endpoint, headers=self.authorization_header)
+        return res.json()
+
+    # ----------------------------list files-----------------------------------------------------
+    def list_files(self, dataset_id, offset=0, count=-1, order_by="create_time", descend=True, keywords=""):
+        params = {
+            "offset": offset,
+            "count": count,
+            "order_by": order_by,
+            "descend": descend,
+            "keywords": keywords
+        }
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/"
+        res = requests.get(endpoint, params=params, headers=self.authorization_header)
         return res.json()
 
     # ----------------------------download a file-----------------------------------------------------
 
     # ----------------------------enable rename-----------------------------------------------------
-
-    # ----------------------------list files-----------------------------------------------------
 
     # ----------------------------start parsing-----------------------------------------------------
 
