@@ -5,7 +5,7 @@ import { curry, isEmpty } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import { Edge, MarkerType, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
-import { Operator, initialFormValuesMap } from './constant';
+import { NodeMap, Operator, initialFormValuesMap } from './constant';
 import { NodeData } from './interface';
 
 const buildEdges = (
@@ -41,7 +41,7 @@ export const buildNodesAndEdgesFromDSLComponents = (data: DSLComponents) => {
     const upstream = [...value.upstream];
     nodes.push({
       id: key,
-      type: 'ragNode',
+      type: NodeMap[value.obj.component_name as Operator] || 'ragNode',
       position: { x: 0, y: 0 },
       data: {
         label: value.obj.component_name,
@@ -161,8 +161,4 @@ export const buildDslComponentsByGraph = (
   });
 
   return components;
-};
-
-export const getOperatorTypeFromId = (id: string | null) => {
-  return id?.split(':')[0] as Operator | undefined;
 };

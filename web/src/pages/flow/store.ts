@@ -20,7 +20,6 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { Operator } from './constant';
 import { NodeData } from './interface';
-import { getOperatorTypeFromId } from './utils';
 
 export type RFState = {
   nodes: Node<NodeData>[];
@@ -35,7 +34,7 @@ export type RFState = {
   updateNodeForm: (nodeId: string, values: any) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
-  getNode: (id?: string) => Node | undefined;
+  getNode: (id?: string | null) => Node<NodeData> | undefined;
   addEdge: (connection: Connection) => void;
   getEdge: (id: string) => Edge | undefined;
   deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
@@ -46,6 +45,7 @@ export type RFState = {
   deleteEdgeBySourceAndSourceHandle: (connection: Partial<Connection>) => void;
   findNodeByName: (operatorName: Operator) => Node | undefined;
   updateMutableNodeFormItem: (id: string, field: string, value: any) => void;
+  getOperatorTypeFromId: (id?: string | null) => string | undefined;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -87,8 +87,11 @@ const useGraphStore = create<RFState>()(
       addNode: (node: Node) => {
         set({ nodes: get().nodes.concat(node) });
       },
-      getNode: (id?: string) => {
+      getNode: (id?: string | null) => {
         return get().nodes.find((x) => x.id === id);
+      },
+      getOperatorTypeFromId: (id?: string | null) => {
+        return get().getNode(id)?.data?.label;
       },
       addEdge: (connection: Connection) => {
         set({
@@ -101,7 +104,7 @@ const useGraphStore = create<RFState>()(
       },
       deletePreviousEdgeOfClassificationNode: (connection: Connection) => {
         // Delete the edge on the classification node anchor when the anchor is connected to other nodes
-        const { edges } = get();
+        const { edges, getOperatorTypeFromId } = get();
         if (getOperatorTypeFromId(connection.source) === Operator.Categorize) {
           const previousEdge = edges.find(
             (x) =>
