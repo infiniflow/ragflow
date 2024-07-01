@@ -267,7 +267,7 @@ def update_dataset(dataset_id):
 # ----------------------------upload files-----------------------------------------------------
 @manager.route('/<dataset_id>/documents/', methods=['POST'])
 @login_required
-def upload(dataset_id):
+def upload_documents(dataset_id):
     # no files
     if not request.files:
         return construct_json_result(
@@ -375,7 +375,7 @@ def upload(dataset_id):
 # ----------------------------delete a file-----------------------------------------------------
 @manager.route('/<dataset_id>/documents/<document_id>', methods=['DELETE'])
 @login_required
-def delete(document_id, dataset_id):  # string
+def delete_document(document_id, dataset_id):  # string
     # get the root folder
     root_folder = FileService.get_root_folder(current_user.id)
     # parent file's id
@@ -430,7 +430,7 @@ def delete(document_id, dataset_id):  # string
 # ----------------------------list files-----------------------------------------------------
 @manager.route('/<dataset_id>/documents/', methods=['GET'])
 @login_required
-def list_docs(dataset_id):
+def list_documents(dataset_id):
     if not dataset_id:
         return construct_json_result(
             data=False, message='Lack of "dataset_id"', code=RetCode.ARGUMENT_ERROR)
@@ -443,8 +443,8 @@ def list_docs(dataset_id):
     order_by = request.args.get("order_by", "create_time")
     descend = request.args.get("descend", True)
     try:
-        docs, total = DocumentService.get_documents_by_dataset_id(dataset_id, int(offset), int(count), order_by,
-                                                                  descend, keywords)
+        docs, total = DocumentService.list_documents_in_dataset(dataset_id, int(offset), int(count), order_by,
+                                                                descend, keywords)
 
         return construct_json_result(data={"total": total, "docs": docs}, message=RetCode.SUCCESS)
     except Exception as e:

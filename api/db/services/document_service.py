@@ -61,7 +61,7 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_documents_by_dataset_id(cls, dataset_id, offset, count, order_by, descend, keywords):
+    def list_documents_in_dataset(cls, dataset_id, offset, count, order_by, descend, keywords):
         if keywords:
             docs = cls.model.select().where(
                 (cls.model.kb_id == dataset_id),

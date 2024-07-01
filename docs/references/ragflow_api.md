@@ -275,3 +275,81 @@ You are required to input at least one parameter.
     "message": "Please input at least one parameter that you want to update!"
 }
 ```
+
+------------------------------------------------------------------------------------------------------------------------------
+
+## Upload documents
+
+This method uploads documents for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                       |
+|--------|-----------------------------------|
+| POST   | `/dataset/{dataset_id}/documents` |
+
+
+#### Request parameter
+
+| Name         |  Type  | Required |        Description                                         |
+|--------------|--------|----------|------------------------------------------------------------|
+| `dataset_id` | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID. |
+
+### Response 
+
+```json
+
+```
+
+## Delete documents
+
+This method deletes documents for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                       |
+|--------|-----------------------------------|
+| DELETE | `/dataset/{dataset_id}/documents/{document_id}` |
+
+
+#### Request parameter
+
+| Name          |  Type  | Required | Description                                                                         |
+|---------------|--------|----------|-------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.   |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID. |
+
+### Response 
+
+```json
+
+```
+
+## List documents
+
+This method deletes documents for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                       |
+|--------|-----------------------------------|
+| GET    | `/dataset/{dataset_id}/documents` |
+
+
+#### Request parameter
+
+| Name          |  Type  | Required | Description                                                                        |
+|---------------|--------|----------|------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.  |
+
+### Response 
+
+```json
+
+```
