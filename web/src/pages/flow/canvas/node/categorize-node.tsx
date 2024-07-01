@@ -59,7 +59,7 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
         </Space>
       </Flex>
       <section className={styles.bottomBox}>
-        <div className={styles.nodeName}>{id}</div>
+        <div className={styles.nodeName}>{data.name}</div>
       </section>
     </section>
   );

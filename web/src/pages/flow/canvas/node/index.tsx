@@ -62,7 +62,7 @@ export function RagNode({
       </Flex>
 
       <section className={styles.bottomBox}>
-        <div className={styles.nodeName}>{id}</div>
+        <div className={styles.nodeName}>{data.name}</div>
       </section>
     </section>
   );

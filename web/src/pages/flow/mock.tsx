@@ -45,6 +45,7 @@ export const dsl = {
         },
         data: {
           label: 'Begin',
+          name: 'begin',
         },
         sourcePosition: 'left',
         targetPosition: 'right',

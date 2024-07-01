@@ -1,6 +1,7 @@
 import { DSLComponents } from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import dagre from 'dagre';
+import { humanId } from 'human-id';
 import { curry, isEmpty } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import { Edge, MarkerType, Node, Position } from 'reactflow';
@@ -61,6 +62,7 @@ export const buildNodesAndEdgesFromDSLComponents = (data: DSLComponents) => {
       position: { x: 0, y: 0 },
       data: {
         label: componentName,
+        name: humanId(),
         form: params,
       },
       sourcePosition: Position.Left,
