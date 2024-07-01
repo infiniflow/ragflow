@@ -514,16 +514,19 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
 
     return cks
 
+
 def docx_question_level(p, bull = -1):
+    txt = re.sub(r"\u3000", " ", p.text).strip()
     if p.style.name.startswith('Heading'):
-        return int(p.style.name.split(' ')[-1]), re.sub(r"\u3000", " ", p.text).strip()
+        return int(p.style.name.split(' ')[-1]), txt
     else:
         if bull < 0:
-            return 0, re.sub(r"\u3000", " ", p.text).strip()
+            return 0, txt
         for j, title in enumerate(BULLET_PATTERN[bull]):
-            if re.match(title, re.sub(r"\u3000", " ", p.text).strip()):
-                return j+1, re.sub(r"\u3000", " ", p.text).strip()
-    return 0, re.sub(r"\u3000", " ", p.text).strip()
+            if re.match(title, txt):
+                return j+1, txt
+    return len(BULLET_PATTERN[bull]), txt
+
     
 def concat_img(img1, img2):
     if img1 and not img2:
@@ -543,6 +546,7 @@ def concat_img(img1, img2):
     new_image.paste(img2, (0, height1))
 
     return new_image
+
 
 def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
     if not sections:
@@ -574,3 +578,14 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
         add_chunk(sec, image, '')
 
     return cks, images
+
+
+def keyword_extraction(chat_mdl, content):
+    prompt = """
+You're a question analyzer. 
+1. Please give me the most important keyword/phrase of this question.
+Answer format: (in language of user's question)
+ - keyword: 
+"""
+    kwd, _ = chat_mdl.chat(prompt, [{"role": "user",  "content": content}], {"temperature": 0.2})
+    return kwd
