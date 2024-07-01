@@ -29,7 +29,7 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.settings import RetCode
 from api.utils import get_uuid
-from api.utils.api_utils import construct_json_result
+from api.utils.api_utils import construct_json_result, construct_error_response
 from api.utils.file_utils import filename_type, thumbnail
 from rag.utils.minio_conn import MINIO
 from api.db.db_models import Task, File
@@ -199,13 +199,32 @@ def delete(document_id, dataset_id):  # string
 
     return construct_json_result(data=True, code=RetCode.SUCCESS)
 
-# ----------------------------upload online files------------------------------------------------
+# ----------------------------list files-----------------------------------------------------
+@manager.route('/<dataset_id>', methods=['GET'])
+@login_required
+def list_docs(dataset_id):
+    if not dataset_id:
+        return construct_json_result(
+            data=False, message='Lack of "dataset_id"', code=RetCode.ARGUMENT_ERROR)
+
+    # searching keywords
+    keywords = request.args.get("keywords", "")
+
+    offset = request.args.get("offset", 0)
+    count = request.args.get("count", -1)
+    orderby = request.args.get("orderby", "create_time")
+    desc = request.args.get("desc", True)
+    try:
+        docs, total = DocumentService.get_by_kb_id_by_offset(dataset_id, int(offset), int(count), orderby,
+                                                             desc, keywords)
+
+        return construct_json_result(data={"total": total, "docs": docs}, message=RetCode.SUCCESS)
+    except Exception as e:
+        return construct_error_response(e)
 
 # ----------------------------download a file-----------------------------------------------------
 
 # ----------------------------enable rename-----------------------------------------------------
-
-# ----------------------------list files-----------------------------------------------------
 
 # ----------------------------start parsing-----------------------------------------------------
 

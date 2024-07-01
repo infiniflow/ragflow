@@ -79,7 +79,7 @@ class RAGFlow:
         response = requests.put(endpoint, json=params, headers=self.authorization_header)
         return response.json()
 
-# -------------------- content management -----------------------------------------------------
+    # -------------------- content management -----------------------------------------------------
 
     # ----------------------------upload local files-----------------------------------------------------
     def upload_local_file(self, dataset_id, file_paths):
@@ -107,11 +107,22 @@ class RAGFlow:
         res = requests.delete(endpoint, headers=self.authorization_header)
         return res.json()
 
+    # ----------------------------list files-----------------------------------------------------
+    def list_files(self, dataset_id, offset=0, count=-1, orderby="create_time", desc=True):
+        params = {
+            "offset": offset,
+            "count": count,
+            "orderby": orderby,
+            "desc": desc,
+            "keywords": ""
+        }
+        endpoint = f"{self.document_url}/{dataset_id}"
+        res = requests.get(endpoint, params=params, headers=self.authorization_header)
+        return res.json()
+
     # ----------------------------download a file-----------------------------------------------------
 
     # ----------------------------enable rename-----------------------------------------------------
-
-    # ----------------------------list files-----------------------------------------------------
 
     # ----------------------------start parsing-----------------------------------------------------
 

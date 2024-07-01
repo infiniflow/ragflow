@@ -60,6 +60,9 @@ class KnowledgebaseService(CommonService):
         if offset < 0 or offset > kbs_length:
             raise IndexError("Offset is out of the valid range.")
 
+        if count == -1:
+            return kbs[offset:]
+
         return kbs[offset:offset+count]
 
     @classmethod
