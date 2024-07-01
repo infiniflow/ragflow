@@ -108,13 +108,13 @@ class RAGFlow:
         return res.json()
 
     # ----------------------------list files-----------------------------------------------------
-    def list_files(self, dataset_id, offset=0, count=-1, orderby="create_time", desc=True):
+    def list_files(self, dataset_id, offset=0, count=-1, orderby="create_time", desc=True, keywords=""):
         params = {
             "offset": offset,
             "count": count,
             "orderby": orderby,
             "desc": desc,
-            "keywords": ""
+            "keywords": keywords
         }
         endpoint = f"{self.document_url}/{dataset_id}"
         res = requests.get(endpoint, params=params, headers=self.authorization_header)

@@ -302,6 +302,34 @@ class TestFile(TestSdk):
         response = ragflow.list_dataset(created_res_id, -1, -1)
         assert "IndexError" in response['message'] and response['code'] == RetCode.EXCEPTION_ERROR
 
+    def test_list_document_with_verifying_offset_and_count(self):
+        """
+        Test listing documents with verifying the functionalities of offset and count.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_verifying_offset_and_count")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/empty.txt"] * 10
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id, offset=2, count=10)
+
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 10
+
+    def test_list_document_with_verifying_keywords(self):
+        """
+        Test listing documents with verifying the functionality of searching keywords.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_list_document_with_verifying_keywords")
+        created_res_id = created_res['data']['dataset_id']
+        file_paths = ["test_data/test.txt", "test_data/empty.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        # Call the list_document method
+        response = ragflow.list_files(created_res_id, keywords="empty")
+
+        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 1
+
     # TODO: have to set the limitation of the number of documents
 # ----------------------------download a file-----------------------------------------------------
 
