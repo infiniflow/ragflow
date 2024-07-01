@@ -1,7 +1,7 @@
 {
   "edges": [
     {
-      "id": "1a75afcd-05ea-4bf1-af5e-adff4f870100",
+      "id": "f42b5218-8052-4eb5-9cec-2dd302ad478a",
       "label": "",
       "source": "begin",
       "target": "answer:0",
@@ -10,7 +10,7 @@
       }
     },
     {
-      "id": "a88e567e-1c23-457f-a0db-a90f1ea14d21",
+      "id": "84c024e1-a96f-438c-905f-63ef725b0442",
       "label": "",
       "source": "message:reject",
       "target": "answer:0",
@@ -19,7 +19,7 @@
       }
     },
     {
-      "id": "ad5fdb81-568e-46c5-82b1-1f50b625ae23",
+      "id": "04b4bf3c-1f49-4cd8-9b93-779c9d8aa86c",
       "label": "",
       "source": "answer:0",
       "target": "categorize:0",
@@ -28,43 +28,47 @@
       }
     },
     {
-      "id": "fbb4c147-0d4c-4dd2-9264-3088e02c40d1",
+      "id": "0c1ac8d3-9a45-44b1-92e1-f7e3f1b3be9b",
       "label": "",
       "source": "categorize:0",
       "target": "message:introduction",
       "markerEnd": {
         "type": "arrow"
-      }
+      },
+      "sourceHandle": "interested"
     },
     {
-      "id": "40da6d94-7d51-4d77-a5dd-1d583daba147",
+      "id": "309d9f73-f125-44aa-be84-e716dffb4af1",
       "label": "",
       "source": "categorize:0",
       "target": "generate:casual",
       "markerEnd": {
         "type": "arrow"
-      }
+      },
+      "sourceHandle": "casual"
     },
     {
-      "id": "e4c7f5dc-5ccb-45da-af0d-4fbcb9dbb6f9",
+      "id": "d8f39ec9-b993-42c7-aa88-e86192c8ee14",
       "label": "",
       "source": "categorize:0",
       "target": "message:reject",
       "markerEnd": {
         "type": "arrow"
-      }
+      },
+      "sourceHandle": "answer"
     },
     {
-      "id": "a8c0b4e5-9597-4335-bded-5b1dd46f7507",
+      "id": "34047c0a-6c50-4cf7-a2e6-d1a8cd9b269b",
       "label": "",
       "source": "categorize:0",
       "target": "retrieval:0",
       "markerEnd": {
         "type": "arrow"
-      }
+      },
+      "sourceHandle": "about_job"
     },
     {
-      "id": "223972c4-08f7-47ae-b9ce-9a52dba044a7",
+      "id": "0613a366-8476-44a5-8b6c-874007de7d5c",
       "label": "",
       "source": "message:introduction",
       "target": "answer:1",
@@ -73,7 +77,7 @@
       }
     },
     {
-      "id": "ece123ba-a84c-41d6-a843-63df331f945e",
+      "id": "b14d80a7-3e63-4ba4-bfb2-80ad3a1b5980",
       "label": "",
       "source": "generate:aboutJob",
       "target": "answer:1",
@@ -82,7 +86,7 @@
       }
     },
     {
-      "id": "fa07af7d-29de-4066-89b7-f1bee184e260",
+      "id": "6126fd77-f407-4ce5-966b-62cb18011343",
       "label": "",
       "source": "generate:casual",
       "target": "answer:1",
@@ -91,7 +95,7 @@
       }
     },
     {
-      "id": "0d7565d8-673c-4a5e-90f4-f4296384eef0",
+      "id": "24c6cc93-7f0d-4fae-a54d-a2a79336f58e",
       "label": "",
       "source": "generate:get_wechat",
       "target": "answer:1",
@@ -100,7 +104,7 @@
       }
     },
     {
-      "id": "e615e3d2-8ba5-448f-b001-ab926078cca6",
+      "id": "f09d9bf3-d64c-4a23-a415-c53179e7366f",
       "label": "",
       "source": "generate:nowechat",
       "target": "answer:1",
@@ -109,7 +113,7 @@
       }
     },
     {
-      "id": "a9cf0f0a-77b5-42a2-a71f-e71086a525f0",
+      "id": "cd55cf28-ddac-476e-a73e-d6c0d54f62d2",
       "label": "",
       "source": "answer:1",
       "target": "categorize:1",
@@ -118,52 +122,47 @@
       }
     },
     {
-      "id": "4e4c5461-cdc6-46c1-afb1-5892cb54104a",
-      "label": "",
-      "source": "answer:0",
-      "target": "categorize:1",
-      "markerEnd": {
-        "type": "arrow"
-      }
-    },
-    {
-      "id": "44c8cb42-a2d9-43df-83bb-175d4870a027",
+      "id": "69ad4e49-c538-4406-900c-352644fde6b9",
       "label": "",
       "source": "categorize:1",
       "target": "retrieval:0",
       "markerEnd": {
         "type": "arrow"
-      }
+      },
+      "sourceHandle": "about_job"
     },
     {
-      "id": "86d2308d-c91a-4a21-a6d6-081c92fc517c",
+      "id": "999c5601-e69d-4a35-a15e-474546babe64",
       "label": "",
       "source": "categorize:1",
       "target": "generate:casual",
       "markerEnd": {
         "type": "arrow"
-      }
+      },
+      "sourceHandle": "casual"
     },
     {
-      "id": "e5de8fc4-b801-44cf-8240-02f2aac6ae23",
+      "id": "9debb81c-9b74-4e51-a6ae-a2f0188b781b",
       "label": "",
       "source": "categorize:1",
       "target": "generate:get_wechat",
       "markerEnd": {
         "type": "arrow"
-      }
+      },
+      "sourceHandle": "wechat"
     },
     {
-      "id": "a9511914-d696-46b4-90c2-a3a940205b5c",
+      "id": "95e183eb-d114-4ad4-946b-3fb2d3df340c",
       "label": "",
       "source": "categorize:1",
       "target": "generate:nowechat",
       "markerEnd": {
         "type": "arrow"
-      }
+      },
+      "sourceHandle": "giveup"
     },
     {
-      "id": "07db19d7-e356-4c24-8e0d-353b1e6e6ee4",
+      "id": "c59c1a4b-18ed-4a74-bbef-fa961a51d6a4",
       "label": "",
       "source": "retrieval:0",
       "target": "generate:aboutJob",
@@ -172,7 +171,7 @@
       }
     },
     {
-      "id": "e17eb04f-c773-44b2-8a7b-7f770185c4fa",
+      "id": "aa902165-fe39-4cc4-8220-1abcf37b9f12",
       "label": "",
       "source": "relevant:0",
       "target": "generate:aboutJob",
@@ -191,11 +190,9 @@
       },
       "data": {
         "label": "Begin",
-        "params": {
+        "form": {
           "prologue": "您好！我是AGI方向的猎头，了解到您是这方面的大佬，然后冒昧的就联系到您。这边有个机会想和您分享，RAGFlow正在招聘您这个岗位的资深的工程师不知道您那边是不是感兴趣？"
-        },
-        "downstream": ["answer:0"],
-        "upstream": []
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -209,9 +206,7 @@
       },
       "data": {
         "label": "Answer",
-        "params": {},
-        "downstream": ["categorize:0"],
-        "upstream": ["begin", "message:reject"]
+        "form": {}
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -225,7 +220,7 @@
       },
       "data": {
         "label": "Categorize",
-        "params": {
+        "form": {
           "llm_id": "deepseek-chat",
           "category_description": {
             "about_job": {
@@ -249,14 +244,7 @@
               "to": "message:reject"
             }
           }
-        },
-        "downstream": [
-          "message:introduction",
-          "generate:casual",
-          "message:reject",
-          "retrieval:0"
-        ],
-        "upstream": ["answer:0"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -270,13 +258,11 @@
       },
       "data": {
         "label": "Message",
-        "params": {
+        "form": {
           "messages": [
             "我简单介绍以下：\nRAGFlow 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。https://github.com/infiniflow/ragflow\n您那边还有什么要了解的？"
           ]
-        },
-        "downstream": ["answer:1"],
-        "upstream": ["categorize:0"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -290,15 +276,7 @@
       },
       "data": {
         "label": "Answer",
-        "params": {},
-        "downstream": ["categorize:1"],
-        "upstream": [
-          "message:introduction",
-          "generate:aboutJob",
-          "generate:casual",
-          "generate:get_wechat",
-          "generate:nowechat"
-        ]
+        "form": {}
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -312,7 +290,7 @@
       },
       "data": {
         "label": "Categorize",
-        "params": {
+        "form": {
           "llm_id": "deepseek-chat",
           "category_description": {
             "about_job": {
@@ -337,14 +315,7 @@
             }
           },
           "message_history_window_size": 8
-        },
-        "downstream": [
-          "retrieval:0",
-          "generate:casual",
-          "generate:get_wechat",
-          "generate:nowechat"
-        ],
-        "upstream": ["answer:0"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -358,15 +329,13 @@
       },
       "data": {
         "label": "Generate",
-        "params": {
+        "form": {
           "llm_id": "deepseek-chat",
           "prompt": "你是AGI方向的猎头，现在候选人的聊了和职位无关的话题，请耐心的回应候选人，并将话题往该AGI的职位上带，最好能要到候选人微信号以便后面保持联系。",
           "temperature": 0.9,
           "message_history_window_size": 12,
           "cite": false
-        },
-        "downstream": ["answer:1"],
-        "upstream": ["categorize:0", "categorize:1"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -380,16 +349,14 @@
       },
       "data": {
         "label": "Retrieval",
-        "params": {
+        "form": {
           "similarity_threshold": 0.2,
           "keywords_similarity_weight": 0.3,
           "top_n": 6,
           "top_k": 1024,
           "rerank_id": "BAAI/bge-reranker-v2-m3",
           "kb_ids": ["869a236818b811ef91dffa163e197198"]
-        },
-        "downstream": ["generate:aboutJob"],
-        "upstream": ["categorize:0", "categorize:1"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -403,13 +370,11 @@
       },
       "data": {
         "label": "Generate",
-        "params": {
+        "form": {
           "llm_id": "deepseek-chat",
           "prompt": "你是AGI方向的猎头，候选人问了有关职位或公司的问题，你根据以下职位信息回答。如果职位信息中不包含候选人的问题就回答不清楚、不知道、有待确认等。回答完后引导候选人加微信号，如：\n - 方便加一下微信吗，我把JD发您看看？\n  - 微信号多少，我把详细职位JD发您？\n      职位信息如下:\n      {input}\n      职位信息如上。",
           "temperature": 0.02
-        },
-        "downstream": ["answer:1"],
-        "upstream": ["relevant:0"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -423,15 +388,13 @@
       },
       "data": {
         "label": "Generate",
-        "params": {
+        "form": {
           "llm_id": "deepseek-chat",
           "prompt": "你是AGI方向的猎头，候选人表示不反感加微信，如果对方已经报了微信号，表示感谢和信任并表示马上会加上；如果没有，则问对方微信号多少。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。",
           "temperature": 0.1,
           "message_history_window_size": 12,
           "cite": false
-        },
-        "downstream": ["answer:1"],
-        "upstream": ["categorize:1"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -445,15 +408,13 @@
       },
       "data": {
         "label": "Generate",
-        "params": {
+        "form": {
           "llm_id": "deepseek-chat",
           "prompt": "你是AGI方向的猎头，当你提出加微信时对方表示拒绝。你需要耐心礼貌的回应候选人，表示对于保护隐私信息给予理解，也可以询问他对该职位的看法和顾虑。并在恰当的时机再次询问微信联系方式。也可以鼓励候选人主动与你取得联系。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。",
           "temperature": 0.1,
           "message_history_window_size": 12,
           "cite": false
-        },
-        "downstream": ["answer:1"],
-        "upstream": ["categorize:1"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"
@@ -467,14 +428,12 @@
       },
       "data": {
         "label": "Message",
-        "params": {
+        "form": {
           "messages": [
             "好的，祝您生活愉快，工作顺利。",
             "哦，好的，感谢您宝贵的时间！"
           ]
-        },
-        "downstream": ["answer:0"],
-        "upstream": ["categorize:0"]
+        }
       },
       "sourcePosition": "left",
       "targetPosition": "right"

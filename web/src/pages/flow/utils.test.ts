@@ -36,6 +36,8 @@ test('build nodes and edges from dsl', () => {
   const { edges, nodes } = buildNodesAndEdgesFromDSLComponents(
     headhunter_zh.components,
   );
+  console.info('node length', nodes.length);
+  console.info('edge length', edges.length);
   try {
     fs.writeFileSync(
       path.join(__dirname, 'headhunter_zh.json'),
