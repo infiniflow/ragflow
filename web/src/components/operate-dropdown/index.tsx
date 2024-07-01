@@ -10,6 +10,7 @@ interface IProps {
   deleteItem: () => Promise<any> | void;
   iconFontSize?: number;
   items?: MenuProps['items'];
+  height?: number;
 }
 
 const OperateDropdown = ({
@@ -17,6 +18,7 @@ const OperateDropdown = ({
   children,
   iconFontSize = 30,
   items: otherItems = [],
+  height = 24,
 }: React.PropsWithChildren<IProps>) => {
   const { t } = useTranslation();
   const showDeleteConfirm = useShowDeleteConfirm();
@@ -59,7 +61,12 @@ const OperateDropdown = ({
         <span className={styles.delete}>
           <MoreOutlined
             rotate={90}
-            style={{ fontSize: iconFontSize, color: 'gray', cursor: 'pointer' }}
+            style={{
+              fontSize: iconFontSize,
+              color: 'gray',
+              cursor: 'pointer',
+              height,
+            }}
           />
         </span>
       )}

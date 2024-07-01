@@ -1,9 +1,13 @@
+import { Flex } from 'antd';
 import classNames from 'classnames';
-import { Handle, NodeProps, Position } from 'reactflow';
-
-import { Flex, Space } from 'antd';
 import get from 'lodash/get';
-import { CategorizeAnchorPointPositions, Operator } from '../../constant';
+import pick from 'lodash/pick';
+import { Handle, NodeProps, Position } from 'reactflow';
+import {
+  CategorizeAnchorPointPositions,
+  Operator,
+  operatorMap,
+} from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import CategorizeHandle from './categorize-handle';
@@ -18,12 +22,14 @@ export function RagNode({
 }: NodeProps<NodeData>) {
   const isCategorize = data.label === Operator.Categorize;
   const categoryData = get(data, 'form.category_description') ?? {};
+  const style = operatorMap[data.label as Operator];
 
   return (
     <section
       className={classNames(styles.ragNode, {
         [styles.selectedNode]: selected,
       })}
+      style={pick(style, ['backgroundColor', 'width', 'height', 'color'])}
     >
       <Handle
         id="c"
@@ -51,14 +57,18 @@ export function RagNode({
             idx={idx}
           ></CategorizeHandle>
         ))}
-      <Flex vertical align="center" justify="center">
-        <Space size={6}>
-          <OperatorIcon
-            name={data.label as Operator}
-            fontSize={16}
-          ></OperatorIcon>
-          <NodeDropdown id={id}></NodeDropdown>
-        </Space>
+      <Flex vertical align="center" justify={'center'} gap={6}>
+        <OperatorIcon
+          name={data.label as Operator}
+          fontSize={style['iconFontSize'] ?? 24}
+        ></OperatorIcon>
+        <span
+          className={styles.type}
+          style={{ fontSize: style.fontSize ?? 14 }}
+        >
+          {data.label}
+        </span>
+        <NodeDropdown id={id}></NodeDropdown>
       </Flex>
 
       <section className={styles.bottomBox}>

@@ -34,14 +34,45 @@ export const operatorIconMap = {
 export const operatorMap = {
   [Operator.Retrieval]: {
     description: 'Retrieval description drjlftglrthjftl',
+    backgroundColor: '#cad6e0',
+    color: '#385974',
   },
-  [Operator.Generate]: { description: 'Generate description' },
-  [Operator.Answer]: { description: 'Answer description' },
-  [Operator.Begin]: { description: 'Begin description' },
-  [Operator.Categorize]: { description: 'Categorize description' },
-  [Operator.Message]: { description: 'Message description' },
-  [Operator.Relevant]: { description: 'BranchesOutlined description' },
-  [Operator.RewriteQuestion]: { description: 'RewriteQuestion description' },
+  [Operator.Generate]: {
+    description: 'Generate description',
+    backgroundColor: '#ebd6d6',
+    width: 150,
+    height: 150,
+    fontSize: 20,
+    iconFontSize: 30,
+    color: '#996464',
+  },
+  [Operator.Answer]: {
+    description: 'Answer description',
+    backgroundColor: '#f4816d',
+    color: 'white',
+  },
+  [Operator.Begin]: {
+    description: 'Begin description',
+    backgroundColor: '#4f51d6',
+  },
+  [Operator.Categorize]: {
+    description: 'Categorize description',
+    backgroundColor: '#ffebcd',
+    color: '#cc8a26',
+  },
+  [Operator.Message]: {
+    description: 'Message description',
+    backgroundColor: '#c5ddc7',
+    color: 'green',
+  },
+  [Operator.Relevant]: {
+    description: 'BranchesOutlined description',
+    backgroundColor: 'white',
+  },
+  [Operator.RewriteQuestion]: {
+    description: 'RewriteQuestion description',
+    backgroundColor: 'white',
+  },
 };
 
 export const componentMenuList = [
