@@ -24,6 +24,21 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
         position={Position.Left}
         isConnectable
         className={styles.handle}
+        id={'a'}
+      ></Handle>
+      <Handle
+        type="target"
+        position={Position.Top}
+        isConnectable
+        className={styles.handle}
+        id={'b'}
+      ></Handle>
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        isConnectable
+        className={styles.handle}
+        id={'c'}
       ></Handle>
       {Object.keys(categoryData).map((x, idx) => (
         <CategorizeHandle
