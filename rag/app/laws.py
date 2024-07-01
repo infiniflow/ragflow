@@ -54,62 +54,44 @@ class Docx(DocxParser):
         self.doc = Document(
             filename) if not binary else Document(BytesIO(binary))
         pn = 0
-        last_question, last_answer, last_level = "", "", -1
         lines = []
-        root = DocxNode()
-        point = root
         bull = bullets_category([p.text for p in self.doc.paragraphs])
         for p in self.doc.paragraphs:
             if pn > to_page:
                 break
-            question_level, p_text = 0, ''
-            if from_page <= pn < to_page and p.text.strip():
-                question_level, p_text = docx_question_level(p, bull)
-            if not question_level or question_level > 6: # not a question
-                last_answer = f'{last_answer}\n{p_text}'
-            else:   # is a question
-                if last_question:
-                    while last_level <= point.level:
-                        point = point.parent
-                    new_node = DocxNode(last_question, last_answer, last_level, [], point)
-                    point.childs.append(new_node)
-                    point = new_node
-                    last_question, last_answer, last_level = '', '', -1
-                last_level = question_level
-                last_answer = ''
-                last_question = p_text
-            
+            question_level, p_text = docx_question_level(p, bull)
+            if not p_text.strip("\n"):continue
+            lines.append((question_level, p_text))
+
             for run in p.runs:
                 if 'lastRenderedPageBreak' in run._element.xml:
                     pn += 1
                     continue
                 if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
-        if last_question:
-            while last_level <= point.level:
-                point = point.parent
-            new_node = DocxNode(last_question, last_answer, last_level, [], point)
-            point.childs.append(new_node)
-            point = new_node
-            last_question, last_answer, last_level = '', '', -1
-        traversal_queue = [root]
-        while traversal_queue:
-            current_node: DocxNode = traversal_queue.pop()
-            sum_text = f'{self.__clean(current_node.question)}\n{self.__clean(current_node.answer)}'
-            if not current_node.childs and not current_node.answer.strip():
-                continue
-            for child in current_node.childs:
-                sum_text = f'{sum_text}\n{self.__clean(child.question)}'
-                traversal_queue.insert(0, child)
-            lines.append(self.__clean(sum_text))
-        return [l for l in lines if l]
-class DocxNode:
-    def __init__(self, question: str = '', answer: str = '', level: int = 0, childs: list = [], parent = None) -> None:
-        self.question = question
-        self.answer = answer
-        self.level = level
-        self.childs = childs
-        self.parent = parent
+
+        visit = [False for _ in range(len(lines))]
+        sections = []
+        for s in range(len(lines)):
+            e = s + 1
+            while e < len(lines):
+                if lines[e][0] <= lines[s][0]:
+                    break
+                e += 1
+            if e - s == 1 and visit[s]: continue
+            sec = []
+            next_level = lines[s][0] + 1
+            while not sec and next_level < 22:
+                for i in range(s+1, e):
+                    if lines[i][0] != next_level: continue
+                    sec.append(lines[i][1])
+                    visit[i] = True
+                next_level += 1
+            sec.insert(0, lines[s][1])
+
+            sections.append("\n".join(sec))
+        return [l for l in sections if l]
+
     def __str__(self) -> str:
         return f'''
             question:{self.question},
