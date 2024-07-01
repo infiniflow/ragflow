@@ -2,7 +2,9 @@ import { useSetModalState } from '@/hooks/commonHooks';
 import { useFetchFlowList, useSetFlow } from '@/hooks/flow-hooks';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
-import { dsl } from '../mock';
+// import { dsl } from '../mock';
+import headhunterZhComponents from '../../../../../graph/test/dsl_examples/headhunter_zh.json';
+import headhunter_zh from '../headhunter_zh.json';
 
 export const useFetchDataOnMount = () => {
   const { data, loading } = useFetchFlowList();
@@ -22,7 +24,10 @@ export const useSaveFlow = () => {
 
   const onFlowOk = useCallback(
     async (title: string) => {
-      const ret = await setFlow({ title, dsl });
+      const ret = await setFlow({
+        title,
+        dsl: { ...headhunterZhComponents, graph: headhunter_zh },
+      });
 
       if (ret?.retcode === 0) {
         hideFlowSettingModal();

@@ -27,7 +27,7 @@ import { humanId } from 'human-id';
 import { useParams } from 'umi';
 import { NodeMap, Operator, RestrictedUpstreamMap } from './constant';
 import useGraphStore, { RFState } from './store';
-import { buildDslComponentsByGraph, getOperatorTypeFromId } from './utils';
+import { buildDslComponentsByGraph } from './utils';
 
 const selector = (state: RFState) => ({
   nodes: state.nodes,
@@ -249,7 +249,7 @@ export const useSetLlmSetting = (form?: FormInstance) => {
 };
 
 export const useValidateConnection = () => {
-  const edges = useGraphStore((state) => state.edges);
+  const { edges, getOperatorTypeFromId } = useGraphStore((state) => state);
   // restricted lines cannot be connected successfully.
   const isValidConnection = useCallback(
     (connection: Connection) => {
@@ -265,7 +265,7 @@ export const useValidateConnection = () => {
         ]?.every((x) => x !== getOperatorTypeFromId(connection.target));
       return ret;
     },
-    [edges],
+    [edges, getOperatorTypeFromId],
   );
 
   return isValidConnection;
