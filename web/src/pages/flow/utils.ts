@@ -4,7 +4,7 @@ import dagre from 'dagre';
 import { humanId } from 'human-id';
 import { curry, isEmpty } from 'lodash';
 import pipe from 'lodash/fp/pipe';
-import { Edge, MarkerType, Node, Position } from 'reactflow';
+import { Edge, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import { NodeMap, Operator, initialFormValuesMap } from './constant';
 import { ICategorizeItemResult, NodeData } from './interface';
@@ -27,9 +27,12 @@ const buildEdges = (
         // type: 'step',
         source: source,
         target: target,
-        markerEnd: {
-          type: MarkerType.Arrow,
-        },
+        // markerEnd: {
+        //   type: MarkerType.ArrowClosed,
+        //   color: 'rgb(157 149 225)',
+        //   width: 20,
+        //   height: 20,
+        // },
       };
       if (componentName === Operator.Categorize && !isUpstream) {
         const categoryDescription =

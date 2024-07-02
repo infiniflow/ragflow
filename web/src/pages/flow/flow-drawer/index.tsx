@@ -28,13 +28,15 @@ const FormMap = {
   [Operator.RewriteQuestion]: RewriteQuestionForm,
 };
 
+const EmptyContent = () => <div>empty</div>;
+
 const FlowDrawer = ({
   visible,
   hideModal,
   node,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label;
-  const OperatorForm = FormMap[operatorName];
+  const OperatorForm = FormMap[operatorName] ?? EmptyContent;
   const [form] = Form.useForm();
   const { name, handleNameBlur, handleNameChange } =
     useHandleNodeNameChange(node);
