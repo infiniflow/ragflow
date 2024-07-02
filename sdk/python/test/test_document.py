@@ -1,3 +1,4 @@
+from api.db import StatusEnum
 from api.settings import RetCode
 from test_sdkbase import TestSdk
 from ragflow import RAGFlow
@@ -300,6 +301,7 @@ class TestFile(TestSdk):
         created_res = ragflow.create_dataset("test_list_document_with_failure")
         created_res_id = created_res['data']['dataset_id']
         response = ragflow.list_files(created_res_id, offset=-1, count=-1)
+        print(response)
         assert "IndexError" in response['message'] and response['code'] == RetCode.EXCEPTION_ERROR
 
     def test_list_document_with_verifying_offset_and_count(self):
@@ -369,10 +371,176 @@ class TestFile(TestSdk):
             assert doc['name'] in file_paths[i]
             i += 1
 
-    # TODO: have to set the limitation of the number of documents
-# ----------------------------download a file-----------------------------------------------------
+# ----------------------------update files: enable, rename, template_type-------------------------------------------
 
-# ----------------------------enable rename-----------------------------------------------------
+    def test_update_nonexistent_document(self):
+        """
+        Test updating a document which does not exist.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_nonexistent_document")
+        created_res_id = created_res['data']['dataset_id']
+        params = {
+            "name": "new_name"
+        }
+        res = ragflow.update_file(created_res_id, "weird_doc_id", **params)
+        assert res['code'] == RetCode.ARGUMENT_ERROR and res['message'] == 'Document not found!'
+
+    def test_update_document_without_parameters(self):
+        """
+        Test updating a document without giving parameters.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_without_parameters")
+        created_res_id = created_res['data']['dataset_id']
+        # upload files
+        file_paths = ["test_data/test.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res['data'][0]
+        doc_id = data['id']
+        # update file
+        params = {
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res['code'] == RetCode.DATA_ERROR and
+                update_res['message'] == 'Please input at least one parameter that you want to update!')
+
+    def test_update_document_in_nonexistent_dataset(self):
+        """
+        Test updating a document in the nonexistent dataset.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_in_nonexistent_dataset")
+        created_res_id = created_res['data']['dataset_id']
+        # upload files
+        file_paths = ["test_data/test.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res['data'][0]
+        doc_id = data['id']
+        # update file
+        params = {
+            "name": "new_name"
+        }
+        update_res = ragflow.update_file("fake_dataset_id", doc_id, **params)
+        assert (update_res['code'] == RetCode.DATA_ERROR and
+                update_res['message'] == 'This dataset cannot be found!')
+
+    def test_update_document_with_different_extension_name(self):
+        """
+        Test the updating of a document with an extension name that differs from its original.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_different_extension_name")
+        created_res_id = created_res['data']['dataset_id']
+        # upload files
+        file_paths = ["test_data/test.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res['data'][0]
+        doc_id = data['id']
+        # update file
+        params = {
+            "name": "new_name.doc"
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res['code'] == RetCode.ARGUMENT_ERROR and
+                update_res['message'] == "The extension of file can't be changed")
+
+    def test_update_document_with_duplicate_name(self):
+        """
+        Test the updating of a document with a duplicate name.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_different_extension_name")
+        created_res_id = created_res['data']['dataset_id']
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res['data'][0]
+        doc_id = data['id']
+        # update file
+        params = {
+            "name": "test1.txt"
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res['code'] == RetCode.ARGUMENT_ERROR and
+                update_res['message'] == 'Duplicated document name in the same knowledgebase.')
+
+    def test_update_document_with_updating_its_name_with_success(self):
+        """
+        Test the updating of a document's name with success.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_updating_its_name_with_success")
+        created_res_id = created_res['data']['dataset_id']
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res['data'][0]
+        doc_id = data['id']
+        # update file
+        params = {
+            "name": "new_name.txt"
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res['code'] == RetCode.SUCCESS and
+                update_res['message'] == 'Success' and update_res['data']['name'] == "new_name.txt")
+
+    def test_update_document_with_updating_its_template_type_with_success(self):
+        """
+        Test the updating of a document's template type with success.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_updating_its_template_type_with_success")
+        created_res_id = created_res['data']['dataset_id']
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res['data'][0]
+        doc_id = data['id']
+        # update file
+        params = {
+            "template_type": "laws"
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res['code'] == RetCode.SUCCESS and
+                update_res['message'] == 'Success' and update_res['data']['parser_id'] == "laws")
+
+    # update enable
+    def test_update_document_with_updating_its_enable_value_with_success(self):
+        """
+        Test the updating of a document's enable value with success.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_updating_its_enable_value_with_success")
+        created_res_id = created_res['data']['dataset_id']
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res['data'][0]
+        doc_id = data['id']
+        # update file
+        params = {
+            "enable": "0"
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res['code'] == RetCode.SUCCESS and
+                update_res['message'] == 'Success' and update_res['data']['status'] == "0")
+
+# ----------------------------download a file-----------------------------------------------------
 
 # ----------------------------start parsing-----------------------------------------------------
 

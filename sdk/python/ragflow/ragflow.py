@@ -78,7 +78,7 @@ class RAGFlow:
         response = requests.put(endpoint, json=params, headers=self.authorization_header)
         return response.json()
 
-    # -------------------- content management -----------------------------------------------------
+# ------------------------------- CONTENT MANAGEMENT -----------------------------------------------------
 
     # ----------------------------upload local files-----------------------------------------------------
     def upload_local_file(self, dataset_id, file_paths):
@@ -119,9 +119,13 @@ class RAGFlow:
         res = requests.get(endpoint, params=params, headers=self.authorization_header)
         return res.json()
 
-    # ----------------------------download a file-----------------------------------------------------
+    # ----------------------------update files: enable, rename, template_type-------------------------------------------
+    def update_file(self, dataset_id, document_id, **params):
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}"
+        response = requests.put(endpoint, json=params, headers=self.authorization_header)
+        return response.json()
 
-    # ----------------------------enable rename-----------------------------------------------------
+    # ----------------------------download a file-----------------------------------------------------
 
     # ----------------------------start parsing-----------------------------------------------------
 
@@ -136,8 +140,6 @@ class RAGFlow:
     # ----------------------------edit the status of the chunk-----------------------------------------------------
 
     # ----------------------------insert a new chunk-----------------------------------------------------
-
-    # ----------------------------upload a file-----------------------------------------------------
 
     # ----------------------------get a specific chunk-----------------------------------------------------
 

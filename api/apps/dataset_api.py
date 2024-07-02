@@ -14,6 +14,7 @@
 #  limitations under the License.
 
 import os
+import pathlib
 import re
 import warnings
 
@@ -450,9 +451,89 @@ def list_documents(dataset_id):
     except Exception as e:
         return construct_error_response(e)
 
-# ----------------------------download a file-----------------------------------------------------
+# ----------------------------update: enable rename-----------------------------------------------------
+@manager.route('/<dataset_id>/documents/<document_id>', methods=['PUT'])
+@login_required
+def update_document(dataset_id, document_id):
+    req = request.json
+    try:
+        # The request body cannot be empty
+        if not req:
+            return construct_json_result(
+                code=RetCode.DATA_ERROR,
+                message="Please input at least one parameter that you want to update!")
 
-# ----------------------------enable rename-----------------------------------------------------
+        # Check whether there is this dataset
+        exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR, message="This dataset cannot be found!")
+
+        # The document does not exist
+        exist, document = DocumentService.get_by_id(document_id)
+        if not exist:
+            return construct_json_result(message="Document not found!", code=RetCode.ARGUMENT_ERROR)
+
+        # 1) name part
+        if 'name' in req:
+            new_name = req["name"]
+
+            # Check whether the new_name has the same extension of file as before
+            if pathlib.Path(new_name.lower()).suffix != pathlib.Path(
+                    document.name.lower()).suffix:
+                return construct_json_result(
+                    data=False,
+                    message="The extension of file can't be changed",
+                    code=RetCode.ARGUMENT_ERROR)
+
+            # Check whether the new name has already been occupied by other file
+            for d in DocumentService.query(name=new_name, kb_id=document.kb_id):
+                if d.name == new_name:
+                    return construct_json_result(
+                        message="Duplicated document name in the same knowledgebase.",
+                        code=RetCode.ARGUMENT_ERROR)
+
+            # The process of updating
+            if not DocumentService.update_by_id(document_id, {"name": new_name}):
+                return construct_json_result(
+                    code=RetCode.OPERATING_ERROR,
+                    message="Failed to update document in the database! "
+                            "Please check the status of RAGFlow server and try again!")
+
+            # Get file by document id
+            file_information = File2DocumentService.get_by_document_id(document_id)
+            if file_information:
+                exist, file = FileService.get_by_id(file_information[0].file_id)
+                FileService.update_by_id(file.id, {"name": new_name})
+
+        # 2) enable part
+        if 'enable' in req:
+            enable_value = req['enable']
+
+            # The process of updating
+            if not DocumentService.update_by_id(document_id, {"status": enable_value}):
+                return construct_json_result(
+                    code=RetCode.OPERATING_ERROR,
+                    message="Failed to update document in the database! "
+                            "Please check the status of RAGFlow server and try again!")
+
+        # 3) template_type part
+        if 'template_type' in req:
+            template_type = req['template_type']
+            # The process of updating
+            if not DocumentService.update_by_id(document_id, {"parser_id": template_type}):
+                return construct_json_result(
+                    code=RetCode.OPERATING_ERROR,
+                    message="Failed to update document in the database! "
+                            "Please check the status of RAGFlow server and try again!")
+
+        exist, document = DocumentService.get_by_id(document_id)
+
+        # Success
+        return construct_json_result(data=document.to_json(), message="Success", code=RetCode.SUCCESS)
+    except Exception as e:
+        return construct_error_response(e)
+
+# ----------------------------download a file-----------------------------------------------------
 
 # ----------------------------start parsing-----------------------------------------------------
 
