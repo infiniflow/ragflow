@@ -14,7 +14,7 @@ interface IProps {
   top: number;
   right: number;
   text: string;
-  idx: number;
+  idx?: number;
 }
 
 const CategorizeHandle = ({ top, right, text, idx }: IProps) => {

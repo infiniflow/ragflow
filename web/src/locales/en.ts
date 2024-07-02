@@ -558,6 +558,8 @@ The above is the content you need to summarize.`,
       addField: 'Add field',
       loop: 'Loop',
       createFlow: 'Create a workflow',
+      yes: 'Yes',
+      no: 'No',
     },
     footer: {
       profile: 'All rights reserved @ React',

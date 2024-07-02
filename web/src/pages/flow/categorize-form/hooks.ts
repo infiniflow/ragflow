@@ -2,7 +2,6 @@ import get from 'lodash/get';
 import omit from 'lodash/omit';
 import { useCallback, useEffect } from 'react';
 import { Edge, Node } from 'reactflow';
-import { Operator } from '../constant';
 import {
   ICategorizeItem,
   ICategorizeItemResult,
@@ -10,28 +9,6 @@ import {
   NodeData,
 } from '../interface';
 import useGraphStore from '../store';
-
-// exclude some nodes downstream of the classification node
-const excludedNodes = [Operator.Categorize, Operator.Answer, Operator.Begin];
-
-export const useBuildCategorizeToOptions = () => {
-  const nodes = useGraphStore((state) => state.nodes);
-
-  const buildCategorizeToOptions = useCallback(
-    (toList: string[]) => {
-      return nodes
-        .filter(
-          (x) =>
-            excludedNodes.every((y) => y !== x.data.label) &&
-            !toList.some((y) => y === x.id), // filter out selected values ​​in other to fields from the current drop-down box options
-        )
-        .map((x) => ({ label: x.data.name, value: x.id }));
-    },
-    [nodes],
-  );
-
-  return buildCategorizeToOptions;
-};
 
 /**
    * convert the following object into a list
@@ -118,33 +95,4 @@ export const useHandleFormValuesChange = ({
   }, [form, node, edges]);
 
   return { handleValuesChange };
-};
-
-export const useHandleToSelectChange = (nodeId?: string) => {
-  const { addEdge, deleteEdgeBySourceAndSourceHandle } = useGraphStore(
-    (state) => state,
-  );
-  const handleSelectChange = useCallback(
-    (name?: string) => (value?: string) => {
-      if (nodeId && name) {
-        if (value) {
-          addEdge({
-            source: nodeId,
-            target: value,
-            sourceHandle: name,
-            targetHandle: null,
-          });
-        } else {
-          // clear selected value
-          deleteEdgeBySourceAndSourceHandle({
-            source: nodeId,
-            sourceHandle: name,
-          });
-        }
-      }
-    },
-    [addEdge, nodeId, deleteEdgeBySourceAndSourceHandle],
-  );
-
-  return { handleSelectChange };
 };

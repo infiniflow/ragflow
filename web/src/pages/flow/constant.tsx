@@ -136,6 +136,7 @@ export const initialFormValuesMap = {
   [Operator.Generate]: initialGenerateValues,
   [Operator.Answer]: {},
   [Operator.Categorize]: {},
+  [Operator.Relevant]: {},
 };
 
 export const CategorizeAnchorPointPositions = [
@@ -173,6 +174,6 @@ export const NodeMap = {
   [Operator.Generate]: 'ragNode',
   [Operator.Answer]: 'ragNode',
   [Operator.Message]: 'ragNode',
-  [Operator.Relevant]: 'ragNode',
+  [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'ragNode',
 };

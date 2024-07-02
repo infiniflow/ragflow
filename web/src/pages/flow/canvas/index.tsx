@@ -23,11 +23,13 @@ import ChatDrawer from '../chat/drawer';
 import styles from './index.less';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { RelevantNode } from './node/relevant-node';
 
 const nodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
+  relevantNode: RelevantNode,
 };
 
 const edgeTypes = {

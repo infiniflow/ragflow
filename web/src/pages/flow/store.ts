@@ -107,9 +107,15 @@ const useGraphStore = create<RFState>()(
         return get().edges.find((x) => x.id === id);
       },
       deletePreviousEdgeOfClassificationNode: (connection: Connection) => {
-        // Delete the edge on the classification node anchor when the anchor is connected to other nodes
+        // Delete the edge on the classification node or relevant node anchor when the anchor is connected to other nodes
         const { edges, getOperatorTypeFromId } = get();
-        if (getOperatorTypeFromId(connection.source) === Operator.Categorize) {
+        // the node containing the anchor
+        const anchoredNodes = [Operator.Categorize, Operator.Relevant];
+        if (
+          anchoredNodes.some(
+            (x) => x === getOperatorTypeFromId(connection.source),
+          )
+        ) {
           const previousEdge = edges.find(
             (x) =>
               x.source === connection.source &&
