@@ -524,6 +524,7 @@ export default {
       fileError: '文件错误',
     },
     flow: {
+      flow: '工作流',
       cite: '引用',
       citeTip: 'citeTip',
       name: '名称',

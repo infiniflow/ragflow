@@ -1,6 +1,6 @@
-export interface ResponseType {
+export interface ResponseType<T = any> {
   retcode: number;
-  data: any;
+  data: T;
   retmsg: string;
   status: number;
 }

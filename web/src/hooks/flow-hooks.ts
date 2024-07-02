@@ -1,11 +1,12 @@
-import { DSL, IFlow } from '@/interfaces/database/flow';
+import { ResponseType } from '@/interfaces/database/base';
+import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import i18n from '@/locales/config';
 import flowService from '@/services/flow-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useParams } from 'umi';
 
-export const useFetchFlowTemplates = () => {
+export const useFetchFlowTemplates = (): ResponseType<IFlowTemplate[]> => {
   const { data } = useQuery({
     queryKey: ['fetchFlowTemplates'],
     initialData: [],
