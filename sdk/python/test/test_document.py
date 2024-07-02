@@ -383,7 +383,7 @@ class TestFile(TestSdk):
             "name": "new_name"
         }
         res = ragflow.update_file(created_res_id, "weird_doc_id", **params)
-        assert res['code'] == RetCode.ARGUMENT_ERROR and res['message'] == 'Document not found!'
+        assert res['code'] == RetCode.ARGUMENT_ERROR and res['message'] == f"This document weird_doc_id cannot be found!"
 
     def test_update_document_without_parameters(self):
         """
@@ -426,7 +426,7 @@ class TestFile(TestSdk):
         }
         update_res = ragflow.update_file("fake_dataset_id", doc_id, **params)
         assert (update_res['code'] == RetCode.DATA_ERROR and
-                update_res['message'] == 'This dataset cannot be found!')
+                update_res['message'] == f"This dataset fake_dataset_id cannot be found!")
 
     def test_update_document_with_different_extension_name(self):
         """
@@ -448,7 +448,7 @@ class TestFile(TestSdk):
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
         assert (update_res['code'] == RetCode.ARGUMENT_ERROR and
-                update_res['message'] == "The extension of file can't be changed")
+                update_res['message'] == "The extension of file cannot be changed")
 
     def test_update_document_with_duplicate_name(self):
         """
@@ -466,11 +466,11 @@ class TestFile(TestSdk):
         doc_id = data['id']
         # update file
         params = {
-            "name": "test1.txt"
+            "name": "test.txt"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
         assert (update_res['code'] == RetCode.ARGUMENT_ERROR and
-                update_res['message'] == 'Duplicated document name in the same knowledgebase.')
+                update_res['message'] == 'Duplicated document name in the same dataset.')
 
     def test_update_document_with_updating_its_name_with_success(self):
         """
@@ -535,6 +535,7 @@ class TestFile(TestSdk):
             "enable": "0"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        print(update_res)
         assert (update_res['code'] == RetCode.SUCCESS and
                 update_res['message'] == 'Success' and update_res['data']['status'] == "0")
 

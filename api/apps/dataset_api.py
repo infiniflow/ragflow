@@ -466,15 +466,18 @@ def update_document(dataset_id, document_id):
         # Check whether there is this dataset
         exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
         if not exist:
-            return construct_json_result(code=RetCode.DATA_ERROR, message="This dataset cannot be found!")
+            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset {dataset_id} cannot be found!")
 
         # The document does not exist
         exist, document = DocumentService.get_by_id(document_id)
         if not exist:
-            return construct_json_result(message="Document not found!", code=RetCode.ARGUMENT_ERROR)
+            return construct_json_result(message=f"This document {document_id} cannot be found!",
+                                         code=RetCode.ARGUMENT_ERROR)
 
-        # 1) name part
+        # Deal with the different keys
+        updating_data = {}
         if 'name' in req:
+            updating_data['name'] = req['name']
             new_name = req["name"]
 
             # Check whether the new_name has the same extension of file as before
@@ -482,49 +485,36 @@ def update_document(dataset_id, document_id):
                     document.name.lower()).suffix:
                 return construct_json_result(
                     data=False,
-                    message="The extension of file can't be changed",
+                    message="The extension of file cannot be changed",
                     code=RetCode.ARGUMENT_ERROR)
-
             # Check whether the new name has already been occupied by other file
             for d in DocumentService.query(name=new_name, kb_id=document.kb_id):
                 if d.name == new_name:
                     return construct_json_result(
-                        message="Duplicated document name in the same knowledgebase.",
+                        message="Duplicated document name in the same dataset.",
                         code=RetCode.ARGUMENT_ERROR)
 
-            # The process of updating
-            if not DocumentService.update_by_id(document_id, {"name": new_name}):
-                return construct_json_result(
-                    code=RetCode.OPERATING_ERROR,
-                    message="Failed to update document in the database! "
-                            "Please check the status of RAGFlow server and try again!")
+        if 'enable' in req:
+            updating_data["status"] = req['enable']
 
+        # TODO: update parameters inside the json object parser_config
+        if 'template_type' in req:
+            updating_data['parser_id'] = req['template_type']
+
+        # The process of updating
+        if not DocumentService.update_by_id(document_id, updating_data):
+            return construct_json_result(
+                code=RetCode.OPERATING_ERROR,
+                message="Failed to update document in the database! "
+                        "Please check the status of RAGFlow server and try again!")
+
+        # name part: file service
+        if 'name' in req:
             # Get file by document id
             file_information = File2DocumentService.get_by_document_id(document_id)
             if file_information:
                 exist, file = FileService.get_by_id(file_information[0].file_id)
-                FileService.update_by_id(file.id, {"name": new_name})
-
-        # 2) enable part
-        if 'enable' in req:
-            enable_value = req['enable']
-
-            # The process of updating
-            if not DocumentService.update_by_id(document_id, {"status": enable_value}):
-                return construct_json_result(
-                    code=RetCode.OPERATING_ERROR,
-                    message="Failed to update document in the database! "
-                            "Please check the status of RAGFlow server and try again!")
-
-        # 3) template_type part
-        if 'template_type' in req:
-            template_type = req['template_type']
-            # The process of updating
-            if not DocumentService.update_by_id(document_id, {"parser_id": template_type}):
-                return construct_json_result(
-                    code=RetCode.OPERATING_ERROR,
-                    message="Failed to update document in the database! "
-                            "Please check the status of RAGFlow server and try again!")
+                FileService.update_by_id(file.id, {"name": req["name"]})
 
         exist, document = DocumentService.get_by_id(document_id)
 
