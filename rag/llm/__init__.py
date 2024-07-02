@@ -22,6 +22,7 @@ from .rerank_model import *
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
     "OpenAI": OpenAIEmbed,
+    "Azure-OpenAI": AzureEmbed,
     "Xinference": XinferenceEmbed,
     "Tongyi-Qianwen": QWenEmbed,
     "ZHIPU-AI": ZhipuEmbed,
@@ -36,6 +37,7 @@ EmbeddingModel = {
 
 CvModel = {
     "OpenAI": GptV4,
+    "Azure-OpenAI": AzureGptV4,
     "Ollama": OllamaCV,
     "Xinference": XinferenceCV,
     "Tongyi-Qianwen": QWenCV,
@@ -46,6 +48,7 @@ CvModel = {
 
 ChatModel = {
     "OpenAI": GptTurbo,
+    "Azure-OpenAI": AzureChat,
     "ZHIPU-AI": ZhipuChat,
     "Tongyi-Qianwen": QWenChat,
     "Ollama": OllamaChat,
