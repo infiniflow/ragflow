@@ -17,7 +17,7 @@ import os
 import re
 import warnings
 
-from flask import request
+from flask import request, make_response, send_from_directory
 from flask_login import login_required, current_user
 from httpx import HTTPError
 
@@ -462,7 +462,7 @@ def list_documents(dataset_id):
 
 # ----------------------------list the chunks of the file-----------------------------------------------------
 
-# ----------------------------delete the chunk-----------------------------------------------------
+# -- --------------------------delete the chunk-----------------------------------------------------
 
 # ----------------------------edit the status of the chunk-----------------------------------------------------
 
@@ -474,3 +474,34 @@ def list_documents(dataset_id):
 
 # ----------------------------retrieval test-----------------------------------------------------
 
+@manager.route('/<dataset_id>/documents/<document_id>', methods=['GET'])
+@login_required
+@validate_request("target_path")
+def download_documents(dataset_id, document_id):
+    # Make sure there is target_path in the request
+    req = request.json
+    target_path = req['target_path']
+
+    try:
+        # Check whether there is this dataset
+        exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset {dataset_id} cannot be found!")
+
+        # Check whether there is this document
+        exist, document = DocumentService.get_by_id(document_id)
+        if not exist:
+            return construct_json_result(message=f"This document {document_id} cannot be found!",
+                                         code=RetCode.ARGUMENT_ERROR)
+
+        # The process of downloading
+        filename = document['name']
+        response = make_response(send_from_directory
+                                 (target_path, filename.encode('utf-8').decode('utf-8'), as_attachment=True))
+        response.headers["Content-Disposition"] = "attachment; filename={}".format(filename.encode().decode('latin-1'))
+
+        # Download successfully
+        return construct_json_result(data=True, code=RetCode.SUCCESS)
+    # Error
+    except Exception as e:
+        return construct_error_response(e)

@@ -142,3 +142,7 @@ class RAGFlow:
     # ----------------------------get a specific chunk-----------------------------------------------------
 
     # ----------------------------retrieval test-----------------------------------------------------
+    def download_file(self, dataset_id, document_id, target_path):
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}"
+        res = requests.get(endpoint, json={'target_path': target_path}, headers=self.authorization_header)
+        return res.json()
