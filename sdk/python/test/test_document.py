@@ -535,7 +535,6 @@ class TestFile(TestSdk):
             "enable": "0"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-        print(update_res)
         assert (update_res['code'] == RetCode.SUCCESS and
                 update_res['message'] == 'Success' and update_res['data']['status'] == "0")
 
