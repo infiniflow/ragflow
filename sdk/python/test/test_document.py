@@ -301,7 +301,6 @@ class TestFile(TestSdk):
         created_res = ragflow.create_dataset("test_list_document_with_failure")
         created_res_id = created_res['data']['dataset_id']
         response = ragflow.list_files(created_res_id, offset=-1, count=-1)
-        print(response)
         assert "IndexError" in response['message'] and response['code'] == RetCode.EXCEPTION_ERROR
 
     def test_list_document_with_verifying_offset_and_count(self):
@@ -517,7 +516,6 @@ class TestFile(TestSdk):
         assert (update_res['code'] == RetCode.SUCCESS and
                 update_res['message'] == 'Success' and update_res['data']['parser_id'] == "laws")
 
-    # update enable
     def test_update_document_with_updating_its_enable_value_with_success(self):
         """
         Test the updating of a document's enable value with success.
