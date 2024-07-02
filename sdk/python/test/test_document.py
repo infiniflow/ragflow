@@ -35,10 +35,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_two_files")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.SUCCESS and res['message'] == 'success'
+        assert res["code"] == RetCode.SUCCESS and res["message"] == "success"
 
     def test_upload_one_file(self):
         """
@@ -46,10 +46,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_one_file")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.SUCCESS and res['message'] == 'success'
+        assert res["code"] == RetCode.SUCCESS and res["message"] == "success"
 
     def test_upload_nonexistent_files(self):
         """
@@ -57,10 +57,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_nonexistent_files")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/imagination.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.DATA_ERROR and "does not exist" in res['message']
+        assert res["code"] == RetCode.DATA_ERROR and "does not exist" in res["message"]
 
     def test_upload_file_if_dataset_does_not_exist(self):
         """
@@ -69,7 +69,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file("111", file_paths)
-        assert res['code'] == RetCode.DATA_ERROR and res['message'] == "Can't find this dataset"
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "Can't find this dataset"
 
     def test_upload_file_without_name(self):
         """
@@ -77,10 +77,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_file_without_name")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.SUCCESS
+        assert res["code"] == RetCode.SUCCESS
 
     def test_upload_file_without_name1(self):
         """
@@ -88,10 +88,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_file_without_name")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/.txt", "test_data/empty.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.SUCCESS
+        assert res["code"] == RetCode.SUCCESS
 
     def test_upload_files_exceeding_the_number_limit(self):
         """
@@ -99,12 +99,12 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_files_exceeding_the_number_limit")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt", "test_data/test1.txt"] * 256
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert (res['message'] ==
-                'You try to upload 512 files, which exceeds the maximum number of uploading files: 256'
-                and res['code'] == RetCode.DATA_ERROR)
+        assert (res["message"] ==
+                "You try to upload 512 files, which exceeds the maximum number of uploading files: 256"
+                and res["code"] == RetCode.DATA_ERROR)
 
     def test_upload_files_without_files(self):
         """
@@ -112,10 +112,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_files_without_files")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = [None]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert (res['message'] == 'None is not string.' and res['code'] == RetCode.ARGUMENT_ERROR)
+        assert (res["message"] == "None is not string." and res["code"] == RetCode.ARGUMENT_ERROR)
 
     def test_upload_files_with_two_files_with_same_name(self):
         """
@@ -123,10 +123,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_files_with_two_files_with_same_name")
-        dataset_id = created_res['data']['dataset_id']
-        file_paths = ['test_data/test.txt'] * 2
+        dataset_id = created_res["data"]["dataset_id"]
+        file_paths = ["test_data/test.txt"] * 2
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert (res['message'] == 'success' and res['code'] == RetCode.SUCCESS)
+        assert (res["message"] == "success" and res["code"] == RetCode.SUCCESS)
 
     def test_upload_files_with_file_paths(self):
         """
@@ -134,10 +134,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_files_with_file_paths")
-        dataset_id = created_res['data']['dataset_id']
-        file_paths = ['test_data/']
+        dataset_id = created_res["data"]["dataset_id"]
+        file_paths = ["test_data/"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert (res['message'] == 'The file test_data/ does not exist' and res['code'] == RetCode.DATA_ERROR)
+        assert (res["message"] == "The file test_data/ does not exist" and res["code"] == RetCode.DATA_ERROR)
 
     def test_upload_files_with_remote_file_path(self):
         """
@@ -145,10 +145,10 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_upload_files_with_remote_file_path")
-        dataset_id = created_res['data']['dataset_id']
-        file_paths = ['https://github.com/genostack/ragflow']
+        dataset_id = created_res["data"]["dataset_id"]
+        file_paths = ["https://github.com/genostack/ragflow"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
-        assert res['code'] == RetCode.ARGUMENT_ERROR and res['message'] == 'Remote files have not unsupported.'
+        assert res["code"] == RetCode.ARGUMENT_ERROR and res["message"] == "Remote files have not unsupported."
 
 # ----------------------------delete a file-----------------------------------------------------
     def test_delete_one_file(self):
@@ -157,16 +157,16 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_delete_one_file")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
         # get the doc_id
-        data = res['data'][0]
-        doc_id = data['id']
+        data = res["data"][0]
+        doc_id = data["id"]
         # delete the files
         deleted_res = ragflow.delete_files(doc_id, dataset_id)
         # assert value
-        assert deleted_res['code'] == RetCode.SUCCESS and deleted_res['data'] is True
+        assert deleted_res["code"] == RetCode.SUCCESS and deleted_res["data"] is True
 
     def test_delete_document_with_not_existing_document(self):
         """
@@ -174,9 +174,9 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_delete_document_with_not_existing_document")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         res = ragflow.delete_files("111", dataset_id)
-        assert res['code'] == RetCode.DATA_ERROR and res['message'] == 'Document 111 not found!'
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "Document 111 not found!"
 
     def test_delete_document_with_creating_100_documents_and_deleting_100_documents(self):
         """
@@ -185,14 +185,14 @@ class TestFile(TestSdk):
         # upload 100 docs
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_delete_one_file")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt"] * 100
         res = ragflow.upload_local_file(dataset_id, file_paths)
 
         # get the doc_id
-        data = res['data']
+        data = res["data"]
         for d in data:
-            doc_id = d['id']
+            doc_id = d["id"]
             # delete the files
             deleted_res = ragflow.delete_files(doc_id, dataset_id)
             # assert value
@@ -204,7 +204,7 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_delete_one_file")
-        dataset_id = created_res['data']['dataset_id']
+        dataset_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
         # get the doc_id
@@ -223,7 +223,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         # upload a document
         created_res = ragflow.create_dataset("test_delete_document_which_is_located_in_other_dataset")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file(created_res_id, file_paths)
         # other dataset
@@ -246,7 +246,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         # upload a document
         created_res = ragflow.create_dataset("test_list_documents_with_success")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt"]
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
@@ -260,7 +260,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         # upload 10 documents
         created_res = ragflow.create_dataset("test_list_documents_with_checking_size")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt"] * 10
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
@@ -274,7 +274,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         # upload 0 documents
         created_res = ragflow.create_dataset("test_list_documents_with_getting_empty_result")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         # Call the list_document method
         response = ragflow.list_files(created_res_id)
         assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 0
@@ -286,7 +286,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         # upload 100 documents
         created_res = ragflow.create_dataset("test_list_documents_with_creating_100_documents")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt"] * 100
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
@@ -299,7 +299,7 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_list_document_with_failure")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         response = ragflow.list_files(created_res_id, offset=-1, count=-1)
         assert "IndexError" in response['message'] and response['code'] == RetCode.EXCEPTION_ERROR
 
@@ -309,7 +309,7 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_list_document_with_verifying_offset_and_count")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt", "test_data/empty.txt"] * 10
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
@@ -323,7 +323,7 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_list_document_with_verifying_keywords")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt", "test_data/empty.txt"]
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
@@ -337,7 +337,7 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_list_document_with_verifying_order_by_and_descend")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt", "test_data/empty.txt"]
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
@@ -356,7 +356,7 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_list_document_with_verifying_order_by_and_ascend")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         file_paths = ["test_data/test.txt", "test_data/test1.txt", "test_data/empty.txt"]
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
@@ -378,12 +378,12 @@ class TestFile(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_update_nonexistent_document")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         params = {
             "name": "new_name"
         }
         res = ragflow.update_file(created_res_id, "weird_doc_id", **params)
-        assert res['code'] == RetCode.ARGUMENT_ERROR and res['message'] == f"This document weird_doc_id cannot be found!"
+        assert res["code"] == RetCode.ARGUMENT_ERROR and res["message"] == f"This document weird_doc_id cannot be found!"
 
     def test_update_document_without_parameters(self):
         """
@@ -392,19 +392,19 @@ class TestFile(TestSdk):
         # create a dataset
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_update_document_without_parameters")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         # upload files
         file_paths = ["test_data/test.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
         # get the doc_id
-        data = uploading_res['data'][0]
-        doc_id = data['id']
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
         # update file
         params = {
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-        assert (update_res['code'] == RetCode.DATA_ERROR and
-                update_res['message'] == 'Please input at least one parameter that you want to update!')
+        assert (update_res["code"] == RetCode.DATA_ERROR and
+                update_res["message"] == "Please input at least one parameter that you want to update!")
 
     def test_update_document_in_nonexistent_dataset(self):
         """
@@ -413,20 +413,20 @@ class TestFile(TestSdk):
         # create a dataset
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_update_document_in_nonexistent_dataset")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         # upload files
         file_paths = ["test_data/test.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
         # get the doc_id
-        data = uploading_res['data'][0]
-        doc_id = data['id']
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
         # update file
         params = {
             "name": "new_name"
         }
         update_res = ragflow.update_file("fake_dataset_id", doc_id, **params)
-        assert (update_res['code'] == RetCode.DATA_ERROR and
-                update_res['message'] == f"This dataset fake_dataset_id cannot be found!")
+        assert (update_res["code"] == RetCode.DATA_ERROR and
+                update_res["message"] == f"This dataset fake_dataset_id cannot be found!")
 
     def test_update_document_with_different_extension_name(self):
         """
@@ -435,20 +435,20 @@ class TestFile(TestSdk):
         # create a dataset
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_update_document_with_different_extension_name")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         # upload files
         file_paths = ["test_data/test.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
         # get the doc_id
-        data = uploading_res['data'][0]
-        doc_id = data['id']
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
         # update file
         params = {
             "name": "new_name.doc"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-        assert (update_res['code'] == RetCode.ARGUMENT_ERROR and
-                update_res['message'] == "The extension of file cannot be changed")
+        assert (update_res["code"] == RetCode.ARGUMENT_ERROR and
+                update_res["message"] == "The extension of file cannot be changed")
 
     def test_update_document_with_duplicate_name(self):
         """
@@ -462,15 +462,15 @@ class TestFile(TestSdk):
         file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
         # get the doc_id
-        data = uploading_res['data'][0]
-        doc_id = data['id']
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
         # update file
         params = {
             "name": "test.txt"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-        assert (update_res['code'] == RetCode.ARGUMENT_ERROR and
-                update_res['message'] == 'Duplicated document name in the same dataset.')
+        assert (update_res["code"] == RetCode.ARGUMENT_ERROR and
+                update_res["message"] == 'Duplicated document name in the same dataset.')
 
     def test_update_document_with_updating_its_name_with_success(self):
         """
@@ -479,20 +479,20 @@ class TestFile(TestSdk):
         # create a dataset
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_update_document_with_updating_its_name_with_success")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         # upload files
         file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
         # get the doc_id
-        data = uploading_res['data'][0]
-        doc_id = data['id']
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
         # update file
         params = {
             "name": "new_name.txt"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-        assert (update_res['code'] == RetCode.SUCCESS and
-                update_res['message'] == 'Success' and update_res['data']['name'] == "new_name.txt")
+        assert (update_res["code"] == RetCode.SUCCESS and
+                update_res["message"] == "Success" and update_res["data"]["name"] == "new_name.txt")
 
     def test_update_document_with_updating_its_template_type_with_success(self):
         """
@@ -501,20 +501,20 @@ class TestFile(TestSdk):
         # create a dataset
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_update_document_with_updating_its_template_type_with_success")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         # upload files
         file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
         # get the doc_id
-        data = uploading_res['data'][0]
-        doc_id = data['id']
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
         # update file
         params = {
             "template_type": "laws"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-        assert (update_res['code'] == RetCode.SUCCESS and
-                update_res['message'] == 'Success' and update_res['data']['parser_id'] == "laws")
+        assert (update_res["code"] == RetCode.SUCCESS and
+                update_res["message"] == 'Success' and update_res['data']['parser_id'] == "laws")
 
     def test_update_document_with_updating_its_enable_value_with_success(self):
         """
@@ -523,21 +523,132 @@ class TestFile(TestSdk):
         # create a dataset
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_update_document_with_updating_its_enable_value_with_success")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         # upload files
         file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
         # get the doc_id
-        data = uploading_res['data'][0]
-        doc_id = data['id']
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
         # update file
         params = {
             "enable": "0"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-        assert (update_res['code'] == RetCode.SUCCESS and
-                update_res['message'] == 'Success' and update_res['data']['status'] == "0")
+        assert (update_res["code"] == RetCode.SUCCESS and
+                update_res["message"] == "Success" and update_res["data"]["status"] == "0")
 
+    def test_update_document_with_updating_illegal_parameter(self):
+        """
+        Test the updating of a document's illegal parameter.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_updating_illegal_parameter")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # update file
+        params = {
+            "illegal_parameter": "0"
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+
+        assert (update_res["code"] == RetCode.ARGUMENT_ERROR and
+                update_res["message"] == "illegal_parameter is an illegal parameter.")
+
+    def test_update_document_with_giving_its_name_value(self):
+        """
+        Test the updating of a document's name without its name value.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_updating_its_name_with_success")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # update file
+        params = {
+            "name": ""
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res["code"] == RetCode.DATA_ERROR and
+                update_res["message"] == "There is no new name.")
+
+    def test_update_document_with_its_new_name_length_exceeding_limit_value(self):
+        """
+        Test the updating of a document's name's value exceeding the limit.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_updating_its_name_with_success")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # update file
+        new_name = "1" * (NAME_LENGTH_LIMIT + 1)
+        params = {
+            "name": new_name
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res["code"] == RetCode.DATA_ERROR and
+                update_res["message"] == f"Dataset name: {new_name} with length {len(new_name)} exceeds {NAME_LENGTH_LIMIT}!")
+
+    def test_update_document_with_giving_illegal_value_for_enable(self):
+        """
+        Test the updating of a document's with giving illegal enable's value.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_updating_its_name_with_success")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # update file
+        params = {
+            "enable": "?"
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res["code"] == RetCode.DATA_ERROR and
+                update_res["message"] == "Illegal value ? for 'enable' field.")
+
+    def test_update_document_with_giving_illegal_value_for_type(self):
+        """
+        Test the updating of a document's with giving illegal type's value.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_update_document_with_updating_its_name_with_success")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # update file
+        params = {
+            "template_type": "?"
+        }
+        update_res = ragflow.update_file(created_res_id, doc_id, **params)
+        assert (update_res["code"] == RetCode.DATA_ERROR and
+                update_res["message"] == "Illegal value ? for 'template_type' field.")
 # ----------------------------download a file-----------------------------------------------------
 
 # ----------------------------start parsing-----------------------------------------------------

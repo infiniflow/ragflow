@@ -23,11 +23,11 @@ from api.settings import RetCode
 
 class RAGFlow:
     def __init__(self, user_key, base_url, version='v1'):
-        '''
+        """
         api_url: http://<host_address>/api/v1
         dataset_url: http://<host_address>/api/v1/dataset
         document_url: http://<host_address>/api/v1/dataset/{dataset_id}/documents
-        '''
+        """
         self.user_key = user_key
         self.api_url = f"{base_url}/api/{version}"
         self.dataset_url = f"{self.api_url}/dataset"
@@ -50,9 +50,9 @@ class RAGFlow:
 
     def find_dataset_id_by_name(self, dataset_name):
         res = requests.get(self.dataset_url, headers=self.authorization_header)
-        for dataset in res.json()['data']:
-            if dataset['name'] == dataset_name:
-                return dataset['id']
+        for dataset in res.json()["data"]:
+            if dataset["name"] == dataset_name:
+                return dataset["id"]
         return None
 
     def list_dataset(self, offset=0, count=-1, orderby="create_time", desc=True):
@@ -86,15 +86,15 @@ class RAGFlow:
 
         for file_path in file_paths:
             if not isinstance(file_path, str):
-                return {'code': RetCode.ARGUMENT_ERROR, 'message': f"{file_path} is not string."}
-            if 'http' in file_path:
-                return {'code': RetCode.ARGUMENT_ERROR, 'message': "Remote files have not unsupported."}
+                return {"code": RetCode.ARGUMENT_ERROR, "message": f"{file_path} is not string."}
+            if "http" in file_path:
+                return {"code": RetCode.ARGUMENT_ERROR, "message": "Remote files have not unsupported."}
             if os.path.isfile(file_path):
-                files.append(('file', open(file_path, 'rb')))
+                files.append(("file", open(file_path, "rb")))
             else:
-                return {'code': RetCode.DATA_ERROR, 'message': f"The file {file_path} does not exist"}
+                return {"code": RetCode.DATA_ERROR, "message": f"The file {file_path} does not exist"}
 
-        res = requests.request('POST', url=f"{self.dataset_url}/{dataset_id}/documents", files=files,
+        res = requests.request("POST", url=f"{self.dataset_url}/{dataset_id}/documents", files=files,
                                headers=self.authorization_header)
 
         result_dict = json.loads(res.text)
