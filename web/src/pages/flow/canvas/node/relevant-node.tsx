@@ -1,5 +1,6 @@
 import { Flex } from 'antd';
 import classNames from 'classnames';
+import pick from 'lodash/pick';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
@@ -17,10 +18,7 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
       className={classNames(styles.ragNode, {
         [styles.selectedNode]: selected,
       })}
-      style={{
-        backgroundColor: style.backgroundColor,
-        color: style.color,
-      }}
+      style={pick(style, ['backgroundColor', 'width', 'height', 'color'])}
     >
       <Handle
         type="target"
@@ -45,12 +43,17 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
       ></Handle>
       <CategorizeHandle top={20} right={6} text={'yes'}></CategorizeHandle>
       <CategorizeHandle top={80} right={6} text={'no'}></CategorizeHandle>
-      <Flex vertical align="center" justify="center" gap={6}>
+      <Flex vertical align="center" justify="center">
         <OperatorIcon
           name={data.label as Operator}
-          fontSize={24}
+          fontSize={style.iconFontSize}
         ></OperatorIcon>
-        <span className={styles.type}>{data.label}</span>
+        <span
+          className={styles.type}
+          style={{ fontSize: style.fontSize ?? 14 }}
+        >
+          {data.label}
+        </span>
         <NodeDropdown id={id}></NodeDropdown>
       </Flex>
       <section className={styles.bottomBox}>

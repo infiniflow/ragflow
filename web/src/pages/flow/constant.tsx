@@ -67,7 +67,12 @@ export const operatorMap = {
   },
   [Operator.Relevant]: {
     description: 'BranchesOutlined description',
-    backgroundColor: 'white',
+    backgroundColor: '#9fd94d',
+    color: 'white',
+    width: 70,
+    height: 70,
+    fontSize: 12,
+    iconFontSize: 16,
   },
   [Operator.RewriteQuestion]: {
     description: 'RewriteQuestion description',
