@@ -6,6 +6,7 @@ const ExcludedNodesMap = {
   // exclude some nodes downstream of the classification node
   [Operator.Categorize]: [Operator.Categorize, Operator.Answer, Operator.Begin],
   [Operator.Relevant]: [Operator.Begin],
+  [Operator.Generate]: [Operator.Begin],
 };
 
 export const useBuildFormSelectOptions = (
