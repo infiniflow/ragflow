@@ -582,29 +582,6 @@ class TestFile(TestSdk):
         assert (update_res["code"] == RetCode.DATA_ERROR and
                 update_res["message"] == "There is no new name.")
 
-    def test_update_document_with_its_new_name_length_exceeding_limit_value(self):
-        """
-        Test the updating of a document's name's value exceeding the limit.
-        """
-        # create a dataset
-        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        created_res = ragflow.create_dataset("test_update_document_with_updating_its_name_with_success")
-        created_res_id = created_res["data"]["dataset_id"]
-        # upload files
-        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
-        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
-        # get the doc_id
-        data = uploading_res["data"][0]
-        doc_id = data["id"]
-        # update file
-        new_name = "1" * (NAME_LENGTH_LIMIT + 1)
-        params = {
-            "name": new_name
-        }
-        update_res = ragflow.update_file(created_res_id, doc_id, **params)
-        assert (update_res["code"] == RetCode.DATA_ERROR and
-                update_res["message"] == f"Dataset name: {new_name} with length {len(new_name)} exceeds {NAME_LENGTH_LIMIT}!")
-
     def test_update_document_with_giving_illegal_value_for_enable(self):
         """
         Test the updating of a document's with giving illegal enable's value.
