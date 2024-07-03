@@ -158,7 +158,7 @@
         }
       },
       "downstream": ["answer:1"],
-      "upstream": ["relevant:0"]
+      "upstream": ["retrieval:0"]
     },
     "generate:get_wechat": {
       "obj": {
