@@ -14,6 +14,7 @@
 #  limitations under the License.
 
 import os
+import pathlib
 import re
 import warnings
 
@@ -42,12 +43,12 @@ MAXIMUM_OF_UPLOADING_FILES = 256
 
 # ------------------------------ create a dataset ---------------------------------------
 
-@manager.route('/', methods=['POST'])
+@manager.route("/", methods=["POST"])
 @login_required  # use login
 @validate_request("name")  # check name key
 def create_dataset():
     # Check if Authorization header is present
-    authorization_token = request.headers.get('Authorization')
+    authorization_token = request.headers.get("Authorization")
     if not authorization_token:
         return construct_json_result(code=RetCode.AUTHENTICATION_ERROR, message="Authorization header is missing.")
 
@@ -79,14 +80,15 @@ def create_dataset():
     # In case that the length of the name exceeds the limit
     dataset_name_length = len(dataset_name)
     if dataset_name_length > NAME_LENGTH_LIMIT:
-        return construct_json_result(code=RetCode.DATA_ERROR,
-                                     message=f"Dataset name: {dataset_name} with length {dataset_name_length} exceeds {NAME_LENGTH_LIMIT}!")
+        return construct_json_result(
+            code=RetCode.DATA_ERROR,
+            message=f"Dataset name: {dataset_name} with length {dataset_name_length} exceeds {NAME_LENGTH_LIMIT}!")
 
     # In case that there are other fields in the data-binary
     if len(request_body.keys()) > 1:
         name_list = []
         for key_name in request_body.keys():
-            if key_name != 'name':
+            if key_name != "name":
                 name_list.append(key_name)
         return construct_json_result(code=RetCode.DATA_ERROR,
                                      message=f"fields: {name_list}, are not allowed in request body.")
@@ -115,7 +117,7 @@ def create_dataset():
 
 # -----------------------------list datasets-------------------------------------------------------
 
-@manager.route('/', methods=['GET'])
+@manager.route("/", methods=["GET"])
 @login_required
 def list_datasets():
     offset = request.args.get("offset", 0)
@@ -134,7 +136,7 @@ def list_datasets():
 
 # ---------------------------------delete a dataset ----------------------------
 
-@manager.route('/<dataset_id>', methods=['DELETE'])
+@manager.route("/<dataset_id>", methods=["DELETE"])
 @login_required
 def remove_dataset(dataset_id):
     try:
@@ -142,7 +144,7 @@ def remove_dataset(dataset_id):
 
         # according to the id, searching for the dataset
         if not datasets:
-            return construct_json_result(message=f'The dataset cannot be found for your current account.',
+            return construct_json_result(message=f"The dataset cannot be found for your current account.",
                                          code=RetCode.OPERATING_ERROR)
 
         # Iterating the documents inside the dataset
@@ -168,7 +170,7 @@ def remove_dataset(dataset_id):
 
 # ------------------------------ get details of a dataset ----------------------------------------
 
-@manager.route('/<dataset_id>', methods=['GET'])
+@manager.route("/<dataset_id>", methods=["GET"])
 @login_required
 def get_dataset(dataset_id):
     try:
@@ -181,7 +183,7 @@ def get_dataset(dataset_id):
 
 # ------------------------------ update a dataset --------------------------------------------
 
-@manager.route('/<dataset_id>', methods=['PUT'])
+@manager.route("/<dataset_id>", methods=["PUT"])
 @login_required
 def update_dataset(dataset_id):
     req = request.json
@@ -192,7 +194,7 @@ def update_dataset(dataset_id):
                                                                           "you want to update!")
         # check whether the dataset can be found
         if not KnowledgebaseService.query(created_by=current_user.id, id=dataset_id):
-            return construct_json_result(message=f'Only the owner of knowledgebase is authorized for this operation!',
+            return construct_json_result(message=f"Only the owner of knowledgebase is authorized for this operation!",
                                          code=RetCode.OPERATING_ERROR)
 
         exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
@@ -200,7 +202,7 @@ def update_dataset(dataset_id):
         if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR, message="This dataset cannot be found!")
 
-        if 'name' in req:
+        if "name" in req:
             name = req["name"].strip()
             # check whether there is duplicate name
             if name.lower() != dataset.name.lower() \
@@ -215,9 +217,9 @@ def update_dataset(dataset_id):
 
         # 2 parameters: embedding id and chunk method
         # only if chunk_num is 0, the user can update the embedding id
-        if req.get('embedding_model_id'):
+        if req.get("embedding_model_id"):
             if chunk_num == 0:
-                dataset_updating_data['embd_id'] = req['embedding_model_id']
+                dataset_updating_data["embd_id"] = req["embedding_model_id"]
             else:
                 construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document in this "
                                                                        "dataset, so you cannot change the embedding "
@@ -232,18 +234,18 @@ def update_dataset(dataset_id):
                                                                        "change the chunk method.")
         # convert the photo parameter to avatar
         if req.get("photo"):
-            dataset_updating_data['avatar'] = req["photo"]
+            dataset_updating_data["avatar"] = req["photo"]
 
         # layout_recognize
-        if 'layout_recognize' in req:
-            if 'parser_config' not in dataset_updating_data:
+        if "layout_recognize" in req:
+            if "parser_config" not in dataset_updating_data:
                 dataset_updating_data['parser_config'] = {}
             dataset_updating_data['parser_config']['layout_recognize'] = req['layout_recognize']
 
         # TODO: updating use_raptor needs to construct a class
 
         # 6 parameters
-        for key in ['name', 'language', 'description', 'permission', 'id', 'token_num']:
+        for key in ["name", "language", "description", "permission", "id", "token_num"]:
             if key in req:
                 dataset_updating_data[key] = req.get(key)
 
@@ -265,16 +267,16 @@ def update_dataset(dataset_id):
 # --------------------------------content management ----------------------------------------------
 
 # ----------------------------upload files-----------------------------------------------------
-@manager.route('/<dataset_id>/documents/', methods=['POST'])
+@manager.route("/<dataset_id>/documents/", methods=["POST"])
 @login_required
 def upload_documents(dataset_id):
     # no files
     if not request.files:
         return construct_json_result(
-            message='There is no file!', code=RetCode.ARGUMENT_ERROR)
+            message="There is no file!", code=RetCode.ARGUMENT_ERROR)
 
     # the number of uploading files exceeds the limit
-    file_objs = request.files.getlist('file')
+    file_objs = request.files.getlist("file")
     num_file_objs = len(file_objs)
 
     if num_file_objs > MAXIMUM_OF_UPLOADING_FILES:
@@ -288,7 +290,7 @@ def upload_documents(dataset_id):
         # no name
         if not file_name:
             return construct_json_result(
-                message='There is a file without name!', code=RetCode.ARGUMENT_ERROR)
+                message="There is a file without name!", code=RetCode.ARGUMENT_ERROR)
 
         # TODO: support the remote files
         if 'http' in file_name:
@@ -316,7 +318,7 @@ def upload_documents(dataset_id):
 
     # grab all the errs
     err = []
-    MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
+    MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
     uploaded_docs_json = []
     for file in file_objs:
         try:
@@ -373,7 +375,7 @@ def upload_documents(dataset_id):
 
 
 # ----------------------------delete a file-----------------------------------------------------
-@manager.route('/<dataset_id>/documents/<document_id>', methods=['DELETE'])
+@manager.route("/<dataset_id>/documents/<document_id>", methods=["DELETE"])
 @login_required
 def delete_document(document_id, dataset_id):  # string
     # get the root folder
@@ -433,7 +435,7 @@ def delete_document(document_id, dataset_id):  # string
 def list_documents(dataset_id):
     if not dataset_id:
         return construct_json_result(
-            data=False, message='Lack of "dataset_id"', code=RetCode.ARGUMENT_ERROR)
+            data=False, message="Lack of 'dataset_id'", code=RetCode.ARGUMENT_ERROR)
 
     # searching keywords
     keywords = request.args.get("keywords", "")
@@ -450,9 +452,109 @@ def list_documents(dataset_id):
     except Exception as e:
         return construct_error_response(e)
 
-# ----------------------------download a file-----------------------------------------------------
+# ----------------------------update: enable rename-----------------------------------------------------
+@manager.route("/<dataset_id>/documents/<document_id>", methods=["PUT"])
+@login_required
+def update_document(dataset_id, document_id):
+    req = request.json
+    try:
+        legal_parameters = set()
+        legal_parameters.add("name")
+        legal_parameters.add("enable")
+        legal_parameters.add("template_type")
 
-# ----------------------------enable rename-----------------------------------------------------
+        for key in req.keys():
+            if key not in legal_parameters:
+                return construct_json_result(code=RetCode.ARGUMENT_ERROR, message=f"{key} is an illegal parameter.")
+
+        # The request body cannot be empty
+        if not req:
+            return construct_json_result(
+                code=RetCode.DATA_ERROR,
+                message="Please input at least one parameter that you want to update!")
+
+        # Check whether there is this dataset
+        exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset {dataset_id} cannot be found!")
+
+        # The document does not exist
+        exist, document = DocumentService.get_by_id(document_id)
+        if not exist:
+            return construct_json_result(message=f"This document {document_id} cannot be found!",
+                                         code=RetCode.ARGUMENT_ERROR)
+
+        # Deal with the different keys
+        updating_data = {}
+        if "name" in req:
+            new_name = req["name"]
+            updating_data["name"] = new_name
+            # Check whether the new_name is suitable
+            # 1. no name value
+            if not new_name:
+                return construct_json_result(code=RetCode.DATA_ERROR, message="There is no new name.")
+
+            # 2. In case that there's space in the head or the tail
+            new_name = new_name.strip()
+
+            # 3. Check whether the new_name has the same extension of file as before
+            if pathlib.Path(new_name.lower()).suffix != pathlib.Path(
+                    document.name.lower()).suffix:
+                return construct_json_result(
+                    data=False,
+                    message="The extension of file cannot be changed",
+                    code=RetCode.ARGUMENT_ERROR)
+
+            # 4. Check whether the new name has already been occupied by other file
+            for d in DocumentService.query(name=new_name, kb_id=document.kb_id):
+                if d.name == new_name:
+                    return construct_json_result(
+                        message="Duplicated document name in the same dataset.",
+                        code=RetCode.ARGUMENT_ERROR)
+
+        if "enable" in req:
+            enable_value = req["enable"]
+            if is_illegal_value_for_enum(enable_value, StatusEnum):
+                return construct_json_result(message=f"Illegal value {enable_value} for 'enable' field.",
+                                             code=RetCode.DATA_ERROR)
+            updating_data["status"] = enable_value
+
+        # TODO: Chunk-method - update parameters inside the json object parser_config
+        if "template_type" in req:
+            type_value = req["template_type"]
+            if is_illegal_value_for_enum(type_value, ParserType):
+                return construct_json_result(message=f"Illegal value {type_value} for 'template_type' field.",
+                                             code=RetCode.DATA_ERROR)
+            updating_data["parser_id"] = req["template_type"]
+
+        # The process of updating
+        if not DocumentService.update_by_id(document_id, updating_data):
+            return construct_json_result(
+                code=RetCode.OPERATING_ERROR,
+                message="Failed to update document in the database! "
+                        "Please check the status of RAGFlow server and try again!")
+
+        # name part: file service
+        if "name" in req:
+            # Get file by document id
+            file_information = File2DocumentService.get_by_document_id(document_id)
+            if file_information:
+                exist, file = FileService.get_by_id(file_information[0].file_id)
+                FileService.update_by_id(file.id, {"name": req["name"]})
+
+        exist, document = DocumentService.get_by_id(document_id)
+
+        # Success
+        return construct_json_result(data=document.to_json(), message="Success", code=RetCode.SUCCESS)
+    except Exception as e:
+        return construct_error_response(e)
+
+
+# Helper method to judge whether it's an illegal value
+def is_illegal_value_for_enum(value, enum_class):
+    return value not in enum_class.__members__.values()
+
+# ----------------------------download a file-----------------------------------------------------
 
 # ----------------------------start parsing-----------------------------------------------------
 
