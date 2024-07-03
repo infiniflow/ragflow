@@ -45,6 +45,12 @@ export interface ICategorizeItem {
   to?: string;
 }
 
+export interface IGenerateParameter {
+  id?: string;
+  key: string;
+  component_id?: string;
+}
+
 export type ICategorizeItemResult = Record<
   string,
   Omit<ICategorizeItem, 'name'>
