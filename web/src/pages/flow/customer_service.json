@@ -1,103 +1,91 @@
 {
   "edges": [
     {
-      "id": "f7e99034-58d4-4f15-908c-196b4dded860",
+      "id": "63a2f242-8e71-4098-a46a-459a76d538bd",
       "label": "",
       "source": "begin",
       "target": "answer:0"
     },
     {
-      "id": "4c419958-ee28-4c6a-95c2-d59a26b17b45",
-      "label": "",
-      "source": "generate:0",
-      "target": "answer:0"
-    },
-    {
-      "id": "d30cc82c-edbe-4068-bbb3-58447e7a6928",
+      "id": "cc6dd8bb-e9dc-46e8-9009-5b96f98ae6c0",
       "label": "",
       "source": "generate:casual",
       "target": "answer:0"
     },
     {
-      "id": "2290ea52-fddb-4247-8a33-79dc3ca638eb",
+      "id": "58dbf05a-07fc-4a0a-8c03-5f9117e48c35",
       "label": "",
       "source": "generate:answer",
       "target": "answer:0"
     },
     {
-      "id": "49375377-026d-4736-95c9-0593eb1be995",
+      "id": "dd0ff4f2-4d75-4e7d-a505-3e9533402823",
       "label": "",
       "source": "generate:complain",
       "target": "answer:0"
     },
     {
-      "id": "413f4830-2fa8-489a-90b8-2e3c44b36abf",
+      "id": "3dc7a511-9cde-4080-a572-6b06a64e0458",
       "label": "",
       "source": "generate:ask_contact",
       "target": "answer:0"
     },
     {
-      "id": "5be4021b-4ffe-4b1e-b358-5bf41d7fe9f6",
+      "id": "20e31fee-c392-4257-860a-5844d264198e",
       "label": "",
       "source": "message:get_contact",
       "target": "answer:0"
     },
     {
-      "id": "5ba8fc08-0bfc-4ecd-ba6c-96ec9a9419e6",
+      "id": "104ac8bb-5d75-4eca-8065-1d8fc2805b8e",
       "label": "",
       "source": "answer:0",
       "target": "categorize:0"
     },
     {
-      "id": "26b65ad4-c425-4883-835f-ba89f4013fe6",
+      "id": "755864b5-9eef-44ec-a560-9a23b5a3f9ee",
       "label": "",
       "source": "categorize:0",
       "target": "retrieval:0",
       "sourceHandle": "product_related"
     },
     {
-      "id": "9f649802-595a-470c-88b2-be758d1073c4",
+      "id": "7f68384d-3441-4bfa-bf13-69af67e857d2",
       "label": "",
       "source": "categorize:0",
       "target": "generate:casual",
       "sourceHandle": "casual"
     },
     {
-      "id": "0188dbfa-46aa-41e4-8ded-8bf7050a8353",
+      "id": "c9bf8e81-9345-4885-b565-be2f5b16f6ef",
       "label": "",
       "source": "categorize:0",
       "target": "generate:complain",
       "sourceHandle": "complain"
     },
     {
-      "id": "c64cf3a8-8399-469e-816b-57ef86aa799b",
+      "id": "2f326699-621b-4d28-ab98-70d99ad21add",
       "label": "",
       "source": "categorize:0",
       "target": "message:get_contact",
       "sourceHandle": "answer"
     },
     {
-      "id": "ef5d2e9f-56a4-44fe-b0d8-ea5cb86df7f9",
+      "id": "03e45174-55df-47d6-8e5f-fbe2ffc148d7",
       "label": "",
       "source": "retrieval:0",
       "target": "relevant:0"
     },
     {
-      "id": "a4c10df3-37a0-45fc-9d15-ae90ba20a5d4",
+      "id": "a26027ac-e8a9-48e4-814c-3262b8d81913",
       "label": "",
       "source": "relevant:0",
       "target": "generate:answer"
     },
     {
-      "id": "848efd87-55e7-4dee-9713-9fc5b1812986",
+      "id": "04d99dc7-6120-4169-98c6-7bc2813aa85b",
       "label": "",
       "source": "relevant:0",
-      "target": "generate:ask_contact"
-    },
-    {
-      "id": "4012edce-2b69-4ad3-a296-25d08c638223",
-      "label": "",
-      "source": "categorize:0",
       "target": "generate:ask_contact"
     }
   ],
@@ -111,7 +99,7 @@
       },
       "data": {
         "label": "Begin",
-        "name": "BusySpidersWink",
+        "name": "LegalPoetsAttack",
         "form": {
           "prologue": "Hi! How can I help you?"
         }
@@ -128,7 +116,7 @@
       },
       "data": {
         "label": "Answer",
-        "name": "CruelTigersWarn",
+        "name": "ThreeGeeseBehave",
         "form": {}
       },
       "sourcePosition": "left",
@@ -143,7 +131,7 @@
       },
       "data": {
         "label": "Categorize",
-        "name": "MightyIconsGuess",
+        "name": "PublicComicsHammer",
         "form": {
           "llm_id": "deepseek-chat",
           "category_description": {
@@ -183,7 +171,7 @@
       },
       "data": {
         "label": "Generate",
-        "name": "StrongEmusArgue",
+        "name": "SourKnivesPay",
         "form": {
           "llm_id": "deepseek-chat",
           "prompt": "You are a customer support. But the customer wants to have a casual chat with you instead of consulting about the product. Be nice, funny, enthusiasm and concern.",
@@ -204,7 +192,7 @@
       },
       "data": {
         "label": "Generate",
-        "name": "NinePhonesInvent",
+        "name": "TameLlamasSniff",
         "form": {
           "llm_id": "deepseek-chat",
           "prompt": "You are a customer support. the Customers complain even curse about the products but not specific enough. You need to ask him/her what's the specific problem with the product. Be nice, patient and concern to soothe your customers’ emotions at first place.",
@@ -225,7 +213,7 @@
       },
       "data": {
         "label": "Retrieval",
-        "name": "OpenHandsInvite",
+        "name": "ShinyPathsDraw",
         "form": {
           "similarity_threshold": 0.2,
           "keywords_similarity_weight": 0.3,
@@ -247,7 +235,7 @@
       },
       "data": {
         "label": "Relevant",
-        "name": "SevenLandsHear",
+        "name": "LegalPotsLick",
         "form": {
           "llm_id": "deepseek-chat",
           "temperature": 0.02,
@@ -267,7 +255,7 @@
       },
       "data": {
         "label": "Generate",
-        "name": "DirtySwansJudge",
+        "name": "YellowGamesReport",
         "form": {
           "llm_id": "deepseek-chat",
           "prompt": "You are an intelligent assistant. Please answer the question based on content of knowledge base. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\". Answers need to consider chat history.\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
@@ -286,7 +274,7 @@
       },
       "data": {
         "label": "Generate",
-        "name": "OpenEndsShout",
+        "name": "FamousChefsRetire",
         "form": {
           "llm_id": "deepseek-chat",
           "prompt": "You are a customer support. But you can't answer to customers' question. You need to request their contact like E-mail, phone number, Wechat number, LINE number, twitter, discord, etc,. Product experts will contact them later. Please do not ask the same question twice.",
@@ -307,7 +295,7 @@
       },
       "data": {
         "label": "Message",
-        "name": "FairSquidsSmile",
+        "name": "BlueBooksTan",
         "form": {
           "messages": [
             "Okay, I've already write this down. What else I can do for you?",
