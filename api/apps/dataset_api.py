@@ -555,7 +555,41 @@ def is_illegal_value_for_enum(value, enum_class):
     return value not in enum_class.__members__.values()
 
 # ----------------------------download a file-----------------------------------------------------
+@manager.route("/<dataset_id>/documents/<document_id>", methods=["GET"])
+@login_required
+def download_documents(dataset_id, document_id):
+    try:
+        # Check whether there is this dataset
+        exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset {dataset_id} cannot be found!")
 
+        # Check whether there is this document
+        exist, document = DocumentService.get_by_id(document_id)
+        if not exist:
+            return construct_json_result(message=f"This document {document_id} cannot be found!",
+                                         code=RetCode.ARGUMENT_ERROR)
+
+        # The process of downloading
+        b, n = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
+        response = make_response(MINIO.get(b, n))
+        filename = document.name
+        extension = re.search(r"\.([^.]+)$", filename)
+        if extension:
+            if document.type == FileType.VISUAL.value:
+                response.headers.set('Content-Type', 'image/%s' % extension.group(1))
+            else:
+                response.headers.set(
+                    'Content-Type',
+                    'application/%s' %
+                    extension.group(1))
+
+        base64_encoded = base64.b64encode(response.data).decode('utf-8')
+        # Download successfully
+        return construct_json_result(code=RetCode.SUCCESS, data={"filename": filename, "encoded_data": base64_encoded})
+    # Error
+    except Exception as e:
+        return construct_error_response(e)
 # ----------------------------start parsing-----------------------------------------------------
 
 # ----------------------------stop parsing-----------------------------------------------------
@@ -576,40 +610,5 @@ def is_illegal_value_for_enum(value, enum_class):
 
 # ----------------------------retrieval test-----------------------------------------------------
 
-@manager.route("/<dataset_id>/documents/<document_id>", methods=["GET"])
-@login_required
-def download_documents(dataset_id, document_id):
-    try:
-        # Check whether there is this dataset
-        exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
-        if not exist:
-            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset {dataset_id} cannot be found!")
 
-        # Check whether there is this document
-        exist, document = DocumentService.get_by_id(document_id)
-        if not exist:
-            return construct_json_result(message=f"This document {document_id} cannot be found!",
-                                         code=RetCode.ARGUMENT_ERROR)
-
-        # The process of downloading
-        b, n = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
-        response = make_response(MINIO.get(b, n))
-        extension = re.search(r"\.([^.]+)$", document.name)
-        if extension:
-            if document.type == FileType.VISUAL.value:
-                response.headers.set('Content-Type', 'image/%s' % extension.group(1))
-            else:
-                response.headers.set(
-                    'Content-Type',
-                    'application/%s' %
-                    extension.group(1))
-        print("---response----", response)
-        print("---response json----", response.data)
-        base64_encoded = base64.b64encode(response.data).decode('utf-8')
-        print("---base64----", base64_encoded)
-        # Download successfully
-        return construct_json_result(code=RetCode.SUCCESS, data=base64_encoded)
-    # Error
-    except Exception as e:
-        return construct_error_response(e)
 

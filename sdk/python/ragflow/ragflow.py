@@ -126,7 +126,20 @@ class RAGFlow:
         return response.json()
 
     # ----------------------------download a file-----------------------------------------------------
+    def download_file(self, dataset_id, document_id):
+        # whether path is string
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}"
+        res = requests.get(endpoint, headers=self.authorization_header)
+        json_data = res.json()
 
+        if json_data["data"]:
+            base64_encoded = json_data["data"]["encoded_data"]
+            file_path = os.path.join(os.getcwd(), json_data["data"]["filename"])
+            binary_data = base64.b64decode(base64_encoded)
+            with open(file_path, "wb") as file:
+                file.write(binary_data)
+            return {"code": RetCode.SUCCESS, "data": binary_data}
+        return res.json()
     # ----------------------------start parsing-----------------------------------------------------
 
     # ----------------------------stop parsing-----------------------------------------------------
@@ -144,13 +157,4 @@ class RAGFlow:
     # ----------------------------get a specific chunk-----------------------------------------------------
 
     # ----------------------------retrieval test-----------------------------------------------------
-    def download_file(self, dataset_id, document_id):
-        # whether path is string
-        endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}"
-        res = requests.get(endpoint, headers=self.authorization_header)
-        json_data = res.json()
-        if json_data["data"]:
-            base64_encoded = json_data["data"]
-            binary_data = base64.b64decode(base64_encoded)
-            return {"code": RetCode.SUCCESS, "data": binary_data}
-        return res.json()
+
