@@ -91,4 +91,9 @@ class FileSource(StrEnum):
     KNOWLEDGEBASE = "knowledgebase"
     S3 = "s3"
 
+
+class CanvasType(StrEnum):
+    ChatBot = "chatbot"
+    DocBot = "docbot"
+
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"
