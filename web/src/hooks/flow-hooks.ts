@@ -80,9 +80,17 @@ export const useFetchFlowList = (): { data: IFlow[]; loading: boolean } => {
   return { data, loading };
 };
 
-export const useFetchFlow = (): { data: IFlow; loading: boolean } => {
+export const useFetchFlow = (): {
+  data: IFlow;
+  loading: boolean;
+  refetch: () => void;
+} => {
   const { id } = useParams();
-  const { data, isFetching: loading } = useQuery({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
     queryKey: ['flowDetail'],
     initialData: {} as IFlow,
     queryFn: async () => {
@@ -92,7 +100,7 @@ export const useFetchFlow = (): { data: IFlow; loading: boolean } => {
     },
   });
 
-  return { data, loading };
+  return { data, loading, refetch };
 };
 
 export const useSetFlow = () => {
