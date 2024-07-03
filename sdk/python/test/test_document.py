@@ -1,4 +1,3 @@
-from api.db import StatusEnum
 from api.settings import RetCode
 from test_sdkbase import TestSdk
 from ragflow import RAGFlow
@@ -196,7 +195,7 @@ class TestFile(TestSdk):
             # delete the files
             deleted_res = ragflow.delete_files(doc_id, dataset_id)
             # assert value
-            assert deleted_res['code'] == RetCode.SUCCESS and deleted_res['data'] is True
+            assert deleted_res["code"] == RetCode.SUCCESS and deleted_res["data"] is True
 
     def test_delete_document_from_nonexistent_dataset(self):
         """
@@ -208,13 +207,13 @@ class TestFile(TestSdk):
         file_paths = ["test_data/test.txt"]
         res = ragflow.upload_local_file(dataset_id, file_paths)
         # get the doc_id
-        data = res['data'][0]
-        doc_id = data['id']
+        data = res["data"][0]
+        doc_id = data["id"]
         # delete the files
         deleted_res = ragflow.delete_files(doc_id, "000")
         # assert value
-        assert (deleted_res['code'] == RetCode.ARGUMENT_ERROR and deleted_res['message'] ==
-                f'The document {doc_id} is not in the dataset: 000, but in the dataset: {dataset_id}.')
+        assert (deleted_res["code"] == RetCode.ARGUMENT_ERROR and deleted_res["message"] ==
+                f"The document {doc_id} is not in the dataset: 000, but in the dataset: {dataset_id}.")
 
     def test_delete_document_which_is_located_in_other_dataset(self):
         """
@@ -228,15 +227,15 @@ class TestFile(TestSdk):
         res = ragflow.upload_local_file(created_res_id, file_paths)
         # other dataset
         other_res = ragflow.create_dataset("other_dataset")
-        other_dataset_id = other_res['data']['dataset_id']
+        other_dataset_id = other_res["data"]["dataset_id"]
         # get the doc_id
-        data = res['data'][0]
-        doc_id = data['id']
+        data = res["data"][0]
+        doc_id = data["id"]
         # delete the files from the other dataset
         deleted_res = ragflow.delete_files(doc_id, other_dataset_id)
         # assert value
-        assert (deleted_res['code'] == RetCode.ARGUMENT_ERROR and deleted_res['message'] ==
-                f'The document {doc_id} is not in the dataset: {other_dataset_id}, but in the dataset: {created_res_id}.')
+        assert (deleted_res["code"] == RetCode.ARGUMENT_ERROR and deleted_res["message"] ==
+                f"The document {doc_id} is not in the dataset: {other_dataset_id}, but in the dataset: {created_res_id}.")
 
 # ----------------------------list files-----------------------------------------------------
     def test_list_documents_with_success(self):
@@ -251,7 +250,7 @@ class TestFile(TestSdk):
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
         response = ragflow.list_files(created_res_id)
-        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 1
+        assert response["code"] == RetCode.SUCCESS and len(response["data"]["docs"]) == 1
 
     def test_list_documents_with_checking_size(self):
         """
@@ -265,7 +264,7 @@ class TestFile(TestSdk):
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
         response = ragflow.list_files(created_res_id)
-        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 10
+        assert response["code"] == RetCode.SUCCESS and len(response["data"]["docs"]) == 10
 
     def test_list_documents_with_getting_empty_result(self):
         """
@@ -277,7 +276,7 @@ class TestFile(TestSdk):
         created_res_id = created_res["data"]["dataset_id"]
         # Call the list_document method
         response = ragflow.list_files(created_res_id)
-        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 0
+        assert response["code"] == RetCode.SUCCESS and len(response["data"]["docs"]) == 0
 
     def test_list_documents_with_creating_100_documents(self):
         """
@@ -291,7 +290,7 @@ class TestFile(TestSdk):
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
         response = ragflow.list_files(created_res_id)
-        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 100
+        assert response["code"] == RetCode.SUCCESS and len(response["data"]["docs"]) == 100
 
     def test_list_document_with_failure(self):
         """
@@ -301,7 +300,7 @@ class TestFile(TestSdk):
         created_res = ragflow.create_dataset("test_list_document_with_failure")
         created_res_id = created_res["data"]["dataset_id"]
         response = ragflow.list_files(created_res_id, offset=-1, count=-1)
-        assert "IndexError" in response['message'] and response['code'] == RetCode.EXCEPTION_ERROR
+        assert "IndexError" in response["message"] and response["code"] == RetCode.EXCEPTION_ERROR
 
     def test_list_document_with_verifying_offset_and_count(self):
         """
@@ -315,7 +314,7 @@ class TestFile(TestSdk):
         # Call the list_document method
         response = ragflow.list_files(created_res_id, offset=2, count=10)
 
-        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 10
+        assert response["code"] == RetCode.SUCCESS and len(response["data"]["docs"]) == 10
 
     def test_list_document_with_verifying_keywords(self):
         """
@@ -329,7 +328,7 @@ class TestFile(TestSdk):
         # Call the list_document method
         response = ragflow.list_files(created_res_id, keywords="empty")
 
-        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 1
+        assert response["code"] == RetCode.SUCCESS and len(response["data"]["docs"]) == 1
 
     def test_list_document_with_verifying_order_by_and_descend(self):
         """
@@ -342,12 +341,12 @@ class TestFile(TestSdk):
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
         response = ragflow.list_files(created_res_id)
-        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 2
-        docs = response['data']['docs']
+        assert response["code"] == RetCode.SUCCESS and len(response["data"]["docs"]) == 2
+        docs = response["data"]["docs"]
         # reverse
         i = 1
         for doc in docs:
-            assert doc['name'] in file_paths[i]
+            assert doc["name"] in file_paths[i]
             i -= 1
 
     def test_list_document_with_verifying_order_by_and_ascend(self):
@@ -361,13 +360,13 @@ class TestFile(TestSdk):
         ragflow.upload_local_file(created_res_id, file_paths)
         # Call the list_document method
         response = ragflow.list_files(created_res_id, descend=False)
-        assert response['code'] == RetCode.SUCCESS and len(response['data']['docs']) == 3
+        assert response["code"] == RetCode.SUCCESS and len(response["data"]["docs"]) == 3
 
-        docs = response['data']['docs']
+        docs = response["data"]["docs"]
 
         i = 0
         for doc in docs:
-            assert doc['name'] in file_paths[i]
+            assert doc["name"] in file_paths[i]
             i += 1
 
 # ----------------------------update files: enable, rename, template_type-------------------------------------------
@@ -457,7 +456,7 @@ class TestFile(TestSdk):
         # create a dataset
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_update_document_with_different_extension_name")
-        created_res_id = created_res['data']['dataset_id']
+        created_res_id = created_res["data"]["dataset_id"]
         # upload files
         file_paths = ["test_data/test.txt", "test_data/test1.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
@@ -470,7 +469,7 @@ class TestFile(TestSdk):
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
         assert (update_res["code"] == RetCode.ARGUMENT_ERROR and
-                update_res["message"] == 'Duplicated document name in the same dataset.')
+                update_res["message"] == "Duplicated document name in the same dataset.")
 
     def test_update_document_with_updating_its_name_with_success(self):
         """
@@ -514,7 +513,7 @@ class TestFile(TestSdk):
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
         assert (update_res["code"] == RetCode.SUCCESS and
-                update_res["message"] == 'Success' and update_res['data']['parser_id'] == "laws")
+                update_res["message"] == "Success" and update_res["data"]["parser_id"] == "laws")
 
     def test_update_document_with_updating_its_enable_value_with_success(self):
         """

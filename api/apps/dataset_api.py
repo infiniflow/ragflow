@@ -487,8 +487,8 @@ def update_document(dataset_id, document_id):
         # Deal with the different keys
         updating_data = {}
         if "name" in req:
-            updating_data["name"] = req["name"]
             new_name = req["name"]
+            updating_data["name"] = new_name
             # Check whether the new_name is suitable
             # 1. no name value
             if not new_name:
@@ -497,14 +497,7 @@ def update_document(dataset_id, document_id):
             # 2. In case that there's space in the head or the tail
             new_name = new_name.strip()
 
-            # 3. In case that the length of the name exceeds the limit
-            new_name_length = len(new_name)
-            if new_name_length > NAME_LENGTH_LIMIT:
-                return construct_json_result(
-                    message=f"Dataset name: {new_name} with length {new_name_length} exceeds {NAME_LENGTH_LIMIT}!",
-                    code=RetCode.DATA_ERROR)
-
-            # Check whether the new_name has the same extension of file as before
+            # 3. Check whether the new_name has the same extension of file as before
             if pathlib.Path(new_name.lower()).suffix != pathlib.Path(
                     document.name.lower()).suffix:
                 return construct_json_result(
@@ -512,7 +505,7 @@ def update_document(dataset_id, document_id):
                     message="The extension of file cannot be changed",
                     code=RetCode.ARGUMENT_ERROR)
 
-            # Check whether the new name has already been occupied by other file
+            # 4. Check whether the new name has already been occupied by other file
             for d in DocumentService.query(name=new_name, kb_id=document.kb_id):
                 if d.name == new_name:
                     return construct_json_result(
