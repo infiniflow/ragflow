@@ -14,7 +14,7 @@ interface IProps {
   top: number;
   right: number;
   text: string;
-  idx: number;
+  idx?: number;
 }
 
 const CategorizeHandle = ({ top, right, text, idx }: IProps) => {
@@ -30,6 +30,7 @@ const CategorizeHandle = ({ top, right, text, idx }: IProps) => {
         top: `${top}%`,
         right: `${right}%`,
         background: 'red',
+        color: 'black',
       }}
     >
       <span className={styles.categorizeAnchorPointText}>{text}</span>

@@ -6,14 +6,11 @@ import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import NodeDropdown from './dropdown';
+
+import CategorizeHandle from './categorize-handle';
 import styles from './index.less';
 
-export function RagNode({
-  id,
-  data,
-  isConnectable = true,
-  selected,
-}: NodeProps<NodeData>) {
+export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
   const style = operatorMap[data.label as Operator];
 
   return (
@@ -24,25 +21,32 @@ export function RagNode({
       style={pick(style, ['backgroundColor', 'width', 'height', 'color'])}
     >
       <Handle
-        id="c"
-        type="source"
+        type="target"
         position={Position.Left}
-        isConnectable={isConnectable}
+        isConnectable
         className={styles.handle}
+        id={'a'}
       ></Handle>
-      <Handle type="source" position={Position.Top} id="d" isConnectable />
       <Handle
-        type="source"
-        position={Position.Right}
-        isConnectable={isConnectable}
+        type="target"
+        position={Position.Top}
+        isConnectable
         className={styles.handle}
-        id="b"
+        id={'b'}
       ></Handle>
-      <Handle type="source" position={Position.Bottom} id="a" isConnectable />
-      <Flex vertical align="center" justify={'center'} gap={6}>
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        isConnectable
+        className={styles.handle}
+        id={'c'}
+      ></Handle>
+      <CategorizeHandle top={20} right={6} text={'yes'}></CategorizeHandle>
+      <CategorizeHandle top={80} right={6} text={'no'}></CategorizeHandle>
+      <Flex vertical align="center" justify="center">
         <OperatorIcon
           name={data.label as Operator}
-          fontSize={style['iconFontSize'] ?? 24}
+          fontSize={style.iconFontSize}
         ></OperatorIcon>
         <span
           className={styles.type}
@@ -52,7 +56,6 @@ export function RagNode({
         </span>
         <NodeDropdown id={id}></NodeDropdown>
       </Flex>
-
       <section className={styles.bottomBox}>
         <div className={styles.nodeName}>{data.name}</div>
       </section>

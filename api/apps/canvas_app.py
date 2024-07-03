@@ -19,6 +19,7 @@ from functools import partial
 from flask import request, Response
 from flask_login import login_required, current_user
 
+from api.db.db_models import UserCanvas
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request
@@ -34,8 +35,9 @@ def templates():
 @manager.route('/list', methods=['GET'])
 @login_required
 def canvas_list():
-
-    return get_json_result(data=[c.to_dict() for c in UserCanvasService.query(user_id=current_user.id)])
+    return get_json_result(data=sorted([c.to_dict() for c in \
+                                 UserCanvasService.query(user_id=current_user.id)], key=lambda x: x["update_time"])
+                           )
 
 
 @manager.route('/rm', methods=['POST'])
@@ -53,7 +55,7 @@ def rm():
 def save():
     req = request.json
     req["user_id"] = current_user.id
-    if not isinstance(req["dsl"], str):req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
+    if not isinstance(req["dsl"], str): req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
 
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
@@ -111,7 +113,7 @@ def run():
                     for k in ans.keys():
                         final_ans[k] = ans[k]
                     ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
-                    yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) +"\n\n"
+                    yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
 
                 canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
                 if "reference" in final_ans:
@@ -153,5 +155,3 @@ def reset():
         return get_json_result(data=req["dsl"])
     except Exception as e:
         return server_error_response(e)
-
-

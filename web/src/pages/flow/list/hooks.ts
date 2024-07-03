@@ -1,10 +1,16 @@
 import { useSetModalState } from '@/hooks/commonHooks';
-import { useFetchFlowList, useSetFlow } from '@/hooks/flow-hooks';
+import {
+  useFetchFlowList,
+  useFetchFlowTemplates,
+  useSetFlow,
+} from '@/hooks/flow-hooks';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 // import { dsl } from '../mock';
-import headhunterZhComponents from '../../../../../graph/test/dsl_examples/headhunter_zh.json';
-import headhunter_zh from '../headhunter_zh.json';
+// import headhunterZhComponents from '../../../../../graph/test/dsl_examples/headhunter_zh.json';
+// import dslJson from '../../../../../dls.json';
+// import customerServiceBase from '../../../../../graph/test/dsl_examples/customer_service.json';
+// import customerService from '../customer_service.json';
 
 export const useFetchDataOnMount = () => {
   const { data, loading } = useFetchFlowList();
@@ -21,12 +27,21 @@ export const useSaveFlow = () => {
   } = useSetModalState();
   const { loading, setFlow } = useSetFlow();
   const navigate = useNavigate();
+  const { data: list } = useFetchFlowTemplates();
 
   const onFlowOk = useCallback(
-    async (title: string) => {
+    async (title: string, templateId: string) => {
+      const templateItem = list.find((x) => x.id === templateId);
+
+      let dsl = templateItem?.dsl;
+      // if (dsl) {
+      //   dsl.graph = headhunter_zh;
+      // }
       const ret = await setFlow({
         title,
-        dsl: { ...headhunterZhComponents, graph: headhunter_zh },
+        dsl,
+        // dsl: dslJson,
+        // dsl: { ...customerServiceBase, graph: customerService },
       });
 
       if (ret?.retcode === 0) {
@@ -34,7 +49,7 @@ export const useSaveFlow = () => {
         navigate(`/flow/${ret.data.id}`);
       }
     },
-    [setFlow, hideFlowSettingModal, navigate],
+    [setFlow, hideFlowSettingModal, navigate, list],
   );
 
   const handleShowFlowSettingModal = useCallback(

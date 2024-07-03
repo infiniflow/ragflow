@@ -45,12 +45,23 @@ export interface ICategorizeItem {
   to?: string;
 }
 
+export interface IGenerateParameter {
+  id?: string;
+  key: string;
+  component_id?: string;
+}
+
 export type ICategorizeItemResult = Record<
   string,
   Omit<ICategorizeItem, 'name'>
 >;
 export interface ICategorizeForm extends IGenerateForm {
   category_description: ICategorizeItemResult;
+}
+
+export interface IRelevantForm extends IGenerateForm {
+  yes: string;
+  no: string;
 }
 
 export type NodeData = {

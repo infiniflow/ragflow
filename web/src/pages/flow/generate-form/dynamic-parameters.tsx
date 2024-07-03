@@ -7,13 +7,13 @@ import {
   useBuildFormSelectOptions,
   useHandleFormSelectChange,
 } from '../form-hooks';
-import { ICategorizeItem } from '../interface';
+import { IGenerateParameter } from '../interface';
 
 interface IProps {
   nodeId?: string;
 }
 
-const DynamicCategorize = ({ nodeId }: IProps) => {
+const DynamicParameters = ({ nodeId }: IProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
   const form = Form.useFormInstance();
   const buildCategorizeToOptions = useBuildFormSelectOptions(
@@ -25,11 +25,11 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
 
   return (
     <>
-      <Form.List name="items">
+      <Form.List name="parameters">
         {(fields, { add, remove }) => {
           const handleAdd = () => {
             const idx = fields.length;
-            add({ name: `Categorize ${idx + 1}` });
+            add({ name: `parameter ${idx + 1}` });
             if (nodeId) updateNodeInternals(nodeId);
           };
           return (
@@ -49,38 +49,33 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                   }
                 >
                   <Form.Item
-                    label={t('name')} // TODO: repeatability check
-                    name={[field.name, 'name']}
+                    label={t('key')} // TODO: repeatability check
+                    name={[field.name, 'key']}
                     rules={[{ required: true, message: t('nameMessage') }]}
                   >
                     <Input />
                   </Form.Item>
                   <Form.Item
-                    label={t('description')}
-                    name={[field.name, 'description']}
+                    label={t('componentId')}
+                    name={[field.name, 'component_id']}
                   >
-                    <Input.TextArea rows={3} />
-                  </Form.Item>
-                  <Form.Item
-                    label={t('examples')}
-                    name={[field.name, 'examples']}
-                  >
-                    <Input.TextArea rows={3} />
-                  </Form.Item>
-                  <Form.Item label={t('to')} name={[field.name, 'to']}>
                     <Select
                       allowClear
                       options={buildCategorizeToOptions(
-                        (form.getFieldValue(['items']) ?? [])
-                          .map((x: ICategorizeItem) => x.to)
+                        (form.getFieldValue(['parameters']) ?? [])
+                          .map((x: IGenerateParameter) => x.component_id)
                           .filter(
                             (x: string) =>
                               x !==
-                              form.getFieldValue(['items', field.name, 'to']),
+                              form.getFieldValue([
+                                'parameters',
+                                field.name,
+                                'component_id',
+                              ]),
                           ),
                       )}
                       onChange={handleSelectChange(
-                        form.getFieldValue(['items', field.name, 'name']),
+                        form.getFieldValue(['parameters', field.name, 'key']),
                       )}
                     />
                   </Form.Item>
@@ -106,4 +101,4 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   );
 };
 
-export default DynamicCategorize;
+export default DynamicParameters;

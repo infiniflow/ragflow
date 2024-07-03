@@ -1,8 +1,9 @@
-import LlmSettingItems from '@/components/llm-setting-items';
+import LLMSelect from '@/components/llm-select';
 import { useTranslate } from '@/hooks/commonHooks';
 import { Form, Input, Switch } from 'antd';
 import { useSetLlmSetting } from '../hooks';
 import { IOperatorForm } from '../interface';
+import DynamicParameters from './next-dynamic-parameters';
 
 const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
@@ -18,7 +19,13 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
       form={form}
       onValuesChange={onValuesChange}
     >
-      <LlmSettingItems></LlmSettingItems>
+      <Form.Item
+        name={'llm_id'}
+        label={t('model', { keyPrefix: 'chat' })}
+        tooltip={t('modelTip', { keyPrefix: 'chat' })}
+      >
+        <LLMSelect></LLMSelect>
+      </Form.Item>
       <Form.Item
         name={['prompt']}
         label={t('prompt', { keyPrefix: 'knowledgeConfiguration' })}
@@ -42,6 +49,7 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
       >
         <Switch />
       </Form.Item>
+      <DynamicParameters></DynamicParameters>
     </Form>
   );
 };

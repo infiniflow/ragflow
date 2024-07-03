@@ -67,7 +67,12 @@ export const operatorMap = {
   },
   [Operator.Relevant]: {
     description: 'BranchesOutlined description',
-    backgroundColor: 'white',
+    backgroundColor: '#9fd94d',
+    color: 'white',
+    width: 70,
+    height: 70,
+    fontSize: 12,
+    iconFontSize: 16,
   },
   [Operator.RewriteQuestion]: {
     description: 'RewriteQuestion description',
@@ -136,6 +141,7 @@ export const initialFormValuesMap = {
   [Operator.Generate]: initialGenerateValues,
   [Operator.Answer]: {},
   [Operator.Categorize]: {},
+  [Operator.Relevant]: {},
 };
 
 export const CategorizeAnchorPointPositions = [
@@ -173,6 +179,6 @@ export const NodeMap = {
   [Operator.Generate]: 'ragNode',
   [Operator.Answer]: 'ragNode',
   [Operator.Message]: 'ragNode',
-  [Operator.Relevant]: 'ragNode',
+  [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'ragNode',
 };

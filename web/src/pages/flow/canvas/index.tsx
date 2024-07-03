@@ -3,7 +3,6 @@ import ReactFlow, {
   Background,
   ConnectionMode,
   Controls,
-  MarkerType,
   NodeMouseHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -24,11 +23,13 @@ import ChatDrawer from '../chat/drawer';
 import styles from './index.less';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { RelevantNode } from './node/relevant-node';
 
 const nodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
+  relevantNode: RelevantNode,
 };
 
 const edgeTypes = {
@@ -67,6 +68,26 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
 
   return (
     <div className={styles.canvasWrapper}>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ position: 'absolute', top: 10, left: 0 }}
+      >
+        <defs>
+          <marker
+            fill="rgb(157 149 225)"
+            id="logo"
+            viewBox="0 0 40 40"
+            refX="8"
+            refY="5"
+            markerUnits="strokeWidth"
+            markerWidth="20"
+            markerHeight="20"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+        </defs>
+      </svg>
       <ReactFlow
         connectionMode={ConnectionMode.Loose}
         nodes={nodes}
@@ -90,8 +111,17 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
         }}
         defaultEdgeOptions={{
           type: 'buttonEdge',
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
+          markerEnd: 'logo',
+          // markerEnd: {
+          //   type: MarkerType.ArrowClosed,
+          //   color: 'rgb(157 149 225)',
+          //   width: 20,
+          //   height: 20,
+          // },
+          style: {
+            // edge style
+            strokeWidth: 2,
+            stroke: 'rgb(202 197 245)',
           },
         }}
       >

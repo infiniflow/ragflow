@@ -1,9 +1,5 @@
 import { useSetModalState } from '@/hooks/commonHooks';
-import {
-  useFetchFlow,
-  useFetchFlowTemplates,
-  useSetFlow,
-} from '@/hooks/flow-hooks';
+import { useFetchFlow, useSetFlow } from '@/hooks/flow-hooks';
 import { useFetchLlmList } from '@/hooks/llmHooks';
 import { IGraph } from '@/interfaces/database/flow';
 import { useIsFetching } from '@tanstack/react-query';
@@ -217,11 +213,10 @@ export const useFetchDataOnMount = () => {
 
   useEffect(() => {
     setGraphInfo(data?.dsl?.graph ?? ({} as IGraph));
-  }, [setGraphInfo, data?.dsl?.graph]);
+  }, [setGraphInfo, data]);
 
   useWatchGraphChange();
 
-  useFetchFlowTemplates();
   useFetchLlmList();
 
   return { loading, flowDetail: data };
