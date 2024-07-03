@@ -12,7 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
+import base64
 import os
 import re
 import warnings
@@ -281,9 +281,12 @@ def upload_documents(dataset_id):
         return construct_json_result(code=RetCode.DATA_ERROR, message=f"You try to upload {num_file_objs} files, "
                                                                       f"which exceeds the maximum number of uploading files: {MAXIMUM_OF_UPLOADING_FILES}")
 
+    # no dataset
+    exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
+    if not exist:
+        return construct_json_result(message="Can't find this dataset", code=RetCode.DATA_ERROR)
+
     for file_obj in file_objs:
-        # the content of the file
-        file_content = file_obj.read()
         file_name = file_obj.filename
         # no name
         if not file_name:
@@ -293,15 +296,6 @@ def upload_documents(dataset_id):
         # TODO: support the remote files
         if 'http' in file_name:
             return construct_json_result(code=RetCode.ARGUMENT_ERROR, message="Remote files have not unsupported.")
-
-        # the content is empty, raising a warning
-        if file_content == b'':
-            warnings.warn(f"[WARNING]: The file {file_name} is empty.")
-
-    # no dataset
-    exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
-    if not exist:
-        return construct_json_result(message="Can't find this dataset", code=RetCode.DATA_ERROR)
 
     # get the root_folder
     root_folder = FileService.get_root_folder(current_user.id)
@@ -340,8 +334,14 @@ def upload_documents(dataset_id):
             location = filename
             while MINIO.obj_exist(dataset_id, location):
                 location += "_"
+
             blob = file.read()
+            # the content is empty, raising a warning
+            if blob == b'':
+                warnings.warn(f"[WARNING]: The file {filename} is empty.")
+
             MINIO.put(dataset_id, location, blob)
+
             doc = {
                 "id": get_uuid(),
                 "kb_id": dataset.id,
@@ -474,14 +474,9 @@ def list_documents(dataset_id):
 
 # ----------------------------retrieval test-----------------------------------------------------
 
-@manager.route('/<dataset_id>/documents/<document_id>', methods=['GET'])
+@manager.route("/<dataset_id>/documents/<document_id>", methods=["GET"])
 @login_required
-@validate_request("target_path")
 def download_documents(dataset_id, document_id):
-    # Make sure there is target_path in the request
-    req = request.json
-    target_path = req['target_path']
-
     try:
         # Check whether there is this dataset
         exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
@@ -495,13 +490,24 @@ def download_documents(dataset_id, document_id):
                                          code=RetCode.ARGUMENT_ERROR)
 
         # The process of downloading
-        filename = document['name']
-        response = make_response(send_from_directory
-                                 (target_path, filename.encode('utf-8').decode('utf-8'), as_attachment=True))
-        response.headers["Content-Disposition"] = "attachment; filename={}".format(filename.encode().decode('latin-1'))
-
+        b, n = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
+        response = make_response(MINIO.get(b, n))
+        extension = re.search(r"\.([^.]+)$", document.name)
+        if extension:
+            if document.type == FileType.VISUAL.value:
+                response.headers.set('Content-Type', 'image/%s' % extension.group(1))
+            else:
+                response.headers.set(
+                    'Content-Type',
+                    'application/%s' %
+                    extension.group(1))
+        print("---response----", response)
+        print("---response json----", response.data)
+        base64_encoded = base64.b64encode(response.data).decode('utf-8')
+        print("---base64----", base64_encoded)
         # Download successfully
-        return construct_json_result(data=True, code=RetCode.SUCCESS)
+        return construct_json_result(code=RetCode.SUCCESS, data=base64_encoded)
     # Error
     except Exception as e:
         return construct_error_response(e)
+

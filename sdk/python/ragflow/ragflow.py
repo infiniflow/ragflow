@@ -12,7 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
+import base64
 import json
 import os
 
@@ -142,7 +142,13 @@ class RAGFlow:
     # ----------------------------get a specific chunk-----------------------------------------------------
 
     # ----------------------------retrieval test-----------------------------------------------------
-    def download_file(self, dataset_id, document_id, target_path):
+    def download_file(self, dataset_id, document_id):
+        # whether path is string
         endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}"
-        res = requests.get(endpoint, json={'target_path': target_path}, headers=self.authorization_header)
+        res = requests.get(endpoint, headers=self.authorization_header)
+        json_data = res.json()
+        if json_data["data"]:
+            base64_encoded = json_data["data"]
+            binary_data = base64.b64decode(base64_encoded)
+            return {"code": RetCode.SUCCESS, "data": binary_data}
         return res.json()
