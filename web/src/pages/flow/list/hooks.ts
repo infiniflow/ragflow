@@ -8,7 +8,9 @@ import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 // import { dsl } from '../mock';
 // import headhunterZhComponents from '../../../../../graph/test/dsl_examples/headhunter_zh.json';
-import dslJson from '../../../../../dls.json';
+// import dslJson from '../../../../../dls.json';
+import customerServiceBase from '../../../../../graph/test/dsl_examples/customer_service.json';
+import customerService from '../customer_service.json';
 
 export const useFetchDataOnMount = () => {
   const { data, loading } = useFetchFlowList();
@@ -37,7 +39,8 @@ export const useSaveFlow = () => {
       // }
       const ret = await setFlow({
         title,
-        dsl: dslJson,
+        // dsl: dslJson,
+        dsl: { ...customerServiceBase, ...customerService },
       });
 
       if (ret?.retcode === 0) {

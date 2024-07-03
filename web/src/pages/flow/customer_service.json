@@ -1,0 +1,324 @@
+{
+  "edges": [
+    {
+      "id": "f7e99034-58d4-4f15-908c-196b4dded860",
+      "label": "",
+      "source": "begin",
+      "target": "answer:0"
+    },
+    {
+      "id": "4c419958-ee28-4c6a-95c2-d59a26b17b45",
+      "label": "",
+      "source": "generate:0",
+      "target": "answer:0"
+    },
+    {
+      "id": "d30cc82c-edbe-4068-bbb3-58447e7a6928",
+      "label": "",
+      "source": "generate:casual",
+      "target": "answer:0"
+    },
+    {
+      "id": "2290ea52-fddb-4247-8a33-79dc3ca638eb",
+      "label": "",
+      "source": "generate:answer",
+      "target": "answer:0"
+    },
+    {
+      "id": "49375377-026d-4736-95c9-0593eb1be995",
+      "label": "",
+      "source": "generate:complain",
+      "target": "answer:0"
+    },
+    {
+      "id": "413f4830-2fa8-489a-90b8-2e3c44b36abf",
+      "label": "",
+      "source": "generate:ask_contact",
+      "target": "answer:0"
+    },
+    {
+      "id": "5be4021b-4ffe-4b1e-b358-5bf41d7fe9f6",
+      "label": "",
+      "source": "message:get_contact",
+      "target": "answer:0"
+    },
+    {
+      "id": "5ba8fc08-0bfc-4ecd-ba6c-96ec9a9419e6",
+      "label": "",
+      "source": "answer:0",
+      "target": "categorize:0"
+    },
+    {
+      "id": "26b65ad4-c425-4883-835f-ba89f4013fe6",
+      "label": "",
+      "source": "categorize:0",
+      "target": "retrieval:0",
+      "sourceHandle": "product_related"
+    },
+    {
+      "id": "9f649802-595a-470c-88b2-be758d1073c4",
+      "label": "",
+      "source": "categorize:0",
+      "target": "generate:casual",
+      "sourceHandle": "casual"
+    },
+    {
+      "id": "0188dbfa-46aa-41e4-8ded-8bf7050a8353",
+      "label": "",
+      "source": "categorize:0",
+      "target": "generate:complain",
+      "sourceHandle": "complain"
+    },
+    {
+      "id": "c64cf3a8-8399-469e-816b-57ef86aa799b",
+      "label": "",
+      "source": "categorize:0",
+      "target": "message:get_contact",
+      "sourceHandle": "answer"
+    },
+    {
+      "id": "ef5d2e9f-56a4-44fe-b0d8-ea5cb86df7f9",
+      "label": "",
+      "source": "retrieval:0",
+      "target": "relevant:0"
+    },
+    {
+      "id": "a4c10df3-37a0-45fc-9d15-ae90ba20a5d4",
+      "label": "",
+      "source": "relevant:0",
+      "target": "generate:answer"
+    },
+    {
+      "id": "848efd87-55e7-4dee-9713-9fc5b1812986",
+      "label": "",
+      "source": "relevant:0",
+      "target": "generate:ask_contact"
+    },
+    {
+      "id": "4012edce-2b69-4ad3-a296-25d08c638223",
+      "label": "",
+      "source": "categorize:0",
+      "target": "generate:ask_contact"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "begin",
+      "type": "beginNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Begin",
+        "name": "BusySpidersWink",
+        "form": {
+          "prologue": "Hi! How can I help you?"
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "answer:0",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Answer",
+        "name": "CruelTigersWarn",
+        "form": {}
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "categorize:0",
+      "type": "categorizeNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Categorize",
+        "name": "MightyIconsGuess",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "category_description": {
+            "product_related": {
+              "description": "The question is about the product usage, appearance and how it works.",
+              "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?\nException: Can't connect to ES cluster\nHow to build the RAGFlow image from scratch",
+              "to": "retrieval:0"
+            },
+            "casual": {
+              "description": "The question is not about the product usage, appearance and how it works. Just casual chat.",
+              "examples": "How are you doing?\nWhat is your name?\nAre you a robot?\nWhat's the weather?\nWill it rain?",
+              "to": "generate:casual"
+            },
+            "complain": {
+              "description": "Complain even curse about the product or service you provide. But the comment is not specific enough.",
+              "examples": "How bad is it.\nIt's really sucks.\nDamn, for God's sake, can it be more steady?\nShit, I just can't use this shit.\nI can't stand it anymore.",
+              "to": "generate:complain"
+            },
+            "answer": {
+              "description": "This answer provide a specific contact information, like e-mail, phone number, wechat number, line number, twitter, discord, etc,.",
+              "examples": "My phone number is 203921\nkevinhu.hk@gmail.com\nThis is my discord number: johndowson_29384",
+              "to": "message:get_contact"
+            }
+          },
+          "message_history_window_size": 8
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "generate:casual",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Generate",
+        "name": "StrongEmusArgue",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "prompt": "You are a customer support. But the customer wants to have a casual chat with you instead of consulting about the product. Be nice, funny, enthusiasm and concern.",
+          "temperature": 0.9,
+          "message_history_window_size": 12,
+          "cite": false
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "generate:complain",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Generate",
+        "name": "NinePhonesInvent",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "prompt": "You are a customer support. the Customers complain even curse about the products but not specific enough. You need to ask him/her what's the specific problem with the product. Be nice, patient and concern to soothe your customers’ emotions at first place.",
+          "temperature": 0.9,
+          "message_history_window_size": 12,
+          "cite": false
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "retrieval:0",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Retrieval",
+        "name": "OpenHandsInvite",
+        "form": {
+          "similarity_threshold": 0.2,
+          "keywords_similarity_weight": 0.3,
+          "top_n": 6,
+          "top_k": 1024,
+          "rerank_id": "BAAI/bge-reranker-v2-m3",
+          "kb_ids": ["869a236818b811ef91dffa163e197198"]
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "relevant:0",
+      "type": "relevantNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Relevant",
+        "name": "SevenLandsHear",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "temperature": 0.02,
+          "yes": "generate:answer",
+          "no": "generate:ask_contact"
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "generate:answer",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Generate",
+        "name": "DirtySwansJudge",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "prompt": "You are an intelligent assistant. Please answer the question based on content of knowledge base. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\". Answers need to consider chat history.\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
+          "temperature": 0.02
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "generate:ask_contact",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Generate",
+        "name": "OpenEndsShout",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "prompt": "You are a customer support. But you can't answer to customers' question. You need to request their contact like E-mail, phone number, Wechat number, LINE number, twitter, discord, etc,. Product experts will contact them later. Please do not ask the same question twice.",
+          "temperature": 0.9,
+          "message_history_window_size": 12,
+          "cite": false
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "message:get_contact",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Message",
+        "name": "FairSquidsSmile",
+        "form": {
+          "messages": [
+            "Okay, I've already write this down. What else I can do for you?",
+            "Get it. What else I can do for you?",
+            "Thanks for your trust! Our expert will contact ASAP. So, anything else I can do for you?",
+            "Thanks! So, anything else I can do for you?"
+          ]
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    }
+  ]
+}
