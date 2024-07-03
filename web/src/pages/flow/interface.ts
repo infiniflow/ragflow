@@ -53,6 +53,11 @@ export interface ICategorizeForm extends IGenerateForm {
   category_description: ICategorizeItemResult;
 }
 
+export interface IRelevantForm extends IGenerateForm {
+  yes: string;
+  no: string;
+}
+
 export type NodeData = {
   label: string; // operator type
   name: string; // operator name
