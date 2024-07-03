@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import os
 import time
 import uuid
@@ -21,11 +22,13 @@ from copy import deepcopy
 from api.db import LLMType, UserTenantRole
 from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM
 from api.db.services import UserService
+from api.db.services.canvas_service import CanvasTemplateService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMFactoriesService, LLMService, TenantLLMService, LLMBundle
 from api.db.services.user_service import TenantService, UserTenantService
 from api.settings import CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, LLM_FACTORY, API_KEY, LLM_BASE_URL
+from api.utils.file_utils import get_project_base_directory
 
 
 def init_superuser():
@@ -694,6 +697,20 @@ def init_llm_factory():
     """
 
 
+def add_graph_templates():
+    dir = os.path.join(get_project_base_directory(), "graph", "templates")
+    for fnm in os.listdir(dir):
+        try:
+            cnvs = json.load(open(os.path.join(dir, fnm), "r"))
+            try:
+                CanvasTemplateService.save(**cnvs)
+            except:
+                CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
+        except Exception as e:
+            print("Add graph templates error: ", e)
+            print("------------", flush=True)
+
+
 def init_web_data():
     start_time = time.time()
 
@@ -701,6 +718,7 @@ def init_web_data():
     if not UserService.get_all().count():
         init_superuser()
 
+    add_graph_templates()
     print("init web data success:{}".format(time.time() - start_time))
 
 

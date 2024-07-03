@@ -587,5 +587,6 @@ You're a question analyzer.
 Answer format: (in language of user's question)
  - keyword: 
 """
-    kwd, _ = chat_mdl.chat(prompt, [{"role": "user",  "content": content}], {"temperature": 0.2})
+    kwd = chat_mdl.chat(prompt, [{"role": "user",  "content": content}], {"temperature": 0.2})
+    if isinstance(kwd, tuple): return kwd[0]
     return kwd
