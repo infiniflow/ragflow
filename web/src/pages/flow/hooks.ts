@@ -253,7 +253,7 @@ export const useValidateConnection = () => {
   // restricted lines cannot be connected successfully.
   const isValidConnection = useCallback(
     (connection: Connection) => {
-      // limit there to be only one line between two nodes
+      // limit the connection between two nodes to only one connection line in one direction
       const hasLine = edges.some(
         (x) => x.source === connection.source && x.target === connection.target,
       );

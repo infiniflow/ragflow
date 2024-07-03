@@ -54,7 +54,8 @@ const MessageForm = ({ onValuesChange, form }: IOperatorForm) => {
                   ]}
                   noStyle
                 >
-                  <Input
+                  <Input.TextArea
+                    rows={4}
                     placeholder={t('messagePlaceholder')}
                     style={{ width: '80%' }}
                   />

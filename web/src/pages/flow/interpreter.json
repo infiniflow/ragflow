@@ -1,0 +1,75 @@
+{
+  "edges": [
+    {
+      "id": "c87c7805-8cf0-4cd4-b45b-152031811020",
+      "label": "",
+      "source": "begin",
+      "target": "answer:0"
+    },
+    {
+      "id": "e30320bb-601b-4885-acb3-79becdc49f08",
+      "label": "",
+      "source": "generate:0",
+      "target": "answer:0"
+    },
+    {
+      "id": "83927e42-739a-402a-9f75-a88d4fab37ed",
+      "label": "",
+      "source": "answer:0",
+      "target": "generate:0"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "begin",
+      "type": "beginNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Begin",
+        "name": "FruityPianosSend",
+        "form": {
+          "prologue": "Hi there! Please enter the text you want to translate in format like: 'text you want to translate' => target language. For an example: 您好！ => English"
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "answer:0",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Answer",
+        "name": "YummyBoatsFlow",
+        "form": {}
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "generate:0",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Generate",
+        "name": "SwiftTramsDrop",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "prompt": "You are an professional interpreter.\n- Role: an professional interpreter.\n- Input format: content need to be translated => target language. \n- Answer format: => translated content in target language. \n- Examples:\n  - user: 您好！ => English. assistant: => How are you doing!\n  - user: You look good today. => Japanese. assistant: => 今日は調子がいいですね 。\n",
+          "temperature": 0.5
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    }
+  ]
+}

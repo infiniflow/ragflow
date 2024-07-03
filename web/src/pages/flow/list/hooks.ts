@@ -11,6 +11,8 @@ import { useNavigate } from 'umi';
 // import dslJson from '../../../../../dls.json';
 // import customerServiceBase from '../../../../../graph/test/dsl_examples/customer_service.json';
 // import customerService from '../customer_service.json';
+// import interpreterBase from '../../../../../graph/test/dsl_examples/interpreter.json';
+// import interpreter from '../interpreter.json';
 
 export const useFetchDataOnMount = () => {
   const { data, loading } = useFetchFlowList();
@@ -41,7 +43,7 @@ export const useSaveFlow = () => {
         title,
         dsl,
         // dsl: dslJson,
-        // dsl: { ...customerServiceBase, graph: customerService },
+        // dsl: { ...interpreterBase, graph: interpreter },
       });
 
       if (ret?.retcode === 0) {
