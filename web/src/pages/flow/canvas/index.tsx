@@ -133,10 +133,12 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
         visible={drawerVisible}
         hideModal={hideDrawer}
       ></FlowDrawer>
-      <ChatDrawer
-        visible={chatDrawerVisible}
-        hideModal={hideChatDrawer}
-      ></ChatDrawer>
+      {chatDrawerVisible && (
+        <ChatDrawer
+          visible={chatDrawerVisible}
+          hideModal={hideChatDrawer}
+        ></ChatDrawer>
+      )}
     </div>
   );
 }
