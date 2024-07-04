@@ -266,9 +266,8 @@ export const useFlowIsFetching = () => {
   return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
 };
 
-export const useSetLlmSetting = (form?: FormInstance, llmId?: string) => {
+export const useSetLlmSetting = (form?: FormInstance) => {
   const initialLlmSetting = undefined;
-  const initialLlmId = useFetchModelId(true);
 
   useEffect(() => {
     const switchBoxValues = Object.keys(variableEnabledFieldMap).reduce<
@@ -288,9 +287,8 @@ export const useSetLlmSetting = (form?: FormInstance, llmId?: string) => {
     form?.setFieldsValue({
       ...switchBoxValues,
       ...otherValues,
-      llm_id: llmId ?? initialLlmId,
     });
-  }, [form, initialLlmSetting, llmId, initialLlmId]);
+  }, [form, initialLlmSetting]);
 };
 
 export const useValidateConnection = () => {
