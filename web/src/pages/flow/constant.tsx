@@ -196,7 +196,14 @@ export const RestrictedUpstreamMap = {
   [Operator.Answer]: [],
   [Operator.Retrieval]: [],
   [Operator.Generate]: [],
-  [Operator.Message]: [],
+  [Operator.Message]: [
+    Operator.Begin,
+    Operator.Message,
+    Operator.Generate,
+    Operator.Retrieval,
+    Operator.RewriteQuestion,
+    Operator.Categorize,
+  ],
   [Operator.Relevant]: [],
   [Operator.RewriteQuestion]: [],
 };

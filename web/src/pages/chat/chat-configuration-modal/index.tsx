@@ -11,11 +11,11 @@ import camelCase from 'lodash/camelCase';
 import { useEffect, useRef, useState } from 'react';
 import { IPromptConfigParameters } from '../interface';
 import AssistantSetting from './assistant-setting';
-import { useFetchLlmModelOnVisible, useFetchModelId } from './hooks';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
 import { useTranslate } from '@/hooks/commonHooks';
+import { useFetchLlmModelOnVisible, useFetchModelId } from '@/hooks/logicHooks';
 import { getBase64FromUploadFileList } from '@/utils/fileUtil';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import styles from './index.less';

@@ -22,8 +22,13 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
 import { useSetModalState, useTranslate } from './commonHooks';
 import { useSetDocumentParser } from './documentHooks';
+import { useFetchLlmList } from './llmHooks';
 import { useOneNamespaceEffectsLoading } from './storeHooks';
-import { useSaveSetting } from './userSettingHook';
+import {
+  useFetchTenantInfo,
+  useSaveSetting,
+  useSelectTenantInfo,
+} from './userSettingHook';
 
 export const useChangeDocumentParser = (documentId: string) => {
   const setDocumentParser = useSetDocumentParser();
@@ -268,4 +273,27 @@ export const useSelectItem = (defaultId?: string) => {
   }, [defaultId]);
 
   return { selectedId, handleItemClick };
+};
+
+export const useFetchModelId = (visible: boolean) => {
+  const fetchTenantInfo = useFetchTenantInfo(false);
+  const tenantInfo = useSelectTenantInfo();
+
+  useEffect(() => {
+    if (visible) {
+      fetchTenantInfo();
+    }
+  }, [visible, fetchTenantInfo]);
+
+  return tenantInfo?.llm_id ?? '';
+};
+
+export const useFetchLlmModelOnVisible = (visible: boolean) => {
+  const fetchLlmList = useFetchLlmList();
+
+  useEffect(() => {
+    if (visible) {
+      fetchLlmList();
+    }
+  }, [fetchLlmList, visible]);
 };
