@@ -580,16 +580,12 @@ def download_document(dataset_id, document_id):
         file = BytesIO(file_stream)
 
         # Use send_file with a proper filename and MIME type
-        try:
-            return send_file(
-                file,
-                as_attachment=True,
-                download_name=document.name,
-                mimetype='application/octet-stream'  # Set a default MIME type
-            )
-        except S3Error as e:
-            # Handle the error from MinIO
-            return construct_json_result(code=RetCode.SERVER_ERROR, message=str(e))
+        return send_file(
+            file,
+            as_attachment=True,
+            download_name=document.name,
+            mimetype='application/octet-stream'  # Set a default MIME type
+        )
 
     # Error
     except Exception as e:
