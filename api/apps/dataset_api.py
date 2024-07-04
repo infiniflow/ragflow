@@ -18,26 +18,30 @@ import re
 import warnings
 from io import BytesIO
 
+from elasticsearch_dsl import Q
 from flask import request, send_file
 from flask_login import login_required, current_user
 from httpx import HTTPError
 from minio import S3Error
 
 from api.contants import NAME_LENGTH_LIMIT
-from api.db import FileType, ParserType, FileSource
+from api.db import FileType, ParserType, FileSource, TaskStatus
 from api.db import StatusEnum
-from api.db.db_models import File
+from api.db.db_models import File, Task
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.task_service import TaskService, queue_tasks
 from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import construct_json_result, construct_error_response
 from api.utils.api_utils import construct_result, validate_request
 from api.utils.file_utils import filename_type, thumbnail
+from rag.nlp import search
+from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 
 MAXIMUM_OF_UPLOADING_FILES = 256
@@ -341,7 +345,7 @@ def upload_documents(dataset_id):
             blob = file.read()
             # the content is empty, raising a warning
             if blob == b'':
-                warnings.warn(f"[WARNING]: The file {filename} is empty.")
+                warnings.warn(f"[WARNING]: The content of the file {filename} is empty.")
 
             MINIO.put(dataset_id, location, blob)
 
@@ -592,7 +596,54 @@ def download_document(dataset_id, document_id):
         return construct_error_response(e)
 
 # ----------------------------start parsing-----------------------------------------------------
+@manager.route("/<dataset_id>/documents/<document_id>/status", methods=["POST"])
+@login_required
+@validate_request("status")
+def run(dataset_id, document_id):
+    run_value = request.json["status"]
+    try:
+        exist, _ = KnowledgebaseService.get_by_id(dataset_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR,
+                                         message=f"This dataset '{dataset_id}' cannot be found!")
+        # valid document?
+        exist, _ = DocumentService.get_by_id(document_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This '{document_id}' is not a valid document.")
 
+        info = {"run": run_value, "progress": 0}  # initial progress of 0 / reset the progress
+
+        if run_value != TaskStatus.RUNNING.value:
+            return construct_json_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message=f"The status value should be '1', not {run_value}."
+            )
+        info["progress_msg"] = ""
+        info["chunk_num"] = 0
+        info["token_num"] = 0
+
+        DocumentService.update_by_id(document_id, info)  # update information regarding it
+
+        # in case that it's null
+        tenant_id = DocumentService.get_tenant_id(document_id)
+        if not tenant_id:
+            return construct_json_result(message="Tenant not found!", code=RetCode.AUTHENTICATION_ERROR)
+
+        # delete it from es
+        ELASTICSEARCH.deleteByQuery(Q("match", doc_id=document_id), idxnm=search.index_name(tenant_id))
+
+        # delete the tasks from the cache
+        TaskService.filter_delete([Task.doc_id == document_id])
+        _, doc = DocumentService.get_by_id(document_id)
+        doc = doc.to_dict()
+        # renew
+        doc["tenant_id"] = tenant_id
+        bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])  # address
+        queue_tasks(doc, bucket, name)  # as queue
+
+        return construct_json_result(data=True, code=RetCode.SUCCESS)
+    except Exception as e:
+        return construct_error_response(e)
 # ----------------------------stop parsing-----------------------------------------------------
 
 # ----------------------------show the status of the file-----------------------------------------------------
