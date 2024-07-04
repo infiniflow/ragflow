@@ -95,6 +95,7 @@ class DeepSeekChat(Base):
         if not base_url: base_url="https://api.deepseek.com/v1"
         super().__init__(key, model_name, base_url)
 
+
 class AzureChat(Base):
     def __init__(self, key, model_name, **kwargs):
         self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")
