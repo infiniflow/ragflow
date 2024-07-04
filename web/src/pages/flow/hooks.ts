@@ -17,13 +17,25 @@ import {
   ModelVariableType,
   settledModelVariableMap,
 } from '@/constants/knowledge';
+import { useFetchModelId } from '@/hooks/logicHooks';
 import { Variable } from '@/interfaces/database/chat';
 import { useDebounceEffect } from 'ahooks';
 import { FormInstance, message } from 'antd';
 import { humanId } from 'human-id';
 import trim from 'lodash/trim';
 import { useParams } from 'umi';
-import { NodeMap, Operator, RestrictedUpstreamMap } from './constant';
+import {
+  NodeMap,
+  Operator,
+  RestrictedUpstreamMap,
+  initialBeginValues,
+  initialCategorizeValues,
+  initialGenerateValues,
+  initialMessageValues,
+  initialRelevantValues,
+  initialRetrievalValues,
+  initialRewriteQuestionValues,
+} from './constant';
 import useGraphStore, { RFState } from './store';
 import { buildDslComponentsByGraph } from './utils';
 
@@ -43,6 +55,32 @@ export const useSelectCanvasData = () => {
   return useGraphStore(selector);
 };
 
+export const useInitializeOperatorParams = () => {
+  const llmId = useFetchModelId(true);
+
+  const initializeOperatorParams = useCallback(
+    (operatorName: Operator) => {
+      const initialFormValuesMap = {
+        [Operator.Begin]: initialBeginValues,
+        [Operator.Retrieval]: initialRetrievalValues,
+        [Operator.Generate]: { ...initialGenerateValues, llm_id: llmId },
+        [Operator.Answer]: {},
+        [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
+        [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
+        [Operator.RewriteQuestion]: {
+          ...initialRewriteQuestionValues,
+          llm_id: llmId,
+        },
+        [Operator.Message]: initialMessageValues,
+      };
+      return initialFormValuesMap[operatorName];
+    },
+    [llmId],
+  );
+
+  return initializeOperatorParams;
+};
+
 export const useHandleDrag = () => {
   const handleDragStart = useCallback(
     (operatorId: string) => (ev: React.DragEvent<HTMLDivElement>) => {
@@ -59,6 +97,7 @@ export const useHandleDrop = () => {
   const addNode = useGraphStore((state) => state.addNode);
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<any, any>>();
+  const initializeOperatorParams = useInitializeOperatorParams();
 
   const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -93,6 +132,7 @@ export const useHandleDrop = () => {
         data: {
           label: `${type}`,
           name: humanId(),
+          form: initializeOperatorParams(type as Operator),
         },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
@@ -100,7 +140,7 @@ export const useHandleDrop = () => {
 
       addNode(newNode);
     },
-    [reactFlowInstance, addNode],
+    [reactFlowInstance, addNode, initializeOperatorParams],
   );
 
   return { onDrop, onDragOver, setReactFlowInstance };
@@ -244,7 +284,10 @@ export const useSetLlmSetting = (form?: FormInstance) => {
       return pre;
     }, {});
     const otherValues = settledModelVariableMap[ModelVariableType.Precise];
-    form?.setFieldsValue({ ...switchBoxValues, ...otherValues });
+    form?.setFieldsValue({
+      ...switchBoxValues,
+      ...otherValues,
+    });
   }, [form, initialLlmSetting]);
 };
 

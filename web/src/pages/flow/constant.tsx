@@ -1,3 +1,4 @@
+import { variableEnabledFieldMap } from '@/constants/chat';
 import {
   BranchesOutlined,
   DatabaseOutlined,
@@ -33,7 +34,7 @@ export const operatorIconMap = {
 
 export const operatorMap = {
   [Operator.Retrieval]: {
-    description: 'Retrieval description drjlftglrthjftl',
+    description: 'This is where the flow begin',
     backgroundColor: '#cad6e0',
     color: '#385974',
   },
@@ -47,7 +48,8 @@ export const operatorMap = {
     color: '#996464',
   },
   [Operator.Answer]: {
-    description: 'Answer description',
+    description:
+      'This component is used as an interface between bot and human. It receives input of user and display the result of the computation of the bot.',
     backgroundColor: '#f4816d',
     color: 'white',
   },
@@ -126,7 +128,15 @@ export const initialBeginValues = {
   prologue: `Hi! I'm your assistant, what can I do for you?`,
 };
 
+export const variableCheckBoxFieldMap = Object.keys(
+  variableEnabledFieldMap,
+).reduce<Record<string, boolean>>((pre, cur) => {
+  pre[cur] = true;
+  return pre;
+}, {});
+
 const initialLlmBaseValues = {
+  ...variableCheckBoxFieldMap,
   temperature: 0.1,
   top_p: 0.3,
   frequency_penalty: 0.7,
@@ -196,7 +206,14 @@ export const RestrictedUpstreamMap = {
   [Operator.Answer]: [],
   [Operator.Retrieval]: [],
   [Operator.Generate]: [],
-  [Operator.Message]: [],
+  [Operator.Message]: [
+    Operator.Begin,
+    Operator.Message,
+    Operator.Generate,
+    Operator.Retrieval,
+    Operator.RewriteQuestion,
+    Operator.Categorize,
+  ],
   [Operator.Relevant]: [],
   [Operator.RewriteQuestion]: [],
 };
