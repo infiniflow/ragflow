@@ -3,7 +3,6 @@ from test_sdkbase import TestSdk
 from ragflow import RAGFlow
 import pytest
 from common import API_KEY, HOST_ADDRESS
-from api.contants import NAME_LENGTH_LIMIT
 
 
 class TestFile(TestSdk):

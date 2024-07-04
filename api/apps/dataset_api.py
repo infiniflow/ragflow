@@ -12,14 +12,13 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import base64
 import os
 import pathlib
 import re
 import warnings
 from io import BytesIO
 
-from flask import request, make_response, send_file
+from flask import request, send_file
 from flask_login import login_required, current_user
 from httpx import HTTPError
 from minio import S3Error
