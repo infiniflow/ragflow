@@ -11,7 +11,7 @@ export const EmptyDsl = {
   graph: {
     nodes: [
       {
-        id: 'Begin',
+        id: 'begin',
         type: 'beginNode',
         position: {
           x: 50,

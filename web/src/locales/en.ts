@@ -57,6 +57,7 @@ export default {
       setting: '用户设置',
       logout: '登出',
       fileManager: 'File Management',
+      flow: 'Graph',
     },
     knowledgeList: {
       welcome: 'Welcome back',

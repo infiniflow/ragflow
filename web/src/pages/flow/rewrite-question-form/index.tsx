@@ -11,8 +11,8 @@ const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 8 }}
-      wrapperCol={{ span: 16 }}
+      labelCol={{ span: 6 }}
+      wrapperCol={{ span: 18 }}
       onValuesChange={onValuesChange}
       autoComplete="off"
       form={form}
@@ -24,7 +24,11 @@ const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
       >
         <LLMSelect></LLMSelect>
       </Form.Item>
-      <Form.Item label={t('loop', { keyPrefix: 'flow' })} name="loop">
+      <Form.Item
+        label={t('loop', { keyPrefix: 'flow' })}
+        name="loop"
+        initialValue={1}
+      >
         <InputNumber />
       </Form.Item>
     </Form>

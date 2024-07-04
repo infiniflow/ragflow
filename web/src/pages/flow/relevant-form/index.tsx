@@ -23,10 +23,8 @@ const RelevantForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 8 }}
-      wrapperCol={{ span: 16 }}
-      style={{ maxWidth: 600 }}
-      initialValues={{ remember: true }}
+      labelCol={{ span: 6 }}
+      wrapperCol={{ span: 18 }}
       onValuesChange={onValuesChange}
       autoComplete="off"
       form={form}
