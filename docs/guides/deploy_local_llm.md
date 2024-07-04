@@ -157,3 +157,131 @@ Click on your logo **>** **Model Providers** **>** **System Model Settings** to 
 Update your chat model accordingly in **Chat Configuration**:
 
 > If your local model is an embedding model, update it on the configruation page of your knowledge base.
+
+## Deploy a local model using IPEX-LLM
+
+IPEX-LLM([IPEX-LLM](https://github.com/intel-analytics/ipex-llm)) is a PyTorch library for running LLM on Intel CPU and GPU (e.g., local PC with iGPU, discrete GPU such as Arc, Flex and Max) with very low latency
+
+To deploy a local model, eg., **Qwen2**, using IPEX-LLM, follow the steps below:
+
+### 1. Check firewall settings
+
+Ensure that your host machine's firewall allows inbound connections on port 11434. For example:
+   
+```bash
+sudo ufw allow 11434/tcp
+```
+
+### 2. Install and Start Ollama serve using IPEX-LLM
+
+#### 2.1 Install IPEX-LLM for Ollama
+
+IPEX-LLM's support for `ollama` now is available for Linux system and Windows system.
+
+Visit [Run llama.cpp with IPEX-LLM on Intel GPU Guide](https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md), and follow the instructions in section [Prerequisites](https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md#0-prerequisites) to setup and section [Install IPEX-LLM cpp](https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md#1-install-ipex-llm-for-llamacpp) to install the IPEX-LLM with Ollama binaries.
+
+**After the installation, you should have created a conda environment, named `llm-cpp` for instance, for running `ollama` commands with IPEX-LLM.**
+
+#### 2.2 Initialize Ollama
+
+Activate the `llm-cpp` conda environment and initialize Ollama by executing the commands below. A symbolic link to `ollama` will appear in your current directory.
+
+- For **Linux users**:
+  
+  ```bash
+  conda activate llm-cpp
+  init-ollama
+  ```
+
+- For **Windows users**:
+
+  Please run the following command with **administrator privilege in Miniforge Prompt**.
+
+  ```cmd
+  conda activate llm-cpp
+  init-ollama.bat
+  ```
+
+> [!NOTE]
+> If you have installed higher version `ipex-llm[cpp]` and want to upgrade your ollama binary file, don't forget to remove old binary files first and initialize again with `init-ollama` or `init-ollama.bat`.
+
+**Now you can use this executable file by standard ollama's usage.**
+
+#### 2.3 Run Ollama Serve
+
+You may launch the Ollama service as below:
+
+- For **Linux users**:
+
+  ```bash
+  export OLLAMA_NUM_GPU=999
+  export no_proxy=localhost,127.0.0.1
+  export ZES_ENABLE_SYSMAN=1
+  source /opt/intel/oneapi/setvars.sh
+  export SYCL_CACHE_PERSISTENT=1
+
+  ./ollama serve
+  ```
+
+- For **Windows users**:
+
+  Please run the following command in Miniforge Prompt.
+
+  ```cmd
+  set OLLAMA_NUM_GPU=999
+  set no_proxy=localhost,127.0.0.1
+  set ZES_ENABLE_SYSMAN=1
+  set SYCL_CACHE_PERSISTENT=1
+
+  ollama serve
+  ```
+
+> [!NOTE]
+> Please set environment variable `OLLAMA_NUM_GPU` to `999` to make sure all layers of your model are running on Intel GPU, otherwise, some layers may run on CPU.
+
+> [!TIP]
+> If your local LLM is running on Intel Arc™ A-Series Graphics with Linux OS (Kernel 6.2), it is recommended to additionaly set the following environment variable for optimal performance before executing `ollama serve`:
+>
+> ```bash
+> export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
+> ```
+
+> [!NOTE]
+> To allow the service to accept connections from all IP addresses, use `OLLAMA_HOST=0.0.0.0 ./ollama serve` instead of just `./ollama serve`.
+
+The console will display messages similar to the following:
+
+<a href="https://llm-assets.readthedocs.io/en/latest/_images/ollama_serve.png" target="_blank">
+  <img src="https://llm-assets.readthedocs.io/en/latest/_images/ollama_serve.png" width=100%; />
+</a>
+
+### 3. Pull and Run Ollama Model
+
+Keep the Ollama service on and open another terminal and run `./ollama pull <model_name>` in Linux (`ollama.exe pull <model_name>` in Windows) to automatically pull a model. e.g. `qwen2:latest`:
+
+<a href="https://llm-assets.readthedocs.io/en/latest/_images/ollama_pull.png" target="_blank">
+  <img src="https://llm-assets.readthedocs.io/en/latest/_images/ollama_pull.png" width=100%; />
+</a>
+
+#### Run Ollama Model
+
+- For **Linux users**:
+  ```bash
+  ./ollama run qwen2:latest
+  ```
+  
+- For **Windows users**:
+  ```cmd
+  ollama run qwen2:latest
+  ```
+### 4. Configure RAGflow to use IPEX-LLM accelerated Ollama
+
+The confiugraiton follows the steps in 
+
+Ollama Section 4 [Add Ollama](#4-add-ollama), 
+
+Section 5 [Complete basic Ollama settings](#5-complete-basic-ollama-settings), 
+
+Section 6 [Update System Model Settings](#6-update-system-model-settings), 
+
+Section 7 [Update Chat Configuration](#7-update-chat-configuration)

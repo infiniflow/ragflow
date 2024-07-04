@@ -10,7 +10,7 @@ const ChatDrawer = ({ visible, hideModal }: IModalProps<any>) => {
       onClose={hideModal}
       open={visible}
       getContainer={false}
-      width={470}
+      width={window.innerWidth > 1278 ? '30%' : 470}
       mask={false}
       // zIndex={10000}
     >

@@ -36,6 +36,7 @@ import { getFileExtension } from '@/utils';
 import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import omit from 'lodash/omit';
+import trim from 'lodash/trim';
 import {
   ChangeEventHandler,
   useCallback,
@@ -619,6 +620,8 @@ export const useSendMessage = (
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
+
     if (done) {
       setValue('');
       handleSendMessage(value.trim());
@@ -630,6 +633,7 @@ export const useSendMessage = (
     handlePressEnter,
     handleInputChange,
     value,
+    setValue,
     loading: !done,
   };
 };
@@ -761,6 +765,10 @@ export const useGetSendButtonDisabled = () => {
   const { dialogId, conversationId } = useGetChatSearchParams();
 
   return dialogId === '' && conversationId === '';
+};
+
+export const useSendButtonDisabled = (value: string) => {
+  return trim(value) === '';
 };
 //#endregion
 

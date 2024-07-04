@@ -45,6 +45,7 @@
 
 ## 📌 近期更新
 
+- 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件。支持提取出 Docx 文件中的图片。支持提取出 Markdown 文件中的表格。
 - 2024-06-14 Q&A 解析方式支持 PDF 文件。
 - 2024-06-06 支持 [Self-RAG](https://huggingface.co/papers/2310.11511) ，在对话设置里面默认勾选。
 - 2024-05-30 集成 [BCE](https://github.com/netease-youdao/BCEmbedding) 和 [BGE](https://github.com/FlagOpen/FlagEmbedding) 重排序模型。

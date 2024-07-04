@@ -30,11 +30,25 @@
   .messageItemContentReverse {
     flex-direction: row-reverse;
   }
+  .messageTextBase() {
+    padding: 6px 10px;
+    border-radius: 8px;
+    & > p {
+      margin: 0;
+    }
+  }
   .messageText {
     .chunkText();
-    padding: 0 14px;
-    background-color: rgba(249, 250, 251, 1);
+    .messageTextBase();
+    background-color: #e6f4ff;
     word-break: break-all;
+  }
+  .messageUserText {
+    .chunkText();
+    .messageTextBase();
+    background-color: rgb(248, 247, 247);
+    word-break: break-all;
+    text-align: justify;
   }
   .messageEmpty {
     width: 300px;

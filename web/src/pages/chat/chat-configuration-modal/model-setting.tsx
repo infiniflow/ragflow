@@ -1,7 +1,3 @@
-import {
-  ModelVariableType,
-  settledModelVariableMap,
-} from '@/constants/knowledge';
 import classNames from 'classnames';
 import { useEffect } from 'react';
 import { ISegmentedContentProps } from '../interface';
@@ -20,11 +16,6 @@ const ModelSetting = ({
   initialLlmSetting?: Variable;
   visible?: boolean;
 }) => {
-  const handleParametersChange = (value: ModelVariableType) => {
-    const variable = settledModelVariableMap[value];
-    form.setFieldsValue({ llm_setting: variable });
-  };
-
   useEffect(() => {
     if (visible) {
       const values = Object.keys(variableEnabledFieldMap).reduce<
@@ -50,12 +41,7 @@ const ModelSetting = ({
         [styles.segmentedHidden]: !show,
       })}
     >
-      {visible && (
-        <LlmSettingItems
-          prefix="llm_setting"
-          handleParametersChange={handleParametersChange}
-        ></LlmSettingItems>
-      )}
+      {visible && <LlmSettingItems prefix="llm_setting"></LlmSettingItems>}
       {/* <Form.Item
         label={t('model')}
         name="llm_id"

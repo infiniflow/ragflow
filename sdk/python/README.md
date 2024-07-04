@@ -3,9 +3,9 @@
 # update python client
 
 - Update "version" field of [project] chapter
-- build new python SDK
-- upload to pypi.org
-- install new python SDK
+- Build new python SDK
+- Upload to pypi.org
+- Install new python SDK
 
 # build python SDK
 
@@ -27,7 +27,7 @@ twine upload dist/*.whl
 
 Enter your pypi API token according to the prompt.
 
-Note that pypi allow a version of a package [be uploaded only once](https://pypi.org/help/#file-name-reuse). You need to change the `version` inside the `pyproject.toml` before build and upload.
+Note that pypi allows a version of a package [be uploaded only once](https://pypi.org/help/#file-name-reuse). You need to change the `version` inside the `pyproject.toml` before building and uploading.
 
 # using
 

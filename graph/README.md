@@ -9,7 +9,7 @@ English | [简体中文](./README_zh.md)
 It is used to compose a complex work flow or agent. 
 And this graph is beyond the DAG that we can use circles to describe our agent or work flow.
 Under this folder, we propose a test tool ./test/client.py which can test the DSLs such as json files in folder ./test/dsl_examples.
-Please use this client at the same folder you start RAGFlow. If it's ran by docker, please go into the container before running the client.
+Please use this client at the same folder you start RAGFlow. If it's run by Docker, please go into the container before running the client.
 Otherwise, correct configurations in conf/service_conf.yaml is essential.
 
 ```bash
@@ -32,7 +32,7 @@ options:
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/419d8588-87b1-4ab8-ac49-2d1f047a4b97" width="600"/>
 </div>
-💡 We plant to display it here in the near future.
+💡 We plan to display it here in the near future.
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/c97915de-0091-46a5-afd9-e278946e5fe3" width="600"/>
 </div>

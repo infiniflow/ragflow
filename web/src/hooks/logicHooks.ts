@@ -244,3 +244,28 @@ export const useHandleMessageInputChange = () => {
 };
 
 // #endregion
+
+/**
+ *
+ * @param defaultId
+ * used to switch between different items, similar to radio
+ * @returns
+ */
+export const useSelectItem = (defaultId?: string) => {
+  const [selectedId, setSelectedId] = useState('');
+
+  const handleItemClick = useCallback(
+    (id: string) => () => {
+      setSelectedId(id);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (defaultId) {
+      setSelectedId(defaultId);
+    }
+  }, [defaultId]);
+
+  return { selectedId, handleItemClick };
+};

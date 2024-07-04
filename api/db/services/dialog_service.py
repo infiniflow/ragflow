@@ -23,7 +23,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
 from api.settings import chat_logger, retrievaler
 from rag.app.resume import forbidden_select_fields4resume
-from rag.nlp.rag_tokenizer import is_chinese
+from rag.nlp import keyword_extraction
 from rag.nlp.search import index_name
 from rag.utils import rmSpace, num_tokens_from_string, encoder
 
@@ -121,6 +121,8 @@ def chat(dialog, messages, stream=True, **kwargs):
     if "knowledge" not in [p["key"] for p in prompt_config["parameters"]]:
         kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
     else:
+        if prompt_config.get("keyword", False):
+            questions[-1] += keyword_extraction(chat_mdl, questions[-1])
         kbinfos = retrievaler.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
                                         dialog.similarity_threshold,
                                         dialog.vector_similarity_weight,

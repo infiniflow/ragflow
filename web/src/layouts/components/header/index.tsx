@@ -1,14 +1,15 @@
-import { ReactComponent as StarIon } from '@/assets/svg/chat-star.svg';
 import { ReactComponent as FileIcon } from '@/assets/svg/file-management.svg';
+import { ReactComponent as GraphIcon } from '@/assets/svg/graph.svg';
 import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base.svg';
 import { useTranslate } from '@/hooks/commonHooks';
 import { useNavigateWithFromState } from '@/hooks/routeHook';
-import { Layout, Radio, Space, theme } from 'antd';
+import { Flex, Layout, Radio, Space, theme } from 'antd';
 import { useCallback, useMemo } from 'react';
 import { useLocation } from 'umi';
 import Toolbar from '../right-toolbar';
 
 import { useFetchAppConf } from '@/hooks/logicHooks';
+import { MessageOutlined } from '@ant-design/icons';
 import styles from './index.less';
 
 const { Header } = Layout;
@@ -25,7 +26,8 @@ const RagHeader = () => {
   const tagsData = useMemo(
     () => [
       { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
-      { path: '/chat', name: t('chat'), icon: StarIon },
+      { path: '/chat', name: t('chat'), icon: MessageOutlined },
+      { path: '/flow', name: t('flow'), icon: GraphIcon },
       { path: '/file', name: t('fileManager'), icon: FileIcon },
     ],
     [t],
@@ -73,13 +75,13 @@ const RagHeader = () => {
               onClick={() => handleChange(item.path)}
               key={item.name}
             >
-              <Space>
+              <Flex align="center" gap={8}>
                 <item.icon
                   className={styles.radioButtonIcon}
                   stroke={item.name === currentPath ? 'black' : 'white'}
                 ></item.icon>
                 {item.name}
-              </Space>
+              </Flex>
             </Radio.Button>
           ))}
         </Radio.Group>

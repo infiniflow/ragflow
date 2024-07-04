@@ -1,13 +1,13 @@
-import {IChunk, IKnowledgeFile} from '@/interfaces/database/knowledge';
-import {IChangeParserConfigRequestBody} from '@/interfaces/request/document';
-import {api_host} from '@/utils/api';
-import {buildChunkHighlights} from '@/utils/documentUtils';
-import {UploadFile} from 'antd';
-import {useCallback, useMemo, useState} from 'react';
-import {IHighlight} from 'react-pdf-highlighter';
-import {useDispatch, useSelector} from 'umi';
-import {useGetKnowledgeSearchParams} from './routeHook';
-import {useOneNamespaceEffectsLoading} from './storeHooks';
+import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { api_host } from '@/utils/api';
+import { buildChunkHighlights } from '@/utils/documentUtils';
+import { UploadFile } from 'antd';
+import { useCallback, useMemo, useState } from 'react';
+import { IHighlight } from 'react-pdf-highlighter';
+import { useDispatch, useSelector } from 'umi';
+import { useGetKnowledgeSearchParams } from './routeHook';
+import { useOneNamespaceEffectsLoading } from './storeHooks';
 
 export const useGetDocumentUrl = (documentId?: string) => {
   const getDocumentUrl = useCallback(
@@ -211,21 +211,21 @@ export const useWebCrawl = () => {
   const dispatch = useDispatch();
   const { knowledgeId } = useGetKnowledgeSearchParams();
   return useCallback(
-      (name: string, url: string) => {
-        try {
-          return dispatch<any>({
-            type: 'kFModel/web_crawl',
-            payload: {
-              name,
-              url,
-              kb_id: knowledgeId,
-            },
-          });
-        } catch (errorInfo) {
-          console.log('Failed:', errorInfo);
-        }
-      },
-      [dispatch],
+    (name: string, url: string) => {
+      try {
+        return dispatch<any>({
+          type: 'kFModel/web_crawl',
+          payload: {
+            name,
+            url,
+            kb_id: knowledgeId,
+          },
+        });
+      } catch (errorInfo) {
+        console.log('Failed:', errorInfo);
+      }
+    },
+    [dispatch],
   );
 };
 

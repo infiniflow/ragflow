@@ -15,8 +15,10 @@
 #
 import re
 from typing import Optional
+import  threading
 import requests
 from huggingface_hub import snapshot_download
+from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 import os
 from abc import ABC
@@ -44,7 +46,7 @@ class Base(ABC):
 
 class DefaultEmbedding(Base):
     _model = None
-
+    _model_lock = threading.Lock()
     def __init__(self, key, model_name, **kwargs):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
@@ -58,17 +60,20 @@ class DefaultEmbedding(Base):
 
         """
         if not DefaultEmbedding._model:
-            try:
-                self._model = FlagModel(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
-                                        query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
-                                        use_fp16=torch.cuda.is_available())
-            except Exception as e:
-                model_dir = snapshot_download(repo_id="BAAI/bge-large-zh-v1.5",
-                                                local_dir=os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
-                                                local_dir_use_symlinks=False)
-                self._model = FlagModel(model_dir,
-                                        query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
-                                        use_fp16=torch.cuda.is_available())
+            with DefaultEmbedding._model_lock:
+                if not DefaultEmbedding._model:
+                    try:
+                        DefaultEmbedding._model = FlagModel(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                                                            query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
+                                                            use_fp16=torch.cuda.is_available())
+                    except Exception as e:
+                        model_dir = snapshot_download(repo_id="BAAI/bge-large-zh-v1.5",
+                                                      local_dir=os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                                                      local_dir_use_symlinks=False)
+                        DefaultEmbedding._model = FlagModel(model_dir,
+                                                            query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
+                                                            use_fp16=torch.cuda.is_available())
+        self._model = DefaultEmbedding._model
 
     def encode(self, texts: list, batch_size=32):
         texts = [truncate(t, 2048) for t in texts]
@@ -105,6 +110,11 @@ class OpenAIEmbed(Base):
                                             model=self.model_name)
         return np.array(res.data[0].embedding), res.usage.total_tokens
 
+
+class AzureEmbed(Base):
+    def __init__(self, key, model_name, **kwargs):
+        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")
+        self.model_name = model_name
 
 class BaiChuanEmbed(OpenAIEmbed):
     def __init__(self, key,

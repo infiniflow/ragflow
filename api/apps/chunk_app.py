@@ -20,7 +20,7 @@ from flask_login import login_required, current_user
 from elasticsearch_dsl import Q
 
 from rag.app.qa import rmPrefix, beAdoc
-from rag.nlp import search, rag_tokenizer
+from rag.nlp import search, rag_tokenizer, keyword_extraction
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
@@ -267,6 +267,10 @@ def retrieval_test():
         if req.get("rerank_id"):
             rerank_mdl = TenantLLMService.model_instance(
                 kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+
+        if req.get("keyword", False):
+            chat_mdl = TenantLLMService.model_instance(kb.tenant_id, LLMType.CHAT)
+            question += keyword_extraction(chat_mdl, question)
 
         ranks = retrievaler.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size,
                                       similarity_threshold, vector_similarity_weight, top,

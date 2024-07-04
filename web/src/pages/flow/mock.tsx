@@ -37,14 +37,15 @@ export const dsl = {
   graph: {
     nodes: [
       {
-        id: 'begin',
-        type: 'ragNode',
+        id: 'Begin',
+        type: 'beginNode',
         position: {
           x: 50,
           y: 200,
         },
         data: {
           label: 'Begin',
+          name: 'begin',
         },
         sourcePosition: 'left',
         targetPosition: 'right',

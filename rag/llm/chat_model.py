@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 from dashscope import Generation
 from abc import ABC
@@ -93,6 +94,12 @@ class DeepSeekChat(Base):
     def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1"):
         if not base_url: base_url="https://api.deepseek.com/v1"
         super().__init__(key, model_name, base_url)
+
+
+class AzureChat(Base):
+    def __init__(self, key, model_name, **kwargs):
+        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")
+        self.model_name = model_name
 
 
 class BaiChuanChat(Base):

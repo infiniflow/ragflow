@@ -1,4 +1,5 @@
 import { FormInstance } from 'antd';
+import { Node } from 'reactflow';
 
 export interface DSLComponentList {
   id: string;
@@ -8,6 +9,8 @@ export interface DSLComponentList {
 export interface IOperatorForm {
   onValuesChange?(changedValues: any, values: any): void;
   form?: FormInstance;
+  node?: Node<NodeData>;
+  nodeId?: string;
 }
 
 export interface IBeginForm {
@@ -35,9 +38,35 @@ export interface IGenerateForm {
   llm_id: string;
   parameters: { key: string; component_id: string };
 }
+export interface ICategorizeItem {
+  name: string;
+  description?: string;
+  examples?: string;
+  to?: string;
+}
+
+export interface IGenerateParameter {
+  id?: string;
+  key: string;
+  component_id?: string;
+}
+
+export type ICategorizeItemResult = Record<
+  string,
+  Omit<ICategorizeItem, 'name'>
+>;
+export interface ICategorizeForm extends IGenerateForm {
+  category_description: ICategorizeItemResult;
+}
+
+export interface IRelevantForm extends IGenerateForm {
+  yes: string;
+  no: string;
+}
 
 export type NodeData = {
-  label: string;
+  label: string; // operator type
+  name: string; // operator name
   color: string;
-  form: IBeginForm | IRetrievalForm | IGenerateForm;
+  form: IBeginForm | IRetrievalForm | IGenerateForm | ICategorizeForm;
 };

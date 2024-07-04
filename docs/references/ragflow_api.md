@@ -275,3 +275,261 @@ You are required to input at least one parameter.
     "message": "Please input at least one parameter that you want to update!"
 }
 ```
+
+------------------------------------------------------------------------------------------------------------------------------
+
+## Upload documents
+
+This method uploads documents for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                       |
+|--------|-----------------------------------|
+| POST   | `/dataset/{dataset_id}/documents` |
+
+
+#### Request parameter
+
+| Name         |  Type  | Required |        Description                                         |
+|--------------|--------|----------|------------------------------------------------------------|
+| `dataset_id` | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID. |
+
+### Response 
+
+### Successful response
+
+```json
+{
+      "code": 0,
+      "data": [
+        {
+          "created_by": "b48110a0286411ef994a3043d7ee537e",
+          "id": "859584a0379211efb1a23043d7ee537e",
+          "kb_id": "8591349a379211ef92213043d7ee537e",
+          "location": "test.txt",
+          "name": "test.txt",
+          "parser_config": {
+            "pages": [
+              [1, 1000000]
+            ]
+          },
+          "parser_id": "naive",
+          "size": 0,
+          "thumbnail": null,
+          "type": "doc"
+        },
+        {
+          "created_by": "b48110a0286411ef994a3043d7ee537e",
+          "id": "8596f18c379211efb1a23043d7ee537e",
+          "kb_id": "8591349a379211ef92213043d7ee537e",
+          "location": "test1.txt",
+          "name": "test1.txt",
+          "parser_config": {
+            "pages": [
+              [1, 1000000]
+            ]
+          },
+          "parser_id": "naive",
+          "size": 0,
+          "thumbnail": null,
+          "type": "doc"
+        }
+      ],
+      "message": "success"
+}
+```
+
+### Response for nonexistent files
+
+```json
+{
+      "code": "RetCode.DATA_ERROR",
+      "message": "The file test_data/imagination.txt does not exist"
+}
+```
+
+### Response for nonexistent dataset
+
+```json
+{
+      "code": 102,
+      "message": "Can't find this dataset"
+}
+```
+
+### Response for the number of files exceeding the limit
+
+```json
+{
+      "code": 102,
+      "message": "You try to upload 512 files, which exceeds the maximum number of uploading files: 256"
+}
+```
+### Response for uploading without files.
+
+```json
+{
+    "code": 101,
+    "message": "None is not string."
+}
+```
+
+## Delete documents
+
+This method deletes documents for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                       |
+|--------|-----------------------------------|
+| DELETE | `/dataset/{dataset_id}/documents/{document_id}` |
+
+
+#### Request parameter
+
+| Name          |  Type  | Required | Description                                                                         |
+|---------------|--------|----------|-------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.   |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID. |
+
+### Response 
+
+### Successful response
+
+```json
+{
+      "code": 0,
+      "data": true,
+      "message": "success"
+}
+```
+
+### Response for deleting a document that does not exist
+
+```json
+{
+      "code": 102,
+      "message": "Document 111 not found!"
+}
+```
+### Response for deleting documents from a non-existent dataset
+
+```json
+{
+      "code": 101,
+      "message": "The document f7aba1ec379b11ef8e853043d7ee537e is not in the dataset: 000, but in the dataset: f7a7ccf2379b11ef83223043d7ee537e."
+}
+```
+
+## List documents
+
+This method deletes documents for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                       |
+|--------|-----------------------------------|
+| GET    | `/dataset/{dataset_id}/documents` |
+
+
+#### Request parameter
+
+| Name         | Type   | Required | Description                                                                                                |
+|--------------|--------|----------|------------------------------------------------------------------------------------------------------------|
+| `dataset_id` | string | Yes      | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.                          |
+| `offset`     | int    | No       | The start of the listed documents. Default: 0                                                              |
+| `count`      | int    | No       | The total count of the listed documents. Default: -1, meaning all the later part of documents from the start. |
+| `order_by`   | string | No       | Default: `create_time`                                                                                     |
+| `descend`    | bool   | No       | The order of listing documents. Default: True                                                              |
+| `keywords`   | string | No       | The searching keywords of listing documents. Default: ""                                                   |
+
+### Response 
+
+### Successful Response 
+
+```json
+{
+      "code": 0,
+      "data": {
+        "docs": [
+          {
+            "chunk_num": 0,
+            "create_date": "Mon, 01 Jul 2024 19:24:10 GMT",
+            "create_time": 1719833050046,
+            "created_by": "b48110a0286411ef994a3043d7ee537e",
+            "id": "6fb6f588379c11ef87023043d7ee537e",
+            "kb_id": "6fb1c9e6379c11efa3523043d7ee537e",
+            "location": "empty.txt",
+            "name": "empty.txt",
+            "parser_config": {
+              "pages": [
+                [1, 1000000]
+              ]
+            },
+            "parser_id": "naive",
+            "process_begin_at": null,
+            "process_duation": 0.0,
+            "progress": 0.0,
+            "progress_msg": "",
+            "run": "0",
+            "size": 0,
+            "source_type": "local",
+            "status": "1",
+            "thumbnail": null,
+            "token_num": 0,
+            "type": "doc",
+            "update_date": "Mon, 01 Jul 2024 19:24:10 GMT",
+            "update_time": 1719833050046
+          },
+          {
+            "chunk_num": 0,
+            "create_date": "Mon, 01 Jul 2024 19:24:10 GMT",
+            "create_time": 1719833050037,
+            "created_by": "b48110a0286411ef994a3043d7ee537e",
+            "id": "6fb59c60379c11ef87023043d7ee537e",
+            "kb_id": "6fb1c9e6379c11efa3523043d7ee537e",
+            "location": "test.txt",
+            "name": "test.txt",
+            "parser_config": {
+              "pages": [
+                [1, 1000000]
+              ]
+            },
+            "parser_id": "naive",
+            "process_begin_at": null,
+            "process_duation": 0.0,
+            "progress": 0.0,
+            "progress_msg": "",
+            "run": "0",
+            "size": 0,
+            "source_type": "local",
+            "status": "1",
+            "thumbnail": null,
+            "token_num": 0,
+            "type": "doc",
+            "update_date": "Mon, 01 Jul 2024 19:24:10 GMT",
+            "update_time": 1719833050037
+          }
+        ],
+        "total": 2
+      },
+      "message": "success"
+}
+```
+
+### Response for listing documents with IndexError
+
+```json
+{
+      "code": 100,
+      "message": "IndexError('Offset is out of the valid range.')"
+}
+```
+

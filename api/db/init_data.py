@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import os
 import time
 import uuid
@@ -21,11 +22,13 @@ from copy import deepcopy
 from api.db import LLMType, UserTenantRole
 from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM
 from api.db.services import UserService
+from api.db.services.canvas_service import CanvasTemplateService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMFactoriesService, LLMService, TenantLLMService, LLMBundle
 from api.db.services.user_service import TenantService, UserTenantService
 from api.settings import CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, LLM_FACTORY, API_KEY, LLM_BASE_URL
+from api.utils.file_utils import get_project_base_directory
 
 
 def init_superuser():
@@ -153,7 +156,7 @@ factory_infos = [{
     "tags": "TEXT EMBEDDING, TEXT RE-RANK",
     "status": "1",
 },{
-    "name": "Minimax",
+    "name": "MiniMax",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
@@ -161,6 +164,11 @@ factory_infos = [{
     "name": "Mistral",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
+    "status": "1",
+},{
+    "name": "Azure-OpenAI",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
     "status": "1",
 }
     # {
@@ -646,6 +654,83 @@ def init_llm_factory():
             "max_tokens": 8192,
             "model_type": LLMType.EMBEDDING
         },
+        # ------------------------ Azure OpenAI -----------------------
+        #  Please ensure the llm_name is the same as the name in Azure
+        #  OpenAI deployment name (e.g., azure-gpt-4o). And the llm_name
+        #  must different from the OpenAI llm_name
+        #
+        #  Each model must be deployed in the Azure OpenAI service, otherwise,
+        #  you will receive an error message 'The API deployment for
+        #  this resource does not exist'
+        {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-gpt-4o",
+            "tags": "LLM,CHAT,128K",
+            "max_tokens": 128000,
+            "model_type": LLMType.CHAT.value + "," + LLMType.IMAGE2TEXT.value
+        }, {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-gpt-35-turbo",
+            "tags": "LLM,CHAT,4K",
+            "max_tokens": 4096,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-gpt-35-turbo-16k",
+            "tags": "LLM,CHAT,16k",
+            "max_tokens": 16385,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-text-embedding-ada-002",
+            "tags": "TEXT EMBEDDING,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-text-embedding-3-small",
+            "tags": "TEXT EMBEDDING,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.EMBEDDING.value
+        }, {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-text-embedding-3-large",
+            "tags": "TEXT EMBEDDING,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.EMBEDDING.value
+        },{
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-whisper-1",
+            "tags": "SPEECH2TEXT",
+            "max_tokens": 25 * 1024 * 1024,
+            "model_type": LLMType.SPEECH2TEXT.value
+         },
+        {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-gpt-4",
+            "tags": "LLM,CHAT,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-gpt-4-turbo",
+            "tags": "LLM,CHAT,8K",
+            "max_tokens": 8191,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-gpt-4-32k",
+            "tags": "LLM,CHAT,32K",
+            "max_tokens": 32768,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[15]["name"],
+            "llm_name": "azure-gpt-4-vision-preview",
+            "tags": "LLM,CHAT,IMAGE2TEXT",
+            "max_tokens": 765,
+            "model_type": LLMType.IMAGE2TEXT.value
+        },
+
     ]
     for info in factory_infos:
         try:
@@ -694,6 +779,20 @@ def init_llm_factory():
     """
 
 
+def add_graph_templates():
+    dir = os.path.join(get_project_base_directory(), "graph", "templates")
+    for fnm in os.listdir(dir):
+        try:
+            cnvs = json.load(open(os.path.join(dir, fnm), "r"))
+            try:
+                CanvasTemplateService.save(**cnvs)
+            except:
+                CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
+        except Exception as e:
+            print("Add graph templates error: ", e)
+            print("------------", flush=True)
+
+
 def init_web_data():
     start_time = time.time()
 
@@ -701,6 +800,7 @@ def init_web_data():
     if not UserService.get_all().count():
         init_superuser()
 
+    add_graph_templates()
     print("init web data success:{}".format(time.time() - start_time))
 
 

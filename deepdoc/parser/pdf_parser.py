@@ -952,7 +952,7 @@ class RAGFlowPdfParser:
                 fnm, str) else pdfplumber.open(BytesIO(fnm))
             self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
                                 enumerate(self.pdf.pages[page_from:page_to])]
-            self.page_chars = [[c for c in page.chars if self._has_color(c)] for page in
+            self.page_chars = [[{**c, 'top': max(0, c['top'] - 10), 'bottom': max(0, c['bottom'] - 10)} for c in page.chars if self._has_color(c)] for page in
                                self.pdf.pages[page_from:page_to]]
             self.total_page = len(self.pdf.pages)
         except Exception as e:

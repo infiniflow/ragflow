@@ -131,7 +131,7 @@
                     }
                 },
                 "downstream": ["answer:0"],
-                "upstream": ["categorize:0"]
+                "upstream": ["relevant:0"]
             },
             "message:get_contact": {
                 "obj":{
@@ -152,6 +152,6 @@
   "history": [],
   "messages": [],
   "path": [],
-  "reference": {},
+  "reference": [],
   "answer": []
 }
