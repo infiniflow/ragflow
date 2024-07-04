@@ -64,7 +64,7 @@
                     "component_name": "KeywordExtract",
                     "params": {
                       "llm_id": "deepseek-chat",
-                      "prompt": "You are an intelligent assistant. Please answer the question based on content of knowledge base. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\". Answers need to consider chat history.\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
+                      "prompt": "- Role: You're a question analyzer.\n    - Requirements:\n     - Summarize user's question, and give top %s important keyword/phrase.\n    - Use comma as a delimiter to separate keywords/phrases.\n    - Answer format: (in language of user's question)\n    - keyword: ",
                       "temperature": 0.2,
                       "top_n": 1
                     }
@@ -87,7 +87,7 @@
                     "component_name": "Generate",
                     "params": {
                       "llm_id": "deepseek-chat",
-                      "prompt": "You are an intelligent assistant. Please answer the question based on content searched from Baidu. When the answer comes from a Baidu search, you need to output the URL link of the corresponding content as well. When all the content searched from Baidu is irrelevant to the question, your answer must include the sentence, \"The answer you are looking for is not found in the Baidu search!\". Answers need to consider chat history.\n       The content of Baidu search is as follows:\n    {input}\n     The above is the content of Baidu search.",
+                      "prompt": "You are an intelligent assistant. Please answer the question based on content searched from Baidu. When the answer from a Baidu search is incomplete, you need to output the URL link of the corresponding content as well. When all the content searched from Baidu is irrelevant to the question, your answer must include the sentence, \"The answer you are looking for is not found in the Baidu search!\". Answers need to consider chat history.\n       The content of Baidu search is as follows:\n    {input}\n     The above is the content of Baidu search.",
                       "temperature": 0.2
                     }
                 },
