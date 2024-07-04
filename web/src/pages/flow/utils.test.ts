@@ -3,6 +3,7 @@ import path from 'path';
 import customer_service from '../../../../graph/test/dsl_examples/customer_service.json';
 import headhunter_zh from '../../../../graph/test/dsl_examples/headhunter_zh.json';
 import interpreter from '../../../../graph/test/dsl_examples/interpreter.json';
+import retrievalRelevantRewriteAndGenerate from '../../../../graph/test/dsl_examples/retrieval_relevant_rewrite_and_generate.json';
 import { dsl } from './mock';
 import { buildNodesAndEdgesFromDSLComponents } from './utils';
 
@@ -79,6 +80,22 @@ test('build nodes and edges from interpreter dsl', () => {
   try {
     fs.writeFileSync(
       path.join(__dirname, 'interpreter.json'),
+      JSON.stringify({ edges, nodes }, null, 4),
+    );
+    console.log('JSON data is saved.');
+  } catch (error) {
+    console.warn(error);
+  }
+  expect(nodes.length).toEqual(12);
+});
+
+test('build nodes and edges from chat bot dsl', () => {
+  const { edges, nodes } = buildNodesAndEdgesFromDSLComponents(
+    retrievalRelevantRewriteAndGenerate.components,
+  );
+  try {
+    fs.writeFileSync(
+      path.join(__dirname, 'retrieval_relevant_rewrite_and_generate.json'),
       JSON.stringify({ edges, nodes }, null, 4),
     );
     console.log('JSON data is saved.');
