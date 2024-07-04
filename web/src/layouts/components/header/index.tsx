@@ -9,6 +9,7 @@ import { useLocation } from 'umi';
 import Toolbar from '../right-toolbar';
 
 import { useFetchAppConf } from '@/hooks/logicHooks';
+import { NodeIndexOutlined } from '@ant-design/icons';
 import styles from './index.less';
 
 const { Header } = Layout;
@@ -26,6 +27,7 @@ const RagHeader = () => {
     () => [
       { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
       { path: '/chat', name: t('chat'), icon: StarIon },
+      { path: '/flow', name: t('flow'), icon: NodeIndexOutlined },
       { path: '/file', name: t('fileManager'), icon: FileIcon },
     ],
     [t],

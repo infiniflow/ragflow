@@ -13,8 +13,8 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 9 }}
-      wrapperCol={{ span: 15 }}
+      labelCol={{ span: 6 }}
+      wrapperCol={{ span: 18 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}

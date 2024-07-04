@@ -126,18 +126,40 @@ export const initialBeginValues = {
   prologue: `Hi! I'm your assistant, what can I do for you?`,
 };
 
-export const initialGenerateValues = {
-  // parameters: ModelVariableType.Precise,
-  // temperatureEnabled: true,
+const initialLlmBaseValues = {
   temperature: 0.1,
   top_p: 0.3,
   frequency_penalty: 0.7,
   presence_penalty: 0.4,
-  max_tokens: 512,
+  max_tokens: 256,
+};
+
+export const initialGenerateValues = {
+  // parameters: ModelVariableType.Precise,
+  // temperatureEnabled: true,
+  ...initialLlmBaseValues,
   prompt: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
   {cluster_content}
 The above is the content you need to summarize.`,
   cite: true,
+};
+
+export const initialRewriteQuestionValues = {
+  ...initialLlmBaseValues,
+  loop: 1,
+};
+
+export const initialRelevantValues = {
+  ...initialLlmBaseValues,
+};
+
+export const initialCategorizeValues = {
+  ...initialLlmBaseValues,
+  category_description: {},
+};
+
+export const initialMessageValues = {
+  messages: [],
 };
 
 export const initialFormValuesMap = {
@@ -145,8 +167,10 @@ export const initialFormValuesMap = {
   [Operator.Retrieval]: initialRetrievalValues,
   [Operator.Generate]: initialGenerateValues,
   [Operator.Answer]: {},
-  [Operator.Categorize]: {},
-  [Operator.Relevant]: {},
+  [Operator.Categorize]: initialCategorizeValues,
+  [Operator.Relevant]: initialRelevantValues,
+  [Operator.RewriteQuestion]: initialRewriteQuestionValues,
+  [Operator.Message]: initialMessageValues,
 };
 
 export const CategorizeAnchorPointPositions = [
