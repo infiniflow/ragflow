@@ -35,6 +35,7 @@ class KeywordExtractParam(GenerateParam):
 
     def check(self):
         super().check()
+        self.check_positive_integer(self.top_n, "Top N")
 
     def get_prompt(self):
         self.prompt = """
