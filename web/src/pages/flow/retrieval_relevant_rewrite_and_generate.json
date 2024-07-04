@@ -1,0 +1,160 @@
+{
+  "edges": [
+    {
+      "id": "81de838d-a541-4b3f-9d68-9172ffd7c6b4",
+      "label": "",
+      "source": "begin",
+      "target": "answer:0"
+    },
+    {
+      "id": "8fa8daaa-58e7-4494-84c9-d53f379d2550",
+      "label": "",
+      "source": "generate:0",
+      "target": "answer:0"
+    },
+    {
+      "id": "6720a5b8-96bc-4535-8800-ad3f35431a16",
+      "label": "",
+      "source": "answer:0",
+      "target": "retrieval:0"
+    },
+    {
+      "id": "81476d89-707f-4d87-8aa3-fecb9d8499b3",
+      "label": "",
+      "source": "rewrite:0",
+      "target": "retrieval:0"
+    },
+    {
+      "id": "2bba4a81-44e7-4796-b25f-e68c3fc7e54a",
+      "label": "",
+      "source": "retrieval:0",
+      "target": "relevant:0"
+    },
+    {
+      "id": "eb205b7a-a87e-4bcc-94c5-bddff13f8ddd",
+      "label": "",
+      "source": "relevant:0",
+      "target": "generate:0"
+    },
+    {
+      "id": "b8611b17-a01a-485c-ad40-377329eb8d96",
+      "label": "",
+      "source": "relevant:0",
+      "target": "rewrite:0"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "begin",
+      "type": "beginNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Begin",
+        "name": "FiftyDeerDeny",
+        "form": {
+          "prologue": "Hi there!"
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "answer:0",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Answer",
+        "name": "NinePointsSmoke",
+        "form": {}
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "retrieval:0",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Retrieval",
+        "name": "ProudLiesPull",
+        "form": {
+          "similarity_threshold": 0.2,
+          "keywords_similarity_weight": 0.3,
+          "top_n": 6,
+          "top_k": 1024,
+          "rerank_id": "BAAI/bge-reranker-v2-m3",
+          "kb_ids": ["869a236818b811ef91dffa163e197198"],
+          "empty_response": "Sorry, knowledge base has noting related information."
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "relevant:0",
+      "type": "relevantNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Relevant",
+        "name": "StrongBooksPay",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "temperature": 0.02,
+          "yes": "generate:0",
+          "no": "rewrite:0"
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "generate:0",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Generate",
+        "name": "CyanBooksTell",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "prompt": "You are an intelligent assistant. Please answer the question based on content of knowledge base. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\". Answers need to consider chat history.\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
+          "temperature": 0.02
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    },
+    {
+      "id": "rewrite:0",
+      "type": "ragNode",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "RewriteQuestion",
+        "name": "SourPapersMake",
+        "form": {
+          "llm_id": "deepseek-chat",
+          "temperature": 0.8
+        }
+      },
+      "sourcePosition": "left",
+      "targetPosition": "right"
+    }
+  ]
+}
