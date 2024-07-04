@@ -1,5 +1,5 @@
 {
-  "id": 1,
+  "id": 2,
   "title": "Customer service",
   "description": "A call-in customer service chat bot. It will provide useful information about the products, answer customers' questions and soothe the customers' bad emotions.",
   "canvas_type": "chatbot",
@@ -106,7 +106,7 @@
           "upstream": ["categorize:0"]
         },
         "generate:complain": {
-          "downstream": [],
+          "downstream": ["answer:0"],
           "obj": {
             "component_name": "Generate",
             "params": {
@@ -116,7 +116,7 @@
               "prompt": "You are a customer support. the Customers complain even curse about the products but not specific enough. You need to ask him/her what's the specific problem with the product. Be nice, patient and concern to soothe your customers’ emotions at first place."
             }
           },
-          "upstream": ["categorize:0", "answer:0"]
+          "upstream": ["categorize:0"]
         },
         "message:get_contact": {
           "downstream": ["answer:0"],
@@ -286,13 +286,13 @@
           {
             "id": "reactflow__edge-answer:0a-generate:complaind",
             "markerEnd": "logo",
-            "source": "answer:0",
+            "source": "generate:complain",
             "sourceHandle": "a",
             "style": {
               "stroke": "rgb(202 197 245)",
               "strokeWidth": 2
             },
-            "target": "generate:complain",
+            "target": "answer:0",
             "targetHandle": "d",
             "type": "buttonEdge"
           },

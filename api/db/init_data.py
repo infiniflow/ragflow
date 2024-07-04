@@ -156,7 +156,7 @@ factory_infos = [{
     "tags": "TEXT EMBEDDING, TEXT RE-RANK",
     "status": "1",
 },{
-    "name": "Minimax",
+    "name": "MiniMax",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
