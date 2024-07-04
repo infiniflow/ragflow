@@ -28,9 +28,6 @@ class KeywordExtractParam(GenerateParam):
 
     def __init__(self):
         super().__init__()
-        self.llm_id = ""
-        self.temperature = 0.5
-        self.prompt = ""
         self.top_n = 1
 
     def check(self):
