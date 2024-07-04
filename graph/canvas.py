@@ -102,18 +102,25 @@ class Canvas(ABC):
         self.load()
 
     def load(self):
-        assert self.dsl.get("components", {}).get("begin"), "There have to be a 'Begin' component."
-
         self.components = self.dsl["components"]
+        cpn_nms = set([])
         for k, cpn in self.components.items():
+            cpn_nms.add(cpn["obj"]["component_name"])
+
+        assert "Begin" in cpn_nms, "There have to be an 'Begin' component."
+        assert "Answer" in cpn_nms, "There have to be an 'Answer' component."
+
+        for k, cpn in self.components.items():
+            cpn_nms.add(cpn["obj"]["component_name"])
             param = component_class(cpn["obj"]["component_name"] + "Param")()
             param.update(cpn["obj"]["params"])
             param.check()
             cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
             if cpn["obj"].component_name == "Categorize":
-                for _,desc in param.category_description.items():
+                for _, desc in param.category_description.items():
                     if desc["to"] not in cpn["downstream"]:
                         cpn["downstream"].append(desc["to"])
+
 
         self.path = self.dsl["path"]
         self.history = self.dsl["history"]
@@ -140,7 +147,8 @@ class Canvas(ABC):
         self.messages = []
         self.answer = []
         self.reference = []
-        self.components = {}
+        for k, cpn in self.components.items():
+            self.components[k]["obj"].reset()
         self._embed_id = ""
 
     def run(self, **kwargs):
@@ -176,7 +184,7 @@ class Canvas(ABC):
                 ran += 1
 
         prepare2run(self.components[self.path[-2][-1]]["downstream"])
-        while ran < len(self.path[-1]):
+        while 0 <= ran < len(self.path[-1]):
             if DEBUG: print(ran, self.path)
             cpn_id = self.path[-1][ran]
             cpn = self.get_component(cpn_id)

@@ -418,6 +418,9 @@ class ComponentBase(ABC):
             o = pd.DataFrame(o)
         return self._param.output_var_name, o
 
+    def reset(self):
+        setattr(self._param, self._param.output_var_name, None)
+
     def set_output(self, v: pd.DataFrame):
         setattr(self._param, self._param.output_var_name, v)
 
