@@ -1,9 +1,9 @@
 import {
   BranchesOutlined,
   DatabaseOutlined,
+  FormOutlined,
   MergeCellsOutlined,
   MessageOutlined,
-  QuestionOutlined,
   RocketOutlined,
   SendOutlined,
   SlidersOutlined,
@@ -28,7 +28,7 @@ export const operatorIconMap = {
   [Operator.Categorize]: DatabaseOutlined,
   [Operator.Message]: MessageOutlined,
   [Operator.Relevant]: BranchesOutlined,
-  [Operator.RewriteQuestion]: QuestionOutlined,
+  [Operator.RewriteQuestion]: FormOutlined,
 };
 
 export const operatorMap = {
@@ -76,7 +76,12 @@ export const operatorMap = {
   },
   [Operator.RewriteQuestion]: {
     description: 'RewriteQuestion description',
-    backgroundColor: 'white',
+    backgroundColor: '#f8c7f8',
+    color: 'white',
+    width: 70,
+    height: 70,
+    fontSize: 12,
+    iconFontSize: 16,
   },
 };
 

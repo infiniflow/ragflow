@@ -32,7 +32,7 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
         </Space>
         <Space size={'large'}>
           <Button onClick={showChatDrawer}>
-            <b>Debug</b>
+            <b>Run</b>
           </Button>
           <Button type="primary" onClick={saveGraph}>
             <b>Save</b>

@@ -39,7 +39,12 @@ export function RagNode({
         id="b"
       ></Handle>
       <Handle type="source" position={Position.Bottom} id="a" isConnectable />
-      <Flex vertical align="center" justify={'center'} gap={6}>
+      <Flex
+        vertical
+        align="center"
+        justify={'center'}
+        gap={data.label === Operator.RewriteQuestion ? 0 : 6}
+      >
         <OperatorIcon
           name={data.label as Operator}
           fontSize={style['iconFontSize'] ?? 24}
@@ -48,7 +53,7 @@ export function RagNode({
           className={styles.type}
           style={{ fontSize: style.fontSize ?? 14 }}
         >
-          {data.label}
+          {data.label === Operator.RewriteQuestion ? 'Rewrite' : data.label}
         </span>
         <NodeDropdown id={id}></NodeDropdown>
       </Flex>
