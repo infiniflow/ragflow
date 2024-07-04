@@ -93,9 +93,7 @@ export const useSendMessage = (
 ) => {
   const { id: flowId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  const { data: flowDetail, refetch } = useFetchFlow();
-  const messages = flowDetail.dsl.messages;
-  const isMessagesEmpty = messages?.length === 0;
+  const { refetch } = useFetchFlow();
   const { resetFlow } = useResetFlow();
 
   const { send, answer, done } = useSendMessageWithSse(api.runCanvas);
