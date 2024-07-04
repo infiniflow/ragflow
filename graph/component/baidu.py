@@ -57,11 +57,6 @@ class Baidu(ComponentBase, ABC):
 
         del url_res
 
-        if not baidu_res:
-            br = Baidu.be_output(self._param.empty_response)
-            br["empty_response"] = True
-            return dr
-
         br = pd.DataFrame(baidu_res, columns=['content'])
         print(">>>>>>>>>>>>>>>>>>>>>>>>>>\n", br)
         return br
