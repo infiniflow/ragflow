@@ -11,6 +11,7 @@ interface IProps {
   iconFontSize?: number;
   items?: MenuProps['items'];
   height?: number;
+  needsDeletionValidation?: boolean;
 }
 
 const OperateDropdown = ({
@@ -19,12 +20,17 @@ const OperateDropdown = ({
   iconFontSize = 30,
   items: otherItems = [],
   height = 24,
+  needsDeletionValidation = true,
 }: React.PropsWithChildren<IProps>) => {
   const { t } = useTranslation();
   const showDeleteConfirm = useShowDeleteConfirm();
 
   const handleDelete = () => {
-    showDeleteConfirm({ onOk: deleteItem });
+    if (needsDeletionValidation) {
+      showDeleteConfirm({ onOk: deleteItem });
+    } else {
+      deleteItem();
+    }
   };
 
   const handleDropdownMenuClick: MenuProps['onClick'] = ({ domEvent, key }) => {
