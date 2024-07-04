@@ -12,15 +12,16 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
 import os
 import pathlib
 import re
 import warnings
+from io import BytesIO
 
-from flask import request
+from flask import request, send_file
 from flask_login import login_required, current_user
 from httpx import HTTPError
+from minio import S3Error
 
 from api.contants import NAME_LENGTH_LIMIT
 from api.db import FileType, ParserType, FileSource
@@ -283,9 +284,12 @@ def upload_documents(dataset_id):
         return construct_json_result(code=RetCode.DATA_ERROR, message=f"You try to upload {num_file_objs} files, "
                                                                       f"which exceeds the maximum number of uploading files: {MAXIMUM_OF_UPLOADING_FILES}")
 
+    # no dataset
+    exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
+    if not exist:
+        return construct_json_result(message="Can't find this dataset", code=RetCode.DATA_ERROR)
+
     for file_obj in file_objs:
-        # the content of the file
-        file_content = file_obj.read()
         file_name = file_obj.filename
         # no name
         if not file_name:
@@ -295,15 +299,6 @@ def upload_documents(dataset_id):
         # TODO: support the remote files
         if 'http' in file_name:
             return construct_json_result(code=RetCode.ARGUMENT_ERROR, message="Remote files have not unsupported.")
-
-        # the content is empty, raising a warning
-        if file_content == b'':
-            warnings.warn(f"[WARNING]: The file {file_name} is empty.")
-
-    # no dataset
-    exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
-    if not exist:
-        return construct_json_result(message="Can't find this dataset", code=RetCode.DATA_ERROR)
 
     # get the root_folder
     root_folder = FileService.get_root_folder(current_user.id)
@@ -342,8 +337,14 @@ def upload_documents(dataset_id):
             location = filename
             while MINIO.obj_exist(dataset_id, location):
                 location += "_"
+
             blob = file.read()
+            # the content is empty, raising a warning
+            if blob == b'':
+                warnings.warn(f"[WARNING]: The file {filename} is empty.")
+
             MINIO.put(dataset_id, location, blob)
+
             doc = {
                 "id": get_uuid(),
                 "kb_id": dataset.id,
@@ -555,6 +556,40 @@ def is_illegal_value_for_enum(value, enum_class):
     return value not in enum_class.__members__.values()
 
 # ----------------------------download a file-----------------------------------------------------
+@manager.route("/<dataset_id>/documents/<document_id>", methods=["GET"])
+@login_required
+def download_document(dataset_id, document_id):
+    try:
+        # Check whether there is this dataset
+        exist, _ = KnowledgebaseService.get_by_id(dataset_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset '{dataset_id}' cannot be found!")
+
+        # Check whether there is this document
+        exist, document = DocumentService.get_by_id(document_id)
+        if not exist:
+            return construct_json_result(message=f"This document '{document_id}' cannot be found!",
+                                         code=RetCode.ARGUMENT_ERROR)
+
+        # The process of downloading
+        doc_id, doc_location = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
+        file_stream = MINIO.get(doc_id, doc_location)
+        if not file_stream:
+            return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+
+        file = BytesIO(file_stream)
+
+        # Use send_file with a proper filename and MIME type
+        return send_file(
+            file,
+            as_attachment=True,
+            download_name=document.name,
+            mimetype='application/octet-stream'  # Set a default MIME type
+        )
+
+    # Error
+    except Exception as e:
+        return construct_error_response(e)
 
 # ----------------------------start parsing-----------------------------------------------------
 
@@ -564,7 +599,7 @@ def is_illegal_value_for_enum(value, enum_class):
 
 # ----------------------------list the chunks of the file-----------------------------------------------------
 
-# ----------------------------delete the chunk-----------------------------------------------------
+# -- --------------------------delete the chunk-----------------------------------------------------
 
 # ----------------------------edit the status of the chunk-----------------------------------------------------
 
@@ -575,4 +610,6 @@ def is_illegal_value_for_enum(value, enum_class):
 # ----------------------------get a specific chunk-----------------------------------------------------
 
 # ----------------------------retrieval test-----------------------------------------------------
+
+
 
