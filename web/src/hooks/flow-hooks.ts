@@ -164,3 +164,20 @@ export const useRunFlow = () => {
 
   return { data, loading, runFlow: mutateAsync };
 };
+
+export const useResetFlow = () => {
+  const { id } = useParams();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['resetFlow'],
+    mutationFn: async () => {
+      const { data } = await flowService.resetCanvas({ id });
+      return data;
+    },
+  });
+
+  return { data, loading, resetFlow: mutateAsync };
+};

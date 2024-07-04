@@ -1,5 +1,5 @@
 import { MessageType } from '@/constants/chat';
-import { useFetchFlow } from '@/hooks/flow-hooks';
+import { useFetchFlow, useResetFlow } from '@/hooks/flow-hooks';
 import {
   useHandleMessageInputChange,
   useScrollToBottom,
@@ -95,11 +95,13 @@ export const useSendMessage = (
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { data: flowDetail, refetch } = useFetchFlow();
   const messages = flowDetail.dsl.messages;
+  const isMessagesEmpty = messages?.length === 0;
+  const { resetFlow } = useResetFlow();
 
   const { send, answer, done } = useSendMessageWithSse(api.runCanvas);
 
   const sendMessage = useCallback(
-    async (message: string, id?: string) => {
+    async (message: string) => {
       const params: Record<string, unknown> = {
         id: flowId,
       };
@@ -128,6 +130,18 @@ export const useSendMessage = (
     [sendMessage],
   );
 
+  /**
+   * Call the reset api before opening the run drawer each time
+   */
+  const resetFlowBeforeFetchingPrologue = useCallback(async () => {
+    // After resetting, all previous messages will be cleared.
+    const ret = await resetFlow();
+    if (ret.retcode === 0) {
+      // fetch prologue
+      sendMessage('');
+    }
+  }, [resetFlow, sendMessage]);
+
   useEffect(() => {
     if (answer.answer) {
       addNewestAnswer(answer);
@@ -135,11 +149,8 @@ export const useSendMessage = (
   }, [answer, addNewestAnswer]);
 
   useEffect(() => {
-    // fetch prologue
-    if (messages.length === 0) {
-      sendMessage('');
-    }
-  }, [sendMessage, messages]);
+    resetFlowBeforeFetchingPrologue();
+  }, [resetFlowBeforeFetchingPrologue]);
 
   const handlePressEnter = useCallback(() => {
     if (done) {
