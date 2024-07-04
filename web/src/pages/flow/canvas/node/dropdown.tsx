@@ -41,6 +41,7 @@ const NodeDropdown = ({ id }: IProps) => {
       height={14}
       deleteItem={deleteNode}
       items={items}
+      needsDeletionValidation={false}
     ></OperateDropdown>
   );
 };
