@@ -36,7 +36,7 @@ def templates():
 @login_required
 def canvas_list():
     return get_json_result(data=sorted([c.to_dict() for c in \
-                                 UserCanvasService.query(user_id=current_user.id)], key=lambda x: x["update_time"])
+                                 UserCanvasService.query(user_id=current_user.id)], key=lambda x: x["update_time"]*-1)
                            )
 
 
@@ -148,7 +148,7 @@ def reset():
     req = request.json
     try:
         user_canvas = UserCanvasService.get_by_id(req["canvas_id"])
-        canvas = Canvas(req["dsl"], current_user.id)
+        canvas = Canvas(user_canvas.dsl, current_user.id)
         canvas.reset()
         req["dsl"] = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["canvas_id"], dsl=req["dsl"])

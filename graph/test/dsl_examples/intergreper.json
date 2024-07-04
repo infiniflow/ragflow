@@ -1,0 +1,39 @@
+{
+  "components": {
+            "begin": {
+                "obj":{
+                    "component_name": "Begin",
+                    "params": {
+                      "prologue": "Hi there! Please enter the text you want to translate in format like: 'text you want to translate' => target language. For an example: 您好！ => English"
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": []
+            },
+            "answer:0": {
+                "obj": {
+                    "component_name": "Answer",
+                    "params": {}
+                },
+                "downstream": ["generate:0"],
+                "upstream": ["begin", "generate:0"]
+            },
+            "generate:0": {
+                "obj": {
+                    "component_name": "Generate",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "prompt": "You are an professional interpreter.\n- Role: an professional interpreter.\n- Input format: content need to be translated => target language. \n- Answer format: => translated content in target language. \n- Examples:\n  - user: 您好！ => English. assistant: => How are you doing!\n  - user: You look good today. => Japanese. assistant: => 今日は調子がいいですね 。\n",
+                      "temperature": 0.5
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": ["answer:0"]
+            }
+  },
+  "history": [],
+  "messages": [],
+  "reference": {},
+  "path": [],
+  "answer": []
+}

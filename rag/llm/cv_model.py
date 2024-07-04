@@ -108,6 +108,7 @@ class AzureGptV4(Base):
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
+
 class QWenCV(Base):
     def __init__(self, key, model_name="qwen-vl-chat-v1", lang="Chinese", **kwargs):
         import dashscope
