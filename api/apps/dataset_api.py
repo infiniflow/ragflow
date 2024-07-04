@@ -17,10 +17,12 @@ import os
 import pathlib
 import re
 import warnings
+from io import BytesIO
 
-from flask import request, make_response, send_from_directory
+from flask import request, make_response, send_file
 from flask_login import login_required, current_user
 from httpx import HTTPError
+from minio import S3Error
 
 from api.contants import NAME_LENGTH_LIMIT
 from api.db import FileType, ParserType, FileSource
@@ -557,39 +559,43 @@ def is_illegal_value_for_enum(value, enum_class):
 # ----------------------------download a file-----------------------------------------------------
 @manager.route("/<dataset_id>/documents/<document_id>", methods=["GET"])
 @login_required
-def download_documents(dataset_id, document_id):
+def download_document(dataset_id, document_id):
     try:
         # Check whether there is this dataset
-        exist, dataset = KnowledgebaseService.get_by_id(dataset_id)
+        exist, _ = KnowledgebaseService.get_by_id(dataset_id)
         if not exist:
-            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset {dataset_id} cannot be found!")
+            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset '{dataset_id}' cannot be found!")
 
         # Check whether there is this document
         exist, document = DocumentService.get_by_id(document_id)
         if not exist:
-            return construct_json_result(message=f"This document {document_id} cannot be found!",
+            return construct_json_result(message=f"This document '{document_id}' cannot be found!",
                                          code=RetCode.ARGUMENT_ERROR)
 
         # The process of downloading
-        b, n = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
-        response = make_response(MINIO.get(b, n))
-        filename = document.name
-        extension = re.search(r"\.([^.]+)$", filename)
-        if extension:
-            if document.type == FileType.VISUAL.value:
-                response.headers.set('Content-Type', 'image/%s' % extension.group(1))
-            else:
-                response.headers.set(
-                    'Content-Type',
-                    'application/%s' %
-                    extension.group(1))
+        doc_id, doc_location = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
+        file_stream = MINIO.get(doc_id, doc_location)
+        if not file_stream:
+            return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
 
-        base64_encoded = base64.b64encode(response.data).decode('utf-8')
-        # Download successfully
-        return construct_json_result(code=RetCode.SUCCESS, data={"filename": filename, "encoded_data": base64_encoded})
+        file = BytesIO(file_stream)
+
+        # Use send_file with a proper filename and MIME type
+        try:
+            return send_file(
+                file,
+                as_attachment=True,
+                download_name=document.name,
+                mimetype='application/octet-stream'  # Set a default MIME type
+            )
+        except S3Error as e:
+            # Handle the error from MinIO
+            return construct_json_result(code=RetCode.SERVER_ERROR, message=str(e))
+
     # Error
     except Exception as e:
         return construct_error_response(e)
+
 # ----------------------------start parsing-----------------------------------------------------
 
 # ----------------------------stop parsing-----------------------------------------------------

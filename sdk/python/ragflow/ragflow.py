@@ -18,6 +18,7 @@ import os
 
 import requests
 
+from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 
 
@@ -127,19 +128,21 @@ class RAGFlow:
 
     # ----------------------------download a file-----------------------------------------------------
     def download_file(self, dataset_id, document_id):
-        # whether path is string
         endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}"
         res = requests.get(endpoint, headers=self.authorization_header)
-        json_data = res.json()
 
-        if json_data["data"]:
-            base64_encoded = json_data["data"]["encoded_data"]
-            file_path = os.path.join(os.getcwd(), json_data["data"]["filename"])
-            binary_data = base64.b64decode(base64_encoded)
+        content = res.content  # binary data
+        # decode the binary data
+        try:
+            decoded_content = content.decode("utf-8")
+            json_data = json.loads(decoded_content)
+            return json_data  # message
+        except json.JSONDecodeError:  # binary data
+            _, document = DocumentService.get_by_id(document_id)
+            file_path = os.path.join(os.getcwd(), document.name)
             with open(file_path, "wb") as file:
-                file.write(binary_data)
-            return {"code": RetCode.SUCCESS, "data": binary_data}
-        return res.json()
+                file.write(content)
+            return {"code": RetCode.SUCCESS, "data": content}
     # ----------------------------start parsing-----------------------------------------------------
 
     # ----------------------------stop parsing-----------------------------------------------------

@@ -637,8 +637,7 @@ class TestFile(TestSdk):
         created_res = ragflow.create_dataset("test_download_nonexistent_document")
         created_res_id = created_res["data"]["dataset_id"]
         res = ragflow.download_file(created_res_id, "imagination")
-        print(res)
-        assert res["code"] == RetCode.ARGUMENT_ERROR and res["message"] == f"This document imagination cannot be found!"
+        assert res["code"] == RetCode.ARGUMENT_ERROR and res["message"] == f"This document 'imagination' cannot be found!"
 
     def test_download_document_in_nonexistent_dataset(self):
         """
@@ -656,8 +655,7 @@ class TestFile(TestSdk):
         doc_id = data["id"]
         # download file
         res = ragflow.download_file("imagination", doc_id)
-
-        assert res["code"] == RetCode.DATA_ERROR and res["message"] == f"This dataset imagination cannot be found!"
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == f"This dataset 'imagination' cannot be found!"
 
     def test_download_document_with_success(self):
         """
@@ -679,9 +677,9 @@ class TestFile(TestSdk):
         res = ragflow.download_file(created_res_id, doc_id)
         assert res["code"] == RetCode.SUCCESS and res["data"] == binary_data
 
-    def test_download_an_empty_document_with_success(self):
+    def test_download_an_empty_document(self):
         """
-        Test the downloading of an empty document with success.
+        Test the downloading of an empty document.
         """
         # create a dataset
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
@@ -695,7 +693,7 @@ class TestFile(TestSdk):
         doc_id = data["id"]
         # download file
         res = ragflow.download_file(created_res_id, doc_id)
-        assert res["code"] == RetCode.SUCCESS and res["data"] == b""
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This file is empty."
 
 # ----------------------------start parsing-----------------------------------------------------
 
