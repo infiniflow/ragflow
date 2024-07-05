@@ -50,12 +50,12 @@ class Baidu(ComponentBase, ABC):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36'}
         response = requests.get(url=url, headers=headers)
 
-        baidu_res = re.findall(r'"contentText":"(.*?)"', response.text)
         url_res = re.findall(r"'url': \\\"(.*?)\\\"}", response.text)
-        for i in range(min(len(baidu_res), len(url_res))):
-            baidu_res[i] += '<a>' + url_res[i] + '</a>'
-
-        del url_res
+        title_res = re.findall(r"'title': \\\"(.*?)\\\",\\n", response.text)
+        body_res = re.findall(r"\"contentText\":\"(.*?)\"", response.text)
+        baidu_res = [re.sub('<em>|</em>', '', '<a href="' + url + '">' + title + '</a>    ' + body) for url, title, body
+                     in zip(url_res, title_res, body_res)]
+        del body_res, url_res, title_res
 
         br = pd.DataFrame(baidu_res, columns=['content'])
         print(">>>>>>>>>>>>>>>>>>>>>>>>>>\n", br)
