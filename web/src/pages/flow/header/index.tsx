@@ -3,7 +3,7 @@ import { Button, Flex, Space } from 'antd';
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { Link } from 'umi';
-import { useSaveGraph } from '../hooks';
+import { useSaveGraph, useSaveGraphBeforeOpeningDebugDrawer } from '../hooks';
 
 import styles from './index.less';
 
@@ -13,7 +13,7 @@ interface IProps {
 
 const FlowHeader = ({ showChatDrawer }: IProps) => {
   const { saveGraph } = useSaveGraph();
-
+  const handleRun = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const { data } = useFetchFlow();
 
   return (
@@ -31,7 +31,7 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
           <h3>{data.title}</h3>
         </Space>
         <Space size={'large'}>
-          <Button onClick={showChatDrawer}>
+          <Button onClick={handleRun}>
             <b>Run</b>
           </Button>
           <Button type="primary" onClick={saveGraph}>

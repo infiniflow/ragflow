@@ -181,3 +181,6 @@ export const buildDslComponentsByGraph = (
 
   return components;
 };
+
+export const receiveMessageError = (res: any) =>
+  res && (res?.response.status !== 200 || res?.data?.retcode !== 0);
