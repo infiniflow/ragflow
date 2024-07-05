@@ -203,9 +203,9 @@ export const CategorizeAnchorPointPositions = [
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [],
   [Operator.Categorize]: [Operator.Begin, Operator.Categorize, Operator.Answer],
-  [Operator.Answer]: [],
-  [Operator.Retrieval]: [],
-  [Operator.Generate]: [],
+  [Operator.Answer]: [Operator.Begin, Operator.Answer, Operator.Message],
+  [Operator.Retrieval]: [Operator.Begin, Operator.Relevant],
+  [Operator.Generate]: [Operator.Begin],
   [Operator.Message]: [
     Operator.Begin,
     Operator.Message,
@@ -214,8 +214,14 @@ export const RestrictedUpstreamMap = {
     Operator.RewriteQuestion,
     Operator.Categorize,
   ],
-  [Operator.Relevant]: [],
-  [Operator.RewriteQuestion]: [],
+  [Operator.Relevant]: [Operator.Begin, Operator.Answer],
+  [Operator.RewriteQuestion]: [
+    Operator.Begin,
+    Operator.Message,
+    Operator.Generate,
+    Operator.RewriteQuestion,
+    Operator.Categorize,
+  ],
 };
 
 export const NodeMap = {
