@@ -1,5 +1,5 @@
 import { useSetModalState } from '@/hooks/commonHooks';
-import { useFetchFlow, useSetFlow } from '@/hooks/flow-hooks';
+import { useFetchFlow, useResetFlow, useSetFlow } from '@/hooks/flow-hooks';
 import { useFetchLlmList } from '@/hooks/llmHooks';
 import { IGraph } from '@/interfaces/database/flow';
 import { useIsFetching } from '@tanstack/react-query';
@@ -17,8 +17,9 @@ import {
   ModelVariableType,
   settledModelVariableMap,
 } from '@/constants/knowledge';
-import { useFetchModelId } from '@/hooks/logicHooks';
+import { useFetchModelId, useSendMessageWithSse } from '@/hooks/logicHooks';
 import { Variable } from '@/interfaces/database/chat';
+import api from '@/utils/api';
 import { useDebounceEffect } from 'ahooks';
 import { FormInstance, message } from 'antd';
 import { humanId } from 'human-id';
@@ -37,7 +38,7 @@ import {
   initialRewriteQuestionValues,
 } from './constant';
 import useGraphStore, { RFState } from './store';
-import { buildDslComponentsByGraph } from './utils';
+import { buildDslComponentsByGraph, receiveMessageError } from './utils';
 
 const selector = (state: RFState) => ({
   nodes: state.nodes,
@@ -193,9 +194,9 @@ export const useSaveGraph = () => {
   const { setFlow } = useSetFlow();
   const { id } = useParams();
   const { nodes, edges } = useGraphStore((state) => state);
-  const saveGraph = useCallback(() => {
+  const saveGraph = useCallback(async () => {
     const dslComponents = buildDslComponentsByGraph(nodes, edges);
-    setFlow({
+    return setFlow({
       id,
       title: data.title,
       dsl: { ...data.dsl, graph: { nodes, edges }, components: dslComponents },
@@ -344,4 +345,30 @@ export const useHandleNodeNameChange = (node?: Node) => {
   }, [previousName]);
 
   return { name, handleNameBlur, handleNameChange };
+};
+
+export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
+  const { id } = useParams();
+  const { saveGraph } = useSaveGraph();
+  const { resetFlow } = useResetFlow();
+  const { send } = useSendMessageWithSse(api.runCanvas);
+  const handleRun = useCallback(async () => {
+    const saveRet = await saveGraph();
+    if (saveRet?.retcode === 0) {
+      // Call the reset api before opening the run drawer each time
+      const resetRet = await resetFlow();
+      // After resetting, all previous messages will be cleared.
+      if (resetRet?.retcode === 0) {
+        // fetch prologue
+        const sendRet = await send({ id });
+        if (receiveMessageError(sendRet)) {
+          message.error(sendRet?.data?.retmsg);
+        } else {
+          show();
+        }
+      }
+    }
+  }, [saveGraph, resetFlow, id, send, show]);
+
+  return handleRun;
 };

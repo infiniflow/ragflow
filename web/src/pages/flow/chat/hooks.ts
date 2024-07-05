@@ -1,5 +1,5 @@
 import { MessageType } from '@/constants/chat';
-import { useFetchFlow, useResetFlow } from '@/hooks/flow-hooks';
+import { useFetchFlow } from '@/hooks/flow-hooks';
 import {
   useHandleMessageInputChange,
   useScrollToBottom,
@@ -12,6 +12,7 @@ import { message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
+import { receiveMessageError } from '../utils';
 
 const antMessage = message;
 
@@ -94,7 +95,6 @@ export const useSendMessage = (
   const { id: flowId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { refetch } = useFetchFlow();
-  const { resetFlow } = useResetFlow();
 
   const { send, answer, done } = useSendMessageWithSse(api.runCanvas);
 
@@ -108,7 +108,7 @@ export const useSendMessage = (
       }
       const res = await send(params);
 
-      if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
+      if (receiveMessageError(res)) {
         antMessage.error(res?.data?.retmsg);
 
         // cancel loading
@@ -128,27 +128,11 @@ export const useSendMessage = (
     [sendMessage],
   );
 
-  /**
-   * Call the reset api before opening the run drawer each time
-   */
-  const resetFlowBeforeFetchingPrologue = useCallback(async () => {
-    // After resetting, all previous messages will be cleared.
-    const ret = await resetFlow();
-    if (ret.retcode === 0) {
-      // fetch prologue
-      sendMessage('');
-    }
-  }, [resetFlow, sendMessage]);
-
   useEffect(() => {
     if (answer.answer) {
       addNewestAnswer(answer);
     }
   }, [answer, addNewestAnswer]);
-
-  useEffect(() => {
-    resetFlowBeforeFetchingPrologue();
-  }, [resetFlowBeforeFetchingPrologue]);
 
   const handlePressEnter = useCallback(() => {
     if (done) {
