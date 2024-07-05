@@ -2,11 +2,11 @@ import { DSLComponents } from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import dagre from 'dagre';
 import { humanId } from 'human-id';
-import { curry, isEmpty } from 'lodash';
+import { curry } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import { Edge, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
-import { NodeMap, Operator, initialFormValuesMap } from './constant';
+import { NodeMap, Operator } from './constant';
 import { ICategorizeItemResult, NodeData } from './interface';
 
 const buildEdges = (
@@ -143,17 +143,17 @@ const removeUselessDataInTheOperator = curry(
   },
 );
 // initialize data for operators without parameters
-const initializeOperatorParams = curry((operatorName: string, values: any) => {
-  if (isEmpty(values)) {
-    return initialFormValuesMap[operatorName as Operator];
-  }
-  return values;
-});
+// const initializeOperatorParams = curry((operatorName: string, values: any) => {
+//   if (isEmpty(values)) {
+//     return initialFormValuesMap[operatorName as Operator];
+//   }
+//   return values;
+// });
 
 const buildOperatorParams = (operatorName: string) =>
   pipe(
     removeUselessDataInTheOperator(operatorName),
-    initializeOperatorParams(operatorName), // Final processing, for guarantee
+    // initializeOperatorParams(operatorName), // Final processing, for guarantee
   );
 
 // construct a dsl based on the node information of the graph
@@ -181,3 +181,6 @@ export const buildDslComponentsByGraph = (
 
   return components;
 };
+
+export const receiveMessageError = (res: any) =>
+  res && (res?.response.status !== 200 || res?.data?.retcode !== 0);

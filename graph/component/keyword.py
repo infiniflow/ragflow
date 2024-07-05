@@ -22,18 +22,17 @@ from graph.settings import DEBUG
 
 
 class KeywordExtractParam(GenerateParam):
-
     """
     Define the KeywordExtract component parameters.
     """
+
     def __init__(self):
         super().__init__()
-        self.temperature = 0.5
-        self.prompt = ""
-        self.topn = 1
+        self.top_n = 1
 
     def check(self):
         super().check()
+        self.check_positive_integer(self.top_n, "Top N")
 
     def get_prompt(self):
         self.prompt = """
@@ -43,12 +42,12 @@ class KeywordExtractParam(GenerateParam):
   - Use comma as a delimiter to separate keywords/phrases.
 - Answer format: (in language of user's question)
   - keyword: 
-"""%self.topn
+""" % self.top_n
         return self.prompt
 
 
 class KeywordExtract(Generate, ABC):
-    component_name = "RewriteQuestion"
+    component_name = "KeywordExtract"
 
     def _run(self, history, **kwargs):
         q = ""
@@ -64,5 +63,3 @@ class KeywordExtract(Generate, ABC):
         ans = re.sub(r".*keyword:", "", ans).strip()
         if DEBUG: print(ans, ":::::::::::::::::::::::::::::::::")
         return KeywordExtract.be_output(ans)
-
-
