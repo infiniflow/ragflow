@@ -45,6 +45,7 @@ export const useSaveFlow = () => {
       const ret = await setFlow({
         title,
         dsl,
+        avatar: templateItem?.avatar,
         // dsl: dslJson,
         // dsl: {
         //   ...retrievalRelevantRewriteAndGenerateBase,
