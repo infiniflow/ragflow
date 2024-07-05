@@ -62,6 +62,10 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
     [showDrawer],
   );
 
+  const onPaneClick = useCallback(() => {
+    hideDrawer();
+  }, [hideDrawer]);
+
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
 
   const { handleKeyUp } = useHandleKeyUp();
@@ -101,6 +105,7 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
         onDrop={onDrop}
         onDragOver={onDragOver}
         onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         onInit={setReactFlowInstance}
         onKeyUp={handleKeyUp}
         onSelectionChange={onSelectionChange}
