@@ -30,7 +30,7 @@ class DuckDuckGoSearchParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.top_n = 10
-        self.channel = ""
+        self.channel = "text"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
@@ -49,18 +49,14 @@ class DuckDuckGoSearch(ComponentBase, ABC):
         if self.channel == "text":
             with DDGS() as ddgs:
                 # {'title': '', 'href': '', 'body': ''}
-                duck_res = ddgs.text(query, max_results=self._param.top_n)
-                for i in duck_res:
-                    i["body"] += '<a>' + i["href"] + '</a>'
+                duck_res = ['<a href="' + i["href"] + '">' + i["title"] + '</a>    ' + i["body"] for i in
+                            ddgs.text(ans, max_results=self._param.top_n)]
         elif self.channel == "news":
             with DDGS() as ddgs:
                 # {'date': '', 'title': '', 'body': '', 'url': '', 'image': '', 'source': ''}
-                duck_res = ddgs.news(query, max_results=self._param.top_n)
-                for i in duck_res:
-                    i["body"] += '<a>' + i["url"] + '</a>'
+                duck_res = ['<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"] for i in
+                            ddgs.news(ans, max_results=self._param.top_n)]
 
-        dr = pd.DataFrame(duck_res)
-        dr["content"] = dr["body"]
-        del dr["body"]
+        dr = pd.DataFrame(duck_res, columns=['content'])
         print(">>>>>>>>>>>>>>>>>>>>>>>>>>\n", dr)
         return dr
