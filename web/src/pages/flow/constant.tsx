@@ -145,13 +145,12 @@ const initialLlmBaseValues = {
 };
 
 export const initialGenerateValues = {
-  // parameters: ModelVariableType.Precise,
-  // temperatureEnabled: true,
   ...initialLlmBaseValues,
   prompt: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
-  {cluster_content}
+  {input}
 The above is the content you need to summarize.`,
   cite: true,
+  parameters: [],
 };
 
 export const initialRewriteQuestionValues = {

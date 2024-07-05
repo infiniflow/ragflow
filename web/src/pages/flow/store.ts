@@ -189,7 +189,17 @@ const useGraphStore = create<RFState>()(
         set({
           nodes: get().nodes.map((node) => {
             if (node.id === nodeId) {
-              node.data = { ...node.data, form: values };
+              // node.data = {
+              //   ...node.data,
+              //   form: { ...node.data.form, ...values },
+              // };
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  form: { ...node.data.form, ...values },
+                },
+              } as any;
             }
 
             return node;
