@@ -1,0 +1,103 @@
+{
+  "components": {
+            "begin": {
+                "obj":{
+                    "component_name": "Begin",
+                    "params": {
+                      "prologue": "Hi there!"
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": []
+            },
+            "answer:0": {
+                "obj": {
+                    "component_name": "Answer",
+                    "params": {}
+                },
+                "downstream": ["retrieval:0"],
+                "upstream": ["begin"]
+            },
+            "retrieval:0": {
+                "obj": {
+                    "component_name": "Retrieval",
+                    "params": {
+                      "similarity_threshold": 0.2,
+                      "keywords_similarity_weight": 0.3,
+                      "top_n": 6,
+                      "top_k": 1024,
+                      "rerank_id": "BAAI/bge-reranker-v2-m3",
+                      "kb_ids": ["21ca4e6a2c8911ef8b1e0242ac120006"],
+                      "empty_response": "Sorry, knowledge base has noting related information."
+                    }
+                },
+                "downstream": ["relevant:0"],
+                "upstream": ["answer:0"]
+            },
+            "relevant:0": {
+                "obj": {
+                    "component_name": "Relevant",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "temperature": 0.02,
+                      "yes": "generate:0",
+                      "no": "keyword:0"
+                    }
+                },
+                "downstream": ["keyword:0", "generate:0"],
+                "upstream": ["retrieval:0"]
+            },
+            "generate:0": {
+                "obj": {
+                    "component_name": "Generate",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "prompt": "You are an intelligent assistant. Please answer the question based on content of knowledge base. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\". Answers need to consider chat history.\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
+                      "temperature": 0.2
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": ["relevant:0"]
+            },
+            "keyword:0": {
+                "obj": {
+                    "component_name": "KeywordExtract",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "prompt": "- Role: You're a question analyzer.\n    - Requirements:\n     - Summarize user's question, and give top %s important keyword/phrase.\n    - Use comma as a delimiter to separate keywords/phrases.\n    - Answer format: (in language of user's question)\n    - keyword: ",
+                      "temperature": 0.2,
+                      "top_n": 1
+                    }
+                },
+                "downstream": ["baidu:0"],
+                "upstream": ["relevant:0"]
+            },
+            "baidu:0": {
+                "obj":{
+                    "component_name": "Baidu",
+                    "params": {
+                      "top_n": 10
+                    }
+                },
+                "downstream": ["generate:1"],
+                "upstream": ["keyword:0"]
+            },
+            "generate:1": {
+                "obj": {
+                    "component_name": "Generate",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "prompt": "You are an intelligent assistant. Please answer the question based on content searched from Baidu. When the answer from a Baidu search is incomplete, you need to output the URL link of the corresponding content as well. When all the content searched from Baidu is irrelevant to the question, your answer must include the sentence, \"The answer you are looking for is not found in the Baidu search!\". Answers need to consider chat history.\n       The content of Baidu search is as follows:\n    {input}\n     The above is the content of Baidu search.",
+                      "temperature": 0.2
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": ["baidu:0"]
+            }
+  },
+  "history": [],
+  "path": [],
+  "messages": [],
+  "reference": {},
+  "answer": []
+}
