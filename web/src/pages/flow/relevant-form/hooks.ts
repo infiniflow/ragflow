@@ -1,3 +1,4 @@
+import pick from 'lodash/pick';
 import { useCallback, useEffect } from 'react';
 import { Edge } from 'reactflow';
 import { IOperatorForm } from '../interface';
@@ -30,6 +31,14 @@ const getTargetOfEdge = (edges: Edge[], sourceHandle: string) =>
  */
 export const useWatchConnectionChanges = ({ nodeId, form }: IOperatorForm) => {
   const edges = useGraphStore((state) => state.edges);
+  const getNode = useGraphStore((state) => state.getNode);
+  const node = getNode(nodeId);
+
+  const watchFormChanges = useCallback(() => {
+    if (node) {
+      form?.setFieldsValue(pick(node, ['yes', 'no']));
+    }
+  }, [node, form]);
 
   const watchConnectionChanges = useCallback(() => {
     const edgeList = edges.filter((x) => x.source === nodeId);
@@ -39,6 +48,6 @@ export const useWatchConnectionChanges = ({ nodeId, form }: IOperatorForm) => {
   }, [edges, nodeId, form]);
 
   useEffect(() => {
-    watchConnectionChanges();
-  }, [watchConnectionChanges]);
+    watchFormChanges();
+  }, [watchFormChanges]);
 };

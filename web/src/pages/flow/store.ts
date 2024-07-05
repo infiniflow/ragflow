@@ -38,6 +38,7 @@ export type RFState = {
   getNode: (id?: string | null) => Node<NodeData> | undefined;
   addEdge: (connection: Connection) => void;
   getEdge: (id: string) => Edge | undefined;
+  updateFormDataOnConnect: (connection: Connection) => void;
   deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
   duplicateNode: (id: string) => void;
   deleteEdge: () => void;
@@ -71,10 +72,15 @@ const useGraphStore = create<RFState>()(
         });
       },
       onConnect: (connection: Connection) => {
+        const {
+          deletePreviousEdgeOfClassificationNode,
+          updateFormDataOnConnect,
+        } = get();
         set({
           edges: addEdge(connection, get().edges),
         });
-        get().deletePreviousEdgeOfClassificationNode(connection);
+        deletePreviousEdgeOfClassificationNode(connection);
+        updateFormDataOnConnect(connection);
       },
       onSelectionChange: ({ nodes, edges }: OnSelectionChangeParams) => {
         set({
@@ -106,9 +112,16 @@ const useGraphStore = create<RFState>()(
       getEdge: (id: string) => {
         return get().edges.find((x) => x.id === id);
       },
+      updateFormDataOnConnect: (connection: Connection) => {
+        const { getOperatorTypeFromId, updateNodeForm } = get();
+        const { source, target, sourceHandle } = connection;
+        if (source && getOperatorTypeFromId(source) === Operator.Relevant) {
+          updateNodeForm(source, { [sourceHandle as string]: target });
+        }
+      },
       deletePreviousEdgeOfClassificationNode: (connection: Connection) => {
         // Delete the edge on the classification node or relevant node anchor when the anchor is connected to other nodes
-        const { edges, getOperatorTypeFromId } = get();
+        const { edges, getOperatorTypeFromId, deleteEdgeById } = get();
         // the node containing the anchor
         const anchoredNodes = [Operator.Categorize, Operator.Relevant];
         if (
@@ -123,9 +136,7 @@ const useGraphStore = create<RFState>()(
               x.target !== connection.target,
           );
           if (previousEdge) {
-            set({
-              edges: edges.filter((edge) => edge !== previousEdge),
-            });
+            deleteEdgeById(previousEdge.id);
           }
         }
       },
@@ -155,7 +166,14 @@ const useGraphStore = create<RFState>()(
         });
       },
       deleteEdgeById: (id: string) => {
-        const { edges } = get();
+        const { edges, updateNodeForm } = get();
+        const currentEdge = edges.find((x) => x.id === id);
+        if (currentEdge) {
+          // After deleting the edge, set the corresponding field in the node's form field to undefined
+          updateNodeForm(currentEdge.source, {
+            [currentEdge.sourceHandle as string]: undefined,
+          });
+        }
         set({
           edges: edges.filter((edge) => edge.id !== id),
         });
