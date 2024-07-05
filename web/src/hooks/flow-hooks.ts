@@ -111,7 +111,12 @@ export const useSetFlow = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: ['setFlow'],
-    mutationFn: async (params: { id?: string; title?: string; dsl?: DSL }) => {
+    mutationFn: async (params: {
+      id?: string;
+      title?: string;
+      dsl?: DSL;
+      avatar?: string;
+    }) => {
       const { data } = await flowService.setCanvas(params);
       if (data.retcode === 0) {
         message.success(

@@ -1,20 +1,11 @@
-import { ReactComponent as NothingIcon } from '@/assets/svg/nothing.svg';
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { useTranslate } from '@/hooks/commonHooks';
 import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
 import { useSelectItem } from '@/hooks/logicHooks';
-import {
-  Avatar,
-  Card,
-  Flex,
-  Form,
-  Input,
-  Modal,
-  Space,
-  Typography,
-} from 'antd';
+import { Card, Flex, Form, Input, Modal, Space, Typography } from 'antd';
 import classNames from 'classnames';
 import { useEffect } from 'react';
+import GraphAvatar from './graph-avatar';
 import styles from './index.less';
 
 const { Title } = Typography;
@@ -90,11 +81,7 @@ const CreateFlowModal = ({
             onClick={handleItemClick(x.id)}
           >
             <Space size={'middle'}>
-              {x.avatar ? (
-                <Avatar size={40} icon={<NothingIcon />} src={x.avatar} />
-              ) : (
-                <NothingIcon width={40} height={30} />
-              )}
+              <GraphAvatar avatar={x.avatar}></GraphAvatar>
               <b>{x.title}</b>
             </Space>
             <p>{x.description}</p>
