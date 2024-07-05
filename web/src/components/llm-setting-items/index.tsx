@@ -51,7 +51,7 @@ const LlmSettingItems = ({ prefix, formItemLayout = {} }: IProps) => {
       <Divider></Divider>
       <Form.Item
         label={t('freedom')}
-        name="parameters"
+        name="parameter"
         tooltip={t('freedomTip')}
         {...formItemLayout}
         initialValue={ModelVariableType.Precise}

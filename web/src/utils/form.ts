@@ -20,7 +20,7 @@ export const excludeUnEnabledVariables = (
 export const removeUselessFieldsFromValues = (values: any, prefix?: string) => {
   const nextValues: any = omit(values, [
     ...Object.keys(variableEnabledFieldMap),
-    'parameters',
+    'parameter',
     ...excludeUnEnabledVariables(values, prefix),
   ]);
 

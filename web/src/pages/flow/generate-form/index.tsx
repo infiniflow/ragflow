@@ -3,9 +3,9 @@ import { useTranslate } from '@/hooks/commonHooks';
 import { Form, Input, Switch } from 'antd';
 import { useSetLlmSetting } from '../hooks';
 import { IOperatorForm } from '../interface';
-import DynamicParameters from './next-dynamic-parameters';
+import DynamicParameters from './dynamic-parameters';
 
-const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
+const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   useSetLlmSetting(form);
@@ -29,7 +29,7 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
       <Form.Item
         name={['prompt']}
         label={t('prompt', { keyPrefix: 'knowledgeConfiguration' })}
-        initialValue={t('promptText', { keyPrefix: 'knowledgeConfiguration' })}
+        initialValue={t('promptText')}
         tooltip={t('promptTip', { keyPrefix: 'knowledgeConfiguration' })}
         rules={[
           {
@@ -49,7 +49,7 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
       >
         <Switch />
       </Form.Item>
-      <DynamicParameters></DynamicParameters>
+      <DynamicParameters nodeId={node?.id}></DynamicParameters>
     </Form>
   );
 };
