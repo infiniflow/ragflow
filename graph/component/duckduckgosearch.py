@@ -16,28 +16,29 @@
 import random
 from abc import ABC
 from functools import partial
+from duckduckgosearch import DDGS
 import pandas as pd
-import requests
-import re
 
 from graph.component.base import ComponentBase, ComponentParamBase
 
 
-class BaiduParam(ComponentParamBase):
+class DuckDuckGoSearchParam(ComponentParamBase):
     """
-    Define the Baidu component parameters.
+    Define the DuckDuckGoSearch component parameters.
     """
 
     def __init__(self):
         super().__init__()
         self.top_n = 10
+        self.channel = "text"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
+        self.check_valid_value(self.channel, "Web Search or News", ["text", "news"])
 
 
-class Baidu(ComponentBase, ABC):
-    component_name = "Baidu"
+class DuckDuckGoSearch(ComponentBase, ABC):
+    component_name = "DuckDuckGoSearch"
 
     def _run(self, history, **kwargs):
         ans = self.get_input()
@@ -45,18 +46,17 @@ class Baidu(ComponentBase, ABC):
         if not ans:
             return Baidu.be_output(self._param.no)
 
-        url = 'https://www.baidu.com/s?wd=' + ans + '&rn=' + str(self._param.top_n)
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36'}
-        response = requests.get(url=url, headers=headers)
+        if self.channel == "text":
+            with DDGS() as ddgs:
+                # {'title': '', 'href': '', 'body': ''}
+                duck_res = ['<a href="' + i["href"] + '">' + i["title"] + '</a>    ' + i["body"] for i in
+                            ddgs.text(ans, max_results=self._param.top_n)]
+        elif self.channel == "news":
+            with DDGS() as ddgs:
+                # {'date': '', 'title': '', 'body': '', 'url': '', 'image': '', 'source': ''}
+                duck_res = ['<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"] for i in
+                            ddgs.news(ans, max_results=self._param.top_n)]
 
-        url_res = re.findall(r"'url': \\\"(.*?)\\\"}", response.text)
-        title_res = re.findall(r"'title': \\\"(.*?)\\\",\\n", response.text)
-        body_res = re.findall(r"\"contentText\":\"(.*?)\"", response.text)
-        baidu_res = [re.sub('<em>|</em>', '', '<a href="' + url + '">' + title + '</a>    ' + body) for url, title, body
-                     in zip(url_res, title_res, body_res)]
-        del body_res, url_res, title_res
-
-        br = pd.DataFrame(baidu_res, columns=['content'])
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>\n", br)
-        return br
+        dr = pd.DataFrame(duck_res, columns=['content'])
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>\n", dr)
+        return dr
