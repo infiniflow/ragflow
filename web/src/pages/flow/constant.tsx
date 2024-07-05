@@ -1,3 +1,6 @@
+import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
+import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
+import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { variableEnabledFieldMap } from '@/constants/chat';
 import {
   BranchesOutlined,
@@ -19,6 +22,9 @@ export enum Operator {
   Message = 'Message',
   Relevant = 'Relevant',
   RewriteQuestion = 'RewriteQuestion',
+  KeywordExtract = 'KeywordExtract',
+  Baidu = 'Baidu',
+  DuckDuckGo = 'DuckDuckGo',
 }
 
 export const operatorIconMap = {
@@ -30,6 +36,9 @@ export const operatorIconMap = {
   [Operator.Message]: MessageOutlined,
   [Operator.Relevant]: BranchesOutlined,
   [Operator.RewriteQuestion]: FormOutlined,
+  [Operator.KeywordExtract]: KeywordIcon,
+  [Operator.DuckDuckGo]: DuckIcon,
+  [Operator.Baidu]: BaiduIcon,
 };
 
 export const operatorMap = {
@@ -116,6 +125,18 @@ export const componentMenuList = [
     name: Operator.RewriteQuestion,
     description: operatorMap[Operator.RewriteQuestion].description,
   },
+  // {
+  //   name: Operator.KeywordExtract,
+  //   description: operatorMap[Operator.Message].description,
+  // },
+  // {
+  //   name: Operator.DuckDuckGo,
+  //   description: operatorMap[Operator.Relevant].description,
+  // },
+  // {
+  //   name: Operator.Baidu,
+  //   description: operatorMap[Operator.RewriteQuestion].description,
+  // },
 ];
 
 export const initialRetrievalValues = {
@@ -200,11 +221,21 @@ export const CategorizeAnchorPointPositions = [
 // key is the source of the edge, value is the target of the edge
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
-  [Operator.Begin]: [],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize, Operator.Answer],
-  [Operator.Answer]: [Operator.Begin, Operator.Answer, Operator.Message],
-  [Operator.Retrieval]: [Operator.Begin, Operator.Relevant],
-  [Operator.Generate]: [Operator.Begin],
+  [Operator.Begin]: [Operator.Relevant],
+  [Operator.Categorize]: [
+    Operator.Begin,
+    Operator.Categorize,
+    Operator.Answer,
+    Operator.Relevant,
+  ],
+  [Operator.Answer]: [
+    Operator.Begin,
+    Operator.Answer,
+    Operator.Message,
+    Operator.Relevant,
+  ],
+  [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Generate]: [Operator.Begin, Operator.Relevant],
   [Operator.Message]: [
     Operator.Begin,
     Operator.Message,
@@ -212,14 +243,16 @@ export const RestrictedUpstreamMap = {
     Operator.Retrieval,
     Operator.RewriteQuestion,
     Operator.Categorize,
+    Operator.Relevant,
   ],
-  [Operator.Relevant]: [Operator.Begin, Operator.Answer],
+  [Operator.Relevant]: [Operator.Begin, Operator.Answer, Operator.Relevant],
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
     Operator.Generate,
     Operator.RewriteQuestion,
     Operator.Categorize,
+    Operator.Relevant,
   ],
 };
 
