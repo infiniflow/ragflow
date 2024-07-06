@@ -142,7 +142,9 @@ def add_llm():
     msg = ""
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
-            key=None, model_name=llm["llm_name"], base_url=llm["api_base"])
+            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock"] else None,
+            model_name=llm["llm_name"], 
+            base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
             if len(arr[0]) == 0 or tc == 0:
@@ -151,7 +153,7 @@ def add_llm():
             msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
-            key=llm['api_key'] if factory == "VolcEngine" else None,
+            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock"] else None,
             model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
