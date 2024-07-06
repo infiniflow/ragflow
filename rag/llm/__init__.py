@@ -31,7 +31,8 @@ EmbeddingModel = {
     "BaiChuan": BaiChuanEmbed,
     "Jina": JinaEmbed,
     "BAAI": DefaultEmbedding,
-    "Mistral": MistralEmbed
+    "Mistral": MistralEmbed,
+    "Bedrock": BedrockEmbed
 }
 
 
@@ -58,7 +59,8 @@ ChatModel = {
     "VolcEngine": VolcEngineChat,
     "BaiChuan": BaiChuanChat,
     "MiniMax": MiniMaxChat,
-    "Mistral": MistralChat
+    "Mistral": MistralChat,
+    "Bedrock": BedrockChat
 }
 
 
