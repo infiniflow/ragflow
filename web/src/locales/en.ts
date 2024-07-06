@@ -573,9 +573,8 @@ The above is the content you need to summarize.`,
       relevantDescription: `This component is used to judge if the output of upstream is relevent to user's latest question. 'Yes' represents that they're relevant. 'No' represents they're irrelevant.`,
       rewriteQuestionDescription: `This component is used to refine user's quesion. Typically, when a user's original question can't retrieve relevant information from knowledge base, this component help you change the question into a proper one which might be more consistant with the expressions in knowledge base. Only 'Retrieval' can be its downstreams.`,
       messageDescription:
-        'This component is used to send user static information.',
-      keywordDescription:
-        'This component is used to send user static information.',
+        'This component is used to send user static information. You can prepare several messages which will be chosen randomly.',
+      keywordDescription: `This component is used to extract keywords from user's question. Top N specifies the number of keywords you need to extract.`,
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
         {input}
   The above is the content you need to summarize.`,

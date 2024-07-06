@@ -2,6 +2,7 @@ import { useTranslate } from '@/hooks/commonHooks';
 import { Card, Divider, Flex, Layout, Tooltip } from 'antd';
 import classNames from 'classnames';
 import lowerFirst from 'lodash/lowerFirst';
+import React from 'react';
 import { Operator, componentMenuList } from '../constant';
 import { useHandleDrag } from '../hooks';
 import OperatorIcon from '../operator-icon';
@@ -29,7 +30,7 @@ const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
       <Flex vertical gap={10} className={styles.siderContent}>
         {componentMenuList.map((x) => {
           return (
-            <>
+            <React.Fragment key={x.name}>
               {x.name === Operator.DuckDuckGo && (
                 <Divider
                   style={{
@@ -57,7 +58,7 @@ const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
                   </section>
                 </Flex>
               </Card>
-            </>
+            </React.Fragment>
           );
         })}
       </Flex>

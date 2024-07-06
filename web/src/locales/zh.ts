@@ -537,6 +537,27 @@ export default {
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       loop: '环',
+      createFlow: 'Create a workflow',
+      yes: 'Yes',
+      no: 'No',
+      key: 'key',
+      componentId: 'component id',
+      add: 'Add',
+      operation: 'operation',
+      beginDescription: 'This is where the flow begin',
+      answerDescription: `This component is used as an interface between bot and human. It receives input of user and display the result of the computation of the bot.`,
+      retrievalDescription: `This component is for the process of retrieving relevent information from knowledge base. So, knowledgebases should be selected. If there's nothing retrieved, the 'Empty response' will be returned.`,
+      generateDescription: `This component is used to call LLM to generate text. Be careful about the prompt setting.`,
+      categorizeDescription: `This component is used to categorize text. Please specify the name, description and examples of the category. Every single category leads to different downstream components.`,
+      relevantDescription: `This component is used to judge if the output of upstream is relevent to user's latest question. 'Yes' represents that they're relevant. 'No' represents they're irrelevant.`,
+      rewriteQuestionDescription: `This component is used to refine user's quesion. Typically, when a user's original question can't retrieve relevant information from knowledge base, this component help you change the question into a proper one which might be more consistant with the expressions in knowledge base. Only 'Retrieval' can be its downstreams.`,
+      messageDescription:
+        'This component is used to send user static information.',
+      keywordDescription:
+        'This component is used to send user static information.',
+      promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
+        {input}
+  The above is the content you need to summarize.`,
     },
     footer: {
       profile: 'All rights reserved @ React',
