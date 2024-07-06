@@ -374,3 +374,50 @@ class MistralEmbed(Base):
         res = self.client.embeddings(input=[truncate(text, 8196)],
                                             model=self.model_name)
         return np.array(res.data[0].embedding), res.usage.total_tokens
+
+
+class BedrockEmbed(Base):
+    def __init__(self, key, model_name,
+                 **kwargs):
+        import boto3
+        self.bedrock_ak = eval(key).get('bedrock_ak', '')
+        self.bedrock_sk = eval(key).get('bedrock_sk', '')
+        self.bedrock_region = eval(key).get('bedrock_region', '')
+        self.model_name = model_name
+        self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
+                                   aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+
+    def encode(self, texts: list, batch_size=32):
+        texts = [truncate(t, 8196) for t in texts]
+        embeddings = []
+        total_tokens = 0
+        for text in texts:
+            if self.model_name.split('.')[0] == 'amazon':
+                body = {"inputText": text}
+            elif self.model_name.split('.')[0] == 'cohere':
+                body = {"texts": [text], "input_type": 'search_document'}
+
+            response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
+            model_response = json.loads(response["body"].read())
+            embeddings.extend([model_response["embedding"]])
+            total_tokens += len(text)
+
+        return np.array(embeddings), total_tokens
+
+    def encode_queries(self, text):
+
+        texts = truncate(text, 8196)
+        embeddings = []
+        total_tokens = 0
+        if self.model_name.split('.')[0] == 'amazon':
+            body = {"inputText": texts}
+        elif self.model_name.split('.')[0] == 'cohere':
+            body = {"texts": [texts], "input_type": 'search_query'}
+
+        response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
+        model_response = json.loads(response["body"].read())
+        embeddings.extend([model_response["embedding"]])
+        total_tokens = len(text)
+
+        return np.array(embeddings), total_tokens
+
