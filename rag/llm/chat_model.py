@@ -567,13 +567,9 @@ class BedrockChat(Base):
                 messages=history,
                 inferenceConfig=gen_conf
             )
-
             # Extract and print the response text.
             ans = response["output"]["message"]["content"][0]["text"]
-            if response.choices[0].finish_reason == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-            return ans, response.usage.total_tokens
+            return ans, num_tokens_from_string(ans)
 
         except (ClientError, Exception) as e:
             return f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}", 0
@@ -598,18 +594,13 @@ class BedrockChat(Base):
                     messages=history,
                     inferenceConfig=gen_conf
                 )
-
                 ans = response["output"]["message"]["content"][0]["text"]
-                if response.choices[0].finish_reason == "length":
-                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-                return ans, response.usage.total_tokens
+                return ans, num_tokens_from_string(ans)
 
             except (ClientError, Exception) as e:
                 return f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}", 0
 
         ans = ""
-        tk_count = 0
         try:
             # Send the message to the model, using a basic inference configuration.
             streaming_response = self.client.converse_stream(
@@ -622,13 +613,9 @@ class BedrockChat(Base):
             for resp in streaming_response["stream"]:
                 if "contentBlockDelta" in resp:
                     ans += resp["contentBlockDelta"]["delta"]["text"]
-                    tk_count += len(resp["contentBlockDelta"]["delta"]["text"])
-                    if resp.choices[0].finish_reason == "length":
-                        ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                            [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
                     yield ans
-
+            
         except (ClientError, Exception) as e:
             yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
 
-        yield tk_count
+        yield num_tokens_from_string(ans)
