@@ -70,7 +70,7 @@ def load_model(model_dir, nm):
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     options.intra_op_num_threads = 2
     options.inter_op_num_threads = 2
-    if False and ort.get_device() == "GPU":
+    if ort.get_device() == "GPU":
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
