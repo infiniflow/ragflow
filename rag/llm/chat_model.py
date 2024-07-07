@@ -567,6 +567,7 @@ class BedrockChat(Base):
                 messages=history,
                 inferenceConfig=gen_conf
             )
+            
             # Extract and print the response text.
             ans = response["output"]["message"]["content"][0]["text"]
             return ans, num_tokens_from_string(ans)
