@@ -1,6 +1,6 @@
 import { useTranslate } from '@/hooks/commonHooks';
 import { CloseOutlined } from '@ant-design/icons';
-import { Button, Card, Form, Input, Select, Typography } from 'antd';
+import { Button, Card, Form, Input, Select } from 'antd';
 import { useUpdateNodeInternals } from 'reactflow';
 import { Operator } from '../constant';
 import {
@@ -95,13 +95,13 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
         }}
       </Form.List>
 
-      <Form.Item noStyle shouldUpdate>
+      {/* <Form.Item noStyle shouldUpdate>
         {() => (
           <Typography>
             <pre>{JSON.stringify(form.getFieldsValue(), null, 2)}</pre>
           </Typography>
         )}
-      </Form.Item>
+      </Form.Item> */}
     </>
   );
 };

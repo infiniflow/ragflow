@@ -57,6 +57,7 @@ export default {
       setting: '用戶設置',
       logout: '登出',
       fileManager: '文件管理',
+      flow: '圖',
     },
     knowledgeList: {
       welcome: '歡迎回來',
