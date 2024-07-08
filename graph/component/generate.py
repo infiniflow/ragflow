@@ -72,7 +72,10 @@ class Generate(ComponentBase):
         for para in self._param.parameters:
             cpn = self._canvas.get_component(para["component_id"])["obj"]
             _, out = cpn.output(allow_partial=False)
-            kwargs[para["key"]] = "\n - ".join(out["content"])
+            if "content" not in out.columns:
+                kwargs[para["key"]] = "Nothing"
+            else:
+                kwargs[para["key"]] = "\n - ".join(out["content"])
 
         kwargs["input"] = input
         for n, v in kwargs.items():

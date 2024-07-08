@@ -204,7 +204,8 @@ class Canvas(ABC):
             cpn = self.get_component(cpn_id)
             if not cpn["downstream"]: break
 
-            if self._find_loop(): raise OverflowError("Too much loops!")
+            loop = self._find_loop()
+            if loop: raise OverflowError(f"Too much loops: {loop}")
 
             if cpn["obj"].component_name.lower() in ["switch", "categorize", "relevant"]:
                 switch_out = cpn["obj"].output()[1].iloc[0, 0]
@@ -277,15 +278,18 @@ class Canvas(ABC):
 
         if len(path) < 2: return False
 
-        for l in range(1, len(path) // 2):
+        for l in range(2, len(path) // 2):
             pat = ",".join(path[0:l])
             path_str = ",".join(path)
             if len(pat) >= len(path_str): return False
-            path_str = path_str[len(pat):]
             loop = max_loops
-            while path_str.find(pat) >= 0 and loop >= 0:
+            while path_str.find(pat) == 0 and loop >= 0:
                 loop -= 1
-                path_str = path_str[len(pat):]
-            if loop < 0: return True
+                if len(pat)+1 >= len(path_str):
+                    return False
+                path_str = path_str[len(pat)+1:]
+            if loop < 0:
+                pat = " => ".join([p.split(":")[0] for p in path[0:l]])
+                return pat + " => " + pat
 
         return False
