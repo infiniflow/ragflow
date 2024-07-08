@@ -193,7 +193,7 @@
           "obj": {
             "component_name": "Retrieval",
             "params": {
-              "kb_ids": ["869a236818b811ef91dffa163e197198"],
+              "kb_ids": [],
               "keywords_similarity_weight": 0.3,
               "rerank_id": "BAAI/bge-reranker-v2-m3",
               "similarity_threshold": 0.2,
@@ -574,7 +574,7 @@
           {
             "data": {
               "form": {
-                "kb_ids": ["869a236818b811ef91dffa163e197198"],
+                "kb_ids": [],
                 "keywords_similarity_weight": 0.3,
                 "rerank_id": "BAAI/bge-reranker-v2-m3",
                 "similarity_threshold": 0.2,
