@@ -107,7 +107,7 @@ class Dealer:
                 if re.match(p, t):
                     tk = "#"
                     break
-            tk = re.sub(r"([\+\\-])", r"\\\1", tk)
+            #tk = re.sub(r"([\+\\-])", r"\\\1", tk)
             if tk != "#" and tk:
                 res.append(tk)
         return res

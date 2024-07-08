@@ -43,7 +43,7 @@ class CategorizeParam(GenerateParam):
     def get_prompt(self):
         cate_lines = []
         for c, desc in self.category_description.items():
-            for l in desc["examples"].split("\n"):
+            for l in desc.get("examples", "").split("\n"):
                 if not l: continue
                 cate_lines.append("Question: {}\tCategory: {}".format(l, c))
         descriptions = []
