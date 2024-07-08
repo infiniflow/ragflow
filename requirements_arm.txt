@@ -145,4 +145,6 @@ cn2an==0.5.22
 roman-numbers==1.0.2
 word2number==1.1
 markdown==3.6
+mistralai==0.4.2
+boto3==1.34.140
 duckduckgo_search==6.1.9

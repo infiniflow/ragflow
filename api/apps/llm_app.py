@@ -109,15 +109,23 @@ def set_api_key():
 def add_llm():
     req = request.json
     factory = req["llm_factory"]
-    # For VolcEngine, due to its special authentication method
-    # Assemble volc_ak, volc_sk, endpoint_id into api_key
+
     if factory == "VolcEngine":
+        # For VolcEngine, due to its special authentication method
+        # Assemble volc_ak, volc_sk, endpoint_id into api_key
         temp = list(eval(req["llm_name"]).items())[0]
         llm_name = temp[0]
         endpoint_id = temp[1]
         api_key = '{' + f'"volc_ak": "{req.get("volc_ak", "")}", ' \
                         f'"volc_sk": "{req.get("volc_sk", "")}", ' \
                         f'"ep_id": "{endpoint_id}", ' + '}'
+    elif factory == "Bedrock":
+        # For Bedrock, due to its special authentication method
+        # Assemble bedrock_ak, bedrock_sk, bedrock_region
+        llm_name = req["llm_name"]
+        api_key = '{' + f'"bedrock_ak": "{req.get("bedrock_ak", "")}", ' \
+                        f'"bedrock_sk": "{req.get("bedrock_sk", "")}", ' \
+                        f'"bedrock_region": "{req.get("bedrock_region", "")}", ' + '}'
     else:
         llm_name = req["llm_name"]
         api_key = "xxxxxxxxxxxxxxx"
@@ -134,7 +142,9 @@ def add_llm():
     msg = ""
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
-            key=None, model_name=llm["llm_name"], base_url=llm["api_base"])
+            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock"] else None,
+            model_name=llm["llm_name"], 
+            base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
             if len(arr[0]) == 0 or tc == 0:
@@ -143,7 +153,7 @@ def add_llm():
             msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
-            key=llm['api_key'] if factory == "VolcEngine" else None,
+            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock"] else None,
             model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
