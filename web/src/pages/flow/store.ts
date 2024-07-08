@@ -115,8 +115,18 @@ const useGraphStore = create<RFState>()(
       updateFormDataOnConnect: (connection: Connection) => {
         const { getOperatorTypeFromId, updateNodeForm } = get();
         const { source, target, sourceHandle } = connection;
-        if (source && getOperatorTypeFromId(source) === Operator.Relevant) {
-          updateNodeForm(source, { [sourceHandle as string]: target });
+        const operatorType = getOperatorTypeFromId(source);
+        if (source) {
+          switch (operatorType) {
+            case Operator.Relevant:
+              updateNodeForm(source, { [sourceHandle as string]: target });
+              break;
+            case Operator.Categorize:
+              // updateNodeForm(source, { [sourceHandle as string]: target });
+              break;
+            default:
+              break;
+          }
         }
       },
       deletePreviousEdgeOfClassificationNode: (connection: Connection) => {
