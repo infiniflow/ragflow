@@ -527,6 +527,7 @@ export default {
       operation: '操作',
       run: '運行',
       save: '儲存',
+      title: '標題：',
       beginDescription: '這是流程開始的地方',
       answerDescription: `該組件用作機器人與人類之間的介面。它接收使用者的輸入並顯示機器人的計算結果。`,
       retrievalDescription: `此元件用於從知識庫中檢索相關資訊。選擇知識庫。如果沒有檢索到任何內容，將傳回「空響應」。`,

@@ -11,8 +11,8 @@ const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 6 }}
-      wrapperCol={{ span: 18 }}
+      labelCol={{ span: 4 }}
+      wrapperCol={{ span: 20 }}
       onValuesChange={onValuesChange}
       autoComplete="off"
       form={form}

@@ -1,5 +1,6 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { IModalProps } from '@/interfaces/common';
-import { Drawer, Form, Input } from 'antd';
+import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
@@ -9,9 +10,12 @@ import { Operator } from '../constant';
 import GenerateForm from '../generate-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import MessageForm from '../message-form';
+import OperatorIcon from '../operator-icon';
 import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
+
+import styles from './index.less';
 
 interface IProps {
   node?: Node;
@@ -40,6 +44,7 @@ const FlowDrawer = ({
   const [form] = Form.useForm();
   const { name, handleNameBlur, handleNameChange } =
     useHandleNodeNameChange(node);
+  const { t } = useTranslate('flow');
 
   const { handleValuesChange } = useHandleFormValuesChange(node?.id);
 
@@ -52,11 +57,19 @@ const FlowDrawer = ({
   return (
     <Drawer
       title={
-        <Input
-          value={name}
-          onBlur={handleNameBlur}
-          onChange={handleNameChange}
-        ></Input>
+        <Flex gap={'middle'} align="center">
+          <OperatorIcon name={operatorName}></OperatorIcon>
+          <Flex align="center" gap={'small'} flex={1}>
+            <label htmlFor="" className={styles.title}>
+              {t('title')}
+            </label>
+            <Input
+              value={name}
+              onBlur={handleNameBlur}
+              onChange={handleNameChange}
+            ></Input>
+          </Flex>
+        </Flex>
       }
       placement="right"
       onClose={hideModal}
