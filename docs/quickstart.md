@@ -4,8 +4,6 @@ slug: /
 ---
 
 # Quick start
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 
 RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. When integrated with LLMs, it is capable of providing truthful question-answering capabilities, backed by well-founded citations from various complex formatted data.
 
@@ -18,111 +16,38 @@ This quick start guide describes a general process from:
 
 ## Prerequisites
 
-- CPU &ge; 4 cores;
-- RAM &ge; 16 GB;
-- Disk &ge; 50 GB;
-- Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1.
+- CPU >= 4 cores
+- RAM >= 16 GB
+- Disk >= 50 GB
+- Docker >= 24.0.0 & Docker Compose >= v2.26.1
 
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 ## Start up the server
 
-This section provides instructions on setting up the RAGFlow server on Linux. If you are on a different operating system, no worries. Most steps are alike.
+This section provides instructions on setting up the RAGFlow server on Linux. If you are on a different operating system, no worries. Most steps are alike. 
 
-<details>
-  <summary>1. Ensure <code>vm.max_map_count</code> &ge; 262144:</summary>
+1. Ensure `vm.max_map_count` >= 262144:
 
-   `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abmornal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation. 
-
-   RAGFlow v0.8.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
-
-<Tabs
-  defaultValue="linux"
-  values={[
-    {label: 'Linux', value: 'linux'},
-    {label: 'macOS', value: 'macos'},
-    {label: 'Windows', value: 'windows'},
-  ]}>
-  <TabItem value="linux">
-   1.1. Check the value of `vm.max_map_count`:
-
-   ```bash
-   $ sysctl vm.max_map_count
-   ```
-
-   1.2. Reset `vm.max_map_count` to a value at least 262144 if it is not.
-
-   ```bash
-   $ sudo sysctl -w vm.max_map_count=262144
-   ```
-
-   :::caution WARNING
-   This change will be reset after a system reboot. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
-   :::
-   
-   1.3. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
-
-   ```bash
-   vm.max_map_count=262144
-   ```
-  </TabItem>
-  <TabItem value="macos">
-   If you are on macOS with Docker Desktop, then you *must* use docker-machine to update `vm.max_map_count`:
-
-   ```bash
-   $ docker-machine ssh
-   $ sudo sysctl -w vm.max_map_count=262144
-   ```
-
-   :::caution WARNING
-   This change will be reset after a system reboot. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
-   :::
-  </TabItem>
-  <TabItem value="windows">
-
-   #### If you are on Windows with Docker Desktop, then you *must* use docker-machine to set `vm.max_map_count`:
-
-   ```bash
-   $ docker-machine ssh
-   $ sudo sysctl -w vm.max_map_count=262144
-   ```
-   #### If you are on Windows with Docker Desktop WSL 2 backend, then use docker-desktop to set `vm.max_map_count`:
-
-   1.1. Run the following in WSL: 
-   ```bash
-   $ wsl -d docker-desktop -u root
-   $ sysctl -w vm.max_map_count=262144
-   ```
-
-   :::caution WARNING
-   This change will be reset after you restart Docker. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
-   :::
-
-   1.2. If you do not wish to have to run those commands each time you restart Docker, you can update your `%USERPROFILE%.wslconfig` as follows to keep your change permanent and globally for all WSL distributions:
-
-   ```bash
-   [wsl2]
-   kernelCommandLine = "sysctl.vm.max_map_count=262144"
-   ```
-   *This causes all WSL2 virtual machines to have that setting assigned when they start.*
-
-   :::note
-   If you are on Windows 11 or Windows 10 version 22H2, and have installed the Microsoft Store version of WSL, you can also update the **/etc/sysctl.conf** within the docker-desktop WSL distribution to keep your change permanent:
-
-   ```bash
-   $ wsl -d docker-desktop -u root
-   $ vi /etc/sysctl.conf
-   ```
-
-   ```bash
-   # Append a line, which reads: 
-   vm.max_map_count = 262144
-   ```
-   :::
-  </TabItem>
-</Tabs>
-
-</details>
+   > To check the value of `vm.max_map_count`:
+   >
+   > ```bash
+   > $ sysctl vm.max_map_count
+   > ```
+   >
+   > Reset `vm.max_map_count` to a value at least 262144 if it is not.
+   >
+   > ```bash
+   > # In this case, we set it to 262144:
+   > $ sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
+   >
+   > ```bash
+   > vm.max_map_count=262144
+   > ```
+   > See [this guide](./guides/max_map_count.md) for instructions on permanently setting `vm.max_map_count` on an operating system other than Linux. 
 
 2. Clone the repo:
 
@@ -168,9 +93,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
-:::caution WARNING
-With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
-:::
+   > - With default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
 
 ## Configure LLMs
 
@@ -190,7 +113,7 @@ To add and configure an LLM:
 
 1. Click on your logo on the top right of the page **>** **Model Providers**:
 
-   ![add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
+   ![2 add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
    > Each RAGFlow account is able to use **text-embedding-v2** for free, a embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
 
@@ -289,4 +212,3 @@ Conversations in RAGFlow are based on a particular knowledge base or multiple kn
    ![question1](https://github.com/infiniflow/ragflow/assets/93570324/bb72dd67-b35e-4b2a-87e9-4e4edbd6e677)
 
    ![question2](https://github.com/infiniflow/ragflow/assets/93570324/7cc585ae-88d0-4aa2-817d-0370b2ad7230)
-
