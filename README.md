@@ -64,7 +64,8 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 📌 Latest Updates
 
-- 2024-07-08 [Graph](./graph/README.md) is supported.
+- 2024-07-08 Supports [Graph](./graph/README.md).
+
 - 2024-06-27 Supports Markdown and Docx in the Q&A parsing method. Supports extracting images from Docx files. Supports extracting tables from Markdown files.
 - 2024-06-14 Supports PDF in the Q&A parsing method.
 - 2024-06-06 Supports [Self-RAG](https://huggingface.co/papers/2310.11511), which is enabled by default in dialog settings.
