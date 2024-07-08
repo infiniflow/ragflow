@@ -704,13 +704,13 @@ class TestFile(TestSdk):
         created_res = ragflow.create_dataset("test_start_parsing_document_with_success")
         created_res_id = created_res["data"]["dataset_id"]
         # upload files
-        file_paths = ["test_data/test.txt"]
+        file_paths = ["test_data/lol.txt"]
         uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
         # get the doc_id
         data = uploading_res["data"][0]
         doc_id = data["id"]
         # parse file
-        res = ragflow.start_parsing(created_res_id, doc_id)
+        res = ragflow.start_parsing_document(created_res_id, doc_id)
         assert res["code"] == RetCode.SUCCESS and res["data"] is True
 
     def test_start_parsing_nonexistent_document(self):
@@ -721,7 +721,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_start_parsing_nonexistent_document")
         created_res_id = created_res["data"]["dataset_id"]
-        res = ragflow.start_parsing(created_res_id, "imagination")
+        res = ragflow.start_parsing_document(created_res_id, "imagination")
         assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This 'imagination' is not a valid document."
 
     def test_start_parsing_document_in_nonexistent_dataset(self):
@@ -739,7 +739,7 @@ class TestFile(TestSdk):
         data = uploading_res["data"][0]
         doc_id = data["id"]
         # parse
-        res = ragflow.start_parsing("imagination", doc_id)
+        res = ragflow.start_parsing_document("imagination", doc_id)
         assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This dataset 'imagination' cannot be found!"
 
     def test_start_parsing_an_empty_document(self):
@@ -756,8 +756,18 @@ class TestFile(TestSdk):
         # get the doc_id
         data = uploading_res["data"][0]
         doc_id = data["id"]
+        res = ragflow.start_parsing_document(created_res_id, doc_id)
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == f"Empty data in the document: {doc_id}"
 
-        res = ragflow.start_parsing(created_res_id, doc_id)
+    def test_start_parsing_multiple_documents(self):
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset(" test_start_parsing_multiple_documents")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        res = ragflow.start_parsing_documents(created_res_id)
         assert res["code"] == RetCode.SUCCESS and res["data"] is True
 
 # ----------------------------stop parsing-----------------------------------------------------

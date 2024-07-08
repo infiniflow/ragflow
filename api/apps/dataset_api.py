@@ -22,7 +22,6 @@ from elasticsearch_dsl import Q
 from flask import request, send_file
 from flask_login import login_required, current_user
 from httpx import HTTPError
-from minio import S3Error
 
 from api.contants import NAME_LENGTH_LIMIT
 from api.db import FileType, ParserType, FileSource, TaskStatus
@@ -33,18 +32,20 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, queue_tasks
+from api.db.services.task_service import TaskService
 from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import construct_json_result, construct_error_response
 from api.utils.api_utils import construct_result, validate_request
 from api.utils.file_utils import filename_type, thumbnail
+from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 
 MAXIMUM_OF_UPLOADING_FILES = 256
+
 
 # ------------------------------ create a dataset ---------------------------------------
 
@@ -120,6 +121,7 @@ def create_dataset():
     except Exception as e:
         return construct_error_response(e)
 
+
 # -----------------------------list datasets-------------------------------------------------------
 
 @manager.route("/", methods=["GET"])
@@ -138,6 +140,7 @@ def list_datasets():
         return construct_error_response(e)
     except HTTPError as http_err:
         return construct_json_result(http_err)
+
 
 # ---------------------------------delete a dataset ----------------------------
 
@@ -166,12 +169,14 @@ def remove_dataset(dataset_id):
 
         # delete the dataset
         if not KnowledgebaseService.delete_by_id(dataset_id):
-            return construct_json_result(code=RetCode.DATA_ERROR, message="There was an error during the dataset removal process. "
-                                                                          "Please check the status of the RAGFlow server and try the removal again.")
+            return construct_json_result(code=RetCode.DATA_ERROR,
+                                         message="There was an error during the dataset removal process. "
+                                                 "Please check the status of the RAGFlow server and try the removal again.")
         # success
         return construct_json_result(code=RetCode.SUCCESS, message=f"Remove dataset: {dataset_id} successfully")
     except Exception as e:
         return construct_error_response(e)
+
 
 # ------------------------------ get details of a dataset ----------------------------------------
 
@@ -185,6 +190,7 @@ def get_dataset(dataset_id):
         return construct_json_result(data=dataset, code=RetCode.SUCCESS)
     except Exception as e:
         return construct_json_result(e)
+
 
 # ------------------------------ update a dataset --------------------------------------------
 
@@ -213,8 +219,9 @@ def update_dataset(dataset_id):
             if name.lower() != dataset.name.lower() \
                     and len(KnowledgebaseService.query(name=name, tenant_id=current_user.id,
                                                        status=StatusEnum.VALID.value)) > 1:
-                return construct_json_result(code=RetCode.DATA_ERROR, message=f"The name: {name.lower()} is already used by other "
-                                                                              f"datasets. Please choose a different name.")
+                return construct_json_result(code=RetCode.DATA_ERROR,
+                                             message=f"The name: {name.lower()} is already used by other "
+                                                     f"datasets. Please choose a different name.")
 
         dataset_updating_data = {}
         chunk_num = req.get("chunk_num")
@@ -269,12 +276,14 @@ def update_dataset(dataset_id):
     except Exception as e:
         return construct_error_response(e)
 
+
 # --------------------------------content management ----------------------------------------------
 
 # ----------------------------upload files-----------------------------------------------------
 @manager.route("/<dataset_id>/documents/", methods=["POST"])
 @login_required
 def upload_documents(dataset_id):
+    print("WWWWWWWWWWWWWWWWWWWWWWWWwwwww", flush=True)
     # no files
     if not request.files:
         return construct_json_result(
@@ -343,6 +352,7 @@ def upload_documents(dataset_id):
                 location += "_"
 
             blob = file.read()
+
             # the content is empty, raising a warning
             if blob == b'':
                 warnings.warn(f"[WARNING]: The content of the file {filename} is empty.")
@@ -457,6 +467,7 @@ def list_documents(dataset_id):
     except Exception as e:
         return construct_error_response(e)
 
+
 # ----------------------------update: enable rename-----------------------------------------------------
 @manager.route("/<dataset_id>/documents/<document_id>", methods=["PUT"])
 @login_required
@@ -559,6 +570,7 @@ def update_document(dataset_id, document_id):
 def is_illegal_value_for_enum(value, enum_class):
     return value not in enum_class.__members__.values()
 
+
 # ----------------------------download a file-----------------------------------------------------
 @manager.route("/<dataset_id>/documents/<document_id>", methods=["GET"])
 @login_required
@@ -567,7 +579,8 @@ def download_document(dataset_id, document_id):
         # Check whether there is this dataset
         exist, _ = KnowledgebaseService.get_by_id(dataset_id)
         if not exist:
-            return construct_json_result(code=RetCode.DATA_ERROR, message=f"This dataset '{dataset_id}' cannot be found!")
+            return construct_json_result(code=RetCode.DATA_ERROR,
+                                         message=f"This dataset '{dataset_id}' cannot be found!")
 
         # Check whether there is this document
         exist, document = DocumentService.get_by_id(document_id)
@@ -595,13 +608,46 @@ def download_document(dataset_id, document_id):
     except Exception as e:
         return construct_error_response(e)
 
-# ----------------------------start parsing-----------------------------------------------------
+# ----------------------------start parsing a document-----------------------------------------------------
+def dummy(prog=None, msg=""):
+    pass
+
+def doc_chunk(binary, name, doc, tenant_id):
+    parser_id = doc["parser_id"]
+    if parser_id == "book":
+        book.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "laws":
+        laws.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "manual":
+        manual.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "naive":
+        naive.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "one":
+        one.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "paper":
+        paper.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "picture":
+        picture.chunk(name, binary=binary, tenant_id=tenant_id, lang="Chinese", callback=dummy)
+    elif parser_id == "presentation":
+        presentation.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "qa":
+        qa.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "resume":
+        resume.chunk(name, binary=binary, callback=dummy)
+    elif parser_id == "table":
+        table.chunk(name, binary=binary, callback=dummy)
+    else:
+        return False
+
+    return True
+
 @manager.route("/<dataset_id>/documents/<document_id>/status", methods=["POST"])
 @login_required
 @validate_request("status")
-def run(dataset_id, document_id):
+def parse_document(dataset_id, document_id):
     run_value = request.json["status"]
     try:
+        # valid dataset
         exist, _ = KnowledgebaseService.get_by_id(dataset_id)
         if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR,
@@ -610,6 +656,11 @@ def run(dataset_id, document_id):
         exist, _ = DocumentService.get_by_id(document_id)
         if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR, message=f"This '{document_id}' is not a valid document.")
+
+        # in case that it's null
+        tenant_id = DocumentService.get_tenant_id(document_id)
+        if not tenant_id:
+            return construct_json_result(message="Tenant not found!", code=RetCode.AUTHENTICATION_ERROR)
 
         info = {"run": run_value, "progress": 0}  # initial progress of 0 / reset the progress
 
@@ -624,11 +675,6 @@ def run(dataset_id, document_id):
 
         DocumentService.update_by_id(document_id, info)  # update information regarding it
 
-        # in case that it's null
-        tenant_id = DocumentService.get_tenant_id(document_id)
-        if not tenant_id:
-            return construct_json_result(message="Tenant not found!", code=RetCode.AUTHENTICATION_ERROR)
-
         # delete it from es
         ELASTICSEARCH.deleteByQuery(Q("match", doc_id=document_id), idxnm=search.index_name(tenant_id))
 
@@ -636,14 +682,65 @@ def run(dataset_id, document_id):
         TaskService.filter_delete([Task.doc_id == document_id])
         _, doc = DocumentService.get_by_id(document_id)
         doc = doc.to_dict()
+
         # renew
         doc["tenant_id"] = tenant_id
-        bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])  # address
-        queue_tasks(doc, bucket, name)  # as queue
+        bucket, name = File2DocumentService.get_minio_address(doc_id=document_id)  # address
+        binary = MINIO.get(bucket, name)
+        if binary:
+            if doc_chunk(binary, name, doc, tenant_id) is True:
+                return construct_json_result(data=True, code=RetCode.SUCCESS)
+            return construct_json_result(code=RetCode.DATA_ERROR, message="wrong parser id")
+        return construct_json_result(code=RetCode.DATA_ERROR, message=f"Empty data in the document: {document_id}")
+    except Exception as e:
+        return construct_error_response(e)
+
+# ----------------------------start parsing documents-----------------------------------------------------
+@manager.route("/<dataset_id>/documents/status", methods=["POST"])
+@login_required
+@validate_request("status")
+def parse_documents(dataset_id):
+    run_value = request.json["status"]
+    try:
+        exist, _ = KnowledgebaseService.get_by_id(dataset_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR,
+                                         message=f"This dataset '{dataset_id}' cannot be found!")
+        # documents inside the dataset
+        docs, total = DocumentService.list_documents_in_dataset(dataset_id, 0, -1, "create_time",
+                                                                True, "")
+        # for loop
+        for doc in docs:
+            id = doc["id"]
+
+            tenant_id = DocumentService.get_tenant_id(id)
+            if not tenant_id:
+                return construct_json_result(message="Tenant not found!", code=RetCode.AUTHENTICATION_ERROR)
+
+            info = {"run": run_value, "progress": 0}
+            if run_value == TaskStatus.RUNNING.value:
+                info["progress_msg"] = ""
+                info["chunk_num"] = 0
+                info["token_num"] = 0
+            DocumentService.update_by_id(id, info)
+
+            ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+
+            TaskService.filter_delete([Task.doc_id == id])
+            _, doc = DocumentService.get_by_id(id)
+            doc = doc.to_dict()
+
+            doc["tenant_id"] = tenant_id
+            bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
+            binary = MINIO.get(bucket, name)
+            if binary:
+                if doc_chunk(binary, name, doc, tenant_id) is False:
+                    return construct_json_result(code=RetCode.DATA_ERROR, message="wrong parser id")
 
         return construct_json_result(data=True, code=RetCode.SUCCESS)
     except Exception as e:
         return construct_error_response(e)
+
 # ----------------------------stop parsing-----------------------------------------------------
 
 # ----------------------------show the status of the file-----------------------------------------------------
@@ -661,6 +758,3 @@ def run(dataset_id, document_id):
 # ----------------------------get a specific chunk-----------------------------------------------------
 
 # ----------------------------retrieval test-----------------------------------------------------
-
-
-

@@ -144,8 +144,14 @@ class RAGFlow:
             return {"code": RetCode.SUCCESS, "data": content}
 
     # ----------------------------start parsing-----------------------------------------------------
-    def start_parsing(self, dataset_id, document_id):
+    def start_parsing_document(self, dataset_id, document_id):
         endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}/status"
+        res = requests.post(endpoint, headers=self.authorization_header, json={"status": "1"})
+
+        return res.json()
+
+    def start_parsing_documents(self, dataset_id):
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/status"
         res = requests.post(endpoint, headers=self.authorization_header, json={"status": "1"})
 
         return res.json()
