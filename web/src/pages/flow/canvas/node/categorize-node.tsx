@@ -49,15 +49,18 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
         className={styles.handle}
         id={'c'}
       ></Handle>
-      {Object.keys(categoryData).map((x, idx) => (
-        <CategorizeHandle
-          top={CategorizeAnchorPointPositions[idx].top}
-          right={CategorizeAnchorPointPositions[idx].right}
-          key={idx}
-          text={x}
-          idx={idx}
-        ></CategorizeHandle>
-      ))}
+      {Object.keys(categoryData).map((x, idx) => {
+        console.info(categoryData, id, data);
+        return (
+          <CategorizeHandle
+            top={CategorizeAnchorPointPositions[idx].top}
+            right={CategorizeAnchorPointPositions[idx].right}
+            key={idx}
+            text={x}
+            idx={idx}
+          ></CategorizeHandle>
+        );
+      })}
       <Flex vertical align="center" justify="center" gap={6}>
         <OperatorIcon
           name={data.label as Operator}

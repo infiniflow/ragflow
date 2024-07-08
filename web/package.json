@@ -33,6 +33,7 @@
     "human-id": "^4.1.1",
     "i18next": "^23.7.16",
     "i18next-browser-languagedetector": "^8.0.0",
+    "immer": "^10.1.1",
     "js-base64": "^3.7.5",
     "jsencrypt": "^3.3.2",
     "lodash": "^4.17.21",
