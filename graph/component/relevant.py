@@ -33,6 +33,8 @@ class RelevantParam(GenerateParam):
 
     def check(self):
         super().check()
+        self.check_empty(self.yes, "[Relevant] 'Yes'")
+        self.check_empty(self.no, "[Relevant] 'No'")
 
     def get_prompt(self):
         self.prompt = """

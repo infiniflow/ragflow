@@ -40,10 +40,10 @@ class RetrievalParam(ComponentParamBase):
         self.empty_response = ""
 
     def check(self):
-        self.check_decimal_float(self.similarity_threshold, "Similarity threshold")
-        self.check_decimal_float(self.keywords_similarity_weight, "Keywords similarity weight")
-        self.check_positive_number(self.top_n, "Top N")
-        self.check_empty(self.kb_ids, "Knowledge bases")
+        self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
+        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keywords similarity weight")
+        self.check_positive_number(self.top_n, "[Retrieval] Top N")
+        self.check_empty(self.kb_ids, "[Retrieval] Knowledge bases")
 
 
 class Retrieval(ComponentBase, ABC):

@@ -35,7 +35,10 @@ class CategorizeParam(GenerateParam):
 
     def check(self):
         super().check()
-        self.check_empty(self.category_description, "Category examples")
+        self.check_empty(self.category_description, "[Categorize] Category examples")
+        for k, v in self.category_description.items():
+            if not k: raise ValueError(f"[Categorize] Category name can not be empty!")
+            if not v["to"]: raise ValueError(f"[Categorize] 'To' of category {k} can not be empty!")
 
     def get_prompt(self):
         cate_lines = []
