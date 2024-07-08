@@ -34,7 +34,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abmornal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation. 
 
-   RAGFlow v0.7.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.8.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -132,7 +132,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 3. Build the pre-built Docker images and start up the server:
 
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.7.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.8.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker

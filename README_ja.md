@@ -17,8 +17,8 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.7.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.7.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.8.0-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.8.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
@@ -45,15 +45,15 @@
 
 
 ## 📌 最新情報
+- 2024-07-08 [Graph](./graph/README.md) に対応しました。.
 - 2024-06-27 Q&A解析方式はMarkdownファイルとDocxファイルをサポートしています。Docxファイルからの画像の抽出をサポートします。Markdownファイルからテーブルを抽出することをサポートします。
 - 2024-06-14 Q&A 解析メソッドは PDF ファイルをサポートしています。
 - 2024-06-06 会話設定でデフォルトでチェックされている [Self-RAG](https://huggingface.co/papers/2310.11511) をサポートします。
-- 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding)、[BGE](https://github.com/FlagOpen/FlagEmbedding) reranker を統合。
+- 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding) 、[BGE](https://github.com/FlagOpen/FlagEmbedding) reranker を統合。
 - 2024-05-28 LLM BaichuanとVolcanoArkを統合しました。
-- 2024-05-23 より良いテキスト検索のために[RAPTOR](https://arxiv.org/html/2401.18059v1)をサポート。
+- 2024-05-23 より良いテキスト検索のために [RAPTOR](https://arxiv.org/html/2401.18059v1) をサポート。
 - 2024-05-21 ストリーミング出力とテキストチャンク取得APIをサポート。
 - 2024-05-15 OpenAI GPT-4oを統合しました。
-- 2024-05-08 LLM DeepSeek-V2を統合しました。
 
 ## 🌟 主な特徴
 
@@ -136,7 +136,7 @@
    $ docker compose up -d
    ```
 
-   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_VERSION変数を見つけて、対応するバージョンに変更してください。 例えば、RAGFLOW_VERSION=v0.7.0として、上記のコマンドを実行してください。
+   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_VERSION変数を見つけて、対応するバージョンに変更してください。 例えば、RAGFLOW_VERSION=v0.8.0として、上記のコマンドを実行してください。
 
    > コアイメージのサイズは約 9 GB で、ロードに時間がかかる場合があります。
 
@@ -198,7 +198,7 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.7.0 .
+$ docker build -t infiniflow/ragflow:v0.8.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
