@@ -57,7 +57,7 @@ const IconMap = {
   VolcEngine: 'volc_engine',
   BaiChuan: 'baichuan',
   Jina: 'jina',
-  Minimax: 'ChatMinimaxAl',
+  Minimax: 'chat-minimax',
   Mistral: 'mistral',
   'Azure-Openai':'azure'
 };
