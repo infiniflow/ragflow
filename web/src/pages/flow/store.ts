@@ -18,6 +18,7 @@ import {
 } from 'reactflow';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { immer } from 'zustand/middleware/immer';
 import { Operator } from './constant';
 import { NodeData } from './interface';
 
@@ -32,7 +33,7 @@ export type RFState = {
   onConnect: OnConnect;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
-  updateNodeForm: (nodeId: string, values: any) => void;
+  updateNodeForm: (nodeId: string, values: any, path?: string[]) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
   getNode: (id?: string | null) => Node<NodeData> | undefined;
@@ -55,7 +56,7 @@ export type RFState = {
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
 const useGraphStore = create<RFState>()(
   devtools(
-    (set, get) => ({
+    immer((set, get) => ({
       nodes: [] as Node[],
       edges: [] as Edge[],
       selectedNodeIds: [] as string[],
@@ -108,6 +109,8 @@ const useGraphStore = create<RFState>()(
           edges: addEdge(connection, get().edges),
         });
         get().deletePreviousEdgeOfClassificationNode(connection);
+        //  TODO: This may not be reasonable. You need to choose between listening to changes in the form.
+        get().updateFormDataOnConnect(connection);
       },
       getEdge: (id: string) => {
         return get().edges.find((x) => x.id === id);
@@ -115,8 +118,23 @@ const useGraphStore = create<RFState>()(
       updateFormDataOnConnect: (connection: Connection) => {
         const { getOperatorTypeFromId, updateNodeForm } = get();
         const { source, target, sourceHandle } = connection;
-        if (source && getOperatorTypeFromId(source) === Operator.Relevant) {
-          updateNodeForm(source, { [sourceHandle as string]: target });
+        const operatorType = getOperatorTypeFromId(source);
+        if (source) {
+          switch (operatorType) {
+            case Operator.Relevant:
+              updateNodeForm(source, { [sourceHandle as string]: target });
+              break;
+            case Operator.Categorize:
+              if (sourceHandle)
+                updateNodeForm(source, target, [
+                  'category_description',
+                  sourceHandle,
+                  'to',
+                ]);
+              break;
+            default:
+              break;
+          }
         }
       },
       deletePreviousEdgeOfClassificationNode: (connection: Connection) => {
@@ -166,13 +184,30 @@ const useGraphStore = create<RFState>()(
         });
       },
       deleteEdgeById: (id: string) => {
-        const { edges, updateNodeForm } = get();
+        const { edges, updateNodeForm, getOperatorTypeFromId } = get();
         const currentEdge = edges.find((x) => x.id === id);
+
         if (currentEdge) {
+          const { source, sourceHandle } = currentEdge;
+          const operatorType = getOperatorTypeFromId(source);
           // After deleting the edge, set the corresponding field in the node's form field to undefined
-          updateNodeForm(currentEdge.source, {
-            [currentEdge.sourceHandle as string]: undefined,
-          });
+          switch (operatorType) {
+            case Operator.Relevant:
+              updateNodeForm(source, {
+                [sourceHandle as string]: undefined,
+              });
+              break;
+            case Operator.Categorize:
+              if (sourceHandle)
+                updateNodeForm(source, undefined, [
+                  'category_description',
+                  sourceHandle,
+                  'to',
+                ]);
+              break;
+            default:
+              break;
+          }
         }
         set({
           edges: edges.filter((edge) => edge.id !== id),
@@ -203,7 +238,7 @@ const useGraphStore = create<RFState>()(
       findNodeByName: (name: Operator) => {
         return get().nodes.find((x) => x.data.label === name);
       },
-      updateNodeForm: (nodeId: string, values: any) => {
+      updateNodeForm: (nodeId: string, values: any, path: string[] = []) => {
         set({
           nodes: get().nodes.map((node) => {
             if (node.id === nodeId) {
@@ -211,11 +246,17 @@ const useGraphStore = create<RFState>()(
               //   ...node.data,
               //   form: { ...node.data.form, ...values },
               // };
+              let nextForm: Record<string, unknown> = { ...node.data.form };
+              if (path.length === 0) {
+                nextForm = Object.assign(nextForm, values);
+              } else {
+                lodashSet(nextForm, path, values);
+              }
               return {
                 ...node,
                 data: {
                   ...node.data,
-                  form: { ...node.data.form, ...values },
+                  form: nextForm,
                 },
               } as any;
             }
@@ -247,7 +288,7 @@ const useGraphStore = create<RFState>()(
       setClickedNodeId: (id?: string) => {
         set({ clickedNodeId: id });
       },
-    }),
+    })),
     { name: 'graph' },
   ),
 );

@@ -536,7 +536,7 @@ export default {
       messagePlaceholder: '消息',
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
-      loop: '环',
+      loop: '循环上限',
       createFlow: '创建工作流',
       yes: '是',
       no: '否',
