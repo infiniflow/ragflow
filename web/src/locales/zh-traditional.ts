@@ -518,6 +518,28 @@ export default {
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       loop: '環',
+      createFlow: '创建工作流',
+      yes: '是',
+      no: '否',
+      key: 'key',
+      componentId: '組件id',
+      add: '新增',
+      operation: '操作',
+      run: '運行',
+      save: '儲存',
+      beginDescription: '這是流程開始的地方',
+      answerDescription: `該組件用作機器人與人類之間的介面。它接收使用者的輸入並顯示機器人的計算結果。`,
+      retrievalDescription: `此元件用於從知識庫中檢索相關資訊。選擇知識庫。如果沒有檢索到任何內容，將傳回「空響應」。`,
+      generateDescription: `此元件用於呼叫LLM生成文本，請注意提示的設定。`,
+      categorizeDescription: `此組件用於對文字進行分類。請指定類別的名稱、描述和範例。每個類別都指向不同的下游組件。`,
+      relevantDescription: `此元件用來判斷upstream的輸出是否與使用者最新的問題相關，『是』代表相關，『否』代表不相關。`,
+      rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。只有「檢索」可作為其下游。`,
+      messageDescription:
+        '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
+      keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
+      promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
+{input}
+以上就是你需要總結的內容。`,
     },
     footer: {
       profile: '“保留所有權利 @ react”',
