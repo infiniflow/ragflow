@@ -70,7 +70,7 @@ const CreateFlowModal = ({
           <Input />
         </Form.Item>
       </Form>
-      <Title level={5}>Create from templates</Title>
+      <Title level={5}>{t('createFromTemplates', { keyPrefix: 'flow' })}</Title>
       <Flex vertical gap={16} className={styles.templatesBox}>
         {list?.map((x) => (
           <Card

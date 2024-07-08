@@ -560,6 +560,8 @@ export default {
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
 以上就是你需要总结的内容。`,
+      createGraph: '创建图表',
+      createFromTemplates: '从模板创建',
     },
     footer: {
       profile: 'All rights reserved @ React',
