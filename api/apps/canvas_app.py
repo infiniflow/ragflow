@@ -95,13 +95,15 @@ def run():
     final_ans = {"reference": [], "content": ""}
     try:
         canvas = Canvas(cvs.dsl, current_user.id)
-        print(canvas)
         if "message" in req:
             canvas.messages.append({"role": "user", "content": req["message"]})
             canvas.add_user_input(req["message"])
         answer = canvas.run(stream=stream)
+        print(canvas)
     except Exception as e:
         return server_error_response(e)
+
+    assert answer, "Nothing. Is it over?"
 
     if stream:
         assert isinstance(answer, partial)
@@ -116,7 +118,7 @@ def run():
                     yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
 
                 canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
-                if "reference" in final_ans:
+                if final_ans.get("reference"):
                     canvas.reference.append(final_ans["reference"])
                 cvs.dsl = json.loads(str(canvas))
                 UserCanvasService.update_by_id(req["id"], cvs.to_dict())
@@ -134,7 +136,7 @@ def run():
         return resp
 
     canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
-    if "reference" in final_ans:
+    if final_ans.get("reference"):
         canvas.reference.append(final_ans["reference"])
     cvs.dsl = json.loads(str(canvas))
     UserCanvasService.update_by_id(req["id"], cvs.to_dict())
