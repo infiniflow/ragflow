@@ -254,6 +254,9 @@ export const RestrictedUpstreamMap = {
     Operator.Categorize,
     Operator.Relevant,
   ],
+  [Operator.KeywordExtract]: [Operator.Begin],
+  [Operator.Baidu]: [Operator.Begin],
+  [Operator.DuckDuckGo]: [Operator.Begin],
 };
 
 export const NodeMap = {
