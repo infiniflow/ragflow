@@ -59,7 +59,8 @@ const IconMap = {
   Jina: 'jina',
   Minimax: 'chat-minimax',
   Mistral: 'mistral',
-  'Azure-Openai':'azure'
+  'Azure-OpenAI': 'azure',
+  Bedrock: 'bedrock',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
