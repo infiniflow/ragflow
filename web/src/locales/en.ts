@@ -581,6 +581,8 @@ The above is the content you need to summarize.`,
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
         {input}
   The above is the content you need to summarize.`,
+      create: 'Create graph',
+      createFromTemplates: 'Create from templates',
     },
     footer: {
       profile: 'All rights reserved @ React',

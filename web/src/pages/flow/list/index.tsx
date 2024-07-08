@@ -4,6 +4,7 @@ import CreateFlowModal from './create-flow-modal';
 import FlowCard from './flow-card';
 import { useFetchDataOnMount, useSaveFlow } from './hooks';
 
+import { useTranslate } from '@/hooks/commonHooks';
 import styles from './index.less';
 
 const FlowList = () => {
@@ -14,6 +15,7 @@ const FlowList = () => {
     flowSettingLoading,
     onFlowOk,
   } = useSaveFlow();
+  const { t } = useTranslate('flow');
 
   const { list, loading } = useFetchDataOnMount();
 
@@ -25,7 +27,7 @@ const FlowList = () => {
           icon={<PlusOutlined />}
           onClick={showFlowSettingModal}
         >
-          create canvas
+          {t('create')}
         </Button>
       </Flex>
       <Spin spinning={loading}>

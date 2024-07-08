@@ -541,6 +541,8 @@ export default {
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}
 以上就是你需要總結的內容。`,
+      createGraph: '建立圖表',
+      createFromTemplates: '從模板創建',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
