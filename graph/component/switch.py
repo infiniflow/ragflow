@@ -44,8 +44,10 @@ class SwitchParam(ComponentParamBase):
         self.default = ""
 
     def check(self):
-        self.check_empty(self.conditions, "Switch conditions")
-        self.check_empty(self.default, "Default path")
+        self.check_empty(self.conditions, "[Switch] conditions")
+        self.check_empty(self.default, "[Switch] Default path")
+        for cond in self.conditions:
+            if not cond["to"]: raise ValueError(f"[Switch] 'To' can not be empty!")
 
     def operators(self, field, op, value):
         if op == "gt":

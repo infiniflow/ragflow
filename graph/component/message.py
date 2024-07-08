@@ -32,7 +32,7 @@ class MessageParam(ComponentParamBase):
         self.messages = []
 
     def check(self):
-        self.check_empty(self.messages, "Message")
+        self.check_empty(self.messages, "[Message]")
         return True
 
 
