@@ -6,6 +6,7 @@ import {
 } from 'reactflow';
 import useGraphStore from '../../store';
 
+import { useFetchFlow } from '@/hooks/flow-hooks';
 import { useMemo } from 'react';
 import styles from './index.less';
 
@@ -17,6 +18,8 @@ export function ButtonEdge({
   targetY,
   sourcePosition,
   targetPosition,
+  source,
+  target,
   style = {},
   markerEnd,
   selected,
@@ -32,19 +35,43 @@ export function ButtonEdge({
   });
 
   const selectedStyle = useMemo(() => {
-    return selected ? { strokeWidth: 1, stroke: '#1677ff' } : {};
+    return selected ? { strokeWidth: 2, stroke: '#1677ff' } : {};
   }, [selected]);
 
   const onEdgeClick = () => {
     deleteEdgeById(id);
   };
 
+  // highlight the nodes that the workflow passes through
+  const { data: flowDetail } = useFetchFlow();
+  const graphPath = useMemo(() => {
+    // TODO: this will be called multiple times
+    const path = flowDetail.dsl.path ?? [];
+    // The second to last
+    const previousGraphPath: string[] = path.at(-2) ?? [];
+    let graphPath: string[] = path.at(-1) ?? [];
+    // The last of the second to last article
+    const previousLatestElement = previousGraphPath.at(-1);
+    if (previousGraphPath.length > 0 && previousLatestElement) {
+      graphPath = [previousLatestElement, ...graphPath];
+    }
+    return graphPath;
+  }, [flowDetail.dsl.path]);
+
+  const highlightStyle = useMemo(() => {
+    const idx = graphPath.findIndex((x) => x === source);
+    if (idx !== -1 && graphPath[idx + 1] === target) {
+      return { strokeWidth: 2, stroke: 'red' };
+    }
+    return {};
+  }, [source, target, graphPath]);
+
   return (
     <>
       <BaseEdge
         path={edgePath}
         markerEnd={markerEnd}
-        style={{ ...style, ...selectedStyle }}
+        style={{ ...style, ...selectedStyle, ...highlightStyle }}
       />
       <EdgeLabelRenderer>
         <div
