@@ -539,7 +539,6 @@ class BedrockChat(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
-        from botocore.exceptions import ClientError
         self.bedrock_ak = eval(key).get('bedrock_ak', '')
         self.bedrock_sk = eval(key).get('bedrock_sk', '')
         self.bedrock_region = eval(key).get('bedrock_region', '')
@@ -548,6 +547,7 @@ class BedrockChat(Base):
                                    aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
 
     def chat(self, system, history, gen_conf):
+        from botocore.exceptions import ClientError
         if system:
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
@@ -576,6 +576,7 @@ class BedrockChat(Base):
             return f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}", 0
 
     def chat_streamly(self, system, history, gen_conf):
+        from botocore.exceptions import ClientError
         if system:
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
