@@ -57,8 +57,9 @@ const IconMap = {
   VolcEngine: 'volc_engine',
   BaiChuan: 'baichuan',
   Jina: 'jina',
-  MiniMax: 'minimax',
+  Minimax: 'ChatMinimaxAl',
   Mistral: 'mistral',
+  'Azure-Openai':'azure'
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
