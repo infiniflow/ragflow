@@ -53,7 +53,7 @@ const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
                   <OperatorIcon name={x.name}></OperatorIcon>
                   <section>
                     <Tooltip title={t(`${lowerFirst(x.name)}Description`)}>
-                      <b>{x.name}</b>
+                      <b>{t(lowerFirst(x.name))}</b>
                     </Tooltip>
                   </section>
                 </Flex>

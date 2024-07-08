@@ -1,6 +1,8 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import get from 'lodash/get';
+import lowerFirst from 'lodash/lowerFirst';
 import { Handle, NodeProps, Position } from 'reactflow';
 import {
   CategorizeAnchorPointPositions,
@@ -11,13 +13,12 @@ import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import CategorizeHandle from './categorize-handle';
 import NodeDropdown from './dropdown';
-
 import styles from './index.less';
 
 export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
   const categoryData = get(data, 'form.category_description') ?? {};
   const style = operatorMap[data.label as Operator];
-
+  const { t } = useTranslate('flow');
   return (
     <section
       className={classNames(styles.ragNode, {
@@ -66,7 +67,7 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
           name={data.label as Operator}
           fontSize={24}
         ></OperatorIcon>
-        <span className={styles.type}>{data.label}</span>
+        <span className={styles.type}>{t(lowerFirst(data.label))}</span>
         <NodeDropdown id={id}></NodeDropdown>
       </Flex>
       <section className={styles.bottomBox}>

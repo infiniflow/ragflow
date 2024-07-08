@@ -1,3 +1,4 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { ResponseType } from '@/interfaces/database/base';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import i18n from '@/locales/config';
@@ -45,6 +46,7 @@ export const EmptyDsl = {
 };
 
 export const useFetchFlowTemplates = (): ResponseType<IFlowTemplate[]> => {
+  const { t } = useTranslate('flow');
   const { data } = useQuery({
     queryKey: ['fetchFlowTemplates'],
     initialData: [],
@@ -53,8 +55,8 @@ export const useFetchFlowTemplates = (): ResponseType<IFlowTemplate[]> => {
       if (Array.isArray(data?.data)) {
         data.data.unshift({
           id: uuid(),
-          title: 'Blank',
-          description: 'Create from nothing',
+          title: t('blank'),
+          description: t('createFromNothing'),
           dsl: EmptyDsl,
         });
       }

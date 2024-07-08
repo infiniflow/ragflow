@@ -1,6 +1,8 @@
 import { Handle, Position } from 'reactflow';
 // import { v4 as uuid } from 'uuid';
 
+import { useTranslate } from '@/hooks/commonHooks';
+import lowerFirst from 'lodash/lowerFirst';
 import styles from './index.less';
 
 const DEFAULT_HANDLE_STYLE = {
@@ -18,6 +20,7 @@ interface IProps {
 }
 
 const CategorizeHandle = ({ top, right, text, idx }: IProps) => {
+  const { t } = useTranslate('flow');
   return (
     <Handle
       type="source"
@@ -33,7 +36,9 @@ const CategorizeHandle = ({ top, right, text, idx }: IProps) => {
         color: 'black',
       }}
     >
-      <span className={styles.categorizeAnchorPointText}>{text}</span>
+      <span className={styles.categorizeAnchorPointText}>
+        {lowerFirst(t(text))}
+      </span>
     </Handle>
   );
 };

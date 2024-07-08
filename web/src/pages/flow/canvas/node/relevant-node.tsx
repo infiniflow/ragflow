@@ -1,5 +1,7 @@
+import { useTranslate } from '@/hooks/commonHooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
+import lowerFirst from 'lodash/lowerFirst';
 import pick from 'lodash/pick';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { Operator, operatorMap } from '../../constant';
@@ -12,7 +14,7 @@ import styles from './index.less';
 
 export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
   const style = operatorMap[data.label as Operator];
-
+  const { t } = useTranslate('flow');
   return (
     <section
       className={classNames(styles.ragNode, {
@@ -52,7 +54,7 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
           className={styles.type}
           style={{ fontSize: style.fontSize ?? 14 }}
         >
-          {data.label}
+          {t(lowerFirst(data.label))}
         </span>
         <NodeDropdown id={id}></NodeDropdown>
       </Flex>

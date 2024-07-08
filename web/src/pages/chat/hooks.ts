@@ -303,14 +303,14 @@ export const useSelectDerivedConversationList = () => {
   const { conversationList, currentDialog } = chatModel;
   const { dialogId } = useGetChatSearchParams();
   const prologue = currentDialog?.prompt_config?.prologue ?? '';
-
+  const { t } = useTranslate('chat');
   const addTemporaryConversation = useCallback(() => {
     setList((pre) => {
       if (dialogId) {
         const nextList = [
           {
             id: '',
-            name: 'New conversation',
+            name: t('newConversation'),
             dialog_id: dialogId,
             message: [
               {

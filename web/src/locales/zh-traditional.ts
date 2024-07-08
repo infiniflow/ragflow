@@ -280,6 +280,7 @@ export default {
       ellipse: '省略',
     },
     chat: {
+      newConversation: '新會話',
       createAssistant: '新建助理',
       assistantSetting: '助理設置',
       promptEngine: '提示引擎',
@@ -529,6 +530,7 @@ export default {
       run: '運行',
       save: '儲存',
       title: '標題：',
+
       beginDescription: '這是流程開始的地方',
       answerDescription: `該組件用作機器人與人類之間的介面。它接收使用者的輸入並顯示機器人的計算結果。`,
       retrievalDescription: `此元件用於從知識庫中檢索相關資訊。選擇知識庫。如果沒有檢索到任何內容，將傳回「空響應」。`,
@@ -544,6 +546,16 @@ export default {
 以上就是你需要總結的內容。`,
       createGraph: '建立圖表',
       createFromTemplates: '從模板創建',
+      retrieval: '檢索',
+      generate: '產生',
+      answer: '回答',
+      categorize: '分類',
+      relevant: '相關',
+      rewriteQuestion: '重組',
+      rewrite: '重組',
+      begin: '開始',
+      blank: '空',
+      createFromNothing: '從無到有',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
