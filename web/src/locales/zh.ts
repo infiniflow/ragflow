@@ -532,7 +532,7 @@ export default {
       nameMessage: '请输入名称',
       description: '描述',
       examples: '示例',
-      to: '到',
+      to: '下一步',
       message: '消息',
       messagePlaceholder: '消息',
       messageMsg: '请输入消息或删除此字段。',
