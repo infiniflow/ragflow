@@ -27,7 +27,7 @@ const FlowList = () => {
           icon={<PlusOutlined />}
           onClick={showFlowSettingModal}
         >
-          {t('create')}
+          {t('createGraph')}
         </Button>
       </Flex>
       <Spin spinning={loading}>
