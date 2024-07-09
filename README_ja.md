@@ -45,8 +45,10 @@
 
 
 ## 📌 最新情報
-- 2024-07-08 [Graph](./graph/README.md) に対応しました。.
-- 2024-06-27 Q&A解析方式はMarkdownファイルとDocxファイルをサポートしています。Docxファイルからの画像の抽出をサポートします。Markdownファイルからテーブルを抽出することをサポートします。
+- 2024-07-08 [Graph](./graph/README.md) ベースのワークフローをサポート
+- 2024-06-27 Q&A解析方式はMarkdownファイルとDocxファイルをサポートしています。
+- 2024-06-27 Docxファイルからの画像の抽出をサポートします。
+- 2024-06-27 Markdownファイルからテーブルを抽出することをサポートします。
 - 2024-06-14 Q&A 解析メソッドは PDF ファイルをサポートしています。
 - 2024-06-06 会話設定でデフォルトでチェックされている [Self-RAG](https://huggingface.co/papers/2310.11511) をサポートします。
 - 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding) 、[BGE](https://github.com/FlagOpen/FlagEmbedding) reranker を統合。
