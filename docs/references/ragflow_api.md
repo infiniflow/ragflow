@@ -13,7 +13,7 @@ http://<host_address>/v1/api/
 
 ## Dataset URL
 ```
-http://<host_address>/v1/api/dataset
+http://<host_address>/api/v1/dataset
 ```
 
 ## Authorization
