@@ -513,7 +513,7 @@ export default {
       nameMessage: '請輸入名稱',
       description: '描述',
       examples: '範例',
-      to: '到',
+      to: '下一步',
       message: '訊息',
       messagePlaceholder: '訊息',
       messageMsg: '請輸入訊息或刪除此欄位。',
