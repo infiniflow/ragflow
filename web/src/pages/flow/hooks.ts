@@ -38,7 +38,11 @@ import {
   initialRewriteQuestionValues,
 } from './constant';
 import useGraphStore, { RFState } from './store';
-import { buildDslComponentsByGraph, receiveMessageError } from './utils';
+import {
+  buildDslComponentsByGraph,
+  receiveMessageError,
+  replaceIdWithText,
+} from './utils';
 
 const selector = (state: RFState) => ({
   nodes: state.nodes,
@@ -375,4 +379,14 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   }, [saveGraph, resetFlow, id, send, show]);
 
   return handleRun;
+};
+
+export const useReplaceIdWithText = (output: unknown) => {
+  const getNode = useGraphStore((state) => state.getNode);
+
+  const getNameById = (id?: string) => {
+    return getNode(id)?.data.name;
+  };
+
+  return replaceIdWithText(output, getNameById);
 };
