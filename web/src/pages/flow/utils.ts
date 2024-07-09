@@ -4,6 +4,7 @@ import dagre from 'dagre';
 import { humanId } from 'human-id';
 import { curry } from 'lodash';
 import pipe from 'lodash/fp/pipe';
+import isObject from 'lodash/isObject';
 import { Edge, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import { NodeMap, Operator } from './constant';
@@ -184,3 +185,26 @@ export const buildDslComponentsByGraph = (
 
 export const receiveMessageError = (res: any) =>
   res && (res?.response.status !== 200 || res?.data?.retcode !== 0);
+
+// Replace the id in the object with text
+export const replaceIdWithText = (
+  obj: Record<string, unknown> | unknown[] | unknown,
+  getNameById: (id?: string) => string | undefined,
+) => {
+  if (isObject(obj)) {
+    const ret: Record<string, unknown> | unknown[] = Array.isArray(obj)
+      ? []
+      : {};
+    Object.keys(obj).forEach((key) => {
+      const val = (obj as Record<string, unknown>)[key];
+      const text = typeof val === 'string' ? getNameById(val) : undefined;
+      (ret as Record<string, unknown>)[key] = text
+        ? text
+        : replaceIdWithText(val, getNameById);
+    });
+
+    return ret;
+  }
+
+  return obj;
+};
