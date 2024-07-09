@@ -88,7 +88,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
               ))}
 
               <Button type="dashed" onClick={handleAdd} block>
-                + Add Item
+                + {t('addItem')}
               </Button>
             </div>
           );
