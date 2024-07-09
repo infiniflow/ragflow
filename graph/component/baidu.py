@@ -57,6 +57,6 @@ class Baidu(ComponentBase, ABC):
                      in zip(url_res, title_res, body_res)]
         del body_res, url_res, title_res
 
-        br = pd.DataFrame(baidu_res, columns=['content'])
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>\n", br)
-        return br
+        print(baidu_res, ":::::::::::::::::::::::::::::::::")
+        return Baidu.be_output(baidu_res)
+
