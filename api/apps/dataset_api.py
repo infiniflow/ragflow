@@ -283,7 +283,6 @@ def update_dataset(dataset_id):
 @manager.route("/<dataset_id>/documents/", methods=["POST"])
 @login_required
 def upload_documents(dataset_id):
-    print("WWWWWWWWWWWWWWWWWWWWWWWWwwwww", flush=True)
     # no files
     if not request.files:
         return construct_json_result(
@@ -609,11 +608,12 @@ def download_document(dataset_id, document_id):
         return construct_error_response(e)
 
 # ----------------------------start parsing a document-----------------------------------------------------
+# helper method for parsing
 def dummy(prog=None, msg=""):
     pass
 
-def doc_chunk(binary, name, doc, tenant_id):
-    parser_id = doc["parser_id"]
+
+def doc_chunk(binary, name, parser_id, tenant_id):
     if parser_id == "book":
         book.chunk(name, binary=binary, callback=dummy)
     elif parser_id == "laws":
@@ -665,33 +665,33 @@ def parse_document(dataset_id, document_id):
         info = {"run": run_value, "progress": 0}  # initial progress of 0 / reset the progress
 
         if run_value != TaskStatus.RUNNING.value:
-            return construct_json_result(
-                code=RetCode.ARGUMENT_ERROR,
-                message=f"The status value should be '1', not {run_value}."
-            )
+            return construct_json_result(code=RetCode.ARGUMENT_ERROR,
+                                         message=f"The status value should be '1', not {run_value}.")
+
         info["progress_msg"] = ""
         info["chunk_num"] = 0
         info["token_num"] = 0
 
-        DocumentService.update_by_id(document_id, info)  # update information regarding it
+        DocumentService.update_by_id(document_id, info)  # update information
 
         # delete it from es
         ELASTICSEARCH.deleteByQuery(Q("match", doc_id=document_id), idxnm=search.index_name(tenant_id))
 
         # delete the tasks from the cache
-        TaskService.filter_delete([Task.doc_id == document_id])
-        _, doc = DocumentService.get_by_id(document_id)
+        _, doc = DocumentService.get_by_id(document_id)  # get doc object
         doc = doc.to_dict()
 
         # renew
-        doc["tenant_id"] = tenant_id
         bucket, name = File2DocumentService.get_minio_address(doc_id=document_id)  # address
-        binary = MINIO.get(bucket, name)
+        binary = MINIO.get(bucket, name)  # content
+        parser_id = doc["parser_id"]
         if binary:
-            if doc_chunk(binary, name, doc, tenant_id) is True:
+            if doc_chunk(binary, name, parser_id, tenant_id) is True:
                 return construct_json_result(data=True, code=RetCode.SUCCESS)
-            return construct_json_result(code=RetCode.DATA_ERROR, message="wrong parser id")
-        return construct_json_result(code=RetCode.DATA_ERROR, message=f"Empty data in the document: {document_id}")
+
+            return construct_json_result(code=RetCode.DATA_ERROR,
+                                         message=f"Parser id: {parser_id} is not supported")
+        return construct_json_result(code=RetCode.DATA_ERROR, message=f"Empty data in the document: {name}")
     except Exception as e:
         return construct_error_response(e)
 
@@ -722,20 +722,23 @@ def parse_documents(dataset_id):
                 info["progress_msg"] = ""
                 info["chunk_num"] = 0
                 info["token_num"] = 0
+
             DocumentService.update_by_id(id, info)
 
             ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
 
-            TaskService.filter_delete([Task.doc_id == id])
             _, doc = DocumentService.get_by_id(id)
             doc = doc.to_dict()
 
-            doc["tenant_id"] = tenant_id
             bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
             binary = MINIO.get(bucket, name)
+            parser_id = doc["parser_id"]
             if binary:
-                if doc_chunk(binary, name, doc, tenant_id) is False:
-                    return construct_json_result(code=RetCode.DATA_ERROR, message="wrong parser id")
+                if doc_chunk(binary, name, parser_id, tenant_id) is False:
+                    return construct_json_result(code=RetCode.DATA_ERROR,
+                                                 message=f"Parser id: {parser_id} is not supported")
+            else:
+                return construct_json_result(code=RetCode.DATA_ERROR, message=f"Empty data in the document: {name}")
 
         return construct_json_result(data=True, code=RetCode.SUCCESS)
     except Exception as e:
