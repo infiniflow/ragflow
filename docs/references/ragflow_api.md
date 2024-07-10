@@ -8,7 +8,7 @@ RAGFlow offers RESTful APIs for you to integrate its capabilities into third-par
 
 ## Base URL
 ```
-http://<host_address>/api/v1/
+http://<host_address>/v1/api/
 ```
 
 ## Dataset URL
