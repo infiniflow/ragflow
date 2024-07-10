@@ -208,3 +208,8 @@ export const replaceIdWithText = (
 
   return obj;
 };
+
+export const isEdgeEqual = (previous: Edge, current: Edge) =>
+  previous.source === current.source &&
+  previous.target === current.target &&
+  previous.sourceHandle === current.sourceHandle;

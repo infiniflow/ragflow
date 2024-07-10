@@ -10,7 +10,7 @@ import React, {
   useEffect,
   useState,
 } from 'react';
-import { Connection, Node, Position, ReactFlowInstance } from 'reactflow';
+import { Connection, Edge, Node, Position, ReactFlowInstance } from 'reactflow';
 // import { shallow } from 'zustand/shallow';
 import { variableEnabledFieldMap } from '@/constants/chat';
 import {
@@ -25,6 +25,7 @@ import { FormInstance, message } from 'antd';
 import { humanId } from 'human-id';
 import trim from 'lodash/trim';
 import { useParams } from 'umi';
+import { v4 as uuid } from 'uuid';
 import {
   NodeMap,
   Operator,
@@ -37,6 +38,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
 } from './constant';
+import { ICategorizeForm } from './interface';
 import useGraphStore, { RFState } from './store';
 import {
   buildDslComponentsByGraph,
@@ -389,4 +391,57 @@ export const useReplaceIdWithText = (output: unknown) => {
   };
 
   return replaceIdWithText(output, getNameById);
+};
+
+/**
+ *  monitor changes in the data.form field of the categorize and relevant operators
+ *  and then synchronize them to the edge
+ */
+export const useWatchNodeFormDataChange = () => {
+  const { getNode, nodes, setEdgesByNodeId } = useGraphStore((state) => state);
+
+  const buildCategorizeEdgesByFormData = useCallback(
+    (nodeId: string, form: ICategorizeForm) => {
+      // add
+      // delete
+      // edit
+      const categoryDescription = form.category_description;
+      const downstreamEdges = Object.keys(categoryDescription).reduce<Edge[]>(
+        (pre, sourceHandle) => {
+          const target = categoryDescription[sourceHandle]?.to;
+          if (target) {
+            pre.push({
+              id: uuid(),
+              source: nodeId,
+              target,
+              sourceHandle,
+            });
+          }
+
+          return pre;
+        },
+        [],
+      );
+
+      setEdgesByNodeId(nodeId, downstreamEdges);
+    },
+    [setEdgesByNodeId],
+  );
+
+  useEffect(() => {
+    nodes.forEach((node) => {
+      const currentNode = getNode(node.id);
+      const form = currentNode?.data.form;
+      const operatorType = currentNode?.data.label;
+      switch (operatorType) {
+        case Operator.Relevant:
+          break;
+        case Operator.Categorize:
+          buildCategorizeEdgesByFormData(node.id, form as ICategorizeForm);
+          break;
+        default:
+          break;
+      }
+    });
+  }, [nodes, buildCategorizeEdgesByFormData, getNode]);
 };
