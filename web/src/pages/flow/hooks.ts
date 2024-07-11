@@ -38,7 +38,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
 } from './constant';
-import { ICategorizeForm } from './interface';
+import { ICategorizeForm, IRelevantForm } from './interface';
 import useGraphStore, { RFState } from './store';
 import {
   buildDslComponentsByGraph,
@@ -432,13 +432,30 @@ export const useWatchNodeFormDataChange = () => {
     [setEdgesByNodeId],
   );
 
+  const buildRelevantEdgesByFormData = useCallback(
+    (nodeId: string, form: IRelevantForm) => {
+      const downstreamEdges = ['yes', 'no'].reduce<Edge[]>((pre, cur) => {
+        const target = form[cur as keyof IRelevantForm] as string;
+        if (target) {
+          pre.push({ id: uuid(), source: nodeId, target, sourceHandle: cur });
+        }
+
+        return pre;
+      }, []);
+
+      setEdgesByNodeId(nodeId, downstreamEdges);
+    },
+    [setEdgesByNodeId],
+  );
+
   useEffect(() => {
     nodes.forEach((node) => {
       const currentNode = getNode(node.id);
-      const form = currentNode?.data.form;
+      const form = currentNode?.data.form ?? {};
       const operatorType = currentNode?.data.label;
       switch (operatorType) {
         case Operator.Relevant:
+          buildRelevantEdgesByFormData(node.id, form as IRelevantForm);
           break;
         case Operator.Categorize:
           buildCategorizeEdgesByFormData(node.id, form as ICategorizeForm);
@@ -447,5 +464,10 @@ export const useWatchNodeFormDataChange = () => {
           break;
       }
     });
-  }, [nodes, buildCategorizeEdgesByFormData, getNode]);
+  }, [
+    nodes,
+    buildCategorizeEdgesByFormData,
+    getNode,
+    buildRelevantEdgesByFormData,
+  ]);
 };

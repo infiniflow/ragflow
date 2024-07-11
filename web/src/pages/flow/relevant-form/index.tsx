@@ -2,10 +2,7 @@ import LLMSelect from '@/components/llm-select';
 import { useTranslate } from '@/hooks/commonHooks';
 import { Form, Select } from 'antd';
 import { Operator } from '../constant';
-import {
-  useBuildFormSelectOptions,
-  useHandleFormSelectChange,
-} from '../form-hooks';
+import { useBuildFormSelectOptions } from '../form-hooks';
 import { useSetLlmSetting } from '../hooks';
 import { IOperatorForm } from '../interface';
 import { useWatchConnectionChanges } from './hooks';
@@ -18,7 +15,6 @@ const RelevantForm = ({ onValuesChange, form, node }: IOperatorForm) => {
     node?.id,
   );
   useWatchConnectionChanges({ nodeId: node?.id, form });
-  const { handleSelectChange } = useHandleFormSelectChange(node?.id);
 
   return (
     <Form
@@ -40,14 +36,12 @@ const RelevantForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         <Select
           allowClear
           options={buildRelevantOptions([form?.getFieldValue('no')])}
-          onChange={handleSelectChange('yes')}
         />
       </Form.Item>
       <Form.Item label={t('no')} name={'no'}>
         <Select
           allowClear
           options={buildRelevantOptions([form?.getFieldValue('yes')])}
-          onChange={handleSelectChange('no')}
         />
       </Form.Item>
     </Form>

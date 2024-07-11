@@ -99,22 +99,24 @@ const useGraphStore = create<RFState>()(
       setEdges: (edges: Edge[]) => {
         set({ edges });
       },
-      setEdgesByNodeId: (nodeId: string, currentEdges: Edge[]) => {
+      setEdgesByNodeId: (nodeId: string, currentDownstreamEdges: Edge[]) => {
         const { edges, setEdges } = get();
-        // previous edges
-        const previousEdges = edges.filter((x) => x.source === nodeId);
+        // the previous downstream edge of this node
+        const previousDownstreamEdges = edges.filter(
+          (x) => x.source === nodeId,
+        );
         const isDifferent =
-          previousEdges.length !== currentEdges.length ||
-          !previousEdges.every((x) =>
-            currentEdges.some(
+          previousDownstreamEdges.length !== currentDownstreamEdges.length ||
+          !previousDownstreamEdges.every((x) =>
+            currentDownstreamEdges.some(
               (y) =>
                 y.source === x.source &&
                 y.target === x.target &&
                 y.sourceHandle === x.sourceHandle,
             ),
           ) ||
-          !currentEdges.every((x) =>
-            previousEdges.some(
+          !currentDownstreamEdges.every((x) =>
+            previousDownstreamEdges.some(
               (y) =>
                 y.source === x.source &&
                 y.target === x.target &&
@@ -122,29 +124,26 @@ const useGraphStore = create<RFState>()(
             ),
           );
 
-        const otherIntersectionEdges = intersectionWith(
-          previousEdges,
-          currentEdges,
+        const intersectionDownstreamEdges = intersectionWith(
+          previousDownstreamEdges,
+          currentDownstreamEdges,
           isEdgeEqual,
         );
-        console.info('isDifferent:', isDifferent);
-        console.info('next intersectionEdges:', otherIntersectionEdges);
         if (isDifferent) {
           // other operator's edges
           const irrelevantEdges = edges.filter((x) => x.source !== nodeId);
           // the abandoned edges
           const selfAbandonedEdges = [];
-          // the added edges
-          const selfAddedEdges = differenceWith(
-            currentEdges,
-            otherIntersectionEdges,
+          // the added downstream edges
+          const selfAddedDownstreamEdges = differenceWith(
+            currentDownstreamEdges,
+            intersectionDownstreamEdges,
             isEdgeEqual,
           );
-          console.info('selfAddedEdges:', selfAddedEdges);
           setEdges([
             ...irrelevantEdges,
-            ...otherIntersectionEdges,
-            ...selfAddedEdges,
+            ...intersectionDownstreamEdges,
+            ...selfAddedDownstreamEdges,
           ]);
         }
       },
