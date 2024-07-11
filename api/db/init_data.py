@@ -945,35 +945,40 @@ def init_llm_factory():
             "fid": factory_infos[18]["name"],
             "llm_name": "gemma-7b-it",
             "tags": "LLM,CHAT,15k",
-            "max_tokens": 15000,
+            "max_tokens": 8192,
+
             "model_type": LLMType.CHAT.value
         },
         {
             "fid": factory_infos[18]["name"],
             "llm_name": "gemma2-9b-it",
             "tags": "LLM,CHAT,15k",
-            "max_tokens": 15000,
+            "max_tokens": 8192,
+
             "model_type": LLMType.CHAT.value
         },
         {
             "fid": factory_infos[18]["name"],
             "llm_name": "llama3-70b-8192",
             "tags": "LLM,CHAT,6k",
-            "max_tokens": 6000,
+            "max_tokens": 8192,
+
             "model_type": LLMType.CHAT.value
         },
         {
             "fid": factory_infos[18]["name"],
             "llm_name": "llama3-8b-8192",
             "tags": "LLM,CHAT,30k",
-            "max_tokens": 30000,
+            "max_tokens": 8192,
+
             "model_type": LLMType.CHAT.value
         },
         {
             "fid": factory_infos[18]["name"],
             "llm_name": "mixtral-8x7b-32768",
             "tags": "LLM,CHAT,5k",
-            "max_tokens": 5000,
+            "max_tokens": 32768,
+
             "model_type": LLMType.CHAT.value
         }
     ]

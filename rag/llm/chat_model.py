@@ -686,7 +686,7 @@ class GeminiChat(Base):
 
 
 
-class Groqchat:
+class GroqChat:
     def __init__(self, key, model_name,base_url=''):
         self.client = Groq(api_key=key)
         self.model_name = model_name
