@@ -1,15 +1,90 @@
 import { useTranslate } from '@/hooks/commonHooks';
 import { CloseOutlined } from '@ant-design/icons';
-import { Button, Card, Form, Input, Select } from 'antd';
+import { Button, Card, Form, FormListFieldData, Input, Select } from 'antd';
+import { FormInstance } from 'antd/lib';
 import { humanId } from 'human-id';
+import trim from 'lodash/trim';
+import {
+  ChangeEventHandler,
+  FocusEventHandler,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
 import { useUpdateNodeInternals } from 'reactflow';
 import { Operator } from '../constant';
 import { useBuildFormSelectOptions } from '../form-hooks';
-import { ICategorizeItem } from '../interface';
 
 interface IProps {
   nodeId?: string;
 }
+
+interface INameInputProps {
+  value?: string;
+  onChange?: (value: string) => void;
+  otherNames?: string[];
+  validate(errors: string[]): void;
+}
+
+const getOtherFieldValues = (
+  form: FormInstance,
+  field: FormListFieldData,
+  latestField: string,
+) =>
+  (form.getFieldValue(['items']) ?? [])
+    .map((x: any) => x[latestField])
+    .filter(
+      (x: string) =>
+        x !== form.getFieldValue(['items', field.name, latestField]),
+    );
+
+const NameInput = ({
+  value,
+  onChange,
+  otherNames,
+  validate,
+}: INameInputProps) => {
+  const [name, setName] = useState<string | undefined>();
+  const { t } = useTranslate('flow');
+
+  const handleNameChange: ChangeEventHandler<HTMLInputElement> = useCallback(
+    (e) => {
+      const val = e.target.value;
+      // trigger validation
+      if (otherNames?.some((x) => x === val)) {
+        validate([t('nameRepeatedMsg')]);
+      } else if (trim(val) === '') {
+        validate([t('nameRequiredMsg')]);
+      } else {
+        validate([]);
+      }
+      setName(val);
+    },
+    [otherNames, validate, t],
+  );
+
+  const handleNameBlur: FocusEventHandler<HTMLInputElement> = useCallback(
+    (e) => {
+      const val = e.target.value;
+      if (otherNames?.every((x) => x !== val) && trim(val) !== '') {
+        onChange?.(val);
+      }
+    },
+    [onChange, otherNames],
+  );
+
+  useEffect(() => {
+    setName(value);
+  }, [value]);
+
+  return (
+    <Input
+      value={name}
+      onChange={handleNameChange}
+      onBlur={handleNameBlur}
+    ></Input>
+  );
+};
 
 const DynamicCategorize = ({ nodeId }: IProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
@@ -45,11 +120,28 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                   }
                 >
                   <Form.Item
-                    label={t('name')} // TODO: repeatability check
+                    label={t('name')}
                     name={[field.name, 'name']}
-                    rules={[{ required: true, message: t('nameMessage') }]}
+                    validateTrigger={['onChange', 'onBlur']}
+                    rules={[
+                      {
+                        required: true,
+                        whitespace: true,
+                        message: t('nameMessage'),
+                      },
+                    ]}
                   >
-                    <Input />
+                    <NameInput
+                      otherNames={getOtherFieldValues(form, field, 'name')}
+                      validate={(errors: string[]) =>
+                        form.setFields([
+                          {
+                            name: ['items', field.name, 'name'],
+                            errors,
+                          },
+                        ])
+                      }
+                    ></NameInput>
                   </Form.Item>
                   <Form.Item
                     label={t('description')}
@@ -67,13 +159,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                     <Select
                       allowClear
                       options={buildCategorizeToOptions(
-                        (form.getFieldValue(['items']) ?? [])
-                          .map((x: ICategorizeItem) => x.to)
-                          .filter(
-                            (x: string) =>
-                              x !==
-                              form.getFieldValue(['items', field.name, 'to']),
-                          ),
+                        getOtherFieldValues(form, field, 'to'),
                       )}
                     />
                   </Form.Item>

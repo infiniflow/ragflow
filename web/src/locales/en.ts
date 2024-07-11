@@ -596,6 +596,8 @@ The above is the content you need to summarize.`,
       blank: 'Blank',
       createFromNothing: 'Create from nothing',
       addItem: 'Add Item',
+      nameRequiredMsg: 'Name is required',
+      nameRepeatedMsg: 'The name cannot be repeated',
     },
     footer: {
       profile: 'All rights reserved @ React',

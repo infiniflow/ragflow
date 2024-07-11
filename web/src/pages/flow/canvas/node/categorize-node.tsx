@@ -46,7 +46,6 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
           ),
           indexesInUse,
         );
-        console.info('newPositionMap:', newPositionMap);
 
         const nextPostionMap = {
           ...pick(state, intersectionKeys),

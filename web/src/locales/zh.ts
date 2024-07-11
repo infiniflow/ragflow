@@ -575,6 +575,8 @@ export default {
       blank: '空',
       createFromNothing: '从无到有',
       addItem: '新增',
+      nameRequiredMsg: '名称不能为空',
+      nameRepeatedMsg: '名称不能重复',
     },
     footer: {
       profile: 'All rights reserved @ React',
