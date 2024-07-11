@@ -32,7 +32,8 @@ EmbeddingModel = {
     "Jina": JinaEmbed,
     "BAAI": DefaultEmbedding,
     "Mistral": MistralEmbed,
-    "Bedrock": BedrockEmbed
+    "Bedrock": BedrockEmbed,
+    "Groq": Groqchat
 }
 
 
