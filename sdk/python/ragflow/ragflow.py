@@ -142,7 +142,19 @@ class RAGFlow:
             with open(file_path, "wb") as file:
                 file.write(content)
             return {"code": RetCode.SUCCESS, "data": content}
+
     # ----------------------------start parsing-----------------------------------------------------
+    def start_parsing_document(self, dataset_id, document_id):
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}/status"
+        res = requests.post(endpoint, headers=self.authorization_header)
+
+        return res.json()
+
+    def start_parsing_documents(self, dataset_id, doc_ids=None):
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/status"
+        res = requests.post(endpoint, headers=self.authorization_header, json={"doc_ids": doc_ids})
+
+        return res.json()
 
     # ----------------------------stop parsing-----------------------------------------------------
 
