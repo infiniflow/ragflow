@@ -109,7 +109,7 @@ factory_infos = [{
     "name": "Ollama",
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-        "status": "1",
+    "status": "1",
 }, {
     "name": "Moonshot",
     "logo": "",
@@ -123,8 +123,8 @@ factory_infos = [{
 }, {
     "name": "Xinference",
     "logo": "",
-    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-        "status": "1",
+    "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION,TEXT RE-RANK",
+    "status": "1",
 },{
     "name": "Youdao",
     "logo": "",
