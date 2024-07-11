@@ -618,31 +618,31 @@ def dummy(prog=None, msg=""):
     pass
 
 
-def doc_parse(binary, name, parser_id, tenant_id):
-    match parser_id:
+def doc_parse(binary, doc_name, parser_name, tenant_id):
+    match parser_name:
         case "book":
-            book.chunk(name, binary=binary, callback=dummy)
+            book.chunk(doc_name, binary=binary, callback=dummy)
         case "laws":
-            laws.chunk(name, binary=binary, callback=dummy)
+            laws.chunk(doc_name, binary=binary, callback=dummy)
         case "manual":
-            manual.chunk(name, binary=binary, callback=dummy)
+            manual.chunk(doc_name, binary=binary, callback=dummy)
         case "naive":
             # It's the mode by default, which is general in the front-end
-            naive.chunk(name, binary=binary, callback=dummy)
+            naive.chunk(doc_name, binary=binary, callback=dummy)
         case "one":
-            one.chunk(name, binary=binary, callback=dummy)
+            one.chunk(doc_name, binary=binary, callback=dummy)
         case "paper":
-            paper.chunk(name, binary=binary, callback=dummy)
+            paper.chunk(doc_name, binary=binary, callback=dummy)
         case "picture":
-            picture.chunk(name, binary=binary, tenant_id=tenant_id, lang="Chinese", callback=dummy)
+            picture.chunk(doc_name, binary=binary, tenant_id=tenant_id, lang="Chinese", callback=dummy)
         case "presentation":
-            presentation.chunk(name, binary=binary, callback=dummy)
+            presentation.chunk(doc_name, binary=binary, callback=dummy)
         case "qa":
-            qa.chunk(name, binary=binary, callback=dummy)
+            qa.chunk(doc_name, binary=binary, callback=dummy)
         case "resume":
-            resume.chunk(name, binary=binary, callback=dummy)
+            resume.chunk(doc_name, binary=binary, callback=dummy)
         case "table":
-            table.chunk(name, binary=binary, callback=dummy)
+            table.chunk(doc_name, binary=binary, callback=dummy)
         case _:
             return False
 
@@ -728,21 +728,21 @@ def get_message_during_parsing_document(id, message):
 
         ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
 
-        _, doc = DocumentService.get_by_id(id)
-        doc = doc.to_dict()
-        doc_id = doc["id"]
+        _, doc_attributes = DocumentService.get_by_id(id)
+        doc_attributes = doc_attributes.to_dict()
+        doc_id = doc_attributes["id"]
 
-        bucket, name = File2DocumentService.get_minio_address(doc_id=doc_id)
-        binary = MINIO.get(bucket, name)
-        parser_id = doc["parser_id"]
+        bucket, doc_name = File2DocumentService.get_minio_address(doc_id=doc_id)
+        binary = MINIO.get(bucket, doc_name)
+        parser_name = doc_attributes["parser_id"]
         if binary:
-            res = doc_parse(binary, name, parser_id, tenant_id)
+            res = doc_parse(binary, doc_name, parser_name, tenant_id)
             if res is False:
-                message += f"The parser id: {parser_id} of the document {doc_id} is not supported; "
+                message += f"The parser id: {parser_name} of the document {doc_id} is not supported; "
         else:
-            message += f"Empty data in the document: {name}; "
+            message += f"Empty data in the document: {doc_name}; "
         # failed in parsing
-        if doc["status"] == TaskStatus.FAIL.value:
+        if doc_attributes["status"] == TaskStatus.FAIL.value:
             message += f"Failed in parsing the document: {doc_id}; "
         return message
     except Exception as e:
