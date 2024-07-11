@@ -220,6 +220,7 @@ class Canvas(ABC):
                             prepare2run([p])
                             break
                     traceback.print_exc()
+                    break
                 continue
 
             try:
@@ -231,6 +232,7 @@ class Canvas(ABC):
                         prepare2run([p])
                         break
                 traceback.print_exc()
+                break
 
         if self.answer:
             cpn_id = self.answer[0]

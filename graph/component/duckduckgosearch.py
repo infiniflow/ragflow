@@ -57,6 +57,5 @@ class DuckDuckGoSearch(ComponentBase, ABC):
                 duck_res = ['<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"] for i in
                             ddgs.news(ans, max_results=self._param.top_n)]
 
-        dr = pd.DataFrame(duck_res, columns=['content'])
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>\n", dr)
-        return dr
+        print(duck_res, ":::::::::::::::::::::::::::::::::")
+        return DuckDuckGoSearch.be_output(duck_res)

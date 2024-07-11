@@ -175,6 +175,11 @@ factory_infos = [{
     "logo": "",
     "tags": "LLM,TEXT EMBEDDING",
     "status": "1",
+},{
+    "name": "Gemini",
+    "logo": "",
+    "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+    "status": "1",
 }
     # {
     #     "name": "文心一言",
@@ -898,7 +903,37 @@ def init_llm_factory():
             "tags": "TEXT EMBEDDING",
             "max_tokens": 2048,
             "model_type": LLMType.EMBEDDING.value
-        },
+        }, {
+            "fid": factory_infos[17]["name"],
+            "llm_name": "gemini-1.5-pro-latest",
+            "tags": "LLM,CHAT,1024K",
+            "max_tokens": 1024*1024,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[17]["name"],
+            "llm_name": "gemini-1.5-flash-latest",
+            "tags": "LLM,CHAT,1024K",
+            "max_tokens": 1024*1024,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[17]["name"],
+            "llm_name": "gemini-1.0-pro",
+            "tags": "LLM,CHAT,30K",
+            "max_tokens": 30*1024,
+            "model_type": LLMType.CHAT.value
+        }, {
+            "fid": factory_infos[17]["name"],
+            "llm_name": "gemini-1.0-pro-vision-latest",
+            "tags": "LLM,IMAGE2TEXT,12K",
+            "max_tokens": 12*1024,
+            "model_type": LLMType.IMAGE2TEXT.value
+        }, {
+            "fid": factory_infos[17]["name"],
+            "llm_name": "text-embedding-004",
+            "tags": "TEXT EMBEDDING",
+            "max_tokens": 2048,
+            "model_type": LLMType.EMBEDDING.value
+        }
     ]
     for info in factory_infos:
         try:
