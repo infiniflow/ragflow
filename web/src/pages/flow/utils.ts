@@ -225,6 +225,7 @@ export const buildNewPositionMap = (
     ).filter((x) => !indexesInUse.some((y) => y === x));
     const idx = sample(effectiveIdxes);
     if (idx !== undefined) {
+      indexesInUse.push(idx);
       pre[cur] = { ...CategorizeAnchorPointPositions[idx], idx };
     }
 

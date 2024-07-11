@@ -255,7 +255,7 @@ const useSetGraphInfo = () => {
 };
 
 export const useFetchDataOnMount = () => {
-  const { loading, data } = useFetchFlow();
+  const { loading, data, refetch } = useFetchFlow();
   const setGraphInfo = useSetGraphInfo();
 
   useEffect(() => {
@@ -265,6 +265,10 @@ export const useFetchDataOnMount = () => {
   useWatchGraphChange();
 
   useFetchLlmList();
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
 
   return { loading, flowDetail: data };
 };
