@@ -695,7 +695,261 @@ class TestFile(TestSdk):
         assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This file is empty."
 
 # ----------------------------start parsing-----------------------------------------------------
+    def test_start_parsing_document_with_success(self):
+        """
+        Test the parsing of a document with success.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_start_parsing_document_with_success")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/lol.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # parse file
+        res = ragflow.start_parsing_document(created_res_id, doc_id)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
 
+    def test_start_parsing_nonexistent_document(self):
+        """
+        Test the parsing a document which does not exist.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_start_parsing_nonexistent_document")
+        created_res_id = created_res["data"]["dataset_id"]
+        res = ragflow.start_parsing_document(created_res_id, "imagination")
+        assert res["code"] == RetCode.ARGUMENT_ERROR and res["message"] == "This document 'imagination' cannot be found!"
+
+    def test_start_parsing_document_in_nonexistent_dataset(self):
+        """
+        Test the parsing a document whose dataset is nonexistent.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_download_nonexistent_document")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # parse
+        res = ragflow.start_parsing_document("imagination", doc_id)
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This dataset 'imagination' cannot be found!"
+
+    def test_start_parsing_an_empty_document(self):
+        """
+        Test the parsing of an empty document.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_download_nonexistent_document")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/empty.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        res = ragflow.start_parsing_document(created_res_id, doc_id)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == "Empty data in the document: empty.txt; "
+
+    # ------------------------parsing multiple documents----------------------------
+    def test_start_parsing_documents_in_nonexistent_dataset(self):
+        """
+        Test the parsing documents whose dataset is nonexistent.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_download_nonexistent_document")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # parse
+        res = ragflow.start_parsing_documents("imagination")
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This dataset 'imagination' cannot be found!"
+
+    def test_start_parsing_multiple_documents(self):
+        """
+        Test the parsing documents with a success.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset(" test_start_parsing_multiple_documents")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        res = ragflow.start_parsing_documents(created_res_id)
+        assert res["code"] == RetCode.SUCCESS and res["data"] is True and res["message"] == ""
+
+    def test_start_parsing_multiple_documents_with_one_empty_file(self):
+        """
+        Test the parsing documents, one of which is empty.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset(" test_start_parsing_multiple_documents")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt", "test_data/empty.txt"]
+        ragflow.upload_local_file(created_res_id, file_paths)
+        res = ragflow.start_parsing_documents(created_res_id)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == "Empty data in the document: empty.txt; "
+
+    def test_start_parsing_multiple_specific_documents(self):
+        """
+        Test the parsing documents whose document ids are specified.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset(" test_start_parsing_multiple_documents")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"]
+        doc_ids = []
+        for d in data:
+            doc_ids.append(d["id"])
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+
+    def test_start_re_parsing_multiple_specific_documents(self):
+        """
+        Test the re-parsing documents.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset(" test_start_parsing_multiple_documents")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"]
+        doc_ids = []
+        for d in data:
+            doc_ids.append(d["id"])
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+        # re-parse
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+
+    def test_start_re_parsing_multiple_specific_documents_with_changing_parser_id(self):
+        """
+        Test the re-parsing documents after changing the parser id.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset(" test_start_parsing_multiple_documents")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"]
+        doc_ids = []
+        for d in data:
+            doc_ids.append(d["id"])
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+        # general -> laws
+        params = {
+            "template_type": "laws"
+        }
+        ragflow.update_file(created_res_id, doc_ids[0], **params)
+        # re-parse
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+
+    def test_start_re_parsing_multiple_specific_documents_with_changing_illegal_parser_id(self):
+        """
+        Test the re-parsing documents after changing an illegal parser id.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset(" test_start_parsing_multiple_documents")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"]
+        doc_ids = []
+        for d in data:
+            doc_ids.append(d["id"])
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+        # general -> illegal
+        params = {
+            "template_type": "illegal"
+        }
+        res = ragflow.update_file(created_res_id, doc_ids[0], **params)
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "Illegal value illegal for 'template_type' field."
+        # re-parse
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+
+    def test_start_parsing_multiple_specific_documents_with_changing_illegal_parser_id(self):
+        """
+        Test the parsing documents after changing an illegal parser id.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset(" test_start_parsing_multiple_documents")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"]
+        doc_ids = []
+        for d in data:
+            doc_ids.append(d["id"])
+        # general -> illegal
+        params = {
+            "template_type": "illegal"
+        }
+        res = ragflow.update_file(created_res_id, doc_ids[0], **params)
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "Illegal value illegal for 'template_type' field."
+        # re-parse
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+
+    def test_start_parsing_multiple_documents_in_the_dataset_whose_parser_id_is_illegal(self):
+        """
+        Test the parsing documents whose dataset's parser id is illegal.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_start_parsing_multiple_documents_in_the_dataset_whose_parser_id_is_illegal")
+        created_res_id = created_res["data"]["dataset_id"]
+        # update the parser id
+        params = {
+            "chunk_method": "illegal"
+        }
+        res = ragflow.update_dataset("test_start_parsing_multiple_documents_in_the_dataset_whose_parser_id_is_illegal", **params)
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "Illegal value illegal for 'chunk_method' field."
+        # upload files
+        file_paths = ["test_data/test.txt", "test_data/test1.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"]
+        doc_ids = []
+        for d in data:
+            doc_ids.append(d["id"])
+        # parse
+        res = ragflow.start_parsing_documents(created_res_id, doc_ids)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
 # ----------------------------stop parsing-----------------------------------------------------
 
 # ----------------------------show the status of the file-----------------------------------------------------
