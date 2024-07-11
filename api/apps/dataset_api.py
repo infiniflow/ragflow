@@ -233,17 +233,21 @@ def update_dataset(dataset_id):
             if chunk_num == 0:
                 dataset_updating_data["embd_id"] = req["embedding_model_id"]
             else:
-                construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document in this "
+                return construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document in this "
                                                                        "dataset, so you cannot change the embedding "
                                                                        "model.")
         # only if chunk_num is 0, the user can update the chunk_method
-        if req.get("chunk_method"):
-            if chunk_num == 0:
-                dataset_updating_data['parser_id'] = req["chunk_method"]
-            else:
+        if "chunk_method" in req:
+            type_value = req["chunk_method"]
+            if is_illegal_value_for_enum(type_value, ParserType):
+                return construct_json_result(message=f"Illegal value {type_value} for 'chunk_method' field.",
+                                             code=RetCode.DATA_ERROR)
+            if chunk_num != 0:
                 construct_json_result(code=RetCode.DATA_ERROR, message="You have already parsed the document "
                                                                        "in this dataset, so you cannot "
                                                                        "change the chunk method.")
+            dataset_updating_data["parser_id"] = req["template_type"]
+
         # convert the photo parameter to avatar
         if req.get("photo"):
             dataset_updating_data["avatar"] = req["photo"]
@@ -623,6 +627,7 @@ def doc_parse(binary, name, parser_id, tenant_id):
         case "manual":
             manual.chunk(name, binary=binary, callback=dummy)
         case "naive":
+            # It's the mode by default, which is general in the front-end
             naive.chunk(name, binary=binary, callback=dummy)
         case "one":
             one.chunk(name, binary=binary, callback=dummy)
@@ -653,43 +658,14 @@ def parse_document(dataset_id, document_id):
         if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR,
                                          message=f"This dataset '{dataset_id}' cannot be found!")
-        # valid document?
-        exist, _ = DocumentService.get_by_id(document_id)
-        if not exist:
-            return construct_json_result(code=RetCode.DATA_ERROR,
-                                         message=f"This '{document_id}' is not a valid document.")
+        message = ""
+        res = get_message_during_parsing_document(document_id, message)
+        if isinstance(res, str):
+            message += res
+            return construct_json_result(code=RetCode.SUCCESS, message=message)
+        else:
+            return res
 
-        # in case that it's null
-        tenant_id = DocumentService.get_tenant_id(document_id)
-        if not tenant_id:
-            return construct_json_result(message="Tenant not found!", code=RetCode.AUTHENTICATION_ERROR)
-
-        info = {"run": "1", "progress": 0}  # initial progress of 0 / reset the progress
-
-        info["progress_msg"] = ""
-        info["chunk_num"] = 0
-        info["token_num"] = 0
-
-        DocumentService.update_by_id(document_id, info)  # update information
-
-        # delete it from es
-        ELASTICSEARCH.deleteByQuery(Q("match", doc_id=document_id), idxnm=search.index_name(tenant_id))
-
-        # delete the tasks from the cache
-        _, doc = DocumentService.get_by_id(document_id)  # get doc object
-        doc = doc.to_dict()
-
-        # renew
-        bucket, name = File2DocumentService.get_minio_address(doc_id=document_id)  # address
-        binary = MINIO.get(bucket, name)  # content
-        parser_id = doc["parser_id"]
-        if binary:
-            if doc_parse(binary, name, parser_id, tenant_id) is True:
-                return construct_json_result(data=True, code=RetCode.SUCCESS)
-
-            return construct_json_result(code=RetCode.DATA_ERROR,
-                                         message=f"Parser id: {parser_id} is not supported")
-        return construct_json_result(code=RetCode.SUCCESS, message=f"Empty data in the document: {name}")
     except Exception as e:
         return construct_error_response(e)
 
@@ -709,41 +685,11 @@ def parse_documents(dataset_id):
             message = ""
             # for loop
             for id in doc_ids:
-                # Check whether there is this document
-                exist, document = DocumentService.get_by_id(id)
-                if not exist:
-                    return construct_json_result(message=f"This document '{id}' cannot be found!",
-                                                 code=RetCode.ARGUMENT_ERROR)
-
-                tenant_id = DocumentService.get_tenant_id(id)
-                if not tenant_id:
-                    return construct_json_result(message="Tenant not found!", code=RetCode.AUTHENTICATION_ERROR)
-
-                info = {"run": "1", "progress": 0}
-                info["progress_msg"] = ""
-                info["chunk_num"] = 0
-                info["token_num"] = 0
-
-                DocumentService.update_by_id(id, info)
-
-                ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
-
-                _, doc = DocumentService.get_by_id(id)
-                doc = doc.to_dict()
-                doc_id = doc["id"]
-
-                bucket, name = File2DocumentService.get_minio_address(doc_id=doc_id)
-                binary = MINIO.get(bucket, name)
-                parser_id = doc["parser_id"]
-                if binary:
-                    res = doc_parse(binary, name, parser_id, tenant_id)
-                    if res is False:
-                        message += f"The parser id: {parser_id} of the document {doc_id} is not supported; "
+                res = get_message_during_parsing_document(id, message)
+                if isinstance(res, str):
+                    message += res
                 else:
-                    message += f"Empty data in the document: {name}; "
-                # failed in parsing
-                if doc["status"] == TaskStatus.FAIL.value:
-                    message += f"Failed in parsing the document: {doc_id}; "
+                    return res
             return construct_json_result(data=True, code=RetCode.SUCCESS, message=message)
 
         # two conditions
@@ -760,6 +706,47 @@ def parse_documents(dataset_id):
         return construct_error_response(e)
 
 
+# helper method for getting message or response when parsing the document
+def get_message_during_parsing_document(id, message):
+    try:
+        # Check whether there is this document
+        exist, document = DocumentService.get_by_id(id)
+        if not exist:
+            return construct_json_result(message=f"This document '{id}' cannot be found!",
+                                         code=RetCode.ARGUMENT_ERROR)
+
+        tenant_id = DocumentService.get_tenant_id(id)
+        if not tenant_id:
+            return construct_json_result(message="Tenant not found!", code=RetCode.AUTHENTICATION_ERROR)
+
+        info = {"run": "1", "progress": 0}
+        info["progress_msg"] = ""
+        info["chunk_num"] = 0
+        info["token_num"] = 0
+
+        DocumentService.update_by_id(id, info)
+
+        ELASTICSEARCH.deleteByQuery(Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+
+        _, doc = DocumentService.get_by_id(id)
+        doc = doc.to_dict()
+        doc_id = doc["id"]
+
+        bucket, name = File2DocumentService.get_minio_address(doc_id=doc_id)
+        binary = MINIO.get(bucket, name)
+        parser_id = doc["parser_id"]
+        if binary:
+            res = doc_parse(binary, name, parser_id, tenant_id)
+            if res is False:
+                message += f"The parser id: {parser_id} of the document {doc_id} is not supported; "
+        else:
+            message += f"Empty data in the document: {name}; "
+        # failed in parsing
+        if doc["status"] == TaskStatus.FAIL.value:
+            message += f"Failed in parsing the document: {doc_id}; "
+        return message
+    except Exception as e:
+        return construct_error_response(e)
 # ----------------------------stop parsing-----------------------------------------------------
 
 # ----------------------------show the status of the file-----------------------------------------------------
