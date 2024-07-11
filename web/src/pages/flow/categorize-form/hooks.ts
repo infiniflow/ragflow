@@ -67,7 +67,6 @@ export const useHandleFormValuesChange = ({
 
   const handleValuesChange = useCallback(
     (changedValues: any, values: any) => {
-      console.info(changedValues, values);
       onValuesChange?.(changedValues, {
         ...omit(values, 'items'),
         category_description: buildCategorizeObjectFromList(values.items),
@@ -80,7 +79,6 @@ export const useHandleFormValuesChange = ({
     const items = buildCategorizeListFromObject(
       get(node, 'data.form.category_description', {}),
     );
-    console.info('effect:', items);
     form?.setFieldsValue({
       items,
     });
