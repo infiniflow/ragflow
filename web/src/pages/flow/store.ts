@@ -1,5 +1,7 @@
 import type {} from '@redux-devtools/extension';
 import { humanId } from 'human-id';
+import differenceWith from 'lodash/differenceWith';
+import intersectionWith from 'lodash/intersectionWith';
 import lodashSet from 'lodash/set';
 import {
   Connection,
@@ -21,6 +23,7 @@ import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { Operator } from './constant';
 import { NodeData } from './interface';
+import { isEdgeEqual } from './utils';
 
 export type RFState = {
   nodes: Node<NodeData>[];
@@ -33,6 +36,7 @@ export type RFState = {
   onConnect: OnConnect;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
+  setEdgesByNodeId: (nodeId: string, edges: Edge[]) => void;
   updateNodeForm: (nodeId: string, values: any, path?: string[]) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
@@ -95,6 +99,55 @@ const useGraphStore = create<RFState>()(
       setEdges: (edges: Edge[]) => {
         set({ edges });
       },
+      setEdgesByNodeId: (nodeId: string, currentDownstreamEdges: Edge[]) => {
+        const { edges, setEdges } = get();
+        // the previous downstream edge of this node
+        const previousDownstreamEdges = edges.filter(
+          (x) => x.source === nodeId,
+        );
+        const isDifferent =
+          previousDownstreamEdges.length !== currentDownstreamEdges.length ||
+          !previousDownstreamEdges.every((x) =>
+            currentDownstreamEdges.some(
+              (y) =>
+                y.source === x.source &&
+                y.target === x.target &&
+                y.sourceHandle === x.sourceHandle,
+            ),
+          ) ||
+          !currentDownstreamEdges.every((x) =>
+            previousDownstreamEdges.some(
+              (y) =>
+                y.source === x.source &&
+                y.target === x.target &&
+                y.sourceHandle === x.sourceHandle,
+            ),
+          );
+
+        const intersectionDownstreamEdges = intersectionWith(
+          previousDownstreamEdges,
+          currentDownstreamEdges,
+          isEdgeEqual,
+        );
+        if (isDifferent) {
+          // other operator's edges
+          const irrelevantEdges = edges.filter((x) => x.source !== nodeId);
+          // the abandoned edges
+          const selfAbandonedEdges = [];
+          // the added downstream edges
+          const selfAddedDownstreamEdges = differenceWith(
+            currentDownstreamEdges,
+            intersectionDownstreamEdges,
+            isEdgeEqual,
+          );
+          setEdges([
+            ...irrelevantEdges,
+            ...intersectionDownstreamEdges,
+            ...selfAddedDownstreamEdges,
+          ]);
+        }
+      },
+
       addNode: (node: Node) => {
         set({ nodes: get().nodes.concat(node) });
       },
@@ -242,10 +295,6 @@ const useGraphStore = create<RFState>()(
         set({
           nodes: get().nodes.map((node) => {
             if (node.id === nodeId) {
-              // node.data = {
-              //   ...node.data,
-              //   form: { ...node.data.form, ...values },
-              // };
               let nextForm: Record<string, unknown> = { ...node.data.form };
               if (path.length === 0) {
                 nextForm = Object.assign(nextForm, values);

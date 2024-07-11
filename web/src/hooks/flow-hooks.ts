@@ -93,6 +93,8 @@ export const useFetchFlow = (): {
   } = useQuery({
     queryKey: ['flowDetail'],
     initialData: {} as IFlow,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
     queryFn: async () => {
       const { data } = await flowService.getCanvas({}, id);
 

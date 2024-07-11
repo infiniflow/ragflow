@@ -1,12 +1,10 @@
 import { useTranslate } from '@/hooks/commonHooks';
 import { CloseOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select } from 'antd';
+import { humanId } from 'human-id';
 import { useUpdateNodeInternals } from 'reactflow';
 import { Operator } from '../constant';
-import {
-  useBuildFormSelectOptions,
-  useHandleFormSelectChange,
-} from '../form-hooks';
+import { useBuildFormSelectOptions } from '../form-hooks';
 import { ICategorizeItem } from '../interface';
 
 interface IProps {
@@ -20,7 +18,6 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
     Operator.Categorize,
     nodeId,
   );
-  const { handleSelectChange } = useHandleFormSelectChange(nodeId);
   const { t } = useTranslate('flow');
 
   return (
@@ -28,8 +25,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
       <Form.List name="items">
         {(fields, { add, remove }) => {
           const handleAdd = () => {
-            const idx = fields.length;
-            add({ name: `Categorize ${idx + 1}` });
+            add({ name: humanId() });
             if (nodeId) updateNodeInternals(nodeId);
           };
           return (
@@ -78,9 +74,6 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                               x !==
                               form.getFieldValue(['items', field.name, 'to']),
                           ),
-                      )}
-                      onChange={handleSelectChange(
-                        form.getFieldValue(['items', field.name, 'name']),
                       )}
                     />
                   </Form.Item>

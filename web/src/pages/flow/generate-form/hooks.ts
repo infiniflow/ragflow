@@ -27,11 +27,9 @@ export const useHandleOperateParameters = (nodeId: string) => {
   const { getNode, updateNodeForm } = useGraphStore((state) => state);
   const node = getNode(nodeId);
   const dataSource: IGenerateParameter[] = useMemo(
-    () => get(node, 'data.form.parameters', []),
+    () => get(node, 'data.form.parameters', []) as IGenerateParameter[],
     [node],
   );
-
-  //   const [x, setDataSource] = useState<IGenerateParameter[]>([]);
 
   const handleComponentIdChange = useCallback(
     (row: IGenerateParameter) => (value: string) => {
@@ -44,7 +42,6 @@ export const useHandleOperateParameters = (nodeId: string) => {
       });
 
       updateNodeForm(nodeId, { parameters: newData });
-      //   setDataSource(newData);
     },
     [updateNodeForm, nodeId, dataSource],
   );
@@ -53,20 +50,11 @@ export const useHandleOperateParameters = (nodeId: string) => {
     (id?: string) => () => {
       const newData = dataSource.filter((item) => item.id !== id);
       updateNodeForm(nodeId, { parameters: newData });
-      // setDataSource(newData);
     },
     [updateNodeForm, nodeId, dataSource],
   );
 
   const handleAdd = useCallback(() => {
-    // setDataSource((state) => [
-    //   ...state,
-    //   {
-    //     id: uuid(),
-    //     key: '',
-    //     component_id: undefined,
-    //   },
-    // ]);
     updateNodeForm(nodeId, {
       parameters: [
         ...dataSource,
@@ -89,7 +77,6 @@ export const useHandleOperateParameters = (nodeId: string) => {
     });
 
     updateNodeForm(nodeId, { parameters: newData });
-    // setDataSource(newData);
   };
 
   return {

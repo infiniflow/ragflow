@@ -16,6 +16,7 @@ import {
   useSelectCanvasData,
   useShowDrawer,
   useValidateConnection,
+  useWatchNodeFormDataChange,
 } from '../hooks';
 import { RagNode } from './node';
 
@@ -69,6 +70,7 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
 
   const { handleKeyUp } = useHandleKeyUp();
+  useWatchNodeFormDataChange();
 
   return (
     <div className={styles.canvasWrapper}>

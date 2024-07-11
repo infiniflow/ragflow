@@ -6,7 +6,8 @@ import {
 } from 'reactflow';
 import useGraphStore from '../../store';
 
-import { useFetchFlow } from '@/hooks/flow-hooks';
+import { IFlow } from '@/interfaces/database/flow';
+import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import styles from './index.less';
 
@@ -43,10 +44,12 @@ export function ButtonEdge({
   };
 
   // highlight the nodes that the workflow passes through
-  const { data: flowDetail } = useFetchFlow();
+  const queryClient = useQueryClient();
+  const flowDetail = queryClient.getQueryData<IFlow>(['flowDetail']);
+
   const graphPath = useMemo(() => {
     // TODO: this will be called multiple times
-    const path = flowDetail.dsl.path ?? [];
+    const path = flowDetail?.dsl.path ?? [];
     // The second to last
     const previousGraphPath: string[] = path.at(-2) ?? [];
     let graphPath: string[] = path.at(-1) ?? [];
@@ -56,7 +59,7 @@ export function ButtonEdge({
       graphPath = [previousLatestElement, ...graphPath];
     }
     return graphPath;
-  }, [flowDetail.dsl.path]);
+  }, [flowDetail?.dsl.path]);
 
   const highlightStyle = useMemo(() => {
     const idx = graphPath.findIndex((x) => x === source);
