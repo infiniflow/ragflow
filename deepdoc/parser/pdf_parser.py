@@ -999,7 +999,6 @@ class RAGFlowPdfParser:
             self.is_english = True
         else:
             self.is_english = False
-        self.is_english = False
 
         st = timer()
         for i, img in enumerate(self.page_images):
