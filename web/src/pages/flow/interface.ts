@@ -70,3 +70,5 @@ export type NodeData = {
   color: string;
   form: IBeginForm | IRetrievalForm | IGenerateForm | ICategorizeForm;
 };
+
+export type IPosition = { top: number; right: number; idx: number };

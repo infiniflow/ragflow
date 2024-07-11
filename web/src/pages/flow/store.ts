@@ -1,7 +1,6 @@
 import type {} from '@redux-devtools/extension';
 import { humanId } from 'human-id';
 import differenceWith from 'lodash/differenceWith';
-import intersectionBy from 'lodash/intersectionBy';
 import intersectionWith from 'lodash/intersectionWith';
 import lodashSet from 'lodash/set';
 import {
@@ -123,21 +122,12 @@ const useGraphStore = create<RFState>()(
             ),
           );
 
-        const intersectionEdges = intersectionBy(
-          previousEdges,
-          currentEdges,
-          'source',
-          'target',
-          'sourceHandle',
-        );
-
         const otherIntersectionEdges = intersectionWith(
           previousEdges,
           currentEdges,
           isEdgeEqual,
         );
         console.info('isDifferent:', isDifferent);
-        console.info('intersectionEdges:', intersectionEdges);
         console.info('next intersectionEdges:', otherIntersectionEdges);
         if (isDifferent) {
           // other operator's edges
@@ -153,7 +143,6 @@ const useGraphStore = create<RFState>()(
           console.info('selfAddedEdges:', selfAddedEdges);
           setEdges([
             ...irrelevantEdges,
-            // ...currentEdges,
             ...otherIntersectionEdges,
             ...selfAddedEdges,
           ]);
