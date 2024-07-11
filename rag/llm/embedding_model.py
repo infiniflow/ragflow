@@ -31,7 +31,7 @@ import numpy as np
 import asyncio
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
-
+import google.generativeai as genai 
 
 class Base(ABC):
     def __init__(self, key, model_name):
@@ -418,4 +418,28 @@ class BedrockEmbed(Base):
         embeddings.extend([model_response["embedding"]])
 
         return np.array(embeddings), token_count
-
+    
+class GeminiEmbed(Base):
+    def __init__(self, key, model_name='models/text-embedding-004',
+                 **kwargs):
+        genai.configure(api_key=key)
+        self.model_name = 'models/' + model_name
+        
+    def encode(self, texts: list, batch_size=32):
+        texts = [truncate(t, 2048) for t in texts]
+        token_count = sum(num_tokens_from_string(text) for text in texts)
+        result = genai.embed_content(
+            model=self.model_name,
+            content=texts,
+            task_type="retrieval_document",
+            title="Embedding of list of strings")
+        return np.array(result['embedding']),token_count
+    
+    def encode_queries(self, text):
+        result = genai.embed_content(
+            model=self.model_name,
+            content=truncate(text,2048),
+            task_type="retrieval_document",
+            title="Embedding of single string")
+        token_count = num_tokens_from_string(text)
+        return np.array(result['embedding']),token_count
