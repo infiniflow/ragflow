@@ -621,3 +621,64 @@ class BedrockChat(Base):
             yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
 
         yield num_tokens_from_string(ans)
+
+class GeminiChat(Base):
+
+    def __init__(self, key, model_name,base_url=None):
+        from google.generativeai import client,GenerativeModel 
+        
+        client.configure(api_key=key)
+        _client = client.get_default_generative_client()
+        self.model_name = 'models/' + model_name
+        self.model = GenerativeModel(model_name=self.model_name)
+        self.model._client = _client
+        
+    def chat(self,system,history,gen_conf):
+        if system:
+            history.insert(0, {"role": "user", "parts": system})
+        if 'max_tokens' in gen_conf:
+            gen_conf['max_output_tokens'] = gen_conf['max_tokens']
+        for k in list(gen_conf.keys()):
+            if k not in ["temperature", "top_p", "max_output_tokens"]:
+                del gen_conf[k]
+        for item in history:
+            if 'role' in item and item['role'] == 'assistant':
+                item['role'] = 'model'
+            if  'content' in item :
+                item['parts'] = item.pop('content')
+        
+        try:
+            response = self.model.generate_content(
+                history,
+                generation_config=gen_conf)
+            ans = response.text
+            return ans, response.usage_metadata.total_token_count
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "user", "parts": system})
+        if 'max_tokens' in gen_conf:
+            gen_conf['max_output_tokens'] = gen_conf['max_tokens']
+        for k in list(gen_conf.keys()):
+            if k not in ["temperature", "top_p", "max_output_tokens"]:
+                del gen_conf[k]
+        for item in history:
+            if 'role' in item and item['role'] == 'assistant':
+                item['role'] = 'model'
+            if  'content' in item :
+                item['parts'] = item.pop('content')
+        ans = ""
+        try:
+            response = self.model.generate_content(
+                history,
+                generation_config=gen_conf,stream=True)
+            for resp in response:
+                ans += resp.text
+                yield ans
+
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield  response._chunks[-1].usage_metadata.total_token_count
