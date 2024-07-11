@@ -68,4 +68,5 @@ RerankModel = {
     "BAAI": DefaultRerank,
     "Jina": JinaRerank,
     "Youdao": YoudaoRerank,
+    "Xinference": XInferenceRerank
 }

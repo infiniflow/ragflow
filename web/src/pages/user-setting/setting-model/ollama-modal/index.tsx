@@ -74,6 +74,7 @@ const OllamaModal = ({
           <Select placeholder={t('modelTypeMessage')}>
             <Option value="chat">chat</Option>
             <Option value="embedding">embedding</Option>
+            <Option value="rerank">rerank</Option>
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
