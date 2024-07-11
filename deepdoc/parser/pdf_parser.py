@@ -288,10 +288,9 @@ class RAGFlowPdfParser:
 
         # solve char content confusion
         record_error_length = 0
-        for c in Recognizer.sort_X_firstly(chars, self.mean_width[pagenum - 1] // 4)[0:128]:
+        for c in chars[0:128]:
             ii = Recognizer.find_overlapped(c, bxs)
             if ii is None:
-                self.lefted_chars.append(c)
                 continue
             record_error_length += abs((bxs[ii]["bottom"] + bxs[ii]["bottom"] - c["bottom"] - c["top"]) / 2)
 
