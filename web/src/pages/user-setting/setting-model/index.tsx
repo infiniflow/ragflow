@@ -61,6 +61,7 @@ const IconMap = {
   Mistral: 'mistral',
   'Azure-OpenAI': 'azure',
   Bedrock: 'bedrock',
+  Gemini:'gemini',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
