@@ -570,6 +570,9 @@ export default {
       channelTip: '針對該組件的輸入進行文字搜尋或新聞搜索',
       text: '文字',
       news: '新聞',
+      messageHistoryWindowSize: '歷史訊息視窗大小',
+      messageHistoryWindowSizeTip:
+        'LLM需要查看的對話記錄的視窗大小。越大越好。但要注意LLM的最大內容長度。',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

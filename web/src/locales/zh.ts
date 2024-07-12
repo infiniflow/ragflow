@@ -588,6 +588,9 @@ export default {
       channelTip: '针对该组件的输入进行文本搜索或新闻搜索',
       text: '文本',
       news: '新闻',
+      messageHistoryWindowSize: '历史消息窗口大小',
+      messageHistoryWindowSizeTip:
+        'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大内容长度。',
     },
     footer: {
       profile: 'All rights reserved @ React',
