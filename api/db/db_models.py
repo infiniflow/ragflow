@@ -332,7 +332,7 @@ DB.lock = DatabaseLock
 def close_connection():
     try:
         if DB:
-            DB.close()
+            DB.close_stale(age=30)
     except Exception as e:
         LOGGER.exception(e)
 

@@ -33,7 +33,7 @@ EmbeddingModel = {
     "BAAI": DefaultEmbedding,
     "Mistral": MistralEmbed,
     "Bedrock": BedrockEmbed,
-    "Gemini":GeminiEmbed,
+    "Gemini":GeminiEmbed
 }
 
 
