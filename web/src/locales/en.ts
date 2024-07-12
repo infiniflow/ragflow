@@ -609,6 +609,9 @@ The above is the content you need to summarize.`,
       channelTip: `Perform text search or news search on the component's input`,
       text: 'Text',
       news: 'News',
+      messageHistoryWindowSize: 'Message window size',
+      messageHistoryWindowSizeTip:
+        'The  window size of conversation history that needed to be seen by LLM. The larger the better. But be careful with the maximum content length of LLM.',
     },
     footer: {
       profile: 'All rights reserved @ React',

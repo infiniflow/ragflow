@@ -2,6 +2,8 @@ import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { variableEnabledFieldMap } from '@/constants/chat';
+import i18n from '@/locales/config';
+
 import {
   BranchesOutlined,
   DatabaseOutlined,
@@ -162,10 +164,9 @@ const initialLlmBaseValues = {
 
 export const initialGenerateValues = {
   ...initialLlmBaseValues,
-  prompt: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
-  {input}
-The above is the content you need to summarize.`,
+  prompt: i18n.t('flow.promptText'),
   cite: true,
+  message_history_window_size: 12,
   parameters: [],
 };
 
