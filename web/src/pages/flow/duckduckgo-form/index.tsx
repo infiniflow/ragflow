@@ -1,6 +1,6 @@
 import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/commonHooks';
-import { Form, Input } from 'antd';
+import { Form, Select } from 'antd';
 import { IOperatorForm } from '../interface';
 
 const DuckDuckGoForm = ({ onValuesChange, form }: IOperatorForm) => {
@@ -20,8 +20,14 @@ const DuckDuckGoForm = ({ onValuesChange, form }: IOperatorForm) => {
         label={t('channel')}
         name={'channel'}
         tooltip={t('channelTip')}
+        initialValue={'text'}
       >
-        <Input.TextArea rows={5} />
+        <Select
+          options={[
+            { value: 'text', label: t('text') },
+            { value: 'news', label: t('news') },
+          ]}
+        ></Select>
       </Form.Item>
     </Form>
   );

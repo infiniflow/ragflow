@@ -559,6 +559,17 @@ export default {
       addItem: '新增',
       nameRequiredMsg: '名稱不能為空',
       nameRepeatedMsg: '名稱不能重複',
+      keywordExtract: '關鍵字',
+      keywordExtractDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
+      baidu: '百度',
+      baiduDescription: `此組件用於取得www.baidu.com的搜尋結果，一般作為知識庫的補充，Top N指定需要採納的搜尋結果數。`,
+      duckDuckGo: 'DuckDuckGo',
+      duckDuckGoDescription:
+        '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要採用的搜尋結果數。',
+      channel: '頻道',
+      channelTip: '針對該組件的輸入進行文字搜尋或新聞搜索',
+      text: '文字',
+      news: '新聞',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

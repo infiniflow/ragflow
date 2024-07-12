@@ -606,7 +606,9 @@ The above is the content you need to summarize.`,
       duckDuckGoDescription:
         'This component is used to get search result from www.duckduckgo.com. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adopt.',
       channel: 'Channel',
-      channelTip: 'channelTip',
+      channelTip: `Perform text search or news search on the component's input`,
+      text: 'Text',
+      news: 'News',
     },
     footer: {
       profile: 'All rights reserved @ React',
