@@ -165,6 +165,17 @@ def add_llm():
         except Exception as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(
                 e)
+    elif llm["model_type"] == LLMType.RERANK:
+        mdl = RerankModel[factory](
+            key=None, model_name=llm["llm_name"], base_url=llm["api_base"]
+        )
+        try:
+            arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!"])
+            if len(arr) == 0 or tc == 0:
+                raise Exception("Not known.")
+        except Exception as e:
+            msg += f"\nFail to access model({llm['llm_name']})." + str(
+                e)
     else:
         # TODO: check other type of models
         pass
