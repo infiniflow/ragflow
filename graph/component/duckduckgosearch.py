@@ -44,18 +44,19 @@ class DuckDuckGoSearch(ComponentBase, ABC):
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
-            return Baidu.be_output(self._param.no)
+            return DuckDuckGoSearch.be_output(self._param.no)
 
         if self.channel == "text":
             with DDGS() as ddgs:
                 # {'title': '', 'href': '', 'body': ''}
-                duck_res = ['<a href="' + i["href"] + '">' + i["title"] + '</a>    ' + i["body"] for i in
+                duck_res = [{"content": '<a href="' + i["href"] + '">' + i["title"] + '</a>    ' + i["body"]} for i in
                             ddgs.text(ans, max_results=self._param.top_n)]
         elif self.channel == "news":
             with DDGS() as ddgs:
                 # {'date': '', 'title': '', 'body': '', 'url': '', 'image': '', 'source': ''}
-                duck_res = ['<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"] for i in
+                duck_res = [{"content": '<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"]} for i in
                             ddgs.news(ans, max_results=self._param.top_n)]
 
-        print(duck_res, ":::::::::::::::::::::::::::::::::")
-        return DuckDuckGoSearch.be_output(duck_res)
+        df = pd.DataFrame(duck_res)
+        print(df, ":::::::::::::::::::::::::::::::::")
+        return df
