@@ -134,3 +134,4 @@ mistralai==0.4.2
 boto3==1.34.140
 duckduckgo_search==6.1.9
 google-generativeai==0.7.2
+groq==0.9.0
