@@ -61,6 +61,7 @@ ChatModel = {
     "BaiChuan": BaiChuanChat,
     "MiniMax": MiniMaxChat,
     "Mistral": MistralChat,
+    'Gemini' : GeminiChat,
     "Bedrock": BedrockChat
 }
 
