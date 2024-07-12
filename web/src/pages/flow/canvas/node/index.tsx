@@ -52,11 +52,11 @@ export function RagNode({
         >
           <OperatorIcon
             name={data.label as Operator}
-            fontSize={style['iconFontSize'] ?? 24}
+            fontSize={style?.iconFontSize ?? 24}
           ></OperatorIcon>
           <span
             className={styles.type}
-            style={{ fontSize: style.fontSize ?? 14 }}
+            style={{ fontSize: style?.fontSize ?? 14 }}
           >
             {t(lowerFirst(data.label))}
           </span>

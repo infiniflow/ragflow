@@ -27,7 +27,6 @@ const MessageForm = ({ onValuesChange, form }: IOperatorForm) => {
     <Form
       name="basic"
       {...formItemLayoutWithOutLabel}
-      initialValues={{ remember: true }}
       onValuesChange={onValuesChange}
       autoComplete="off"
       form={form}
