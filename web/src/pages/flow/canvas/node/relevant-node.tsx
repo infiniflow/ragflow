@@ -47,18 +47,24 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
         ></Handle>
         <CategorizeHandle top={20} right={6} text={'yes'}></CategorizeHandle>
         <CategorizeHandle top={80} right={6} text={'no'}></CategorizeHandle>
-        <Flex vertical align="center" justify="center">
-          <OperatorIcon
-            name={data.label as Operator}
-            fontSize={style.iconFontSize}
-          ></OperatorIcon>
-          <span
-            className={styles.type}
-            style={{ fontSize: style.fontSize ?? 14 }}
-          >
-            {t(lowerFirst(data.label))}
-          </span>
-          <NodeDropdown id={id}></NodeDropdown>
+        <Flex vertical align="center" justify="center" gap={0}>
+          <Flex flex={1}>
+            <OperatorIcon
+              name={data.label as Operator}
+              fontSize={style.iconFontSize}
+            ></OperatorIcon>
+          </Flex>
+          <Flex flex={1}>
+            <span
+              className={styles.type}
+              style={{ fontSize: style.fontSize ?? 14 }}
+            >
+              {t(lowerFirst(data.label))}
+            </span>
+          </Flex>
+          <Flex flex={1}>
+            <NodeDropdown id={id}></NodeDropdown>
+          </Flex>
         </Flex>
         <section className={styles.bottomBox}>
           <div className={styles.nodeName}>{data.name}</div>

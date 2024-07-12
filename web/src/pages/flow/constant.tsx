@@ -43,12 +43,10 @@ export const operatorIconMap = {
 
 export const operatorMap = {
   [Operator.Retrieval]: {
-    description: 'This is where the flow begin',
     backgroundColor: '#cad6e0',
     color: '#385974',
   },
   [Operator.Generate]: {
-    description: 'Generate description',
     backgroundColor: '#ebd6d6',
     width: 150,
     height: 150,
@@ -57,27 +55,21 @@ export const operatorMap = {
     color: '#996464',
   },
   [Operator.Answer]: {
-    description:
-      'This component is used as an interface between bot and human. It receives input of user and display the result of the computation of the bot.',
     backgroundColor: '#f4816d',
     color: 'white',
   },
   [Operator.Begin]: {
-    description: 'Begin description',
     backgroundColor: '#4f51d6',
   },
   [Operator.Categorize]: {
-    description: 'Categorize description',
     backgroundColor: '#ffebcd',
     color: '#cc8a26',
   },
   [Operator.Message]: {
-    description: 'Message description',
     backgroundColor: '#c5ddc7',
     color: 'green',
   },
   [Operator.Relevant]: {
-    description: 'BranchesOutlined description',
     backgroundColor: '#9fd94d',
     color: 'white',
     width: 70,
@@ -86,7 +78,6 @@ export const operatorMap = {
     iconFontSize: 16,
   },
   [Operator.RewriteQuestion]: {
-    description: 'RewriteQuestion description',
     backgroundColor: '#f8c7f8',
     color: 'white',
     width: 70,
@@ -94,48 +85,52 @@ export const operatorMap = {
     fontSize: 12,
     iconFontSize: 16,
   },
+  [Operator.KeywordExtract]: {
+    width: 70,
+    height: 70,
+    backgroundColor: '#0f0e0f',
+    color: '#e1dcdc',
+    fontSize: 12,
+    iconWidth: 16,
+    // iconFontSize: 16,
+  },
+  [Operator.DuckDuckGo]: {
+    backgroundColor: '#e7e389',
+    color: '#aea00c',
+  },
+  [Operator.Baidu]: {},
 };
 
 export const componentMenuList = [
   {
     name: Operator.Retrieval,
-    description: operatorMap[Operator.Retrieval].description,
   },
   {
     name: Operator.Generate,
-    description: operatorMap[Operator.Generate].description,
   },
   {
     name: Operator.Answer,
-    description: operatorMap[Operator.Answer].description,
   },
   {
     name: Operator.Categorize,
-    description: operatorMap[Operator.Categorize].description,
   },
   {
     name: Operator.Message,
-    description: operatorMap[Operator.Message].description,
   },
   {
     name: Operator.Relevant,
-    description: operatorMap[Operator.Relevant].description,
   },
   {
     name: Operator.RewriteQuestion,
-    description: operatorMap[Operator.RewriteQuestion].description,
   },
   {
     name: Operator.KeywordExtract,
-    description: operatorMap[Operator.Message].description,
   },
   {
     name: Operator.DuckDuckGo,
-    description: operatorMap[Operator.Relevant].description,
   },
   {
     name: Operator.Baidu,
-    description: operatorMap[Operator.RewriteQuestion].description,
   },
 ];
 
@@ -254,9 +249,13 @@ export const RestrictedUpstreamMap = {
     Operator.Categorize,
     Operator.Relevant,
   ],
-  [Operator.KeywordExtract]: [Operator.Begin],
-  [Operator.Baidu]: [Operator.Begin],
-  [Operator.DuckDuckGo]: [Operator.Begin],
+  [Operator.KeywordExtract]: [
+    Operator.Begin,
+    Operator.Message,
+    Operator.Relevant,
+  ],
+  [Operator.Baidu]: [Operator.Begin, Operator.Retrieval],
+  [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -268,4 +267,7 @@ export const NodeMap = {
   [Operator.Message]: 'ragNode',
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'ragNode',
+  [Operator.KeywordExtract]: 'ragNode',
+  [Operator.DuckDuckGo]: 'ragNode',
+  [Operator.Baidu]: 'ragNode',
 };
