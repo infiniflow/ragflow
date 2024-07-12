@@ -12,7 +12,7 @@ const BaiduForm = ({ onValuesChange, form }: IOperatorForm) => {
       form={form}
       onValuesChange={onValuesChange}
     >
-      <TopNItem></TopNItem>
+      <TopNItem initialValue={10}></TopNItem>
     </Form>
   );
 };

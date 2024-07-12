@@ -7,6 +7,8 @@ import 'react18-json-view/src/style.css';
 import { Operator } from '../../constant';
 import { useReplaceIdWithText } from '../../hooks';
 
+import styles from './index.less';
+
 interface IProps extends React.PropsWithChildren {
   nodeId: string;
 }
@@ -32,7 +34,7 @@ const NodePopover = ({ children, nodeId }: IProps) => {
         <JsonView
           src={replacedOutput}
           displaySize={30}
-          style={{ maxWidth: 300, maxHeight: 500 }}
+          className={styles.jsonView}
         />
       </div>
     ) : undefined;
