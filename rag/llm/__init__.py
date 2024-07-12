@@ -33,6 +33,7 @@ EmbeddingModel = {
     "BAAI": DefaultEmbedding,
     "Mistral": MistralEmbed,
     "Bedrock": BedrockEmbed,
+    "Gemini":GeminiEmbed,
     "Groq": GroqChat
 }
 
@@ -44,7 +45,8 @@ CvModel = {
     "Xinference": XinferenceCV,
     "Tongyi-Qianwen": QWenCV,
     "ZHIPU-AI": Zhipu4V,
-    "Moonshot": LocalCV
+    "Moonshot": LocalCV,
+    'Gemini':GeminiCV
 }
 
 
