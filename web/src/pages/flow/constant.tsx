@@ -125,18 +125,18 @@ export const componentMenuList = [
     name: Operator.RewriteQuestion,
     description: operatorMap[Operator.RewriteQuestion].description,
   },
-  // {
-  //   name: Operator.KeywordExtract,
-  //   description: operatorMap[Operator.Message].description,
-  // },
-  // {
-  //   name: Operator.DuckDuckGo,
-  //   description: operatorMap[Operator.Relevant].description,
-  // },
-  // {
-  //   name: Operator.Baidu,
-  //   description: operatorMap[Operator.RewriteQuestion].description,
-  // },
+  {
+    name: Operator.KeywordExtract,
+    description: operatorMap[Operator.Message].description,
+  },
+  {
+    name: Operator.DuckDuckGo,
+    description: operatorMap[Operator.Relevant].description,
+  },
+  {
+    name: Operator.Baidu,
+    description: operatorMap[Operator.RewriteQuestion].description,
+  },
 ];
 
 export const initialRetrievalValues = {
