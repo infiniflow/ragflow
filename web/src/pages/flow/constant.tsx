@@ -188,6 +188,11 @@ export const initialMessageValues = {
   messages: [],
 };
 
+export const initialKeywordExtractValues = {
+  ...initialLlmBaseValues,
+  top_n: 1,
+};
+
 export const initialFormValuesMap = {
   [Operator.Begin]: initialBeginValues,
   [Operator.Retrieval]: initialRetrievalValues,
@@ -197,6 +202,7 @@ export const initialFormValuesMap = {
   [Operator.Relevant]: initialRelevantValues,
   [Operator.RewriteQuestion]: initialRewriteQuestionValues,
   [Operator.Message]: initialMessageValues,
+  [Operator.KeywordExtract]: initialKeywordExtractValues,
 };
 
 export const CategorizeAnchorPointPositions = [

@@ -365,6 +365,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { id } = useParams();
   const { saveGraph } = useSaveGraph();
   const { resetFlow } = useResetFlow();
+  const { refetch } = useFetchFlow();
   const { send } = useSendMessageWithSse(api.runCanvas);
   const handleRun = useCallback(async () => {
     const saveRet = await saveGraph();
@@ -373,6 +374,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
       const resetRet = await resetFlow();
       // After resetting, all previous messages will be cleared.
       if (resetRet?.retcode === 0) {
+        refetch();
         // fetch prologue
         const sendRet = await send({ id });
         if (receiveMessageError(sendRet)) {
@@ -382,7 +384,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         }
       }
     }
-  }, [saveGraph, resetFlow, id, send, show]);
+  }, [saveGraph, resetFlow, id, send, show, refetch]);
 
   return handleRun;
 };
