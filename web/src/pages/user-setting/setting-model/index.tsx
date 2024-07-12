@@ -62,6 +62,7 @@ const IconMap = {
   'Azure-OpenAI': 'azure',
   Bedrock: 'bedrock',
   Gemini:'gemini',
+  Groq: 'Groq',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {
