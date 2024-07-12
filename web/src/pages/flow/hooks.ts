@@ -374,12 +374,12 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
       const resetRet = await resetFlow();
       // After resetting, all previous messages will be cleared.
       if (resetRet?.retcode === 0) {
-        refetch();
         // fetch prologue
         const sendRet = await send({ id });
         if (receiveMessageError(sendRet)) {
           message.error(sendRet?.data?.retmsg);
         } else {
+          refetch();
           show();
         }
       }
