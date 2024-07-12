@@ -577,6 +577,17 @@ export default {
       addItem: '新增',
       nameRequiredMsg: '名称不能为空',
       nameRepeatedMsg: '名称不能重复',
+      keywordExtract: '关键词',
+      keywordExtractDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
+      baidu: '百度',
+      baiduDescription: `该组件用于获取www.baidu.com的搜索结果，一般作为知识库的补充，Top N指定需要采纳的搜索结果数量。`,
+      duckDuckGo: 'DuckDuckGo',
+      duckDuckGoDescription:
+        '此组件用于从 www.duckduckgo.com 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要采用的搜索结果数量。',
+      channel: '频道',
+      channelTip: '针对该组件的输入进行文本搜索或新闻搜索',
+      text: '文本',
+      news: '新闻',
     },
     footer: {
       profile: 'All rights reserved @ React',
