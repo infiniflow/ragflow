@@ -94,7 +94,7 @@ if __name__ == '__main__':
         werkzeug_logger = logging.getLogger("werkzeug")
         for h in access_logger.handlers:
             werkzeug_logger.addHandler(h)
-        run_simple(hostname=HOST, port=HTTP_PORT, application=app, threaded=True, use_reloader=RuntimeConfig.DEBUG, use_debugger=RuntimeConfig.DEBUG)
+        run_simple(hostname=HOST, port=HTTP_PORT, application=app, processes=5, use_reloader=RuntimeConfig.DEBUG, use_debugger=RuntimeConfig.DEBUG)
     except Exception:
         traceback.print_exc()
         os.kill(os.getpid(), signal.SIGKILL)
