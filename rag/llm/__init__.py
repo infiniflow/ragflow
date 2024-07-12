@@ -34,7 +34,6 @@ EmbeddingModel = {
     "Mistral": MistralEmbed,
     "Bedrock": BedrockEmbed,
     "Gemini":GeminiEmbed,
-    "Groq": GroqChat
 }
 
 
@@ -64,7 +63,8 @@ ChatModel = {
     "MiniMax": MiniMaxChat,
     "Mistral": MistralChat,
     'Gemini' : GeminiChat,
-    "Bedrock": BedrockChat
+    "Bedrock": BedrockChat,
+    "Groq": GroqChat
 }
 
 
