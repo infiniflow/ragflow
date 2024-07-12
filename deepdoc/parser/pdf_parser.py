@@ -287,7 +287,7 @@ class RAGFlowPdfParser:
         )
 
         # solve char content confusion
-        record_error_length, ct = 0, 1
+        record_error_length, ct = 0, 0.001
         for c in chars[0:128]:
             ii = Recognizer.find_overlapped(c, bxs)
             if ii is None:
