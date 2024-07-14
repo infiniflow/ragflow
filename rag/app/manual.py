@@ -164,7 +164,7 @@ class Docx(DocxParser):
         return ti_list, tbls
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", callback=None, **kwargs):
+          lang="Chinese", callback=None, tenant_id=None, **kwargs):
     """
         Only pdf is supported.
     """
