@@ -16,6 +16,7 @@
 
 import copy
 import re
+import io
 
 from api.db import ParserType
 from io import BytesIO
@@ -25,6 +26,8 @@ from rag.utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from docx import Document
 from PIL import Image
+from api.db import LLMType
+from api.db.services.llm_service import LLMBundle
 
 class Pdf(PdfParser):
     def __init__(self):
@@ -224,6 +227,28 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 return ""
             return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
                 .format(pn, left, right, top, bottom)
+        
+        # Describe images with CV LLM and add to sections
+        cv_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, lang=lang)
+        for ((img, rows), poss) in tbls:
+            image_binary = covert_image(img, callback)
+            description = cv_mdl.describe(image_binary)
+            #description = " ------------------------------------------ LLM test ------------------------------------------"
+            callback(0.72, f"Image described: {description[:50]}")
+            adjusted_poss = [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]
+            sections.append(("\nImage: " + description + "\n", -1, adjusted_poss))
+            callback(0.78, "Image description successful!")
+        
+        # Merge sections with the same poss
+        merged_sections = {}
+        for txt, sec_id, poss in sections:
+            poss_tuple = tuple(poss)
+            if poss_tuple in merged_sections:
+                merged_sections[poss_tuple][0] += "\n" + txt
+            else:
+                merged_sections[poss_tuple] = [txt, sec_id, poss]
+
+        sections = [(txt, sec_id, poss) for (poss, (txt, sec_id, poss)) in merged_sections.items()]
 
         chunks = []
         last_sid = -2
@@ -259,6 +284,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         raise NotImplementedError("file type not supported yet(pdf and docx supported)")
     
 
+def covert_image(image_pil, callback):
+    try:
+        img_byte_arr = io.BytesIO()
+        image_pil.save(img_byte_arr, format='PNG')
+        callback(0.7, "Use CV LLM to describe the picture.")
+        return img_byte_arr.getvalue()
+    except Exception as e:
+        callback(0.7, "Failed to prepare image for description: {e}")
+        return None
 
 
 if __name__ == "__main__":
