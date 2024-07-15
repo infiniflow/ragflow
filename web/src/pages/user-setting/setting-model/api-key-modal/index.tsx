@@ -16,6 +16,8 @@ type FieldType = {
   base_url?: string;
 };
 
+const modelsWithBaseUrl = ['OpenAI', 'Azure-OpenAI'];
+
 const ApiKeyModal = ({
   visible,
   hideModal,
@@ -33,18 +35,6 @@ const ApiKeyModal = ({
     return onOk(ret.api_key, ret.base_url);
   };
 
-  const handleCancel = () => {
-    hideModal();
-  };
-
-  const onFinish = (values: any) => {
-    console.log('Success:', values);
-  };
-
-  const onFinishFailed = (errorInfo: any) => {
-    console.log('Failed:', errorInfo);
-  };
-
   useEffect(() => {
     if (visible) {
       form.setFieldValue('api_key', initialValue);
@@ -56,7 +46,7 @@ const ApiKeyModal = ({
       title={t('modify')}
       open={visible}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={hideModal}
       okButtonProps={{ loading }}
       confirmLoading={loading}
     >
@@ -65,8 +55,6 @@ const ApiKeyModal = ({
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
         style={{ maxWidth: 600 }}
-        onFinish={onFinish}
-        onFinishFailed={onFinishFailed}
         autoComplete="off"
         form={form}
       >
@@ -78,7 +66,7 @@ const ApiKeyModal = ({
         >
           <Input />
         </Form.Item>
-        {llmFactory === 'OpenAI' && (
+        {modelsWithBaseUrl.some((x) => x === llmFactory) && (
           <Form.Item<FieldType>
             label={t('baseUrl')}
             name="base_url"
