@@ -17,6 +17,7 @@ import OperatorIcon from '../operator-icon';
 import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
+import WikipediaForm from '../wikipedia-form';
 
 import styles from './index.less';
 
@@ -36,6 +37,7 @@ const FormMap = {
   [Operator.Baidu]: BaiduForm,
   [Operator.DuckDuckGo]: DuckDuckGoForm,
   [Operator.KeywordExtract]: KeywordExtractForm,
+  [Operator.Wikipedia]: WikipediaForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

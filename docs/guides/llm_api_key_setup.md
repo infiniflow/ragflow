@@ -12,8 +12,14 @@ An API key is required for RAGFlow to interact with an online AI model. This gui
 For now, RAGFlow supports the following online LLMs. Click the corresponding link to apply for your API key. Most LLM providers grant newly-created accounts trial credit, which will expire in a couple of months, or a promotional amount of free quota.
 
 - [OpenAI](https://platform.openai.com/login?launch),
+- Azure-OpenAI,
+- Gemini,
+- Groq,
+- Mistral,
+- Bedrock,
 - [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model),
 - [ZHIPU-AI](https://open.bigmodel.cn/),
+- MiniMax
 - [Moonshot](https://platform.moonshot.cn/docs),
 - [DeepSeek](https://platform.deepseek.com/api-docs/),
 - [Baichuan](https://www.baichuan-ai.com/home),
