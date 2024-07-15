@@ -6,6 +6,7 @@ import { IChunk } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Button, Flex, Popover, Space } from 'antd';
+import DOMPurify from 'dompurify';
 import { useCallback } from 'react';
 import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
@@ -94,7 +95,7 @@ const MarkdownContent = ({
           <Space direction={'vertical'}>
             <div
               dangerouslySetInnerHTML={{
-                __html: chunkItem?.content_with_weight,
+                __html: DOMPurify.sanitize(chunkItem?.content_with_weight),
               }}
               className={styles.chunkContentText}
             ></div>
