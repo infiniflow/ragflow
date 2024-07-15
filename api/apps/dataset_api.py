@@ -750,7 +750,27 @@ def get_message_during_parsing_document(id, message):
 # ----------------------------stop parsing-----------------------------------------------------
 
 # ----------------------------show the status of the file-----------------------------------------------------
+@manager.route("/<dataset_id>/documents/<document_id>/status", methods=["GET"])
+@login_required
+def show_status(dataset_id, document_id):
+    try:
+        # valid dataset
+        exist, _ = KnowledgebaseService.get_by_id(dataset_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR,
+                                         message=f"This dataset: '{dataset_id}' cannot be found!")
+        # valid document
+        exist, _ = DocumentService.get_by_id(document_id)
+        if not exist:
+            return construct_json_result(code=RetCode.DATA_ERROR,
+                                         message=f"This document: '{document_id}' is not a valid document.")
 
+        _, doc = DocumentService.get_by_id(document_id)  # get doc object
+        doc_attributes = doc.to_dict()
+
+        return construct_json_result(data={"progress": doc_attributes["progress"], "status": doc_attributes["status"]}, code=RetCode.SUCCESS)
+    except Exception as e:
+        return construct_error_response(e)
 # ----------------------------list the chunks of the file-----------------------------------------------------
 
 # -- --------------------------delete the chunk-----------------------------------------------------

@@ -953,7 +953,52 @@ class TestFile(TestSdk):
 # ----------------------------stop parsing-----------------------------------------------------
 
 # ----------------------------show the status of the file-----------------------------------------------------
+    def test_show_status_with_success(self):
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_show_status_with_success")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/lol.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # parse file
+        res = ragflow.start_parsing_document(created_res_id, doc_id)
+        assert res["code"] == RetCode.SUCCESS and res["message"] == ""
+        # show status
+        status_res = ragflow.show_status(created_res_id, doc_id)
+        assert status_res["code"] == RetCode.SUCCESS and status_res["data"]["status"] == "1"
 
+    def test_show_status_nonexistent_document(self):
+        """
+        Test showing the status of a document which does not exist.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_show_status_nonexistent_document")
+        created_res_id = created_res["data"]["dataset_id"]
+        res = ragflow.show_status(created_res_id, "imagination")
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This document: 'imagination' is not a valid document."
+
+    def test_show_status_document_in_nonexistent_dataset(self):
+        """
+        Test showing the status of a document whose dataset is nonexistent.
+        """
+        # create a dataset
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        created_res = ragflow.create_dataset("test_show_status_document_in_nonexistent_dataset")
+        created_res_id = created_res["data"]["dataset_id"]
+        # upload files
+        file_paths = ["test_data/test.txt"]
+        uploading_res = ragflow.upload_local_file(created_res_id, file_paths)
+        # get the doc_id
+        data = uploading_res["data"][0]
+        doc_id = data["id"]
+        # parse
+        res = ragflow.show_status("imagination", doc_id)
+        assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This dataset: 'imagination' cannot be found!"
 # ----------------------------list the chunks of the file-----------------------------------------------------
 
 # ----------------------------delete the chunk-----------------------------------------------------
