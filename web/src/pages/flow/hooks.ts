@@ -41,6 +41,7 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialWikipediaValues,
 } from './constant';
 import { ICategorizeForm, IRelevantForm } from './interface';
 import useGraphStore, { RFState } from './store';
@@ -88,6 +89,7 @@ export const useInitializeOperatorParams = () => {
       },
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Baidu]: initialBaiduValues,
+      [Operator.Wikipedia]: initialWikipediaValues,
     };
   }, [llmId]);
 
