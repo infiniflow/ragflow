@@ -57,6 +57,7 @@ const KnowledgeCreatingModal = ({
       onOk={handleOk}
       onCancel={handleCancel}
       okButtonProps={{ loading }}
+      maskClosable={false}
     >
       <Form
         name="Create"

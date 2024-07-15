@@ -54,6 +54,7 @@ const ChatApiKeyModal = ({
         style={{ top: 300 }}
         onOk={hideModal}
         width={'50vw'}
+        maskClosable={false}
       >
         <Table
           columns={columns}

@@ -46,6 +46,7 @@ const VolcEngineModal = ({
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
+      maskClosable={false}
       okButtonProps={{ loading }}
       footer={(originNode: React.ReactNode) => {
         return (

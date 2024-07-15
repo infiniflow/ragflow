@@ -41,6 +41,7 @@ const ConnectToKnowledgeModal = ({
       onOk={handleOk}
       onCancel={hideModal}
       confirmLoading={loading}
+      maskClosable={false}
     >
       <Form form={form}>
         <Form.Item name="knowledgeIds" noStyle>

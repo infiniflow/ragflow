@@ -49,6 +49,7 @@ const ApiKeyModal = ({
       onCancel={hideModal}
       okButtonProps={{ loading }}
       confirmLoading={loading}
+      maskClosable={false}
     >
       <Form
         name="basic"

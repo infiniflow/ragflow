@@ -94,6 +94,7 @@ const ChunkCreatingModal: React.FC<kFProps> = ({ doc_id, chunkId }) => {
       onOk={handleOk}
       onCancel={handleCancel}
       okButtonProps={{ loading }}
+      maskClosable={false}
     >
       <Form
         form={form}

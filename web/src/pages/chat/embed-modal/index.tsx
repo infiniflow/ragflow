@@ -61,6 +61,7 @@ const EmbedModal = ({
       width={'50vw'}
       onOk={hideModal}
       onCancel={hideModal}
+      maskClosable={false}
     >
       <Tabs defaultActiveKey="1" items={items} onChange={onChange} />
     </Modal>

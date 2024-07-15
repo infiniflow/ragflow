@@ -49,6 +49,7 @@ const RenameModal = ({
       onOk={handleOk}
       onCancel={hideModal}
       okButtonProps={{ loading }}
+      maskClosable={false}
     >
       <Form
         name="basic"

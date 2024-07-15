@@ -26,6 +26,7 @@ const FileCreatingModal: React.FC<IProps> = ({ visible, hideModal, onOk }) => {
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
+      maskClosable={false}
     >
       <Form
         form={form}

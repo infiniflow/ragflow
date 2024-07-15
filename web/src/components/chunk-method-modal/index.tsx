@@ -114,6 +114,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
       onCancel={hideModal}
       afterClose={afterClose}
       confirmLoading={loading}
+      maskClosable={false}
       width={700}
     >
       <Space size={[0, 8]} wrap>

@@ -116,6 +116,7 @@ const FileUploadModal = ({
         onCancel={hideModal}
         confirmLoading={loading}
         afterClose={afterClose}
+        maskClosable={false}
       >
         <Flex gap={'large'} vertical>
           <Segmented

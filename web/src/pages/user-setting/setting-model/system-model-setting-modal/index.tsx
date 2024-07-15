@@ -45,6 +45,7 @@ const SystemModelSettingModal = ({
       onCancel={hideModal}
       okButtonProps={{ loading }}
       confirmLoading={loading}
+      maskClosable={false}
     >
       <Form form={form} onValuesChange={onFormLayoutChange} layout={'vertical'}>
         <Form.Item

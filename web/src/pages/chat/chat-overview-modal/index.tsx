@@ -73,6 +73,7 @@ const ChatOverviewModal = ({
         cancelButtonProps={{ style: { display: 'none' } }}
         onOk={hideModal}
         width={'100vw'}
+        maskClosable={false}
         okText={t('close', { keyPrefix: 'common' })}
       >
         <Flex vertical gap={'middle'}>

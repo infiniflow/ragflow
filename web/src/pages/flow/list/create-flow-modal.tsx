@@ -53,6 +53,7 @@ const CreateFlowModal = ({
       onCancel={hideModal}
       okButtonProps={{ loading }}
       confirmLoading={loading}
+      maskClosable={false}
     >
       <Form
         name="basic"

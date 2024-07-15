@@ -154,6 +154,7 @@ const ChatConfigurationModal = ({
       confirmLoading={loading}
       destroyOnClose
       afterClose={handleModalAfterClose}
+      maskClosable={false}
     >
       <Segmented
         size={'large'}
