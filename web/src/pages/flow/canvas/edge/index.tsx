@@ -6,8 +6,7 @@ import {
 } from 'reactflow';
 import useGraphStore from '../../store';
 
-import { IFlow } from '@/interfaces/database/flow';
-import { useQueryClient } from '@tanstack/react-query';
+import { useFetchFlow } from '@/hooks/flow-hooks';
 import { useMemo } from 'react';
 import styles from './index.less';
 
@@ -44,8 +43,9 @@ export function ButtonEdge({
   };
 
   // highlight the nodes that the workflow passes through
-  const queryClient = useQueryClient();
-  const flowDetail = queryClient.getQueryData<IFlow>(['flowDetail']);
+  // const queryClient = useQueryClient();
+  // const flowDetail = queryClient.getQueryData<IFlow>(['flowDetail']);
+  const { data: flowDetail } = useFetchFlow();
 
   const graphPath = useMemo(() => {
     // TODO: this will be called multiple times
@@ -59,12 +59,16 @@ export function ButtonEdge({
       graphPath = [previousLatestElement, ...graphPath];
     }
     return graphPath;
-  }, [flowDetail?.dsl?.path]);
+  }, [flowDetail.dsl?.path]);
 
   const highlightStyle = useMemo(() => {
     const idx = graphPath.findIndex((x) => x === source);
-    if (idx !== -1 && graphPath[idx + 1] === target) {
-      return { strokeWidth: 2, stroke: 'red' };
+    if (idx !== -1) {
+      // The set of elements following source
+      const slicedGraphPath = graphPath.slice(idx + 1);
+      if (slicedGraphPath.some((x) => x === target)) {
+        return { strokeWidth: 2, stroke: 'red' };
+      }
     }
     return {};
   }, [source, target, graphPath]);
