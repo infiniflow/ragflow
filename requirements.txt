@@ -149,3 +149,4 @@ boto3==1.34.140
 duckduckgo_search==6.1.9
 google-generativeai==0.7.2
 groq==0.9.0
+wikipedia==1.4.0
