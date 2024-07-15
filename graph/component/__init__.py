@@ -11,6 +11,7 @@ from .rewrite import RewriteQuestion, RewriteQuestionParam
 from .keyword import KeywordExtract, KeywordExtractParam
 from .baidu import Baidu, BaiduParam
 from .duckduckgo import DuckDuckGo, DuckDuckGoParam
+from .wikipedia import Wikipedia, WikipediaParam
 
 
 def component_class(class_name):
