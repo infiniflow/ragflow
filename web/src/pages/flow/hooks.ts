@@ -82,7 +82,10 @@ export const useInitializeOperatorParams = () => {
         llm_id: llmId,
       },
       [Operator.Message]: initialMessageValues,
-      [Operator.KeywordExtract]: initialKeywordExtractValues,
+      [Operator.KeywordExtract]: {
+        ...initialKeywordExtractValues,
+        llm_id: llmId,
+      },
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Baidu]: initialBaiduValues,
     };
