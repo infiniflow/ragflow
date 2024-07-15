@@ -752,7 +752,7 @@ def get_message_during_parsing_document(id, message):
 # ----------------------------show the status of the file-----------------------------------------------------
 @manager.route("/<dataset_id>/documents/<document_id>/status", methods=["GET"])
 @login_required
-def show_status(dataset_id, document_id):
+def show_parsing_status(dataset_id, document_id):
     try:
         # valid dataset
         exist, _ = KnowledgebaseService.get_by_id(dataset_id)

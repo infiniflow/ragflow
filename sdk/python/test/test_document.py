@@ -968,7 +968,7 @@ class TestFile(TestSdk):
         res = ragflow.start_parsing_document(created_res_id, doc_id)
         assert res["code"] == RetCode.SUCCESS and res["message"] == ""
         # show status
-        status_res = ragflow.show_status(created_res_id, doc_id)
+        status_res = ragflow.show_parsing_status(created_res_id, doc_id)
         assert status_res["code"] == RetCode.SUCCESS and status_res["data"]["status"] == "1"
 
     def test_show_status_nonexistent_document(self):
@@ -979,7 +979,7 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_show_status_nonexistent_document")
         created_res_id = created_res["data"]["dataset_id"]
-        res = ragflow.show_status(created_res_id, "imagination")
+        res = ragflow.show_parsing_status(created_res_id, "imagination")
         assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This document: 'imagination' is not a valid document."
 
     def test_show_status_document_in_nonexistent_dataset(self):
@@ -997,7 +997,7 @@ class TestFile(TestSdk):
         data = uploading_res["data"][0]
         doc_id = data["id"]
         # parse
-        res = ragflow.show_status("imagination", doc_id)
+        res = ragflow.show_parsing_status("imagination", doc_id)
         assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This dataset: 'imagination' cannot be found!"
 # ----------------------------list the chunks of the file-----------------------------------------------------
 
