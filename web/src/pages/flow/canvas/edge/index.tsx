@@ -49,7 +49,7 @@ export function ButtonEdge({
 
   const graphPath = useMemo(() => {
     // TODO: this will be called multiple times
-    const path = flowDetail?.dsl.path ?? [];
+    const path = flowDetail?.dsl?.path ?? [];
     // The second to last
     const previousGraphPath: string[] = path.at(-2) ?? [];
     let graphPath: string[] = path.at(-1) ?? [];
@@ -59,7 +59,7 @@ export function ButtonEdge({
       graphPath = [previousLatestElement, ...graphPath];
     }
     return graphPath;
-  }, [flowDetail?.dsl.path]);
+  }, [flowDetail?.dsl?.path]);
 
   const highlightStyle = useMemo(() => {
     const idx = graphPath.findIndex((x) => x === source);
