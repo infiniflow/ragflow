@@ -4,6 +4,12 @@ import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { variableEnabledFieldMap } from '@/constants/chat';
 import i18n from '@/locales/config';
 
+// DuckDuckGo's channel options
+export enum Channel {
+  Text = 'text',
+  News = 'news',
+}
+
 import {
   BranchesOutlined,
   DatabaseOutlined,
@@ -192,17 +198,13 @@ export const initialKeywordExtractValues = {
   ...initialLlmBaseValues,
   top_n: 1,
 };
+export const initialDuckValues = {
+  top_n: 10,
+  channel: Channel.Text,
+};
 
-export const initialFormValuesMap = {
-  [Operator.Begin]: initialBeginValues,
-  [Operator.Retrieval]: initialRetrievalValues,
-  [Operator.Generate]: initialGenerateValues,
-  [Operator.Answer]: {},
-  [Operator.Categorize]: initialCategorizeValues,
-  [Operator.Relevant]: initialRelevantValues,
-  [Operator.RewriteQuestion]: initialRewriteQuestionValues,
-  [Operator.Message]: initialMessageValues,
-  [Operator.KeywordExtract]: initialKeywordExtractValues,
+export const initialBaiduValues = {
+  top_n: 10,
 };
 
 export const CategorizeAnchorPointPositions = [
