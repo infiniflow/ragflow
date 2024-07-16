@@ -555,7 +555,6 @@ class TestFile(TestSdk):
             "illegal_parameter": "0"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-
         assert (update_res["code"] == RetCode.ARGUMENT_ERROR and
                 update_res["message"] == "illegal_parameter is an illegal parameter.")
 
