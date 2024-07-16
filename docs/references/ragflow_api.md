@@ -713,8 +713,8 @@ This method downloads a specific document for a specific user.
       "message": "This file is empty."
 }
 ```
----------------
-## Start parsing the document
+
+## Start parsing a document
 
 This method enables a specific document to start parsing for a specific user. 
 
@@ -740,12 +740,12 @@ This method enables a specific document to start parsing for a specific user.
 
 ```json
 {
-      "code": "<RetCode.SUCCESS: 0>",
-      "data": "b'test\\ntest\\ntest'"
+      "code": 0,
+      "message": ""
 }
 ```
 
-### Response for downloading a document which does not exist.
+### Response for parsing a document which does not exist.
 
 ```json
 {
@@ -754,7 +754,7 @@ This method enables a specific document to start parsing for a specific user.
 }
 ```
 
-### Response for downloading a document in the nonexistent dataset.
+### Response for parsing a document in the nonexistent dataset.
 ```json
 {
       "code": 102,
@@ -762,10 +762,120 @@ This method enables a specific document to start parsing for a specific user.
 }
 ```
 
-### Response for downloading an empty document.
+### Response for parsing an empty document.
+```json
+{
+      "code": 0,
+      "message": "Empty data in the document: empty.txt;"
+}
+```
+
+## Start parsing multiple documents
+
+This method enables multiple documents, including all documents in the specific dataset or specified documents, to start parsing for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                                           |
+|--------|-------------------------------------------------------|
+| POST   | `/dataset/{dataset_id}/documents/status` |
+
+
+#### Request parameter
+
+| Name         | Type   | Required | Description                                                                                                                       |
+|--------------|--------|----------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.                                                 |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID.                                               |
+| `doc_ids` | list | No | The document IDs of the documents that the user would like to parse. Default: None, means all documents in the specified dataset. |
+### Response 
+
+### Successful Response 
+
+```json
+{
+      "code": 0,
+      "data": true,
+      "message": ""
+}
+```
+
+### Response for parsing documents which does not exist.
+
+```json
+{
+      "code": 101,
+      "message": "This document 'imagination' cannot be found!"
+}
+```
+
+### Response for parsing documents in the nonexistent dataset.
 ```json
 {
       "code": 102,
-      "message": "This file is empty."
+      "message": "This dataset 'imagination' cannot be found!"
+}
+```
+
+### Response for parsing documents, one of which is empty.
+```json
+{
+      "code": 0,
+      "data": true,
+      "message": "Empty data in the document: empty.txt; "
+}
+```
+
+## Show the parsing status of the document
+
+This method shows the parsing status of the document for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                                           |
+|--------|-------------------------------------------------------|
+| GET    | `/dataset/{dataset_id}/documents/status` |
+
+
+#### Request parameter
+
+| Name         | Type   | Required | Description                                                                                                                       |
+|--------------|--------|----------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.                                                 |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID.                                               |
+
+### Response 
+
+### Successful Response 
+
+```json
+{
+      "code": 0,
+      "data": {
+            "progress": 0.0,
+            "status": "1"
+      },
+      "message": "success"
+}
+```
+
+### Response for showing the parsing status of a document which does not exist.
+
+```json
+{
+      "code": 102,
+      "message": "This document: 'imagination' is not a valid document."
+}
+```
+
+### Response for showing the parsing status of a document in the nonexistent dataset.
+```json
+{
+      "code": 102,
+      "message": "This dataset 'imagination' cannot be found!"
 }
 ```
