@@ -684,7 +684,7 @@ This method downloads a specific document for a specific user.
 
 ```json
 {
-      "code": "<RetCode.SUCCESS: 0>",
+      "code": "0",
       "data": "b'test\\ntest\\ntest'"
 }
 ```
