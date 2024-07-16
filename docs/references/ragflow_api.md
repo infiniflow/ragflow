@@ -694,7 +694,7 @@ This method downloads a specific document for a specific user.
 ```json
 {
       "code": 101,
-      "message": "This document 'imagination' cannot be found!"
+      "message": "This document 'imagination.txt' cannot be found!"
 }
 ```
 
@@ -750,7 +750,7 @@ This method enables a specific document to start parsing for a specific user.
 ```json
 {
       "code": 101,
-      "message": "This document 'imagination' cannot be found!"
+      "message": "This document 'imagination.txt' cannot be found!"
 }
 ```
 
@@ -758,7 +758,7 @@ This method enables a specific document to start parsing for a specific user.
 ```json
 {
       "code": 102,
-      "message": "This dataset 'imagination' cannot be found!"
+      "message": "This dataset 'imagination.txt' cannot be found!"
 }
 ```
 
@@ -807,7 +807,7 @@ This method enables multiple documents, including all documents in the specific 
 ```json
 {
       "code": 101,
-      "message": "This document 'imagination' cannot be found!"
+      "message": "This document 'imagination.txt' cannot be found!"
 }
 ```
 
@@ -857,7 +857,7 @@ This method shows the parsing status of the document for a specific user.
       "code": 0,
       "data": {
             "progress": 0.0,
-            "status": "1"
+            "status": "RUNNING"
       },
       "message": "success"
 }
@@ -868,7 +868,7 @@ This method shows the parsing status of the document for a specific user.
 ```json
 {
       "code": 102,
-      "message": "This document: 'imagination' is not a valid document."
+      "message": "This document: 'imagination.txt' is not a valid document."
 }
 ```
 
