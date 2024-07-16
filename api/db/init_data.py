@@ -90,15 +90,20 @@ def init_superuser():
 
 
 def init_llm_factory():
-    factory_llm_infos = json.load(open(os.path.join(get_project_base_directory(), "conf", "llm_factories.json"), "r"))
-    for factory_llm_info in factory_llm_infos['factory_llm_infos']:
-        llm_infos = factory_llm_info.pop('llm')
+    factory_llm_infos = json.load(
+        open(
+            os.path.join(get_project_base_directory(), "conf", "llm_factories.json"),
+            "r",
+        )
+    )
+    for factory_llm_info in factory_llm_infos["factory_llm_infos"]:
+        llm_infos = factory_llm_info.pop("llm")
         try:
             LLMFactoriesService.save(**factory_llm_info)
         except Exception as e:
             pass
         for llm_info in llm_infos:
-            llm_info['fid'] = factory_llm_info['name']
+            llm_info["fid"] = factory_llm_info["name"]
             try:
                 LLMService.save(**llm_info)
             except Exception as e:
@@ -107,7 +112,7 @@ def init_llm_factory():
         LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
     except Exception as e:
         pass
-    
+
     LLMFactoriesService.filter_delete([LLMFactories.name == "Local"])
     LLMService.filter_delete([LLM.fid == "Local"])
     LLMService.filter_delete([LLM.fid == "Moonshot", LLM.llm_name == "flag-embedding"])
