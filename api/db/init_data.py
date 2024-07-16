@@ -90,8 +90,8 @@ def init_superuser():
 
 
 def init_llm_factory():
-    with open('conf/llm_factories.json', 'r', encoding='utf-8') as json_file:
-        factory_llm_infos = json.load(json_file)
+    file_path = os.path.join(get_project_base_directory(), "conf", "llm_factories.json")
+    factory_llm_infos = json.load(open(file_path,'r',encoding='utf-8'))
     for factory_llm_info in factory_llm_infos['factory_llm_infos']:
         llm_infos = factory_llm_info.pop('llm')
         factory_info = factory_llm_info
