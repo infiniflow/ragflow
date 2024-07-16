@@ -1,18 +1,17 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="16px" height="16px" viewBox="0 0 16 16" enable-background="new 0 0 16 16" xml:space="preserve">  <image id="image0" width="16" height="16" x="0" y="0"
-    xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAAIGNIUk0AAHomAACAhAAA+gAAAIDo
-AAB1MAAA6mAAADqYAAAXcJy6UTwAAADnUExURQAAAJSkuZeluJmZmZajt5SkuZSkuJSkuJSjuJSj
-uJSkuZOnupaju5Sjt5WjuJSiuYuiuZajuZWjuJSjuJSiuJKktr+/v5WkuZSjuJSjuJSkt5ent5eh
-vZWkuZSjuJWjuZWjuZSiuJSjuJSkuP///5Oit4CAgJSjuJeiuZSjuJSkuZmZzJOlt5WkuJSkuJSm
-uJSkuJSjuJmzs5Oit5Sjt5SjuJWkuZWjuZWjuZSjuJCmsZOkupSjuJSjuJOjuJWqqpSkuJSjt5Sj
-uI+fv5ilupSkupWjuJSit5WkuJOfuZOjt5SjuP///6MuKmIAAABLdFJOUwCdNgVOkbG48/2gGkvd
-8m4Llv7+pRwEVNzDUSAb2so6su33cAFHAtYs+4MFR4nlK7AyCof8/LmOi5sXO97wYQx+5PoQJUNI
-8rYoQFP//YUAAAABYktHRCS0BvmZAAAAB3RJTUUH6AcMBxoClVndlQAAAI5JREFUGNNjYMADGJkQ
-bGYWVjZ2Dk4ubiifh9cbAvj4QVwBQSEoX1hElIFBTFwCyJSUkpaRlZMHSisoArlKyipApqoaSD1I
-pboGkl0gAU0tbYSAjq4eUEhOH8g0MIQIGRmbeHubmplbKJlaWkGErG2g1nrb2kFE7B0cwXwnc2eY
-USourm7uHp6onvPC6mUAFZcZIrBzIB0AAAAldEVYdGRhdGU6Y3JlYXRlADIwMjQtMDctMTJUMDc6
-MjY6MDIrMDA6MDClm05uAAAAJXRFWHRkYXRlOm1vZGlmeQAyMDI0LTA3LTEyVDA3OjI2OjAyKzAw
-OjAw1Mb20gAAACh0RVh0ZGF0ZTp0aW1lc3RhbXAAMjAyNC0wNy0xMlQwNzoyNjowMiswMDowMIPT
-1w0AAAAASUVORK5CYII=" />
+<svg width="100%" height="100%" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" class="w-4 rounded-full"
+    fill="currentColor" stroke="currentColor" aria-label="Logo">
+    <g clip-path="url(#clip0_205_3)">
+        <path d="M3 248.945C18 248.945 76 236 106 219C136 202 136 202 198 158C276.497 102.293 332 120.945 423 120.945"
+            stroke-width="90"></path>
+        <path d="M511 121.5L357.25 210.268L357.25 32.7324L511 121.5Z"></path>
+        <path
+            d="M0 249C15 249 73 261.945 103 278.945C133 295.945 133 295.945 195 339.945C273.497 395.652 329 377 420 377"
+            stroke-width="90"></path>
+        <path d="M508 376.445L354.25 287.678L354.25 465.213L508 376.445Z"></path>
+    </g>
+    <defs>
+        <clipPath id="clip0_205_3">
+            <rect width="512" height="512" fill="white"></rect>
+        </clipPath>
+    </defs>
 </svg>
