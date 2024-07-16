@@ -244,7 +244,7 @@ class OpenRouterCV(Base):
                     "Authorization": f"Bearer {self.key}",
                 },
                 data=json.dumps({
-                    "model": self.model_name, # Optional
+                    "model": self.model_name,
                     "messages": self.prompt(b64),
                     'max_tokens':max_tokens
                 })
