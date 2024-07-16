@@ -155,5 +155,4 @@ class XInferenceRerank(Base):
             "documents": texts
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
-        return np.array([d["relevance_score"] for d in res["results"]]), res["tokens"]["input_tokens"] + res["tokens"][
-            "output_tokens"]
+        return np.array([d["relevance_score"] for d in res["results"]]), res["meta"]["tokens"]["input_tokens"]+res["meta"]["tokens"]["output_tokens"]
