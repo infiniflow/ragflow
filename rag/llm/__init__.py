@@ -61,6 +61,7 @@ ChatModel = {
     "VolcEngine": VolcEngineChat,
     "BaiChuan": BaiChuanChat,
     "MiniMax": MiniMaxChat,
+    "Minimax": MiniMaxChat,
     "Mistral": MistralChat,
     'Gemini' : GeminiChat,
     "Bedrock": BedrockChat,

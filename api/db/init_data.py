@@ -573,42 +573,35 @@ def init_llm_factory():
         # ------------------------ Minimax -----------------------
         {
             "fid": factory_infos[13]["name"],
-            "llm_name": "abab6.5-chat",
+            "llm_name": "abab6.5",
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
             "model_type": LLMType.CHAT.value
         },
         {
             "fid": factory_infos[13]["name"],
-            "llm_name": "abab6.5s-chat",
+            "llm_name": "abab6.5s",
             "tags": "LLM,CHAT,245k",
             "max_tokens": 245760,
             "model_type": LLMType.CHAT.value
         },
         {
             "fid": factory_infos[13]["name"],
-            "llm_name": "abab6.5t-chat",
+            "llm_name": "abab6.5t",
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
             "model_type": LLMType.CHAT.value
         },
         {
             "fid": factory_infos[13]["name"],
-            "llm_name": "abab6.5g-chat",
+            "llm_name": "abab6.5g",
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
             "model_type": LLMType.CHAT.value
         },
         {
             "fid": factory_infos[13]["name"],
-            "llm_name": "abab5.5-chat",
-            "tags": "LLM,CHAT,16k",
-            "max_tokens": 16384,
-            "model_type": LLMType.CHAT.value
-        },
-        {
-            "fid": factory_infos[13]["name"],
-            "llm_name": "abab5.5s-chat",
+            "llm_name": "abab5.5s",
             "tags": "LLM,CHAT,8k",
             "max_tokens": 8192,
             "model_type": LLMType.CHAT.value
@@ -987,6 +980,8 @@ def init_llm_factory():
             LLMFactoriesService.save(**info)
         except Exception as e:
             pass
+
+    LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
     for info in llm_infos:
         try:
             LLMService.save(**info)
