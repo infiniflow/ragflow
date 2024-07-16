@@ -90,6 +90,11 @@ def init_superuser():
 
 
 def init_llm_factory():
+    try:
+        LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
+    except Exception as e:
+        pass
+
     factory_llm_infos = json.load(
         open(
             os.path.join(get_project_base_directory(), "conf", "llm_factories.json"),
@@ -108,10 +113,6 @@ def init_llm_factory():
                 LLMService.save(**llm_info)
             except Exception as e:
                 pass
-    try:
-        LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
-    except Exception as e:
-        pass
 
     LLMFactoriesService.filter_delete([LLMFactories.name == "Local"])
     LLMService.filter_delete([LLM.fid == "Local"])
