@@ -39,7 +39,7 @@ class TestFile(TestSdk):
     """
 
 # ----------------------------upload local files-----------------------------------------------------
-    def test_upload_two_files(self):
+    def test_upload_two_files(self, ragflow, create_dataset):
         """
         Test uploading two files with success.
         """
@@ -48,7 +48,7 @@ class TestFile(TestSdk):
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert res["code"] == RetCode.SUCCESS and res["message"] == "success"
 
-    def test_upload_one_file(self):
+    def test_upload_one_file(self, ragflow, create_dataset):
         """
         Test uploading one file with success.
         """
@@ -57,7 +57,7 @@ class TestFile(TestSdk):
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert res["code"] == RetCode.SUCCESS and res["message"] == "success"
 
-    def test_upload_nonexistent_files(self):
+    def test_upload_nonexistent_files(self, ragflow, create_dataset):
         """
         Test uploading a file which does not exist.
         """
@@ -66,7 +66,7 @@ class TestFile(TestSdk):
         res = ragflow.upload_local_file(dataset_id, file_paths)
         assert res["code"] == RetCode.DATA_ERROR and "does not exist" in res["message"]
 
-    def test_upload_file_if_dataset_does_not_exist(self):
+    def test_upload_file_if_dataset_does_not_exist(self, ragflow):
         """
         Test uploading files if the dataset id does not exist.
         """
