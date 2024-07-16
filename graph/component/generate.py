@@ -63,6 +63,10 @@ class GenerateParam(ComponentParamBase):
 class Generate(ComponentBase):
     component_name = "Generate"
 
+    def get_dependent_components(self):
+        cpnts = [para["component_id"] for para in self._param.parameters]
+        return cpnts
+
     def _run(self, history, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         prompt = self._param.prompt

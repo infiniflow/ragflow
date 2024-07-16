@@ -1,8 +1,15 @@
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
+import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 import { variableEnabledFieldMap } from '@/constants/chat';
 import i18n from '@/locales/config';
+
+// DuckDuckGo's channel options
+export enum Channel {
+  Text = 'text',
+  News = 'news',
+}
 
 import {
   BranchesOutlined,
@@ -27,6 +34,7 @@ export enum Operator {
   KeywordExtract = 'KeywordExtract',
   Baidu = 'Baidu',
   DuckDuckGo = 'DuckDuckGo',
+  Wikipedia = 'Wikipedia',
 }
 
 export const operatorIconMap = {
@@ -41,6 +49,7 @@ export const operatorIconMap = {
   [Operator.KeywordExtract]: KeywordIcon,
   [Operator.DuckDuckGo]: DuckIcon,
   [Operator.Baidu]: BaiduIcon,
+  [Operator.Wikipedia]: WikipediaIcon,
 };
 
 export const operatorMap = {
@@ -101,6 +110,9 @@ export const operatorMap = {
     color: '#aea00c',
   },
   [Operator.Baidu]: {},
+  [Operator.Wikipedia]: {
+    backgroundColor: '#dee0e2',
+  },
 };
 
 export const componentMenuList = [
@@ -133,6 +145,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Baidu,
+  },
+  {
+    name: Operator.Wikipedia,
   },
 ];
 
@@ -192,17 +207,18 @@ export const initialKeywordExtractValues = {
   ...initialLlmBaseValues,
   top_n: 1,
 };
+export const initialDuckValues = {
+  top_n: 10,
+  channel: Channel.Text,
+};
 
-export const initialFormValuesMap = {
-  [Operator.Begin]: initialBeginValues,
-  [Operator.Retrieval]: initialRetrievalValues,
-  [Operator.Generate]: initialGenerateValues,
-  [Operator.Answer]: {},
-  [Operator.Categorize]: initialCategorizeValues,
-  [Operator.Relevant]: initialRelevantValues,
-  [Operator.RewriteQuestion]: initialRewriteQuestionValues,
-  [Operator.Message]: initialMessageValues,
-  [Operator.KeywordExtract]: initialKeywordExtractValues,
+export const initialBaiduValues = {
+  top_n: 10,
+};
+
+export const initialWikipediaValues = {
+  top_n: 10,
+  language: 'en',
 };
 
 export const CategorizeAnchorPointPositions = [
@@ -263,6 +279,7 @@ export const RestrictedUpstreamMap = {
   ],
   [Operator.Baidu]: [Operator.Begin, Operator.Retrieval],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -277,4 +294,288 @@ export const NodeMap = {
   [Operator.KeywordExtract]: 'ragNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Baidu]: 'ragNode',
+  [Operator.Wikipedia]: 'ragNode',
 };
+
+export const LanguageOptions = [
+  {
+    value: 'af',
+    label: 'Afrikaans',
+  },
+  {
+    value: 'pl',
+    label: 'Polski',
+  },
+  {
+    value: 'ar',
+    label: 'العربية',
+  },
+  {
+    value: 'ast',
+    label: 'Asturianu',
+  },
+  {
+    value: 'az',
+    label: 'Azərbaycanca',
+  },
+  {
+    value: 'bg',
+    label: 'Български',
+  },
+  {
+    value: 'nan',
+    label: '閩南語 / Bân-lâm-gú',
+  },
+  {
+    value: 'bn',
+    label: 'বাংলা',
+  },
+  {
+    value: 'be',
+    label: 'Беларуская',
+  },
+  {
+    value: 'ca',
+    label: 'Català',
+  },
+  {
+    value: 'cs',
+    label: 'Čeština',
+  },
+  {
+    value: 'cy',
+    label: 'Cymraeg',
+  },
+  {
+    value: 'da',
+    label: 'Dansk',
+  },
+  {
+    value: 'de',
+    label: 'Deutsch',
+  },
+  {
+    value: 'et',
+    label: 'Eesti',
+  },
+  {
+    value: 'el',
+    label: 'Ελληνικά',
+  },
+  {
+    value: 'en',
+    label: 'English',
+  },
+  {
+    value: 'es',
+    label: 'Español',
+  },
+  {
+    value: 'eo',
+    label: 'Esperanto',
+  },
+  {
+    value: 'eu',
+    label: 'Euskara',
+  },
+  {
+    value: 'fa',
+    label: 'فارسی',
+  },
+  {
+    value: 'fr',
+    label: 'Français',
+  },
+  {
+    value: 'gl',
+    label: 'Galego',
+  },
+  {
+    value: 'ko',
+    label: '한국어',
+  },
+  {
+    value: 'hy',
+    label: 'Հայերեն',
+  },
+  {
+    value: 'hi',
+    label: 'हिन्दी',
+  },
+  {
+    value: 'hr',
+    label: 'Hrvatski',
+  },
+  {
+    value: 'id',
+    label: 'Bahasa Indonesia',
+  },
+  {
+    value: 'it',
+    label: 'Italiano',
+  },
+  {
+    value: 'he',
+    label: 'עברית',
+  },
+  {
+    value: 'ka',
+    label: 'ქართული',
+  },
+  {
+    value: 'lld',
+    label: 'Ladin',
+  },
+  {
+    value: 'la',
+    label: 'Latina',
+  },
+  {
+    value: 'lv',
+    label: 'Latviešu',
+  },
+  {
+    value: 'lt',
+    label: 'Lietuvių',
+  },
+  {
+    value: 'hu',
+    label: 'Magyar',
+  },
+  {
+    value: 'mk',
+    label: 'Македонски',
+  },
+  {
+    value: 'arz',
+    label: 'مصرى',
+  },
+  {
+    value: 'ms',
+    label: 'Bahasa Melayu',
+  },
+  {
+    value: 'min',
+    label: 'Bahaso Minangkabau',
+  },
+  {
+    value: 'my',
+    label: 'မြန်မာဘာသာ',
+  },
+  {
+    value: 'nl',
+    label: 'Nederlands',
+  },
+  {
+    value: 'ja',
+    label: '日本語',
+  },
+  {
+    value: 'no',
+    label: 'Norsk (bokmål)',
+  },
+  {
+    value: 'nn',
+    label: 'Norsk (nynorsk)',
+  },
+  {
+    value: 'ce',
+    label: 'Нохчийн',
+  },
+  {
+    value: 'uz',
+    label: 'Oʻzbekcha / Ўзбекча',
+  },
+  {
+    value: 'pt',
+    label: 'Português',
+  },
+  {
+    value: 'kk',
+    label: 'Қазақша / Qazaqşa / قازاقشا',
+  },
+  {
+    value: 'ro',
+    label: 'Română',
+  },
+  {
+    value: 'ru',
+    label: 'Русский',
+  },
+  {
+    value: 'ceb',
+    label: 'Sinugboanong Binisaya',
+  },
+  {
+    value: 'sk',
+    label: 'Slovenčina',
+  },
+  {
+    value: 'sl',
+    label: 'Slovenščina',
+  },
+  {
+    value: 'sr',
+    label: 'Српски / Srpski',
+  },
+  {
+    value: 'sh',
+    label: 'Srpskohrvatski / Српскохрватски',
+  },
+  {
+    value: 'fi',
+    label: 'Suomi',
+  },
+  {
+    value: 'sv',
+    label: 'Svenska',
+  },
+  {
+    value: 'ta',
+    label: 'தமிழ்',
+  },
+  {
+    value: 'tt',
+    label: 'Татарча / Tatarça',
+  },
+  {
+    value: 'th',
+    label: 'ภาษาไทย',
+  },
+  {
+    value: 'tg',
+    label: 'Тоҷикӣ',
+  },
+  {
+    value: 'azb',
+    label: 'تۆرکجه',
+  },
+  {
+    value: 'tr',
+    label: 'Türkçe',
+  },
+  {
+    value: 'uk',
+    label: 'Українська',
+  },
+  {
+    value: 'ur',
+    label: 'اردو',
+  },
+  {
+    value: 'vi',
+    label: 'Tiếng Việt',
+  },
+  {
+    value: 'war',
+    label: 'Winaray',
+  },
+  {
+    value: 'zh',
+    label: '中文',
+  },
+  {
+    value: 'yue',
+    label: '粵語',
+  },
+];

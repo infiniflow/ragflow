@@ -559,6 +559,7 @@ export default {
       messageDescription:
         '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
+      wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要采用的搜索结果数量。`,
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
 以上就是你需要总结的内容。`,
@@ -591,6 +592,7 @@ export default {
       messageHistoryWindowSize: '历史消息窗口大小',
       messageHistoryWindowSizeTip:
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大内容长度。',
+      wikipedia: '维基百科',
     },
     footer: {
       profile: 'All rights reserved @ React',

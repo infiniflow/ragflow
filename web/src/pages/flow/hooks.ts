@@ -8,6 +8,7 @@ import React, {
   KeyboardEventHandler,
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from 'react';
 import { Connection, Edge, Node, Position, ReactFlowInstance } from 'reactflow';
@@ -30,13 +31,17 @@ import {
   NodeMap,
   Operator,
   RestrictedUpstreamMap,
+  initialBaiduValues,
   initialBeginValues,
   initialCategorizeValues,
+  initialDuckValues,
   initialGenerateValues,
+  initialKeywordExtractValues,
   initialMessageValues,
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialWikipediaValues,
 } from './constant';
 import { ICategorizeForm, IRelevantForm } from './interface';
 import useGraphStore, { RFState } from './store';
@@ -65,24 +70,34 @@ export const useSelectCanvasData = () => {
 export const useInitializeOperatorParams = () => {
   const llmId = useFetchModelId(true);
 
+  const initialFormValuesMap = useMemo(() => {
+    return {
+      [Operator.Begin]: initialBeginValues,
+      [Operator.Retrieval]: initialRetrievalValues,
+      [Operator.Generate]: { ...initialGenerateValues, llm_id: llmId },
+      [Operator.Answer]: {},
+      [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
+      [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
+      [Operator.RewriteQuestion]: {
+        ...initialRewriteQuestionValues,
+        llm_id: llmId,
+      },
+      [Operator.Message]: initialMessageValues,
+      [Operator.KeywordExtract]: {
+        ...initialKeywordExtractValues,
+        llm_id: llmId,
+      },
+      [Operator.DuckDuckGo]: initialDuckValues,
+      [Operator.Baidu]: initialBaiduValues,
+      [Operator.Wikipedia]: initialWikipediaValues,
+    };
+  }, [llmId]);
+
   const initializeOperatorParams = useCallback(
     (operatorName: Operator) => {
-      const initialFormValuesMap = {
-        [Operator.Begin]: initialBeginValues,
-        [Operator.Retrieval]: initialRetrievalValues,
-        [Operator.Generate]: { ...initialGenerateValues, llm_id: llmId },
-        [Operator.Answer]: {},
-        [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
-        [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
-        [Operator.RewriteQuestion]: {
-          ...initialRewriteQuestionValues,
-          llm_id: llmId,
-        },
-        [Operator.Message]: initialMessageValues,
-      };
       return initialFormValuesMap[operatorName];
     },
-    [llmId],
+    [initialFormValuesMap],
   );
 
   return initializeOperatorParams;

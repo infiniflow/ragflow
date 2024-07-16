@@ -193,9 +193,13 @@ class Canvas(ABC):
                     self.answer.append(c)
                 else:
                     if DEBUG: print("RUN: ", c)
+                    if cpn.component_name == "Generate":
+                        cpids = cpn.get_dependent_components()
+                        if any([c not in self.path[-1] for c in cpids]):
+                            continue
                     ans = cpn.run(self.history, **kwargs)
                     self.path[-1].append(c)
-                ran += 1
+            ran += 1
 
         prepare2run(self.components[self.path[-2][-1]]["downstream"])
         while 0 <= ran < len(self.path[-1]):

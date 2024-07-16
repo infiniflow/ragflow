@@ -4,7 +4,11 @@ import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { Flex, Form, Input, Modal, Select, Space, Switch } from 'antd';
 import omit from 'lodash/omit';
 
-type FieldType = IAddLlmRequestBody & { vision: boolean };
+type FieldType = IAddLlmRequestBody & {
+  vision: boolean;
+  volc_ak: string;
+  volc_sk: string;
+};
 
 const { Option } = Select;
 
@@ -13,7 +17,7 @@ const VolcEngineModal = ({
   hideModal,
   onOk,
   loading,
-  llmFactory
+  llmFactory,
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
   const [form] = Form.useForm<FieldType>();
 
