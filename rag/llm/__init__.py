@@ -33,7 +33,7 @@ EmbeddingModel = {
     "BAAI": DefaultEmbedding,
     "Mistral": MistralEmbed,
     "Bedrock": BedrockEmbed,
-    "Gemini":GeminiEmbed,
+    "Gemini":GeminiEmbed
 }
 
 
@@ -45,7 +45,8 @@ CvModel = {
     "Tongyi-Qianwen": QWenCV,
     "ZHIPU-AI": Zhipu4V,
     "Moonshot": LocalCV,
-    'Gemini':GeminiCV
+    'Gemini':GeminiCV,
+    'OpenRouter':OpenRouterCV
 }
 
 
@@ -61,10 +62,12 @@ ChatModel = {
     "VolcEngine": VolcEngineChat,
     "BaiChuan": BaiChuanChat,
     "MiniMax": MiniMaxChat,
+    "Minimax": MiniMaxChat,
     "Mistral": MistralChat,
     'Gemini' : GeminiChat,
     "Bedrock": BedrockChat,
-    "Groq": GroqChat
+    "Groq": GroqChat,
+    'OpenRouter':OpenRouterChat
 }
 
 

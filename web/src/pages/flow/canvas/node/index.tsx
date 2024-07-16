@@ -11,6 +11,8 @@ import NodeDropdown from './dropdown';
 import styles from './index.less';
 import NodePopover from './popover';
 
+const ZeroGapOperators = [Operator.RewriteQuestion, Operator.KeywordExtract];
+
 export function RagNode({
   id,
   data,
@@ -47,20 +49,29 @@ export function RagNode({
         <Flex
           vertical
           align="center"
-          justify={'center'}
-          gap={data.label === Operator.RewriteQuestion ? 0 : 6}
+          justify={'space-around'}
+          gap={ZeroGapOperators.some((x) => x === data.label) ? 0 : 6}
         >
-          <OperatorIcon
-            name={data.label as Operator}
-            fontSize={style['iconFontSize'] ?? 24}
-          ></OperatorIcon>
-          <span
-            className={styles.type}
-            style={{ fontSize: style.fontSize ?? 14 }}
-          >
-            {t(lowerFirst(data.label))}
-          </span>
-          <NodeDropdown id={id}></NodeDropdown>
+          <Flex flex={1} justify="center" align="center">
+            <OperatorIcon
+              name={data.label as Operator}
+              fontSize={style?.iconFontSize ?? 24}
+              width={style?.iconWidth}
+            ></OperatorIcon>
+          </Flex>
+
+          <Flex flex={1}>
+            <span
+              className={styles.type}
+              style={{ fontSize: style?.fontSize ?? 14 }}
+            >
+              {t(lowerFirst(data.label))}
+            </span>
+          </Flex>
+          <Flex flex={1}>
+            {' '}
+            <NodeDropdown id={id}></NodeDropdown>
+          </Flex>
         </Flex>
 
         <section className={styles.bottomBox}>

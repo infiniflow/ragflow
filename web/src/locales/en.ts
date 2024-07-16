@@ -579,6 +579,7 @@ The above is the content you need to summarize.`,
       messageDescription:
         'This component is used to send user static information. You can prepare several messages which will be chosen randomly.',
       keywordDescription: `This component is used to extract keywords from user's question. Top N specifies the number of keywords you need to extract.`,
+      wikipediaDescription: `This component is used to get search result from https://www.wikipedia.org/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adopt.`,
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
         {input}
   The above is the content you need to summarize.`,
@@ -598,6 +599,21 @@ The above is the content you need to summarize.`,
       addItem: 'Add Item',
       nameRequiredMsg: 'Name is required',
       nameRepeatedMsg: 'The name cannot be repeated',
+      keywordExtract: 'Keyword',
+      keywordExtractDescription: `This component is used to extract keywords from user's question. Top N specifies the number of keywords you need to extract.`,
+      baidu: 'Baidu',
+      baiduDescription: `This component is used to get search result from www.baidu.com. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adopt.`,
+      duckDuckGo: 'DuckDuckGo',
+      duckDuckGoDescription:
+        'This component is used to get search result from www.duckduckgo.com. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adopt.',
+      channel: 'Channel',
+      channelTip: `Perform text search or news search on the component's input`,
+      text: 'Text',
+      news: 'News',
+      messageHistoryWindowSize: 'Message window size',
+      messageHistoryWindowSizeTip:
+        'The  window size of conversation history that needed to be seen by LLM. The larger the better. But be careful with the maximum content length of LLM.',
+      wikipedia: 'Wikipedia',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -2,6 +2,7 @@ import Image from '@/components/image';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
 import classNames from 'classnames';
+import DOMPurify from 'dompurify';
 import { useState } from 'react';
 
 import { ChunkTextMode } from '../../constant';
@@ -73,7 +74,9 @@ const ChunkCard = ({
           className={styles.content}
         >
           <div
-            dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(item.content_with_weight),
+            }}
             className={classNames({
               [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,
             })}

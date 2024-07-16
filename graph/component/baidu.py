@@ -53,10 +53,11 @@ class Baidu(ComponentBase, ABC):
         url_res = re.findall(r"'url': \\\"(.*?)\\\"}", response.text)
         title_res = re.findall(r"'title': \\\"(.*?)\\\",\\n", response.text)
         body_res = re.findall(r"\"contentText\":\"(.*?)\"", response.text)
-        baidu_res = [re.sub('<em>|</em>', '', '<a href="' + url + '">' + title + '</a>    ' + body) for url, title, body
-                     in zip(url_res, title_res, body_res)]
+        baidu_res = [{"content": re.sub('<em>|</em>', '', '<a href="' + url + '">' + title + '</a>    ' + body)} for url, title, body in zip(url_res, title_res, body_res)]
         del body_res, url_res, title_res
 
-        print(baidu_res, ":::::::::::::::::::::::::::::::::")
-        return Baidu.be_output(baidu_res)
+        df = pd.DataFrame(baidu_res)
+        print(df, ":::::::::::::::::::::::::::::::::")
+
+        return df
 

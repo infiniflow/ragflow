@@ -1,6 +1,6 @@
 import LLMSelect from '@/components/llm-select';
 import { useTranslate } from '@/hooks/commonHooks';
-import { Form, Input, Switch } from 'antd';
+import { Form, Input, InputNumber, Switch } from 'antd';
 import { useSetLlmSetting } from '../hooks';
 import { IOperatorForm } from '../interface';
 import DynamicParameters from './dynamic-parameters';
@@ -13,8 +13,8 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 5 }}
-      wrapperCol={{ span: 19 }}
+      labelCol={{ span: 10 }}
+      wrapperCol={{ span: 14 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
@@ -48,6 +48,14 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         tooltip={t('citeTip')}
       >
         <Switch />
+      </Form.Item>
+      <Form.Item
+        name={'message_history_window_size'}
+        label={t('messageHistoryWindowSize')}
+        initialValue={12}
+        tooltip={t('messageHistoryWindowSizeTip')}
+      >
+        <InputNumber style={{ width: '100%' }} />
       </Form.Item>
       <DynamicParameters nodeId={node?.id}></DynamicParameters>
     </Form>

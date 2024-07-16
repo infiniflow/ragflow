@@ -35,7 +35,7 @@ _IS_RAW_CONF = "_is_raw_conf"
 class ComponentParamBase(ABC):
     def __init__(self):
         self.output_var_name = "output"
-        self.message_history_window_size = 4
+        self.message_history_window_size = 22
 
     def set_name(self, name: str):
         self._name = name
@@ -445,6 +445,7 @@ class ComponentBase(ABC):
         if DEBUG: print(self.component_name, reversed_cpnts[::-1])
         for u in reversed_cpnts[::-1]:
             if self.get_component_name(u) in ["switch"]: continue
+            if u not in self._canvas.get_component(self._id)["upstream"]: continue
             if self.component_name.lower().find("switch") < 0 \
                     and self.get_component_name(u) in ["relevant", "categorize"]:
                 continue

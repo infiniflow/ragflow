@@ -4,16 +4,20 @@ import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
+import BaiduForm from '../baidu-form';
 import BeginForm from '../begin-form';
 import CategorizeForm from '../categorize-form';
 import { Operator } from '../constant';
+import DuckDuckGoForm from '../duckduckgo-form';
 import GenerateForm from '../generate-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
+import KeywordExtractForm from '../keyword-extract-form';
 import MessageForm from '../message-form';
 import OperatorIcon from '../operator-icon';
 import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
+import WikipediaForm from '../wikipedia-form';
 
 import styles from './index.less';
 
@@ -30,6 +34,10 @@ const FormMap = {
   [Operator.Message]: MessageForm,
   [Operator.Relevant]: RelevantForm,
   [Operator.RewriteQuestion]: RewriteQuestionForm,
+  [Operator.Baidu]: BaiduForm,
+  [Operator.DuckDuckGo]: DuckDuckGoForm,
+  [Operator.KeywordExtract]: KeywordExtractForm,
+  [Operator.Wikipedia]: WikipediaForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

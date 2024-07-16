@@ -23,6 +23,8 @@ from openai import OpenAI
 import os
 import base64
 from io import BytesIO
+import json
+import requests
 
 from api.utils import get_uuid
 from api.utils.file_utils import get_project_base_directory
@@ -226,6 +228,50 @@ class GeminiCV(Base):
             generation_config=gen_config,
         )
         return res.text,res.usage_metadata.total_token_count
+
+class OpenRouterCV(Base):
+    def __init__(self, key, model_name, lang="Chinese",base_url="https://openrouter.ai/api/v1/chat/completions"):
+        self.model_name = model_name
+        self.lang = lang
+        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.key=key
+    
+    def describe(self, image, max_tokens=300):
+        b64 = self.image2base64(image)
+        response = requests.post(
+                url=self.base_url,
+                headers={
+                    "Authorization": f"Bearer {self.key}",
+                },
+                data=json.dumps({
+                    "model": self.model_name, # Optional
+                    "messages": self.prompt(b64),
+                    'max_tokens':max_tokens
+                })
+        )
+        response = response.json()
+        return response['choices'][0]['message']['content'].strip(), response['usage']['total_tokens']
+    
+    def prompt(self, b64):
+        return [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}"
+                        },
+                    },
+                    {
+                        'type':'text',
+                        "text": "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。" if self.lang.lower() == "chinese" else
+                        "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out.",
+                    },
+                ],
+            }
+        ]
+
 
 class LocalCV(Base):
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):

@@ -80,7 +80,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         llm = TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=dialog.llm_id)
         if not llm:
             raise LookupError("LLM(%s) not found" % dialog.llm_id)
-        max_tokens = 1024
+        max_tokens = 8192
     else:
         max_tokens = llm[0].max_tokens
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)

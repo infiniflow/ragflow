@@ -63,6 +63,7 @@ const IconMap = {
   Bedrock: 'bedrock',
   Gemini:'gemini',
   Groq: 'Groq',
+  OpenRouter:'open-router'
 };
 
 const LlmIcon = ({ name }: { name: string }) => {

@@ -58,7 +58,7 @@ def set_api_key():
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
                 m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
-                                 "temperature": 0.9})
+                                 "temperature": 0.9,'max_tokens':50})
                 if not tc:
                     raise Exception(m)
             except Exception as e:
@@ -162,6 +162,17 @@ def add_llm():
                              "temperature": 0.9})
             if not tc:
                 raise Exception(m)
+        except Exception as e:
+            msg += f"\nFail to access model({llm['llm_name']})." + str(
+                e)
+    elif llm["model_type"] == LLMType.RERANK:
+        mdl = RerankModel[factory](
+            key=None, model_name=llm["llm_name"], base_url=llm["api_base"]
+        )
+        try:
+            arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!"])
+            if len(arr) == 0 or tc == 0:
+                raise Exception("Not known.")
         except Exception as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(
                 e)

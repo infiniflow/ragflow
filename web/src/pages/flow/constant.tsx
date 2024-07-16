@@ -1,7 +1,16 @@
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
+import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 import { variableEnabledFieldMap } from '@/constants/chat';
+import i18n from '@/locales/config';
+
+// DuckDuckGo's channel options
+export enum Channel {
+  Text = 'text',
+  News = 'news',
+}
+
 import {
   BranchesOutlined,
   DatabaseOutlined,
@@ -25,6 +34,7 @@ export enum Operator {
   KeywordExtract = 'KeywordExtract',
   Baidu = 'Baidu',
   DuckDuckGo = 'DuckDuckGo',
+  Wikipedia = 'Wikipedia',
 }
 
 export const operatorIconMap = {
@@ -39,16 +49,15 @@ export const operatorIconMap = {
   [Operator.KeywordExtract]: KeywordIcon,
   [Operator.DuckDuckGo]: DuckIcon,
   [Operator.Baidu]: BaiduIcon,
+  [Operator.Wikipedia]: WikipediaIcon,
 };
 
 export const operatorMap = {
   [Operator.Retrieval]: {
-    description: 'This is where the flow begin',
     backgroundColor: '#cad6e0',
     color: '#385974',
   },
   [Operator.Generate]: {
-    description: 'Generate description',
     backgroundColor: '#ebd6d6',
     width: 150,
     height: 150,
@@ -57,27 +66,21 @@ export const operatorMap = {
     color: '#996464',
   },
   [Operator.Answer]: {
-    description:
-      'This component is used as an interface between bot and human. It receives input of user and display the result of the computation of the bot.',
     backgroundColor: '#f4816d',
     color: 'white',
   },
   [Operator.Begin]: {
-    description: 'Begin description',
     backgroundColor: '#4f51d6',
   },
   [Operator.Categorize]: {
-    description: 'Categorize description',
     backgroundColor: '#ffebcd',
     color: '#cc8a26',
   },
   [Operator.Message]: {
-    description: 'Message description',
     backgroundColor: '#c5ddc7',
     color: 'green',
   },
   [Operator.Relevant]: {
-    description: 'BranchesOutlined description',
     backgroundColor: '#9fd94d',
     color: 'white',
     width: 70,
@@ -86,7 +89,6 @@ export const operatorMap = {
     iconFontSize: 16,
   },
   [Operator.RewriteQuestion]: {
-    description: 'RewriteQuestion description',
     backgroundColor: '#f8c7f8',
     color: 'white',
     width: 70,
@@ -94,49 +96,59 @@ export const operatorMap = {
     fontSize: 12,
     iconFontSize: 16,
   },
+  [Operator.KeywordExtract]: {
+    width: 70,
+    height: 70,
+    backgroundColor: '#0f0e0f',
+    color: '#e1dcdc',
+    fontSize: 12,
+    iconWidth: 16,
+    // iconFontSize: 16,
+  },
+  [Operator.DuckDuckGo]: {
+    backgroundColor: '#e7e389',
+    color: '#aea00c',
+  },
+  [Operator.Baidu]: {},
+  [Operator.Wikipedia]: {
+    backgroundColor: '#dee0e2',
+  },
 };
 
 export const componentMenuList = [
   {
     name: Operator.Retrieval,
-    description: operatorMap[Operator.Retrieval].description,
   },
   {
     name: Operator.Generate,
-    description: operatorMap[Operator.Generate].description,
   },
   {
     name: Operator.Answer,
-    description: operatorMap[Operator.Answer].description,
   },
   {
     name: Operator.Categorize,
-    description: operatorMap[Operator.Categorize].description,
   },
   {
     name: Operator.Message,
-    description: operatorMap[Operator.Message].description,
   },
   {
     name: Operator.Relevant,
-    description: operatorMap[Operator.Relevant].description,
   },
   {
     name: Operator.RewriteQuestion,
-    description: operatorMap[Operator.RewriteQuestion].description,
   },
-  // {
-  //   name: Operator.KeywordExtract,
-  //   description: operatorMap[Operator.Message].description,
-  // },
-  // {
-  //   name: Operator.DuckDuckGo,
-  //   description: operatorMap[Operator.Relevant].description,
-  // },
-  // {
-  //   name: Operator.Baidu,
-  //   description: operatorMap[Operator.RewriteQuestion].description,
-  // },
+  {
+    name: Operator.KeywordExtract,
+  },
+  {
+    name: Operator.DuckDuckGo,
+  },
+  {
+    name: Operator.Baidu,
+  },
+  {
+    name: Operator.Wikipedia,
+  },
 ];
 
 export const initialRetrievalValues = {
@@ -167,10 +179,9 @@ const initialLlmBaseValues = {
 
 export const initialGenerateValues = {
   ...initialLlmBaseValues,
-  prompt: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
-  {input}
-The above is the content you need to summarize.`,
+  prompt: i18n.t('flow.promptText'),
   cite: true,
+  message_history_window_size: 12,
   parameters: [],
 };
 
@@ -192,15 +203,22 @@ export const initialMessageValues = {
   messages: [],
 };
 
-export const initialFormValuesMap = {
-  [Operator.Begin]: initialBeginValues,
-  [Operator.Retrieval]: initialRetrievalValues,
-  [Operator.Generate]: initialGenerateValues,
-  [Operator.Answer]: {},
-  [Operator.Categorize]: initialCategorizeValues,
-  [Operator.Relevant]: initialRelevantValues,
-  [Operator.RewriteQuestion]: initialRewriteQuestionValues,
-  [Operator.Message]: initialMessageValues,
+export const initialKeywordExtractValues = {
+  ...initialLlmBaseValues,
+  top_n: 1,
+};
+export const initialDuckValues = {
+  top_n: 10,
+  channel: Channel.Text,
+};
+
+export const initialBaiduValues = {
+  top_n: 10,
+};
+
+export const initialWikipediaValues = {
+  top_n: 10,
+  language: 'en',
 };
 
 export const CategorizeAnchorPointPositions = [
@@ -254,9 +272,14 @@ export const RestrictedUpstreamMap = {
     Operator.Categorize,
     Operator.Relevant,
   ],
-  [Operator.KeywordExtract]: [Operator.Begin],
-  [Operator.Baidu]: [Operator.Begin],
-  [Operator.DuckDuckGo]: [Operator.Begin],
+  [Operator.KeywordExtract]: [
+    Operator.Begin,
+    Operator.Message,
+    Operator.Relevant,
+  ],
+  [Operator.Baidu]: [Operator.Begin, Operator.Retrieval],
+  [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -268,4 +291,291 @@ export const NodeMap = {
   [Operator.Message]: 'ragNode',
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'ragNode',
+  [Operator.KeywordExtract]: 'ragNode',
+  [Operator.DuckDuckGo]: 'ragNode',
+  [Operator.Baidu]: 'ragNode',
+  [Operator.Wikipedia]: 'ragNode',
 };
+
+export const LanguageOptions = [
+  {
+    value: 'af',
+    label: 'Afrikaans',
+  },
+  {
+    value: 'pl',
+    label: 'Polski',
+  },
+  {
+    value: 'ar',
+    label: 'العربية',
+  },
+  {
+    value: 'ast',
+    label: 'Asturianu',
+  },
+  {
+    value: 'az',
+    label: 'Azərbaycanca',
+  },
+  {
+    value: 'bg',
+    label: 'Български',
+  },
+  {
+    value: 'nan',
+    label: '閩南語 / Bân-lâm-gú',
+  },
+  {
+    value: 'bn',
+    label: 'বাংলা',
+  },
+  {
+    value: 'be',
+    label: 'Беларуская',
+  },
+  {
+    value: 'ca',
+    label: 'Català',
+  },
+  {
+    value: 'cs',
+    label: 'Čeština',
+  },
+  {
+    value: 'cy',
+    label: 'Cymraeg',
+  },
+  {
+    value: 'da',
+    label: 'Dansk',
+  },
+  {
+    value: 'de',
+    label: 'Deutsch',
+  },
+  {
+    value: 'et',
+    label: 'Eesti',
+  },
+  {
+    value: 'el',
+    label: 'Ελληνικά',
+  },
+  {
+    value: 'en',
+    label: 'English',
+  },
+  {
+    value: 'es',
+    label: 'Español',
+  },
+  {
+    value: 'eo',
+    label: 'Esperanto',
+  },
+  {
+    value: 'eu',
+    label: 'Euskara',
+  },
+  {
+    value: 'fa',
+    label: 'فارسی',
+  },
+  {
+    value: 'fr',
+    label: 'Français',
+  },
+  {
+    value: 'gl',
+    label: 'Galego',
+  },
+  {
+    value: 'ko',
+    label: '한국어',
+  },
+  {
+    value: 'hy',
+    label: 'Հայերեն',
+  },
+  {
+    value: 'hi',
+    label: 'हिन्दी',
+  },
+  {
+    value: 'hr',
+    label: 'Hrvatski',
+  },
+  {
+    value: 'id',
+    label: 'Bahasa Indonesia',
+  },
+  {
+    value: 'it',
+    label: 'Italiano',
+  },
+  {
+    value: 'he',
+    label: 'עברית',
+  },
+  {
+    value: 'ka',
+    label: 'ქართული',
+  },
+  {
+    value: 'lld',
+    label: 'Ladin',
+  },
+  {
+    value: 'la',
+    label: 'Latina',
+  },
+  {
+    value: 'lv',
+    label: 'Latviešu',
+  },
+  {
+    value: 'lt',
+    label: 'Lietuvių',
+  },
+  {
+    value: 'hu',
+    label: 'Magyar',
+  },
+  {
+    value: 'mk',
+    label: 'Македонски',
+  },
+  {
+    value: 'arz',
+    label: 'مصرى',
+  },
+  {
+    value: 'ms',
+    label: 'Bahasa Melayu',
+  },
+  {
+    value: 'min',
+    label: 'Bahaso Minangkabau',
+  },
+  {
+    value: 'my',
+    label: 'မြန်မာဘာသာ',
+  },
+  {
+    value: 'nl',
+    label: 'Nederlands',
+  },
+  {
+    value: 'ja',
+    label: '日本語',
+  },
+  {
+    value: 'no',
+    label: 'Norsk (bokmål)',
+  },
+  {
+    value: 'nn',
+    label: 'Norsk (nynorsk)',
+  },
+  {
+    value: 'ce',
+    label: 'Нохчийн',
+  },
+  {
+    value: 'uz',
+    label: 'Oʻzbekcha / Ўзбекча',
+  },
+  {
+    value: 'pt',
+    label: 'Português',
+  },
+  {
+    value: 'kk',
+    label: 'Қазақша / Qazaqşa / قازاقشا',
+  },
+  {
+    value: 'ro',
+    label: 'Română',
+  },
+  {
+    value: 'ru',
+    label: 'Русский',
+  },
+  {
+    value: 'ceb',
+    label: 'Sinugboanong Binisaya',
+  },
+  {
+    value: 'sk',
+    label: 'Slovenčina',
+  },
+  {
+    value: 'sl',
+    label: 'Slovenščina',
+  },
+  {
+    value: 'sr',
+    label: 'Српски / Srpski',
+  },
+  {
+    value: 'sh',
+    label: 'Srpskohrvatski / Српскохрватски',
+  },
+  {
+    value: 'fi',
+    label: 'Suomi',
+  },
+  {
+    value: 'sv',
+    label: 'Svenska',
+  },
+  {
+    value: 'ta',
+    label: 'தமிழ்',
+  },
+  {
+    value: 'tt',
+    label: 'Татарча / Tatarça',
+  },
+  {
+    value: 'th',
+    label: 'ภาษาไทย',
+  },
+  {
+    value: 'tg',
+    label: 'Тоҷикӣ',
+  },
+  {
+    value: 'azb',
+    label: 'تۆرکجه',
+  },
+  {
+    value: 'tr',
+    label: 'Türkçe',
+  },
+  {
+    value: 'uk',
+    label: 'Українська',
+  },
+  {
+    value: 'ur',
+    label: 'اردو',
+  },
+  {
+    value: 'vi',
+    label: 'Tiếng Việt',
+  },
+  {
+    value: 'war',
+    label: 'Winaray',
+  },
+  {
+    value: 'zh',
+    label: '中文',
+  },
+  {
+    value: 'yue',
+    label: '粵語',
+  },
+];

@@ -6,11 +6,14 @@ import styles from './index.less';
 interface IProps {
   name: Operator;
   fontSize?: number;
+  width?: number;
 }
 
-const OperatorIcon = ({ name, fontSize }: IProps) => {
+const OperatorIcon = ({ name, fontSize, width }: IProps) => {
   const Icon = operatorIconMap[name] || React.Fragment;
-  return <Icon className={styles.icon} style={{ fontSize }}></Icon>;
+  return (
+    <Icon className={styles.icon} style={{ fontSize }} width={width}></Icon>
+  );
 };
 
 export default OperatorIcon;
