@@ -45,7 +45,8 @@ CvModel = {
     "Tongyi-Qianwen": QWenCV,
     "ZHIPU-AI": Zhipu4V,
     "Moonshot": LocalCV,
-    'Gemini':GeminiCV
+    'Gemini':GeminiCV,
+    'OpenRouter':OpenRouterCV
 }
 
 
@@ -65,7 +66,8 @@ ChatModel = {
     "Mistral": MistralChat,
     'Gemini' : GeminiChat,
     "Bedrock": BedrockChat,
-    "Groq": GroqChat
+    "Groq": GroqChat,
+    'OpenRouter':OpenRouterChat
 }
 
 
