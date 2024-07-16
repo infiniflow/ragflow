@@ -866,8 +866,10 @@ def show_parsing_status(dataset_id, document_id):
         _, doc = DocumentService.get_by_id(document_id)  # get doc object
         doc_attributes = doc.to_dict()
 
-        return construct_json_result(data={"progress": doc_attributes["progress"], "status": doc_attributes["status"]},
-                                     code=RetCode.SUCCESS)
+        return construct_json_result(
+            data={"progress": doc_attributes["progress"], "status": TaskStatus(doc_attributes["status"]).name},
+            code=RetCode.SUCCESS
+        )
     except Exception as e:
         return construct_error_response(e)
 
