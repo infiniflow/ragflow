@@ -162,6 +162,7 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     def decorate_answer(answer):
         nonlocal prompt_config, knowledges, kwargs, kbinfos
+        refs = []
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             answer, idx = retrievaler.insert_citations(answer,
                                                        [ck["content_ltks"]
@@ -177,10 +178,11 @@ def chat(dialog, messages, stream=True, **kwargs):
             if not recall_docs: recall_docs = kbinfos["doc_aggs"]
             kbinfos["doc_aggs"] = recall_docs
 
-        refs = deepcopy(kbinfos)
-        for c in refs["chunks"]:
-            if c.get("vector"):
-                del c["vector"]
+            refs = deepcopy(kbinfos)
+            for c in refs["chunks"]:
+                if c.get("vector"):
+                    del c["vector"]
+
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
         return {"answer": answer, "reference": refs}

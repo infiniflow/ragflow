@@ -2,18 +2,20 @@ import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { useTranslate } from '@/hooks/commonHooks';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
+import { ApiKeyPostBody } from '../../interface';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
   initialValue: string;
   llmFactory: string;
-  onOk: (name: string, baseUrl: string) => void;
+  onOk: (postBody: ApiKeyPostBody) => void;
   showModal?(): void;
 }
 
 type FieldType = {
   api_key?: string;
   base_url?: string;
+  group_id?: string;
 };
 
 const modelsWithBaseUrl = ['OpenAI', 'Azure-OpenAI'];
@@ -32,7 +34,7 @@ const ApiKeyModal = ({
   const handleOk = async () => {
     const ret = await form.validateFields();
 
-    return onOk(ret.api_key, ret.base_url);
+    return onOk(ret);
   };
 
   useEffect(() => {
@@ -73,6 +75,11 @@ const ApiKeyModal = ({
             tooltip={t('baseUrlTip')}
           >
             <Input placeholder="https://api.openai.com/v1" />
+          </Form.Item>
+        )}
+        {llmFactory === 'Minimax' && (
+          <Form.Item<FieldType> label={'Group ID'} name="group_id">
+            <Input />
           </Form.Item>
         )}
       </Form>

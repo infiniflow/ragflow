@@ -555,7 +555,6 @@ class TestFile(TestSdk):
             "illegal_parameter": "0"
         }
         update_res = ragflow.update_file(created_res_id, doc_id, **params)
-
         assert (update_res["code"] == RetCode.ARGUMENT_ERROR and
                 update_res["message"] == "illegal_parameter is an illegal parameter.")
 
@@ -969,7 +968,7 @@ class TestFile(TestSdk):
         assert res["code"] == RetCode.SUCCESS and res["message"] == ""
         # show status
         status_res = ragflow.show_parsing_status(created_res_id, doc_id)
-        assert status_res["code"] == RetCode.SUCCESS and status_res["data"]["status"] == "1"
+        assert status_res["code"] == RetCode.SUCCESS and status_res["data"]["status"] == "RUNNING"
 
     def test_show_status_nonexistent_document(self):
         """

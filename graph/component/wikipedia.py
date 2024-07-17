@@ -30,11 +30,11 @@ class WikipediaParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.top_n = 10
-        self.lang = 'en'
+        self.language = 'en'
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
-        self.check_valid_value(self.lang, "Wikipedia languages",
+        self.check_valid_value(self.language, "Wikipedia languages",
                                ['af', 'pl', 'ar', 'ast', 'az', 'bg', 'nan', 'bn', 'be', 'ca', 'cs', 'cy', 'da', 'de',
                                 'et', 'el', 'en', 'es', 'eo', 'eu', 'fa', 'fr', 'gl', 'ko', 'hy', 'hi', 'hr', 'id',
                                 'it', 'he', 'ka', 'lld', 'la', 'lv', 'lt', 'hu', 'mk', 'arz', 'ms', 'min', 'my', 'nl',
@@ -52,7 +52,7 @@ class Wikipedia(ComponentBase, ABC):
             return Wikipedia.be_output(self._param.no)
 
         wiki_res = []
-        wikipedia.set_lang(self._param.lang)
+        wikipedia.set_lang(self._param.language)
         wiki_engine = wikipedia
         for wiki_key in wiki_engine.search(ans, results=self._param.top_n):
             try:

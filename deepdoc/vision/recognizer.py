@@ -19,7 +19,6 @@ from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from .operators import *
-from rag.settings import cron_logger
 
 
 class Recognizer(object):
@@ -340,7 +339,6 @@ class Recognizer(object):
                 if score < thr:
                     continue
                 if clsid >= len(self.label_list):
-                    cron_logger.warning(f"bad category id")
                     continue
                 bb.append({
                     "type": self.label_list[clsid].lower(),

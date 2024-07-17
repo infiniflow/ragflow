@@ -53,7 +53,11 @@ const model: DvaModel<ChunkModelState> = {
       return { ...state, available: payload };
     },
     setSearchString(state, { payload }) {
-      return { ...state, searchString: payload };
+      return {
+        ...state,
+        pagination: { ...state.pagination, current: 1 },
+        searchString: payload,
+      };
     },
     setPagination(state, { payload }) {
       return { ...state, pagination: { ...state.pagination, ...payload } };
