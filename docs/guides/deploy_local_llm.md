@@ -143,6 +143,7 @@ In RAGFlow, click on your logo on the top right of the page **>** **Model Provid
 ### 5. Complete basic Xinference settings
 
 Enter an accessible base URL, such as `http://<your-xinference-endpoint-domain>:9997/v1`. 
+> For rerank model, please use the `http://<your-xinference-endpoint-domain>:9997/v1/rerank` as the base URL.
 
 ### 6. Update System Model Settings
 
