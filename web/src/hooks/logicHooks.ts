@@ -189,7 +189,10 @@ export const useSendMessageWithSse = (
               const d = val?.data;
               if (typeof d !== 'boolean') {
                 console.info('data:', d);
-                setAnswer(d);
+                setAnswer({
+                  ...d,
+                  conversationId: body?.conversation_id,
+                });
               }
             } catch (e) {
               console.warn(e);
