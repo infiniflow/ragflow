@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Card, Divider, Flex, Layout, Tooltip } from 'antd';
 import classNames from 'classnames';
 import lowerFirst from 'lodash/lowerFirst';

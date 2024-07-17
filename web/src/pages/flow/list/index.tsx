@@ -4,7 +4,7 @@ import CreateFlowModal from './create-flow-modal';
 import FlowCard from './flow-card';
 import { useFetchDataOnMount, useSaveFlow } from './hooks';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import styles from './index.less';
 
 const FlowList = () => {

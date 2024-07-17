@@ -1,4 +1,4 @@
-import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { api_host } from '@/utils/api';
 import { useSize } from 'ahooks';
 import { CustomTextRenderer } from 'node_modules/react-pdf/dist/esm/shared/types';

@@ -17,14 +17,14 @@ import {
   useSelectTokenList,
   useSetDialog,
   useUpdateConversation,
-} from '@/hooks/chatHooks';
+} from '@/hooks/chat-hooks';
 import {
   useSetModalState,
   useShowDeleteConfirm,
   useTranslate,
-} from '@/hooks/commonHooks';
+} from '@/hooks/common-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   IAnswer,
   IConversation,

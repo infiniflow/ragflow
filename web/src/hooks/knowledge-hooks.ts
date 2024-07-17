@@ -1,9 +1,9 @@
-import { useShowDeleteConfirm } from '@/hooks/commonHooks';
+import { useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
-import { useGetKnowledgeSearchParams } from './routeHook';
-import { useOneNamespaceEffectsLoading } from './storeHooks';
+import { useGetKnowledgeSearchParams } from './route-hook';
+import { useOneNamespaceEffectsLoading } from './store-hooks';
 
 export const useKnowledgeBaseId = (): string => {
   const [searchParams] = useSearchParams();

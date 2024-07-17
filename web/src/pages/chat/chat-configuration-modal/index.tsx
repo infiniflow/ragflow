@@ -14,7 +14,7 @@ import AssistantSetting from './assistant-setting';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import {
   useFetchLlmModelOnVisible,
   useFetchModelId,

@@ -1,5 +1,5 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
 import { useSelectItem } from '@/hooks/logic-hooks';
 import { Card, Flex, Form, Input, Modal, Space, Typography } from 'antd';

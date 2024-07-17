@@ -1,4 +1,4 @@
-import { useSelectKnowledgeList } from '@/hooks/knowledgeHook';
+import { useSelectKnowledgeList } from '@/hooks/knowledge-hooks';
 import { useState } from 'react';
 
 export const useSearchKnowledge = () => {

@@ -1,5 +1,5 @@
-import { useLogin, useRegister } from '@/hooks/loginHooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { useLogin, useRegister } from '@/hooks/login-hooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
 import { useEffect, useState } from 'react';

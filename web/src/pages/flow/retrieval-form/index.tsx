@@ -2,7 +2,7 @@ import KnowledgeBaseItem from '@/components/knowledge-base-item';
 import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
 import TopNItem from '@/components/top-n-item';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import type { FormProps } from 'antd';
 import { Form, Input } from 'antd';
 import { IOperatorForm } from '../interface';

@@ -1,6 +1,6 @@
 import { Alert, Flex } from 'antd';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import React from 'react';
 import styles from './index.less';
 

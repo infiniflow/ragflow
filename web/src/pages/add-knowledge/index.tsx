@@ -1,9 +1,9 @@
-import { useKnowledgeBaseId } from '@/hooks/knowledgeHook';
+import { useKnowledgeBaseId } from '@/hooks/knowledge-hooks';
 import {
   useNavigateWithFromState,
   useSecondPathName,
   useThirdPathName,
-} from '@/hooks/routeHook';
+} from '@/hooks/route-hook';
 import { Breadcrumb } from 'antd';
 import { ItemType } from 'antd/es/breadcrumb/Breadcrumb';
 import { useEffect, useMemo } from 'react';

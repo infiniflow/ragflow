@@ -20,15 +20,15 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
-import { useSetModalState, useTranslate } from './commonHooks';
-import { useSetDocumentParser } from './documentHooks';
-import { useFetchLlmList } from './llmHooks';
-import { useOneNamespaceEffectsLoading } from './storeHooks';
+import { useSetModalState, useTranslate } from './common-hooks';
+import { useSetDocumentParser } from './document-hooks';
+import { useFetchLlmList } from './llm-hooks';
+import { useOneNamespaceEffectsLoading } from './store-hooks';
 import {
   useFetchTenantInfo,
   useSaveSetting,
   useSelectTenantInfo,
-} from './userSettingHook';
+} from './user-setting-hooks';
 
 export const useChangeDocumentParser = (documentId: string) => {
   const setDocumentParser = useSetDocumentParser();

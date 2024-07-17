@@ -3,7 +3,7 @@ import SvgIcon from '@/components/svg-icon';
 import { Flex, Rate, Space, Typography } from 'antd';
 import classNames from 'classnames';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import styles from './index.less';
 
 const { Title, Text } = Typography;

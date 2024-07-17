@@ -1,6 +1,6 @@
 import ModalManager from '@/components/modal-manager';
-import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
-import { useSelectUserInfo } from '@/hooks/userSettingHook';
+import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useSelectUserInfo } from '@/hooks/user-setting-hooks';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Empty, Flex, Input, Space, Spin } from 'antd';
 import KnowledgeCard from './knowledge-card';

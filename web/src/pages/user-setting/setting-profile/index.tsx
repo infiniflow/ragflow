@@ -2,7 +2,7 @@ import {
   useFetchUserInfo,
   useSaveSetting,
   useSelectUserInfo,
-} from '@/hooks/userSettingHook';
+} from '@/hooks/user-setting-hooks';
 import {
   getBase64FromUploadFileList,
   getUploadFileListFromBase64,
@@ -31,7 +31,7 @@ import {
 } from '../hooks';
 
 import { LanguageList } from '@/constants/common';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import parentStyles from '../index.less';
 import styles from './index.less';
