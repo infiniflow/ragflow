@@ -510,7 +510,7 @@ class MiniMaxChat(Base):
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return ans, response["usage"]["total_tokens"]
-        except openai.APIError as e:
+        except Exception as e:
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf):
@@ -547,7 +547,7 @@ class MiniMaxChat(Base):
                 total_tokens += num_tokens_from_string(text)
                 yield ans
 
-        except openai.APIError as e:
+        except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
