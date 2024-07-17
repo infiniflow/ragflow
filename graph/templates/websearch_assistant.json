@@ -59,7 +59,6 @@
                             "cite": true,
                             "frequency_penalty": 0.7,
                             "llm_id": "deepseek-chat",
-                            "max_tokens": 2048,
                             "message_history_window_size": 12,
                             "parameters": [
                                 {
@@ -108,7 +107,7 @@
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
                             "llm_id": "deepseek-chat",
-                            "maxTokensEnabled": false,
+                            "maxTokensEnabled": true,
                             "max_tokens": 256,
                             "parameter": "Precise",
                             "presencePenaltyEnabled": true,
@@ -366,7 +365,7 @@
                                 "frequencyPenaltyEnabled": true,
                                 "frequency_penalty": 0.7,
                                 "llm_id": "deepseek-chat",
-                                "maxTokensEnabled": false,
+                                "maxTokensEnabled": true,
                                 "max_tokens": 256,
                                 "parameter": "Precise",
                                 "presencePenaltyEnabled": true,
@@ -510,8 +509,6 @@
                                 "frequencyPenaltyEnabled": true,
                                 "frequency_penalty": 0.7,
                                 "llm_id": "deepseek-chat",
-                                "maxTokensEnabled": true,
-                                "max_tokens": 2048,
                                 "message_history_window_size": 12,
                                 "parameter": "Precise",
                                 "parameters": [
@@ -538,7 +535,7 @@
                                 ],
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompt": "Role: You are an intelligent assistant. \nTask: Chat with user. Answer the question based on the provided content from: Knowledge Base, Wikipedia, Duckduckgo, Baidu.\nRequirements:\n  - Answer should be in markdown format.\n - Summarize and label the sources of the cited content separately: (Knowledge Base, Wikipedia, Duckduckgo, Baidu).\n  - Attach URL links to the content which is quoted from Wikipedia, DuckDuckGo or Baidu.\n  - Do not make thing up when there's no relevant information to user's question. \n\n## Knowledge base content\n {kb_input}\n\n\n## Wikipedia content\n{wikipedia}\n\n\n## Duckduckgo content\n{duckduckgo}\n\n\n## Baidu content\n{baidu}",
+                                "prompt": "Role: You are an intelligent assistant. \nTask: Chat with user. Answer the question based on the provided content from: Knowledge Base, Wikipedia, Duckduckgo, Baidu.\nRequirements:\n  - Answer should be in markdown format.\n - Answer should include all sources(Knowledge Base, Wikipedia, Duckduckgo, Baidu) as long as they are relevant, and label the sources of the cited content separately.\n  - Attach URL links to the content which is quoted from Wikipedia, DuckDuckGo or Baidu.\n  - Do not make thing up when there's no relevant information to user's question. \n\n## Knowledge base content\n {kb_input}\n\n\n## Wikipedia content\n{wikipedia}\n\n\n## Duckduckgo content\n{duckduckgo}\n\n\n## Baidu content\n{baidu}",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
                                 "topPEnabled": true,

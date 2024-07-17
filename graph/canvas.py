@@ -188,6 +188,7 @@ class Canvas(ABC):
         def prepare2run(cpns):
             nonlocal ran, ans
             for c in cpns:
+                if self.path[-1] and c == self.path[-1][-1]: continue
                 cpn = self.components[c]["obj"]
                 if cpn.component_name == "Answer":
                     self.answer.append(c)
