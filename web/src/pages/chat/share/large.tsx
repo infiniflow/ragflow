@@ -1,129 +1,17 @@
-import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
+import MessageItem from '@/components/message-item';
 import { MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/commonHooks';
-import { IReference, Message } from '@/interfaces/database/chat';
-import { Avatar, Button, Flex, Input, List, Spin } from 'antd';
-import classNames from 'classnames';
-
-import NewDocumentLink from '@/components/new-document-link';
-import SvgIcon from '@/components/svg-icon';
-import { useGetDocumentUrl } from '@/hooks/documentHooks';
-import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
-import { getExtension, isPdf } from '@/utils/documentUtils';
-import { forwardRef, useMemo } from 'react';
-import MarkdownContent from '../markdown-content';
+import { useSendButtonDisabled } from '@/pages/chat/hooks';
+import { Button, Flex, Input, Spin } from 'antd';
+import { forwardRef } from 'react';
 import {
   useCreateSharedConversationOnMount,
   useSelectCurrentSharedConversation,
   useSendSharedMessage,
 } from '../shared-hooks';
 import { buildMessageItemReference } from '../utils';
+
 import styles from './index.less';
-import {useSendButtonDisabled} from "@/pages/chat/hooks";
-
-const MessageItem = ({
-  item,
-  reference,
-  loading = false,
-}: {
-  item: Message;
-  reference: IReference;
-  loading?: boolean;
-}) => {
-  const isAssistant = item.role === MessageType.Assistant;
-  const { t } = useTranslate('chat');
-  const fileThumbnails = useSelectFileThumbnails();
-  const getDocumentUrl = useGetDocumentUrl();
-
-  const referenceDocumentList = useMemo(() => {
-    return reference?.doc_aggs ?? [];
-  }, [reference?.doc_aggs]);
-
-  const content = useMemo(() => {
-    let text = item.content;
-    if (text === '') {
-      text = t('searching');
-    }
-    return loading ? text?.concat('~~2$$') : text;
-  }, [item.content, loading, t]);
-
-  return (
-    <div
-      className={classNames(styles.messageItem, {
-        [styles.messageItemLeft]: item.role === MessageType.Assistant,
-        [styles.messageItemRight]: item.role === MessageType.User,
-      })}
-    >
-      <section
-        className={classNames(styles.messageItemSection, {
-          [styles.messageItemSectionLeft]: item.role === MessageType.Assistant,
-          [styles.messageItemSectionRight]: item.role === MessageType.User,
-        })}
-      >
-        <div
-          className={classNames(styles.messageItemContent, {
-            [styles.messageItemContentReverse]: item.role === MessageType.User,
-          })}
-        >
-          {item.role === MessageType.User ? (
-            <Avatar
-              size={40}
-              src={
-                'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png'
-              }
-            />
-          ) : (
-            <AssistantIcon></AssistantIcon>
-          )}
-          <Flex vertical gap={8} flex={1}>
-            <b>{isAssistant ? '' : 'You'}</b>
-            <div className={isAssistant ? styles.messageText : styles.messageUserText}>
-              <MarkdownContent
-                reference={reference}
-                clickDocumentButton={() => {}}
-                content={content}
-              ></MarkdownContent>
-            </div>
-            {isAssistant && referenceDocumentList.length > 0 && (
-              <List
-                bordered
-                dataSource={referenceDocumentList}
-                renderItem={(item) => {
-                  const fileThumbnail = fileThumbnails[item.doc_id];
-                  const fileExtension = getExtension(item.doc_name);
-                  return (
-                    <List.Item>
-                      <Flex gap={'small'} align="center">
-                        {fileThumbnail ? (
-                          <img
-                            src={fileThumbnail}
-                            className={styles.thumbnailImg}
-                          ></img>
-                        ) : (
-                          <SvgIcon
-                            name={`file-icon/${fileExtension}`}
-                            width={24}
-                          ></SvgIcon>
-                        )}
-
-                        <NewDocumentLink
-                          link={getDocumentUrl(item.doc_id)}
-                          preventDefault={!isPdf(item.doc_name)}
-                        >
-                          {item.doc_name}
-                        </NewDocumentLink>
-                      </Flex>
-                    </List.Item>
-                  );
-                }}
-              />
-            )}
-          </Flex>
-        </div>
-      </section>
-    </div>
-  );
-};
 
 const ChatContainer = () => {
   const { t } = useTranslate('chat');
@@ -163,6 +51,7 @@ const ChatContainer = () => {
                   <MessageItem
                     key={message.id}
                     item={message}
+                    nickname="You"
                     reference={buildMessageItemReference(conversation, message)}
                     loading={
                       message.role === MessageType.Assistant &&

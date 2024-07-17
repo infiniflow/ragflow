@@ -28,7 +28,7 @@ const MarkdownContent = ({
 }: {
   content: string;
   reference: IReference;
-  clickDocumentButton: (documentId: string, chunk: IChunk) => void;
+  clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
 }) => {
   const fileThumbnails = useSelectFileThumbnails();
 
@@ -37,7 +37,7 @@ const MarkdownContent = ({
       if (!isPdf) {
         return;
       }
-      clickDocumentButton(documentId, chunk);
+      clickDocumentButton?.(documentId, chunk);
     },
     [clickDocumentButton],
   );

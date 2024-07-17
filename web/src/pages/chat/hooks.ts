@@ -326,7 +326,7 @@ export const useSelectDerivedConversationList = () => {
 
       return pre;
     });
-  }, [conversationList, dialogId, prologue]);
+  }, [conversationList, dialogId, prologue, t]);
 
   useEffect(() => {
     addTemporaryConversation();
@@ -402,7 +402,7 @@ export const useSelectCurrentConversation = () => {
               role: MessageType.Assistant,
               content: answer,
               id: uuid(),
-              reference: [],
+              reference: {},
             } as IMessage,
           ],
         };
@@ -433,7 +433,6 @@ export const useSelectCurrentConversation = () => {
   }, []);
 
   const removeLatestMessage = useCallback(() => {
-    console.info('removeLatestMessage');
     setCurrentConversation((pre) => {
       const nextMessages = pre.message?.slice(0, -2) ?? [];
       return {
@@ -484,7 +483,6 @@ export const useScrollToBottom = (currentConversation: IClientConversation) => {
   const ref = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
-    console.info('useScrollToBottom');
     if (currentConversation.id) {
       ref.current?.scrollIntoView({ behavior: 'instant' });
     }
@@ -588,7 +586,6 @@ export const useSendMessage = (
     [
       conversation?.message,
       conversationId,
-      // fetchConversation,
       handleClickConversation,
       removeLatestMessage,
       setValue,
@@ -612,12 +609,10 @@ export const useSendMessage = (
   );
 
   useEffect(() => {
-    if (answer.answer) {
+    if (answer.answer && answer?.conversationId === conversationId) {
       addNewestAnswer(answer);
-      console.info('true?');
-      console.info('send msg:', answer.answer);
     }
-  }, [answer, addNewestAnswer]);
+  }, [answer, addNewestAnswer, conversationId]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
@@ -639,15 +634,9 @@ export const useSendMessage = (
 };
 
 export const useGetFileIcon = () => {
-  // const req = require.context('@/assets/svg/file-icon');
-  // const ret = req.keys().map(req);
-  // console.info(ret);
-  // useEffect(() => {}, []);
-
   const getFileIcon = (filename: string) => {
     const ext: string = getFileExtension(filename);
     const iconPath = fileIconMap[ext as keyof typeof fileIconMap];
-    // const x = require(`@/assets/svg/file-icon/${iconPath}`);
     return `@/assets/svg/file-icon/${iconPath}`;
   };
 
