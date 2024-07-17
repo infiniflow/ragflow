@@ -1,5 +1,5 @@
 {
-  "id": 4,
+  "id": 0,
   "title": "WebSearch Assistant",
   "description": "A chat assistant that combines information both from knowledge base and web search engines. It integrates information from the knowledge base and relevant search engines to answer a given question. What you need to do is setting up knowleage base in 'Retrieval'.",
   "canvas_type": "chatbot",
