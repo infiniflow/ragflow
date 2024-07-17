@@ -30,8 +30,8 @@ class WikipediaParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.top_n = 10
-        self.language = 'en'
-        self.no = 'The content found on Wikipedia is empty'
+        self.language = "en"
+        self.no = "The content found on Wikipedia is empty"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
