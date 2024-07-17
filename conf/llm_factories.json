@@ -433,37 +433,37 @@
             ]
         },
         {
-            "name": "Minimax",
+            "name": "MiniMax",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "abab6.5",
+                    "llm_name": "abab6.5-chat",
                     "tags": "LLM,CHAT,8k",
                     "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "abab6.5s",
+                    "llm_name": "abab6.5s-chat",
                     "tags": "LLM,CHAT,245k",
                     "max_tokens": 245760,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "abab6.5t",
+                    "llm_name": "abab6.5t-chat",
                     "tags": "LLM,CHAT,8k",
                     "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "abab6.5g",
+                    "llm_name": "abab6.5g-chat",
                     "tags": "LLM,CHAT,8k",
                     "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "abab5.5s",
+                    "llm_name": "abab5.5s-chat",
                     "tags": "LLM,CHAT,8k",
                     "max_tokens": 8192,
                     "model_type": "chat"
