@@ -758,7 +758,7 @@ This method enables a specific document to start parsing for a specific user.
 ```json
 {
       "code": 102,
-      "message": "This dataset 'imagination.txt' cannot be found!"
+      "message": "This dataset 'imagination' cannot be found!"
 }
 ```
 
