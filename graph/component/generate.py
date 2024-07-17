@@ -72,7 +72,7 @@ class Generate(ComponentBase):
         prompt = self._param.prompt
 
         retrieval_res = self.get_input()
-        input = "\n- ".join(retrieval_res["content"])
+        input = "\n- ".join(retrieval_res["content"]) if "content" in retrieval_res else ""
         for para in self._param.parameters:
             cpn = self._canvas.get_component(para["component_id"])["obj"]
             _, out = cpn.output(allow_partial=False)
