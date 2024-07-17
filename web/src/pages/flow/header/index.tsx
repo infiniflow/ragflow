@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { Button, Flex, Space } from 'antd';

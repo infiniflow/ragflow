@@ -1,8 +1,8 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { useTranslate } from '@/hooks/commonHooks';
-import { useGetDocumentUrl } from '@/hooks/documentHooks';
-import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useGetDocumentUrl } from '@/hooks/document-hooks';
+import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference, Message } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';

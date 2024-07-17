@@ -1,6 +1,6 @@
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
-import kbService from '@/services/kbService';
+import kbService from '@/services/knowledge-service';
 import { message } from 'antd';
 import { DvaModel } from 'umi';
 

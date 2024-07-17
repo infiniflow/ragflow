@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { PlusOutlined } from '@ant-design/icons';
 import {
   Button,
@@ -12,7 +12,7 @@ import {
 } from 'antd';
 import random from 'lodash/random';
 
-export const excludedParseMethods = ['table', 'resume', 'one',"picture"];
+export const excludedParseMethods = ['table', 'resume', 'one', 'picture'];
 
 export const showRaptorParseConfiguration = (parserId: string) => {
   return !excludedParseMethods.includes(parserId);

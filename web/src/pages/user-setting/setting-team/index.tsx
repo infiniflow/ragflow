@@ -1,7 +1,7 @@
 import { Button, Card, Flex } from 'antd';
 
-import { useTranslate } from '@/hooks/commonHooks';
-import { useSelectUserInfo } from '@/hooks/userSettingHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useSelectUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
 const UserSettingTeam = () => {

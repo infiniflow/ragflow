@@ -3,9 +3,9 @@ import SvgIcon from '@/components/svg-icon';
 import {
   useSelectDocumentList,
   useSetDocumentStatus,
-} from '@/hooks/documentHooks';
+} from '@/hooks/document-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
-import { useSelectParserList } from '@/hooks/userSettingHook';
+import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';
 import { Divider, Flex, Switch, Table, Typography } from 'antd';

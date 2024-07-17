@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { DownOutlined, GithubOutlined } from '@ant-design/icons';
 import { Dropdown, MenuProps, Space } from 'antd';
 import camelCase from 'lodash/camelCase';

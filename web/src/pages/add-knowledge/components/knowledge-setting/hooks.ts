@@ -3,14 +3,14 @@ import {
   useKnowledgeBaseId,
   useSelectKnowledgeDetails,
   useUpdateKnowledge,
-} from '@/hooks/knowledgeHook';
-import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llmHooks';
-import { useNavigateToDataset } from '@/hooks/routeHook';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+} from '@/hooks/knowledge-hooks';
+import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llm-hooks';
+import { useNavigateToDataset } from '@/hooks/route-hook';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   useFetchTenantInfo,
   useSelectParserList,
-} from '@/hooks/userSettingHook';
+} from '@/hooks/user-setting-hooks';
 import {
   getBase64FromUploadFileList,
   getUploadFileListFromBase64,

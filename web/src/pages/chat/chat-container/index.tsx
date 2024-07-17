@@ -1,7 +1,7 @@
 import MessageItem from '@/components/message-item';
 import DocumentPreviewer from '@/components/pdf-previewer';
 import { MessageType } from '@/constants/chat';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Button, Drawer, Flex, Input, Spin } from 'antd';
 import {
   useClickDrawer,
@@ -14,7 +14,7 @@ import {
 } from '../hooks';
 import { buildMessageItemReference } from '../utils';
 
-import { useSelectUserInfo } from '@/hooks/userSettingHook';
+import { useSelectUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
 const ChatContainer = () => {

@@ -1,7 +1,7 @@
 import { BaseState } from '@/interfaces/common';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
-import kbService, { getDocumentFile } from '@/services/kbService';
+import kbService, { getDocumentFile } from '@/services/knowledge-service';
 import { message } from 'antd';
 import omit from 'lodash/omit';
 import pick from 'lodash/pick';

@@ -1,4 +1,4 @@
-import { useShowDeleteConfirm } from '@/hooks/commonHooks';
+import { useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { DeleteOutlined, MoreOutlined } from '@ant-design/icons';
 import { Dropdown, MenuProps, Space } from 'antd';
 import { useTranslation } from 'react-i18next';

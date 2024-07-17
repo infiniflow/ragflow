@@ -1,5 +1,5 @@
-import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { Form, Select } from 'antd';
 
 const KnowledgeBaseItem = () => {

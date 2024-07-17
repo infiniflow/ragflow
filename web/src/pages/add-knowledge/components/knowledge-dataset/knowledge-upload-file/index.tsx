@@ -6,17 +6,17 @@ import {
   useRunDocument,
   useSelectDocumentList,
   useUploadDocument,
-} from '@/hooks/documentHooks';
+} from '@/hooks/document-hooks';
 import {
   useDeleteDocumentById,
   useFetchKnowledgeDetail,
   useKnowledgeBaseId,
-} from '@/hooks/knowledgeHook';
+} from '@/hooks/knowledge-hooks';
 import {
   useChangeDocumentParser,
   useSetSelectedRecord,
 } from '@/hooks/logic-hooks';
-import { useFetchTenantInfo } from '@/hooks/userSettingHook';
+import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getExtension, isFileUploadDone } from '@/utils/documentUtils';
 import {
@@ -40,7 +40,7 @@ import classNames from 'classnames';
 import { ReactElement, useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'umi';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import styles from './index.less';
 
 const { Dragger } = Upload;

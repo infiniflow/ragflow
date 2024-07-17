@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';

@@ -1,4 +1,4 @@
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { Form } from 'antd';
 import { useEffect, useState } from 'react';
 

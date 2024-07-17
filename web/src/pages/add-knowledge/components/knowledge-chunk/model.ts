@@ -1,6 +1,6 @@
 import { BaseState } from '@/interfaces/common';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
-import kbService from '@/services/kbService';
+import kbService from '@/services/knowledge-service';
 import { message } from 'antd';
 import { pick } from 'lodash';
 // import { delay } from '@/utils/storeUtil';
