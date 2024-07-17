@@ -663,14 +663,8 @@ def parse_document(dataset_id, document_id):
         if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR,
                                          message=f"This dataset '{dataset_id}' cannot be found!")
-        message = ""
-        res = parsing_document_internal(document_id)
-        res_body = res.json
-        if res_body["code"] == RetCode.SUCCESS:
-            message += res_body["message"]
-        else:
-            return res
-        return construct_json_result(code=RetCode.SUCCESS, message=message)
+
+        return parsing_document_internal(document_id)
 
     except Exception as e:
         return construct_error_response(e)
@@ -762,14 +756,8 @@ def stop_parsing_document(dataset_id, document_id):
         if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR,
                                          message=f"This dataset '{dataset_id}' cannot be found!")
-        message = ""
-        res = stop_parsing_document_internal(document_id)
-        res_body = res.json
-        if res_body["code"] == RetCode.SUCCESS:
-            message += res_body["message"]
-            return construct_json_result(code=RetCode.SUCCESS, message=message)
-        else:
-            return res
+
+        return stop_parsing_document_internal(document_id)
 
     except Exception as e:
         return construct_error_response(e)
