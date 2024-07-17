@@ -90,10 +90,11 @@ class LayoutRecognizer(Recognizer):
                     if bxs[i].get("layout_type"):
                         i += 1
                         continue
+                    """
                     if __is_garbage(bxs[i]):
                         bxs.pop(i)
                         continue
-
+                    """
                     ii = self.find_overlapped_with_threashold(bxs[i], lts_,
                                                               thr=0.4)
                     if ii is None:  # belong to nothing

@@ -4,7 +4,7 @@ import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
 import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';
-import { InfoCircleOutlined } from '@ant-design/icons';
+import { InfoCircleFilled } from '@ant-design/icons';
 import { Button, Flex, Popover, Space } from 'antd';
 import { useCallback } from 'react';
 import Markdown from 'react-markdown';
@@ -134,7 +134,7 @@ const MarkdownContent = ({
         const chunkIndex = getChunkIndex(match);
         return (
           <Popover content={getPopoverContent(chunkIndex)}>
-            <InfoCircleOutlined key={i} className={styles.referenceIcon} />
+            <InfoCircleFilled key={i} className={styles.referenceIcon} style={{ color: '#F08080' }} />
           </Popover>
         );
       });
