@@ -1,5 +1,5 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IToken } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';

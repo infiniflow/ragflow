@@ -1,4 +1,4 @@
-import { useSelectFileList } from '@/hooks/fileManagerHooks';
+import { useSelectFileList } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { formatDate } from '@/utils/date';
 import { Button, Flex, Space, Table, Tag, Typography } from 'antd';
@@ -19,7 +19,7 @@ import {
 import FileUploadModal from '@/components/file-upload-modal';
 import RenameModal from '@/components/rename-modal';
 import SvgIcon from '@/components/svg-icon';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { formatNumberWithThousandsSeparator } from '@/utils/commonUtil';
 import { getExtension } from '@/utils/documentUtils';
 import ConnectToKnowledgeModal from './connect-to-knowledge-modal';

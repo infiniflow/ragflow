@@ -3,7 +3,7 @@ import { IChunk } from '@/interfaces/database/knowledge';
 import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ChunkTextMode } from '../../constant';
 import styles from './index.less';
@@ -30,7 +30,7 @@ const ChunkCard = ({
   textMode,
 }: IProps) => {
   const available = Number(item.available_int);
-  const [enabled, setEnabled] = useState(available === 1);
+  const [enabled, setEnabled] = useState(false);
 
   const onChange = (checked: boolean) => {
     setEnabled(checked);
@@ -48,6 +48,10 @@ const ChunkCard = ({
   const handleContentClick = () => {
     clickChunkCard(item.chunk_id);
   };
+
+  useEffect(() => {
+    setEnabled(available === 1);
+  }, [available]);
 
   return (
     <Card

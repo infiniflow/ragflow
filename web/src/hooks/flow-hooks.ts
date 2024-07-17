@@ -120,7 +120,7 @@ export const useSetFlow = () => {
       dsl?: DSL;
       avatar?: string;
     }) => {
-      const { data } = await flowService.setCanvas(params);
+      const { data = {} } = await flowService.setCanvas(params);
       if (data.retcode === 0) {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),

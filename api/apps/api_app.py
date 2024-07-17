@@ -573,6 +573,7 @@ def completion_faq():
                     response = MINIO.get(bkt, nm)
                     data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
                     data.append(data_type_picture)
+                    break
                 except Exception as e:
                     return server_error_response(e)
 

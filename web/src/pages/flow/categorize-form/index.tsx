@@ -1,5 +1,5 @@
 import LLMSelect from '@/components/llm-select';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Form } from 'antd';
 import { useSetLlmSetting } from '../hooks';
 import { IOperatorForm } from '../interface';

@@ -1,4 +1,4 @@
-import { useTestChunkRetrieval } from '@/hooks/knowledgeHook';
+import { useTestChunkRetrieval } from '@/hooks/knowledge-hooks';
 import { Flex, Form } from 'antd';
 import { useEffect } from 'react';
 import { useDispatch } from 'umi';

@@ -17,14 +17,14 @@ import {
   useSelectTokenList,
   useSetDialog,
   useUpdateConversation,
-} from '@/hooks/chatHooks';
+} from '@/hooks/chat-hooks';
 import {
   useSetModalState,
   useShowDeleteConfirm,
   useTranslate,
-} from '@/hooks/commonHooks';
-import { useSendMessageWithSse } from '@/hooks/logicHooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+} from '@/hooks/common-hooks';
+import { useSendMessageWithSse } from '@/hooks/logic-hooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   IAnswer,
   IConversation,
@@ -326,7 +326,7 @@ export const useSelectDerivedConversationList = () => {
 
       return pre;
     });
-  }, [conversationList, dialogId, prologue]);
+  }, [conversationList, dialogId, prologue, t]);
 
   useEffect(() => {
     addTemporaryConversation();
@@ -402,7 +402,7 @@ export const useSelectCurrentConversation = () => {
               role: MessageType.Assistant,
               content: answer,
               id: uuid(),
-              reference: [],
+              reference: {},
             } as IMessage,
           ],
         };
@@ -433,7 +433,6 @@ export const useSelectCurrentConversation = () => {
   }, []);
 
   const removeLatestMessage = useCallback(() => {
-    console.info('removeLatestMessage');
     setCurrentConversation((pre) => {
       const nextMessages = pre.message?.slice(0, -2) ?? [];
       return {
@@ -484,7 +483,6 @@ export const useScrollToBottom = (currentConversation: IClientConversation) => {
   const ref = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
-    console.info('useScrollToBottom');
     if (currentConversation.id) {
       ref.current?.scrollIntoView({ behavior: 'instant' });
     }
@@ -554,7 +552,7 @@ export const useSendMessage = (
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
   const { handleClickConversation } = useClickConversationCard();
-  const { send, answer, done } = useSendMessageWithSse();
+  const { send, answer, done, setDone } = useSendMessageWithSse();
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
@@ -588,7 +586,6 @@ export const useSendMessage = (
     [
       conversation?.message,
       conversationId,
-      // fetchConversation,
       handleClickConversation,
       removeLatestMessage,
       setValue,
@@ -612,12 +609,18 @@ export const useSendMessage = (
   );
 
   useEffect(() => {
-    if (answer.answer) {
+    //  #1289
+    if (answer.answer && answer?.conversationId === conversationId) {
       addNewestAnswer(answer);
-      console.info('true?');
-      console.info('send msg:', answer.answer);
     }
-  }, [answer, addNewestAnswer]);
+  }, [answer, addNewestAnswer, conversationId]);
+
+  useEffect(() => {
+    // #1289 switch to another conversion window when the last conversion answer doesn't finish.
+    if (conversationId) {
+      setDone(true);
+    }
+  }, [setDone, conversationId]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
@@ -639,15 +642,9 @@ export const useSendMessage = (
 };
 
 export const useGetFileIcon = () => {
-  // const req = require.context('@/assets/svg/file-icon');
-  // const ret = req.keys().map(req);
-  // console.info(ret);
-  // useEffect(() => {}, []);
-
   const getFileIcon = (filename: string) => {
     const ext: string = getFileExtension(filename);
     const iconPath = fileIconMap[ext as keyof typeof fileIconMap];
-    // const x = require(`@/assets/svg/file-icon/${iconPath}`);
     return `@/assets/svg/file-icon/${iconPath}`;
   };
 

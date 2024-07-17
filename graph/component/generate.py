@@ -63,19 +63,23 @@ class GenerateParam(ComponentParamBase):
 class Generate(ComponentBase):
     component_name = "Generate"
 
+    def get_dependent_components(self):
+        cpnts = [para["component_id"] for para in self._param.parameters]
+        return cpnts
+
     def _run(self, history, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         prompt = self._param.prompt
 
         retrieval_res = self.get_input()
-        input = "\n- ".join(retrieval_res["content"])
+        input = ("  - " + "\n  - ".join(retrieval_res["content"])) if "content" in retrieval_res else ""
         for para in self._param.parameters:
             cpn = self._canvas.get_component(para["component_id"])["obj"]
             _, out = cpn.output(allow_partial=False)
             if "content" not in out.columns:
                 kwargs[para["key"]] = "Nothing"
             else:
-                kwargs[para["key"]] = "\n - ".join(out["content"])
+                kwargs[para["key"]] = "  - " + "\n  - ".join(out["content"])
 
         kwargs["input"] = input
         for n, v in kwargs.items():

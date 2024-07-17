@@ -1,11 +1,11 @@
 import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
 import SvgIcon from '@/components/svg-icon';
-import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
+import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import {
   LlmItem,
   useFetchLlmFactoryListOnMount,
   useFetchMyLlmListOnMount,
-} from '@/hooks/llmHooks';
+} from '@/hooks/llm-hooks';
 import {
   CloseCircleOutlined,
   SettingOutlined,
@@ -61,8 +61,9 @@ const IconMap = {
   Mistral: 'mistral',
   'Azure-OpenAI': 'azure',
   Bedrock: 'bedrock',
-  Gemini:'gemini',
+  Gemini: 'gemini',
   Groq: 'Groq',
+  OpenRouter: 'open-router',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {

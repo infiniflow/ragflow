@@ -1,7 +1,7 @@
 import {
   useGetChunkHighlights,
   useGetDocumentUrl,
-} from '@/hooks/documentHooks';
+} from '@/hooks/document-hooks';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { Skeleton } from 'antd';
 import { useEffect, useRef, useState } from 'react';

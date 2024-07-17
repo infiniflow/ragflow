@@ -188,14 +188,19 @@ class Canvas(ABC):
         def prepare2run(cpns):
             nonlocal ran, ans
             for c in cpns:
+                if self.path[-1] and c == self.path[-1][-1]: continue
                 cpn = self.components[c]["obj"]
                 if cpn.component_name == "Answer":
                     self.answer.append(c)
                 else:
                     if DEBUG: print("RUN: ", c)
+                    if cpn.component_name == "Generate":
+                        cpids = cpn.get_dependent_components()
+                        if any([c not in self.path[-1] for c in cpids]):
+                            continue
                     ans = cpn.run(self.history, **kwargs)
                     self.path[-1].append(c)
-                ran += 1
+            ran += 1
 
         prepare2run(self.components[self.path[-2][-1]]["downstream"])
         while 0 <= ran < len(self.path[-1]):
