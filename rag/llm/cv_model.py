@@ -32,7 +32,7 @@ class Base(ABC):
     def __init__(self, key, model_name):
         pass
 
-    def describe(self, image, max_tokens=1024):
+    def describe(self, image, max_tokens=2048):
         raise NotImplementedError("Please implement encode method!")
 
     def image2base64(self, image):
@@ -82,7 +82,7 @@ class GptV4(Base):
         self.model_name = model_name
         self.lang = lang
 
-    def describe(self, image, max_tokens=1024):
+    def describe(self, image, max_tokens=2048):
         b64 = self.image2base64(image)
         prompt = self.prompt(b64)
         for i in range(len(prompt)):
@@ -102,7 +102,7 @@ class AzureGptV4(Base):
         self.model_name = model_name
         self.lang = lang
 
-    def describe(self, image, max_tokens=1024):
+    def describe(self, image, max_tokens=2048):
         b64 = self.image2base64(image)
         prompt = self.prompt(b64)
         for i in range(len(prompt)):
@@ -153,7 +153,7 @@ class QWenCV(Base):
             }
         ]
 
-    def describe(self, image, max_tokens=1024):
+    def describe(self, image, max_tokens=2048):
         from http import HTTPStatus
         from dashscope import MultiModalConversation
         response = MultiModalConversation.call(model=self.model_name,
@@ -169,7 +169,7 @@ class Zhipu4V(Base):
         self.model_name = model_name
         self.lang = lang
 
-    def describe(self, image, max_tokens=1024):
+    def describe(self, image, max_tokens=2048):
         b64 = self.image2base64(image)
 
         res = self.client.chat.completions.create(
@@ -186,7 +186,7 @@ class OllamaCV(Base):
         self.model_name = model_name
         self.lang = lang
 
-    def describe(self, image, max_tokens=1024):
+    def describe(self, image, max_tokens=2048):
         prompt = self.prompt("")
         try:
             options = {"num_predict": max_tokens}
@@ -208,7 +208,7 @@ class XinferenceCV(Base):
         self.model_name = model_name
         self.lang = lang
 
-    def describe(self, image, max_tokens=1024):
+    def describe(self, image, max_tokens=2048):
         b64 = self.image2base64(image)
 
         res = self.client.chat.completions.create(
@@ -246,5 +246,5 @@ class LocalCV(Base):
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         pass
 
-    def describe(self, image, max_tokens=1024):
+    def describe(self, image, max_tokens=2048):
         return "", 0
