@@ -31,6 +31,7 @@ class BaiduParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.top_n = 10
+        self.no = "The content found on Baidu is empty"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
@@ -43,7 +44,7 @@ class Baidu(ComponentBase, ABC):
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
-            return Baidu.be_output(self._param.no)
+            return Baidu.be_output("")
 
         url = 'https://www.baidu.com/s?wd=' + ans + '&rn=' + str(self._param.top_n)
         headers = {
@@ -56,8 +57,10 @@ class Baidu(ComponentBase, ABC):
         baidu_res = [{"content": re.sub('<em>|</em>', '', '<a href="' + url + '">' + title + '</a>    ' + body)} for url, title, body in zip(url_res, title_res, body_res)]
         del body_res, url_res, title_res
 
-        df = pd.DataFrame(baidu_res)
-        print(df, ":::::::::::::::::::::::::::::::::")
+        if not baidu_res:
+            return Baidu.be_output(self._param.no)
 
+        df = pd.DataFrame(baidu_res)
+        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
         return df
 
