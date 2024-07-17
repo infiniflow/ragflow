@@ -708,7 +708,7 @@ def parse_documents(dataset_id):
         return construct_error_response(e)
 
 
-# helper method for getting message or response when parsing the document
+# helper method for parsing the document
 def parsing_document_internal(id):
     message = ""
     try:
