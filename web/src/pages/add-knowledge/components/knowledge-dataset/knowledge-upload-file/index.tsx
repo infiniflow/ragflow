@@ -15,7 +15,7 @@ import {
 import {
   useChangeDocumentParser,
   useSetSelectedRecord,
-} from '@/hooks/logicHooks';
+} from '@/hooks/logic-hooks';
 import { useFetchTenantInfo } from '@/hooks/userSettingHook';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getExtension, isFileUploadDone } from '@/utils/documentUtils';

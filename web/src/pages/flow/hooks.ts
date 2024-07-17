@@ -18,7 +18,7 @@ import {
   ModelVariableType,
   settledModelVariableMap,
 } from '@/constants/knowledge';
-import { useFetchModelId, useSendMessageWithSse } from '@/hooks/logicHooks';
+import { useFetchModelId, useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { Variable } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { useDebounceEffect } from 'ahooks';

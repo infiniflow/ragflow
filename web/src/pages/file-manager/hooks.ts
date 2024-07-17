@@ -10,7 +10,7 @@ import {
   useSelectParentFolderList,
   useUploadFile,
 } from '@/hooks/fileManagerHooks';
-import { useGetPagination, useSetPagination } from '@/hooks/logicHooks';
+import { useGetPagination, useSetPagination } from '@/hooks/logic-hooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { PaginationProps } from 'antd';

@@ -42,7 +42,7 @@ import {
 } from './hooks';
 
 import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
-import { useSetSelectedRecord } from '@/hooks/logicHooks';
+import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { IDialog } from '@/interfaces/database/chat';
 import ChatOverviewModal from './chat-overview-modal';
 import styles from './index.less';

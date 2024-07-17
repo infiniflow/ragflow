@@ -214,7 +214,7 @@ export const useSendMessageWithSse = (
     [url],
   );
 
-  return { send, answer, done };
+  return { send, answer, done, setDone };
 };
 
 //#region chat hooks
