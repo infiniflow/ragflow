@@ -72,6 +72,7 @@ umap==0.1.1
 volcengine==1.0.146
 webdriver_manager==4.0.1
 Werkzeug==3.0.3
+wikipedia==1.4.0
 word2number==1.1
 xgboost==2.1.0
 xpinyin==0.7.6
