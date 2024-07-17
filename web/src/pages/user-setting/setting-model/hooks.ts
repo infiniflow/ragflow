@@ -16,6 +16,7 @@ import {
 } from '@/hooks/userSettingHook';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { useCallback, useEffect, useState } from 'react';
+import { ApiKeyPostBody } from '../interface';
 
 type SavingParamsState = Omit<IApiKeySavingParams, 'api_key'>;
 
@@ -31,11 +32,10 @@ export const useSubmitApiKey = () => {
   } = useSetModalState();
 
   const onApiKeySavingOk = useCallback(
-    async (apiKey: string, baseUrl: string) => {
+    async (postBody: ApiKeyPostBody) => {
       const ret = await saveApiKey({
         ...savingParams,
-        api_key: apiKey,
-        base_url: baseUrl,
+        ...postBody,
       });
 
       if (ret === 0) {

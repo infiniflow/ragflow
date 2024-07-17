@@ -30,7 +30,7 @@ class WikipediaParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.top_n = 10
-        self.language = 'en'
+        self.language = "en"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
@@ -49,7 +49,7 @@ class Wikipedia(ComponentBase, ABC):
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
-            return Wikipedia.be_output(self._param.no)
+            return Wikipedia.be_output("")
 
         wiki_res = []
         wikipedia.set_lang(self._param.language)
@@ -63,7 +63,7 @@ class Wikipedia(ComponentBase, ABC):
                 pass
 
         if not wiki_res:
-            return Wikipedia.be_output(self._param.no)
+            return Wikipedia.be_output("")
 
         df = pd.DataFrame(wiki_res)
         if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
