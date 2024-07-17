@@ -8,7 +8,7 @@ import { useCallback, useMemo } from 'react';
 import { useLocation } from 'umi';
 import Toolbar from '../right-toolbar';
 
-import { useFetchAppConf } from '@/hooks/logicHooks';
+import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { MessageOutlined } from '@ant-design/icons';
 import styles from './index.less';
 

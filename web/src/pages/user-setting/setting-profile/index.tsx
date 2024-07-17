@@ -32,7 +32,7 @@ import {
 
 import { LanguageList } from '@/constants/common';
 import { useTranslate } from '@/hooks/commonHooks';
-import { useChangeLanguage } from '@/hooks/logicHooks';
+import { useChangeLanguage } from '@/hooks/logic-hooks';
 import parentStyles from '../index.less';
 import styles from './index.less';
 

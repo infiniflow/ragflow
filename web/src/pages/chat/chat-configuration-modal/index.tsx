@@ -15,7 +15,10 @@ import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
 import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchLlmModelOnVisible, useFetchModelId } from '@/hooks/logicHooks';
+import {
+  useFetchLlmModelOnVisible,
+  useFetchModelId,
+} from '@/hooks/logic-hooks';
 import { getBase64FromUploadFileList } from '@/utils/fileUtil';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import styles from './index.less';

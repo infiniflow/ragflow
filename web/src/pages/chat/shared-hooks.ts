@@ -3,7 +3,7 @@ import {
   useCreateSharedConversation,
   useFetchSharedConversation,
 } from '@/hooks/chatHooks';
-import { useSendMessageWithSse } from '@/hooks/logicHooks';
+import { useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
 import { IAnswer } from '@/interfaces/database/chat';
 import api from '@/utils/api';

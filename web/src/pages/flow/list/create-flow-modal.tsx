@@ -1,7 +1,7 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { useTranslate } from '@/hooks/commonHooks';
 import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
-import { useSelectItem } from '@/hooks/logicHooks';
+import { useSelectItem } from '@/hooks/logic-hooks';
 import { Card, Flex, Form, Input, Modal, Space, Typography } from 'antd';
 import classNames from 'classnames';
 import { useEffect } from 'react';

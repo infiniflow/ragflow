@@ -6,7 +6,7 @@ import React from 'react';
 import User from '../user';
 
 import { LanguageList } from '@/constants/common';
-import { useChangeLanguage } from '@/hooks/logicHooks';
+import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useSelector } from 'umi';
 import styled from './index.less';
 
