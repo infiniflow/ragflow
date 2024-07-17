@@ -31,7 +31,6 @@ class BaiduParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.top_n = 10
-        self.no = "The content found on Baidu is empty"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
@@ -58,7 +57,7 @@ class Baidu(ComponentBase, ABC):
         del body_res, url_res, title_res
 
         if not baidu_res:
-            return Baidu.be_output(self._param.no)
+            return Baidu.be_output("")
 
         df = pd.DataFrame(baidu_res)
         if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
