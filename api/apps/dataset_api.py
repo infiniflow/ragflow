@@ -616,7 +616,7 @@ def download_document(dataset_id, document_id):
 # ----------------------------start parsing a document-----------------------------------------------------
 # helper method for parsing
 # callback method
-def callback(doc_id, prog=None, msg=""):
+def doc_parse_callback(doc_id, prog=None, msg=""):
     cancel = DocumentService.do_cancel(doc_id)
     if cancel:
         raise Exception("The parsing process has been cancelled!")
@@ -625,29 +625,29 @@ def callback(doc_id, prog=None, msg=""):
 def doc_parse(binary, doc_name, parser_name, tenant_id, doc_id):
     match parser_name:
         case "book":
-            book.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            book.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "laws":
-            laws.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            laws.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "manual":
-            manual.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            manual.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "naive":
             # It's the mode by default, which is general in the front-end
-            naive.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            naive.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "one":
-            one.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            one.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "paper":
-            paper.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            paper.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "picture":
             picture.chunk(doc_name, binary=binary, tenant_id=tenant_id, lang="Chinese",
-                          callback=partial(callback, doc_id))
+                          callback=partial(doc_parse_callback, doc_id))
         case "presentation":
-            presentation.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            presentation.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "qa":
-            qa.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            qa.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "resume":
-            resume.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            resume.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "table":
-            table.chunk(doc_name, binary=binary, callback=partial(callback, doc_id))
+            table.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case _:
             return False
 
@@ -664,12 +664,13 @@ def parse_document(dataset_id, document_id):
             return construct_json_result(code=RetCode.DATA_ERROR,
                                          message=f"This dataset '{dataset_id}' cannot be found!")
         message = ""
-        res = get_message_during_parsing_document(document_id, message)
-        if isinstance(res, str):
-            message += res
-            return construct_json_result(code=RetCode.SUCCESS, message=message)
+        res = parsing_document_internal(document_id)
+        res_body = res.json
+        if res_body["code"] == RetCode.SUCCESS:
+            message += res_body["message"]
         else:
             return res
+        return construct_json_result(code=RetCode.SUCCESS, message=message)
 
     except Exception as e:
         return construct_error_response(e)
@@ -685,34 +686,31 @@ def parse_documents(dataset_id):
         if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR,
                                          message=f"This dataset '{dataset_id}' cannot be found!")
-
-        def process(doc_ids):
-            message = ""
-            # for loop
-            for id in doc_ids:
-                res = get_message_during_parsing_document(id, message)
-                if isinstance(res, str):
-                    message += res
-                else:
-                    return res
-            return construct_json_result(data=True, code=RetCode.SUCCESS, message=message)
-
         # two conditions
-        if doc_ids:
-            return process(doc_ids)
-        else:
+        if not doc_ids:
             # documents inside the dataset
             docs, total = DocumentService.list_documents_in_dataset(dataset_id, 0, -1, "create_time",
                                                                     True, "")
             doc_ids = [doc["id"] for doc in docs]
-            return process(doc_ids)
+
+        message = ""
+        # for loop
+        for id in doc_ids:
+            res = parsing_document_internal(id)
+            res_body = res.json
+            if res_body["code"] == RetCode.SUCCESS:
+                message += res_body["message"]
+            else:
+                return res
+        return construct_json_result(data=True, code=RetCode.SUCCESS, message=message)
 
     except Exception as e:
         return construct_error_response(e)
 
 
 # helper method for getting message or response when parsing the document
-def get_message_during_parsing_document(id, message):
+def parsing_document_internal(id):
+    message = ""
     try:
         # Check whether there is this document
         exist, document = DocumentService.get_by_id(id)
@@ -749,7 +747,7 @@ def get_message_during_parsing_document(id, message):
         # failed in parsing
         if doc_attributes["status"] == TaskStatus.FAIL.value:
             message += f"Failed in parsing the document: {doc_id}; "
-        return message
+        return construct_json_result(code=RetCode.SUCCESS, message=message)
     except Exception as e:
         return construct_error_response(e)
 
@@ -765,9 +763,10 @@ def stop_parsing_document(dataset_id, document_id):
             return construct_json_result(code=RetCode.DATA_ERROR,
                                          message=f"This dataset '{dataset_id}' cannot be found!")
         message = ""
-        res = get_message_during_stop_parsing_document(document_id, message)
-        if isinstance(res, str):
-            message += res
+        res = stop_parsing_document_internal(document_id)
+        res_body = res.json
+        if res_body["code"] == RetCode.SUCCESS:
+            message += res_body["message"]
             return construct_json_result(code=RetCode.SUCCESS, message=message)
         else:
             return res
@@ -787,33 +786,29 @@ def stop_parsing_documents(dataset_id):
         if not exist:
             return construct_json_result(code=RetCode.DATA_ERROR,
                                          message=f"This dataset '{dataset_id}' cannot be found!")
-
-        def process(doc_ids):
-            message = ""
-            # for loop
-            for id in doc_ids:
-                res = get_message_during_stop_parsing_document(id, message)
-                if isinstance(res, str):
-                    message += res
-                else:
-                    return res
-            return construct_json_result(data=True, code=RetCode.SUCCESS, message=message)
-
-        # two conditions
-        if doc_ids:
-            return process(doc_ids)
-        else:
+        if not doc_ids:
             # documents inside the dataset
             docs, total = DocumentService.list_documents_in_dataset(dataset_id, 0, -1, "create_time",
-                                                                    True, "")
+                                                                        True, "")
             doc_ids = [doc["id"] for doc in docs]
-            return process(doc_ids)
+
+        message = ""
+        # for loop
+        for id in doc_ids:
+            res = stop_parsing_document_internal(id)
+            res_body = res.json
+            if res_body["code"] == RetCode.SUCCESS:
+                message += res_body["message"]
+            else:
+                return res
+        return construct_json_result(data=True, code=RetCode.SUCCESS, message=message)
 
     except Exception as e:
         return construct_error_response(e)
 
 
-def get_message_during_stop_parsing_document(document_id, message):
+# Helper method
+def stop_parsing_document_internal(document_id):
     try:
         # valid doc?
         exist, doc = DocumentService.get_by_id(document_id)
@@ -822,7 +817,7 @@ def get_message_during_stop_parsing_document(document_id, message):
                                          code=RetCode.ARGUMENT_ERROR)
         doc_attributes = doc.to_dict()
 
-        # only the status is parsing, we need to stop it
+        # only when the status is parsing, we need to stop it
         if doc_attributes["status"] == TaskStatus.RUNNING.value:
             tenant_id = DocumentService.get_tenant_id(document_id)
             if not tenant_id:
@@ -841,8 +836,8 @@ def get_message_during_stop_parsing_document(document_id, message):
 
             # failed in stop parsing
             if doc_attributes["status"] == TaskStatus.RUNNING.value:
-                message += f"Failed in parsing the document: {document_id}; "
-            return message
+                return construct_json_result(message=f"Failed in parsing the document: {document_id}; ", code=RetCode.SUCCESS)
+        return construct_json_result(code=RetCode.SUCCESS, message="")
     except Exception as e:
         return construct_error_response(e)
 

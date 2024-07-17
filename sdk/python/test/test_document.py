@@ -979,8 +979,8 @@ class TestFile(TestSdk):
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         created_res = ragflow.create_dataset("test_start_parsing_nonexistent_document")
         created_res_id = created_res["data"]["dataset_id"]
-        res = ragflow.stop_parsing_document(created_res_id, "imagination")
-        assert res["code"] == RetCode.ARGUMENT_ERROR and res["message"] == "This document 'imagination' cannot be found!"
+        res = ragflow.stop_parsing_document(created_res_id, "imagination.txt")
+        assert res["code"] == RetCode.ARGUMENT_ERROR and res["message"] == "This document 'imagination.txt' cannot be found!"
 
     def test_stop_parsing_document_in_nonexistent_dataset(self):
         """
