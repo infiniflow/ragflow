@@ -3,7 +3,7 @@ import {
   ITestingChunk,
   ITestingDocument,
 } from '@/interfaces/database/knowledge';
-import kbService from '@/services/kbService';
+import kbService from '@/services/knowledge-service';
 import { DvaModel } from 'umi';
 
 export interface TestingModelState extends Pick<BaseState, 'pagination'> {

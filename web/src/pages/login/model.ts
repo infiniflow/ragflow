@@ -1,6 +1,6 @@
 import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';
-import userService from '@/services/userService';
+import userService from '@/services/user-service';
 import authorizationUtil from '@/utils/authorizationUtil';
 import { message } from 'antd';
 import { DvaModel } from 'umi';

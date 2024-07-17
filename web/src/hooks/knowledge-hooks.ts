@@ -1,5 +1,7 @@
 import { useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
+import kbService from '@/services/knowledge-service';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import { useGetKnowledgeSearchParams } from './route-hook';
@@ -156,6 +158,23 @@ export const useFetchKnowledgeList = (
   }, [fetchList]);
 
   return { list, loading, fetchList };
+};
+
+export const useNextFetchKnowledgeList = (): {
+  data: any[];
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchKnowledgeList'],
+    initialData: [],
+    queryFn: async () => {
+      const { data } = await kbService.getList();
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
 };
 
 export const useSelectFileThumbnails = () => {

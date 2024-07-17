@@ -1,6 +1,6 @@
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { ISystemStatus, IUserInfo } from '@/interfaces/database/userSetting';
-import userService from '@/services/userService';
+import userService from '@/services/user-service';
 import authorizationUtil from '@/utils/authorizationUtil';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { history, useDispatch, useSelector } from 'umi';
