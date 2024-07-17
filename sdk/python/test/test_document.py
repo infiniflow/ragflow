@@ -1000,7 +1000,7 @@ class TestFile(TestSdk):
         res = ragflow.stop_parsing_document("imagination", doc_id)
         assert res["code"] == RetCode.DATA_ERROR and res["message"] == "This dataset 'imagination' cannot be found!"
 
-    # ------------------------parsing multiple documents----------------------------
+    # ------------------------stop parsing multiple documents----------------------------
     def test_stop_parsing_documents_in_nonexistent_dataset(self):
         """
         Test the stopping parsing documents whose dataset is nonexistent.

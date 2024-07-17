@@ -616,10 +616,10 @@ def download_document(dataset_id, document_id):
 # ----------------------------start parsing a document-----------------------------------------------------
 # helper method for parsing
 # callback method
-def callback(doc_id):
+def callback(doc_id, prog=None, msg=""):
     cancel = DocumentService.do_cancel(doc_id)
     if cancel:
-        print("hi! callback!")
+        raise Exception("The parsing process has been cancelled!")
 
 
 def doc_parse(binary, doc_name, parser_name, tenant_id, doc_id):
