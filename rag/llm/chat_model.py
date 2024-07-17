@@ -482,7 +482,9 @@ class MiniMaxChat(Base):
         model_name,
         base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",
     ):
-        self.base_url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
+        if not base_url:
+            base_url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
+        self.base_url = base_url
         self.model_name = model_name
         self.api_key = key
 
