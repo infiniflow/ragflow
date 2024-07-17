@@ -33,7 +33,7 @@ def main(args):
         labels = LayoutRecognizer.labels
         detr = Recognizer(
             labels,
-            "layout.paper",
+            "layout",
             os.path.join(
                 get_project_base_directory(),
                 "rag/res/deepdoc/"))
