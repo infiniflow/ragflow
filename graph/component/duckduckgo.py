@@ -31,6 +31,7 @@ class DuckDuckGoParam(ComponentParamBase):
         super().__init__()
         self.top_n = 10
         self.channel = "text"
+        self.no = "The content found on DuckDuckGo is empty"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
@@ -44,7 +45,7 @@ class DuckDuckGo(ComponentBase, ABC):
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
-            return DuckDuckGo.be_output(self._param.no)
+            return DuckDuckGo.be_output("")
 
         if self._param.channel == "text":
             with DDGS() as ddgs:
@@ -57,6 +58,9 @@ class DuckDuckGo(ComponentBase, ABC):
                 duck_res = [{"content": '<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"]} for i in
                             ddgs.news(ans, max_results=self._param.top_n)]
 
+       if not duck_res:
+           return DuckDuckGo.be_output(self._param.no)
+
         df = pd.DataFrame(duck_res)
-        print(df, ":::::::::::::::::::::::::::::::::")
+        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
         return df
