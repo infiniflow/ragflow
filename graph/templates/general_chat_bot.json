@@ -1,5 +1,5 @@
 {
-  "id": 0,
+  "id": 1,
   "title": "Chat bot",
   "description": "A general chat bot. It is based on Self-RAG mechanism. What you need to do is setting up knowleage base in 'Retrieval'",
   "canvas_type": "chatbot",
