@@ -575,6 +575,9 @@ export default {
       messageHistoryWindowSizeTip:
         'LLM需要查看的對話記錄的視窗大小。越大越好。但要注意LLM的最大內容長度。',
       wikipedia: '維基百科',
+      email: '信箱',
+      emailTip:
+        '此元件用於從 https://pubmed.ncbi.nlm.nih.gov/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要採用的搜尋結果的數量。電子郵件是必填欄位。',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

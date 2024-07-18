@@ -614,6 +614,10 @@ The above is the content you need to summarize.`,
       messageHistoryWindowSizeTip:
         'The  window size of conversation history that needed to be seen by LLM. The larger the better. But be careful with the maximum content length of LLM.',
       wikipedia: 'Wikipedia',
+      pubMed: 'PubMed',
+      email: 'Email',
+      emailTip:
+        'This component is used to get search result from https://pubmed.ncbi.nlm.nih.gov/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adopt. E-mail is a required field.',
     },
     footer: {
       profile: 'All rights reserved @ React',

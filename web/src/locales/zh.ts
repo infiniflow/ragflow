@@ -593,6 +593,9 @@ export default {
       messageHistoryWindowSizeTip:
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大内容长度。',
       wikipedia: '维基百科',
+      email: '邮箱',
+      emailTip:
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要采用的搜索结果数。电子邮件是必填字段。',
     },
     footer: {
       profile: 'All rights reserved @ React',

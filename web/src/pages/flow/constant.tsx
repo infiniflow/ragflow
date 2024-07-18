@@ -1,7 +1,9 @@
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
+import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
+
 import { variableEnabledFieldMap } from '@/constants/chat';
 import i18n from '@/locales/config';
 
@@ -35,6 +37,7 @@ export enum Operator {
   Baidu = 'Baidu',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
+  PubMed = 'PubMed',
 }
 
 export const operatorIconMap = {
@@ -50,6 +53,7 @@ export const operatorIconMap = {
   [Operator.DuckDuckGo]: DuckIcon,
   [Operator.Baidu]: BaiduIcon,
   [Operator.Wikipedia]: WikipediaIcon,
+  [Operator.PubMed]: PubMedIcon,
 };
 
 export const operatorMap = {
@@ -113,6 +117,9 @@ export const operatorMap = {
   [Operator.Wikipedia]: {
     backgroundColor: '#dee0e2',
   },
+  [Operator.PubMed]: {
+    backgroundColor: '#a2ccf0',
+  },
 };
 
 export const componentMenuList = [
@@ -148,6 +155,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Wikipedia,
+  },
+  {
+    name: Operator.PubMed,
   },
 ];
 
@@ -221,6 +231,11 @@ export const initialWikipediaValues = {
   language: 'en',
 };
 
+export const initialPubMedValues = {
+  top_n: 10,
+  email: '',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -280,6 +295,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Baidu]: [Operator.Begin, Operator.Retrieval],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
+  [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -295,6 +311,7 @@ export const NodeMap = {
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
+  [Operator.PubMed]: 'ragNode',
 };
 
 export const LanguageOptions = [
