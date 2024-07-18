@@ -19,7 +19,7 @@ from functools import partial
 import pandas as pd
 import requests
 import re
-
+from graph.settings import DEBUG
 from graph.component.base import ComponentBase, ComponentParamBase
 
 

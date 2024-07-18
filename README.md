@@ -63,7 +63,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 </div>
 
 
-## 📌 Latest Updates
+## 🔥 Latest Updates
 
 - 2024-07-08 Supports workflow based on [Graph](./graph/README.md).
 - 2024-06-27 Supports Markdown and Docx in the Q&A parsing method. 

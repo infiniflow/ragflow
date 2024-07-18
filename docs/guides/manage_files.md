@@ -43,7 +43,7 @@ You can link your file to one knowledge base or multiple knowledge bases at one 
 
 ![link multiple kb](https://github.com/infiniflow/ragflow/assets/93570324/6c508803-fb1f-435d-b688-683066fd7fff)
 
-## Move file to specified folder
+## Move file to a specific folder
 
 As of RAGFlow v0.8.0, this feature is *not* available.
 
