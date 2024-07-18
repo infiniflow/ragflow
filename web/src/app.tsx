@@ -1,12 +1,10 @@
 import i18n from '@/locales/config';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { App, ConfigProvider, ConfigProviderProps } from 'antd';
 import enUS from 'antd/locale/en_US';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
-import React, { ReactNode, useEffect, useState } from 'react';
-import storage from './utils/authorizationUtil';
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -14,6 +12,8 @@ import localeData from 'dayjs/plugin/localeData';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
+import React, { ReactNode, useEffect, useState } from 'react';
+import storage from './utils/authorizationUtil';
 
 dayjs.extend(customParseFormat);
 dayjs.extend(advancedFormat);
@@ -63,6 +63,7 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
       >
         <App> {children}</App>
       </ConfigProvider>
+      <ReactQueryDevtools />
     </QueryClientProvider>
   );
 };
