@@ -1,3 +1,4 @@
+arxiv==2.1.3
 Aspose.Slides==24.2.0
 BCEmbedding==0.1.3
 boto3==1.34.140
