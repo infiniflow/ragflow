@@ -45,6 +45,7 @@ import OllamaModal from './ollama-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
 import VolcEngineModal from './volcengine-model';
 
+// Please lowercase the file name
 const IconMap = {
   'Tongyi-Qianwen': 'tongyi',
   Moonshot: 'moonshot',
@@ -57,12 +58,12 @@ const IconMap = {
   VolcEngine: 'volc_engine',
   BaiChuan: 'baichuan',
   Jina: 'jina',
-  Minimax: 'chat-minimax',
+  MiniMax: 'chat-minimax',
   Mistral: 'mistral',
   'Azure-OpenAI': 'azure',
   Bedrock: 'bedrock',
   Gemini: 'gemini',
-  Groq: 'Groq',
+  Groq: 'groq-next',
   OpenRouter: 'open-router',
 };
 
