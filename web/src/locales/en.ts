@@ -124,7 +124,7 @@ export default {
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
       toMessage: 'Missing end page number(excluded)',
-      layoutRecognize: 'Layout recognize',
+      layoutRecognize: 'Layout recognition',
       layoutRecognizeTip:
         'Use visual models for layout analysis to better identify document structure, find where the titles, text blocks, images, and tables are. Without this feature, only the plain text of the PDF can be obtained.',
       taskPageSize: 'Task page size',

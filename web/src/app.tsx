@@ -63,7 +63,7 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
       >
         <App> {children}</App>
       </ConfigProvider>
-      <ReactQueryDevtools />
+      <ReactQueryDevtools buttonPosition={'top-left'} />
     </QueryClientProvider>
   );
 };

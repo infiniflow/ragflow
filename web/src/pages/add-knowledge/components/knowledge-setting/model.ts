@@ -29,14 +29,6 @@ const model: DvaModel<KSModelState> = {
     },
   },
   effects: {
-    *createKb({ payload = {} }, { call }) {
-      const { data } = yield call(kbService.createKb, payload);
-      const { retcode } = data;
-      if (retcode === 0) {
-        message.success(i18n.t('message.created'));
-      }
-      return data;
-    },
     *updateKb({ payload = {} }, { call, put }) {
       const { data } = yield call(kbService.updateKb, payload);
       const { retcode } = data;
