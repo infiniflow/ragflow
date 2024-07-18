@@ -18,7 +18,7 @@ from abc import ABC
 from functools import partial
 from duckduckgo_search import DDGS
 import pandas as pd
-
+from graph.settings import DEBUG
 from graph.component.base import ComponentBase, ComponentParamBase
 
 
