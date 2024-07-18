@@ -44,7 +44,7 @@
 </div>
 
 
-## 📌 近期更新
+## 🔥 近期更新
 
 - 2024-07-08 支持 Agentic RAG: 基于 [Graph](./graph/README.md) 的工作流。
 - 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件。 

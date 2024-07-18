@@ -12,6 +12,8 @@ from .keyword import KeywordExtract, KeywordExtractParam
 from .baidu import Baidu, BaiduParam
 from .duckduckgo import DuckDuckGo, DuckDuckGoParam
 from .wikipedia import Wikipedia, WikipediaParam
+from .pubmed import PubMed, PubMedParam
+from .arxiv import ArXiv, ArXivParam
 
 
 def component_class(class_name):

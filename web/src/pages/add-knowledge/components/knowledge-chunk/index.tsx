@@ -203,6 +203,12 @@ const Chunk = () => {
                 current={pagination.current}
                 size={'small'}
                 total={total}
+                showTotal={(total) => (
+                  <Space>
+                    {t('total', { keyPrefix: 'common' })}
+                    {total}
+                  </Space>
+                )}
               />
             </div>
           </Flex>

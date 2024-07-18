@@ -16,50 +16,48 @@
 import random
 from abc import ABC
 from functools import partial
-from duckduckgo_search import DDGS
+from Bio import Entrez
 import pandas as pd
+import xml.etree.ElementTree as ET
 from graph.settings import DEBUG
 from graph.component.base import ComponentBase, ComponentParamBase
 
 
-class DuckDuckGoParam(ComponentParamBase):
+class PubMedParam(ComponentParamBase):
     """
-    Define the DuckDuckGo component parameters.
+    Define the PubMed component parameters.
     """
 
     def __init__(self):
         super().__init__()
-        self.top_n = 10
-        self.channel = "text"
+        self.top_n = 5
+        self.email = "A.N.Other@example.com"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
-        self.check_valid_value(self.channel, "Web Search or News", ["text", "news"])
 
 
-class DuckDuckGo(ComponentBase, ABC):
-    component_name = "DuckDuckGo"
+class PubMed(ComponentBase, ABC):
+    component_name = "PubMed"
 
     def _run(self, history, **kwargs):
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
-            return DuckDuckGo.be_output("")
+            return PubMed.be_output("")
 
-        if self._param.channel == "text":
-            with DDGS() as ddgs:
-                # {'title': '', 'href': '', 'body': ''}
-                duck_res = [{"content": '<a href="' + i["href"] + '">' + i["title"] + '</a>    ' + i["body"]} for i in
-                            ddgs.text(ans, max_results=self._param.top_n)]
-        elif self._param.channel == "news":
-            with DDGS() as ddgs:
-                # {'date': '', 'title': '', 'body': '', 'url': '', 'image': '', 'source': ''}
-                duck_res = [{"content": '<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"]} for i in
-                            ddgs.news(ans, max_results=self._param.top_n)]
+        Entrez.email = self._param.email
+        pubmedids = Entrez.read(Entrez.esearch(db='pubmed', retmax=self._param.top_n, term=ans))['IdList']
+        pubmedcnt = ET.fromstring(
+            Entrez.efetch(db='pubmed', id=",".join(pubmedids), retmode="xml").read().decode("utf-8"))
+        pubmed_res = [{"content": 'Title:' + child.find("MedlineCitation").find("Article").find(
+            "ArticleTitle").text + '\nUrl:<a href=" https://pubmed.ncbi.nlm.nih.gov/' + child.find(
+            "MedlineCitation").find("PMID").text + '">' + '</a>\n' + 'Abstract:' + child.find("MedlineCitation").find(
+            "Article").find("Abstract").find("AbstractText").text} for child in pubmedcnt.findall("PubmedArticle")]
 
-        if not duck_res:
-            return DuckDuckGo.be_output("")
+        if not pubmed_res:
+            return PubMed.be_output("")
 
-        df = pd.DataFrame(duck_res)
+        df = pd.DataFrame(pubmed_res)
         if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
         return df

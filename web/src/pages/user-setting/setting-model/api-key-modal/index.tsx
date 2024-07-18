@@ -77,7 +77,7 @@ const ApiKeyModal = ({
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
         )}
-        {llmFactory === 'Minimax' && (
+        {llmFactory?.toLowerCase() === 'Minimax'.toLowerCase() && (
           <Form.Item<FieldType> label={'Group ID'} name="group_id">
             <Input />
           </Form.Item>
