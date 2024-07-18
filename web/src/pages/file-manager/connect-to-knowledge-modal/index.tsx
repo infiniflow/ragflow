@@ -1,5 +1,5 @@
-import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { filterOptionsByInput } from '@/utils/commonUtil';
 import { Form, Modal, Select } from 'antd';

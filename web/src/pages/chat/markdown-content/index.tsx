@@ -1,6 +1,6 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
-import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
+import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';
@@ -28,7 +28,7 @@ const MarkdownContent = ({
 }: {
   content: string;
   reference: IReference;
-  clickDocumentButton: (documentId: string, chunk: IChunk) => void;
+  clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
 }) => {
   const fileThumbnails = useSelectFileThumbnails();
 
@@ -37,7 +37,7 @@ const MarkdownContent = ({
       if (!isPdf) {
         return;
       }
-      clickDocumentButton(documentId, chunk);
+      clickDocumentButton?.(documentId, chunk);
     },
     [clickDocumentButton],
   );

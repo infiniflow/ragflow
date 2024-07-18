@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { api_host } from '@/utils/api';
 import { downloadFile } from '@/utils/fileUtil';

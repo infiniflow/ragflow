@@ -11,7 +11,7 @@ import MaxTokenNumber from '@/components/max-token-number';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
 } from '@/components/parse-configuration';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { FormInstance } from 'antd/lib';
 import styles from './index.less';
 

@@ -1,11 +1,11 @@
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
-import { useSaveSetting } from '@/hooks/userSettingHook';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
+import { useSaveSetting } from '@/hooks/user-setting-hooks';
 import { rsaPsw } from '@/utils';
 import { Button, Divider, Form, Input, Space } from 'antd';
 import SettingTitle from '../components/setting-title';
 import { useValidateSubmittable } from '../hooks';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import parentStyles from '../index.less';
 import styles from './index.less';
 

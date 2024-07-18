@@ -4,7 +4,7 @@ import { IFile, IFolder } from '@/interfaces/database/file-manager';
 import i18n from '@/locales/config';
 import fileManagerService, {
   getDocumentFile,
-} from '@/services/fileManagerService';
+} from '@/services/file-manager-service';
 import { message } from 'antd';
 import omit from 'lodash/omit';
 import { DvaModel } from 'umi';

@@ -1,6 +1,6 @@
-import { useSetModalState } from '@/hooks/commonHooks';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchFlow, useResetFlow, useSetFlow } from '@/hooks/flow-hooks';
-import { useFetchLlmList } from '@/hooks/llmHooks';
+import { useFetchLlmList } from '@/hooks/llm-hooks';
 import { IGraph } from '@/interfaces/database/flow';
 import { useIsFetching } from '@tanstack/react-query';
 import React, {
@@ -18,7 +18,7 @@ import {
   ModelVariableType,
   settledModelVariableMap,
 } from '@/constants/knowledge';
-import { useFetchModelId, useSendMessageWithSse } from '@/hooks/logicHooks';
+import { useFetchModelId, useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { Variable } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { useDebounceEffect } from 'ahooks';

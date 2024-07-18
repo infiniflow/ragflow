@@ -333,6 +333,17 @@ class DocumentService(CommonService):
             cls.model.kb_id == kb_id).dicts())
 
 
+    @classmethod
+    @DB.connection_context()
+    def do_cancel(cls, doc_id):
+        try:
+            _, doc = DocumentService.get_by_id(doc_id)
+            return doc.run == TaskStatus.CANCEL.value or doc.progress < 0
+        except Exception as e:
+            pass
+        return False
+
+
 def queue_raptor_tasks(doc):
     def new_task():
         nonlocal doc
