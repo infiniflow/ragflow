@@ -188,6 +188,20 @@ class Zhipu4V(Base):
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
+    def chat_prompt(self, text, b64):
+        return [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"{b64}"
+                },
+            },
+            {
+                "type": "text",
+                "text": text
+            },
+        ]
+
     def chat(self, system, history, gen_conf, image=""):
         if system:
             history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
