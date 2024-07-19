@@ -58,7 +58,7 @@ class Baidu(ComponentBase, ABC):
                          url, title, body in zip(url_res, title_res, body_res)]
             del body_res, url_res, title_res
         except Exception as e:
-            return Baidu.be_output(e)
+            return Baidu.be_output("**ERROR**: " + str(e))
 
         if not baidu_res:
             return Baidu.be_output("")
