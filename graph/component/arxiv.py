@@ -47,18 +47,21 @@ class ArXiv(ComponentBase, ABC):
         if not ans:
             return ArXiv.be_output("")
 
-        sort_choices = {"relevance": arxiv.SortCriterion.Relevance,
-                        "lastUpdatedDate": arxiv.SortCriterion.LastUpdatedDate,
-                        'submittedDate': arxiv.SortCriterion.SubmittedDate}
-        arxiv_client = arxiv.Client()
-        search = arxiv.Search(
-            query=ans,
-            max_results=self._param.top_n,
-            sort_by=sort_choices[self._param.sort_by]
-        )
-        arxiv_res = [
-            {"content": 'Title: ' + i.title + '\nPdf_Url: <a href="' + i.pdf_url + '"></a> \nSummary: ' + i.summary} for
-            i in list(arxiv_client.results(search))]
+        try:
+            sort_choices = {"relevance": arxiv.SortCriterion.Relevance,
+                            "lastUpdatedDate": arxiv.SortCriterion.LastUpdatedDate,
+                            'submittedDate': arxiv.SortCriterion.SubmittedDate}
+            arxiv_client = arxiv.Client()
+            search = arxiv.Search(
+                query=ans,
+                max_results=self._param.top_n,
+                sort_by=sort_choices[self._param.sort_by]
+            )
+            arxiv_res = [
+                {"content": 'Title: ' + i.title + '\nPdf_Url: <a href="' + i.pdf_url + '"></a> \nSummary: ' + i.summary} for
+                i in list(arxiv_client.results(search))]
+        except Exception as e:
+            return ArXiv.be_output("**ERROR**: " + str(e))
 
         if not arxiv_res:
             return ArXiv.be_output("")

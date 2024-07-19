@@ -46,14 +46,18 @@ class PubMed(ComponentBase, ABC):
         if not ans:
             return PubMed.be_output("")
 
-        Entrez.email = self._param.email
-        pubmedids = Entrez.read(Entrez.esearch(db='pubmed', retmax=self._param.top_n, term=ans))['IdList']
-        pubmedcnt = ET.fromstring(
-            Entrez.efetch(db='pubmed', id=",".join(pubmedids), retmode="xml").read().decode("utf-8"))
-        pubmed_res = [{"content": 'Title:' + child.find("MedlineCitation").find("Article").find(
-            "ArticleTitle").text + '\nUrl:<a href=" https://pubmed.ncbi.nlm.nih.gov/' + child.find(
-            "MedlineCitation").find("PMID").text + '">' + '</a>\n' + 'Abstract:' + child.find("MedlineCitation").find(
-            "Article").find("Abstract").find("AbstractText").text} for child in pubmedcnt.findall("PubmedArticle")]
+        try:
+            Entrez.email = self._param.email
+            pubmedids = Entrez.read(Entrez.esearch(db='pubmed', retmax=self._param.top_n, term=ans))['IdList']
+            pubmedcnt = ET.fromstring(
+                Entrez.efetch(db='pubmed', id=",".join(pubmedids), retmode="xml").read().decode("utf-8"))
+            pubmed_res = [{"content": 'Title:' + child.find("MedlineCitation").find("Article").find(
+                "ArticleTitle").text + '\nUrl:<a href=" https://pubmed.ncbi.nlm.nih.gov/' + child.find(
+                "MedlineCitation").find("PMID").text + '">' + '</a>\n' + 'Abstract:' + child.find(
+                "MedlineCitation").find("Article").find("Abstract").find("AbstractText").text} for child in
+                          pubmedcnt.findall("PubmedArticle")]
+        except Exception as e:
+            return PubMed.be_output("**ERROR**: " + str(e))
 
         if not pubmed_res:
             return PubMed.be_output("")
