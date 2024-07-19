@@ -1,11 +1,12 @@
 import { useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
+import i18n from '@/locales/config';
 import kbService from '@/services/knowledge-service';
-import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { message } from 'antd';
+import { useCallback, useEffect } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
 import { useGetKnowledgeSearchParams } from './route-hook';
-import { useOneNamespaceEffectsLoading } from './store-hooks';
 
 export const useKnowledgeBaseId = (): string => {
   const [searchParams] = useSearchParams();
@@ -127,54 +128,70 @@ export const useFetchKnowledgeBaseConfiguration = () => {
   }, [fetchKnowledgeBaseConfiguration]);
 };
 
-export const useSelectKnowledgeList = () => {
-  const knowledgeModel = useSelector((state) => state.knowledgeModel);
-  const { data = [] } = knowledgeModel;
-  return data;
-};
-
-export const useFetchKnowledgeList = (
+export const useNextFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
-) => {
-  const dispatch = useDispatch();
-  const loading = useOneNamespaceEffectsLoading('knowledgeModel', ['getList']);
-
-  const knowledgeModel = useSelector((state) => state.knowledgeModel);
-  const { data = [] } = knowledgeModel;
-  const list: IKnowledge[] = useMemo(() => {
-    return shouldFilterListWithoutDocument
-      ? data.filter((x: IKnowledge) => x.chunk_num > 0)
-      : data;
-  }, [data, shouldFilterListWithoutDocument]);
-
-  const fetchList = useCallback(() => {
-    dispatch({
-      type: 'knowledgeModel/getList',
-    });
-  }, [dispatch]);
-
-  useEffect(() => {
-    fetchList();
-  }, [fetchList]);
-
-  return { list, loading, fetchList };
-};
-
-export const useNextFetchKnowledgeList = (): {
-  data: any[];
+): {
+  list: any[];
   loading: boolean;
 } => {
   const { data, isFetching: loading } = useQuery({
     queryKey: ['fetchKnowledgeList'],
     initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
       const { data } = await kbService.getList();
+      const list = data?.data ?? [];
+      return shouldFilterListWithoutDocument
+        ? list.filter((x: IKnowledge) => x.chunk_num > 0)
+        : list;
+    },
+  });
 
+  return { list: data, loading };
+};
+
+export const useCreateKnowledge = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['createKnowledge'],
+    mutationFn: async (params: { id?: string; name: string }) => {
+      const { data = {} } = await kbService.createKb(params);
+      if (data.retcode === 0) {
+        message.success(
+          i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
+        );
+        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, createKnowledge: mutateAsync };
+};
+
+export const useDeleteKnowledge = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteKnowledge'],
+    mutationFn: async (id: string) => {
+      const { data } = await kbService.rmKb({ kb_id: id });
+      if (data.retcode === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+      }
       return data?.data ?? [];
     },
   });
 
-  return { data, loading };
+  return { data, loading, deleteKnowledge: mutateAsync };
 };
 
 export const useSelectFileThumbnails = () => {

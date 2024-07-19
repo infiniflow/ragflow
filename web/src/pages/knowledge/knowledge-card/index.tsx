@@ -8,9 +8,10 @@ import {
 } from '@ant-design/icons';
 import { Avatar, Card, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useNavigate } from 'umi';
+import { useNavigate } from 'umi';
 
 import OperateDropdown from '@/components/operate-dropdown';
+import { useDeleteKnowledge } from '@/hooks/knowledge-hooks';
 import styles from './index.less';
 
 interface IProps {
@@ -19,16 +20,12 @@ interface IProps {
 
 const KnowledgeCard = ({ item }: IProps) => {
   const navigate = useNavigate();
-  const dispatch = useDispatch();
   const { t } = useTranslation();
 
+  const { deleteKnowledge } = useDeleteKnowledge();
+
   const removeKnowledge = async () => {
-    return dispatch({
-      type: 'knowledgeModel/rmKb',
-      payload: {
-        kb_id: item.id,
-      },
-    });
+    return deleteKnowledge(item.id);
   };
 
   const handleCardClick = () => {

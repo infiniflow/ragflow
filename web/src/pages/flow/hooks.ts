@@ -38,6 +38,7 @@ import {
   initialGenerateValues,
   initialKeywordExtractValues,
   initialMessageValues,
+  initialPubMedValues,
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
@@ -90,6 +91,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Baidu]: initialBaiduValues,
       [Operator.Wikipedia]: initialWikipediaValues,
+      [Operator.PubMed]: initialPubMedValues,
     };
   }, [llmId]);
 
