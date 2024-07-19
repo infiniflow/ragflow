@@ -75,6 +75,7 @@ const OllamaModal = ({
             <Option value="chat">chat</Option>
             <Option value="embedding">embedding</Option>
             <Option value="rerank">rerank</Option>
+            <Option value="image2text">image2text</Option>
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
