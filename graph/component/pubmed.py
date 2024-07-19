@@ -57,7 +57,7 @@ class PubMed(ComponentBase, ABC):
                 "MedlineCitation").find("Article").find("Abstract").find("AbstractText").text} for child in
                           pubmedcnt.findall("PubmedArticle")]
         except Exception as e:
-            return PubMed.be_output(e)
+            return PubMed.be_output("**ERROR**: " + str(e))
 
         if not pubmed_res:
             return PubMed.be_output("")
