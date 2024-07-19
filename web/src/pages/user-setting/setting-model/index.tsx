@@ -28,14 +28,17 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
 import ApiKeyModal from './api-key-modal';
+import BedrockModal from './bedrock-modal';
+import { IconMap } from './constant';
 import {
   useHandleDeleteLlm,
   useSelectModelProvidersLoading,
   useSubmitApiKey,
+  useSubmitBedrock,
   useSubmitOllama,
   useSubmitSystemModelSetting,
   useSubmitVolcEngine,
@@ -43,31 +46,7 @@ import {
 import styles from './index.less';
 import OllamaModal from './ollama-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
-import VolcEngineModal from './volcengine-model';
-
-// Please lowercase the file name
-const IconMap = {
-  'Tongyi-Qianwen': 'tongyi',
-  Moonshot: 'moonshot',
-  OpenAI: 'openai',
-  'ZHIPU-AI': 'zhipu',
-  文心一言: 'wenxin',
-  Ollama: 'ollama',
-  Xinference: 'xinference',
-  DeepSeek: 'deepseek',
-  VolcEngine: 'volc_engine',
-  BaiChuan: 'baichuan',
-  Jina: 'jina',
-  MiniMax: 'chat-minimax',
-  Mistral: 'mistral',
-  'Azure-OpenAI': 'azure',
-  Bedrock: 'bedrock',
-  Gemini: 'gemini',
-  Groq: 'groq-next',
-  OpenRouter: 'open-router',
-  LocalAI:'local-ai',
-  StepFun:'stepfun'
-};
+import VolcEngineModal from './volcengine-modal';
 
 const LlmIcon = ({ name }: { name: string }) => {
   const icon = IconMap[name as keyof typeof IconMap];
@@ -188,31 +167,36 @@ const UserSettingModel = () => {
     showVolcAddingModal,
     onVolcAddingOk,
     volcAddingLoading,
-    selectedVolcFactory,
   } = useSubmitVolcEngine();
 
-  const handleApiKeyClick = useCallback(
+  const {
+    bedrockAddingLoading,
+    onBedrockAddingOk,
+    bedrockAddingVisible,
+    hideBedrockAddingModal,
+    showBedrockAddingModal,
+  } = useSubmitBedrock();
+
+  const ModalMap = useMemo(
+    () => ({
+      Bedrock: showBedrockAddingModal,
+      VolcEngine: showVolcAddingModal,
+    }),
+    [showBedrockAddingModal, showVolcAddingModal],
+  );
+
+  const handleAddModel = useCallback(
     (llmFactory: string) => {
       if (isLocalLlmFactory(llmFactory)) {
         showLlmAddingModal(llmFactory);
-      } else if (llmFactory === 'VolcEngine') {
-        showVolcAddingModal('VolcEngine');
+      } else if (llmFactory in ModalMap) {
+        ModalMap[llmFactory as keyof typeof ModalMap]();
       } else {
         showApiKeyModal({ llm_factory: llmFactory });
       }
     },
-    [showApiKeyModal, showLlmAddingModal, showVolcAddingModal],
+    [showApiKeyModal, showLlmAddingModal, ModalMap],
   );
-
-  const handleAddModel = (llmFactory: string) => () => {
-    if (isLocalLlmFactory(llmFactory)) {
-      showLlmAddingModal(llmFactory);
-    } else if (llmFactory === 'VolcEngine') {
-      showVolcAddingModal('VolcEngine');
-    } else {
-      handleApiKeyClick(llmFactory);
-    }
-  };
 
   const items: CollapseProps['items'] = [
     {
@@ -223,7 +207,7 @@ const UserSettingModel = () => {
           grid={{ gutter: 16, column: 1 }}
           dataSource={llmList}
           renderItem={(item) => (
-            <ModelCard item={item} clickApiKey={handleApiKeyClick}></ModelCard>
+            <ModelCard item={item} clickApiKey={handleAddModel}></ModelCard>
           )}
         />
       ),
@@ -254,7 +238,7 @@ const UserSettingModel = () => {
                   </Flex>
                 </Flex>
                 <Divider></Divider>
-                <Button type="link" onClick={handleAddModel(item.name)}>
+                <Button type="link" onClick={() => handleAddModel(item.name)}>
                   {t('addTheModel')}
                 </Button>
               </Card>
@@ -305,8 +289,15 @@ const UserSettingModel = () => {
         hideModal={hideVolcAddingModal}
         onOk={onVolcAddingOk}
         loading={volcAddingLoading}
-        llmFactory={selectedVolcFactory}
+        llmFactory={'VolcEngine'}
       ></VolcEngineModal>
+      <BedrockModal
+        visible={bedrockAddingVisible}
+        hideModal={hideBedrockAddingModal}
+        onOk={onBedrockAddingOk}
+        loading={bedrockAddingLoading}
+        llmFactory={'Bedrock'}
+      ></BedrockModal>
     </section>
   );
 };
