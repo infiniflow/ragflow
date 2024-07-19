@@ -58,7 +58,7 @@ class DuckDuckGo(ComponentBase, ABC):
                     duck_res = [{"content": '<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"]} for i
                                 in ddgs.news(ans, max_results=self._param.top_n)]
         except Exception as e:
-            return DuckDuckGo.be_output(e)
+            return DuckDuckGo.be_output("**ERROR**: " + str(e))
 
         if not duck_res:
             return DuckDuckGo.be_output("")
