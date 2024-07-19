@@ -82,7 +82,7 @@ def llm_id2llm_type(llm_id):
     for llm_factory in llm_factories["factory_llm_infos"]:
         for llm in llm_factory["llm"]:
             if llm_id == llm["llm_name"]:
-                return llm["model_type"]
+                return llm["model_type"].strip(",")[-1]
                 
 
 def chat(dialog, messages, stream=True, **kwargs):
