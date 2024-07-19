@@ -452,7 +452,7 @@ class XinferenceCV(Base):
 
 class GeminiCV(Base):
     def __init__(self, key, model_name="gemini-1.0-pro-vision-latest", lang="Chinese", **kwargs):
-        from google.generativeai import client,GenerativeModel 
+        from google.generativeai import client, GenerativeModel, GenerationConfig
         client.configure(api_key=key)
         _client = client.get_default_generative_client()
         self.model_name = model_name
@@ -473,6 +473,59 @@ class GeminiCV(Base):
             generation_config=gen_config,
         )
         return res.text,res.usage_metadata.total_token_count
+
+    def chat(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+        try:
+            for his in history:
+                if his["role"] == "assistant":
+                    his["role"] = "model"
+                    his["parts"] = [his["content"]]
+                    his.pop("content")
+                if his["role"] == "user":
+                    his["parts"] = [his["content"]]
+                    his.pop("content")
+            history[-1]["parts"].append(f"data:image/jpeg;base64," + image)
+
+            response = self.model.generate_content(history, generation_config=GenerationConfig(
+                max_output_tokens=gen_conf.get("max_tokens", 1000), temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7)))
+
+            ans = response.text
+            return ans, response.usage_metadata.total_token_count
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+
+        ans = ""
+        tk_count = 0
+        try:
+            for his in history:
+                if his["role"] == "assistant":
+                    his["role"] = "model"
+                    his["parts"] = [his["content"]]
+                    his.pop("content")
+                if his["role"] == "user":
+                    his["parts"] = [his["content"]]
+                    his.pop("content")
+            history[-1]["parts"].append(f"data:image/jpeg;base64," + image)
+
+            response = self.model.generate_content(history, generation_config=GenerationConfig(
+                max_output_tokens=gen_conf.get("max_tokens", 1000), temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7)), stream=True)
+
+            for resp in response:
+                if not resp.text: continue
+                ans += resp.text
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield response._chunks[-1].usage_metadata.total_token_count
 
 
 class OpenRouterCV(Base):
