@@ -26,6 +26,7 @@ from io import BytesIO
 import json
 import requests
 
+from rag.nlp import is_english
 from api.utils import get_uuid
 from api.utils.file_utils import get_project_base_directory
 
@@ -36,7 +37,60 @@ class Base(ABC):
 
     def describe(self, image, max_tokens=300):
         raise NotImplementedError("Please implement encode method!")
+        
+    def chat(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+        try:
+            for his in history:
+                if his["role"] == "user":
+                    his["content"] = self.chat_prompt(his["content"], image)
 
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                max_tokens=gen_conf.get("max_tokens", 1000),
+                temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7)
+            )
+            return response.choices[0].message.content.strip(), response.usage.total_tokens
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+
+        ans = ""
+        tk_count = 0
+        try:
+            for his in history:
+                if his["role"] == "user":
+                    his["content"] = self.chat_prompt(his["content"], image)
+
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                max_tokens=gen_conf.get("max_tokens", 1000),
+                temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7),
+                stream=True
+            )
+            for resp in response:
+                if not resp.choices[0].delta.content: continue
+                delta = resp.choices[0].delta.content
+                ans += delta
+                if resp.choices[0].finish_reason == "length":
+                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    tk_count = resp.usage.total_tokens
+                if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield tk_count
+        
     def image2base64(self, image):
         if isinstance(image, bytes):
             return base64.b64encode(image).decode("utf-8")
@@ -67,6 +121,21 @@ class Base(ABC):
                 ],
             }
         ]
+
+    def chat_prompt(self, text, b64):
+        return [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{b64}",
+                },
+            },
+            {
+                "type": "text",
+                "text": text
+            },
+        ]
+
 
 
 class GptV4(Base):
@@ -140,6 +209,12 @@ class QWenCV(Base):
             }
         ]
 
+    def chat_prompt(self, text, b64):
+        return [
+            {"image": f"{b64}"},
+            {"text": text},
+        ]
+    
     def describe(self, image, max_tokens=300):
         from http import HTTPStatus
         from dashscope import MultiModalConversation
@@ -148,6 +223,66 @@ class QWenCV(Base):
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'][0]["text"], response.usage.output_tokens
         return response.message, 0
+
+    def chat(self, system, history, gen_conf, image=""):
+        from http import HTTPStatus
+        from dashscope import MultiModalConversation
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+
+        for his in history:
+            if his["role"] == "user":
+                his["content"] = self.chat_prompt(his["content"], image)
+        response = MultiModalConversation.call(model=self.model_name, messages=history,
+                                               max_tokens=gen_conf.get("max_tokens", 1000),
+                                               temperature=gen_conf.get("temperature", 0.3),
+                                               top_p=gen_conf.get("top_p", 0.7))
+
+        ans = ""
+        tk_count = 0
+        if response.status_code == HTTPStatus.OK:
+            ans += response.output.choices[0]['message']['content']
+            tk_count += response.usage.total_tokens
+            if response.output.choices[0].get("finish_reason", "") == "length":
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            return ans, tk_count
+
+        return "**ERROR**: " + response.message, tk_count
+
+    def chat_streamly(self, system, history, gen_conf, image=""):
+        from http import HTTPStatus
+        from dashscope import MultiModalConversation
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+
+        for his in history:
+            if his["role"] == "user":
+                his["content"] = self.chat_prompt(his["content"], image)
+
+        ans = ""
+        tk_count = 0
+        try:
+            response = MultiModalConversation.call(model=self.model_name, messages=history,
+                                                   max_tokens=gen_conf.get("max_tokens", 1000),
+                                                   temperature=gen_conf.get("temperature", 0.3),
+                                                   top_p=gen_conf.get("top_p", 0.7),
+                                                   stream=True)
+            for resp in response:
+                if resp.status_code == HTTPStatus.OK:
+                    ans = resp.output.choices[0]['message']['content']
+                    tk_count = resp.usage.total_tokens
+                    if resp.output.choices[0].get("finish_reason", "") == "length":
+                        ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                            [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    yield ans
+                else:
+                    yield ans + "\n**ERROR**: " + resp.message if str(resp.message).find(
+                        "Access") < 0 else "Out of credit. Please set the API key in **settings > Model providers.**"
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield tk_count
 
 
 class Zhipu4V(Base):
@@ -165,6 +300,59 @@ class Zhipu4V(Base):
             max_tokens=max_tokens,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
+
+    def chat(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+        try:
+            for his in history:
+                if his["role"] == "user":
+                    his["content"] = self.chat_prompt(his["content"], image)
+
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                max_tokens=gen_conf.get("max_tokens", 1000),
+                temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7)
+            )
+            return response.choices[0].message.content.strip(), response.usage.total_tokens
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+
+        ans = ""
+        tk_count = 0
+        try:
+            for his in history:
+                if his["role"] == "user":
+                    his["content"] = self.chat_prompt(his["content"], image)
+
+            response = self.client.chat.completions.create(
+                model=self.model_name, 
+                messages=history,
+                max_tokens=gen_conf.get("max_tokens", 1000),
+                temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7),
+                stream=True
+            )
+            for resp in response:
+                if not resp.choices[0].delta.content: continue
+                delta = resp.choices[0].delta.content
+                ans += delta
+                if resp.choices[0].finish_reason == "length":
+                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    tk_count = resp.usage.total_tokens
+                if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield tk_count
 
 
 class OllamaCV(Base):
@@ -187,6 +375,63 @@ class OllamaCV(Base):
             return ans, 128
         except Exception as e:
             return "**ERROR**: " + str(e), 0
+
+    def chat(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+            
+        try:
+            for his in history:
+                if his["role"] == "user":
+                    his["images"] = [image]
+            options = {}
+            if "temperature" in gen_conf: options["temperature"] = gen_conf["temperature"]
+            if "max_tokens" in gen_conf: options["num_predict"] = gen_conf["max_tokens"]
+            if "top_p" in gen_conf: options["top_k"] = gen_conf["top_p"]
+            if "presence_penalty" in gen_conf: options["presence_penalty"] = gen_conf["presence_penalty"]
+            if "frequency_penalty" in gen_conf: options["frequency_penalty"] = gen_conf["frequency_penalty"]
+            response = self.client.chat(
+                model=self.model_name,
+                messages=history,
+                options=options,
+                keep_alive=-1
+            )
+
+            ans = response["message"]["content"].strip()
+            return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+
+        for his in history:
+            if his["role"] == "user":
+                his["images"] = [image]
+        options = {}
+        if "temperature" in gen_conf: options["temperature"] = gen_conf["temperature"]
+        if "max_tokens" in gen_conf: options["num_predict"] = gen_conf["max_tokens"]
+        if "top_p" in gen_conf: options["top_k"] = gen_conf["top_p"]
+        if "presence_penalty" in gen_conf: options["presence_penalty"] = gen_conf["presence_penalty"]
+        if "frequency_penalty" in gen_conf: options["frequency_penalty"] = gen_conf["frequency_penalty"]
+        ans = ""
+        try:
+            response = self.client.chat(
+                model=self.model_name,
+                messages=history,
+                stream=True,
+                options=options,
+                keep_alive=-1
+            )
+            for resp in response:
+                if resp["done"]:
+                    yield resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
+                ans += resp["message"]["content"]
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+        yield 0
 
 
 class LocalAICV(Base):
@@ -236,7 +481,7 @@ class XinferenceCV(Base):
 
 class GeminiCV(Base):
     def __init__(self, key, model_name="gemini-1.0-pro-vision-latest", lang="Chinese", **kwargs):
-        from google.generativeai import client,GenerativeModel 
+        from google.generativeai import client, GenerativeModel, GenerationConfig
         client.configure(api_key=key)
         _client = client.get_default_generative_client()
         self.model_name = model_name
@@ -257,6 +502,59 @@ class GeminiCV(Base):
             generation_config=gen_config,
         )
         return res.text,res.usage_metadata.total_token_count
+
+    def chat(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+        try:
+            for his in history:
+                if his["role"] == "assistant":
+                    his["role"] = "model"
+                    his["parts"] = [his["content"]]
+                    his.pop("content")
+                if his["role"] == "user":
+                    his["parts"] = [his["content"]]
+                    his.pop("content")
+            history[-1]["parts"].append(f"data:image/jpeg;base64," + image)
+
+            response = self.model.generate_content(history, generation_config=GenerationConfig(
+                max_output_tokens=gen_conf.get("max_tokens", 1000), temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7)))
+
+            ans = response.text
+            return ans, response.usage_metadata.total_token_count
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf, image=""):
+        if system:
+            history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+
+        ans = ""
+        tk_count = 0
+        try:
+            for his in history:
+                if his["role"] == "assistant":
+                    his["role"] = "model"
+                    his["parts"] = [his["content"]]
+                    his.pop("content")
+                if his["role"] == "user":
+                    his["parts"] = [his["content"]]
+                    his.pop("content")
+            history[-1]["parts"].append(f"data:image/jpeg;base64," + image)
+
+            response = self.model.generate_content(history, generation_config=GenerationConfig(
+                max_output_tokens=gen_conf.get("max_tokens", 1000), temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7)), stream=True)
+
+            for resp in response:
+                if not resp.text: continue
+                ans += resp.text
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield response._chunks[-1].usage_metadata.total_token_count
 
 
 class OpenRouterCV(Base):
