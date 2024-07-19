@@ -158,6 +158,13 @@
             "llm": []
         },
         {
+            "name": "LocalAI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "Moonshot",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",

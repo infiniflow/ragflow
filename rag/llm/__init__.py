@@ -21,6 +21,7 @@ from .rerank_model import *
 
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
+    "LocalAI": LocalAIEmbed,
     "OpenAI": OpenAIEmbed,
     "Azure-OpenAI": AzureEmbed,
     "Xinference": XinferenceEmbed,
@@ -46,7 +47,8 @@ CvModel = {
     "ZHIPU-AI": Zhipu4V,
     "Moonshot": LocalCV,
     'Gemini':GeminiCV,
-    'OpenRouter':OpenRouterCV
+    'OpenRouter':OpenRouterCV,
+    "LocalAI":LocalAICV
 }
 
 
@@ -56,6 +58,7 @@ ChatModel = {
     "ZHIPU-AI": ZhipuChat,
     "Tongyi-Qianwen": QWenChat,
     "Ollama": OllamaChat,
+    "LocalAI": LocalAIChat,
     "Xinference": XinferenceChat,
     "Moonshot": MoonshotChat,
     "DeepSeek": DeepSeekChat,
@@ -67,7 +70,7 @@ ChatModel = {
     'Gemini' : GeminiChat,
     "Bedrock": BedrockChat,
     "Groq": GroqChat,
-    'OpenRouter':OpenRouterChat
+    'OpenRouter':OpenRouterChat,
 }
 
 

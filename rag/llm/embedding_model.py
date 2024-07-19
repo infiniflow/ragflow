@@ -111,6 +111,24 @@ class OpenAIEmbed(Base):
         return np.array(res.data[0].embedding), res.usage.total_tokens
 
 
+class LocalAIEmbed(Base):
+    def __init__(self, key, model_name, base_url):
+        self.base_url = base_url + "/embeddings"
+        self.headers = {
+            "Content-Type": "application/json",
+        }
+        self.model_name = model_name.split("___")[0]
+
+    def encode(self, texts: list, batch_size=None):
+        data = {"model": self.model_name, "input": texts, "encoding_type": "float"}
+        res = requests.post(self.base_url, headers=self.headers, json=data).json()
+
+        return np.array([d["embedding"] for d in res["data"]]), 1024
+
+    def encode_queries(self, text):
+        embds, cnt = self.encode([text])
+        return np.array(embds[0]), cnt
+
 class AzureEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, **kwargs):
         self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")

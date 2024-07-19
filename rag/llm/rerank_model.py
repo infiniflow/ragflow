@@ -135,7 +135,7 @@ class YoudaoRerank(DefaultRerank):
             if isinstance(scores, float): res.append(scores)
             else: res.extend(scores)
         return np.array(res), token_count
-    
+
 
 class XInferenceRerank(Base):
     def __init__(self, key="xxxxxxx", model_name="", base_url=""):
@@ -156,3 +156,11 @@ class XInferenceRerank(Base):
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
         return np.array([d["relevance_score"] for d in res["results"]]), res["meta"]["tokens"]["input_tokens"]+res["meta"]["tokens"]["output_tokens"]
+
+
+class LocalAIRerank(Base):
+    def __init__(self, key, model_name, base_url):
+        pass
+
+    def similarity(self, query: str, texts: list):
+        raise NotImplementedError("The LocalAIRerank has not been implement")
