@@ -561,7 +561,7 @@ class MiniMaxChat(Base):
         if not base_url:
             base_url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
         self.base_url = base_url
-        self.model_name = model_name.split('___')[0]
+        self.model_name = model_name
         self.api_key = key
 
     def chat(self, system, history, gen_conf):
