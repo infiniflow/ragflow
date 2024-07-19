@@ -65,6 +65,8 @@ const IconMap = {
   Gemini: 'gemini',
   Groq: 'groq-next',
   OpenRouter: 'open-router',
+  LocalAI:'local-ai',
+  StepFun:'stepfun'
 };
 
 const LlmIcon = ({ name }: { name: string }) => {

@@ -897,3 +897,9 @@ class OpenRouterChat(Base):
         self.base_url = "https://openrouter.ai/api/v1"
         self.client = OpenAI(base_url=self.base_url, api_key=key)
         self.model_name = model_name
+
+class StepFunChat(Base):
+    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1/chat/completions"):
+        if not base_url:
+            base_url = "https://api.stepfun.com/v1/chat/completions"
+        super().__init__(key, model_name, base_url)
