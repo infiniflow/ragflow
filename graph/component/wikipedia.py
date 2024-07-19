@@ -59,7 +59,7 @@ class Wikipedia(ComponentBase, ABC):
                 page = wiki_engine.page(title=wiki_key, auto_suggest=False)
                 wiki_res.append({"content": '<a href="' + page.url + '">' + page.title + '</a> ' + page.summary})
         except Exception as e:
-            return Wikipedia.be_output(e)
+            return Wikipedia.be_output("**ERROR**: " + str(e))
 
         if not wiki_res:
             return Wikipedia.be_output("")
