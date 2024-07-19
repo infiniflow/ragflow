@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { CloseOutlined } from '@ant-design/icons';
 import { Button, Card, Form, FormListFieldData, Input, Select } from 'antd';
 import { FormInstance } from 'antd/lib';

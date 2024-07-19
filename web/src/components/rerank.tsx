@@ -1,6 +1,6 @@
 import { LlmModelType } from '@/constants/knowledge';
-import { useTranslate } from '@/hooks/commonHooks';
-import { useSelectLlmOptionsByModelType } from '@/hooks/llmHooks';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
 import { Form, Select, Slider } from 'antd';
 
 type FieldType = {

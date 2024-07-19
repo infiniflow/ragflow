@@ -1,6 +1,6 @@
 import MessageItem from '@/components/message-item';
 import { MessageType } from '@/constants/chat';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Button, Flex, Input, Spin } from 'antd';
 import { forwardRef } from 'react';

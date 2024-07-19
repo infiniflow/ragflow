@@ -1,5 +1,5 @@
 import LineChart from '@/components/line-chart';
-import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
+import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IDialog, IStats } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';

@@ -1,5 +1,5 @@
 import { ReactComponent as DeleteIcon } from '@/assets/svg/delete.svg';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import {
   DownOutlined,
   FileTextOutlined,
@@ -26,7 +26,7 @@ import {
   useSelectBreadcrumbItems,
 } from './hooks';
 
-import { useSelectParentFolderList } from '@/hooks/fileManagerHooks';
+import { useSelectParentFolderList } from '@/hooks/file-manager-hooks';
 import styles from './index.less';
 
 interface IProps {

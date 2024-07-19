@@ -129,11 +129,11 @@ class LocalAIEmbed(Base):
         embds, cnt = self.encode([text])
         return np.array(embds[0]), cnt
 
-
-class AzureEmbed(Base):
+class AzureEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, **kwargs):
         self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")
         self.model_name = model_name
+
 
 class BaiChuanEmbed(OpenAIEmbed):
     def __init__(self, key,

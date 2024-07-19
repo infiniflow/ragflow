@@ -1,8 +1,8 @@
 import { ReactComponent as ConfigurationIcon } from '@/assets/svg/knowledge-configration.svg';
 import { ReactComponent as DatasetIcon } from '@/assets/svg/knowledge-dataset.svg';
 import { ReactComponent as TestingIcon } from '@/assets/svg/knowledge-testing.svg';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/knowledgeHook';
-import { useSecondPathName } from '@/hooks/routeHook';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/knowledge-hooks';
+import { useSecondPathName } from '@/hooks/route-hook';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { getWidth } from '@/utils';
 import { Avatar, Menu, MenuProps, Space } from 'antd';

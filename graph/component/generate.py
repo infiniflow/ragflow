@@ -86,7 +86,10 @@ class Generate(ComponentBase):
             # prompt = re.sub(r"\{%s\}"%n, re.escape(str(v)), prompt)
             prompt = re.sub(r"\{%s\}" % n, str(v), prompt)
 
-        if kwargs.get("stream"):
+        downstreams = self._canvas.get_component(self._id)["downstream"]
+        if kwargs.get("stream") \
+                and len(downstreams) == 1 \
+                and self._canvas.get_component(downstreams[0])["obj"].component_name.lower() == "answer":
             return partial(self.stream_output, chat_mdl, prompt, retrieval_res)
 
         if "empty_response" in retrieval_res.columns:

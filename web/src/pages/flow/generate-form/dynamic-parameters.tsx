@@ -1,5 +1,5 @@
 import { EditableCell, EditableRow } from '@/components/editable-cell';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Flex, Select, Table, TableProps } from 'antd';
 import { IGenerateParameter } from '../interface';

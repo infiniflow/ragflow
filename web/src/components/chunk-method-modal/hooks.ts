@@ -1,7 +1,7 @@
 import {
   useFetchTenantInfo,
   useSelectParserList,
-} from '@/hooks/userSettingHook';
+} from '@/hooks/user-setting-hooks';
 import { useEffect, useMemo, useState } from 'react';
 
 const ParserListMap = new Map([

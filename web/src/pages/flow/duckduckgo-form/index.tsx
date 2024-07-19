@@ -1,5 +1,5 @@
 import TopNItem from '@/components/top-n-item';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Select } from 'antd';
 import { useMemo } from 'react';
 import { Channel } from '../constant';

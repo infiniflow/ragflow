@@ -1,6 +1,6 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
-import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
+import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';

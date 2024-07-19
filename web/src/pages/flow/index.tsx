@@ -1,4 +1,4 @@
-import { useSetModalState } from '@/hooks/commonHooks';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { Layout } from 'antd';
 import { useState } from 'react';
 import { ReactFlowProvider } from 'reactflow';

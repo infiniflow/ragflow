@@ -1,4 +1,4 @@
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/commonHooks';
+import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import {
   IApiKeySavingParams,
   ISystemModelSettingSavingParams,
@@ -8,12 +8,12 @@ import {
   useSaveApiKey,
   useSaveTenantInfo,
   useSelectLlmOptionsByModelType,
-} from '@/hooks/llmHooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+} from '@/hooks/llm-hooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   useFetchTenantInfo,
   useSelectTenantInfo,
-} from '@/hooks/userSettingHook';
+} from '@/hooks/user-setting-hooks';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiKeyPostBody } from '../interface';

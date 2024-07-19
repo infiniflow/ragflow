@@ -4,7 +4,7 @@ import {
   useHandleMessageInputChange,
   useScrollToBottom,
   useSendMessageWithSse,
-} from '@/hooks/logicHooks';
+} from '@/hooks/logic-hooks';
 import { IAnswer } from '@/interfaces/database/chat';
 import { IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';

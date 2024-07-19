@@ -3,16 +3,15 @@ import SvgIcon from '@/components/svg-icon';
 import {
   useSelectDocumentList,
   useSetDocumentStatus,
-} from '@/hooks/documentHooks';
-import { useSetSelectedRecord } from '@/hooks/logicHooks';
-import { useSelectParserList } from '@/hooks/userSettingHook';
+} from '@/hooks/document-hooks';
+import { useSetSelectedRecord } from '@/hooks/logic-hooks';
+import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/documentUtils';
 import { Divider, Flex, Switch, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 import CreateFileModal from './create-file-modal';
-import WebCrawlModal from './web-crawl-modal';
 import DocumentToolbar from './document-toolbar';
 import {
   useChangeDocumentParser,
@@ -20,13 +19,15 @@ import {
   useFetchDocumentListOnMount,
   useGetPagination,
   useGetRowSelection,
-  useHandleUploadDocument, useHandleWebCrawl,
+  useHandleUploadDocument,
+  useHandleWebCrawl,
   useNavigateToOtherPage,
   useRenameDocument,
 } from './hooks';
 import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
 import RenameModal from './rename-modal';
+import WebCrawlModal from './web-crawl-modal';
 
 import FileUploadModal from '@/components/file-upload-modal';
 import { formatDate } from '@/utils/date';

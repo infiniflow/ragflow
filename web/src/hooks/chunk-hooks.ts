@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useDispatch } from 'umi';
-import { useGetKnowledgeSearchParams } from './routeHook';
+import { useGetKnowledgeSearchParams } from './route-hook';
 
 interface PayloadType {
   doc_id: string;
