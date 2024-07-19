@@ -185,13 +185,19 @@ def switch():
 
 @manager.route('/rm', methods=['POST'])
 @login_required
-@validate_request("chunk_ids")
+@validate_request("chunk_ids","doc_id")
 def rm():
     req = request.json
     try:
         if not ELASTICSEARCH.deleteByQuery(
                 Q("ids", values=req["chunk_ids"]), search.index_name(current_user.id)):
             return get_data_error_result(retmsg="Index updating failure")
+        e, doc = DocumentService.get_by_id(req["doc_id"])
+        if not e:
+            return get_data_error_result(retmsg="Document not found!")
+        deleted_chunk_ids = req["chunk_ids"]
+        chunk_number = len(deleted_chunk_ids)
+        DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, chunk_number, 0)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
