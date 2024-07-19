@@ -46,7 +46,7 @@ const LlmSettingItems = ({ prefix, formItemLayout = {} }: IProps) => {
         {...formItemLayout}
         rules={[{ required: true, message: t('modelMessage') }]}
       >
-        <Select options={modelOptions[LlmModelType.Chat]} showSearch />
+        <Select options={[...modelOptions[LlmModelType.Chat], ...modelOptions[LlmModelType.Image2text],]} showSearch/>
       </Form.Item>
       <Divider></Divider>
       <Form.Item
