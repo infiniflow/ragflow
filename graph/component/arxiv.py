@@ -61,7 +61,7 @@ class ArXiv(ComponentBase, ABC):
                 {"content": 'Title: ' + i.title + '\nPdf_Url: <a href="' + i.pdf_url + '"></a> \nSummary: ' + i.summary} for
                 i in list(arxiv_client.results(search))]
         except Exception as e:
-            return ArXiv.be_output(e)
+            return ArXiv.be_output("**ERROR**: " + str(e))
 
         if not arxiv_res:
             return ArXiv.be_output("")
