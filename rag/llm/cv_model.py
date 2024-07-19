@@ -79,9 +79,7 @@ class Base(ABC):
         return [
             {
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{b64}"
-                },
+                "image_url": f"{b64}"
             },
             {
                 "type": "text",
