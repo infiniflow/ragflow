@@ -230,7 +230,6 @@ def create():
             tenant_id, LLMType.EMBEDDING.value, embd_id)
         
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
-        #DocumentService.increment_chunk_num(req["doc_id"], doc.kb_id, c, 1, 0)
         v = 0.1 * v[0] + 0.9 * v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
         ELASTICSEARCH.upsert([d], search.index_name(tenant_id))
