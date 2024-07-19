@@ -1,5 +1,5 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
 import { ApiKeyPostBody } from '../../interface';
@@ -77,7 +77,7 @@ const ApiKeyModal = ({
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
         )}
-        {llmFactory === 'Minimax' && (
+        {llmFactory?.toLowerCase() === 'Minimax'.toLowerCase() && (
           <Form.Item<FieldType> label={'Group ID'} name="group_id">
             <Input />
           </Form.Item>

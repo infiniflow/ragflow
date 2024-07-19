@@ -96,6 +96,7 @@ export const useFetchFlow = (): {
     refetchOnReconnect: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
+    gcTime: 0,
     queryFn: async () => {
       const { data } = await flowService.getCanvas({}, id);
 

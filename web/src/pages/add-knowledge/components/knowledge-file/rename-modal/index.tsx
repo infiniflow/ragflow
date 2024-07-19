@@ -1,5 +1,5 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
 

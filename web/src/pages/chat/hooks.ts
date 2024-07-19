@@ -17,14 +17,14 @@ import {
   useSelectTokenList,
   useSetDialog,
   useUpdateConversation,
-} from '@/hooks/chatHooks';
+} from '@/hooks/chat-hooks';
 import {
   useSetModalState,
   useShowDeleteConfirm,
   useTranslate,
-} from '@/hooks/commonHooks';
-import { useSendMessageWithSse } from '@/hooks/logicHooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+} from '@/hooks/common-hooks';
+import { useSendMessageWithSse } from '@/hooks/logic-hooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   IAnswer,
   IConversation,
@@ -552,7 +552,7 @@ export const useSendMessage = (
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
   const { handleClickConversation } = useClickConversationCard();
-  const { send, answer, done } = useSendMessageWithSse();
+  const { send, answer, done, setDone } = useSendMessageWithSse();
 
   const sendMessage = useCallback(
     async (message: string, id?: string) => {
@@ -609,10 +609,18 @@ export const useSendMessage = (
   );
 
   useEffect(() => {
+    //  #1289
     if (answer.answer && answer?.conversationId === conversationId) {
       addNewestAnswer(answer);
     }
   }, [answer, addNewestAnswer, conversationId]);
+
+  useEffect(() => {
+    // #1289 switch to another conversion window when the last conversion answer doesn't finish.
+    if (conversationId) {
+      setDone(true);
+    }
+  }, [setDone, conversationId]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;

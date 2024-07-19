@@ -52,7 +52,7 @@ class RAGFlowPptParser(object):
                 break
             texts = []
             for shape in sorted(
-                    slide.shapes, key=lambda x: (x.top // 10, x.left)):
+                    slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left)):
                 txt = self.__extract(shape)
                 if txt:
                     texts.append(txt)

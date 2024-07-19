@@ -51,16 +51,15 @@ class Wikipedia(ComponentBase, ABC):
         if not ans:
             return Wikipedia.be_output("")
 
-        wiki_res = []
-        wikipedia.set_lang(self._param.language)
-        wiki_engine = wikipedia
-        for wiki_key in wiki_engine.search(ans, results=self._param.top_n):
-            try:
+        try:
+            wiki_res = []
+            wikipedia.set_lang(self._param.language)
+            wiki_engine = wikipedia
+            for wiki_key in wiki_engine.search(ans, results=self._param.top_n):
                 page = wiki_engine.page(title=wiki_key, auto_suggest=False)
                 wiki_res.append({"content": '<a href="' + page.url + '">' + page.title + '</a> ' + page.summary})
-            except Exception as e:
-                print(e)
-                pass
+        except Exception as e:
+            return Wikipedia.be_output("**ERROR**: " + str(e))
 
         if not wiki_res:
             return Wikipedia.be_output("")

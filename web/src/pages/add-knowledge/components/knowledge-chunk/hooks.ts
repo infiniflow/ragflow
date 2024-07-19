@@ -1,4 +1,4 @@
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { buildChunkHighlights } from '@/utils/documentUtils';
 import { useCallback, useMemo, useState } from 'react';

@@ -6,8 +6,8 @@ import {
 import { Divider, Flex, Form, InputNumber, Select, Slider, Switch } from 'antd';
 import camelCase from 'lodash/camelCase';
 
-import { useTranslate } from '@/hooks/commonHooks';
-import { useSelectLlmOptionsByModelType } from '@/hooks/llmHooks';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
 import { useCallback, useMemo } from 'react';
 import styles from './index.less';
 

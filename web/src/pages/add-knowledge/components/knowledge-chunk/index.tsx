@@ -1,5 +1,5 @@
-import { useFetchChunkList } from '@/hooks/chunkHooks';
-import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
+import { useFetchChunkList } from '@/hooks/chunk-hooks';
+import { useDeleteChunkByIds } from '@/hooks/knowledge-hooks';
 import type { PaginationProps } from 'antd';
 import { Divider, Flex, Pagination, Space, Spin, message } from 'antd';
 import classNames from 'classnames';
@@ -203,6 +203,12 @@ const Chunk = () => {
                 current={pagination.current}
                 size={'small'}
                 total={total}
+                showTotal={(total) => (
+                  <Space>
+                    {t('total', { keyPrefix: 'common' })}
+                    {total}
+                  </Space>
+                )}
               />
             </div>
           </Flex>

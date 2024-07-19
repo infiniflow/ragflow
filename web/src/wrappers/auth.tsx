@@ -1,4 +1,4 @@
-import { useAuth } from '@/hooks/authHook';
+import { useAuth } from '@/hooks/auth-hooks';
 import { Navigate, Outlet } from 'umi';
 
 export default () => {

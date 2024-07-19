@@ -1,6 +1,6 @@
 import { ReactComponent as SelectedFilesCollapseIcon } from '@/assets/svg/selected-files-collapse.svg';
 import Image from '@/components/image';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { ITestingChunk } from '@/interfaces/database/knowledge';
 import {
   Card,

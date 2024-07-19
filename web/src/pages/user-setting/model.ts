@@ -7,7 +7,7 @@ import {
 } from '@/interfaces/database/llm';
 import { IUserInfo } from '@/interfaces/database/userSetting';
 import i18n from '@/locales/config';
-import userService from '@/services/userService';
+import userService from '@/services/user-service';
 import { message } from 'antd';
 import { DvaModel } from 'umi';
 

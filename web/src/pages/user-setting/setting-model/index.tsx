@@ -1,11 +1,11 @@
 import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
 import SvgIcon from '@/components/svg-icon';
-import { useSetModalState, useTranslate } from '@/hooks/commonHooks';
+import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import {
   LlmItem,
   useFetchLlmFactoryListOnMount,
   useFetchMyLlmListOnMount,
-} from '@/hooks/llmHooks';
+} from '@/hooks/llm-hooks';
 import {
   CloseCircleOutlined,
   SettingOutlined,
@@ -45,6 +45,7 @@ import OllamaModal from './ollama-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
 import VolcEngineModal from './volcengine-model';
 
+// Please lowercase the file name
 const IconMap = {
   'Tongyi-Qianwen': 'tongyi',
   Moonshot: 'moonshot',
@@ -57,13 +58,13 @@ const IconMap = {
   VolcEngine: 'volc_engine',
   BaiChuan: 'baichuan',
   Jina: 'jina',
-  Minimax: 'chat-minimax',
+  MiniMax: 'chat-minimax',
   Mistral: 'mistral',
   'Azure-OpenAI': 'azure',
   Bedrock: 'bedrock',
-  Gemini:'gemini',
-  Groq: 'Groq',
-  OpenRouter:'open-router'
+  Gemini: 'gemini',
+  Groq: 'groq-next',
+  OpenRouter: 'open-router',
 };
 
 const LlmIcon = ({ name }: { name: string }) => {

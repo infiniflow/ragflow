@@ -1,6 +1,6 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import HightLightMarkdown from '@/components/highlight-markdown';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Card, Modal, Tabs, TabsProps } from 'antd';
 import styles from './index.less';
