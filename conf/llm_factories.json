@@ -158,6 +158,13 @@
             "llm": []
         },
         {
+            "name": "LocalAI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "Moonshot",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
@@ -1876,6 +1883,38 @@
                     "llm_name": "01-ai/yi-6b",
                     "tags": "LLM CHAT 4K",
                     "max_tokens": 4096,
+                    "model_type": "chat"
+                }
+            ]
+        },
+        {
+            "name": "StepFun",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "step-1-8k",
+                    "tags": "LLM,CHAT,15k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "step-1-32k",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "step-1-128k",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "step-1-256k",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
                     "model_type": "chat"
                 }
             ]

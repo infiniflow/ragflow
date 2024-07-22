@@ -1,12 +1,9 @@
 import {
   useFetchKnowledgeBaseConfiguration,
-  useKnowledgeBaseId,
-  useSelectKnowledgeDetails,
   useUpdateKnowledge,
 } from '@/hooks/knowledge-hooks';
 import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llm-hooks';
 import { useNavigateToDataset } from '@/hooks/route-hook';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   useFetchTenantInfo,
   useSelectParserList,
@@ -15,6 +12,7 @@ import {
   getBase64FromUploadFileList,
   getUploadFileListFromBase64,
 } from '@/utils/fileUtil';
+import { useIsFetching } from '@tanstack/react-query';
 import { Form, UploadFile } from 'antd';
 import { FormInstance } from 'antd/lib';
 import pick from 'lodash/pick';
@@ -22,32 +20,32 @@ import { useCallback, useEffect } from 'react';
 import { LlmModelType } from '../../constant';
 
 export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
-  const save = useUpdateKnowledge();
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const submitLoading = useOneNamespaceEffectsLoading('kSModel', ['updateKb']);
+  const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
   const navigateToDataset = useNavigateToDataset();
 
   const submitKnowledgeConfiguration = useCallback(async () => {
     const values = await form.validateFields();
     const avatar = await getBase64FromUploadFileList(values.avatar);
-    save({
+    saveKnowledgeConfiguration({
       ...values,
       avatar,
-      kb_id: knowledgeBaseId,
     });
     navigateToDataset();
-  }, [save, knowledgeBaseId, form, navigateToDataset]);
+  }, [saveKnowledgeConfiguration, form, navigateToDataset]);
 
-  return { submitKnowledgeConfiguration, submitLoading, navigateToDataset };
+  return {
+    submitKnowledgeConfiguration,
+    submitLoading: loading,
+    navigateToDataset,
+  };
 };
 
 export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
-  const knowledgeDetails = useSelectKnowledgeDetails();
   const parserList = useSelectParserList();
   const embeddingModelOptions = useSelectLlmOptions();
 
   useFetchTenantInfo();
-  useFetchKnowledgeBaseConfiguration();
+  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
   useFetchLlmList(LlmModelType.Embedding);
 
   useEffect(() => {
@@ -76,7 +74,7 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
 };
 
 export const useSelectKnowledgeDetailsLoading = () =>
-  useOneNamespaceEffectsLoading('kSModel', ['getKbDetail']);
+  useIsFetching({ queryKey: ['fetchKnowledgeDetail'] }) > 0;
 
 export const useHandleChunkMethodChange = () => {
   const [form] = Form.useForm();

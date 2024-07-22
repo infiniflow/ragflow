@@ -3,7 +3,6 @@ import { ReactComponent as DatasetIcon } from '@/assets/svg/knowledge-dataset.sv
 import { ReactComponent as TestingIcon } from '@/assets/svg/knowledge-testing.svg';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/knowledge-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
-import { IKnowledge } from '@/interfaces/database/knowledge';
 import { getWidth } from '@/utils';
 import { Avatar, Menu, MenuProps, Space } from 'antd';
 import classNames from 'classnames';
@@ -11,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSelector } from 'umi';
 import { KnowledgeRouteKey } from '../../constant';
+
 import styles from './index.less';
 
 const KnowledgeSidebar = () => {
@@ -18,13 +18,11 @@ const KnowledgeSidebar = () => {
   const { id } = kAModel;
   let navigate = useNavigate();
   const activeKey = useSecondPathName();
-  const knowledgeDetails: IKnowledge = useSelector(
-    (state: any) => state.kSModel.knowledgeDetails,
-  );
 
   const [windowWidth, setWindowWidth] = useState(getWidth());
   const [collapsed, setCollapsed] = useState(false);
   const { t } = useTranslation();
+  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
   const handleSelect: MenuProps['onSelect'] = (e) => {
     navigate(`/knowledge/${e.key}?id=${id}`);
@@ -93,8 +91,6 @@ const KnowledgeSidebar = () => {
       window.removeEventListener('resize', widthSize);
     };
   }, []);
-
-  useFetchKnowledgeBaseConfiguration();
 
   return (
     <div className={styles.sidebarWrapper}>
