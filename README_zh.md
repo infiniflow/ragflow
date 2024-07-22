@@ -309,6 +309,10 @@ $ systemctl start nginx
 
 RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的[贡献者指南](./docs/references/CONTRIBUTING.md) 。
 
+## 🤝 商务合作
+
+- [预约咨询](https://aao615odquw.feishu.cn/share/base/form/shrcnjw7QleretCLqh1nuPo1xxh)
+
 ## 👥 加入社区
 
 扫二维码添加 RAGFlow 小助手，进 RAGFlow 交流群。
