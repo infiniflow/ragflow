@@ -143,7 +143,7 @@ def init_llm_factory():
     """
     drop table llm;
     drop table llm_factories;
-    update tenant set parser_ids='naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One';
+    update tenant set parser_ids='naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio';
     alter table knowledgebase modify avatar longtext;
     alter table user modify avatar longtext;
     alter table dialog modify icon longtext;
