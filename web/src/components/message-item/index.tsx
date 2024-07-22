@@ -1,7 +1,6 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useGetDocumentUrl } from '@/hooks/document-hooks';
 import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference, Message } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
@@ -9,7 +8,7 @@ import classNames from 'classnames';
 import { useMemo } from 'react';
 
 import MarkdownContent from '@/pages/chat/markdown-content';
-import { getExtension, isPdf } from '@/utils/documentUtils';
+import { getExtension } from '@/utils/documentUtils';
 import { Avatar, Flex, List } from 'antd';
 import NewDocumentLink from '../new-document-link';
 import SvgIcon from '../svg-icon';
@@ -35,7 +34,6 @@ const MessageItem = ({
   const isAssistant = item.role === MessageType.Assistant;
   const { t } = useTranslate('chat');
   const fileThumbnails = useSelectFileThumbnails();
-  const getDocumentUrl = useGetDocumentUrl();
 
   const referenceDocumentList = useMemo(() => {
     return reference?.doc_aggs ?? [];
@@ -114,8 +112,9 @@ const MessageItem = ({
                         )}
 
                         <NewDocumentLink
-                          link={getDocumentUrl(item.doc_id)}
-                          preventDefault={!isPdf(item.doc_name)}
+                          documentId={item.doc_id}
+                          documentName={item.doc_name}
+                          prefix="document"
                         >
                           {item.doc_name}
                         </NewDocumentLink>

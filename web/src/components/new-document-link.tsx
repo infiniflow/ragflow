@@ -1,9 +1,16 @@
+import {
+  getExtension,
+  isSupportedPreviewDocumentType,
+} from '@/utils/documentUtils';
 import React from 'react';
 
 interface IProps extends React.PropsWithChildren {
-  link: string;
+  link?: string;
   preventDefault?: boolean;
   color?: string;
+  documentName: string;
+  documentId?: string;
+  prefix?: string;
 }
 
 const NewDocumentLink = ({
@@ -11,12 +18,25 @@ const NewDocumentLink = ({
   link,
   preventDefault = false,
   color = 'rgb(15, 79, 170)',
+  documentId,
+  documentName,
+  prefix = 'file',
 }: IProps) => {
+  let nextLink = link;
+  const extension = getExtension(documentName);
+  if (!link) {
+    nextLink = `/document/${documentId}?ext=${extension}&prefix=${prefix}`;
+  }
+
   return (
     <a
       target="_blank"
-      onClick={!preventDefault ? undefined : (e) => e.preventDefault()}
-      href={link}
+      onClick={
+        !preventDefault || isSupportedPreviewDocumentType(extension)
+          ? undefined
+          : (e) => e.preventDefault()
+      }
+      href={nextLink}
       rel="noreferrer"
       style={{ color, wordBreak: 'break-all' }}
     >
