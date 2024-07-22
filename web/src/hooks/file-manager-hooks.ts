@@ -1,10 +1,21 @@
+import { ResponseType } from '@/interfaces/database/base';
 import {
   IConnectRequestBody,
   IFileListRequestBody,
 } from '@/interfaces/request/file-manager';
-import { UploadFile } from 'antd';
-import { useCallback } from 'react';
-import { useDispatch, useSelector } from 'umi';
+import fileManagerService from '@/services/file-manager-service';
+import { useQuery } from '@tanstack/react-query';
+import { PaginationProps, UploadFile } from 'antd';
+import React, { useCallback } from 'react';
+import { useDispatch, useSearchParams, useSelector } from 'umi';
+import { useGetNextPagination, useHandleSearchChange } from './logic-hooks';
+
+export const useGetFolderId = () => {
+  const [searchParams] = useSearchParams();
+  const id = searchParams.get('folderId') as string;
+
+  return id ?? '';
+};
 
 export const useFetchFileList = () => {
   const dispatch = useDispatch();
@@ -20,6 +31,56 @@ export const useFetchFileList = () => {
   );
 
   return fetchFileList;
+};
+
+export interface IListResult {
+  searchString: string;
+  handleInputChange: React.ChangeEventHandler<HTMLInputElement>;
+  pagination: PaginationProps;
+  setPagination: (pagination: { page: number; pageSize: number }) => void;
+}
+
+export const useFetchNextFileList = (): ResponseType<any> & IListResult => {
+  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { pagination, setPagination } = useGetNextPagination();
+  const id = useGetFolderId();
+
+  const { data } = useQuery({
+    queryKey: [
+      'fetchFileList',
+      id,
+      pagination.current,
+      pagination.pageSize,
+      searchString,
+    ],
+    initialData: {},
+    queryFn: async () => {
+      const { data } = await fileManagerService.listFile({
+        parent_id: id,
+        keywords: searchString,
+        page_size: pagination.pageSize,
+        page: pagination.current,
+      });
+
+      return data;
+    },
+  });
+
+  const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
+    (e) => {
+      setPagination({ page: 1 });
+      handleInputChange(e);
+    },
+    [handleInputChange, setPagination],
+  );
+
+  return {
+    ...data,
+    searchString,
+    handleInputChange: onInputChange,
+    pagination: { ...pagination, total: data?.data?.total },
+    setPagination,
+  };
 };
 
 export const useRemoveFile = () => {
