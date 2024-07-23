@@ -46,16 +46,16 @@
 
 ## 🔥 近期更新
 
+- 2024-07-23 支持解析音频文件.
+- 2024-07-21 支持更多的大模型供应商(LocalAI/OpenRouter/StepFun/Nvidia).
+- 2024-07-18 在Graph中支持算子：Wikipedia，PubMed，Baidu和Duckduckgo.
 - 2024-07-08 支持 Agentic RAG: 基于 [Graph](./graph/README.md) 的工作流。
 - 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件。 
 - 2024-06-27 支持提取出 Docx 文件中的图片。
 - 2024-06-27 支持提取出 Markdown 文件中的表格。
-- 2024-06-14 Q&A 解析方式支持 PDF 文件。
 - 2024-06-06 支持 [Self-RAG](https://huggingface.co/papers/2310.11511) ，在对话设置里面默认勾选。
 - 2024-05-30 集成 [BCE](https://github.com/netease-youdao/BCEmbedding) 和 [BGE](https://github.com/FlagOpen/FlagEmbedding) 重排序模型。
-- 2024-05-28 集成大模型 Baichuan 和火山方舟。
 - 2024-05-23 实现 [RAPTOR](https://arxiv.org/html/2401.18059v1) 提供更好的文本检索。
-- 2024-05-21 支持流式结果输出和文本块获取API。
 - 2024-05-15 集成大模型 OpenAI GPT-4o。
 
 ## 🌟 主要功能

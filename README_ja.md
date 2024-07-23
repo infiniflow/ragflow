@@ -46,16 +46,17 @@
 
 
 ## 🔥 最新情報
+
+- 2024-07-23 音声ファイルの解析をサポートしました。
+- 2024-07-21 より多くの LLM サプライヤー (LocalAI/OpenRouter/StepFun/Nvidia) をサポートします。
+- 2024-07-18 グラフにコンポーネント(Wikipedia/PubMed/Baidu/Duckduckgo)を追加しました。
 - 2024-07-08 [Graph](./graph/README.md) ベースのワークフローをサポート
 - 2024-06-27 Q&A解析方式はMarkdownファイルとDocxファイルをサポートしています。
 - 2024-06-27 Docxファイルからの画像の抽出をサポートします。
 - 2024-06-27 Markdownファイルからテーブルを抽出することをサポートします。
-- 2024-06-14 Q&A 解析メソッドは PDF ファイルをサポートしています。
 - 2024-06-06 会話設定でデフォルトでチェックされている [Self-RAG](https://huggingface.co/papers/2310.11511) をサポートします。
 - 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding) 、[BGE](https://github.com/FlagOpen/FlagEmbedding) reranker を統合。
-- 2024-05-28 LLM BaichuanとVolcanoArkを統合しました。
 - 2024-05-23 より良いテキスト検索のために [RAPTOR](https://arxiv.org/html/2401.18059v1) をサポート。
-- 2024-05-21 ストリーミング出力とテキストチャンク取得APIをサポート。
 - 2024-05-15 OpenAI GPT-4oを統合しました。
 
 ## 🌟 主な特徴

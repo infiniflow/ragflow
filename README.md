@@ -65,16 +65,16 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2024-07-23 Support parsing audio files.
+- 2024-07-21 Support more LLM suppliers(LocalAI/OpenRouter/StepFun/Nvidia).
+- 2024-07-18 Add components(Wikipedia/PubMed/Baidu/Duckduckgo) to the graph.
 - 2024-07-08 Supports workflow based on [Graph](./graph/README.md).
 - 2024-06-27 Supports Markdown and Docx in the Q&A parsing method. 
 - 2024-06-27 Supports extracting images from Docx files. 
 - 2024-06-27 Supports extracting tables from Markdown files.
-- 2024-06-14 Supports PDF in the Q&A parsing method.
 - 2024-06-06 Supports [Self-RAG](https://huggingface.co/papers/2310.11511), which is enabled by default in dialog settings.
 - 2024-05-30 Integrates [BCE](https://github.com/netease-youdao/BCEmbedding) and [BGE](https://github.com/FlagOpen/FlagEmbedding) reranker models.
-- 2024-05-28 Supports LLM Baichuan and VolcanoArk.
 - 2024-05-23 Supports [RAPTOR](https://arxiv.org/html/2401.18059v1) for better text retrieval.
-- 2024-05-21 Supports streaming output and text chunk retrieval API. 
 - 2024-05-15 Integrates OpenAI GPT-4o.
 
 ## 🌟 Key Features
