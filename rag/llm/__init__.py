@@ -34,7 +34,8 @@ EmbeddingModel = {
     "BAAI": DefaultEmbedding,
     "Mistral": MistralEmbed,
     "Bedrock": BedrockEmbed,
-    "Gemini":GeminiEmbed
+    "Gemini":GeminiEmbed,
+    "NVIDIA":NvidiaEmbed
 }
 
 
@@ -48,7 +49,8 @@ CvModel = {
     "Moonshot": LocalCV,
     'Gemini':GeminiCV,
     'OpenRouter':OpenRouterCV,
-    "LocalAI":LocalAICV
+    "LocalAI":LocalAICV,
+    "NVIDIA":NvidiaCV
 }
 
 
@@ -71,7 +73,8 @@ ChatModel = {
     "Bedrock": BedrockChat,
     "Groq": GroqChat,
     'OpenRouter':OpenRouterChat,
-    "StepFun":StepFunChat
+    "StepFun":StepFunChat,
+    "NVIDIA":NvidiaChat
 }
 
 
@@ -79,7 +82,8 @@ RerankModel = {
     "BAAI": DefaultRerank,
     "Jina": JinaRerank,
     "Youdao": YoudaoRerank,
-    "Xinference": XInferenceRerank
+    "Xinference": XInferenceRerank,
+    "NVIDIA":NvidiaRerank
 }
 
 

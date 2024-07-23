@@ -25,7 +25,7 @@ from flask_cors import CORS
 from api.db import StatusEnum
 from api.db.db_models import close_connection
 from api.db.services import UserService
-from api.utils import CustomJSONEncoder
+from api.utils import CustomJSONEncoder, commands
 
 from flask_session import Session
 from flask_login import LoginManager
@@ -60,6 +60,7 @@ Session(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 
+commands.register_commands(app)
 
 
 def search_pages_path(pages_dir):
