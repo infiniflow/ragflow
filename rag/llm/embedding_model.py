@@ -463,33 +463,6 @@ class GeminiEmbed(Base):
         token_count = num_tokens_from_string(text)
         return np.array(result['embedding']),token_count
 
-class LocalAIEmbed(Base):
-    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"):
-        self.api_key = key
-        self.base_url = base_url
-        self.headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        self.model_name = model_name
-
-    def encode(self, texts: list, batch_size=None):
-        payload = {
-            "input": texts,
-            "model": self.model_name,
-            "input_type": "query",
-            "encoding_format": "float",
-            "truncate": "END",
-        }
-        res = requests.post(self.base_url, headers=self.headers, json=payload).json()
-
-        return np.array([d["embedding"] for d in res["data"]]),res.usage.total_tokens
-
-    def encode_queries(self, text):
-        embds, cnt = self.encode([text])
-        return np.array(embds[0]), cnt
-
-
 class NvidiaEmbed(Base):
     def __init__(
         self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"
