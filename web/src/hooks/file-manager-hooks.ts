@@ -1,13 +1,12 @@
 import { ResponseType } from '@/interfaces/database/base';
-import {
-  IConnectRequestBody,
-  IFileListRequestBody,
-} from '@/interfaces/request/file-manager';
+import { IFolder } from '@/interfaces/database/file-manager';
+import { IConnectRequestBody } from '@/interfaces/request/file-manager';
 import fileManagerService from '@/services/file-manager-service';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { PaginationProps, UploadFile } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PaginationProps, UploadFile, message } from 'antd';
 import React, { useCallback } from 'react';
-import { useDispatch, useSearchParams, useSelector } from 'umi';
+import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'umi';
 import { useGetNextPagination, useHandleSearchChange } from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
 
@@ -18,41 +17,22 @@ export const useGetFolderId = () => {
   return id ?? '';
 };
 
-export const useFetchFileList = () => {
-  const dispatch = useDispatch();
-
-  const fetchFileList = useCallback(
-    (payload: IFileListRequestBody) => {
-      return dispatch<any>({
-        type: 'fileManager/listFile',
-        payload,
-      });
-    },
-    [dispatch],
-  );
-
-  return fetchFileList;
-};
-
 export interface IListResult {
   searchString: string;
   handleInputChange: React.ChangeEventHandler<HTMLInputElement>;
   pagination: PaginationProps;
   setPagination: (pagination: { page: number; pageSize: number }) => void;
+  loading: boolean;
 }
 
-export const useFetchNextFileList = (): ResponseType<any> & IListResult => {
+export const useFetchFileList = (): ResponseType<any> & IListResult => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetNextPagination();
   const id = useGetFolderId();
 
-  const { data } = useQuery({
+  const { data, isFetching: loading } = useQuery({
     queryKey: [
       'fetchFileList',
-      // pagination.current,
-      // id,
-      // pagination.pageSize,
-      // searchString,
       {
         id,
         searchString,
@@ -87,27 +67,14 @@ export const useFetchNextFileList = (): ResponseType<any> & IListResult => {
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.data?.total },
     setPagination,
+    loading,
   };
-};
-
-export const useRemoveFile = () => {
-  const dispatch = useDispatch();
-
-  const removeFile = useCallback(
-    (fileIds: string[], parentId: string) => {
-      return dispatch<any>({
-        type: 'fileManager/removeFile',
-        payload: { fileIds, parentId },
-      });
-    },
-    [dispatch],
-  );
-
-  return removeFile;
 };
 
 export const useDeleteFile = () => {
   const { setPaginationParams } = useSetPaginationParams();
+  const queryClient = useQueryClient();
+
   const {
     data,
     isPending: loading,
@@ -117,9 +84,10 @@ export const useDeleteFile = () => {
     mutationFn: async (params: { fileIds: string[]; parentId: string }) => {
       const { data } = await fileManagerService.removeFile(params);
       if (data.retcode === 0) {
-        setPaginationParams(1);
+        setPaginationParams(1); // TODO: There should be a better way to paginate the request list
+        queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
       }
-      return data?.data ?? {};
+      return data.retcode;
     },
   });
 
@@ -127,106 +95,129 @@ export const useDeleteFile = () => {
 };
 
 export const useRenameFile = () => {
-  const dispatch = useDispatch();
-
-  const renameFile = useCallback(
-    (fileId: string, name: string, parentId: string) => {
-      return dispatch<any>({
-        type: 'fileManager/renameFile',
-        payload: { fileId, name, parentId },
-      });
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['renameFile'],
+    mutationFn: async (params: { fileId: string; name: string }) => {
+      const { data } = await fileManagerService.renameFile(params);
+      if (data.retcode === 0) {
+        message.success(t('message.renamed'));
+        queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
+      }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return renameFile;
+  return { data, loading, renameFile: mutateAsync };
 };
 
-export const useFetchParentFolderList = () => {
-  const dispatch = useDispatch();
-
-  const fetchParentFolderList = useCallback(
-    (fileId: string) => {
-      return dispatch<any>({
-        type: 'fileManager/getAllParentFolder',
-        payload: { fileId },
+export const useFetchParentFolderList = (): IFolder[] => {
+  const id = useGetFolderId();
+  const { data } = useQuery({
+    queryKey: ['fetchParentFolderList', id],
+    initialData: [],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data } = await fileManagerService.getAllParentFolder({
+        fileId: id,
       });
-    },
-    [dispatch],
-  );
 
-  return fetchParentFolderList;
+      return data?.data?.parent_folders?.toReversed() ?? [];
+    },
+  });
+
+  return data;
 };
 
 export const useCreateFolder = () => {
-  const dispatch = useDispatch();
+  const { setPaginationParams } = useSetPaginationParams();
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
-  const createFolder = useCallback(
-    (parentId: string, name: string) => {
-      return dispatch<any>({
-        type: 'fileManager/createFolder',
-        payload: { parentId, name, type: 'folder' },
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['createFolder'],
+    mutationFn: async (params: { parentId: string; name: string }) => {
+      const { data } = await fileManagerService.createFolder({
+        ...params,
+        type: 'folder',
       });
+      if (data.retcode === 0) {
+        message.success(t('message.created'));
+        setPaginationParams(1);
+        queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
+      }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return createFolder;
-};
-
-export const useSelectFileList = () => {
-  const fileList = useSelector((state) => state.fileManager.fileList);
-
-  return fileList;
-};
-
-export const useSelectParentFolderList = () => {
-  const parentFolderList = useSelector(
-    (state) => state.fileManager.parentFolderList,
-  );
-  return parentFolderList.toReversed();
+  return { data, loading, createFolder: mutateAsync };
 };
 
 export const useUploadFile = () => {
-  const dispatch = useDispatch();
-
-  const uploadFile = useCallback(
-    (fileList: UploadFile[], parentId: string) => {
-      try {
-        return dispatch<any>({
-          type: 'fileManager/uploadFile',
-          payload: {
-            file: fileList,
-            parentId,
-            path: fileList.map((file) => (file as any).webkitRelativePath),
-          },
-        });
-      } catch (errorInfo) {
-        console.log('Failed:', errorInfo);
+  const { setPaginationParams } = useSetPaginationParams();
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['uploadFile'],
+    mutationFn: async (params: {
+      fileList: UploadFile[];
+      parentId: string;
+    }) => {
+      const fileList = params.fileList;
+      const pathList = params.fileList.map(
+        (file) => (file as any).webkitRelativePath,
+      );
+      const formData = new FormData();
+      formData.append('parent_id', params.parentId);
+      fileList.forEach((file: any, index: number) => {
+        formData.append('file', file);
+        formData.append('path', pathList[index]);
+      });
+      const { data } = await fileManagerService.uploadFile(formData);
+      if (data.retcode === 0) {
+        message.success(t('message.uploaded'));
+        setPaginationParams(1);
+        queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
       }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return uploadFile;
+  return { data, loading, uploadFile: mutateAsync };
 };
 
 export const useConnectToKnowledge = () => {
-  const dispatch = useDispatch();
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
-  const uploadFile = useCallback(
-    (payload: IConnectRequestBody) => {
-      try {
-        return dispatch<any>({
-          type: 'fileManager/connectFileToKnowledge',
-          payload,
-        });
-      } catch (errorInfo) {
-        console.log('Failed:', errorInfo);
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['connectFileToKnowledge'],
+    mutationFn: async (params: IConnectRequestBody) => {
+      const { data } = await fileManagerService.connectFileToKnowledge(params);
+      if (data.retcode === 0) {
+        message.success(t('message.operated'));
+        queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
       }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return uploadFile;
+  return { data, loading, connectFileToKnowledge: mutateAsync };
 };
