@@ -65,7 +65,8 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2024-07-23 Support parsing audio files.
+- 2024-07-23 Supports audio file parsing.
+
 - 2024-07-21 Support more LLM suppliers(LocalAI/OpenRouter/StepFun/Nvidia).
 - 2024-07-18 Add components(Wikipedia/PubMed/Baidu/Duckduckgo) to the graph.
 - 2024-07-08 Supports workflow based on [Graph](./graph/README.md).
