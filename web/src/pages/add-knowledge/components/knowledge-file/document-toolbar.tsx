@@ -3,13 +3,13 @@ import { ReactComponent as DeleteIcon } from '@/assets/svg/delete.svg';
 import { ReactComponent as DisableIcon } from '@/assets/svg/disable.svg';
 import { ReactComponent as EnableIcon } from '@/assets/svg/enable.svg';
 import { ReactComponent as RunIcon } from '@/assets/svg/run.svg';
-import { useShowDeleteConfirm, useTranslate } from '@/hooks/commonHooks';
+import { useShowDeleteConfirm, useTranslate } from '@/hooks/common-hooks';
 import {
   useRemoveDocument,
   useRunDocument,
   useSetDocumentStatus,
-} from '@/hooks/documentHooks';
-import { useGetKnowledgeSearchParams } from '@/hooks/routeHook';
+} from '@/hooks/document-hooks';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import {
   DownOutlined,
   FileOutlined,

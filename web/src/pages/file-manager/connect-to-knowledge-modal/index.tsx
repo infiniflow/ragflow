@@ -1,5 +1,5 @@
-import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { filterOptionsByInput } from '@/utils/commonUtil';
 import { Form, Modal, Select } from 'antd';
@@ -13,7 +13,7 @@ const ConnectToKnowledgeModal = ({
   loading,
 }: IModalProps<string[]> & { initialValue: string[] }) => {
   const [form] = Form.useForm();
-  const { list, fetchList } = useFetchKnowledgeList();
+  const { list } = useNextFetchKnowledgeList();
   const { t } = useTranslate('fileManager');
 
   const options = list?.map((item) => ({
@@ -30,9 +30,8 @@ const ConnectToKnowledgeModal = ({
   useEffect(() => {
     if (visible) {
       form.setFieldValue('knowledgeIds', initialValue);
-      fetchList();
     }
-  }, [visible, fetchList, initialValue, form]);
+  }, [visible, initialValue, form]);
 
   return (
     <Modal

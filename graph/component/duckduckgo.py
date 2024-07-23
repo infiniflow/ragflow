@@ -18,7 +18,7 @@ from abc import ABC
 from functools import partial
 from duckduckgo_search import DDGS
 import pandas as pd
-
+from graph.settings import DEBUG
 from graph.component.base import ComponentBase, ComponentParamBase
 
 
@@ -46,19 +46,22 @@ class DuckDuckGo(ComponentBase, ABC):
         if not ans:
             return DuckDuckGo.be_output("")
 
-        if self._param.channel == "text":
-            with DDGS() as ddgs:
-                # {'title': '', 'href': '', 'body': ''}
-                duck_res = [{"content": '<a href="' + i["href"] + '">' + i["title"] + '</a>    ' + i["body"]} for i in
-                            ddgs.text(ans, max_results=self._param.top_n)]
-        elif self._param.channel == "news":
-            with DDGS() as ddgs:
-                # {'date': '', 'title': '', 'body': '', 'url': '', 'image': '', 'source': ''}
-                duck_res = [{"content": '<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"]} for i in
-                            ddgs.news(ans, max_results=self._param.top_n)]
+        try:
+            if self._param.channel == "text":
+                with DDGS() as ddgs:
+                    # {'title': '', 'href': '', 'body': ''}
+                    duck_res = [{"content": '<a href="' + i["href"] + '">' + i["title"] + '</a>    ' + i["body"]} for i
+                                in ddgs.text(ans, max_results=self._param.top_n)]
+            elif self._param.channel == "news":
+                with DDGS() as ddgs:
+                    # {'date': '', 'title': '', 'body': '', 'url': '', 'image': '', 'source': ''}
+                    duck_res = [{"content": '<a href="' + i["url"] + '">' + i["title"] + '</a>    ' + i["body"]} for i
+                                in ddgs.news(ans, max_results=self._param.top_n)]
+        except Exception as e:
+            return DuckDuckGo.be_output("**ERROR**: " + str(e))
 
-       if not duck_res:
-           return DuckDuckGo.be_output("")
+        if not duck_res:
+            return DuckDuckGo.be_output("")
 
         df = pd.DataFrame(duck_res)
         if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")

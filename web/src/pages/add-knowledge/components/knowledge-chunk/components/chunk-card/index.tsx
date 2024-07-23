@@ -81,7 +81,7 @@ const ChunkCard = ({
             dangerouslySetInnerHTML={{
               __html: DOMPurify.sanitize(item.content_with_weight),
             }}
-            className={classNames({
+            className={classNames(styles.contentText, {
               [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,
             })}
           ></div>

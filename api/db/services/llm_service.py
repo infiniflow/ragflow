@@ -15,7 +15,7 @@
 #
 from api.db.services.user_service import TenantService
 from api.settings import database_logger
-from rag.llm import EmbeddingModel, CvModel, ChatModel, RerankModel
+from rag.llm import EmbeddingModel, CvModel, ChatModel, RerankModel, Seq2txtModel
 from api.db import LLMType
 from api.db.db_models import DB, UserTenant
 from api.db.db_models import LLMFactories, LLM, TenantLLM
@@ -70,7 +70,7 @@ class TenantLLMService(CommonService):
         elif llm_type == LLMType.SPEECH2TEXT.value:
             mdlnm = tenant.asr_id
         elif llm_type == LLMType.IMAGE2TEXT.value:
-            mdlnm = tenant.img2txt_id
+            mdlnm = tenant.img2txt_id if not llm_name else llm_name
         elif llm_type == LLMType.CHAT.value:
             mdlnm = tenant.llm_id if not llm_name else llm_name
         elif llm_type == LLMType.RERANK:
@@ -119,6 +119,14 @@ class TenantLLMService(CommonService):
                 return
             return ChatModel[model_config["llm_factory"]](
                 model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
+
+        if llm_type == LLMType.SPEECH2TEXT:
+            if model_config["llm_factory"] not in Seq2txtModel:
+                return
+            return Seq2txtModel[model_config["llm_factory"]](
+                model_config["api_key"], model_config["llm_name"], lang,
+                base_url=model_config["api_base"]
+            )
 
     @classmethod
     @DB.connection_context()
@@ -205,6 +213,14 @@ class LLMBundle(object):
                 self.tenant_id, self.llm_type, used_tokens):
             database_logger.error(
                 "Can't update token usage for {}/IMAGE2TEXT".format(self.tenant_id))
+        return txt
+
+    def transcription(self, audio):
+        txt, used_tokens = self.mdl.transcription(audio)
+        if not TenantLLMService.increase_usage(
+                self.tenant_id, self.llm_type, used_tokens):
+            database_logger.error(
+                "Can't update token usage for {}/SEQUENCE2TXT".format(self.tenant_id))
         return txt
 
     def chat(self, system, history, gen_conf):

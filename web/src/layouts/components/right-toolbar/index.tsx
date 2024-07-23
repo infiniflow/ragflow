@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { DownOutlined, GithubOutlined } from '@ant-design/icons';
 import { Dropdown, MenuProps, Space } from 'antd';
 import camelCase from 'lodash/camelCase';
@@ -6,7 +6,7 @@ import React from 'react';
 import User from '../user';
 
 import { LanguageList } from '@/constants/common';
-import { useChangeLanguage } from '@/hooks/logicHooks';
+import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useSelector } from 'umi';
 import styled from './index.less';
 

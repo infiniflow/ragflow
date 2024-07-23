@@ -1,18 +1,19 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Flex, Form, Input, Modal, Select, Space, Switch } from 'antd';
-import omit from 'lodash/omit';
+import { Flex, Form, Input, Modal, Select, Space } from 'antd';
+import { useMemo } from 'react';
+import { BedrockRegionList } from '../constant';
 
 type FieldType = IAddLlmRequestBody & {
-  vision: boolean;
-  volc_ak: string;
-  volc_sk: string;
+  bedrock_ak: string;
+  bedrock_sk: string;
+  bedrock_region: string;
 };
 
 const { Option } = Select;
 
-const VolcEngineModal = ({
+const BedrockModal = ({
   visible,
   hideModal,
   onOk,
@@ -22,20 +23,18 @@ const VolcEngineModal = ({
   const [form] = Form.useForm<FieldType>();
 
   const { t } = useTranslate('setting');
+  const options = useMemo(
+    () => BedrockRegionList.map((x) => ({ value: x, label: t(x) })),
+    [t],
+  );
 
   const handleOk = async () => {
     const values = await form.validateFields();
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
 
     const data = {
-      ...omit(values, ['vision']),
-      model_type: modelType,
+      ...values,
       llm_factory: llmFactory,
     };
-    console.info(data);
 
     onOk?.(data);
   };
@@ -51,7 +50,7 @@ const VolcEngineModal = ({
         return (
           <Flex justify={'space-between'}>
             <a
-              href="https://www.volcengine.com/docs/82379/1095322"
+              href="https://console.aws.amazon.com/"
               target="_blank"
               rel="noreferrer"
             >
@@ -83,40 +82,38 @@ const VolcEngineModal = ({
         <Form.Item<FieldType>
           label={t('modelName')}
           name="llm_name"
-          rules={[{ required: true, message: t('volcModelNameMessage') }]}
+          rules={[{ required: true, message: t('bedrockModelNameMessage') }]}
         >
-          <Input placeholder={t('volcModelNameMessage')} />
+          <Input placeholder={t('bedrockModelNameMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
-          label={t('addVolcEngineAK')}
-          name="volc_ak"
-          rules={[{ required: true, message: t('volcAKMessage') }]}
+          label={t('addBedrockEngineAK')}
+          name="bedrock_ak"
+          rules={[{ required: true, message: t('bedrockAKMessage') }]}
         >
-          <Input placeholder={t('volcAKMessage')} />
+          <Input placeholder={t('bedrockAKMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
-          label={t('addVolcEngineSK')}
-          name="volc_sk"
-          rules={[{ required: true, message: t('volcAKMessage') }]}
+          label={t('addBedrockSK')}
+          name="bedrock_sk"
+          rules={[{ required: true, message: t('bedrockSKMessage') }]}
         >
-          <Input placeholder={t('volcAKMessage')} />
+          <Input placeholder={t('bedrockSKMessage')} />
         </Form.Item>
-        <Form.Item noStyle dependencies={['model_type']}>
-          {({ getFieldValue }) =>
-            getFieldValue('model_type') === 'chat' && (
-              <Form.Item
-                label={t('vision')}
-                valuePropName="checked"
-                name={'vision'}
-              >
-                <Switch />
-              </Form.Item>
-            )
-          }
+        <Form.Item<FieldType>
+          label={t('bedrockRegion')}
+          name="bedrock_region"
+          rules={[{ required: true, message: t('bedrockRegionMessage') }]}
+        >
+          <Select
+            placeholder={t('bedrockRegionMessage')}
+            options={options}
+            allowClear
+          ></Select>
         </Form.Item>
       </Form>
     </Modal>
   );
 };
 
-export default VolcEngineModal;
+export default BedrockModal;

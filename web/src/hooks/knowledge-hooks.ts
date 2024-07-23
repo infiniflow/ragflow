@@ -1,9 +1,11 @@
-import { useShowDeleteConfirm } from '@/hooks/commonHooks';
+import { useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
-import { useCallback, useEffect, useMemo } from 'react';
+import i18n from '@/locales/config';
+import kbService from '@/services/knowledge-service';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { message } from 'antd';
+import { useCallback, useEffect } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
-import { useGetKnowledgeSearchParams } from './routeHook';
-import { useOneNamespaceEffectsLoading } from './storeHooks';
 
 export const useKnowledgeBaseId = (): string => {
   const [searchParams] = useSearchParams();
@@ -35,44 +37,6 @@ export const useDeleteDocumentById = (): {
 
   return {
     removeDocument: onRmDocument,
-  };
-};
-
-export const useFetchKnowledgeDetail = () => {
-  const dispatch = useDispatch();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-
-  const fetchKnowledgeDetail = useCallback(
-    (knowledgeId: string) => {
-      dispatch({
-        type: 'knowledgeModel/getKnowledgeDetail',
-        payload: { kb_id: knowledgeId },
-      });
-    },
-    [dispatch],
-  );
-
-  useEffect(() => {
-    fetchKnowledgeDetail(knowledgeId);
-  }, [fetchKnowledgeDetail, knowledgeId]);
-
-  return fetchKnowledgeDetail;
-};
-
-export const useSelectKnowledgeDetail = () => {
-  const knowledge: IKnowledge = useSelector(
-    (state: any) => state.knowledgeModel.knowledge,
-  );
-
-  return knowledge;
-};
-
-export const useGetDocumentDefaultParser = () => {
-  const item = useSelectKnowledgeDetail();
-
-  return {
-    defaultParserId: item?.parser_id ?? '',
-    parserConfig: item?.parser_config ?? '',
   };
 };
 
@@ -108,54 +72,87 @@ export const useDeleteChunkByIds = (): {
 };
 
 export const useFetchKnowledgeBaseConfiguration = () => {
-  const dispatch = useDispatch();
   const knowledgeBaseId = useKnowledgeBaseId();
 
-  const fetchKnowledgeBaseConfiguration = useCallback(() => {
-    dispatch({
-      type: 'kSModel/getKbDetail',
-      payload: {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchKnowledgeDetail'],
+    initialData: {},
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.get_kb_detail({
         kb_id: knowledgeBaseId,
-      },
-    });
-  }, [dispatch, knowledgeBaseId]);
+      });
+      return data?.data ?? {};
+    },
+  });
 
-  useEffect(() => {
-    fetchKnowledgeBaseConfiguration();
-  }, [fetchKnowledgeBaseConfiguration]);
+  return { data, loading };
 };
 
-export const useSelectKnowledgeList = () => {
-  const knowledgeModel = useSelector((state) => state.knowledgeModel);
-  const { data = [] } = knowledgeModel;
-  return data;
-};
-
-export const useFetchKnowledgeList = (
+export const useNextFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
-) => {
-  const dispatch = useDispatch();
-  const loading = useOneNamespaceEffectsLoading('knowledgeModel', ['getList']);
+): {
+  list: any[];
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchKnowledgeList'],
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await kbService.getList();
+      const list = data?.data ?? [];
+      return shouldFilterListWithoutDocument
+        ? list.filter((x: IKnowledge) => x.chunk_num > 0)
+        : list;
+    },
+  });
 
-  const knowledgeModel = useSelector((state) => state.knowledgeModel);
-  const { data = [] } = knowledgeModel;
-  const list: IKnowledge[] = useMemo(() => {
-    return shouldFilterListWithoutDocument
-      ? data.filter((x: IKnowledge) => x.chunk_num > 0)
-      : data;
-  }, [data, shouldFilterListWithoutDocument]);
+  return { list: data, loading };
+};
 
-  const fetchList = useCallback(() => {
-    dispatch({
-      type: 'knowledgeModel/getList',
-    });
-  }, [dispatch]);
+export const useCreateKnowledge = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['createKnowledge'],
+    mutationFn: async (params: { id?: string; name: string }) => {
+      const { data = {} } = await kbService.createKb(params);
+      if (data.retcode === 0) {
+        message.success(
+          i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
+        );
+        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+      }
+      return data;
+    },
+  });
 
-  useEffect(() => {
-    fetchList();
-  }, [fetchList]);
+  return { data, loading, createKnowledge: mutateAsync };
+};
 
-  return { list, loading, fetchList };
+export const useDeleteKnowledge = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteKnowledge'],
+    mutationFn: async (id: string) => {
+      const { data } = await kbService.rmKb({ kb_id: id });
+      if (data.retcode === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, deleteKnowledge: mutateAsync };
 };
 
 export const useSelectFileThumbnails = () => {
@@ -192,27 +189,30 @@ export const useFetchFileThumbnails = (docIds?: Array<string>) => {
 //#region knowledge configuration
 
 export const useUpdateKnowledge = () => {
-  const dispatch = useDispatch();
-
-  const saveKnowledgeConfiguration = useCallback(
-    (payload: any) => {
-      dispatch({
-        type: 'kSModel/updateKb',
-        payload,
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['saveKnowledge'],
+    mutationFn: async (params: Record<string, any>) => {
+      const { data = {} } = await kbService.updateKb({
+        kb_id: knowledgeBaseId,
+        ...params,
       });
+      if (data.retcode === 0) {
+        message.success(i18n.t(`message.updated`));
+        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeDetail'] });
+      }
+      return data;
     },
-    [dispatch],
-  );
+  });
 
-  return saveKnowledgeConfiguration;
+  return { data, loading, saveKnowledgeConfiguration: mutateAsync };
 };
 
-export const useSelectKnowledgeDetails = () => {
-  const knowledgeDetails: IKnowledge = useSelector(
-    (state: any) => state.kSModel.knowledgeDetails,
-  );
-  return knowledgeDetails;
-};
 //#endregion
 
 //#region Retrieval testing

@@ -1,5 +1,5 @@
-import { useShowDeleteConfirm, useTranslate } from '@/hooks/commonHooks';
-import { useRemoveDocument } from '@/hooks/documentHooks';
+import { useShowDeleteConfirm, useTranslate } from '@/hooks/common-hooks';
+import { useRemoveDocument } from '@/hooks/document-hooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { api_host } from '@/utils/api';
 import { downloadFile } from '@/utils/fileUtil';

@@ -20,7 +20,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
-from rag.llm import EmbeddingModel, ChatModel, RerankModel
+from rag.llm import EmbeddingModel, ChatModel, RerankModel,CvModel
 
 
 @manager.route('/factories', methods=['GET'])
@@ -126,6 +126,9 @@ def add_llm():
         api_key = '{' + f'"bedrock_ak": "{req.get("bedrock_ak", "")}", ' \
                         f'"bedrock_sk": "{req.get("bedrock_sk", "")}", ' \
                         f'"bedrock_region": "{req.get("bedrock_region", "")}", ' + '}'
+    elif factory == "LocalAI":
+        llm_name = req["llm_name"]+"___LocalAI"
+        api_key = "xxxxxxxxxxxxxxx"
     else:
         llm_name = req["llm_name"]
         api_key = "xxxxxxxxxxxxxxx"
@@ -176,6 +179,21 @@ def add_llm():
         except Exception as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(
                 e)
+    elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
+        mdl = CvModel[factory](
+            key=None, model_name=llm["llm_name"], base_url=llm["api_base"]
+        )
+        try:
+            img_url = (
+                "https://upload.wikimedia.org/wikipedia/comm"
+                "ons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/256"
+                "0px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+            )
+            m, tc = mdl.describe(img_url)
+            if not tc:
+                raise Exception(m)
+        except Exception as e:
+            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
     else:
         # TODO: check other type of models
         pass

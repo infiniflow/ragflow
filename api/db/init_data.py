@@ -121,6 +121,8 @@ def init_llm_factory():
     LLMFactoriesService.filter_delete([LLMFactoriesService.model.name == "QAnything"])
     LLMService.filter_delete([LLMService.model.fid == "QAnything"])
     TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
+    TenantService.filter_update([1 == 1], {
+        "parser_ids": "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio"})
     ## insert openai two embedding models to the current openai user.
     print("Start to insert 2 OpenAI embedding models...")
     tenant_ids = set([row["tenant_id"] for row in TenantLLMService.get_openai_models()])
@@ -143,7 +145,7 @@ def init_llm_factory():
     """
     drop table llm;
     drop table llm_factories;
-    update tenant set parser_ids='naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One';
+    update tenant set parser_ids='naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio';
     alter table knowledgebase modify avatar longtext;
     alter table user modify avatar longtext;
     alter table dialog modify icon longtext;

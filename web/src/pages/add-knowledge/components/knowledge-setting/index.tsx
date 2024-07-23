@@ -6,7 +6,7 @@ import {
   useSelectKnowledgeDetailsLoading,
 } from './hooks';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import styles from './index.less';
 
 const { Title } = Typography;

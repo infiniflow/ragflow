@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { Flex, Form, Input, Modal, Select, Space, Switch } from 'antd';
@@ -75,6 +75,7 @@ const OllamaModal = ({
             <Option value="chat">chat</Option>
             <Option value="embedding">embedding</Option>
             <Option value="rerank">rerank</Option>
+            <Option value="image2text">image2text</Option>
           </Select>
         </Form.Item>
         <Form.Item<FieldType>

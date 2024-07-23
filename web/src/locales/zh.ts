@@ -472,6 +472,20 @@ export default {
       volcAKMessage: '请输入VOLC_ACCESS_KEY',
       addVolcEngineSK: '火山 SECRET_KEY',
       volcSKMessage: '请输入VOLC_SECRET_KEY',
+      bedrockModelNameMessage: '请输入名称！',
+      addBedrockEngineAK: 'ACCESS KEY',
+      bedrockAKMessage: '请输入 ACCESS KEY',
+      addBedrockSK: 'SECRET KEY',
+      bedrockSKMessage: '请输入 SECRET KEY',
+      bedrockRegion: 'AWS Region',
+      bedrockRegionMessage: '请选择！',
+      'us-east-1': '美国东部 (弗吉尼亚北部)',
+      'us-west-2': '美国西部 (俄勒冈州)',
+      'ap-southeast-1': '亚太地区 (新加坡)',
+      'ap-northeast-1': '亚太地区 (东京)',
+      'eu-central-1': '欧洲 (法兰克福)',
+      'us-gov-west-1': 'AWS GovCloud (US-West)',
+      'ap-southeast-2': '亚太地区 (悉尼)',
     },
     message: {
       registered: '注册成功',
@@ -559,7 +573,7 @@ export default {
       messageDescription:
         '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
-      wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要采用的搜索结果数量。`,
+      wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
 以上就是你需要总结的内容。`,
@@ -581,10 +595,10 @@ export default {
       keywordExtract: '关键词',
       keywordExtractDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
       baidu: '百度',
-      baiduDescription: `该组件用于获取www.baidu.com的搜索结果，一般作为知识库的补充，Top N指定需要采纳的搜索结果数量。`,
+      baiduDescription: `此元件用於取得www.baidu.com的搜尋結果。通常作為知識庫的補充。 Top N指定您需要適配的搜尋結果數。`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
-        '此组件用于从 www.duckduckgo.com 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要采用的搜索结果数量。',
+        '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。',
       channel: '频道',
       channelTip: '针对该组件的输入进行文本搜索或新闻搜索',
       text: '文本',
@@ -593,6 +607,9 @@ export default {
       messageHistoryWindowSizeTip:
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大内容长度。',
       wikipedia: '维基百科',
+      email: '邮箱',
+      emailTip:
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
     },
     footer: {
       profile: 'All rights reserved @ React',

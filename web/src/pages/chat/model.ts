@@ -6,7 +6,7 @@ import {
   Message,
 } from '@/interfaces/database/chat';
 import i18n from '@/locales/config';
-import chatService from '@/services/chatService';
+import chatService from '@/services/chat-service';
 import { message } from 'antd';
 import omit from 'lodash/omit';
 import { DvaModel } from 'umi';

@@ -1,4 +1,4 @@
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/commonHooks';
+import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import {
   IApiKeySavingParams,
   ISystemModelSettingSavingParams,
@@ -8,12 +8,12 @@ import {
   useSaveApiKey,
   useSaveTenantInfo,
   useSelectLlmOptionsByModelType,
-} from '@/hooks/llmHooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+} from '@/hooks/llm-hooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   useFetchTenantInfo,
   useSelectTenantInfo,
-} from '@/hooks/userSettingHook';
+} from '@/hooks/user-setting-hooks';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiKeyPostBody } from '../interface';
@@ -168,7 +168,6 @@ export const useSubmitOllama = () => {
 
 export const useSubmitVolcEngine = () => {
   const loading = useOneNamespaceEffectsLoading('settingModel', ['add_llm']);
-  const [selectedVolcFactory, setSelectedVolcFactory] = useState<string>('');
   const addLlm = useAddLlm();
   const {
     visible: volcAddingVisible,
@@ -186,18 +185,40 @@ export const useSubmitVolcEngine = () => {
     [hideVolcAddingModal, addLlm],
   );
 
-  const handleShowVolcAddingModal = (llmFactory: string) => {
-    setSelectedVolcFactory(llmFactory);
-    showVolcAddingModal();
-  };
-
   return {
     volcAddingLoading: loading,
     onVolcAddingOk,
     volcAddingVisible,
     hideVolcAddingModal,
-    showVolcAddingModal: handleShowVolcAddingModal,
-    selectedVolcFactory,
+    showVolcAddingModal,
+  };
+};
+
+export const useSubmitBedrock = () => {
+  const loading = useOneNamespaceEffectsLoading('settingModel', ['add_llm']);
+  const addLlm = useAddLlm();
+  const {
+    visible: bedrockAddingVisible,
+    hideModal: hideBedrockAddingModal,
+    showModal: showBedrockAddingModal,
+  } = useSetModalState();
+
+  const onBedrockAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideBedrockAddingModal();
+      }
+    },
+    [hideBedrockAddingModal, addLlm],
+  );
+
+  return {
+    bedrockAddingLoading: loading,
+    onBedrockAddingOk,
+    bedrockAddingVisible,
+    hideBedrockAddingModal,
+    showBedrockAddingModal,
   };
 };
 

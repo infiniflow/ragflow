@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { SettingOutlined } from '@ant-design/icons';
 import { Button, Flex, Typography } from 'antd';
 

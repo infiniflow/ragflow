@@ -1,21 +1,27 @@
-import ModalManager from '@/components/modal-manager';
-import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
-import { useSelectUserInfo } from '@/hooks/userSettingHook';
+import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useSelectUserInfo } from '@/hooks/user-setting-hooks';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Empty, Flex, Input, Space, Spin } from 'antd';
 import KnowledgeCard from './knowledge-card';
 import KnowledgeCreatingModal from './knowledge-creating-modal';
 
 import { useTranslation } from 'react-i18next';
-import { useSearchKnowledge, useSelectKnowledgeListByKeywords } from './hooks';
+import { useSaveKnowledge, useSearchKnowledge } from './hooks';
 import styles from './index.less';
 
 const KnowledgeList = () => {
   const { searchString, handleInputChange } = useSearchKnowledge();
-  const { loading } = useFetchKnowledgeList();
-  const list = useSelectKnowledgeListByKeywords(searchString);
+  const { loading, list: data } = useNextFetchKnowledgeList();
+  const list = data.filter((x) => x.name.includes(searchString));
   const userInfo = useSelectUserInfo();
   const { t } = useTranslation('translation', { keyPrefix: 'knowledgeList' });
+  const {
+    visible,
+    hideModal,
+    showModal,
+    onCreateOk,
+    loading: creatingLoading,
+  } = useSaveKnowledge();
 
   return (
     <Flex className={styles.knowledge} vertical flex={1}>
@@ -36,26 +42,14 @@ const KnowledgeList = () => {
             prefix={<SearchOutlined />}
           />
 
-          <ModalManager>
-            {({ visible, hideModal, showModal }) => (
-              <>
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    showModal();
-                  }}
-                  className={styles.topButton}
-                >
-                  {t('createKnowledgeBase')}
-                </Button>
-                <KnowledgeCreatingModal
-                  visible={visible}
-                  hideModal={hideModal}
-                ></KnowledgeCreatingModal>
-              </>
-            )}
-          </ModalManager>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={showModal}
+            className={styles.topButton}
+          >
+            {t('createKnowledgeBase')}
+          </Button>
         </Space>
       </div>
       <Spin spinning={loading}>
@@ -75,6 +69,12 @@ const KnowledgeList = () => {
           )}
         </Flex>
       </Spin>
+      <KnowledgeCreatingModal
+        loading={creatingLoading}
+        visible={visible}
+        hideModal={hideModal}
+        onOk={onCreateOk}
+      ></KnowledgeCreatingModal>
     </Flex>
   );
 };
