@@ -151,6 +151,32 @@
             ]
         },
         {
+            "name": "Stepfun",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "step-1-8k",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 8000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "step-1-32k",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 32000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "step-1v-8k",
+                    "tags": "LLM,CHAT",
+                    "max_tokens": 8000,
+                    "model_type": "chat"
+                }
+            ]
+        },
+        {
             "name": "Ollama",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
