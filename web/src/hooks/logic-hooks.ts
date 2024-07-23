@@ -23,6 +23,7 @@ import { useDispatch } from 'umi';
 import { useSetModalState, useTranslate } from './common-hooks';
 import { useSetDocumentParser } from './document-hooks';
 import { useFetchLlmList } from './llm-hooks';
+import { useSetPaginationParams } from './route-hook';
 import { useOneNamespaceEffectsLoading } from './store-hooks';
 import {
   useFetchTenantInfo,
@@ -101,23 +102,24 @@ export const useChangeLanguage = () => {
 
 export const useGetNextPagination = () => {
   const { t } = useTranslate('common');
-  const [{ page, pageSize }, setPagination] = useState({
-    page: 1,
-    pageSize: 10,
-  });
+  const {
+    setPaginationParams,
+    page,
+    size: pageSize,
+  } = useSetPaginationParams();
 
   const onPageChange: PaginationProps['onChange'] = useCallback(
     (pageNumber: number, pageSize: number) => {
-      setPagination({ page: pageNumber, pageSize });
+      setPaginationParams(pageNumber, pageSize);
     },
-    [setPagination],
+    [setPaginationParams],
   );
 
   const setCurrentPagination = useCallback(
     (pagination: { page: number; pageSize?: number }) => {
-      setPagination((p) => ({ ...p, ...pagination }));
+      setPaginationParams(pagination.page, pagination.pageSize);
     },
-    [setPagination],
+    [setPaginationParams],
   );
 
   const pagination: PaginationProps = useMemo(() => {
