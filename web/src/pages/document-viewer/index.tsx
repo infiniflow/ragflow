@@ -12,9 +12,10 @@ import styles from './index.less';
 
 const DocumentViewer = () => {
   const { id: documentId } = useParams();
-  const api = `${api_host}/file/get/${documentId}`;
   const [currentQueryParameters] = useSearchParams();
   const ext = currentQueryParameters.get('ext');
+  const prefix = currentQueryParameters.get('prefix');
+  const api = `${api_host}/${prefix || 'file'}/get/${documentId}`;
 
   return (
     <section className={styles.viewerWrapper}>

@@ -1,9 +1,8 @@
-import { ReactComponent as NavigationPointerIcon } from '@/assets/svg/navigation-pointer.svg';
 import NewDocumentLink from '@/components/new-document-link';
-import { useGetDocumentUrl } from '@/hooks/document-hooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { ITestingDocument } from '@/interfaces/database/knowledge';
-import { isPdf } from '@/utils/documentUtils';
-import { Table, TableProps } from 'antd';
+import { EyeOutlined } from '@ant-design/icons';
+import { Button, Table, TableProps, Tooltip } from 'antd';
 import { useDispatch, useSelector } from 'umi';
 
 interface IProps {
@@ -14,9 +13,9 @@ const SelectFiles = ({ handleTesting }: IProps) => {
   const documents: ITestingDocument[] = useSelector(
     (state: any) => state.testingModel.documents,
   );
+  const { t } = useTranslate('fileManager');
 
   const dispatch = useDispatch();
-  const getDocumentUrl = useGetDocumentUrl();
 
   const columns: TableProps<ITestingDocument>['columns'] = [
     {
@@ -38,10 +37,15 @@ const SelectFiles = ({ handleTesting }: IProps) => {
       width: 50,
       render: (_, { doc_id, doc_name }) => (
         <NewDocumentLink
-          link={getDocumentUrl(doc_id)}
-          preventDefault={!isPdf(doc_name)}
+          documentName={doc_name}
+          documentId={doc_id}
+          prefix="document"
         >
-          <NavigationPointerIcon />
+          <Tooltip title={t('preview')}>
+            <Button type="text">
+              <EyeOutlined size={20} />
+            </Button>
+          </Tooltip>
         </NewDocumentLink>
       ),
     },

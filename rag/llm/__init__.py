@@ -17,7 +17,7 @@ from .embedding_model import *
 from .chat_model import *
 from .cv_model import *
 from .rerank_model import *
-
+from .sequence2txt_model import *
 
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
@@ -84,4 +84,13 @@ RerankModel = {
     "Youdao": YoudaoRerank,
     "Xinference": XInferenceRerank,
     "NVIDIA":NvidiaRerank
+}
+
+
+Seq2txtModel = {
+    "OpenAI": GPTSeq2txt,
+    "Tongyi-Qianwen": QWenSeq2txt,
+    "Ollama": OllamaSeq2txt,
+    "Azure-OpenAI": AzureSeq2txt,
+    "Xinference": XinferenceSeq2txt
 }

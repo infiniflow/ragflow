@@ -39,7 +39,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import construct_json_result, construct_error_response
 from api.utils.api_utils import construct_result, validate_request
 from api.utils.file_utils import filename_type, thumbnail
-from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture
+from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture, audio
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
@@ -377,6 +377,8 @@ def upload_documents(dataset_id):
             }
             if doc["type"] == FileType.VISUAL:
                 doc["parser_id"] = ParserType.PICTURE.value
+            if doc["type"] == FileType.AURAL:
+                doc["parser_id"] = ParserType.AUDIO.value
             if re.search(r"\.(ppt|pptx|pages)$", filename):
                 doc["parser_id"] = ParserType.PRESENTATION.value
             DocumentService.insert(doc)
@@ -648,6 +650,8 @@ def doc_parse(binary, doc_name, parser_name, tenant_id, doc_id):
             resume.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "table":
             table.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
+        case "audio":
+            audio.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case _:
             return False
 

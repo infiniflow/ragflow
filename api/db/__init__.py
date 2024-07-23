@@ -84,6 +84,7 @@ class ParserType(StrEnum):
     NAIVE = "naive"
     PICTURE = "picture"
     ONE = "one"
+    AUDIO = "audio"
 
 
 class FileSource(StrEnum):
