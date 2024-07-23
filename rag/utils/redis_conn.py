@@ -47,7 +47,9 @@ class RedisDB:
     def health(self):
 
         self.REDIS.ping()
-        self.REDIS.set(a, b, 3600)
+        a, b = 'xx', 'yy'
+        self.REDIS.set(a, b, 3)
+
         if self.REDIS.get(a) == b:
             return True
 
