@@ -175,8 +175,10 @@ class NvidiaRerank(Base):
         self.model_name = model_name
 
         if self.model_name == "nvidia/nv-rerankqa-mistral-4b-v3":
-            self.base_url = os.path.join(base_url, "nv-rerankqa-mistral-4b-v3", "reranking")
-            
+            self.base_url = os.path.join(
+                base_url, "nv-rerankqa-mistral-4b-v3", "reranking"
+            )
+
         if self.model_name == "nvidia/rerank-qa-mistral-4b":
             self.base_url = os.path.join(base_url, "reranking")
             self.model_name = "nv-rerank-qa-mistral-4b:1"
@@ -199,4 +201,4 @@ class NvidiaRerank(Base):
             "top_n": len(texts),
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
-        return (np.array([d["logit"] for d in res["rankings"]]),token_count)
+        return (np.array([d["logit"] for d in res["rankings"]]), token_count)

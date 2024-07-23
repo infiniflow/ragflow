@@ -491,7 +491,9 @@ class LocalAIEmbed(Base):
 
 
 class NvidiaEmbed(Base):
-    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"):
+    def __init__(
+        self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"
+    ):
         if not base_url:
             base_url = "https://integrate.api.nvidia.com/v1/embeddings"
         self.api_key = key
@@ -499,25 +501,28 @@ class NvidiaEmbed(Base):
         self.headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
-             "authorization": f"Bearer {self.api_key}"
+            "authorization": f"Bearer {self.api_key}",
         }
         self.model_name = model_name
-        if model_name == 'nvidia/embed-qa-4':
+        if model_name == "nvidia/embed-qa-4":
             self.base_url = "https://ai.api.nvidia.com/v1/retrieval/nvidia/embeddings"
             self.model_name = "NV-Embed-QA"
-        if model_name == 'snowflake/arctic-embed-l':
+        if model_name == "snowflake/arctic-embed-l":
             self.base_url = "https://ai.api.nvidia.com/v1/retrieval/snowflake/arctic-embed-l/embeddings"
-    
+
     def encode(self, texts: list, batch_size=None):
         payload = {
             "input": texts,
-            "input_type":'query',
+            "input_type": "query",
             "model": self.model_name,
             "encoding_format": "float",
             "truncate": "END",
         }
         res = requests.post(self.base_url, headers=self.headers, json=payload).json()
-        return np.array([d["embedding"] for d in res["data"]]),res['usage']['total_tokens']
+        return (
+            np.array([d["embedding"] for d in res["data"]]),
+            res["usage"]["total_tokens"],
+        )
 
     def encode_queries(self, text):
         embds, cnt = self.encode([text])

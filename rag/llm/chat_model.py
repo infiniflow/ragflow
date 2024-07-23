@@ -916,11 +916,11 @@ class NvidiaChat(Base):
         self.base_url = base_url
         self.model_name = model_name
         self.api_key = key
-        self.headers ={
-                "accept": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            }
+        self.headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
     def chat(self, system, history, gen_conf):
         if system:
@@ -928,9 +928,11 @@ class NvidiaChat(Base):
         for k in list(gen_conf.keys()):
             if k not in ["temperature", "top_p", "max_tokens"]:
                 del gen_conf[k]
-        payload = {"model": self.model_name, "messages": history,**gen_conf}
+        payload = {"model": self.model_name, "messages": history, **gen_conf}
         try:
-            response = requests.post(url=self.base_url, headers=self.headers, json=payload)
+            response = requests.post(
+                url=self.base_url, headers=self.headers, json=payload
+            )
             response = response.json()
             ans = response["choices"][0]["message"]["content"].strip()
             return ans, response["usage"]["total_tokens"]
@@ -945,12 +947,12 @@ class NvidiaChat(Base):
                 del gen_conf[k]
         ans = ""
         total_tokens = 0
-        payload ={
-                    "model": self.model_name,
-                    "messages": history,
-                    "stream": True,
-                    **gen_conf,
-                }
+        payload = {
+            "model": self.model_name,
+            "messages": history,
+            "stream": True,
+            **gen_conf,
+        }
 
         try:
             response = requests.post(
@@ -967,8 +969,8 @@ class NvidiaChat(Base):
                 else:
                     continue
                 ans += text
-                if 'usage' in resp:
-                    total_tokens = resp['usage']['total_tokens']
+                if "usage" in resp:
+                    total_tokens = resp["usage"]["total_tokens"]
                 yield ans
 
         except Exception as e:
