@@ -636,7 +636,6 @@ class NvidiaCV(Base):
             self.base_url = os.path.join(base_url, factory, llm_name)
         else:
             self.base_url = os.path.join(base_url, "community", llm_name.replace('-v1.6','16'))
-        print(self.base_url,flush=True)
         self.key = key
 
     def describe(self, image, max_tokens=1024):
@@ -654,7 +653,6 @@ class NvidiaCV(Base):
                 }
         )
         response = response.json()
-        print(response,flush=True)
         return (
             response["choices"][0]["message"]["content"].strip(),
             response["usage"]["total_tokens"],
