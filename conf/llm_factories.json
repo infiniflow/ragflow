@@ -911,13 +911,13 @@
                     "llm_name": "anthropic/claude-3.5-sonnet",
                     "tags": "LLM IMAGE2TEXT 195K",
                     "max_tokens": 200000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "anthropic/claude-3.5-sonnet:beta",
                     "tags": "LLM IMAGE2TEXT 195K",
                     "max_tokens": 200000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "sao10k/l3-euryale-70b",
@@ -1049,7 +1049,7 @@
                     "llm_name": "openai/gpt-4o-2024-05-13",
                     "tags": "LLM IMAGE2TEXT 125K",
                     "max_tokens": 128000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "meta-llama/llama-3-8b",
@@ -1223,13 +1223,13 @@
                     "llm_name": "openai/gpt-4-turbo",
                     "tags": "LLM IMAGE2TEXT 125K",
                     "max_tokens": 128000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "google/gemini-pro-1.5",
                     "tags": "LLM IMAGE2TEXT 2734K",
                     "max_tokens": 2800000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "cohere/command-r-plus",
@@ -1265,13 +1265,13 @@
                     "llm_name": "anthropic/claude-3-haiku",
                     "tags": "LLM IMAGE2TEXT 195K",
                     "max_tokens": 200000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "anthropic/claude-3-haiku:beta",
                     "tags": "LLM IMAGE2TEXT 195K",
                     "max_tokens": 200000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "google/gemma-7b-it:nitro",
@@ -1307,25 +1307,25 @@
                     "llm_name": "anthropic/claude-3-opus",
                     "tags": "LLM IMAGE2TEXT 195K",
                     "max_tokens": 200000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "anthropic/claude-3-sonnet",
                     "tags": "LLM IMAGE2TEXT 195K",
                     "max_tokens": 200000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "anthropic/claude-3-opus:beta",
                     "tags": "LLM IMAGE2TEXT 195K",
                     "max_tokens": 200000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "anthropic/claude-3-sonnet:beta",
                     "tags": "LLM IMAGE2TEXT 195K",
                     "max_tokens": 200000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "mistralai/mistral-large",
@@ -1451,7 +1451,7 @@
                     "llm_name": "google/gemini-pro-vision",
                     "tags": "LLM IMAGE2TEXT 44K",
                     "max_tokens": 45875,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "mistralai/mixtral-8x7b",
@@ -1595,7 +1595,7 @@
                     "llm_name": "openai/gpt-4-vision-preview",
                     "tags": "LLM IMAGE2TEXT 125K",
                     "max_tokens": 128000,
-                    "model_type": "image2text"
+                    "model_type": "chat,image2text"
                 },
                 {
                     "llm_name": "lizpreciatior/lzlv-70b-fp16-hf",
