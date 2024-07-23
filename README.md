@@ -69,7 +69,8 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 - 2024-07-21 Supports more LLMs (LocalAI, OpenRouter, StepFun, and Nvidia).
 
-- 2024-07-18 Add components(Wikipedia/PubMed/Baidu/Duckduckgo) to the graph.
+- 2024-07-18 Adds more components (Wikipedia, PubMed, Baidu, and Duckduckgo) to the graph.
+
 - 2024-07-08 Supports workflow based on [Graph](./graph/README.md).
 - 2024-06-27 Supports Markdown and Docx in the Q&A parsing method. 
 - 2024-06-27 Supports extracting images from Docx files. 
