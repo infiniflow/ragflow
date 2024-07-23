@@ -44,7 +44,8 @@ class RedisDB:
             logging.warning("Redis can't be connected.")
         return self.REDIS
 
-    def health(self, a, b):
+    def health(self):
+
         self.REDIS.ping()
         self.REDIS.set(a, b, 3600)
         if self.REDIS.get(a) == b:
