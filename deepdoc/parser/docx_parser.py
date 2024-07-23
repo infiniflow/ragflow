@@ -127,7 +127,7 @@ class RAGFlowDocxParser:
                     runs_within_single_paragraph.append(run.text) # append run.text first
 
                 # wrap page break checker into a static method
-                if RAGFlowDocxParser.has_page_break(run._element.xml):
+                if 'lastRenderedPageBreak' in run._element.xml:
                     pn += 1
 
             secs.append(("".join(runs_within_single_paragraph), p.style.name)) # then concat run.text as part of the paragraph
