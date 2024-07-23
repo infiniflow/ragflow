@@ -59,7 +59,8 @@ def status():
 
     st = timer()
     try:
-        qinfo = REDIS_CONN.health(1,2),
+        if not REDIS_CONN.health():
+            raise Exception("Lost connection!")
         res["redis"] = {"status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.)}
     except Exception as e:
         res["redis"] = {"status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}
