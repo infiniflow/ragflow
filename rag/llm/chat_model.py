@@ -982,10 +982,10 @@ class NvidiaChat(Base):
 class LmStudioChat(Base):
     def __init__(self, key, model_name, base_url):
         from os.path import join
+
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        if base_url.split('/')[-1] != 'v1':
-            self.base_url = join(base_url,'v1')
+        if base_url.split("/")[-1] != "v1":
+            self.base_url = join(base_url, "v1")
         self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
-        
