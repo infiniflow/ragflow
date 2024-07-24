@@ -101,7 +101,7 @@ python-pptx==0.6.23
 PyYAML==6.0.1
 redis==5.0.3
 regex==2023.12.25
-requests==2.31.0
+requests==2.32.2
 ruamel.yaml==0.18.6
 ruamel.yaml.clib==0.2.8
 safetensors==0.4.2
