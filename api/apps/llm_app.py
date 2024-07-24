@@ -21,7 +21,7 @@ from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
 from rag.llm import EmbeddingModel, ChatModel, RerankModel,CvModel
-
+import requests
 
 @manager.route('/factories', methods=['GET'])
 @login_required
@@ -189,7 +189,11 @@ def add_llm():
                 "ons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/256"
                 "0px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
             )
-            m, tc = mdl.describe(img_url)
+            res = requests.get(img_url)
+            if res.status_code == 200:
+                m, tc = mdl.describe(res.content)
+            else:
+                raise ConnectionError("fail to download the test picture")
             if not tc:
                 raise Exception(m)
         except Exception as e:
