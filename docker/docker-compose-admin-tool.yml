@@ -1,0 +1,16 @@
+services:
+   kibana:
+    image: kibana:${STACK_VERSION}
+    container_name: ragflow-kibana
+    environment:
+      ELASTICSEARCH_USERNAME: ${KIBANA_USER} 
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD} 
+      ELASTICSEARCH_HOSTS: "http://es:${ES_PORT}"
+    ports:
+      - ${KIBANA_PORT}:5601
+    depends_on:
+      - es01
+
+networks:
+  ragflow:
+    driver: bridge
