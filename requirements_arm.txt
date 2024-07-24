@@ -91,7 +91,7 @@ pycryptodomex
 pydantic==2.6.2
 pydantic_core==2.16.3
 PyJWT==2.8.0
-PyMySQL==1.1.0
+PyMySQL==1.1.1
 PyPDF2==3.0.1
 pypdfium2==4.27.0
 python-dateutil==2.8.2
