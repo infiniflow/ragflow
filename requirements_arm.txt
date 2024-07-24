@@ -30,7 +30,7 @@ filelock==3.13.1
 fastembed==0.2.6
 FlagEmbedding==1.2.5
 Flask==3.0.2
-Flask-Cors==4.0.0
+Flask-Cors==4.0.1
 Flask-Login==0.6.3
 Flask-Session==0.6.0
 flatbuffers==23.5.26
