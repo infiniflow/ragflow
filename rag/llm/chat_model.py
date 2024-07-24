@@ -840,9 +840,9 @@ class OpenRouterChat(Base):
         super().__init__(key, model_name, base_url)
 
 class StepFunChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1/"):
+    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1"):
         if not base_url:
-            base_url = "https://api.stepfun.com/v1/"
+            base_url = "https://api.stepfun.com/v1"
         super().__init__(key, model_name, base_url)
 
 
