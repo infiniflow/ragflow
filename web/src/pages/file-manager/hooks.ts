@@ -2,93 +2,22 @@ import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import {
   useConnectToKnowledge,
   useCreateFolder,
-  useFetchFileList,
+  useDeleteFile,
   useFetchParentFolderList,
-  useRemoveFile,
   useRenameFile,
-  useSelectFileList,
-  useSelectParentFolderList,
   useUploadFile,
 } from '@/hooks/file-manager-hooks';
-import { useGetPagination, useSetPagination } from '@/hooks/logic-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
-import { PaginationProps } from 'antd';
 import { TableRowSelection } from 'antd/es/table/interface';
 import { UploadFile } from 'antd/lib';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useDispatch, useNavigate, useSearchParams, useSelector } from 'umi';
+import { useCallback, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'umi';
 
 export const useGetFolderId = () => {
   const [searchParams] = useSearchParams();
   const id = searchParams.get('folderId') as string;
 
   return id ?? '';
-};
-
-export const useFetchDocumentListOnMount = () => {
-  const fetchDocumentList = useFetchFileList();
-  const fileList = useSelectFileList();
-  const id = useGetFolderId();
-  const { searchString, pagination } = useSelector(
-    (state) => state.fileManager,
-  );
-  const { pageSize, current } = pagination;
-
-  const dispatch = useDispatch();
-
-  useEffect(() => {
-    fetchDocumentList({
-      parent_id: id,
-      keywords: searchString,
-      page_size: pageSize,
-      page: current,
-    });
-  }, [dispatch, fetchDocumentList, id, current, pageSize, searchString]);
-
-  return { fetchDocumentList, fileList };
-};
-
-export const useGetFilesPagination = () => {
-  const { pagination } = useSelector((state) => state.fileManager);
-
-  const setPagination = useSetPagination('fileManager');
-
-  const onPageChange: PaginationProps['onChange'] = useCallback(
-    (pageNumber: number, pageSize: number) => {
-      setPagination(pageNumber, pageSize);
-    },
-    [setPagination],
-  );
-
-  const { pagination: paginationInfo } = useGetPagination(
-    pagination.total,
-    pagination.current,
-    pagination.pageSize,
-    onPageChange,
-  );
-
-  return {
-    pagination: paginationInfo,
-    setPagination,
-  };
-};
-
-export const useHandleSearchChange = () => {
-  const dispatch = useDispatch();
-  const { searchString } = useSelector((state) => state.fileManager);
-  const setPagination = useSetPagination('fileManager');
-
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const value = e.target.value;
-      dispatch({ type: 'fileManager/setSearchString', payload: value });
-      setPagination();
-    },
-    [setPagination, dispatch],
-  );
-
-  return { handleInputChange, searchString };
 };
 
 export const useGetRowSelection = () => {
@@ -126,11 +55,14 @@ export const useRenameCurrentFile = () => {
     hideModal: hideFileRenameModal,
     showModal: showFileRenameModal,
   } = useSetModalState();
-  const renameFile = useRenameFile();
+  const { renameFile, loading } = useRenameFile();
 
   const onFileRenameOk = useCallback(
     async (name: string) => {
-      const ret = await renameFile(file.id, name, file.parent_id);
+      const ret = await renameFile({
+        fileId: file.id,
+        name,
+      });
 
       if (ret === 0) {
         hideFileRenameModal();
@@ -138,8 +70,6 @@ export const useRenameCurrentFile = () => {
     },
     [renameFile, file, hideFileRenameModal],
   );
-
-  const loading = useOneNamespaceEffectsLoading('fileManager', ['renameFile']);
 
   const handleShowFileRenameModal = useCallback(
     async (record: IFile) => {
@@ -160,15 +90,7 @@ export const useRenameCurrentFile = () => {
 };
 
 export const useSelectBreadcrumbItems = () => {
-  const parentFolderList = useSelectParentFolderList();
-  const id = useGetFolderId();
-  const fetchParentFolderList = useFetchParentFolderList();
-
-  useEffect(() => {
-    if (id) {
-      fetchParentFolderList(id);
-    }
-  }, [id, fetchParentFolderList]);
+  const parentFolderList = useFetchParentFolderList();
 
   return parentFolderList.length === 1
     ? []
@@ -184,12 +106,12 @@ export const useHandleCreateFolder = () => {
     hideModal: hideFolderCreateModal,
     showModal: showFolderCreateModal,
   } = useSetModalState();
-  const createFolder = useCreateFolder();
+  const { createFolder, loading } = useCreateFolder();
   const id = useGetFolderId();
 
   const onFolderCreateOk = useCallback(
     async (name: string) => {
-      const ret = await createFolder(id, name);
+      const ret = await createFolder({ parentId: id, name });
 
       if (ret === 0) {
         hideFolderCreateModal();
@@ -197,10 +119,6 @@ export const useHandleCreateFolder = () => {
     },
     [createFolder, hideFolderCreateModal, id],
   );
-
-  const loading = useOneNamespaceEffectsLoading('fileManager', [
-    'createFolder',
-  ]);
 
   return {
     folderCreateLoading: loading,
@@ -215,14 +133,14 @@ export const useHandleDeleteFile = (
   fileIds: string[],
   setSelectedRowKeys: (keys: string[]) => void,
 ) => {
-  const removeDocument = useRemoveFile();
+  const { deleteFile: removeDocument } = useDeleteFile();
   const showDeleteConfirm = useShowDeleteConfirm();
   const parentId = useGetFolderId();
 
   const handleRemoveFile = () => {
     showDeleteConfirm({
       onOk: async () => {
-        const retcode = await removeDocument(fileIds, parentId);
+        const retcode = await removeDocument({ fileIds, parentId });
         if (retcode === 0) {
           setSelectedRowKeys([]);
         }
@@ -234,24 +152,19 @@ export const useHandleDeleteFile = (
   return { handleRemoveFile };
 };
 
-export const useSelectFileListLoading = () => {
-  return useOneNamespaceEffectsLoading('fileManager', ['listFile']);
-};
-
 export const useHandleUploadFile = () => {
   const {
     visible: fileUploadVisible,
     hideModal: hideFileUploadModal,
     showModal: showFileUploadModal,
   } = useSetModalState();
-  const uploadFile = useUploadFile();
+  const { uploadFile, loading } = useUploadFile();
   const id = useGetFolderId();
 
   const onFileUploadOk = useCallback(
     async (fileList: UploadFile[]): Promise<number | undefined> => {
       if (fileList.length > 0) {
-        const ret: number = await uploadFile(fileList, id);
-        console.info(ret);
+        const ret: number = await uploadFile({ fileList, parentId: id });
         if (ret === 0) {
           hideFileUploadModal();
         }
@@ -260,8 +173,6 @@ export const useHandleUploadFile = () => {
     },
     [uploadFile, hideFileUploadModal, id],
   );
-
-  const loading = useOneNamespaceEffectsLoading('fileManager', ['uploadFile']);
 
   return {
     fileUploadLoading: loading,
@@ -278,8 +189,8 @@ export const useHandleConnectToKnowledge = () => {
     hideModal: hideConnectToKnowledgeModal,
     showModal: showConnectToKnowledgeModal,
   } = useSetModalState();
-  const connectToKnowledge = useConnectToKnowledge();
-  const id = useGetFolderId();
+  const { connectFileToKnowledge: connectToKnowledge, loading } =
+    useConnectToKnowledge();
   const [record, setRecord] = useState<IFile>({} as IFile);
 
   const initialValue = useMemo(() => {
@@ -291,7 +202,6 @@ export const useHandleConnectToKnowledge = () => {
   const onConnectToKnowledgeOk = useCallback(
     async (knowledgeIds: string[]) => {
       const ret = await connectToKnowledge({
-        parentId: id,
         fileIds: [record.id],
         kbIds: knowledgeIds,
       });
@@ -301,12 +211,8 @@ export const useHandleConnectToKnowledge = () => {
       }
       return ret;
     },
-    [connectToKnowledge, hideConnectToKnowledgeModal, id, record.id],
+    [connectToKnowledge, hideConnectToKnowledgeModal, record.id],
   );
-
-  const loading = useOneNamespaceEffectsLoading('fileManager', [
-    'connectFileToKnowledge',
-  ]);
 
   const handleShowConnectToKnowledgeModal = useCallback(
     (record: IFile) => {
@@ -328,16 +234,14 @@ export const useHandleConnectToKnowledge = () => {
 
 export const useHandleBreadcrumbClick = () => {
   const navigate = useNavigate();
-  const setPagination = useSetPagination('fileManager');
 
   const handleBreadcrumbClick = useCallback(
     (path?: string) => {
       if (path) {
-        setPagination();
         navigate(path);
       }
     },
-    [setPagination, navigate],
+    [navigate],
   );
 
   return { handleBreadcrumbClick };
