@@ -502,23 +502,22 @@ class NvidiaEmbed(Base):
         return np.array(embds[0]), cnt
 
 
-
 class LmStudioEmbed(Base):
-    def __init__(self, key, model_name,base_url):
+    def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        if base_url.split('/')[-1] != 'v1':
-            self.base_url = os.path.join(base_url,'v1')
-        self.client = OpenAI(api_key='lm-studio',base_url=self.base_url)
+        if base_url.split("/")[-1] != "v1":
+            self.base_url = os.path.join(base_url, "v1")
+        self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=32):
-        res = self.client.embeddings.create(input=texts,
-                                            model=self.model_name)
-        return np.array([d.embedding for d in res.data]
-                        ),1024 #local embedding for LmStudio donot count tokens
+        res = self.client.embeddings.create(input=texts, model=self.model_name)
+        return (
+            np.array([d.embedding for d in res.data]),
+            1024,
+        )  # local embedding for LmStudio donot count tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(text,
-                                            model=self.model_name)
-        return np.array(res.data[0].embedding), 1024 
+        res = self.client.embeddings.create(text, model=self.model_name)
+        return np.array(res.data[0].embedding), 1024

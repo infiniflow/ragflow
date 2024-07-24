@@ -203,6 +203,7 @@ class NvidiaRerank(Base):
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
         return (np.array([d["logit"] for d in res["rankings"]]), token_count)
 
+
 class LmStudioRerank(Base):
     def __init__(self, key, model_name, base_url):
         pass
