@@ -50,7 +50,8 @@ CvModel = {
     'Gemini':GeminiCV,
     'OpenRouter':OpenRouterCV,
     "LocalAI":LocalAICV,
-    "NVIDIA":NvidiaCV
+    "NVIDIA":NvidiaCV,
+    "StepFun":StepFunCV
 }
 
 
