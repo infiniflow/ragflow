@@ -176,15 +176,26 @@ With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (*
 
 RAGFlow is a RAG engine, and it needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. For now, RAGFlow supports the following LLMs, and the list is expanding:
 
-- OpenAI
-- Tongyi-Qianwen
-- ZHIPU-AI
-- Moonshot
-- DeepSeek-V2
-- Baichuan
-- VolcEngine
+- [OpenAI](https://platform.openai.com/login?launch)
+- [Azure-OpenAI](https://ai.azure.com/)
+- [Gemini](https://aistudio.google.com/)
+- [Groq](https://console.groq.com/)
+- [Mistral](https://mistral.ai/)
+- [Bedrock](https://aws.amazon.com/cn/bedrock/)
+- [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model)
+- [ZHIPU-AI](https://open.bigmodel.cn/)
+- [MiniMax](https://platform.minimaxi.com/)
+- [Moonshot](https://platform.moonshot.cn/docs)
+- [DeepSeek](https://platform.deepseek.com/api-docs/)
+- [Baichuan](https://www.baichuan-ai.com/home)
+- [VolcEngine](https://www.volcengine.com/docs/82379)
+- [Jina](https://jina.ai/reader/)
+- [OpenRouter](https://openrouter.ai/)
+- [StepFun](https://platform.stepfun.com/)
 
->  RAGFlow also supports deploying LLMs locally using Ollama or Xinference, but this part is not covered in this quick start guide. 
+:::note 
+RAGFlow also supports deploying LLMs locally using Ollama, Xinference, or LocalAI, but this part is not covered in this quick start guide. 
+:::
 
 To add and configure an LLM: 
 
@@ -192,7 +203,7 @@ To add and configure an LLM:
 
    ![add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
-   > Each RAGFlow account is able to use **text-embedding-v2** for free, a embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
+   > Each RAGFlow account is able to use **text-embedding-v2** for free, an embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
 
 2. Click on the desired LLM and update the API key accordingly (DeepSeek-V2 in this case):
 
@@ -228,7 +239,9 @@ To create your first knowledge base:
 
 3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunk method (template) for your knowledge base. 
 
-   > IMPORTANT: Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
+:::danger IMPORTANT 
+Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
+:::
 
    _You are taken to the **Dataset** page of your knowledge base._
 
@@ -239,6 +252,11 @@ To create your first knowledge base:
    ![file parsing](https://github.com/infiniflow/ragflow/assets/93570324/19f273fa-0ab0-435e-bdf4-a47fb080a078)
 
    _When the file parsing completes, its parsing status changes to **SUCCESS**._
+
+:::alert NOTE 
+- If your file parsing gets stuck at below 1%, see [FAQ 4.3](https://ragflow.io/docs/dev/faq#43-why-does-my-document-parsing-stall-at-under-one-percent). 
+- If your file parsing gets stuck at near completion, see [FAQ 4.4](https://ragflow.io/docs/dev/faq#44-why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
+:::
 
 ## Intervene with file parsing 
 
@@ -255,6 +273,10 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 3. Double click the chunked texts to add keywords or make *manual* changes where necessary:
 
    ![update chunk](https://github.com/infiniflow/ragflow/assets/93570324/1d84b408-4e9f-46fd-9413-8c1059bf9c76)
+
+:::caution NOTE 
+You can add keywords to a file chunk to increase its relevance. This action increases its keyword weight and can improve its position in search list.  
+:::
 
 4. In Retrieval testing, ask a quick question in **Test text** to double check if your configurations work:
 

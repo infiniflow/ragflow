@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import lowerFirst from 'lodash/lowerFirst';
@@ -11,7 +11,11 @@ import NodeDropdown from './dropdown';
 import styles from './index.less';
 import NodePopover from './popover';
 
-const ZeroGapOperators = [Operator.RewriteQuestion, Operator.KeywordExtract];
+const ZeroGapOperators = [
+  Operator.RewriteQuestion,
+  Operator.KeywordExtract,
+  Operator.Arxiv,
+];
 
 export function RagNode({
   id,
@@ -69,8 +73,10 @@ export function RagNode({
             </span>
           </Flex>
           <Flex flex={1}>
-            {' '}
-            <NodeDropdown id={id}></NodeDropdown>
+            <NodeDropdown
+              id={id}
+              iconFontColor={style?.moreIconColor}
+            ></NodeDropdown>
           </Flex>
         </Flex>
 

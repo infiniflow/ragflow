@@ -119,7 +119,7 @@ class Pdf(PdfParser):
             if not has_bull:  # No question bullet
                 if not last_q:
                     if tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top):    # image passed
-                        tbls_index += 1
+                        tbl_index += 1
                     continue
                 else:
                     sum_tag = line_tag

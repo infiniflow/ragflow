@@ -1,5 +1,5 @@
 import { Domain } from '@/constants/common';
-import { useSecondPathName } from '@/hooks/routeHook';
+import { useSecondPathName } from '@/hooks/route-hook';
 import type { MenuProps } from 'antd';
 import { Flex, Menu } from 'antd';
 import React, { useEffect, useMemo } from 'react';
@@ -10,8 +10,8 @@ import {
   UserSettingRouteKey,
 } from '../constants';
 
-import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchSystemVersion, useLogout } from '@/hooks/userSettingHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchSystemVersion, useLogout } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
 type MenuItem = Required<MenuProps>['items'][number];

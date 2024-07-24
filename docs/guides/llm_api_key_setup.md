@@ -11,16 +11,25 @@ An API key is required for RAGFlow to interact with an online AI model. This gui
 
 For now, RAGFlow supports the following online LLMs. Click the corresponding link to apply for your API key. Most LLM providers grant newly-created accounts trial credit, which will expire in a couple of months, or a promotional amount of free quota.
 
-- [OpenAI](https://platform.openai.com/login?launch),
-- [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model),
-- [ZHIPU-AI](https://open.bigmodel.cn/),
-- [Moonshot](https://platform.moonshot.cn/docs),
-- [DeepSeek](https://platform.deepseek.com/api-docs/),
-- [Baichuan](https://www.baichuan-ai.com/home),
-- [VolcEngine](https://www.volcengine.com/docs/82379).
+- [OpenAI](https://platform.openai.com/login?launch)
+- [Azure-OpenAI](https://ai.azure.com/)
+- [Gemini](https://aistudio.google.com/)
+- [Groq](https://console.groq.com/)
+- [Mistral](https://mistral.ai/)
+- [Bedrock](https://aws.amazon.com/cn/bedrock/)
+- [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model)
+- [ZHIPU-AI](https://open.bigmodel.cn/)
+- [MiniMax](https://platform.minimaxi.com/)
+- [Moonshot](https://platform.moonshot.cn/docs)
+- [DeepSeek](https://platform.deepseek.com/api-docs/)
+- [Baichuan](https://www.baichuan-ai.com/home)
+- [VolcEngine](https://www.volcengine.com/docs/82379)
+- [Jina](https://jina.ai/reader/)
+- [OpenRouter](https://openrouter.ai/)
+- [StepFun](https://platform.stepfun.com/)
 
 :::note
-If you find your online LLM is not on the list, don't feel disheartened. The list is expanding, and you can [file a feature request](https://github.com/infiniflow/ragflow/issues/new?assignees=&labels=feature+request&projects=&template=feature_request.yml&title=%5BFeature+Request%5D%3A+) with us! Alternatively, if you have customized or locally-deployed models, you can [bind them to RAGFlow using Ollama or Xinference](./deploy_local_llm.md).
+If you find your online LLM is not on the list, don't feel disheartened. The list is expanding, and you can [file a feature request](https://github.com/infiniflow/ragflow/issues/new?assignees=&labels=feature+request&projects=&template=feature_request.yml&title=%5BFeature+Request%5D%3A+) with us! Alternatively, if you have customized or locally-deployed models, you can [bind them to RAGFlow using Ollama, Xinferenc, or LocalAI](./deploy_local_llm.md).
 :::
 
 ## Configure your API key

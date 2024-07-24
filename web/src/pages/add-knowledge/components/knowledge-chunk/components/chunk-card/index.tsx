@@ -2,7 +2,8 @@ import Image from '@/components/image';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
 import classNames from 'classnames';
-import { useState } from 'react';
+import DOMPurify from 'dompurify';
+import { useEffect, useState } from 'react';
 
 import { ChunkTextMode } from '../../constant';
 import styles from './index.less';
@@ -29,7 +30,7 @@ const ChunkCard = ({
   textMode,
 }: IProps) => {
   const available = Number(item.available_int);
-  const [enabled, setEnabled] = useState(available === 1);
+  const [enabled, setEnabled] = useState(false);
 
   const onChange = (checked: boolean) => {
     setEnabled(checked);
@@ -47,6 +48,10 @@ const ChunkCard = ({
   const handleContentClick = () => {
     clickChunkCard(item.chunk_id);
   };
+
+  useEffect(() => {
+    setEnabled(available === 1);
+  }, [available]);
 
   return (
     <Card
@@ -73,8 +78,10 @@ const ChunkCard = ({
           className={styles.content}
         >
           <div
-            dangerouslySetInnerHTML={{ __html: item.content_with_weight }}
-            className={classNames({
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(item.content_with_weight),
+            }}
+            className={classNames(styles.contentText, {
               [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,
             })}
           ></div>

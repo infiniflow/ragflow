@@ -1,20 +1,24 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
+import { ApiKeyPostBody } from '../../interface';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
   initialValue: string;
   llmFactory: string;
-  onOk: (name: string, baseUrl: string) => void;
+  onOk: (postBody: ApiKeyPostBody) => void;
   showModal?(): void;
 }
 
 type FieldType = {
   api_key?: string;
   base_url?: string;
+  group_id?: string;
 };
+
+const modelsWithBaseUrl = ['OpenAI', 'Azure-OpenAI'];
 
 const ApiKeyModal = ({
   visible,
@@ -30,19 +34,7 @@ const ApiKeyModal = ({
   const handleOk = async () => {
     const ret = await form.validateFields();
 
-    return onOk(ret.api_key, ret.base_url);
-  };
-
-  const handleCancel = () => {
-    hideModal();
-  };
-
-  const onFinish = (values: any) => {
-    console.log('Success:', values);
-  };
-
-  const onFinishFailed = (errorInfo: any) => {
-    console.log('Failed:', errorInfo);
+    return onOk(ret);
   };
 
   useEffect(() => {
@@ -56,7 +48,7 @@ const ApiKeyModal = ({
       title={t('modify')}
       open={visible}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={hideModal}
       okButtonProps={{ loading }}
       confirmLoading={loading}
     >
@@ -65,8 +57,6 @@ const ApiKeyModal = ({
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
         style={{ maxWidth: 600 }}
-        onFinish={onFinish}
-        onFinishFailed={onFinishFailed}
         autoComplete="off"
         form={form}
       >
@@ -78,13 +68,18 @@ const ApiKeyModal = ({
         >
           <Input />
         </Form.Item>
-        {llmFactory === 'OpenAI' && (
+        {modelsWithBaseUrl.some((x) => x === llmFactory) && (
           <Form.Item<FieldType>
             label={t('baseUrl')}
             name="base_url"
             tooltip={t('baseUrlTip')}
           >
             <Input placeholder="https://api.openai.com/v1" />
+          </Form.Item>
+        )}
+        {llmFactory?.toLowerCase() === 'Minimax'.toLowerCase() && (
+          <Form.Item<FieldType> label={'Group ID'} name="group_id">
+            <Input />
           </Form.Item>
         )}
       </Form>

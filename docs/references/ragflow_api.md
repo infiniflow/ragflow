@@ -428,7 +428,7 @@ This method deletes documents for a specific user.
 
 ## List documents
 
-This method deletes documents for a specific user. 
+This method lists documents for a specific user. 
 
 ### Request
 
@@ -532,4 +532,350 @@ This method deletes documents for a specific user.
       "message": "IndexError('Offset is out of the valid range.')"
 }
 ```
+## Update the details of the document
 
+This method updates the details, including the name, enable and template type of a specific document for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                                     |
+|--------|-------------------------------------------------|
+| PUT    | `/dataset/{dataset_id}/documents/{document_id}` |
+
+
+#### Request parameter
+
+| Name         | Type   | Required | Description                                                                                                |
+|--------------|--------|----------|------------------------------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.   |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID. |
+
+### Response 
+
+### Successful Response 
+
+```json
+{
+      "code": 0,
+      "data": {
+        "chunk_num": 0,
+        "create_date": "Mon, 15 Jul 2024 16:55:03 GMT",
+        "create_time": 1721033703914,
+        "created_by": "b48110a0286411ef994a3043d7ee537e",
+        "id": "ed30167a428711efab193043d7ee537e",
+        "kb_id": "ed2d8770428711efaf583043d7ee537e",
+        "location": "test.txt",
+        "name": "new_name.txt",
+        "parser_config": {
+          "pages": [
+            [1, 1000000]
+          ]
+        },
+        "parser_id": "naive",
+        "process_begin_at": null,
+        "process_duration": 0.0,
+        "progress": 0.0,
+        "progress_msg": "",
+        "run": "0",
+        "size": 14,
+        "source_type": "local",
+        "status": "1",
+        "thumbnail": null,
+        "token_num": 0,
+        "type": "doc",
+        "update_date": "Mon, 15 Jul 2024 16:55:03 GMT",
+        "update_time": 1721033703934
+      },
+      "message": "Success"
+}
+```
+
+### Response for updating a document which does not exist.
+
+```json
+{
+      "code": 101,
+      "message": "This document weird_doc_id cannot be found!"
+}
+```
+
+### Response for updating a document without giving parameters.
+```json
+{
+      "code": 102,
+      "message": "Please input at least one parameter that you want to update!"
+}
+```
+
+### Response for updating a document in the nonexistent dataset.
+```json
+{
+      "code": 102,
+      "message": "This dataset fake_dataset_id cannot be found!"
+}
+```
+
+### Response for updating a document with an extension name that differs from its original.
+```json
+{
+      "code": 101,
+      "data": false,
+      "message": "The extension of file cannot be changed"
+}
+```
+
+### Response for updating a document with a duplicate name.
+```json
+{
+      "code": 101,
+      "message": "Duplicated document name in the same dataset."
+}
+```
+
+### Response for updating a document's illegal parameter.
+```json
+{
+      "code": 101,
+      "message": "illegal_parameter is an illegal parameter."
+}
+```
+
+### Response for updating a document's name without its name value.
+```json
+{
+      "code": 102,
+      "message": "There is no new name."
+}
+```
+
+### Response for updating a document's with giving illegal enable's value.
+```json
+{
+      "code": 102,
+      "message": "Illegal value '?' for 'enable' field."
+}
+```
+
+## Download the document
+
+This method downloads a specific document for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                                     |
+|--------|-------------------------------------------------|
+| GET    | `/dataset/{dataset_id}/documents/{document_id}` |
+
+
+#### Request parameter
+
+| Name         | Type   | Required | Description                                                                                                |
+|--------------|--------|----------|------------------------------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.   |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID. |
+
+### Response 
+
+### Successful Response 
+
+```json
+{
+      "code": "0",
+      "data": "b'test\\ntest\\ntest'"
+}
+```
+
+### Response for downloading a document which does not exist.
+
+```json
+{
+      "code": 101,
+      "message": "This document 'imagination.txt' cannot be found!"
+}
+```
+
+### Response for downloading a document in the nonexistent dataset.
+```json
+{
+      "code": 102,
+      "message": "This dataset 'imagination' cannot be found!"
+}
+```
+
+### Response for downloading an empty document.
+```json
+{
+      "code": 102,
+      "message": "This file is empty."
+}
+```
+
+## Start parsing a document
+
+This method enables a specific document to start parsing for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                                            |
+|--------|--------------------------------------------------------|
+| POST   | `/dataset/{dataset_id}/documents/{document_id}/status` |
+
+
+#### Request parameter
+
+| Name         | Type   | Required | Description                                                                                                |
+|--------------|--------|----------|------------------------------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.   |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID. |
+
+### Response 
+
+### Successful Response 
+
+```json
+{
+      "code": 0,
+      "message": ""
+}
+```
+
+### Response for parsing a document which does not exist.
+
+```json
+{
+      "code": 101,
+      "message": "This document 'imagination.txt' cannot be found!"
+}
+```
+
+### Response for parsing a document in the nonexistent dataset.
+```json
+{
+      "code": 102,
+      "message": "This dataset 'imagination' cannot be found!"
+}
+```
+
+### Response for parsing an empty document.
+```json
+{
+      "code": 0,
+      "message": "Empty data in the document: empty.txt;"
+}
+```
+
+## Start parsing multiple documents
+
+This method enables multiple documents, including all documents in the specific dataset or specified documents, to start parsing for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                                           |
+|--------|-------------------------------------------------------|
+| POST   | `/dataset/{dataset_id}/documents/status` |
+
+
+#### Request parameter
+
+| Name         | Type   | Required | Description                                                                                                                       |
+|--------------|--------|----------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.                                                 |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID.                                               |
+| `doc_ids` | list | No | The document IDs of the documents that the user would like to parse. Default: None, means all documents in the specified dataset. |
+### Response 
+
+### Successful Response 
+
+```json
+{
+      "code": 0,
+      "data": true,
+      "message": ""
+}
+```
+
+### Response for parsing documents which does not exist.
+
+```json
+{
+      "code": 101,
+      "message": "This document 'imagination.txt' cannot be found!"
+}
+```
+
+### Response for parsing documents in the nonexistent dataset.
+```json
+{
+      "code": 102,
+      "message": "This dataset 'imagination' cannot be found!"
+}
+```
+
+### Response for parsing documents, one of which is empty.
+```json
+{
+      "code": 0,
+      "data": true,
+      "message": "Empty data in the document: empty.txt; "
+}
+```
+
+## Show the parsing status of the document
+
+This method shows the parsing status of the document for a specific user. 
+
+### Request
+
+#### Request URI
+
+| Method | Request URI                                           |
+|--------|-------------------------------------------------------|
+| GET    | `/dataset/{dataset_id}/documents/status` |
+
+
+#### Request parameter
+
+| Name         | Type   | Required | Description                                                                                                                       |
+|--------------|--------|----------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `dataset_id`  | string |   Yes    | The ID of the dataset. Call ['GET' /dataset](#create-dataset) to retrieve the ID.                                                 |
+| `document_id` | string |   Yes    | The ID of the document. Call ['GET' /document](#list-documents) to retrieve the ID.                                               |
+
+### Response 
+
+### Successful Response 
+
+```json
+{
+      "code": 0,
+      "data": {
+            "progress": 0.0,
+            "status": "RUNNING"
+      },
+      "message": "success"
+}
+```
+
+### Response for showing the parsing status of a document which does not exist.
+
+```json
+{
+      "code": 102,
+      "message": "This document: 'imagination.txt' is not a valid document."
+}
+```
+
+### Response for showing the parsing status of a document in the nonexistent dataset.
+```json
+{
+      "code": 102,
+      "message": "This dataset 'imagination' cannot be found!"
+}
+```

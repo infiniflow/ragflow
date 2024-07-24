@@ -1,7 +1,7 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { LlmModelType } from '@/constants/knowledge';
-import { useTranslate } from '@/hooks/commonHooks';
-import { ISystemModelSettingSavingParams } from '@/hooks/llmHooks';
+import { useTranslate } from '@/hooks/common-hooks';
+import { ISystemModelSettingSavingParams } from '@/hooks/llm-hooks';
 import { Form, Modal, Select } from 'antd';
 import { useEffect } from 'react';
 import { useFetchSystemModelSettingOnMount } from '../hooks';

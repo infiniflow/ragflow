@@ -105,6 +105,8 @@ def upload():
             }
             if doc["type"] == FileType.VISUAL:
                 doc["parser_id"] = ParserType.PICTURE.value
+            if doc["type"] == FileType.AURAL:
+                doc["parser_id"] = ParserType.AUDIO.value
             if re.search(r"\.(ppt|pptx|pages)$", filename):
                 doc["parser_id"] = ParserType.PRESENTATION.value
             DocumentService.insert(doc)
@@ -171,6 +173,8 @@ def web_crawl():
         }
         if doc["type"] == FileType.VISUAL:
             doc["parser_id"] = ParserType.PICTURE.value
+        if doc["type"] == FileType.AURAL:
+            doc["parser_id"] = ParserType.AUDIO.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):
             doc["parser_id"] = ParserType.PRESENTATION.value
         DocumentService.insert(doc)

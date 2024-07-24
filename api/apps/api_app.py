@@ -335,6 +335,8 @@ def upload():
                 doc["parser_id"] = request.form.get("parser_id").strip()
         if doc["type"] == FileType.VISUAL:
             doc["parser_id"] = ParserType.PICTURE.value
+        if doc["type"] == FileType.AURAL:
+            doc["parser_id"] = ParserType.AUDIO.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):
             doc["parser_id"] = ParserType.PRESENTATION.value
 
@@ -573,6 +575,7 @@ def completion_faq():
                     response = MINIO.get(bkt, nm)
                     data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
                     data.append(data_type_picture)
+                    break
                 except Exception as e:
                     return server_error_response(e)
 

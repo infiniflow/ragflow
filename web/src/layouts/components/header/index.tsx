@@ -1,14 +1,14 @@
 import { ReactComponent as FileIcon } from '@/assets/svg/file-management.svg';
 import { ReactComponent as GraphIcon } from '@/assets/svg/graph.svg';
 import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base.svg';
-import { useTranslate } from '@/hooks/commonHooks';
-import { useNavigateWithFromState } from '@/hooks/routeHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useNavigateWithFromState } from '@/hooks/route-hook';
 import { Flex, Layout, Radio, Space, theme } from 'antd';
 import { useCallback, useMemo } from 'react';
 import { useLocation } from 'umi';
 import Toolbar from '../right-toolbar';
 
-import { useFetchAppConf } from '@/hooks/logicHooks';
+import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { MessageOutlined } from '@ant-design/icons';
 import styles from './index.less';
 

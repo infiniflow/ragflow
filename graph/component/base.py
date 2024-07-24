@@ -445,6 +445,12 @@ class ComponentBase(ABC):
         if DEBUG: print(self.component_name, reversed_cpnts[::-1])
         for u in reversed_cpnts[::-1]:
             if self.get_component_name(u) in ["switch"]: continue
+            if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
+                o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
+                if o is not None:
+                    upstream_outs.append(o)
+                    continue
+            if u not in self._canvas.get_component(self._id)["upstream"]: continue
             if self.component_name.lower().find("switch") < 0 \
                     and self.get_component_name(u) in ["relevant", "categorize"]:
                 continue
@@ -455,12 +461,17 @@ class ComponentBase(ABC):
                         break
                 break
             if self.component_name.lower().find("answer") >= 0:
-                if self.get_component_name(u) in ["relevant"]: continue
-
-            else: upstream_outs.append(self._canvas.get_component(u)["obj"].output(allow_partial=False)[1])
+                if self.get_component_name(u) in ["relevant"]:
+                    continue
+            else:
+                o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
+                if o is not None:
+                    upstream_outs.append(o)
             break
 
-        return pd.concat(upstream_outs, ignore_index=False)
+        if upstream_outs:
+            return pd.concat(upstream_outs, ignore_index=False)
+        return pd.DataFrame()
 
     def get_stream_input(self):
         reversed_cpnts = []

@@ -1,5 +1,5 @@
-import { useDeleteChunkByIds } from '@/hooks/knowledgeHook';
-import { useOneNamespaceEffectsLoading } from '@/hooks/storeHooks';
+import { useDeleteChunkByIds } from '@/hooks/knowledge-hooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Checkbox, Divider, Form, Input, Modal, Space } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';

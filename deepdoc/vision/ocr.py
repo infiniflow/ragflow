@@ -23,7 +23,6 @@ import numpy as np
 import onnxruntime as ort
 
 from .postprocess import build_post_process
-from rag.settings import cron_logger
 
 
 def transform(data, ops=None):
@@ -566,9 +565,6 @@ class OCR(object):
             end = time.time()
             time_dict['all'] = end - start
             return None, None, time_dict
-        else:
-            cron_logger.debug("dt_boxes num : {}, elapsed : {}".format(
-                len(dt_boxes), elapse))
 
         return zip(self.sorted_boxes(dt_boxes), [
                    ("", 0) for _ in range(len(dt_boxes))])
@@ -597,9 +593,7 @@ class OCR(object):
             end = time.time()
             time_dict['all'] = end - start
             return None, None, time_dict
-        else:
-            cron_logger.debug("dt_boxes num : {}, elapsed : {}".format(
-                len(dt_boxes), elapse))
+
         img_crop_list = []
 
         dt_boxes = self.sorted_boxes(dt_boxes)
@@ -612,8 +606,6 @@ class OCR(object):
         rec_res, elapse = self.text_recognizer(img_crop_list)
 
         time_dict['rec'] = elapse
-        cron_logger.debug("rec_res num  : {}, elapsed : {}".format(
-            len(rec_res), elapse))
 
         filter_boxes, filter_rec_res = [], []
         for box, rec_result in zip(dt_boxes, rec_res):

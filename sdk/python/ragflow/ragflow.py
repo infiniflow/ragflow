@@ -157,9 +157,24 @@ class RAGFlow:
         return res.json()
 
     # ----------------------------stop parsing-----------------------------------------------------
+    def stop_parsing_document(self, dataset_id, document_id):
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}/status"
+        res = requests.delete(endpoint, headers=self.authorization_header)
+
+        return res.json()
+
+    def stop_parsing_documents(self, dataset_id, doc_ids=None):
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/status"
+        res = requests.delete(endpoint, headers=self.authorization_header, json={"doc_ids": doc_ids})
+
+        return res.json()
 
     # ----------------------------show the status of the file-----------------------------------------------------
+    def show_parsing_status(self, dataset_id, document_id):
+        endpoint = f"{self.dataset_url}/{dataset_id}/documents/{document_id}/status"
+        res = requests.get(endpoint, headers=self.authorization_header)
 
+        return res.json()
     # ----------------------------list the chunks of the file-----------------------------------------------------
 
     # ----------------------------delete the chunk-----------------------------------------------------

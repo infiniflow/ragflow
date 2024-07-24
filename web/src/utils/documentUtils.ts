@@ -1,3 +1,4 @@
+import { SupportedPreviewDocumentTypes } from '@/constants/common';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { UploadFile } from 'antd';
 import { v4 as uuid } from 'uuid';
@@ -45,4 +46,8 @@ export const isPdf = (name: string) => {
 
 export const getUnSupportedFilesCount = (message: string) => {
   return message.split('\n').length;
+};
+
+export const isSupportedPreviewDocumentType = (fileExtension: string) => {
+  return SupportedPreviewDocumentTypes.includes(fileExtension);
 };

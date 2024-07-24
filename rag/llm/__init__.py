@@ -17,10 +17,11 @@ from .embedding_model import *
 from .chat_model import *
 from .cv_model import *
 from .rerank_model import *
-
+from .sequence2txt_model import *
 
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
+    "LocalAI": LocalAIEmbed,
     "OpenAI": OpenAIEmbed,
     "Azure-OpenAI": AzureEmbed,
     "Xinference": XinferenceEmbed,
@@ -33,7 +34,9 @@ EmbeddingModel = {
     "BAAI": DefaultEmbedding,
     "Mistral": MistralEmbed,
     "Bedrock": BedrockEmbed,
-    "Gemini":GeminiEmbed
+    "Gemini": GeminiEmbed,
+    "NVIDIA": NvidiaEmbed,
+    "LM-Studio": LmStudioEmbed
 }
 
 
@@ -45,7 +48,11 @@ CvModel = {
     "Tongyi-Qianwen": QWenCV,
     "ZHIPU-AI": Zhipu4V,
     "Moonshot": LocalCV,
-    'Gemini':GeminiCV
+    "Gemini": GeminiCV,
+    "OpenRouter": OpenRouterCV,
+    "LocalAI": LocalAICV,
+    "NVIDIA": NvidiaCV,
+    "LM-Studio": LmStudioCV
 }
 
 
@@ -55,16 +62,22 @@ ChatModel = {
     "ZHIPU-AI": ZhipuChat,
     "Tongyi-Qianwen": QWenChat,
     "Ollama": OllamaChat,
+    "LocalAI": LocalAIChat,
     "Xinference": XinferenceChat,
     "Moonshot": MoonshotChat,
     "DeepSeek": DeepSeekChat,
     "VolcEngine": VolcEngineChat,
     "BaiChuan": BaiChuanChat,
     "MiniMax": MiniMaxChat,
+    "Minimax": MiniMaxChat,
     "Mistral": MistralChat,
-    'Gemini' : GeminiChat,
+    "Gemini": GeminiChat,
     "Bedrock": BedrockChat,
-    "Groq": GroqChat
+    "Groq": GroqChat,
+    "OpenRouter": OpenRouterChat,
+    "StepFun": StepFunChat,
+    "NVIDIA": NvidiaChat,
+    "LM-Studio": LmStudioChat
 }
 
 
@@ -72,5 +85,16 @@ RerankModel = {
     "BAAI": DefaultRerank,
     "Jina": JinaRerank,
     "Youdao": YoudaoRerank,
-    "Xinference": XInferenceRerank
+    "Xinference": XInferenceRerank,
+    "NVIDIA": NvidiaRerank,
+    "LM-Studio": LmStudioRerank
+}
+
+
+Seq2txtModel = {
+    "OpenAI": GPTSeq2txt,
+    "Tongyi-Qianwen": QWenSeq2txt,
+    "Ollama": OllamaSeq2txt,
+    "Azure-OpenAI": AzureSeq2txt,
+    "Xinference": XinferenceSeq2txt
 }

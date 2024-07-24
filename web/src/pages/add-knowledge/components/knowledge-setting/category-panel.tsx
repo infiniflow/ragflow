@@ -1,7 +1,8 @@
 import SvgIcon from '@/components/svg-icon';
-import { useTranslate } from '@/hooks/commonHooks';
-import { useSelectParserList } from '@/hooks/userSettingHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { Col, Divider, Empty, Row, Typography } from 'antd';
+import DOMPurify from 'dompurify';
 import { useMemo } from 'react';
 import styles from './index.less';
 import { ImageMap } from './utils';
@@ -39,7 +40,7 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
           </Title>
           <p
             dangerouslySetInnerHTML={{
-              __html: item.description,
+              __html: DOMPurify.sanitize(item.description),
             }}
           ></p>
           <Title level={5}>

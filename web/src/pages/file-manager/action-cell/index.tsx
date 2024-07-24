@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { api_host } from '@/utils/api';
 import { downloadFile } from '@/utils/fileUtil';
@@ -13,13 +13,11 @@ import { Button, Space, Tooltip } from 'antd';
 import { useHandleDeleteFile } from '../hooks';
 
 import NewDocumentLink from '@/components/new-document-link';
-import { SupportedPreviewDocumentTypes } from '@/constants/common';
-import { getExtension } from '@/utils/documentUtils';
+import {
+  getExtension,
+  isSupportedPreviewDocumentType,
+} from '@/utils/documentUtils';
 import styles from './index.less';
-
-const isSupportedPreviewDocumentType = (fileExtension: string) => {
-  return SupportedPreviewDocumentTypes.includes(fileExtension);
-};
 
 interface IProps {
   record: IFile;
@@ -118,8 +116,9 @@ const ActionCell = ({
       )}
       {isSupportedPreviewDocumentType(extension) && (
         <NewDocumentLink
+          documentId={documentId}
+          documentName={record.name}
           color="black"
-          link={`/document/${documentId}?ext=${extension}`}
         >
           <Tooltip title={t('preview')}>
             <Button type="text" className={styles.iconButton}>

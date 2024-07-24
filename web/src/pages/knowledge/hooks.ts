@@ -1,5 +1,8 @@
-import { useSelectKnowledgeList } from '@/hooks/knowledgeHook';
-import { useState } from 'react';
+import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { useSetModalState } from '@/hooks/common-hooks';
+import { useCreateKnowledge } from '@/hooks/knowledge-hooks';
+import { useCallback, useState } from 'react';
+import { useNavigate } from 'umi';
 
 export const useSearchKnowledge = () => {
   const [searchString, setSearchString] = useState<string>('');
@@ -13,7 +16,32 @@ export const useSearchKnowledge = () => {
   };
 };
 
-export const useSelectKnowledgeListByKeywords = (keywords: string) => {
-  const list = useSelectKnowledgeList();
-  return list.filter((x) => x.name.includes(keywords));
+export const useSaveKnowledge = () => {
+  const { visible: visible, hideModal, showModal } = useSetModalState();
+  const { loading, createKnowledge } = useCreateKnowledge();
+  const navigate = useNavigate();
+
+  const onCreateOk = useCallback(
+    async (name: string) => {
+      const ret = await createKnowledge({
+        name,
+      });
+
+      if (ret?.retcode === 0) {
+        hideModal();
+        navigate(
+          `/knowledge/${KnowledgeRouteKey.Configuration}?id=${ret.data.kb_id}`,
+        );
+      }
+    },
+    [createKnowledge, hideModal, navigate],
+  );
+
+  return {
+    loading,
+    onCreateOk,
+    visible,
+    hideModal,
+    showModal,
+  };
 };

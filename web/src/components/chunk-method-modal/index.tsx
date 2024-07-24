@@ -21,7 +21,7 @@ import omit from 'lodash/omit';
 import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,

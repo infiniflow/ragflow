@@ -1,38 +1,39 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { useTranslate } from '@/hooks/commonHooks';
-import { useGetDocumentUrl } from '@/hooks/documentHooks';
-import { useSelectFileThumbnails } from '@/hooks/knowledgeHook';
-import { useSelectUserInfo } from '@/hooks/userSettingHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference, Message } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';
 import { useMemo } from 'react';
 
 import MarkdownContent from '@/pages/chat/markdown-content';
-import { getExtension, isPdf } from '@/utils/documentUtils';
+import { getExtension } from '@/utils/documentUtils';
 import { Avatar, Flex, List } from 'antd';
 import NewDocumentLink from '../new-document-link';
 import SvgIcon from '../svg-icon';
 import styles from './index.less';
 
+interface IProps {
+  item: Message;
+  reference: IReference;
+  loading?: boolean;
+  nickname?: string;
+  avatar?: string;
+  clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
+}
+
 const MessageItem = ({
   item,
   reference,
   loading = false,
+  avatar = '',
+  nickname = '',
   clickDocumentButton,
-}: {
-  item: Message;
-  reference: IReference;
-  loading?: boolean;
-  clickDocumentButton: (documentId: string, chunk: IChunk) => void;
-}) => {
-  const userInfo = useSelectUserInfo();
-  const fileThumbnails = useSelectFileThumbnails();
-  const getDocumentUrl = useGetDocumentUrl();
-  const { t } = useTranslate('chat');
-
+}: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
+  const { t } = useTranslate('chat');
+  const fileThumbnails = useSelectFileThumbnails();
 
   const referenceDocumentList = useMemo(() => {
     return reference?.doc_aggs ?? [];
@@ -68,7 +69,7 @@ const MessageItem = ({
             <Avatar
               size={40}
               src={
-                userInfo.avatar ??
+                avatar ??
                 'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png'
               }
             />
@@ -76,8 +77,12 @@ const MessageItem = ({
             <AssistantIcon></AssistantIcon>
           )}
           <Flex vertical gap={8} flex={1}>
-            <b>{isAssistant ? '' : userInfo.nickname}</b>
-            <div className={styles.messageText}>
+            <b>{isAssistant ? '' : nickname}</b>
+            <div
+              className={
+                isAssistant ? styles.messageText : styles.messageUserText
+              }
+            >
               <MarkdownContent
                 content={content}
                 reference={reference}
@@ -107,8 +112,9 @@ const MessageItem = ({
                         )}
 
                         <NewDocumentLink
-                          link={getDocumentUrl(item.doc_id)}
-                          preventDefault={!isPdf(item.doc_name)}
+                          documentId={item.doc_id}
+                          documentName={item.doc_name}
+                          prefix="document"
                         >
                           {item.doc_name}
                         </NewDocumentLink>

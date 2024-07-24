@@ -198,7 +198,7 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ![stall](https://github.com/infiniflow/ragflow/assets/93570324/3589cc25-c733-47d5-bbfc-fedb74a3da50)
 
-If your RAGFlow is deployed *locally*, try the following: 
+Click the red cross beside the 'parsing status' bar, then restart the parsing process to see if the issue remains. If the issue persists and your RAGFlow is deployed locally, try the following: 
 
 1. Check the log of your RAGFlow server to see if it is running properly:
 ```bash
@@ -209,15 +209,17 @@ docker logs -f ragflow-server
 
 #### 4.4 Why does my pdf parsing stall near completion, while the log does not show any error?
 
-If your RAGFlow is deployed *locally*, the parsing process is likely killed due to insufficient RAM. Try increasing your memory allocation by increasing the `MEM_LIMIT` value in **docker/.env**.
+Click the red cross beside the 'parsing status' bar, then restart the parsing process to see if the issue remains. If the issue persists and your RAGFlow is deployed locally, the parsing process is likely killed due to insufficient RAM. Try increasing your memory allocation by increasing the `MEM_LIMIT` value in **docker/.env**.
 
-> Ensure that you restart up your RAGFlow server for your changes to take effect!
-> ```bash
-> docker compose stop
-> ```
-> ```bash
-> docker compose up -d
-> ```
+:::note
+Ensure that you restart up your RAGFlow server for your changes to take effect!
+```bash
+docker compose stop
+```
+```bash
+docker compose up -d
+```
+:::
 
 ![nearcompletion](https://github.com/infiniflow/ragflow/assets/93570324/563974c3-f8bb-4ec8-b241-adcda8929cbb)
 

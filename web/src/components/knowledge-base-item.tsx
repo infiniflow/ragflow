@@ -1,11 +1,11 @@
-import { useTranslate } from '@/hooks/commonHooks';
-import { useFetchKnowledgeList } from '@/hooks/knowledgeHook';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { Form, Select } from 'antd';
 
 const KnowledgeBaseItem = () => {
   const { t } = useTranslate('chat');
 
-  const { list: knowledgeList } = useFetchKnowledgeList(true);
+  const { list: knowledgeList } = useNextFetchKnowledgeList(true);
 
   const knowledgeOptions = knowledgeList.map((x) => ({
     label: x.name,

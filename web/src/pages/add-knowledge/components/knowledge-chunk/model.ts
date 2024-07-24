@@ -1,6 +1,6 @@
 import { BaseState } from '@/interfaces/common';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
-import kbService from '@/services/kbService';
+import kbService from '@/services/knowledge-service';
 import { message } from 'antd';
 import { pick } from 'lodash';
 // import { delay } from '@/utils/storeUtil';
@@ -29,6 +29,7 @@ const model: DvaModel<ChunkModelState> = {
     chunkInfo: {},
     documentInfo: {} as IKnowledgeFile,
     pagination: {
+      total: 0,
       current: 1,
       pageSize: 10,
     },
@@ -53,7 +54,11 @@ const model: DvaModel<ChunkModelState> = {
       return { ...state, available: payload };
     },
     setSearchString(state, { payload }) {
-      return { ...state, searchString: payload };
+      return {
+        ...state,
+        pagination: { ...state.pagination, current: 1 },
+        searchString: payload,
+      };
     },
     setPagination(state, { payload }) {
       return { ...state, pagination: { ...state.pagination, ...payload } };
@@ -64,6 +69,7 @@ const model: DvaModel<ChunkModelState> = {
         pagination: {
           current: 1,
           pageSize: 10,
+          total: 0,
         },
         searchString: '',
         available: undefined,

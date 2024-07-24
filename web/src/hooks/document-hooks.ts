@@ -6,8 +6,8 @@ import { UploadFile } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useDispatch, useSelector } from 'umi';
-import { useGetKnowledgeSearchParams } from './routeHook';
-import { useOneNamespaceEffectsLoading } from './storeHooks';
+import { useGetKnowledgeSearchParams } from './route-hook';
+import { useOneNamespaceEffectsLoading } from './store-hooks';
 
 export const useGetDocumentUrl = (documentId?: string) => {
   const getDocumentUrl = useCallback(

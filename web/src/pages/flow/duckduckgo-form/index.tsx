@@ -1,10 +1,16 @@
 import TopNItem from '@/components/top-n-item';
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Select } from 'antd';
+import { useMemo } from 'react';
+import { Channel } from '../constant';
 import { IOperatorForm } from '../interface';
 
 const DuckDuckGoForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
+
+  const options = useMemo(() => {
+    return Object.values(Channel).map((x) => ({ value: x, label: t(x) }));
+  }, [t]);
 
   return (
     <Form
@@ -22,12 +28,7 @@ const DuckDuckGoForm = ({ onValuesChange, form }: IOperatorForm) => {
         tooltip={t('channelTip')}
         initialValue={'text'}
       >
-        <Select
-          options={[
-            { value: 'text', label: t('text') },
-            { value: 'news', label: t('news') },
-          ]}
-        ></Select>
+        <Select options={options}></Select>
       </Form.Item>
     </Form>
   );

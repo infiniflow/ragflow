@@ -1,4 +1,4 @@
-import { useTranslate } from '@/hooks/commonHooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Flex, Form, InputNumber, Slider } from 'antd';
 
 const MaxTokenNumber = () => {
