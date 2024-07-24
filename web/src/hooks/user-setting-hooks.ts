@@ -1,9 +1,8 @@
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { ISystemStatus, IUserInfo } from '@/interfaces/database/userSetting';
 import userService from '@/services/user-service';
-import authorizationUtil from '@/utils/authorizationUtil';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { history, useDispatch, useSelector } from 'umi';
+import { useDispatch, useSelector } from 'umi';
 
 export const useFetchUserInfo = () => {
   const dispatch = useDispatch();
@@ -65,20 +64,6 @@ export const useSelectParserList = (): Array<{
   }, [tenantInfo]);
 
   return parserList;
-};
-
-export const useLogout = () => {
-  const dispatch = useDispatch(); // TODO: clear redux state
-
-  const logout = useCallback(async () => {
-    const retcode = await dispatch<any>({ type: 'loginModel/logout' });
-    if (retcode === 0) {
-      authorizationUtil.removeAll();
-      history.push('/login');
-    }
-  }, [dispatch]);
-
-  return logout;
 };
 
 export const useSaveSetting = () => {

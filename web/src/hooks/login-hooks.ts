@@ -1,5 +1,10 @@
-import { useCallback } from 'react';
-import { useDispatch } from 'umi';
+import { Authorization } from '@/constants/authorization';
+import userService from '@/services/user-service';
+import authorizationUtil from '@/utils/authorizationUtil';
+import { useMutation } from '@tanstack/react-query';
+import { message } from 'antd';
+import { useTranslation } from 'react-i18next';
+import { history } from 'umi';
 
 export interface ILoginRequestBody {
   email: string;
@@ -11,34 +16,82 @@ export interface IRegisterRequestBody extends ILoginRequestBody {
 }
 
 export const useLogin = () => {
-  const dispatch = useDispatch();
+  const { t } = useTranslation();
 
-  const login = useCallback(
-    (requestBody: ILoginRequestBody) => {
-      // TODO: Type needs to be improved
-      return dispatch<any>({
-        type: 'loginModel/login',
-        payload: requestBody,
-      });
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['login'],
+    mutationFn: async (params: { email: string; password: string }) => {
+      const { data: res = {}, response } = await userService.login(params);
+      if (res.retcode === 0) {
+        const { data } = res;
+        message.success(t('message.logged'));
+        const authorization = response.headers.get(Authorization);
+        const token = data.access_token;
+        const userInfo = {
+          avatar: data.avatar,
+          name: data.nickname,
+          email: data.email,
+        };
+        authorizationUtil.setItems({
+          Authorization: authorization,
+          userInfo: JSON.stringify(userInfo),
+          Token: token,
+        });
+      }
+      return res.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return login;
+  return { data, loading, login: mutateAsync };
 };
 
 export const useRegister = () => {
-  const dispatch = useDispatch();
+  const { t } = useTranslation();
 
-  const register = useCallback(
-    (requestBody: IRegisterRequestBody) => {
-      return dispatch<any>({
-        type: 'loginModel/register',
-        payload: requestBody,
-      });
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['register'],
+    mutationFn: async (params: {
+      email: string;
+      password: string;
+      nickname: string;
+    }) => {
+      const { data = {} } = await userService.register(params);
+      if (data.retcode === 0) {
+        message.success(t('message.registered'));
+      }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return register;
+  return { data, loading, register: mutateAsync };
+};
+
+export const useLogout = () => {
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['logout'],
+    mutationFn: async () => {
+      const { data = {} } = await userService.logout();
+      if (data.retcode === 0) {
+        message.success(t('message.logout'));
+        authorizationUtil.removeAll();
+        history.push('/login');
+      }
+      return data.retcode;
+    },
+  });
+
+  return { data, loading, logout: mutateAsync };
 };
