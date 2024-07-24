@@ -124,7 +124,7 @@ transformers==4.38.1
 typing_extensions==4.10.0
 tzdata==2024.1
 urllib3==2.2.2
-Werkzeug==3.0.1
+Werkzeug==3.0.3
 xgboost==2.0.3
 XlsxWriter==3.2.0
 xpinyin==0.7.6
