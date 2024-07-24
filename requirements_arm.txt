@@ -78,7 +78,7 @@ pandas==2.2.1
 pdfminer.six==20221105
 pdfplumber==0.10.4
 peewee==3.17.1
-pillow==10.2.0
+pillow==10.3.0
 protobuf==4.25.3
 psutil==5.9.8
 pyarrow==15.0.0
