@@ -440,15 +440,8 @@ class LocalAICV(Base):
         self.lang = lang
 
     def describe(self, image, max_tokens=300):
-        if not isinstance(image, bytes) and not isinstance(
-            image, BytesIO
-        ):  # if url string
-            prompt = self.prompt(image)
-            for i in range(len(prompt)):
-                prompt[i]["content"]["image_url"]["url"] = image
-        else:
-            b64 = self.image2base64(image)
-            prompt = self.prompt(b64)
+        b64 = self.image2base64(image)
+        prompt = self.prompt(b64)
         for i in range(len(prompt)):
             for c in prompt[i]["content"]:
                 if "text" in c:
@@ -701,3 +694,13 @@ class StepFunCV(Base):
             max_tokens=max_tokens,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
+
+class LmStudioCV(LocalAICV):
+    def __init__(self, key, model_name, base_url, lang="Chinese"):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        if base_url.split('/')[-1] != 'v1':
+            self.base_url = os.path.join(base_url,'v1')
+        self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
+        self.model_name = model_name
+        self.lang = lang

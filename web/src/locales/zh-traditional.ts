@@ -592,6 +592,13 @@ export default {
       email: '信箱',
       emailTip:
         '此元件用於從 https://pubmed.ncbi.nlm.nih.gov/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要適應的搜尋結果的數量。電子郵件是必填欄位。',
+      arxiv: 'Arxiv',
+      arxivTip:
+        '此元件用於從 https://arxiv.org/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要適應的搜尋結果的數量。',
+      sortBy: '排序方式',
+      submittedDate: '提交日期',
+      lastUpdatedDate: '最後更新日期',
+      relevance: '關聯',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

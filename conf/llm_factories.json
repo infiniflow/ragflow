@@ -2208,6 +2208,13 @@
                     "model_type": "image2text"
                 }
             ]
+        },
+        {
+            "name": "LM-Studio",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": []
         }
     ]
 }
