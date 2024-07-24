@@ -26,7 +26,7 @@ import {
 
 import {
   IListResult,
-  useSelectParentFolderList,
+  useFetchParentFolderList,
 } from '@/hooks/file-manager-hooks';
 import styles from './index.less';
 
@@ -49,7 +49,7 @@ const FileToolbar = ({
   const { t } = useTranslate('knowledgeDetails');
   const breadcrumbItems = useSelectBreadcrumbItems();
   const { handleBreadcrumbClick } = useHandleBreadcrumbClick();
-  const parentFolderList = useSelectParentFolderList();
+  const parentFolderList = useFetchParentFolderList();
   const isKnowledgeBase =
     parentFolderList.at(-1)?.source_type === 'knowledgebase';
 

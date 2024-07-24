@@ -8,7 +8,7 @@ interface BaseRequestBody {
   parentId: string;
 }
 
-export interface IConnectRequestBody extends BaseRequestBody {
+export interface IConnectRequestBody {
   fileIds: string[];
   kbIds: string[];
 }
