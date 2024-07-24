@@ -60,7 +60,7 @@ redis==5.0.3
 Requests==2.32.3
 roman_numbers==1.0.2
 ruamel.base==1.0.0
-scikit_learn==1.4.1.post1
+scikit_learn==1.5.0
 selenium==4.22.0
 setuptools==69.5.1
 Shapely==2.0.5
