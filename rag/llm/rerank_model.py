@@ -147,6 +147,8 @@ class XInferenceRerank(Base):
         }
 
     def similarity(self, query: str, texts: list):
+        if len(texts) == 0:
+            return np.array([]), 0
         data = {
             "model": self.model_name,
             "query": query,

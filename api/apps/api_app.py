@@ -199,9 +199,10 @@ def completion():
             conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
 
         def rename_field(ans):
-            for chunk_i in ans['reference'].get('chunks', []):
-                chunk_i['doc_name'] = chunk_i['docnm_kwd']
-                chunk_i.pop('docnm_kwd')
+            if 'reference' in ans and (len(ans['reference']) > 0):
+                for chunk_i in ans['reference'].get('chunks', []):
+                    chunk_i['doc_name'] = chunk_i['docnm_kwd']
+                    chunk_i.pop('docnm_kwd')
 
         def stream():
             nonlocal dia, msg, req, conv
@@ -232,7 +233,7 @@ def completion():
                 API4ConversationService.append_message(conv.id, conv.to_dict())
                 break
 
-            if answer['reference'] is not None and (len(answer['reference']) > 0):
+            if 'reference' in answer and (len(answer['reference']) > 0):
                 for chunk_i in answer['reference'].get('chunks', []):
                     chunk_i['doc_name'] = chunk_i['docnm_kwd']
                     chunk_i.pop('docnm_kwd')
