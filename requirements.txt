@@ -79,3 +79,4 @@ word2number==1.1
 xgboost==2.1.0
 xpinyin==0.7.6
 zhipuai==2.0.1
+pypdf==4.3.0
