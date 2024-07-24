@@ -57,7 +57,7 @@ python_dateutil==2.8.2
 python_pptx==0.6.23
 readability_lxml==0.8.1
 redis==5.0.3
-Requests==2.32.3
+Requests==2.32.2
 roman_numbers==1.0.2
 ruamel.base==1.0.0
 scikit_learn==1.4.1.post1
