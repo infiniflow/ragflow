@@ -7,9 +7,10 @@ import useGraphStore from '../../store';
 
 interface IProps {
   id: string;
+  iconFontColor?: string;
 }
 
-const NodeDropdown = ({ id }: IProps) => {
+const NodeDropdown = ({ id, iconFontColor }: IProps) => {
   const { t } = useTranslation();
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
   const duplicateNodeById = useGraphStore((store) => store.duplicateNode);
@@ -42,6 +43,7 @@ const NodeDropdown = ({ id }: IProps) => {
       deleteItem={deleteNode}
       items={items}
       needsDeletionValidation={false}
+      iconFontColor={iconFontColor}
     ></OperateDropdown>
   );
 };

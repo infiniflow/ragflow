@@ -610,6 +610,13 @@ export default {
       email: '邮箱',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+      arxiv: 'Arxiv',
+      arxivTip:
+        '此组件用于从 https://arxiv.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。',
+      sortBy: '排序方式',
+      submittedDate: '提交日期',
+      lastUpdatedDate: '最后更新日期',
+      relevance: '关联',
     },
     footer: {
       profile: 'All rights reserved @ React',

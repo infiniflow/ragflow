@@ -9,6 +9,7 @@ import styles from './index.less';
 interface IProps {
   deleteItem: () => Promise<any> | void;
   iconFontSize?: number;
+  iconFontColor?: string;
   items?: MenuProps['items'];
   height?: number;
   needsDeletionValidation?: boolean;
@@ -18,6 +19,7 @@ const OperateDropdown = ({
   deleteItem,
   children,
   iconFontSize = 30,
+  iconFontColor = 'gray',
   items: otherItems = [],
   height = 24,
   needsDeletionValidation = true,
@@ -69,7 +71,7 @@ const OperateDropdown = ({
             rotate={90}
             style={{
               fontSize: iconFontSize,
-              color: 'gray',
+              color: iconFontColor,
               cursor: 'pointer',
               height,
             }}
