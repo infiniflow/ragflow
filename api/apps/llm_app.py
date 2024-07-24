@@ -192,10 +192,10 @@ def add_llm():
             res = requests.get(img_url)
             if res.status_code == 200:
                 m, tc = mdl.describe(res.content)
+                if not tc:
+                    raise Exception(m)
             else:
                 raise ConnectionError("fail to download the test picture")
-            if not tc:
-                raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(e)
     else:
