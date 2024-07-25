@@ -6,7 +6,6 @@ import SettingTitle from '../components/setting-title';
 import { useValidateSubmittable } from '../hooks';
 
 import { useTranslate } from '@/hooks/common-hooks';
-import parentStyles from '../index.less';
 import styles from './index.less';
 
 type FieldType = {
@@ -81,13 +80,11 @@ const UserSettingPassword = () => {
                 message: t('newPasswordMessage'),
                 whitespace: true,
               },
+              { type: 'string', min: 8, message: t('newPasswordDescription') },
             ]}
           >
             <Input.Password />
           </Form.Item>
-          <p className={parentStyles.itemDescription}>
-            {t('newPasswordDescription')}
-          </p>
         </Form.Item>
         <Divider />
         <Form.Item<FieldType>
@@ -100,6 +97,7 @@ const UserSettingPassword = () => {
               message: t('confirmPasswordMessage'),
               whitespace: true,
             },
+            { type: 'string', min: 8, message: t('newPasswordDescription') },
             ({ getFieldValue }) => ({
               validator(_, value) {
                 if (!value || getFieldValue('new_password') === value) {
