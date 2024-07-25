@@ -11,7 +11,7 @@ import {
 import {
   getBase64FromUploadFileList,
   getUploadFileListFromBase64,
-} from '@/utils/fileUtil';
+} from '@/utils/file-util';
 import { useIsFetching } from '@tanstack/react-query';
 import { Form, UploadFile } from 'antd';
 import { FormInstance } from 'antd/lib';

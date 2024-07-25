@@ -1,11 +1,13 @@
 import { Authorization } from '@/constants/authorization';
 import { ResponseType } from '@/interfaces/database/base';
 import i18n from '@/locales/config';
-import authorizationUtil, { getAuthorization } from '@/utils/authorizationUtil';
+import authorizationUtil, {
+  getAuthorization,
+} from '@/utils/authorization-util';
 import { message, notification } from 'antd';
 import { history } from 'umi';
 import { RequestMethod, extend } from 'umi-request';
-import { convertTheKeysOfTheObjectToSnake } from './commonUtil';
+import { convertTheKeysOfTheObjectToSnake } from './common-util';
 
 const ABORT_REQUEST_ERR_MESSAGE = 'The user aborted a request.';
 

@@ -1,6 +1,6 @@
 import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { buildChunkHighlights } from '@/utils/documentUtils';
+import { buildChunkHighlights } from '@/utils/document-util';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useSelector } from 'umi';

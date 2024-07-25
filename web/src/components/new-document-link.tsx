@@ -1,7 +1,7 @@
 import {
   getExtension,
   isSupportedPreviewDocumentType,
-} from '@/utils/documentUtils';
+} from '@/utils/document-util';
 import React from 'react';
 
 interface IProps extends React.PropsWithChildren {

@@ -95,7 +95,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         valuePropName="checked"
         name={['prompt_config', 'self_rag']}
         tooltip={t('selfRagTip')}
-        initialValue={true}
+        initialValue={false}
       >
         <Switch />
       </Form.Item>

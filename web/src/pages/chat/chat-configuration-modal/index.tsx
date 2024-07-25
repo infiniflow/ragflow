@@ -19,7 +19,7 @@ import {
   useFetchLlmModelOnVisible,
   useFetchModelId,
 } from '@/hooks/logic-hooks';
-import { getBase64FromUploadFileList } from '@/utils/fileUtil';
+import { getBase64FromUploadFileList } from '@/utils/file-util';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import styles from './index.less';
 
