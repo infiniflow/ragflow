@@ -1,7 +1,4 @@
-import {
-  useFetchTenantInfo,
-  useSelectParserList,
-} from '@/hooks/user-setting-hooks';
+import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { useEffect, useMemo, useState } from 'react';
 
 const ParserListMap = new Map([
@@ -70,8 +67,6 @@ export const useFetchParserListOnMount = (
       parserList,
     );
   }, [parserList, documentExtension]);
-
-  useFetchTenantInfo();
 
   useEffect(() => {
     setSelectedTag(parserId);

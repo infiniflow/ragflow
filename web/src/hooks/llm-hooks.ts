@@ -16,7 +16,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'umi';
 
 export const useFetchLlmList = (
   modelType?: LlmModelType,
@@ -32,14 +31,6 @@ export const useFetchLlmList = (
   });
 
   return data;
-};
-
-export const useSelectLlmInfo = () => {
-  const llmInfo: IThirdOAIModelCollection = useSelector(
-    (state: any) => state.settingModel.llmInfo,
-  );
-
-  return llmInfo;
 };
 
 export const useSelectLlmOptions = () => {

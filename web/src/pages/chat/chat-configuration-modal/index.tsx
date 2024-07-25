@@ -69,7 +69,7 @@ const ChatConfigurationModal = ({
     ConfigurationSegmented.AssistantSetting,
   );
   const promptEngineRef = useRef<Array<IPromptConfigParameters>>([]);
-  const modelId = useFetchModelId(visible);
+  const modelId = useFetchModelId();
   const { t } = useTranslate('chat');
 
   const handleOk = async () => {

@@ -69,7 +69,7 @@ export const useSelectCanvasData = () => {
 };
 
 export const useInitializeOperatorParams = () => {
-  const llmId = useFetchModelId(true);
+  const llmId = useFetchModelId();
 
   const initialFormValuesMap = useMemo(() => {
     return {

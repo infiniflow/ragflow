@@ -4,10 +4,7 @@ import {
 } from '@/hooks/knowledge-hooks';
 import { useSelectLlmOptions } from '@/hooks/llm-hooks';
 import { useNavigateToDataset } from '@/hooks/route-hook';
-import {
-  useFetchTenantInfo,
-  useSelectParserList,
-} from '@/hooks/user-setting-hooks';
+import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import {
   getBase64FromUploadFileList,
   getUploadFileListFromBase64,
@@ -43,7 +40,6 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
   const parserList = useSelectParserList();
   const embeddingModelOptions = useSelectLlmOptions();
 
-  useFetchTenantInfo();
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
   useEffect(() => {

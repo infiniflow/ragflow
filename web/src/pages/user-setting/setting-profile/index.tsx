@@ -1,8 +1,4 @@
-import {
-  useFetchUserInfo,
-  useSaveSetting,
-  useSelectUserInfo,
-} from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo, useSaveSetting } from '@/hooks/user-setting-hooks';
 import {
   getBase64FromUploadFileList,
   getUploadFileListFromBase64,
@@ -24,11 +20,7 @@ import camelCase from 'lodash/camelCase';
 import { useEffect } from 'react';
 import SettingTitle from '../components/setting-title';
 import { TimezoneList } from '../constants';
-import {
-  useSelectSubmitUserInfoLoading,
-  useSelectUserInfoLoading,
-  useValidateSubmittable,
-} from '../hooks';
+import { useValidateSubmittable } from '../hooks';
 
 import { LanguageList } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
@@ -52,12 +44,9 @@ const tailLayout = {
 };
 
 const UserSettingProfile = () => {
-  const userInfo = useSelectUserInfo();
-  const saveSetting = useSaveSetting();
-  const submitLoading = useSelectSubmitUserInfoLoading();
+  const { data: userInfo, loading } = useFetchUserInfo();
+  const { saveSetting, loading: submitLoading } = useSaveSetting();
   const { form, submittable } = useValidateSubmittable();
-  const loading = useSelectUserInfoLoading();
-  useFetchUserInfo();
   const { t } = useTranslate('setting');
   const changeLanguage = useChangeLanguage();
 

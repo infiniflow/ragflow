@@ -1,7 +1,4 @@
-import {
-  useFetchUserInfo,
-  useSelectUserInfo,
-} from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { Avatar } from 'antd';
 import React from 'react';
 import { history } from 'umi';
@@ -9,13 +6,11 @@ import { history } from 'umi';
 import styles from '../../index.less';
 
 const App: React.FC = () => {
-  const userInfo = useSelectUserInfo();
+  const { data: userInfo } = useFetchUserInfo();
 
   const toSetting = () => {
     history.push('/user-setting');
   };
-
-  useFetchUserInfo();
 
   return (
     <Avatar
