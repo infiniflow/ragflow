@@ -632,8 +632,8 @@ The above is the content you need to summarize.`,
       email: 'Email',
       emailTip:
         'This component is used to get search result from https://pubmed.ncbi.nlm.nih.gov/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt. E-mail is a required field.',
-      arxiv: 'Arxiv',
-      arxivTip:
+      arXiv: 'ArXiv',
+      arXivTip:
         'This component is used to get search result from https://arxiv.org/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.',
       sortBy: 'Sort by',
       submittedDate: 'Submitted date',
