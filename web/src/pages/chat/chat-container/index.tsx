@@ -14,7 +14,7 @@ import {
 } from '../hooks';
 import { buildMessageItemReference } from '../utils';
 
-import { useSelectUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
 const ChatContainer = () => {
@@ -43,7 +43,7 @@ const ChatContainer = () => {
   useGetFileIcon();
   const loading = useSelectConversationLoading();
   const { t } = useTranslate('chat');
-  const userInfo = useSelectUserInfo();
+  const { data: userInfo } = useFetchUserInfo();
 
   return (
     <>

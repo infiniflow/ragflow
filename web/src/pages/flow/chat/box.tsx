@@ -8,7 +8,7 @@ import { Button, Drawer, Flex, Input, Spin } from 'antd';
 
 import { useSelectCurrentMessages, useSendMessage } from './hooks';
 
-import { useSelectUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
 const FlowChatBox = () => {
@@ -32,7 +32,7 @@ const FlowChatBox = () => {
     useClickDrawer();
   useGetFileIcon();
   const { t } = useTranslate('chat');
-  const userInfo = useSelectUserInfo();
+  const { data: userInfo } = useFetchUserInfo();
 
   return (
     <>

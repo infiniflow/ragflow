@@ -264,12 +264,14 @@ const UserSettingModel = () => {
         onOk={onApiKeySavingOk}
         llmFactory={llmFactory}
       ></ApiKeyModal>
-      <SystemModelSettingModal
-        visible={systemSettingVisible}
-        onOk={onSystemSettingSavingOk}
-        hideModal={hideSystemSettingModal}
-        loading={saveSystemModelSettingLoading}
-      ></SystemModelSettingModal>
+      {systemSettingVisible && (
+        <SystemModelSettingModal
+          visible={systemSettingVisible}
+          onOk={onSystemSettingSavingOk}
+          hideModal={hideSystemSettingModal}
+          loading={saveSystemModelSettingLoading}
+        ></SystemModelSettingModal>
+      )}
       <OllamaModal
         visible={llmAddingVisible}
         hideModal={hideLlmAddingModal}

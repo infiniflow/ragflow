@@ -24,11 +24,7 @@ import { useSetModalState, useTranslate } from './common-hooks';
 import { useSetDocumentParser } from './document-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useOneNamespaceEffectsLoading } from './store-hooks';
-import {
-  useFetchTenantInfo,
-  useSaveSetting,
-  useSelectTenantInfo,
-} from './user-setting-hooks';
+import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
 
 export const useChangeDocumentParser = (documentId: string) => {
   const setDocumentParser = useSetDocumentParser();
@@ -87,7 +83,7 @@ export const useHandleSearchChange = () => {
 
 export const useChangeLanguage = () => {
   const { i18n } = useTranslation();
-  const saveSetting = useSaveSetting();
+  const { saveSetting } = useSaveSetting();
 
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(
@@ -333,15 +329,8 @@ export const useSelectItem = (defaultId?: string) => {
   return { selectedId, handleItemClick };
 };
 
-export const useFetchModelId = (visible: boolean) => {
-  const fetchTenantInfo = useFetchTenantInfo(false);
-  const tenantInfo = useSelectTenantInfo();
-
-  useEffect(() => {
-    if (visible) {
-      fetchTenantInfo();
-    }
-  }, [visible, fetchTenantInfo]);
+export const useFetchModelId = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
 
   return tenantInfo?.llm_id ?? '';
 };
