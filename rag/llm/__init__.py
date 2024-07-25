@@ -34,7 +34,9 @@ EmbeddingModel = {
     "BAAI": DefaultEmbedding,
     "Mistral": MistralEmbed,
     "Bedrock": BedrockEmbed,
-    "Gemini":GeminiEmbed
+    "Gemini": GeminiEmbed,
+    "NVIDIA": NvidiaEmbed,
+    "LM-Studio": LmStudioEmbed
 }
 
 
@@ -46,9 +48,11 @@ CvModel = {
     "Tongyi-Qianwen": QWenCV,
     "ZHIPU-AI": Zhipu4V,
     "Moonshot": LocalCV,
-    'Gemini':GeminiCV,
-    'OpenRouter':OpenRouterCV,
-    "LocalAI":LocalAICV
+    "Gemini": GeminiCV,
+    "OpenRouter": OpenRouterCV,
+    "LocalAI": LocalAICV,
+    "NVIDIA": NvidiaCV,
+    "LM-Studio": LmStudioCV
 }
 
 
@@ -67,11 +71,13 @@ ChatModel = {
     "MiniMax": MiniMaxChat,
     "Minimax": MiniMaxChat,
     "Mistral": MistralChat,
-    'Gemini' : GeminiChat,
+    "Gemini": GeminiChat,
     "Bedrock": BedrockChat,
     "Groq": GroqChat,
-    'OpenRouter':OpenRouterChat,
-    "StepFun":StepFunChat
+    "OpenRouter": OpenRouterChat,
+    "StepFun": StepFunChat,
+    "NVIDIA": NvidiaChat,
+    "LM-Studio": LmStudioChat
 }
 
 
@@ -79,7 +85,9 @@ RerankModel = {
     "BAAI": DefaultRerank,
     "Jina": JinaRerank,
     "Youdao": YoudaoRerank,
-    "Xinference": XInferenceRerank
+    "Xinference": XInferenceRerank,
+    "NVIDIA": NvidiaRerank,
+    "LM-Studio": LmStudioRerank
 }
 
 

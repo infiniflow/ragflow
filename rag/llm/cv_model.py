@@ -137,7 +137,6 @@ class Base(ABC):
         ]
 
 
-
 class GptV4(Base):
     def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1"):
         if not base_url: base_url="https://api.openai.com/v1"
@@ -379,7 +378,7 @@ class OllamaCV(Base):
     def chat(self, system, history, gen_conf, image=""):
         if system:
             history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
-            
+
         try:
             for his in history:
                 if his["role"] == "user":
@@ -434,33 +433,15 @@ class OllamaCV(Base):
         yield 0
 
 
-class LocalAICV(Base):
+class LocalAICV(GptV4):
     def __init__(self, key, model_name, base_url, lang="Chinese"):
+        if not base_url:
+            raise ValueError("Local cv model url cannot be None")
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
-
-    def describe(self, image, max_tokens=300):
-        if not isinstance(image, bytes) and not isinstance(
-            image, BytesIO
-        ):  # if url string
-            prompt = self.prompt(image)
-            for i in range(len(prompt)):
-                prompt[i]["content"]["image_url"]["url"] = image
-        else:
-            b64 = self.image2base64(image)
-            prompt = self.prompt(b64)
-        for i in range(len(prompt)):
-            for c in prompt[i]["content"]:
-                if "text" in c:
-                    c["type"] = "text"
-
-        res = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=prompt,
-            max_tokens=max_tokens,
-        )
-        return res.choices[0].message.content.strip(), res.usage.total_tokens
 
 
 class XinferenceCV(Base):
@@ -557,33 +538,62 @@ class GeminiCV(Base):
         yield response._chunks[-1].usage_metadata.total_token_count
 
 
-class OpenRouterCV(Base):
+class OpenRouterCV(GptV4):
     def __init__(
         self,
         key,
         model_name,
         lang="Chinese",
-        base_url="https://openrouter.ai/api/v1/chat/completions",
+        base_url="https://openrouter.ai/api/v1",
     ):
+        if not base_url:
+            base_url = "https://openrouter.ai/api/v1"
+        self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
-        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
+
+
+class LocalCV(Base):
+    def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
+        pass
+
+    def describe(self, image, max_tokens=1024):
+        return "", 0
+
+
+class NvidiaCV(Base):
+    def __init__(
+        self,
+        key,
+        model_name,
+        lang="Chinese",
+        base_url="https://ai.api.nvidia.com/v1/vlm",
+    ):
+        if not base_url:
+            base_url = ("https://ai.api.nvidia.com/v1/vlm",)
+        self.lang = lang
+        factory, llm_name = model_name.split("/")
+        if factory != "liuhaotian":
+            self.base_url = os.path.join(base_url, factory, llm_name)
+        else:
+            self.base_url = os.path.join(
+                base_url, "community", llm_name.replace("-v1.6", "16")
+            )
         self.key = key
 
-    def describe(self, image, max_tokens=300):
+    def describe(self, image, max_tokens=1024):
         b64 = self.image2base64(image)
         response = requests.post(
             url=self.base_url,
             headers={
+                "accept": "application/json",
+                "content-type": "application/json",
                 "Authorization": f"Bearer {self.key}",
             },
-            data=json.dumps(
-                {
-                    "model": self.model_name,
-                    "messages": self.prompt(b64),
-                    "max_tokens": max_tokens,
-                }
-            ),
+            json={
+                "messages": self.prompt(b64),
+                "max_tokens": max_tokens,
+            },
         )
         response = response.json()
         return (
@@ -595,27 +605,30 @@ class OpenRouterCV(Base):
         return [
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
-                            if self.lang.lower() == "chinese"
-                            else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
-                        ),
-                    },
-                ],
+                "content": (
+                    "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
+                    if self.lang.lower() == "chinese"
+                    else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
+                )
+                + f' <img src="data:image/jpeg;base64,{b64}"/>',
+            }
+        ]
+
+    def chat_prompt(self, text, b64):
+        return [
+            {
+                "role": "user",
+                "content": text + f' <img src="data:image/jpeg;base64,{b64}"/>',
             }
         ]
 
 
-class LocalCV(Base):
-    def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
-        pass
-
-    def describe(self, image, max_tokens=1024):
-        return "", 0
+class LmStudioCV(GptV4):
+    def __init__(self, key, model_name, base_url, lang="Chinese"):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
+        self.client = OpenAI(api_key="lm-studio", base_url=base_url)
+        self.model_name = model_name
+        self.lang = lang

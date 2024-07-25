@@ -1,4 +1,4 @@
-import { useSelectFileList } from '@/hooks/file-manager-hooks';
+import { useFetchFileList } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { formatDate } from '@/utils/date';
 import { Button, Flex, Space, Table, Tag, Typography } from 'antd';
@@ -6,14 +6,12 @@ import { ColumnsType } from 'antd/es/table';
 import ActionCell from './action-cell';
 import FileToolbar from './file-toolbar';
 import {
-  useGetFilesPagination,
   useGetRowSelection,
   useHandleConnectToKnowledge,
   useHandleCreateFolder,
   useHandleUploadFile,
   useNavigateToOtherFolder,
   useRenameCurrentFile,
-  useSelectFileListLoading,
 } from './hooks';
 
 import FileUploadModal from '@/components/file-upload-modal';
@@ -30,9 +28,8 @@ const { Text } = Typography;
 
 const FileManager = () => {
   const { t } = useTranslate('fileManager');
-  const fileList = useSelectFileList();
+  // const fileList = useSelectFileList();
   const { rowSelection, setSelectedRowKeys } = useGetRowSelection();
-  const loading = useSelectFileListLoading();
   const navigateToOtherFolder = useNavigateToOtherFolder();
   const {
     fileRenameVisible,
@@ -64,8 +61,9 @@ const FileManager = () => {
     initialValue,
     connectToKnowledgeLoading,
   } = useHandleConnectToKnowledge();
-  const { pagination } = useGetFilesPagination();
-
+  // const { pagination } = useGetFilesPagination();
+  const { pagination, data, searchString, handleInputChange, loading } =
+    useFetchFileList();
   const columns: ColumnsType<IFile> = [
     {
       title: t('name'),
@@ -151,13 +149,15 @@ const FileManager = () => {
   return (
     <section className={styles.fileManagerWrapper}>
       <FileToolbar
+        searchString={searchString}
+        handleInputChange={handleInputChange}
         selectedRowKeys={rowSelection.selectedRowKeys as string[]}
         showFolderCreateModal={showFolderCreateModal}
         showFileUploadModal={showFileUploadModal}
         setSelectedRowKeys={setSelectedRowKeys}
       ></FileToolbar>
       <Table
-        dataSource={fileList}
+        dataSource={data?.files}
         columns={columns}
         rowKey={'id'}
         rowSelection={rowSelection}

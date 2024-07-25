@@ -19,17 +19,19 @@ import {
 } from 'antd';
 import { useMemo } from 'react';
 import {
-  useFetchDocumentListOnMount,
   useHandleBreadcrumbClick,
   useHandleDeleteFile,
-  useHandleSearchChange,
   useSelectBreadcrumbItems,
 } from './hooks';
 
-import { useSelectParentFolderList } from '@/hooks/file-manager-hooks';
+import {
+  IListResult,
+  useFetchParentFolderList,
+} from '@/hooks/file-manager-hooks';
 import styles from './index.less';
 
-interface IProps {
+interface IProps
+  extends Pick<IListResult, 'searchString' | 'handleInputChange'> {
   selectedRowKeys: string[];
   showFolderCreateModal: () => void;
   showFileUploadModal: () => void;
@@ -41,13 +43,13 @@ const FileToolbar = ({
   showFolderCreateModal,
   showFileUploadModal,
   setSelectedRowKeys,
+  searchString,
+  handleInputChange,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
-  useFetchDocumentListOnMount();
-  const { handleInputChange, searchString } = useHandleSearchChange();
   const breadcrumbItems = useSelectBreadcrumbItems();
   const { handleBreadcrumbClick } = useHandleBreadcrumbClick();
-  const parentFolderList = useSelectParentFolderList();
+  const parentFolderList = useFetchParentFolderList();
   const isKnowledgeBase =
     parentFolderList.at(-1)?.source_type === 'knowledgebase';
 

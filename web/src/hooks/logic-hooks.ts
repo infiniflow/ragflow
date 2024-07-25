@@ -23,6 +23,7 @@ import { useDispatch } from 'umi';
 import { useSetModalState, useTranslate } from './common-hooks';
 import { useSetDocumentParser } from './document-hooks';
 import { useFetchLlmList } from './llm-hooks';
+import { useSetPaginationParams } from './route-hook';
 import { useOneNamespaceEffectsLoading } from './store-hooks';
 import {
   useFetchTenantInfo,
@@ -71,6 +72,20 @@ export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
   return { currentRecord, setRecord };
 };
 
+export const useHandleSearchChange = () => {
+  const [searchString, setSearchString] = useState('');
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setSearchString(value);
+    },
+    [],
+  );
+
+  return { handleInputChange, searchString };
+};
+
 export const useChangeLanguage = () => {
   const { i18n } = useTranslation();
   const saveSetting = useSaveSetting();
@@ -83,6 +98,47 @@ export const useChangeLanguage = () => {
   };
 
   return changeLanguage;
+};
+
+export const useGetNextPagination = () => {
+  const { t } = useTranslate('common');
+  const {
+    setPaginationParams,
+    page,
+    size: pageSize,
+  } = useSetPaginationParams();
+
+  const onPageChange: PaginationProps['onChange'] = useCallback(
+    (pageNumber: number, pageSize: number) => {
+      setPaginationParams(pageNumber, pageSize);
+    },
+    [setPaginationParams],
+  );
+
+  const setCurrentPagination = useCallback(
+    (pagination: { page: number; pageSize?: number }) => {
+      setPaginationParams(pagination.page, pagination.pageSize);
+    },
+    [setPaginationParams],
+  );
+
+  const pagination: PaginationProps = useMemo(() => {
+    return {
+      showQuickJumper: true,
+      total: 0,
+      showSizeChanger: true,
+      current: page,
+      pageSize: pageSize,
+      pageSizeOptions: [1, 2, 10, 20, 50, 100],
+      onChange: onPageChange,
+      showTotal: (total) => `${t('total')} ${total}`,
+    };
+  }, [t, onPageChange, page, pageSize]);
+
+  return {
+    pagination,
+    setPagination: setCurrentPagination,
+  };
 };
 
 export const useGetPagination = (

@@ -59,9 +59,9 @@ def status():
 
     st = timer()
     try:
-        qinfo = REDIS_CONN.health(SVR_QUEUE_NAME)
-        res["redis"] = {"status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.),
-                        "pending": qinfo.get("pending", 0)}
+        if not REDIS_CONN.health():
+            raise Exception("Lost connection!")
+        res["redis"] = {"status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.)}
     except Exception as e:
         res["redis"] = {"status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}
 

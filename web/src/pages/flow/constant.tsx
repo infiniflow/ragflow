@@ -1,3 +1,4 @@
+import { ReactComponent as ArxivIcon } from '@/assets/svg/arxiv.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
@@ -38,6 +39,7 @@ export enum Operator {
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
+  Arxiv = 'Arxiv',
 }
 
 export const operatorIconMap = {
@@ -54,6 +56,7 @@ export const operatorIconMap = {
   [Operator.Baidu]: BaiduIcon,
   [Operator.Wikipedia]: WikipediaIcon,
   [Operator.PubMed]: PubMedIcon,
+  [Operator.Arxiv]: ArxivIcon,
 };
 
 export const operatorMap = {
@@ -120,6 +123,16 @@ export const operatorMap = {
   [Operator.PubMed]: {
     backgroundColor: '#a2ccf0',
   },
+  [Operator.Arxiv]: {
+    width: 70,
+    height: 70,
+    fontSize: 12,
+    iconWidth: 16,
+    iconFontSize: 16,
+    moreIconColor: 'white',
+    backgroundColor: '#b31b1b',
+    color: 'white',
+  },
 };
 
 export const componentMenuList = [
@@ -158,6 +171,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.PubMed,
+  },
+  {
+    name: Operator.Arxiv,
   },
 ];
 
@@ -236,6 +252,11 @@ export const initialPubMedValues = {
   email: '',
 };
 
+export const initialArxivValues = {
+  top_n: 10,
+  sort_by: 'relevance',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -296,6 +317,7 @@ export const RestrictedUpstreamMap = {
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Arxiv]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -312,6 +334,7 @@ export const NodeMap = {
   [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
+  [Operator.Arxiv]: 'ragNode',
 };
 
 export const LanguageOptions = [
