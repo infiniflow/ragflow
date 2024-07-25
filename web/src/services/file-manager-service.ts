@@ -1,5 +1,5 @@
 import api from '@/utils/api';
-import registerServer from '@/utils/registerServer';
+import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
 import pureRequest from 'axios';
 

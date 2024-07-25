@@ -3,7 +3,7 @@ import SvgIcon from '@/components/svg-icon';
 import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
-import { getExtension } from '@/utils/documentUtils';
+import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Button, Flex, Popover, Space } from 'antd';
 import DOMPurify from 'dompurify';

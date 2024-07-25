@@ -7,7 +7,7 @@ import {
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { getExtension } from '@/utils/documentUtils';
+import { getExtension } from '@/utils/document-util';
 import { Divider, Flex, Switch, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';

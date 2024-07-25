@@ -8,7 +8,7 @@ import {
   IAddLlmRequestBody,
   IDeleteLlmRequestBody,
 } from '@/interfaces/request/llm';
-import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/commonUtil';
+import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'umi';
 

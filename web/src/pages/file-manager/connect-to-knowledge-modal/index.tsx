@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { filterOptionsByInput } from '@/utils/commonUtil';
+import { filterOptionsByInput } from '@/utils/common-util';
 import { Form, Modal, Select } from 'antd';
 import { useEffect } from 'react';
 

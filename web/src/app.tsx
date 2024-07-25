@@ -13,7 +13,7 @@ import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
 import React, { ReactNode, useEffect, useState } from 'react';
-import storage from './utils/authorizationUtil';
+import storage from './utils/authorization-util';
 
 dayjs.extend(customParseFormat);
 dayjs.extend(advancedFormat);

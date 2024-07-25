@@ -6,7 +6,7 @@ import { IAnswer } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import api from '@/utils/api';
-import { getAuthorization } from '@/utils/authorizationUtil';
+import { getAuthorization } from '@/utils/authorization-util';
 import { PaginationProps } from 'antd';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
