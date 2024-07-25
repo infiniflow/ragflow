@@ -39,7 +39,7 @@ export enum Operator {
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
-  Arxiv = 'Arxiv',
+  ArXiv = 'ArXiv',
 }
 
 export const operatorIconMap = {
@@ -56,7 +56,7 @@ export const operatorIconMap = {
   [Operator.Baidu]: BaiduIcon,
   [Operator.Wikipedia]: WikipediaIcon,
   [Operator.PubMed]: PubMedIcon,
-  [Operator.Arxiv]: ArxivIcon,
+  [Operator.ArXiv]: ArxivIcon,
 };
 
 export const operatorMap = {
@@ -123,7 +123,7 @@ export const operatorMap = {
   [Operator.PubMed]: {
     backgroundColor: '#a2ccf0',
   },
-  [Operator.Arxiv]: {
+  [Operator.ArXiv]: {
     width: 70,
     height: 70,
     fontSize: 12,
@@ -173,7 +173,7 @@ export const componentMenuList = [
     name: Operator.PubMed,
   },
   {
-    name: Operator.Arxiv,
+    name: Operator.ArXiv,
   },
 ];
 
@@ -317,7 +317,7 @@ export const RestrictedUpstreamMap = {
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Arxiv]: [Operator.Begin, Operator.Retrieval],
+  [Operator.ArXiv]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -334,7 +334,7 @@ export const NodeMap = {
   [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
-  [Operator.Arxiv]: 'ragNode',
+  [Operator.ArXiv]: 'ragNode',
 };
 
 export const LanguageOptions = [

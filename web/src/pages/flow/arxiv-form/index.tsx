@@ -4,7 +4,7 @@ import { Form, Select } from 'antd';
 import { useMemo } from 'react';
 import { IOperatorForm } from '../interface';
 
-const ArxivForm = ({ onValuesChange, form }: IOperatorForm) => {
+const ArXivForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const options = useMemo(() => {
@@ -31,4 +31,4 @@ const ArxivForm = ({ onValuesChange, form }: IOperatorForm) => {
   );
 };
 
-export default ArxivForm;
+export default ArXivForm;
