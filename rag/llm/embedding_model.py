@@ -113,21 +113,24 @@ class OpenAIEmbed(Base):
 
 class LocalAIEmbed(Base):
     def __init__(self, key, model_name, base_url):
-        self.base_url = base_url + "/embeddings"
-        self.headers = {
-            "Content-Type": "application/json",
-        }
+        if not base_url:
+            raise ValueError("Local embedding model url cannot be None")
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
+        self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
-    def encode(self, texts: list, batch_size=None):
-        data = {"model": self.model_name, "input": texts, "encoding_type": "float"}
-        res = requests.post(self.base_url, headers=self.headers, json=data).json()
-
-        return np.array([d["embedding"] for d in res["data"]]), 1024
+    def encode(self, texts: list, batch_size=32):
+        res = self.client.embeddings.create(input=texts, model=self.model_name)
+        return (
+            np.array([d.embedding for d in res.data]),
+            1024,
+        )  # local embedding for LmStudio donot count tokens
 
     def encode_queries(self, text):
         embds, cnt = self.encode([text])
         return np.array(embds[0]), cnt
+
 
 class AzureEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, **kwargs):
@@ -500,3 +503,13 @@ class NvidiaEmbed(Base):
     def encode_queries(self, text):
         embds, cnt = self.encode([text])
         return np.array(embds[0]), cnt
+
+
+class LmStudioEmbed(LocalAIEmbed):
+    def __init__(self, key, model_name, base_url):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        if base_url.split("/")[-1] != "v1":
+            self.base_url = os.path.join(base_url, "v1")
+        self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
+        self.model_name = model_name

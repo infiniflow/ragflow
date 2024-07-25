@@ -25,7 +25,7 @@ const handleGithubCLick = () => {
 const RightToolBar = () => {
   const { t } = useTranslate('common');
   const changeLanguage = useChangeLanguage();
-  const { language = 'en' } = useSelector(
+  const { language = 'English' } = useSelector(
     (state) => state.settingModel.userInfo,
   );
 

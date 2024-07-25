@@ -23,7 +23,7 @@ import logging
 from PIL import Image, ImageDraw
 import numpy as np
 from timeit import default_timer as timer
-from PyPDF2 import PdfReader as pdf2_read
+from pypdf import PdfReader as pdf2_read
 
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer
@@ -285,24 +285,10 @@ class RAGFlowPdfParser:
               "page_number": pagenum} for b, t in bxs if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
             self.mean_height[-1] / 3
         )
-
-        # solve char content confusion
-        record_error_length, ct = 0, 0.001
-        for c in chars[0:128]:
-            ii = Recognizer.find_overlapped(c, bxs)
-            if ii is None:
-                continue
-            record_error_length += abs((bxs[ii]["bottom"] + bxs[ii]["top"] - c["bottom"] - c["top"]) / 2)
-            ct += 1
-
-        record_error_length = record_error_length / ct
-        for char in chars:
-            char["top"] -= record_error_length
-            char["bottom"] -= record_error_length
         
         # merge chars in the same rect
-        for c in Recognizer.sort_X_firstly(
-                chars, self.mean_width[pagenum - 1] // 4):
+        for c in Recognizer.sort_Y_firstly(
+                chars, self.mean_height[pagenum - 1] // 4):
             ii = Recognizer.find_overlapped(c, bxs)
             if ii is None:
                 self.lefted_chars.append(c)

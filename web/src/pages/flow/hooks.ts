@@ -31,6 +31,7 @@ import {
   NodeMap,
   Operator,
   RestrictedUpstreamMap,
+  initialArxivValues,
   initialBaiduValues,
   initialBeginValues,
   initialCategorizeValues,
@@ -92,6 +93,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Baidu]: initialBaiduValues,
       [Operator.Wikipedia]: initialWikipediaValues,
       [Operator.PubMed]: initialPubMedValues,
+      [Operator.Arxiv]: initialArxivValues,
     };
   }, [llmId]);
 

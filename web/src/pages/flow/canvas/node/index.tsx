@@ -11,7 +11,11 @@ import NodeDropdown from './dropdown';
 import styles from './index.less';
 import NodePopover from './popover';
 
-const ZeroGapOperators = [Operator.RewriteQuestion, Operator.KeywordExtract];
+const ZeroGapOperators = [
+  Operator.RewriteQuestion,
+  Operator.KeywordExtract,
+  Operator.Arxiv,
+];
 
 export function RagNode({
   id,
@@ -69,8 +73,10 @@ export function RagNode({
             </span>
           </Flex>
           <Flex flex={1}>
-            {' '}
-            <NodeDropdown id={id}></NodeDropdown>
+            <NodeDropdown
+              id={id}
+              iconFontColor={style?.moreIconColor}
+            ></NodeDropdown>
           </Flex>
         </Flex>
 

@@ -236,10 +236,7 @@ def completion():
                 API4ConversationService.append_message(conv.id, conv.to_dict())
                 break
 
-            for chunk_i in answer['reference'].get('chunks',[]):
-                chunk_i['doc_name'] = chunk_i['docnm_kwd']
-                chunk_i.pop('docnm_kwd')
-
+            rename_field(answer)
             return get_json_result(data=answer)
 
     except Exception as e:
@@ -256,6 +253,8 @@ def get(conversation_id):
 
         conv = conv.to_dict()
         for referenct_i in conv['reference']:
+            if referenct_i is None or len(referenct_i) == 0:
+                continue
             for chunk_i in referenct_i['chunks']:
                 if 'docnm_kwd' in chunk_i.keys():
                     chunk_i['doc_name'] = chunk_i['docnm_kwd']
