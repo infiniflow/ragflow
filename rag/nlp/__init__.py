@@ -344,7 +344,7 @@ def make_colon_as_title(sections):
         if txt[-1] not in ":：":
             continue
         txt = txt[::-1]
-        arr = re.split(r"([。？！!?;；]| .)", txt)
+        arr = re.split(r"([。？！!?;；]| \.)", txt)
         if len(arr) < 2 or len(arr[1]) < 32:
             continue
         sections.insert(i - 1, (arr[0][::-1], "title"))
