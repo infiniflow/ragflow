@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { api_host } from '@/utils/api';
-import { downloadFile } from '@/utils/fileUtil';
+import { downloadFile } from '@/utils/file-util';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -16,7 +16,7 @@ import NewDocumentLink from '@/components/new-document-link';
 import {
   getExtension,
   isSupportedPreviewDocumentType,
-} from '@/utils/documentUtils';
+} from '@/utils/document-util';
 import styles from './index.less';
 
 interface IProps {

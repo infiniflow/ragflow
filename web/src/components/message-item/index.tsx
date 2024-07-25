@@ -8,7 +8,7 @@ import classNames from 'classnames';
 import { useMemo } from 'react';
 
 import MarkdownContent from '@/pages/chat/markdown-content';
-import { getExtension } from '@/utils/documentUtils';
+import { getExtension } from '@/utils/document-util';
 import { Avatar, Flex, List } from 'antd';
 import NewDocumentLink from '../new-document-link';
 import SvgIcon from '../svg-icon';

@@ -1,4 +1,4 @@
-import authorizationUtil from '@/utils/authorizationUtil';
+import authorizationUtil from '@/utils/authorization-util';
 import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'umi';

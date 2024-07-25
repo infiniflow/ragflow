@@ -1,6 +1,6 @@
 import { Authorization } from '@/constants/authorization';
 import userService from '@/services/user-service';
-import authorizationUtil from '@/utils/authorizationUtil';
+import authorizationUtil from '@/utils/authorization-util';
 import { useMutation } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useTranslation } from 'react-i18next';

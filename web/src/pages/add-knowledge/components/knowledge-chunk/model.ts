@@ -3,7 +3,7 @@ import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
 import { message } from 'antd';
 import { pick } from 'lodash';
-// import { delay } from '@/utils/storeUtil';
+// import { delay } from '@/utils/store-util';
 import i18n from '@/locales/config';
 import { DvaModel } from 'umi';
 

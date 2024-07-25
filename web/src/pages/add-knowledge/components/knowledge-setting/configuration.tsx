@@ -1,4 +1,4 @@
-import { normFile } from '@/utils/fileUtil';
+import { normFile } from '@/utils/file-util';
 import { PlusOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Radio, Select, Space, Upload } from 'antd';
 import {

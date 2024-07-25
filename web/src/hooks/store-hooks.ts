@@ -1,4 +1,4 @@
-import { getOneNamespaceEffectsLoading } from '@/utils/storeUtil';
+import { getOneNamespaceEffectsLoading } from '@/utils/store-util';
 import { useSelector } from 'umi';
 
 // Get the loading status of given effects under a certain namespace

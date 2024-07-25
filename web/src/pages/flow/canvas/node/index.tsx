@@ -14,7 +14,7 @@ import NodePopover from './popover';
 const ZeroGapOperators = [
   Operator.RewriteQuestion,
   Operator.KeywordExtract,
-  Operator.Arxiv,
+  Operator.ArXiv,
 ];
 
 export function RagNode({

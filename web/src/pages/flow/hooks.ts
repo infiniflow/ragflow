@@ -93,7 +93,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Baidu]: initialBaiduValues,
       [Operator.Wikipedia]: initialWikipediaValues,
       [Operator.PubMed]: initialPubMedValues,
-      [Operator.Arxiv]: initialArxivValues,
+      [Operator.ArXiv]: initialArxivValues,
     };
   }, [llmId]);
 

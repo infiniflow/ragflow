@@ -7,7 +7,7 @@ import lowerCase from 'lodash/lowerCase';
 import upperFirst from 'lodash/upperFirst';
 import { useEffect } from 'react';
 
-import { toFixed } from '@/utils/commonUtil';
+import { toFixed } from '@/utils/common-util';
 import styles from './index.less';
 
 const { Text } = Typography;

@@ -199,8 +199,11 @@ def completion():
             conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
 
         def rename_field(ans):
-            for chunk in ans.get('reference', []):
-                for chunk_i in chunk.get('chunks', []):
+            reference = ans['reference']
+            if not isinstance(reference, dict):
+                return
+            for chunk_i in reference.get('chunks', []):
+                if 'docnm_kwd' in chunk_i:
                     chunk_i['doc_name'] = chunk_i['docnm_kwd']
                     chunk_i.pop('docnm_kwd')
 
