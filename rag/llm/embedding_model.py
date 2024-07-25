@@ -128,8 +128,8 @@ class LocalAIEmbed(Base):
         )  # local embedding for LmStudio donot count tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(text, model=self.model_name)
-        return np.array(res.data[0].embedding), 1024
+        embds, cnt = self.encode([text])
+        return np.array(embds[0]), cnt
 
 
 class AzureEmbed(OpenAIEmbed):
