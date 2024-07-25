@@ -85,7 +85,6 @@ class MoonshotChat(Base):
         if not base_url: base_url="https://api.moonshot.cn/v1"
         super().__init__(key, model_name, base_url)
 
-
 class XinferenceChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         key = "xxx"
@@ -898,9 +897,9 @@ class OpenRouterChat(Base):
         self.model_name = model_name
 
 class StepFunChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1/chat/completions"):
+    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1"):
         if not base_url:
-            base_url = "https://api.stepfun.com/v1/chat/completions"
+            base_url = "https://api.stepfun.com/v1"
         super().__init__(key, model_name, base_url)
 
 
@@ -977,3 +976,15 @@ class NvidiaChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
+
+
+class LmStudioChat(Base):
+    def __init__(self, key, model_name, base_url):
+        from os.path import join
+
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        if base_url.split("/")[-1] != "v1":
+            self.base_url = join(base_url, "v1")
+        self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
+        self.model_name = model_name

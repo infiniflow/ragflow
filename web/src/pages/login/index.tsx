@@ -1,5 +1,4 @@
 import { useLogin, useRegister } from '@/hooks/login-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
 import { useEffect, useState } from 'react';
@@ -13,16 +12,10 @@ import styles from './index.less';
 const Login = () => {
   const [title, setTitle] = useState('login');
   const navigate = useNavigate();
-  const login = useLogin();
-  const register = useRegister();
+  const { login, loading: signLoading } = useLogin();
+  const { register, loading: registerLoading } = useRegister();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
-
-  // TODO: When the server address request is not accessible, the value of dva-loading always remains true.
-
-  const signLoading = useOneNamespaceEffectsLoading('loginModel', [
-    'login',
-    'register',
-  ]);
+  const loading = signLoading || registerLoading;
 
   const changeTitle = () => {
     setTitle((title) => (title === 'login' ? 'register' : 'login'));
@@ -148,7 +141,7 @@ const Login = () => {
               block
               size="large"
               onClick={onCheck}
-              loading={signLoading}
+              loading={loading}
             >
               {title === 'login' ? t('login') : t('continue')}
             </Button>

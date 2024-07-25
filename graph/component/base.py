@@ -470,7 +470,10 @@ class ComponentBase(ABC):
             break
 
         if upstream_outs:
-            return pd.concat(upstream_outs, ignore_index=False)
+            df = pd.concat(upstream_outs, ignore_index=True)
+            if "content" in df:
+                df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+            return df
         return pd.DataFrame()
 
     def get_stream_input(self):

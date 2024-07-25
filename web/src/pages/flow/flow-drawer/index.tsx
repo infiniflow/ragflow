@@ -4,6 +4,7 @@ import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
+import ArxivForm from '../arxiv-form';
 import BaiduForm from '../baidu-form';
 import BeginForm from '../begin-form';
 import CategorizeForm from '../categorize-form';
@@ -40,6 +41,7 @@ const FormMap = {
   [Operator.KeywordExtract]: KeywordExtractForm,
   [Operator.Wikipedia]: WikipediaForm,
   [Operator.PubMed]: PubMedForm,
+  [Operator.Arxiv]: ArxivForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

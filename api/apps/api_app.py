@@ -199,8 +199,8 @@ def completion():
             conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
 
         def rename_field(ans):
-            if 'reference' in ans and (len(ans['reference']) > 0):
-                for chunk_i in ans['reference'].get('chunks', []):
+            for chunk in ans.get('reference', []):
+                for chunk_i in chunk.get('chunks', []):
                     chunk_i['doc_name'] = chunk_i['docnm_kwd']
                     chunk_i.pop('docnm_kwd')
 
@@ -233,11 +233,7 @@ def completion():
                 API4ConversationService.append_message(conv.id, conv.to_dict())
                 break
 
-            if 'reference' in answer and (len(answer['reference']) > 0):
-                for chunk_i in answer['reference'].get('chunks', []):
-                    chunk_i['doc_name'] = chunk_i['docnm_kwd']
-                    chunk_i.pop('docnm_kwd')
-
+            rename_field(answer)
             return get_json_result(data=answer)
 
     except Exception as e:

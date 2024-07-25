@@ -23,7 +23,7 @@ import logging
 from PIL import Image, ImageDraw
 import numpy as np
 from timeit import default_timer as timer
-from PyPDF2 import PdfReader as pdf2_read
+from pypdf import PdfReader as pdf2_read
 
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer

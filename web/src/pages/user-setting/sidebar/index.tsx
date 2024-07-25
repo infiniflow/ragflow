@@ -1,5 +1,8 @@
 import { Domain } from '@/constants/common';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useLogout } from '@/hooks/login-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
+import { useFetchSystemVersion } from '@/hooks/user-setting-hooks';
 import type { MenuProps } from 'antd';
 import { Flex, Menu } from 'antd';
 import React, { useEffect, useMemo } from 'react';
@@ -9,9 +12,6 @@ import {
   UserSettingIconMap,
   UserSettingRouteKey,
 } from '../constants';
-
-import { useTranslate } from '@/hooks/common-hooks';
-import { useFetchSystemVersion, useLogout } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
 type MenuItem = Required<MenuProps>['items'][number];
@@ -19,7 +19,7 @@ type MenuItem = Required<MenuProps>['items'][number];
 const SideBar = () => {
   const navigate = useNavigate();
   const pathName = useSecondPathName();
-  const logout = useLogout();
+  const { logout } = useLogout();
   const { t } = useTranslate('setting');
   const { version, fetchSystemVersion } = useFetchSystemVersion();
 

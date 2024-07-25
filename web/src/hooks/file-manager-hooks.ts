@@ -40,6 +40,7 @@ export const useFetchFileList = (): ResponseType<any> & IListResult => {
       },
     ],
     initialData: {},
+    gcTime: 0,
     queryFn: async (params: any) => {
       console.info(params);
       const { data } = await fileManagerService.listFile({
