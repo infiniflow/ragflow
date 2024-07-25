@@ -1,11 +1,7 @@
 import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
 import SvgIcon from '@/components/svg-icon';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
-import {
-  LlmItem,
-  useFetchLlmFactoryListOnMount,
-  useFetchMyLlmListOnMount,
-} from '@/hooks/llm-hooks';
+import { LlmItem, useSelectLlmList } from '@/hooks/llm-hooks';
 import {
   CloseCircleOutlined,
   SettingOutlined,
@@ -36,7 +32,6 @@ import BedrockModal from './bedrock-modal';
 import { IconMap } from './constant';
 import {
   useHandleDeleteLlm,
-  useSelectModelProvidersLoading,
   useSubmitApiKey,
   useSubmitBedrock,
   useSubmitOllama,
@@ -132,9 +127,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
 };
 
 const UserSettingModel = () => {
-  const factoryList = useFetchLlmFactoryListOnMount();
-  const llmList = useFetchMyLlmListOnMount();
-  const loading = useSelectModelProvidersLoading();
+  const { factoryList, myLlmList: llmList, loading } = useSelectLlmList();
   const {
     saveApiKeyLoading,
     initialApiKey,

@@ -4,12 +4,10 @@ import {
   ISystemModelSettingSavingParams,
   useAddLlm,
   useDeleteLlm,
-  useFetchLlmList,
   useSaveApiKey,
   useSaveTenantInfo,
   useSelectLlmOptionsByModelType,
 } from '@/hooks/llm-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   useFetchTenantInfo,
   useSelectTenantInfo,
@@ -24,7 +22,7 @@ export const useSubmitApiKey = () => {
   const [savingParams, setSavingParams] = useState<SavingParamsState>(
     {} as SavingParamsState,
   );
-  const saveApiKey = useSaveApiKey();
+  const { saveApiKey, loading } = useSaveApiKey();
   const {
     visible: apiKeyVisible,
     hideModal: hideApiKeyModal,
@@ -53,10 +51,6 @@ export const useSubmitApiKey = () => {
     [showApiKeyModal, setSavingParams],
   );
 
-  const loading = useOneNamespaceEffectsLoading('settingModel', [
-    'set_api_key',
-  ]);
-
   return {
     saveApiKeyLoading: loading,
     initialApiKey: '',
@@ -70,10 +64,8 @@ export const useSubmitApiKey = () => {
 
 export const useSubmitSystemModelSetting = () => {
   const systemSetting = useSelectTenantInfo();
-  const loading = useOneNamespaceEffectsLoading('settingModel', [
-    'set_tenant_info',
-  ]);
-  const saveSystemModelSetting = useSaveTenantInfo();
+  const { saveTenantInfo: saveSystemModelSetting, loading } =
+    useSaveTenantInfo();
   const {
     visible: systemSettingVisible,
     hideModal: hideSystemSettingModal,
@@ -109,32 +101,20 @@ export const useSubmitSystemModelSetting = () => {
 export const useFetchSystemModelSettingOnMount = (visible: boolean) => {
   const systemSetting = useSelectTenantInfo();
   const allOptions = useSelectLlmOptionsByModelType();
-  const fetchLlmList = useFetchLlmList();
   const fetchTenantInfo = useFetchTenantInfo();
 
   useEffect(() => {
     if (visible) {
-      fetchLlmList();
       fetchTenantInfo();
     }
-  }, [fetchLlmList, fetchTenantInfo, visible]);
+  }, [fetchTenantInfo, visible]);
 
   return { systemSetting, allOptions };
 };
 
-export const useSelectModelProvidersLoading = () => {
-  const loading = useOneNamespaceEffectsLoading('settingModel', [
-    'my_llm',
-    'factories_list',
-  ]);
-
-  return loading;
-};
-
 export const useSubmitOllama = () => {
-  const loading = useOneNamespaceEffectsLoading('settingModel', ['add_llm']);
   const [selectedLlmFactory, setSelectedLlmFactory] = useState<string>('');
-  const addLlm = useAddLlm();
+  const { addLlm, loading } = useAddLlm();
   const {
     visible: llmAddingVisible,
     hideModal: hideLlmAddingModal,
@@ -167,8 +147,7 @@ export const useSubmitOllama = () => {
 };
 
 export const useSubmitVolcEngine = () => {
-  const loading = useOneNamespaceEffectsLoading('settingModel', ['add_llm']);
-  const addLlm = useAddLlm();
+  const { addLlm, loading } = useAddLlm();
   const {
     visible: volcAddingVisible,
     hideModal: hideVolcAddingModal,
@@ -195,8 +174,7 @@ export const useSubmitVolcEngine = () => {
 };
 
 export const useSubmitBedrock = () => {
-  const loading = useOneNamespaceEffectsLoading('settingModel', ['add_llm']);
-  const addLlm = useAddLlm();
+  const { addLlm, loading } = useAddLlm();
   const {
     visible: bedrockAddingVisible,
     hideModal: hideBedrockAddingModal,
@@ -223,7 +201,7 @@ export const useSubmitBedrock = () => {
 };
 
 export const useHandleDeleteLlm = (llmFactory: string) => {
-  const deleteLlm = useDeleteLlm();
+  const { deleteLlm } = useDeleteLlm();
   const showDeleteConfirm = useShowDeleteConfirm();
 
   const handleDeleteLlm = (name: string) => () => {
