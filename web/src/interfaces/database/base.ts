@@ -4,3 +4,8 @@ export interface ResponseType<T = any> {
   retmsg: string;
   status: number;
 }
+
+export interface ResponseGetType<T = any> {
+  data: T;
+  loading?: boolean;
+}

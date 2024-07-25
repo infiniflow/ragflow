@@ -2,7 +2,7 @@ import {
   useFetchKnowledgeBaseConfiguration,
   useUpdateKnowledge,
 } from '@/hooks/knowledge-hooks';
-import { useFetchLlmList, useSelectLlmOptions } from '@/hooks/llm-hooks';
+import { useSelectLlmOptions } from '@/hooks/llm-hooks';
 import { useNavigateToDataset } from '@/hooks/route-hook';
 import {
   useFetchTenantInfo,
@@ -17,7 +17,6 @@ import { Form, UploadFile } from 'antd';
 import { FormInstance } from 'antd/lib';
 import pick from 'lodash/pick';
 import { useCallback, useEffect } from 'react';
-import { LlmModelType } from '../../constant';
 
 export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
   const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
@@ -46,7 +45,6 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
 
   useFetchTenantInfo();
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
-  useFetchLlmList(LlmModelType.Embedding);
 
   useEffect(() => {
     const fileList: UploadFile[] = getUploadFileListFromBase64(

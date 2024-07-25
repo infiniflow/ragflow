@@ -4,7 +4,11 @@ import {
   ModelVariableType,
   settledModelVariableMap,
 } from '@/constants/knowledge';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchModelId } from '@/hooks/logic-hooks';
 import { IDialog } from '@/interfaces/database/chat';
+import { getBase64FromUploadFileList } from '@/utils/file-util';
+import { removeUselessFieldsFromValues } from '@/utils/form';
 import { Divider, Flex, Form, Modal, Segmented, UploadFile } from 'antd';
 import { SegmentedValue } from 'antd/es/segmented';
 import camelCase from 'lodash/camelCase';
@@ -14,13 +18,6 @@ import AssistantSetting from './assistant-setting';
 import ModelSetting from './model-setting';
 import PromptEngine from './prompt-engine';
 
-import { useTranslate } from '@/hooks/common-hooks';
-import {
-  useFetchLlmModelOnVisible,
-  useFetchModelId,
-} from '@/hooks/logic-hooks';
-import { getBase64FromUploadFileList } from '@/utils/file-util';
-import { removeUselessFieldsFromValues } from '@/utils/form';
 import styles from './index.less';
 
 const layout = {
@@ -99,10 +96,6 @@ const ChatConfigurationModal = ({
     onOk(finalValues);
   };
 
-  const handleCancel = () => {
-    hideModal();
-  };
-
   const handleSegmentedChange = (val: SegmentedValue) => {
     setValue(val as ConfigurationSegmented);
   };
@@ -111,8 +104,6 @@ const ChatConfigurationModal = ({
     clearDialog();
     form.resetFields();
   };
-
-  useFetchLlmModelOnVisible(visible);
 
   const title = (
     <Flex gap={16}>
@@ -153,7 +144,7 @@ const ChatConfigurationModal = ({
       width={688}
       open={visible}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={hideModal}
       confirmLoading={loading}
       destroyOnClose
       afterClose={handleModalAfterClose}

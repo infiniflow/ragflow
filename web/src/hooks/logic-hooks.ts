@@ -22,7 +22,6 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
 import { useSetModalState, useTranslate } from './common-hooks';
 import { useSetDocumentParser } from './document-hooks';
-import { useFetchLlmList } from './llm-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useOneNamespaceEffectsLoading } from './store-hooks';
 import {
@@ -345,14 +344,4 @@ export const useFetchModelId = (visible: boolean) => {
   }, [visible, fetchTenantInfo]);
 
   return tenantInfo?.llm_id ?? '';
-};
-
-export const useFetchLlmModelOnVisible = (visible: boolean) => {
-  const fetchLlmList = useFetchLlmList();
-
-  useEffect(() => {
-    if (visible) {
-      fetchLlmList();
-    }
-  }, [fetchLlmList, visible]);
 };

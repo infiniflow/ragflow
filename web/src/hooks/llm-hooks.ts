@@ -1,37 +1,37 @@
 import { LlmModelType } from '@/constants/knowledge';
+import { ResponseGetType } from '@/interfaces/database/base';
 import {
   IFactory,
   IMyLlmValue,
+  IThirdOAIModelCollection as IThirdAiModelCollection,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
 import {
   IAddLlmRequestBody,
   IDeleteLlmRequestBody,
 } from '@/interfaces/request/llm';
+import userService from '@/services/user-service';
 import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
-import { useCallback, useEffect, useMemo } from 'react';
-import { useDispatch, useSelector } from 'umi';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { message } from 'antd';
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useSelector } from 'umi';
 
 export const useFetchLlmList = (
   modelType?: LlmModelType,
-  isOnMountFetching: boolean = true,
-) => {
-  const dispatch = useDispatch();
+): IThirdAiModelCollection => {
+  const { data } = useQuery({
+    queryKey: ['llmList'],
+    initialData: {},
+    queryFn: async () => {
+      const { data } = await userService.llm_list({ model_type: modelType });
 
-  const fetchLlmList = useCallback(() => {
-    dispatch({
-      type: 'settingModel/llm_list',
-      payload: { model_type: modelType },
-    });
-  }, [dispatch, modelType]);
+      return data?.data ?? {};
+    },
+  });
 
-  useEffect(() => {
-    if (isOnMountFetching) {
-      fetchLlmList();
-    }
-  }, [fetchLlmList, isOnMountFetching]);
-
-  return fetchLlmList;
+  return data;
 };
 
 export const useSelectLlmInfo = () => {
@@ -43,7 +43,7 @@ export const useSelectLlmInfo = () => {
 };
 
 export const useSelectLlmOptions = () => {
-  const llmInfo: IThirdOAIModelCollection = useSelectLlmInfo();
+  const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
 
   const embeddingModelOptions = useMemo(() => {
     return Object.entries(llmInfo).map(([key, value]) => {
@@ -62,7 +62,7 @@ export const useSelectLlmOptions = () => {
 };
 
 export const useSelectLlmOptionsByModelType = () => {
-  const llmInfo: IThirdOAIModelCollection = useSelectLlmInfo();
+  const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
 
   const groupOptionsByModelType = (modelType: LlmModelType) => {
     return Object.entries(llmInfo)
@@ -96,73 +96,65 @@ export const useSelectLlmOptionsByModelType = () => {
   };
 };
 
-export const useSelectLlmFactoryList = () => {
-  const factoryList: IFactory[] = useSelector(
-    (state: any) => state.settingModel.factoryList,
-  );
+export const useFetchLlmFactoryList = (): ResponseGetType<IFactory[]> => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['factoryList'],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await userService.factories_list();
 
-  return factoryList;
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
 };
 
-export const useSelectMyLlmList = () => {
-  const myLlmList: Record<string, IMyLlmValue> = useSelector(
-    (state: any) => state.settingModel.myLlmList,
-  );
+export type LlmItem = { name: string; logo: string } & IMyLlmValue;
 
-  return myLlmList;
+export const useFetchMyLlmList = (): ResponseGetType<
+  Record<string, IMyLlmValue>
+> => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['myLlmList'],
+    initialData: {},
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await userService.my_llm();
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
 };
 
-export const useFetchLlmFactoryListOnMount = () => {
-  const dispatch = useDispatch();
-  const factoryList = useSelectLlmFactoryList();
-  const myLlmList = useSelectMyLlmList();
+export const useSelectLlmList = () => {
+  const { data: myLlmList, loading: myLlmListLoading } = useFetchMyLlmList();
+  const { data: factoryList, loading: factoryListLoading } =
+    useFetchLlmFactoryList();
 
-  const list = useMemo(() => {
+  const nextMyLlmList: Array<LlmItem> = useMemo(() => {
+    return Object.entries(myLlmList).map(([key, value]) => ({
+      name: key,
+      logo: factoryList.find((x) => x.name === key)?.logo ?? '',
+      ...value,
+    }));
+  }, [myLlmList, factoryList]);
+
+  const nextFactoryList = useMemo(() => {
     const currentList = factoryList.filter((x) =>
       Object.keys(myLlmList).every((y) => y !== x.name),
     );
     return sortLLmFactoryListBySpecifiedOrder(currentList);
   }, [factoryList, myLlmList]);
 
-  const fetchLlmFactoryList = useCallback(() => {
-    dispatch({
-      type: 'settingModel/factories_list',
-    });
-  }, [dispatch]);
-
-  useEffect(() => {
-    fetchLlmFactoryList();
-  }, [fetchLlmFactoryList]);
-
-  return list;
-};
-
-export type LlmItem = { name: string; logo: string } & IMyLlmValue;
-
-export const useFetchMyLlmListOnMount = () => {
-  const dispatch = useDispatch();
-  const llmList = useSelectMyLlmList();
-  const factoryList = useSelectLlmFactoryList();
-
-  const list: Array<LlmItem> = useMemo(() => {
-    return Object.entries(llmList).map(([key, value]) => ({
-      name: key,
-      logo: factoryList.find((x) => x.name === key)?.logo ?? '',
-      ...value,
-    }));
-  }, [llmList, factoryList]);
-
-  const fetchMyLlmList = useCallback(() => {
-    dispatch({
-      type: 'settingModel/my_llm',
-    });
-  }, [dispatch]);
-
-  useEffect(() => {
-    fetchMyLlmList();
-  }, [fetchMyLlmList]);
-
-  return list;
+  return {
+    myLlmList: nextMyLlmList,
+    factoryList: nextFactoryList,
+    loading: myLlmListLoading || factoryListLoading,
+  };
 };
 
 export interface IApiKeySavingParams {
@@ -174,19 +166,26 @@ export interface IApiKeySavingParams {
 }
 
 export const useSaveApiKey = () => {
-  const dispatch = useDispatch();
-
-  const saveApiKey = useCallback(
-    (savingParams: IApiKeySavingParams) => {
-      return dispatch<any>({
-        type: 'settingModel/set_api_key',
-        payload: savingParams,
-      });
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['saveApiKey'],
+    mutationFn: async (params: IApiKeySavingParams) => {
+      const { data } = await userService.set_api_key(params);
+      if (data.retcode === 0) {
+        message.success(t('message.modified'));
+        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+      }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return saveApiKey;
+  return { data, loading, saveApiKey: mutateAsync };
 };
 
 export interface ISystemModelSettingSavingParams {
@@ -199,49 +198,67 @@ export interface ISystemModelSettingSavingParams {
 }
 
 export const useSaveTenantInfo = () => {
-  const dispatch = useDispatch();
-
-  const saveTenantInfo = useCallback(
-    (savingParams: ISystemModelSettingSavingParams) => {
-      return dispatch<any>({
-        type: 'settingModel/set_tenant_info',
-        payload: savingParams,
-      });
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['saveTenantInfo'],
+    mutationFn: async (params: ISystemModelSettingSavingParams) => {
+      const { data } = await userService.set_tenant_info(params);
+      if (data.retcode === 0) {
+        message.success(t('message.modified'));
+      }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return saveTenantInfo;
+  return { data, loading, saveTenantInfo: mutateAsync };
 };
 
 export const useAddLlm = () => {
-  const dispatch = useDispatch();
-
-  const addLlm = useCallback(
-    (requestBody: IAddLlmRequestBody) => {
-      return dispatch<any>({
-        type: 'settingModel/add_llm',
-        payload: requestBody,
-      });
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['addLlm'],
+    mutationFn: async (params: IAddLlmRequestBody) => {
+      const { data } = await userService.add_llm(params);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+        message.success(t('message.modified'));
+      }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return addLlm;
+  return { data, loading, addLlm: mutateAsync };
 };
 
 export const useDeleteLlm = () => {
-  const dispatch = useDispatch();
-
-  const deleteLlm = useCallback(
-    (requestBody: IDeleteLlmRequestBody) => {
-      return dispatch<any>({
-        type: 'settingModel/delete_llm',
-        payload: requestBody,
-      });
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteLlm'],
+    mutationFn: async (params: IDeleteLlmRequestBody) => {
+      const { data } = await userService.delete_llm(params);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+        message.success(t('message.deleted'));
+      }
+      return data.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return deleteLlm;
+  return { data, loading, deleteLlm: mutateAsync };
 };
