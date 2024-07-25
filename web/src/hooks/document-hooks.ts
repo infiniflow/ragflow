@@ -1,7 +1,7 @@
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { api_host } from '@/utils/api';
-import { buildChunkHighlights } from '@/utils/documentUtils';
+import { buildChunkHighlights } from '@/utils/document-util';
 import { UploadFile } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';

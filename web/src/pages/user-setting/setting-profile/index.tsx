@@ -7,7 +7,7 @@ import {
   getBase64FromUploadFileList,
   getUploadFileListFromBase64,
   normFile,
-} from '@/utils/fileUtil';
+} from '@/utils/file-util';
 import { PlusOutlined } from '@ant-design/icons';
 import {
   Button,
