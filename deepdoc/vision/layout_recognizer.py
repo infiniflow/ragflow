@@ -75,7 +75,7 @@ class LayoutRecognizer(Recognizer):
                     "x0": b["bbox"][0] / scale_factor, "x1": b["bbox"][2] / scale_factor,
                     "top": b["bbox"][1] / scale_factor, "bottom": b["bbox"][-1] / scale_factor,
                     "page_number": pn,
-                    } for b in lts]
+                    } for b in lts if float(b["score"]) >= 0.8 or b["type"] not in self.garbage_layouts]
             lts = self.sort_Y_firstly(lts, np.mean(
                 [l["bottom"] - l["top"] for l in lts]) / 2)
             lts = self.layouts_cleanup(bxs, lts)
