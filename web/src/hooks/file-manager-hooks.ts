@@ -7,7 +7,10 @@ import { PaginationProps, UploadFile, message } from 'antd';
 import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'umi';
-import { useGetNextPagination, useHandleSearchChange } from './logic-hooks';
+import {
+  useGetPaginationWithRouter,
+  useHandleSearchChange,
+} from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
 
 export const useGetFolderId = () => {
@@ -27,7 +30,7 @@ export interface IListResult {
 
 export const useFetchFileList = (): ResponseType<any> & IListResult => {
   const { searchString, handleInputChange } = useHandleSearchChange();
-  const { pagination, setPagination } = useGetNextPagination();
+  const { pagination, setPagination } = useGetPaginationWithRouter();
   const id = useGetFolderId();
 
   const { data, isFetching: loading } = useQuery({
