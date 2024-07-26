@@ -1,4 +1,3 @@
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { Form } from 'antd';
 import { useEffect, useState } from 'react';
 
@@ -18,9 +17,3 @@ export const useValidateSubmittable = () => {
 
   return { submittable, form };
 };
-
-export const useSelectSubmitUserInfoLoading = () =>
-  useOneNamespaceEffectsLoading('settingModel', ['setting']);
-
-export const useSelectUserInfoLoading = () =>
-  useOneNamespaceEffectsLoading('settingModel', ['getUserInfo']);

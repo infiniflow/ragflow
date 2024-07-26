@@ -353,15 +353,17 @@ const Chat = () => {
       </Flex>
       <Divider type={'vertical'} className={styles.divider}></Divider>
       <ChatContainer></ChatContainer>
-      <ChatConfigurationModal
-        visible={dialogEditVisible}
-        initialDialog={initialDialog}
-        showModal={showDialogEditModal}
-        hideModal={hideDialogEditModal}
-        loading={dialogSettingLoading}
-        onOk={onDialogEditOk}
-        clearDialog={clearDialog}
-      ></ChatConfigurationModal>
+      {dialogEditVisible && (
+        <ChatConfigurationModal
+          visible={dialogEditVisible}
+          initialDialog={initialDialog}
+          showModal={showDialogEditModal}
+          hideModal={hideDialogEditModal}
+          loading={dialogSettingLoading}
+          onOk={onDialogEditOk}
+          clearDialog={clearDialog}
+        ></ChatConfigurationModal>
+      )}
       <RenameModal
         visible={conversationRenameVisible}
         hideModal={hideConversationRenameModal}

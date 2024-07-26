@@ -1,5 +1,5 @@
 import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
-import { useSelectUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Empty, Flex, Input, Space, Spin } from 'antd';
 import KnowledgeCard from './knowledge-card';
@@ -13,7 +13,7 @@ const KnowledgeList = () => {
   const { searchString, handleInputChange } = useSearchKnowledge();
   const { loading, list: data } = useNextFetchKnowledgeList();
   const list = data.filter((x) => x.name.includes(searchString));
-  const userInfo = useSelectUserInfo();
+  const { data: userInfo } = useFetchUserInfo();
   const { t } = useTranslation('translation', { keyPrefix: 'knowledgeList' });
   const {
     visible,

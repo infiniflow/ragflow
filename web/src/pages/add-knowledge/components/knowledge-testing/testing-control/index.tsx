@@ -1,12 +1,10 @@
+import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { Button, Card, Divider, Flex, Form, Input } from 'antd';
 import { FormInstance } from 'antd/lib';
 
-import Rerank from '@/components/rerank';
-import { useTranslate } from '@/hooks/common-hooks';
-import { useFetchLlmList } from '@/hooks/llm-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
-import { useEffect } from 'react';
 import styles from './index.less';
 
 type FieldType = {
@@ -26,11 +24,6 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
     'testDocumentChunk',
   ]);
   const { t } = useTranslate('knowledgeDetails');
-  const fetchLlmList = useFetchLlmList();
-
-  useEffect(() => {
-    fetchLlmList();
-  }, [fetchLlmList]);
 
   const buttonDisabled =
     !question || (typeof question === 'string' && question.trim() === '');
