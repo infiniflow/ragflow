@@ -1,7 +1,8 @@
 include:
   - path: ./docker-compose-base.yml
     env_file: ./.env
-
+  - path: ./docker-compose-admin-tool.yml
+    env_file: ./.env
 services:
   ragflow:
     depends_on:

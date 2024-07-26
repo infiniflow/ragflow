@@ -1,4 +1,3 @@
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { useSaveSetting } from '@/hooks/user-setting-hooks';
 import { rsaPsw } from '@/utils';
 import { Button, Divider, Form, Input, Space } from 'antd';
@@ -19,9 +18,8 @@ const tailLayout = {
 };
 
 const UserSettingPassword = () => {
-  const loading = useOneNamespaceEffectsLoading('settingModel', ['setting']);
   const { form, submittable } = useValidateSubmittable();
-  const saveSetting = useSaveSetting();
+  const { saveSetting, loading } = useSaveSetting();
   const { t } = useTranslate('setting');
 
   const onFinish = (values: any) => {

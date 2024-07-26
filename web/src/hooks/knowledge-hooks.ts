@@ -236,4 +236,22 @@ export const useTestChunkRetrieval = () => {
 
   return testChunk;
 };
+
+export const useTestNextChunkRetrieval = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['testChunk'],
+    mutationFn: async (canvasIds: string[]) => {
+      const { data } = await kbService.retrieval_test({ canvasIds });
+      if (data.retcode === 0) {
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, testChunk: mutateAsync };
+};
 //#endregion
