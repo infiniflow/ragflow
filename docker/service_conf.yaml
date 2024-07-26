@@ -17,10 +17,6 @@ es:
   hosts: 'http://es01:9200'
   username: 'elastic'
   password: 'infini_rag_flow'
-kibana:
-  hosts: 'http://${host}:6601'
-  username: 'rag_flow'
-  password: 'infini_rag_flow'
 redis:
   db: 1
   password: 'infini_rag_flow'
