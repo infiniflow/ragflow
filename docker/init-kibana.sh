@@ -13,7 +13,7 @@ echo "使用者: elastic:${ELASTIC_PASSWORD}"
 
 PAYLOAD="{
   \"password\" : \"${KIBANA_PASSWORD}\",
-  \"roles\" : [ \"kibana_user\",\"kibana_system\" ],
+  \"roles\" : [ \"kibana_admin\",\"kibana_system\" ],
   \"full_name\" : \"${KIBANA_USER}\",
   \"email\" : \"${KIBANA_USER}@example.com\"
 }"
