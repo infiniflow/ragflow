@@ -550,7 +550,7 @@ def concat_img(img1, img2):
 
 def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
     if not sections:
-        return []
+        return [], []
 
     cks = [""]
     images = [None]
