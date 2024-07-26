@@ -107,6 +107,6 @@ export interface ITestingDocument {
 
 export interface ITestingResult {
   chunks: ITestingChunk[];
-  doc_aggs: Record<string, number>;
+  documents: ITestingDocument[];
   total: number;
 }

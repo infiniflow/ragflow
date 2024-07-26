@@ -95,7 +95,7 @@ export const useChangeLanguage = () => {
   return changeLanguage;
 };
 
-export const useGetNextPagination = () => {
+export const useGetPaginationWithRouter = () => {
   const { t } = useTranslate('common');
   const {
     setPaginationParams,
@@ -136,29 +136,32 @@ export const useGetNextPagination = () => {
   };
 };
 
-export const useGetPagination = (
-  total: number,
-  page: number,
-  pageSize: number,
-  onPageChange: PaginationProps['onChange'],
-) => {
+export const useGetPagination = () => {
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
   const { t } = useTranslate('common');
 
-  const pagination: PaginationProps = useMemo(() => {
+  const onPageChange: PaginationProps['onChange'] = useCallback(
+    (pageNumber: number, pageSize: number) => {
+      setPagination({ page: pageNumber, pageSize });
+    },
+    [],
+  );
+
+  const currentPagination: PaginationProps = useMemo(() => {
     return {
       showQuickJumper: true,
-      total,
+      total: 0,
       showSizeChanger: true,
-      current: page,
-      pageSize: pageSize,
+      current: pagination.page,
+      pageSize: pagination.pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
       showTotal: (total) => `${t('total')} ${total}`,
     };
-  }, [t, onPageChange, page, pageSize, total]);
+  }, [t, onPageChange, pagination]);
 
   return {
-    pagination,
+    pagination: currentPagination,
   };
 };
 

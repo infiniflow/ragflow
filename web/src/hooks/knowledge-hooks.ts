@@ -1,11 +1,19 @@
 import { useShowDeleteConfirm } from '@/hooks/common-hooks';
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { ResponsePostType } from '@/interfaces/database/base';
+import { IKnowledge, ITestingResult } from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
 import kbService from '@/services/knowledge-service';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useIsMutating,
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { message } from 'antd';
 import { useCallback, useEffect } from 'react';
 import { useDispatch, useSearchParams, useSelector } from 'umi';
+import { useSetPaginationParams } from './route-hook';
 
 export const useKnowledgeBaseId = (): string => {
   const [searchParams] = useSearchParams();
@@ -217,41 +225,65 @@ export const useUpdateKnowledge = () => {
 
 //#region Retrieval testing
 
-export const useTestChunkRetrieval = () => {
-  const dispatch = useDispatch();
+export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
+  testChunk: (...params: any[]) => void;
+} => {
   const knowledgeBaseId = useKnowledgeBaseId();
+  const { page, size: pageSize } = useSetPaginationParams();
 
-  const testChunk = useCallback(
-    (values: any) => {
-      dispatch({
-        type: 'testingModel/testDocumentChunk',
-        payload: {
-          ...values,
-          kb_id: knowledgeBaseId,
-        },
-      });
-    },
-    [dispatch, knowledgeBaseId],
-  );
-
-  return testChunk;
-};
-
-export const useTestNextChunkRetrieval = () => {
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['testChunk'],
-    mutationFn: async (canvasIds: string[]) => {
-      const { data } = await kbService.retrieval_test({ canvasIds });
+    mutationKey: ['testChunk'], // This method is invalid
+    mutationFn: async (values: any) => {
+      const { data } = await kbService.retrieval_test({
+        ...values,
+        kb_id: knowledgeBaseId,
+        page,
+        size: pageSize,
+      });
       if (data.retcode === 0) {
+        const res = data.data;
+        return {
+          chunks: res.chunks,
+          documents: res.doc_aggs,
+          total: res.total,
+        };
       }
-      return data?.data ?? [];
+      return (
+        data?.data ?? {
+          chunks: [],
+          documents: [],
+          total: 0,
+        }
+      );
     },
   });
 
-  return { data, loading, testChunk: mutateAsync };
+  return {
+    data: data ?? { chunks: [], documents: [], total: 0 },
+    loading,
+    testChunk: mutateAsync,
+  };
+};
+
+export const useChunkIsTesting = () => {
+  return useIsMutating({ mutationKey: ['testChunk'] }) > 0;
+};
+
+export const useSelectTestingResult = (): ITestingResult => {
+  const data = useMutationState({
+    filters: { mutationKey: ['testChunk'] },
+    select: (mutation) => {
+      return mutation.state.data;
+    },
+  });
+  return (data.at(-1) ?? {
+    chunks: [],
+    documents: [],
+    total: 0,
+  }) as ITestingResult;
 };
 //#endregion
