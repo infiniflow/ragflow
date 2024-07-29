@@ -540,7 +540,8 @@ class LLM(DataBaseModel):
         help_text="LLM, Text Embedding, Image2Text, ASR",
         index=True)
     fid = CharField(max_length=128, null=False, help_text="LLM factory id", index=True)
-    max_tokens = IntegerField(default=0, index=True)
+    max_tokens = IntegerField(default=0)
+
     tags = CharField(
         max_length=255,
         null=False,
