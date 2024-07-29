@@ -773,7 +773,8 @@ class Task(DataBaseModel):
     to_page = IntegerField(default=-1)
 
     begin_at = DateTimeField(null=True, index=True)
-    process_duation = FloatField(default=0, index=True)
+    process_duation = FloatField(default=0)
+
     progress = FloatField(default=0, index=True)
     progress_msg = TextField(
         null=True,
