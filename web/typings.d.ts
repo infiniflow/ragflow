@@ -1,6 +1,5 @@
 import { ChunkModelState } from '@/pages/add-knowledge/components/knowledge-chunk/model';
 import { KFModelState } from '@/pages/add-knowledge/components/knowledge-file/model';
-import { TestingModelState } from '@/pages/add-knowledge/components/knowledge-testing/model';
 import { ChatModelState } from '@/pages/chat/model';
 
 declare module 'lodash';
@@ -14,7 +13,6 @@ export interface RootState {
   chatModel: ChatModelState;
   kFModel: KFModelState;
   chunkModel: ChunkModelState;
-  testingModel: TestingModelState;
 }
 
 declare global {
