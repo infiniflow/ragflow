@@ -372,7 +372,7 @@ def fill_db_model_object(model_object, human_model_dict):
 
 
 class User(DataBaseModel, UserMixin):
-    id = CharField(max_length=32, primary_key=True, index=True)
+    id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)
     nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)
     password = CharField(max_length=255, null=True, help_text="password", index=True)
@@ -381,7 +381,7 @@ class User(DataBaseModel, UserMixin):
         null=False,
         help_text="email",
         index=True)
-    avatar = TextField(null=True, help_text="avatar base64 string", index=True)
+    avatar = TextField(null=True, help_text="avatar base64 string")
     language = CharField(
         max_length=32,
         null=True,
@@ -425,7 +425,7 @@ class User(DataBaseModel, UserMixin):
 
 
 class Tenant(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
+    id = CharField(max_length=32, primary_key=True)
     name = CharField(max_length=100, null=True, help_text="Tenant name", index=True)
     public_key = CharField(max_length=255, null=True, index=True)
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID", index=True)
@@ -467,7 +467,7 @@ class Tenant(DataBaseModel):
 
 
 class UserTenant(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
+    id = CharField(max_length=32, primary_key=True)
     user_id = CharField(max_length=32, null=False, index=True)
     tenant_id = CharField(max_length=32, null=False, index=True)
     role = CharField(max_length=32, null=False, help_text="UserTenantRole", index=True)
@@ -484,7 +484,7 @@ class UserTenant(DataBaseModel):
 
 
 class InvitationCode(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
+    id = CharField(max_length=32, primary_key=True)
     code = CharField(max_length=32, null=False, index=True)
     visit_time = DateTimeField(null=True, index=True)
     user_id = CharField(max_length=32, null=True, index=True)
@@ -505,9 +505,8 @@ class LLMFactories(DataBaseModel):
         max_length=128,
         null=False,
         help_text="LLM factory name",
-        primary_key=True,
-        index=True)
-    logo = TextField(null=True, help_text="llm logo base64", index=True)
+        primary_key=True)
+    logo = TextField(null=True, help_text="llm logo base64")
     tags = CharField(
         max_length=255,
         null=False,
@@ -592,8 +591,8 @@ class TenantLLM(DataBaseModel):
 
 
 class Knowledgebase(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
-    avatar = TextField(null=True, help_text="avatar base64 string", index=True)
+    id = CharField(max_length=32, primary_key=True)
+    avatar = TextField(null=True, help_text="avatar base64 string")
     tenant_id = CharField(max_length=32, null=False, index=True)
     name = CharField(
         max_length=128,
@@ -606,7 +605,7 @@ class Knowledgebase(DataBaseModel):
         default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English",
         help_text="English|Chinese",
         index=True)
-    description = TextField(null=True, help_text="KB description", index=True)
+    description = TextField(null=True, help_text="KB description")
     embd_id = CharField(
         max_length=128,
         null=False,
@@ -631,7 +630,7 @@ class Knowledgebase(DataBaseModel):
         help_text="default parser ID",
         default=ParserType.NAIVE.value,
         index=True)
-    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]}, index=True)
+    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     status = CharField(
         max_length=1,
         null=True,
@@ -647,15 +646,15 @@ class Knowledgebase(DataBaseModel):
 
 
 class Document(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
-    thumbnail = TextField(null=True, help_text="thumbnail base64 string", index=True)
+    id = CharField(max_length=32, primary_key=True)
+    thumbnail = TextField(null=True, help_text="thumbnail base64 string")
     kb_id = CharField(max_length=256, null=False, index=True)
     parser_id = CharField(
         max_length=32,
         null=False,
         help_text="default parser ID",
         index=True)
-    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]}, index=True)
+    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     source_type = CharField(
         max_length=128,
         null=False,
@@ -686,8 +685,7 @@ class Document(DataBaseModel):
     progress_msg = TextField(
         null=True,
         help_text="process message",
-        default="",
-        index=True)
+        default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duation = FloatField(default=0, index=True)
     run = CharField(
@@ -710,9 +708,7 @@ class Document(DataBaseModel):
 class File(DataBaseModel):
     id = CharField(
         max_length=32,
-        primary_key=True,
-        index=True
-    )
+        primary_key=True)
     parent_id = CharField(
         max_length=32,
         null=False,
@@ -753,9 +749,7 @@ class File(DataBaseModel):
 class File2Document(DataBaseModel):
     id = CharField(
         max_length=32,
-        primary_key=True,
-        index=True
-    )
+        primary_key=True)
     file_id = CharField(
         max_length=32,
         null=True,
@@ -772,7 +766,7 @@ class File2Document(DataBaseModel):
 
 
 class Task(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
+    id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
     from_page = IntegerField(default=0, index=True)
     to_page = IntegerField(default=-1, index=True)
@@ -782,20 +776,19 @@ class Task(DataBaseModel):
     progress_msg = TextField(
         null=True,
         help_text="process message",
-        default="",
-        index=True)
+        default="")
 
 
 class Dialog(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
+    id = CharField(max_length=32, primary_key=True)
     tenant_id = CharField(max_length=32, null=False, index=True)
     name = CharField(
         max_length=255,
         null=True,
         help_text="dialog application name",
         index=True)
-    description = TextField(null=True, help_text="Dialog description", index=True)
-    icon = TextField(null=True, help_text="icon base64 string", index=True)
+    description = TextField(null=True, help_text="Dialog description")
+    icon = TextField(null=True, help_text="icon base64 string")
     language = CharField(
         max_length=32,
         null=True,
@@ -804,7 +797,7 @@ class Dialog(DataBaseModel):
         index=True)
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID", index=True)
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7,
-                                                 "presence_penalty": 0.4, "max_tokens": 512}, index=True)
+                                                 "presence_penalty": 0.4, "max_tokens": 512})
     prompt_type = CharField(
         max_length=16,
         null=False,
@@ -812,8 +805,7 @@ class Dialog(DataBaseModel):
         help_text="simple|advanced",
         index=True)
     prompt_config = JSONField(null=False, default={"system": "", "prologue": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
-                                                   "parameters": [], "empty_response": "Sorry! 知识库中未找到相关内容！"},
-                              index=True)
+                                                   "parameters": [], "empty_response": "Sorry! 知识库中未找到相关内容！"})
 
     similarity_threshold = FloatField(default=0.2, index=True)
     vector_similarity_weight = FloatField(default=0.3, index=True)
@@ -831,7 +823,7 @@ class Dialog(DataBaseModel):
         help_text="default rerank model ID",
         index=True)
 
-    kb_ids = JSONField(null=False, default=[], index=True)
+    kb_ids = JSONField(null=False, default=[])
     status = CharField(
         max_length=1,
         null=True,
@@ -844,11 +836,11 @@ class Dialog(DataBaseModel):
 
 
 class Conversation(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
+    id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
     name = CharField(max_length=255, null=True, help_text="converastion name", index=True)
-    message = JSONField(null=True, index=True)
-    reference = JSONField(null=True, default=[], index=True)
+    message = JSONField(null=True)
+    reference = JSONField(null=True, default=[])
 
     class Meta:
         db_table = "conversation"
@@ -865,11 +857,11 @@ class APIToken(DataBaseModel):
 
 
 class API4Conversation(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
+    id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
-    message = JSONField(null=True, index=True)
-    reference = JSONField(null=True, default=[], index=True)
+    message = JSONField(null=True)
+    reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0, index=True)
     duration = FloatField(default=0, index=True)
     round = IntegerField(default=0, index=True)
@@ -880,25 +872,25 @@ class API4Conversation(DataBaseModel):
 
 
 class UserCanvas(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
-    avatar = TextField(null=True, help_text="avatar base64 string", index=True)
+    id = CharField(max_length=32, primary_key=True)
+    avatar = TextField(null=True, help_text="avatar base64 string")
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
     title = CharField(max_length=255, null=True, help_text="Canvas title", index=True)
-    description = TextField(null=True, help_text="Canvas description", index=True)
+    description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
-    dsl = JSONField(null=True, default={}, index=True)
+    dsl = JSONField(null=True, default={})
 
     class Meta:
         db_table = "user_canvas"
 
 
 class CanvasTemplate(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True, index=True)
-    avatar = TextField(null=True, help_text="avatar base64 string", index=True)
+    id = CharField(max_length=32, primary_key=True)
+    avatar = TextField(null=True, help_text="avatar base64 string")
     title = CharField(max_length=255, null=True, help_text="Canvas title", index=True)
-    description = TextField(null=True, help_text="Canvas description", index=True)
+    description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
-    dsl = JSONField(null=True, default={}, index=True)
+    dsl = JSONField(null=True, default={})
 
     class Meta:
         db_table = "canvas_template"
