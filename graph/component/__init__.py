@@ -14,6 +14,7 @@ from .duckduckgo import DuckDuckGo, DuckDuckGoParam
 from .wikipedia import Wikipedia, WikipediaParam
 from .pubmed import PubMed, PubMedParam
 from .arxiv import ArXiv, ArXivParam
+from .google import Google, GoogleParam
 
 
 def component_class(class_name):
