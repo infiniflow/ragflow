@@ -7,7 +7,7 @@ import User from '../user';
 
 import { LanguageList } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
-import { useSelector } from 'umi';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styled from './index.less';
 
 const Circle = ({ children, ...restProps }: React.PropsWithChildren) => {
@@ -25,9 +25,9 @@ const handleGithubCLick = () => {
 const RightToolBar = () => {
   const { t } = useTranslate('common');
   const changeLanguage = useChangeLanguage();
-  const { language = 'English' } = useSelector(
-    (state) => state.settingModel.userInfo,
-  );
+  const {
+    data: { language = 'English' },
+  } = useFetchUserInfo();
 
   const handleItemClick: MenuProps['onClick'] = ({ key }) => {
     changeLanguage(key);

@@ -21,7 +21,7 @@ const SystemModelSettingModal = ({
 }: IProps) => {
   const [form] = Form.useForm();
   const { systemSetting: initialValues, allOptions } =
-    useFetchSystemModelSettingOnMount(visible);
+    useFetchSystemModelSettingOnMount();
   const { t } = useTranslate('setting');
 
   const handleOk = async () => {

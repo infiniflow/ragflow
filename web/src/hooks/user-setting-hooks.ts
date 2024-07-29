@@ -1,62 +1,68 @@
+import { LanguageTranslationMap } from '@/constants/common';
+import { ResponseGetType } from '@/interfaces/database/base';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { ISystemStatus, IUserInfo } from '@/interfaces/database/userSetting';
 import userService from '@/services/user-service';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useDispatch, useSelector } from 'umi';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { message } from 'antd';
+import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-export const useFetchUserInfo = () => {
-  const dispatch = useDispatch();
-  const fetchUserInfo = useCallback(() => {
-    dispatch({ type: 'settingModel/getUserInfo' });
-  }, [dispatch]);
+export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
+  const { i18n } = useTranslation();
 
-  useEffect(() => {
-    fetchUserInfo();
-  }, [fetchUserInfo]);
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['userInfo'],
+    initialData: {},
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await userService.user_info();
+      if (data.retcode === 0) {
+        i18n.changeLanguage(
+          LanguageTranslationMap[
+            data.language as keyof typeof LanguageTranslationMap
+          ],
+        );
+      }
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
 };
 
-export const useSelectUserInfo = () => {
-  const userInfo: IUserInfo = useSelector(
-    (state: any) => state.settingModel.userInfo,
-  );
+export const useFetchTenantInfo = (): ResponseGetType<ITenantInfo> => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['tenantInfo'],
+    initialData: {},
+    gcTime: 0,
+    queryFn: async () => {
+      const { data: res } = await userService.get_tenant_info();
+      if (res.retcode === 0) {
+        // llm_id is chat_id
+        // asr_id is speech2txt
+        const { data } = res;
+        data.chat_id = data.llm_id;
+        data.speech2text_id = data.asr_id;
 
-  return userInfo;
-};
+        return data;
+      }
 
-export const useSelectTenantInfo = () => {
-  const tenantInfo: ITenantInfo = useSelector(
-    (state: any) => state.settingModel.tenantIfo,
-  );
+      return res;
+    },
+  });
 
-  return tenantInfo;
-};
-
-export const useFetchTenantInfo = (isOnMountFetching: boolean = true) => {
-  const dispatch = useDispatch();
-
-  const fetchTenantInfo = useCallback(() => {
-    dispatch({
-      type: 'settingModel/getTenantInfo',
-    });
-  }, [dispatch]);
-
-  useEffect(() => {
-    if (isOnMountFetching) {
-      fetchTenantInfo();
-    }
-  }, [fetchTenantInfo, isOnMountFetching]);
-
-  return fetchTenantInfo;
+  return { data, loading };
 };
 
 export const useSelectParserList = (): Array<{
   value: string;
   label: string;
 }> => {
-  const tenantInfo: ITenantInfo = useSelectTenantInfo();
+  const { data: tenantInfo } = useFetchTenantInfo();
 
   const parserList = useMemo(() => {
-    const parserArray: Array<string> = tenantInfo?.parser_ids.split(',') ?? [];
+    const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
     return parserArray.map((x) => {
       const arr = x.split(':');
       return { value: arr[0], label: arr[1] };
@@ -67,16 +73,27 @@ export const useSelectParserList = (): Array<{
 };
 
 export const useSaveSetting = () => {
-  const dispatch = useDispatch();
-
-  const saveSetting = useCallback(
-    (userInfo: { new_password: string } | Partial<IUserInfo>): number => {
-      return dispatch<any>({ type: 'settingModel/setting', payload: userInfo });
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['saveSetting'],
+    mutationFn: async (
+      userInfo: { new_password: string } | Partial<IUserInfo>,
+    ) => {
+      const { data } = await userService.setting(userInfo);
+      if (data.retcode === 0) {
+        message.success(t('message.modified'));
+        queryClient.invalidateQueries({ queryKey: ['userInfo'] });
+      }
+      return data?.retcode;
     },
-    [dispatch],
-  );
+  });
 
-  return saveSetting;
+  return { data, loading, saveSetting: mutateAsync };
 };
 
 export const useFetchSystemVersion = () => {

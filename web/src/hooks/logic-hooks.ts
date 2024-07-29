@@ -22,14 +22,9 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
 import { useSetModalState, useTranslate } from './common-hooks';
 import { useSetDocumentParser } from './document-hooks';
-import { useFetchLlmList } from './llm-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useOneNamespaceEffectsLoading } from './store-hooks';
-import {
-  useFetchTenantInfo,
-  useSaveSetting,
-  useSelectTenantInfo,
-} from './user-setting-hooks';
+import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
 
 export const useChangeDocumentParser = (documentId: string) => {
   const setDocumentParser = useSetDocumentParser();
@@ -88,7 +83,7 @@ export const useHandleSearchChange = () => {
 
 export const useChangeLanguage = () => {
   const { i18n } = useTranslation();
-  const saveSetting = useSaveSetting();
+  const { saveSetting } = useSaveSetting();
 
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(
@@ -100,7 +95,7 @@ export const useChangeLanguage = () => {
   return changeLanguage;
 };
 
-export const useGetNextPagination = () => {
+export const useGetPaginationWithRouter = () => {
   const { t } = useTranslate('common');
   const {
     setPaginationParams,
@@ -141,29 +136,32 @@ export const useGetNextPagination = () => {
   };
 };
 
-export const useGetPagination = (
-  total: number,
-  page: number,
-  pageSize: number,
-  onPageChange: PaginationProps['onChange'],
-) => {
+export const useGetPagination = () => {
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
   const { t } = useTranslate('common');
 
-  const pagination: PaginationProps = useMemo(() => {
+  const onPageChange: PaginationProps['onChange'] = useCallback(
+    (pageNumber: number, pageSize: number) => {
+      setPagination({ page: pageNumber, pageSize });
+    },
+    [],
+  );
+
+  const currentPagination: PaginationProps = useMemo(() => {
     return {
       showQuickJumper: true,
-      total,
+      total: 0,
       showSizeChanger: true,
-      current: page,
-      pageSize: pageSize,
+      current: pagination.page,
+      pageSize: pagination.pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
       showTotal: (total) => `${t('total')} ${total}`,
     };
-  }, [t, onPageChange, page, pageSize, total]);
+  }, [t, onPageChange, pagination]);
 
   return {
-    pagination,
+    pagination: currentPagination,
   };
 };
 
@@ -334,25 +332,8 @@ export const useSelectItem = (defaultId?: string) => {
   return { selectedId, handleItemClick };
 };
 
-export const useFetchModelId = (visible: boolean) => {
-  const fetchTenantInfo = useFetchTenantInfo(false);
-  const tenantInfo = useSelectTenantInfo();
-
-  useEffect(() => {
-    if (visible) {
-      fetchTenantInfo();
-    }
-  }, [visible, fetchTenantInfo]);
+export const useFetchModelId = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
 
   return tenantInfo?.llm_id ?? '';
-};
-
-export const useFetchLlmModelOnVisible = (visible: boolean) => {
-  const fetchLlmList = useFetchLlmList();
-
-  useEffect(() => {
-    if (visible) {
-      fetchLlmList();
-    }
-  }, [fetchLlmList, visible]);
 };

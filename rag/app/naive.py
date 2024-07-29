@@ -23,6 +23,8 @@ from rag.utils import num_tokens_from_string
 from PIL import Image
 from functools import reduce
 from markdown import markdown
+
+
 class Docx(DocxParser):
     def __init__(self):
         pass
@@ -81,7 +83,8 @@ class Docx(DocxParser):
                     continue
                 if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
-        new_line = [(line[0], reduce(concat_img, line[1])) for line in lines]
+        new_line = [(line[0], reduce(concat_img, line[1]) if line[1] else None) for line in lines]
+
         tbls = []
         for tb in self.doc.tables:
             html= "<table>"

@@ -1,12 +1,10 @@
+import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
+import { useTranslate } from '@/hooks/common-hooks';
 import { Button, Card, Divider, Flex, Form, Input } from 'antd';
 import { FormInstance } from 'antd/lib';
 
-import Rerank from '@/components/rerank';
-import { useTranslate } from '@/hooks/common-hooks';
-import { useFetchLlmList } from '@/hooks/llm-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
-import { useEffect } from 'react';
+import { useChunkIsTesting } from '@/hooks/knowledge-hooks';
 import styles from './index.less';
 
 type FieldType = {
@@ -22,15 +20,8 @@ interface IProps {
 
 const TestingControl = ({ form, handleTesting }: IProps) => {
   const question = Form.useWatch('question', { form, preserve: true });
-  const loading = useOneNamespaceEffectsLoading('testingModel', [
-    'testDocumentChunk',
-  ]);
+  const loading = useChunkIsTesting();
   const { t } = useTranslate('knowledgeDetails');
-  const fetchLlmList = useFetchLlmList();
-
-  useEffect(() => {
-    fetchLlmList();
-  }, [fetchLlmList]);
 
   const buttonDisabled =
     !question || (typeof question === 'string' && question.trim() === '');
