@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 from abc import ABC
-from functools import partial
 import requests
 import pandas as pd
 from graph.settings import DEBUG
