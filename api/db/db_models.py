@@ -580,7 +580,8 @@ class TenantLLM(DataBaseModel):
         default="",
         index=True)
     api_key = CharField(max_length=1024, null=True, help_text="API KEY", index=True)
-    api_base = CharField(max_length=255, null=True, help_text="API Base", index=True)
+    api_base = CharField(max_length=255, null=True, help_text="API Base")
+
     used_tokens = IntegerField(default=0, index=True)
 
     def __str__(self):
