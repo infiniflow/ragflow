@@ -813,7 +813,6 @@ class Dialog(DataBaseModel):
                                                    "parameters": [], "empty_response": "Sorry! 知识库中未找到相关内容！"})
 
     similarity_threshold = FloatField(default=0.2)
-
     vector_similarity_weight = FloatField(default=0.3)
 
     top_n = IntegerField(default=6)
