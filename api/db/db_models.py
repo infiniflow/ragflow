@@ -688,7 +688,8 @@ class Document(DataBaseModel):
         help_text="process message",
         default="")
     process_begin_at = DateTimeField(null=True, index=True)
-    process_duation = FloatField(default=0, index=True)
+    process_duation = FloatField(default=0)
+
     run = CharField(
         max_length=1,
         null=True,
