@@ -827,7 +827,6 @@ class Dialog(DataBaseModel):
         max_length=128,
         null=False,
         help_text="default rerank model ID",
-        index=True)
 
     kb_ids = JSONField(null=False, default=[])
     status = CharField(
