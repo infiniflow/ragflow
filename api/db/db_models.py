@@ -929,7 +929,8 @@ def migrate_db():
         try:
             migrate(
                 migrator.add_column('dialog', 'rerank_id', CharField(max_length=128, null=False, default="",
-                                                                     help_text="default rerank model ID", index=True))
+                                                                     help_text="default rerank model ID"))
+
             )
         except Exception as e:
             pass
