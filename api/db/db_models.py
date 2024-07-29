@@ -921,7 +921,8 @@ def migrate_db():
             migrate(
                 migrator.add_column('tenant', 'rerank_id',
                                     CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3",
-                                              help_text="default rerank model ID", index=True))
+                                              help_text="default rerank model ID"))
+
             )
         except Exception as e:
             pass
