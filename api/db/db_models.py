@@ -821,7 +821,6 @@ class Dialog(DataBaseModel):
         max_length=1,
         null=False,
         help_text="it needs to insert reference index into answer or not",
-        default="1",
         index=True)
     rerank_id = CharField(
         max_length=128,
