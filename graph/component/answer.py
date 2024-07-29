@@ -59,8 +59,10 @@ class Answer(ComponentBase, ABC):
         stream = self.get_stream_input()
         if isinstance(stream, pd.DataFrame):
             res = stream
+            answer = ""
             for ii, row in stream.iterrows():
-                yield row.to_dict()
+                answer += row.to_dict()["content"]
+                yield {"content": answer}
         else:
             for st in stream():
                 res = st
