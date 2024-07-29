@@ -768,7 +768,8 @@ class File2Document(DataBaseModel):
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
-    from_page = IntegerField(default=0, index=True)
+    from_page = IntegerField(default=0)
+
     to_page = IntegerField(default=-1, index=True)
     begin_at = DateTimeField(null=True, index=True)
     process_duation = FloatField(default=0, index=True)
