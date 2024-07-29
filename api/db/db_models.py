@@ -811,7 +811,8 @@ class Dialog(DataBaseModel):
     prompt_config = JSONField(null=False, default={"system": "", "prologue": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
                                                    "parameters": [], "empty_response": "Sorry! 知识库中未找到相关内容！"})
 
-    similarity_threshold = FloatField(default=0.2, index=True)
+    similarity_threshold = FloatField(default=0.2)
+
     vector_similarity_weight = FloatField(default=0.3, index=True)
     top_n = IntegerField(default=6, index=True)
     top_k = IntegerField(default=1024, index=True)
