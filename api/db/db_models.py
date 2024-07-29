@@ -934,7 +934,8 @@ def migrate_db():
             pass
         try:
             migrate(
-                migrator.add_column('dialog', 'top_k', IntegerField(default=1024, index=True))
+                migrator.add_column('dialog', 'top_k', IntegerField(default=1024))
+
             )
         except Exception as e:
             pass
