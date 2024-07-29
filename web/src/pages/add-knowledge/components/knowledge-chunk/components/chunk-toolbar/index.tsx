@@ -1,5 +1,6 @@
 import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
+import { IChunkListResult, useSelectChunkList } from '@/hooks/chunk-hooks';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useKnowledgeBaseId } from '@/hooks/knowledge-hooks';
 import {
@@ -27,16 +28,18 @@ import {
   Space,
   Typography,
 } from 'antd';
-import { ChangeEventHandler, useCallback, useMemo, useState } from 'react';
-import { Link, useDispatch, useSelector } from 'umi';
+import { useCallback, useMemo, useState } from 'react';
+import { Link } from 'umi';
 import { ChunkTextMode } from '../../constant';
-import { ChunkModelState } from '../../model';
 
 const { Text } = Typography;
 
-interface IProps {
+interface IProps
+  extends Pick<
+    IChunkListResult,
+    'searchString' | 'handleInputChange' | 'available' | 'handleSetAvailable'
+  > {
   checked: boolean;
-  getChunkList: () => void;
   selectAllChunk: (checked: boolean) => void;
   createChunk: () => void;
   removeChunk: () => void;
@@ -45,17 +48,19 @@ interface IProps {
 }
 
 const ChunkToolBar = ({
-  getChunkList,
   selectAllChunk,
   checked,
   createChunk,
   removeChunk,
   switchChunk,
   changeChunkTextMode,
+  available,
+  handleSetAvailable,
+  searchString,
+  handleInputChange,
 }: IProps) => {
-  const { documentInfo, available, searchString }: ChunkModelState =
-    useSelector((state: any) => state.chunkModel);
-  const dispatch = useDispatch();
+  const data = useSelectChunkList();
+  const documentInfo = data?.documentInfo;
   const knowledgeBaseId = useKnowledgeBaseId();
   const [isShowSearchBox, setIsShowSearchBox] = useState(false);
   const { t } = useTranslate('chunk');
@@ -71,17 +76,17 @@ const ChunkToolBar = ({
     setIsShowSearchBox(true);
   };
 
-  const handleSearchChange: ChangeEventHandler<HTMLInputElement> = (e) => {
-    const val = e.target.value;
-    dispatch({ type: 'chunkModel/setSearchString', payload: val });
-    dispatch({
-      type: 'chunkModel/throttledGetChunkList',
-      payload: documentInfo.id,
-    });
-  };
+  // const handleSearchChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+  //   const val = e.target.value;
+  //   dispatch({ type: 'chunkModel/setSearchString', payload: val });
+  //   dispatch({
+  //     type: 'chunkModel/throttledGetChunkList',
+  //     payload: documentInfo.id,
+  //   });
+  // };
 
   const handleSearchBlur = () => {
-    if (!searchString.trim()) {
+    if (!searchString?.trim()) {
       setIsShowSearchBox(false);
     }
   };
@@ -155,8 +160,7 @@ const ChunkToolBar = ({
 
   const handleFilterChange = (e: RadioChangeEvent) => {
     selectAllChunk(false);
-    dispatch({ type: 'chunkModel/setAvailable', payload: e.target.value });
-    getChunkList();
+    handleSetAvailable(e.target.value);
   };
 
   const filterContent = (
@@ -178,8 +182,8 @@ const ChunkToolBar = ({
           <ArrowLeftOutlined />
         </Link>
         <FilePdfOutlined />
-        <Text ellipsis={{ tooltip: documentInfo.name }} style={{ width: 150 }}>
-          {documentInfo.name}
+        <Text ellipsis={{ tooltip: documentInfo?.name }} style={{ width: 150 }}>
+          {documentInfo?.name}
         </Text>
       </Space>
       <Space>
@@ -202,7 +206,7 @@ const ChunkToolBar = ({
             placeholder={t('search')}
             prefix={<SearchOutlined />}
             allowClear
-            onChange={handleSearchChange}
+            onChange={handleInputChange}
             onBlur={handleSearchBlur}
             value={searchString}
           />
