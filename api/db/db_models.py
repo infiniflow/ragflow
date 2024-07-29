@@ -817,7 +817,8 @@ class Dialog(DataBaseModel):
 
     top_n = IntegerField(default=6)
 
-    top_k = IntegerField(default=1024, index=True)
+    top_k = IntegerField(default=1024)
+
     do_refer = CharField(
         max_length=1,
         null=False,
