@@ -12,10 +12,11 @@ import {
   Space,
 } from 'antd';
 import camelCase from 'lodash/camelCase';
-import { useDispatch, useSelector } from 'umi';
-import { TestingModelState } from '../model';
 import SelectFiles from './select-files';
 
+import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
+import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
+import { useCallback, useState } from 'react';
 import styles from './index.less';
 
 const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
@@ -41,28 +42,27 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
 };
 
 interface IProps {
-  handleTesting: () => Promise<any>;
+  handleTesting: (documentIds?: string[]) => Promise<any>;
 }
 
 const TestingResult = ({ handleTesting }: IProps) => {
-  const {
-    documents,
-    chunks,
-    total,
-    pagination,
-    selectedDocumentIds,
-  }: TestingModelState = useSelector((state: any) => state.testingModel);
-  const dispatch = useDispatch();
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const { documents, chunks, total } = useSelectTestingResult();
   const { t } = useTranslate('knowledgeDetails');
+  const { pagination, setPagination } = useGetPaginationWithRouter();
 
   const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
-    console.log('Page: ', pageNumber, pageSize);
-    dispatch({
-      type: 'testingModel/setPagination',
-      payload: { current: pageNumber, pageSize },
-    });
-    handleTesting();
+    pagination.onChange?.(pageNumber, pageSize);
+    handleTesting(selectedDocumentIds);
   };
+
+  const onTesting = useCallback(
+    (ids: string[]) => {
+      setPagination({ page: 1 });
+      handleTesting(ids);
+    },
+    [setPagination, handleTesting],
+  );
 
   return (
     <section className={styles.testingResultWrapper}>
@@ -94,7 +94,10 @@ const TestingResult = ({ handleTesting }: IProps) => {
             ),
             children: (
               <div>
-                <SelectFiles handleTesting={handleTesting}></SelectFiles>
+                <SelectFiles
+                  setSelectedDocumentIds={setSelectedDocumentIds}
+                  handleTesting={onTesting}
+                ></SelectFiles>
               </div>
             ),
           },
@@ -128,12 +131,9 @@ const TestingResult = ({ handleTesting }: IProps) => {
         ))}
       </Flex>
       <Pagination
+        {...pagination}
         size={'small'}
-        showQuickJumper
-        current={pagination.current}
-        pageSize={pagination.pageSize}
         total={total}
-        showSizeChanger
         onChange={onChange}
       />
     </section>

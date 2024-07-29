@@ -1,10 +1,10 @@
 import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { Button, Card, Divider, Flex, Form, Input } from 'antd';
 import { FormInstance } from 'antd/lib';
 
+import { useChunkIsTesting } from '@/hooks/knowledge-hooks';
 import styles from './index.less';
 
 type FieldType = {
@@ -20,9 +20,7 @@ interface IProps {
 
 const TestingControl = ({ form, handleTesting }: IProps) => {
   const question = Form.useWatch('question', { form, preserve: true });
-  const loading = useOneNamespaceEffectsLoading('testingModel', [
-    'testDocumentChunk',
-  ]);
+  const loading = useChunkIsTesting();
   const { t } = useTranslate('knowledgeDetails');
 
   const buttonDisabled =

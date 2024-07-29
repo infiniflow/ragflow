@@ -62,6 +62,8 @@ class Base(ABC):
                 **gen_conf)
             for resp in response:
                 if not resp.choices:continue
+                if not resp.choices[0].delta.content:
+                    resp.choices[0].delta.content = ""  
                 ans += resp.choices[0].delta.content
                 total_tokens = (
                     (
@@ -562,12 +564,15 @@ class MiniMaxChat(Base):
             )
             for resp in response.text.split("\n\n")[:-1]:
                 resp = json.loads(resp[6:])
-                if "delta" in resp["choices"][0]:
+                text = ""
+                if "choices" in resp and "delta" in resp["choices"][0]:
                     text = resp["choices"][0]["delta"]["content"]
-                else:
-                    continue
                 ans += text
-                total_tokens += num_tokens_from_string(text)
+                total_tokens = (
+                    total_tokens + num_tokens_from_string(text)
+                    if "usage" not in resp
+                    else resp["usage"]["total_tokens"]
+                )
                 yield ans
 
         except Exception as e:

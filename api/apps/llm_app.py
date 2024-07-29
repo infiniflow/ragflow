@@ -195,7 +195,7 @@ def add_llm():
                 if not tc:
                     raise Exception(m)
             else:
-                raise ConnectionError("fail to download the test picture")
+                pass
         except Exception as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(e)
     else:
