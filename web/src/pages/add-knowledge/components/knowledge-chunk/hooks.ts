@@ -1,24 +1,17 @@
+import { useSelectChunkList } from '@/hooks/chunk-hooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
-import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IChunk } from '@/interfaces/database/knowledge';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
-import { useSelector } from 'umi';
 import { ChunkTextMode } from './constant';
 
-export const useSelectDocumentInfo = () => {
-  const documentInfo: IKnowledgeFile = useSelector(
-    (state: any) => state.chunkModel.documentInfo,
-  );
-  return documentInfo;
-};
-
-export const useSelectChunkList = () => {
-  const chunkList: IChunk[] = useSelector(
-    (state: any) => state.chunkModel.data,
-  );
-  return chunkList;
-};
+// export const useSelectChunkList = () => {
+//   const chunkList: IChunk[] = useSelector(
+//     (state: any) => state.chunkModel.data,
+//   );
+//   return chunkList;
+// };
 
 export const useHandleChunkCardClick = () => {
   const [selectedChunkId, setSelectedChunkId] = useState<string>('');
@@ -31,9 +24,9 @@ export const useHandleChunkCardClick = () => {
 };
 
 export const useGetSelectedChunk = (selectedChunkId: string) => {
-  const chunkList: IChunk[] = useSelectChunkList();
+  const data = useSelectChunkList();
   return (
-    chunkList.find((x) => x.chunk_id === selectedChunkId) ?? ({} as IChunk)
+    data?.data?.find((x) => x.chunk_id === selectedChunkId) ?? ({} as IChunk)
   );
 };
 
@@ -45,14 +38,14 @@ export const useGetChunkHighlights = (selectedChunkId: string) => {
     return buildChunkHighlights(selectedChunk, size);
   }, [selectedChunk, size]);
 
-  const setWidthAndHeight = (width: number, height: number) => {
+  const setWidthAndHeight = useCallback((width: number, height: number) => {
     setSize((pre) => {
       if (pre.height !== height || pre.width !== width) {
         return { height, width };
       }
       return pre;
     });
-  };
+  }, []);
 
   return { highlights, setWidthAndHeight };
 };
