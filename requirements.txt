@@ -23,6 +23,7 @@ Flask==3.0.3
 Flask_Cors==4.0.1
 Flask_Login==0.6.3
 flask_session==0.8.0
+google_search_results==2.4.2
 groq==0.9.0
 hanziconv==0.3.2
 html_text==0.6.2
