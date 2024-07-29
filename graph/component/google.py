@@ -15,7 +15,6 @@
 #
 import random
 from abc import ABC
-from functools import partial
 from serpapi import GoogleSearch
 import pandas as pd
 from graph.settings import DEBUG
