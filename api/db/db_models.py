@@ -815,7 +815,8 @@ class Dialog(DataBaseModel):
 
     vector_similarity_weight = FloatField(default=0.3)
 
-    top_n = IntegerField(default=6, index=True)
+    top_n = IntegerField(default=6)
+
     top_k = IntegerField(default=1024, index=True)
     do_refer = CharField(
         max_length=1,
