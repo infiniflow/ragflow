@@ -798,7 +798,8 @@ class Dialog(DataBaseModel):
         default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English",
         help_text="English|Chinese",
         index=True)
-    llm_id = CharField(max_length=128, null=False, help_text="default llm ID", index=True)
+    llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
+
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7,
                                                  "presence_penalty": 0.4, "max_tokens": 512})
     prompt_type = CharField(
