@@ -33,7 +33,6 @@ class GoogleParam(ComponentParamBase):
         self.api_key = "xxx"
         self.country = "cn"
         self.language = "en"
-        self.api_key = "xxx"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
