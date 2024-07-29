@@ -868,7 +868,8 @@ class API4Conversation(DataBaseModel):
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
-    tokens = IntegerField(default=0, index=True)
+    tokens = IntegerField(default=0)
+
     duration = FloatField(default=0, index=True)
     round = IntegerField(default=0, index=True)
     thumb_up = IntegerField(default=0, index=True)
