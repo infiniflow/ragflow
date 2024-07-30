@@ -180,13 +180,18 @@ class BaiChuanChat(Base):
                 stream=True,
                 **self._format_params(gen_conf))
             for resp in response:
-                if resp.choices[0].finish_reason == "stop":
-                    if not resp.choices[0].delta.content:
-                        continue
-                    total_tokens = resp.usage.total_tokens
+                if not resp.choices:continue
                 if not resp.choices[0].delta.content:
-                    continue
+                    resp.choices[0].delta.content = ""  
                 ans += resp.choices[0].delta.content
+                total_tokens = (
+                    (
+                        total_tokens
+                        + num_tokens_from_string(resp.choices[0].delta.content)
+                    )
+                    if not hasattr(resp, "usage")
+                    else resp.usage["total_tokens"]
+                )
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                         [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
