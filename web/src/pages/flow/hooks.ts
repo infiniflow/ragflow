@@ -30,12 +30,14 @@ import {
   NodeMap,
   Operator,
   RestrictedUpstreamMap,
-  initialArxivValues,
+  initialArXivValues,
   initialBaiduValues,
   initialBeginValues,
+  initialBingValues,
   initialCategorizeValues,
   initialDuckValues,
   initialGenerateValues,
+  initialGoogleValues,
   initialKeywordExtractValues,
   initialMessageValues,
   initialPubMedValues,
@@ -92,7 +94,9 @@ export const useInitializeOperatorParams = () => {
       [Operator.Baidu]: initialBaiduValues,
       [Operator.Wikipedia]: initialWikipediaValues,
       [Operator.PubMed]: initialPubMedValues,
-      [Operator.ArXiv]: initialArxivValues,
+      [Operator.ArXiv]: initialArXivValues,
+      [Operator.Google]: initialGoogleValues,
+      [Operator.Bing]: initialBingValues,
     };
   }, [llmId]);
 
