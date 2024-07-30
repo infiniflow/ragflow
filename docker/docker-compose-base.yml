@@ -99,4 +99,6 @@ volumes:
 
 networks:
   ragflow:
-    driver: bridge
+    name: ragflow
+    external: true
+
