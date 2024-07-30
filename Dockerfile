@@ -1,5 +1,5 @@
 # FROM infiniflow/ragflow-base:v2.0
-FROM infiniflow/ragflow:dev as web
+FROM infiniflow/ragflow:dev AS web
 USER  root
 
 WORKDIR /ragflow
