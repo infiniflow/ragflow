@@ -39,10 +39,11 @@ export const fileIconMap = {
   xml: 'xml.svg',
 };
 
-export const LanguageList = ['English', 'Chinese', 'Traditional Chinese'];
+export const LanguageList = ['Vietnamese', 'English'];
 
 export const LanguageTranslationMap = {
   English: 'en',
+  Vietnamese: 'vi',
   Chinese: 'zh',
   'Traditional Chinese': 'zh-TRADITIONAL',
 };

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { App, ConfigProvider, ConfigProviderProps } from 'antd';
 import enUS from 'antd/locale/en_US';
+import viVN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
 import dayjs from 'dayjs';
@@ -24,6 +25,7 @@ dayjs.extend(weekYear);
 
 const AntLanguageMap = {
   en: enUS,
+  vi: viVN,
   zh: zhCN,
   'zh-TRADITIONAL': zh_HK,
 };
