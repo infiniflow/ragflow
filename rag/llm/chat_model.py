@@ -436,7 +436,7 @@ class LocalLLM(Base):
         chat_gen = self._stream_response("/chat", prompt)
         ans = next(chat_gen)
         total_tokens = next(chat_gen)
-        return ans , total_tokens
+        return ans, total_tokens
 
     def chat_streamly(self, system, history, gen_conf):
         prompt = self._prepare_prompt(system, history, gen_conf)
