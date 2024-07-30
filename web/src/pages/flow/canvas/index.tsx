@@ -24,6 +24,7 @@ import ChatDrawer from '../chat/drawer';
 import styles from './index.less';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { LogicNode } from './node/logic-node';
 import { RelevantNode } from './node/relevant-node';
 
 const nodeTypes = {
@@ -31,6 +32,7 @@ const nodeTypes = {
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
   relevantNode: RelevantNode,
+  logicNode: LogicNode,
 };
 
 const edgeTypes = {

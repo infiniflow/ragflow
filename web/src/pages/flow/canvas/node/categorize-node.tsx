@@ -65,7 +65,7 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
   return (
     <NodePopover nodeId={id}>
       <section
-        className={classNames(styles.ragNode, {
+        className={classNames(styles.logicNode, {
           [styles.selectedNode]: selected,
         })}
         style={{

@@ -639,6 +639,15 @@ The above is the content you need to summarize.`,
       submittedDate: 'Submitted date',
       lastUpdatedDate: 'Last updated date',
       relevance: 'Relevance',
+      google: 'Google',
+      googleTip:
+        'This component is used to get search result fromhttps://www.google.com/ . Typically, it performs as a supplement to knowledgebases. Top N and SerpApi API key specifies the number of search results you need to adapt.',
+      bing: 'Bing',
+      bingTip:
+        'This component is used to get search result from https://www.bing.com/. Typically, it performs as a supplement to knowledgebases. Top N and Bing Subscription-Key specifies the number of search results you need to adapt.',
+      apiKey: 'Api Key',
+      country: 'Country',
+      language: 'Language',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -1,6 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
+import lowerFirst from 'lodash/lowerFirst';
 import pick from 'lodash/pick';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { Operator, operatorMap } from '../../constant';
@@ -16,7 +17,7 @@ const ZeroGapOperators = [
   Operator.ArXiv,
 ];
 
-export function RagNode({
+export function LogicNode({
   id,
   data,
   isConnectable = true,
@@ -28,12 +29,10 @@ export function RagNode({
   return (
     <NodePopover nodeId={id}>
       <section
-        className={classNames(styles.ragNode, {
+        className={classNames(styles.logicNode, {
           [styles.selectedNode]: selected,
         })}
-        style={{
-          ...pick(style, ['backgroundColor', 'color']),
-        }}
+        style={pick(style, ['backgroundColor', 'width', 'height', 'color'])}
       >
         <Handle
           id="c"
@@ -55,18 +54,23 @@ export function RagNode({
           vertical
           align="center"
           justify={'space-around'}
-          // gap={ZeroGapOperators.some((x) => x === data.label) ? 0 : 6}
+          gap={ZeroGapOperators.some((x) => x === data.label) ? 0 : 6}
         >
           <Flex flex={1} justify="center" align="center">
-            <label htmlFor=""> </label>
+            <OperatorIcon
+              name={data.label as Operator}
+              fontSize={style?.iconFontSize ?? 24}
+              width={style?.iconWidth}
+            ></OperatorIcon>
           </Flex>
 
           <Flex flex={1}>
-            <OperatorIcon
-              name={data.label as Operator}
-              fontSize={style?.iconFontSize ?? 16}
-              width={style?.iconWidth}
-            ></OperatorIcon>
+            <span
+              className={styles.type}
+              style={{ fontSize: style?.fontSize ?? 14 }}
+            >
+              {t(lowerFirst(data.label))}
+            </span>
           </Flex>
           <Flex flex={1}>
             <NodeDropdown
