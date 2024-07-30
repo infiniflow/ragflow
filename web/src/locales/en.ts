@@ -171,6 +171,7 @@ export default {
       chunkMethodTip: 'The instruction is at right.',
       upload: 'Upload',
       english: 'English',
+      vietnamese: 'Vietnamese',
       chinese: 'Chinese',
       embeddingModelPlaceholder: 'Please select a embedding model',
       chunkMethodPlaceholder: 'Please select a chunk method',

@@ -15,6 +15,7 @@ export default {
       edit: 'Chỉnh sửa',
       upload: 'Tải lên',
       english: 'Tiếng Anh',
+      vietnamese: 'Tiếng Việt',
       chinese: 'Tiếng Trung Giản Thể',
       traditionalChinese: 'Tiếng Trung Phồn Thể',
       language: 'Ngôn ngữ',
