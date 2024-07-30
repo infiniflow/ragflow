@@ -1,10 +1,10 @@
-import { useDeleteChunkByIds } from '@/hooks/knowledge-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
+import { useFetchChunk } from '@/hooks/chunk-hooks';
+import { IModalProps } from '@/interfaces/common';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Checkbox, Divider, Form, Input, Modal, Space } from 'antd';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'umi';
+import { useDeleteChunkByIds } from '../../hooks';
 import EditTag from '../edit-tag';
 
 type FieldType = {
@@ -15,63 +15,39 @@ interface kFProps {
   chunkId: string | undefined;
 }
 
-const ChunkCreatingModal: React.FC<kFProps> = ({ doc_id, chunkId }) => {
-  const dispatch = useDispatch();
+const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
+  doc_id,
+  chunkId,
+  hideModal,
+  onOk,
+  loading,
+}) => {
   const [form] = Form.useForm();
-  const isShowCreateModal: boolean = useSelector(
-    (state: any) => state.chunkModel.isShowCreateModal,
-  );
   const [checked, setChecked] = useState(false);
   const [keywords, setKeywords] = useState<string[]>([]);
-  const loading = useOneNamespaceEffectsLoading('chunkModel', ['create_chunk']);
   const { removeChunk } = useDeleteChunkByIds();
+  const { data } = useFetchChunk(chunkId);
   const { t } = useTranslation();
 
-  const handleCancel = () => {
-    dispatch({
-      type: 'chunkModel/setIsShowCreateModal',
-      payload: false,
-    });
-  };
-
-  const getChunk = useCallback(async () => {
-    console.info(chunkId);
-    if (chunkId && isShowCreateModal) {
-      const data = await dispatch<any>({
-        type: 'chunkModel/get_chunk',
-        payload: {
-          chunk_id: chunkId,
-        },
-      });
-
-      if (data?.retcode === 0) {
-        const { content_with_weight, important_kwd = [] } = data.data;
-        form.setFieldsValue({ content: content_with_weight });
-        setKeywords(important_kwd);
-      }
+  useEffect(() => {
+    if (data?.retcode === 0) {
+      const { content_with_weight, important_kwd = [] } = data.data;
+      form.setFieldsValue({ content: content_with_weight });
+      setKeywords(important_kwd);
     }
 
     if (!chunkId) {
       setKeywords([]);
       form.setFieldsValue({ content: undefined });
     }
-  }, [chunkId, isShowCreateModal, dispatch, form]);
-
-  useEffect(() => {
-    getChunk();
-  }, [getChunk]);
+  }, [data, form, chunkId]);
 
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
-      dispatch({
-        type: 'chunkModel/create_chunk',
-        payload: {
-          content_with_weight: values.content,
-          doc_id,
-          chunk_id: chunkId,
-          important_kwd: keywords, // keywords
-        },
+      onOk?.({
+        content: values.content,
+        keywords, // keywords
       });
     } catch (errorInfo) {
       console.log('Failed:', errorInfo);
@@ -90,17 +66,13 @@ const ChunkCreatingModal: React.FC<kFProps> = ({ doc_id, chunkId }) => {
   return (
     <Modal
       title={`${chunkId ? t('common.edit') : t('common.create')} ${t('chunk.chunk')}`}
-      open={isShowCreateModal}
+      open={true}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={hideModal}
       okButtonProps={{ loading }}
+      destroyOnClose
     >
-      <Form
-        form={form}
-        // name="validateOnly"
-        autoComplete="off"
-        layout={'vertical'}
-      >
+      <Form form={form} autoComplete="off" layout={'vertical'}>
         <Form.Item<FieldType>
           label={t('chunk.chunk')}
           name="content"
