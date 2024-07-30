@@ -599,6 +599,15 @@ export default {
       submittedDate: '提交日期',
       lastUpdatedDate: '最後更新日期',
       relevance: '關聯',
+      google: 'Google',
+      googleTip:
+        '此元件用於從https://www.google.com/取得搜尋結果。通常，它作為知識庫的補充。 Top N 和 SerpApi API 金鑰指定您需要調整的搜尋結果數量。',
+      bing: 'Bing',
+      bingTip:
+        '此元件用於從 https://www.bing.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 和 Bing Subscription-Key 指定您需要適配的搜尋結果數量。',
+      apiKey: 'Api Key',
+      country: '國家',
+      language: '語言',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
