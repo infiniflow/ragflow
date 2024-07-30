@@ -13,7 +13,7 @@ export default defineConfig({
   esbuildMinifyIIFE: true,
   icons: {},
   hash: true,
-  favicons: ['/logo.svg'],
+  favicons: ['/knowledge/logo.svg'],
   clickToComponent: {},
   history: {
     type: 'browser',
