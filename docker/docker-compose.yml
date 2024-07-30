@@ -10,7 +10,9 @@ services:
       es01:
         condition: service_healthy
     # image: infiniflow/ragflow:${RAGFLOW_VERSION}
-    build: ../
+    build:
+      context: ../
+      target: web
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
