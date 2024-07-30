@@ -28,7 +28,7 @@ import os
 import json
 import requests
 import asyncio
-from jina_server import Prompt,Generation
+from rag.svr.jina_server import Prompt,Generation
 
 class Base(ABC):
     def __init__(self, key, model_name, base_url):
