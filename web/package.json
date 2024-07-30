@@ -1,6 +1,6 @@
 {
   "private": true,
-  "homepage": "/knowledge",
+  "homepage": "https://stock.cmcts.com.vn/knowledge",
   "author": "bill",
   "scripts": {
     "build": "umi build",
