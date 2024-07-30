@@ -7,7 +7,7 @@ WORKDIR /ragflow
 ADD ./web ./web
 RUN cd ./web && npm i --force && npm run build
 
-ADD ./api ./api
+# ADD ./api ./api
 ADD ./conf ./conf
 ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
