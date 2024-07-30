@@ -183,7 +183,7 @@ class BaiChuanChat(Base):
                 if resp.choices[0].finish_reason == "stop":
                     if not resp.choices[0].delta.content:
                         continue
-                    total_tokens = resp.usage.get('total_tokens', 0)
+                    total_tokens = resp.usage.total_tokens
                 if not resp.choices[0].delta.content:
                     continue
                 ans += resp.choices[0].delta.content
