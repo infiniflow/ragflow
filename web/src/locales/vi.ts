@@ -150,145 +150,70 @@ export default {
     },
     knowledgeConfiguration: {
       titleDescription:
-        'Update your knowledge base details especially parsing method here.',
-      name: 'Knowledge base name',
-      photo: 'Knowledge base photo',
-      description: 'Description',
-      language: 'Language',
-      languageMessage: 'Please input your language!',
-      languagePlaceholder: 'Please input your language!',
-      permissions: 'Permissions',
-      embeddingModel: 'Embedding model',
-      chunkTokenNumber: 'Chunk token number',
-      chunkTokenNumberMessage: 'Chunk token number is required',
+        'Cập nhật chi tiết cơ sở tri thức của bạn, đặc biệt là phương pháp phân tích tại đây.',
+      name: 'Tên cơ sở tri thức',
+      photo: 'Ảnh cơ sở tri thức',
+      description: 'Mô tả',
+      language: 'Ngôn ngữ',
+      languageMessage: 'Vui lòng nhập ngôn ngữ của bạn!',
+      languagePlaceholder: 'Vui lòng nhập ngôn ngữ của bạn!',
+      permissions: 'Quyền hạn',
+      embeddingModel: 'Mô hình nhúng',
+      chunkTokenNumber: 'Số lượng token chia nhỏ',
+      chunkTokenNumberMessage: 'Số lượng token chia nhỏ là bắt buộc',
       embeddingModelTip:
-        "The embedding model used to embedding chunks. It's unchangable once the knowledgebase has chunks. You need to delete all the chunks if you want to change it.",
+        'Mô hình nhúng được sử dụng để nhúng các đoạn văn bản. Không thể thay đổi khi cơ sở tri thức đã có các đoạn văn bản. Bạn cần xóa tất cả các đoạn văn bản nếu muốn thay đổi nó.',
       permissionsTip:
-        "If the permission is 'Team', all the team member can manipulate the knowledgebase.",
+        "Nếu quyền là 'Đội ngũ', tất cả thành viên đội ngũ có thể thao tác cơ sở tri thức.",
       chunkTokenNumberTip:
-        'It determine the token number of a chunk approximately.',
-      chunkMethod: 'Chunk method',
-      chunkMethodTip: 'The instruction is at right.',
-      upload: 'Upload',
-      english: 'English',
-      chinese: 'Chinese',
-      embeddingModelPlaceholder: 'Please select a embedding model',
-      chunkMethodPlaceholder: 'Please select a chunk method',
-      save: 'Save',
-      me: 'Only me',
-      team: 'Team',
-      cancel: 'Cancel',
-      methodTitle: 'Chunking Method Description',
-      methodExamples: 'Examples',
+        'Xác định số lượng token của một đoạn văn bản khoảng chừng.',
+      chunkMethod: 'Phương pháp chia nhỏ',
+      chunkMethodTip: 'Hướng dẫn nằm bên phải.',
+      upload: 'Tải lên',
+      english: 'Tiếng Anh',
+      chinese: 'Tiếng Trung',
+      embeddingModelPlaceholder: 'Vui lòng chọn mô hình nhúng',
+      chunkMethodPlaceholder: 'Vui lòng chọn phương pháp chia nhỏ',
+      save: 'Lưu',
+      me: 'Chỉ mình tôi',
+      team: 'Đội ngũ',
+      cancel: 'Hủy',
+      methodTitle: 'Mô tả Phương pháp Chia nhỏ',
+      methodExamples: 'Ví dụ',
       methodExamplesDescription:
-        'The following screenshots are presented to facilitate understanding.',
-      dialogueExamplesTitle: 'Dialogue Examples',
+        'Các hình ảnh sau đây được trình bày để hỗ trợ việc hiểu.',
+      dialogueExamplesTitle: 'Ví dụ về Đối thoại',
       methodEmpty:
-        'This will display a visual explanation of the knowledge base categories',
-      book: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
-      Since a book is long and not all the parts are useful, if it's a PDF,
-      please setup the <i>page ranges</i> for every book in order eliminate negative effects and save computing time for analyzing.</p>`,
-      laws: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
-      Legal documents have a very rigorous writing format. We use text feature to detect split point. 
-      </p><p>
-      The chunk granularity is consistent with 'ARTICLE', and all the upper level text will be included in the chunk.
-      </p>`,
-      manual: `<p>Only <b>PDF</b> is supported.</p><p>
-      We assume manual has hierarchical section structure. We use the lowest section titles as pivots to slice documents.
-      So, the figures and tables in the same section will not be sliced apart, and chunk size might be large.
-      </p>`,
-      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT</b>.</p>
-      <p>This method apply the naive ways to chunk files: </p>
-      <p>
-      <li>Successive text will be sliced into pieces using vision detection model.</li>
-      <li>Next, these successive pieces are merge into chunks whose token number is no more than 'Token number'.</li></p>`,
-      paper: `<p>Only <b>PDF</b> file is supported.</p><p>
-      If our model works well, the paper will be sliced by it's sections, like <i>abstract, 1.1, 1.2</i>, etc. </p><p>
-      The benefit of doing this is that LLM can better summarize the content of relevant sections in the paper, 
-      resulting in more comprehensive answers that help readers better understand the paper. 
-      The downside is that it increases the context of the LLM conversation and adds computational cost, 
-      so during the conversation, you can consider reducing the ‘<b>topN</b>’ setting.</p>`,
-      presentation: `<p>The supported file formats are <b>PDF</b>, <b>PPTX</b>.</p><p>
-      Every page will be treated as a chunk. And the thumbnail of every page will be stored.</p><p>
-      <i>All the PPT files you uploaded will be chunked by using this method automatically, setting-up for every PPT file is not necessary.</i></p>`,
-      qa: `
-      <p>
-      This chunk method supports <b>EXCEL</b> and <b>CSV/TXT</b> file formats.
-    </p>
-    <li>
-      If the file is in <b>Excel</b> format, it should consist of two columns
-      without headers: one for questions and the other for answers, with the
-      question column preceding the answer column. Multiple sheets are
-      acceptable as long as the columns are correctly structured.
-    </li>
-    <li>
-      If the file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB
-      used as the delimiter to separate questions and answers.
-    </li>
-    <p>
-      <i>
-        Lines of texts that fail to follow the above rules will be ignored, and
-        each Q&A pair will be considered a distinct chunk.
-      </i>
-    </p>
-      `,
-      resume: `<p>The supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.
-      </p><p>
-      The résumé comes in a variety of formats, just like a person’s personality, but we often have to organize them into structured data that makes it easy to search.
-      </p><p>
-      Instead of chunking the résumé, we parse the résumé into structured data. As a HR, you can dump all the résumé you have, 
-      the you can list all the candidates that match the qualifications just by talk with <i>'RAGFlow'</i>.
-      </p>
-      `,
-      table: `<p><b>EXCEL</b> and <b>CSV/TXT</b> format files are supported.</p><p>
-      Here're some tips:
-      <ul>
-    <li>For csv or txt file, the delimiter between columns is <em><b>TAB</b></em>.</li>
-    <li>The first line must be column headers.</li>
-    <li>Column headers must be meaningful terms in order to make our LLM understanding.
-    It's good to enumerate some synonyms using slash <i>'/'</i> to separate, and even better to
-    enumerate values using brackets like <i>'gender/sex(male, female)'</i>.<p>
-    Here are some examples for headers:<ol>
-        <li>supplier/vendor<b>'TAB'</b>color(yellow, red, brown)<b>'TAB'</b>gender/sex(male, female)<b>'TAB'</b>size(M,L,XL,XXL)</li>
-        <li>姓名/名字<b>'TAB'</b>电话/手机/微信<b>'TAB'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）</li>
-        </ol>
-        </p>
-    </li>
-    <li>Every row in table will be treated as a chunk.</li>
-    </ul>`,
-      picture: `
-    <p>Image files are supported. Video is coming soon.</p><p>
-    If the picture has text in it, OCR is applied to extract the text as its text description.
-    </p><p>
-    If the text extracted by OCR is not enough, visual LLM is used to get the descriptions.
-    </p>`,
-      one: `
-    <p>Supported file formats are <b>DOCX, EXCEL, PDF, TXT</b>.
-    </p><p>
-    For a document, it will be treated as an entire chunk, no split at all.
-    </p><p>
-    If you want to summarize something that needs all the context of an article and the selected LLM's context length covers the document length, you can try this method.
-    </p>`,
-      useRaptor: 'Use RAPTOR to enhance retrieval',
+        'Điều này sẽ hiển thị một lời giải thích trực quan về các danh mục cơ sở tri thức',
+      book: `<p>Định dạng file được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>Vì sách dài và không phải tất cả các phần đều hữu ích, nếu là PDF, vui lòng thiết lập <i>phạm vi trang</i> cho mỗi sách để loại bỏ các tác động tiêu cực và tiết kiệm thời gian tính toán cho việc phân tích.</p>`,
+      laws: `<p>Định dạng file được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>Tài liệu pháp lý có một định dạng viết rất nghiêm ngặt. Chúng tôi sử dụng tính năng văn bản để phát hiện điểm chia nhỏ. </p><p>Độ chi tiết chia nhỏ phù hợp với 'BÀI VIẾT', và tất cả văn bản cấp trên sẽ được bao gồm trong đoạn văn bản chia nhỏ.</p>`,
+      manual: `<p>Chỉ hỗ trợ <b>PDF</b>.</p><p>Chúng tôi giả định rằng sổ tay có cấu trúc phần theo thứ bậc. Chúng tôi sử dụng tiêu đề phần thấp nhất làm điểm xoay để cắt tài liệu. Vì vậy, các hình ảnh và bảng biểu trong cùng một phần sẽ không bị cắt rời, và kích thước đoạn văn bản có thể lớn.</p>`,
+      naive: `<p>Định dạng file được hỗ trợ là <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT</b>.</p><p>Phương pháp này áp dụng cách chia nhỏ cơ bản cho các file:</p><p><li>Văn bản kế tiếp sẽ được chia thành các mảnh bằng cách sử dụng mô hình phát hiện hình ảnh.</li><li>Tiếp theo, các mảnh kế tiếp này được hợp nhất thành các đoạn văn bản có số lượng token không vượt quá 'Số lượng token'.</li></p>`,
+      paper: `<p>Chỉ hỗ trợ file <b>PDF</b>.</p><p>Nếu mô hình của chúng tôi hoạt động tốt, bài báo sẽ được chia nhỏ theo các phần của nó, như <i>tóm tắt, 1.1, 1.2</i>, v.v.</p><p>Lợi ích của việc này là LLM có thể tóm tắt nội dung của các phần liên quan trong bài báo tốt hơn, dẫn đến các câu trả lời toàn diện hơn giúp độc giả hiểu bài báo tốt hơn. Nhược điểm là nó tăng bối cảnh của cuộc trò chuyện LLM và tăng chi phí tính toán, vì vậy trong cuộc trò chuyện, bạn có thể cân nhắc giảm thiết lập ‘<b>topN</b>’.</p>`,
+      presentation: `<p>Các định dạng file được hỗ trợ là <b>PDF</b>, <b>PPTX</b>.</p><p>Mỗi trang sẽ được coi là một đoạn văn bản. Và hình thu nhỏ của mỗi trang sẽ được lưu trữ.</p><p><i>Tất cả các file PPT bạn tải lên sẽ được chia nhỏ bằng phương pháp này tự động, không cần thiết lập cho từng file PPT.</i></p>`,
+      qa: `<p>Phương pháp chia nhỏ này hỗ trợ các định dạng file <b>EXCEL</b> và <b>CSV/TXT</b>.</p><li>Nếu file ở định dạng <b>Excel</b>, nó nên bao gồm hai cột không có tiêu đề: một cho câu hỏi và một cho câu trả lời, với cột câu hỏi đi trước cột câu trả lời. Nhiều sheet được chấp nhận miễn là các cột được cấu trúc đúng.</li><li>Nếu file ở định dạng <b>CSV/TXT</b>, nó phải được mã hóa UTF-8 với TAB được sử dụng làm dấu tách để phân tách câu hỏi và câu trả lời.</li><p><i>Dòng văn bản không tuân theo các quy tắc trên sẽ bị bỏ qua, và mỗi cặp Q&A sẽ được coi là một đoạn văn bản riêng biệt.</i></p>`,
+      resume: `<p>Các định dạng file được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>Sơ yếu lý lịch có nhiều định dạng khác nhau, giống như tính cách của một người, nhưng chúng tôi thường phải tổ chức chúng thành dữ liệu có cấu trúc để dễ dàng tìm kiếm.</p><p>Thay vì chia nhỏ sơ yếu lý lịch, chúng tôi phân tích sơ yếu lý lịch thành dữ liệu có cấu trúc. Là một nhà tuyển dụng, bạn có thể đổ tất cả sơ yếu lý lịch bạn có, sau đó bạn có thể liệt kê tất cả các ứng viên phù hợp với các tiêu chuẩn chỉ bằng cách trò chuyện với <i>'RAGFlow'</i>.</p>`,
+      table: `<p>Các định dạng file <b>EXCEL</b> và <b>CSV/TXT</b> được hỗ trợ.</p><p>Đây là một số mẹo:</p><ul><li>Đối với file csv hoặc txt, dấu tách giữa các cột là <em><b>TAB</b></em>.</li><li>Dòng đầu tiên phải là tiêu đề cột.</li><li>Tiêu đề cột phải là các thuật ngữ có ý nghĩa để làm cho LLM hiểu được. Tốt nhất là liệt kê một số từ đồng nghĩa bằng dấu gạch chéo <i>'/'</i> để tách biệt, và còn tốt hơn nữa nếu liệt kê các giá trị bằng cách sử dụng dấu ngoặc như <i>'giới tính/sex(nam, nữ)'</i>.</li></ul><p>Đây là một số ví dụ về tiêu đề:<ol><li>nhà cung cấp/vendor<b>'TAB'</b>màu sắc(vàng, đỏ, nâu)<b>'TAB'</b>giới tính/sex(nam, nữ)<b>'TAB'</b>kích thước(M,L,XL,XXL)</li><li>tên/名字<b>'TAB'</b>số điện thoại/手机/微信<b>'TAB'</b>trình độ học vấn cao nhất (trung học phổ thông, trung học chuyên nghiệp, thạc sĩ, cử nhân, tiến sĩ, trung học cơ sở, trung học nghề, trung cấp, cao đẳng, liên thông đại học, MPA, MBA, EMBA)</li></ol></p><li>Mỗi hàng trong bảng sẽ được coi là một đoạn văn bản.</li></ul>`,
+      picture: `<p>Các định dạng file hình ảnh được hỗ trợ. Video sẽ sớm được hỗ trợ.</p><p>Nếu hình ảnh có văn bản trong đó, OCR sẽ được áp dụng để trích xuất văn bản như là mô tả văn bản của nó.</p><p>Nếu văn bản trích xuất bằng OCR không đủ, LLM hình ảnh sẽ được sử dụng để nhận mô tả.</p>`,
+      one: `<p>Các định dạng file được hỗ trợ là <b>DOCX, EXCEL, PDF, TXT</b>.</p><p>Đối với một tài liệu, nó sẽ được coi là một đoạn văn bản toàn bộ, không chia nhỏ chút nào.</p><p>Nếu bạn muốn tóm tắt thứ gì đó cần toàn bộ ngữ cảnh của một bài viết và độ dài ngữ cảnh của LLM được chọn bao phủ độ dài tài liệu, bạn có thể thử phương pháp này.</p>`,
+      useRaptor: 'Sử dụng RAPTOR để tăng cường truy xuất',
       useRaptorTip:
-        'Recursive Abstractive Processing for Tree-Organized Retrieval, please refer to https://huggingface.co/papers/2401.18059',
-      prompt: 'Prompt',
-      promptTip: 'LLM prompt used for summarization.',
-      promptMessage: 'Prompt is required',
-      promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
-      {cluster_content}
-The above is the content you need to summarize.`,
-      maxToken: 'Max token',
-      maxTokenTip: 'Maximum token number for summarization.',
-      maxTokenMessage: 'Max token is required',
-      threshold: 'Threshold',
-      thresholdTip: 'The bigger the threshold is the less cluster will be.',
-      thresholdMessage: 'Threshold is required',
-      maxCluster: 'Max cluster',
-      maxClusterTip: 'Maximum cluster number.',
-      maxClusterMessage: 'Max cluster is required',
-      randomSeed: 'Random seed',
-      randomSeedMessage: 'Random seed is required',
+        'Xử lý tóm tắt đệ quy cho truy xuất có tổ chức theo cây, vui lòng tham khảo https://huggingface.co/papers/2401.18059',
+      prompt: 'Gợi ý',
+      promptTip: 'Gợi ý LLM được sử dụng để tóm tắt.',
+      promptMessage: 'Gợi ý là bắt buộc',
+      promptText: `Vui lòng tóm tắt các đoạn văn sau. Hãy cẩn thận với các con số, đừng bịa ra. Các đoạn văn như sau: {cluster_content} Đây là nội dung bạn cần tóm tắt.`,
+      maxToken: 'Số lượng token tối đa',
+      maxTokenTip: 'Số lượng token tối đa cho tóm tắt.',
+      maxTokenMessage: 'Số lượng token tối đa là bắt buộc',
+      threshold: 'Ngưỡng',
+      thresholdTip: 'Ngưỡng càng lớn thì số lượng cụm càng ít.',
+      thresholdMessage: 'Ngưỡng là bắt buộc',
+      maxCluster: 'Số lượng cụm tối đa',
+      maxClusterTip: 'Số lượng cụm tối đa.',
+      maxClusterMessage: 'Số lượng cụm tối đa là bắt buộc',
+      randomSeed: 'Hạt giống ngẫu nhiên',
+      randomSeedMessage: 'Hạt giống ngẫu nhiên là bắt buộc',
     },
     chunk: {
       chunk: 'Chunk',
