@@ -27,6 +27,8 @@ from groq import Groq
 import os 
 import json
 import requests
+import asyncio
+from jina_server import Prompt,Generation
 
 class Base(ABC):
     def __init__(self, key, model_name, base_url):
@@ -381,8 +383,10 @@ class LocalLLM(Base):
 
         def __conn(self):
             from multiprocessing.connection import Client
+
             self._connection = Client(
-                (self.host, self.port), authkey=b'infiniflow-token4kevinhu')
+                (self.host, self.port), authkey=b"infiniflow-token4kevinhu"
+            )
 
         def __getattr__(self, name):
             import pickle
@@ -390,8 +394,7 @@ class LocalLLM(Base):
             def do_rpc(*args, **kwargs):
                 for _ in range(3):
                     try:
-                        self._connection.send(
-                            pickle.dumps((name, args, kwargs)))
+                        self._connection.send(pickle.dumps((name, args, kwargs)))
                         return pickle.loads(self._connection.recv())
                     except Exception as e:
                         self.__conn()
@@ -399,35 +402,45 @@ class LocalLLM(Base):
 
             return do_rpc
 
-    def __init__(self, key, model_name="glm-3-turbo"):
-        self.client = LocalLLM.RPCProxy("127.0.0.1", 7860)
+    def __init__(self, key, model_name):
+        from jina import Client
 
-    def chat(self, system, history, gen_conf):
+        self.client = Client(port=12345, protocol="grpc", asyncio=True)
+
+    def _prepare_prompt(self, system, history, gen_conf):
         if system:
             history.insert(0, {"role": "system", "content": system})
-        try:
-            ans = self.client.chat(
-                history,
-                gen_conf
-            )
-            return ans, num_tokens_from_string(ans)
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
+        if "max_tokens" in gen_conf:
+            gen_conf["max_new_tokens"] = gen_conf.pop("max_tokens")
+        return Prompt(message=history, gen_conf=gen_conf)
 
-    def chat_streamly(self, system, history, gen_conf):
-        if system:
-            history.insert(0, {"role": "system", "content": system})
-        token_count = 0
+    def _stream_response(self, endpoint, prompt):
         answer = ""
         try:
-            for ans in self.client.chat_streamly(history, gen_conf):
-                answer += ans
-                token_count += 1
-                yield answer
+            res = self.client.stream_doc(
+                on=endpoint, inputs=prompt, return_type=Generation
+            )
+            loop = asyncio.get_event_loop()
+            try:
+                while True:
+                    answer = loop.run_until_complete(res.__anext__()).text
+                    yield answer
+            except StopAsyncIteration:
+                pass
         except Exception as e:
             yield answer + "\n**ERROR**: " + str(e)
+        yield num_tokens_from_string(answer)
 
-        yield token_count
+    def chat(self, system, history, gen_conf):
+        prompt = self._prepare_prompt(system, history, gen_conf)
+        chat_gen = self._stream_response("/chat", prompt)
+        ans = next(chat_gen)
+        total_tokens = next(chat_gen)
+        return ans , total_tokens
+
+    def chat_streamly(self, system, history, gen_conf):
+        prompt = self._prepare_prompt(system, history, gen_conf)
+        return self._stream_response("/stream", prompt)
 
 
 class VolcEngineChat(Base):
