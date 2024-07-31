@@ -50,7 +50,7 @@ export default {
       review: 'từ hơn 500 đánh giá',
     },
     header: {
-      knowledgeBase: 'Cơ sở tri thức CMC',
+      knowledgeBase: 'Cơ sở tri thức',
       chat: 'Chat',
       register: 'Đăng ký',
       signin: 'Đăng nhập',
