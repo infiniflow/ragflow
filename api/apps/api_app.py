@@ -44,9 +44,6 @@ def generate_confirmation_token(tenent_id):
     serializer = URLSafeTimedSerializer(tenent_id)
     return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
 
-@manager.route('/health', methods=['GET'])
-def health():
-    return "ok"
 
 @manager.route('/new_token', methods=['POST'])
 @validate_request("dialog_id")
