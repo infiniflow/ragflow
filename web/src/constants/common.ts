@@ -44,8 +44,6 @@ export const LanguageList = ['Vietnamese', 'English'];
 export const LanguageTranslationMap = {
   English: 'en',
   Vietnamese: 'vi',
-  Chinese: 'zh',
-  'Traditional Chinese': 'zh-TRADITIONAL',
 };
 
 export const FileMimeTypeMap = {
