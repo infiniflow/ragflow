@@ -7,7 +7,7 @@ export default defineConfig({
   outputPath: 'dist',
   // alias: { '@': './src' },
   npmClient: 'npm',
-  base: '/',
+  base: '/rag/',
   routes,
   publicPath: '/rag/',
   esbuildMinifyIIFE: true,
