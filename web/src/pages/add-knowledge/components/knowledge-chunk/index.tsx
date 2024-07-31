@@ -182,15 +182,14 @@ const Chunk = () => {
               />
             </div>
           </Flex>
-
-          {
+          {isPdf && (
             <section className={styles.documentPreview}>
               <DocumentPreview
                 highlights={highlights}
                 setWidthAndHeight={setWidthAndHeight}
               ></DocumentPreview>
             </section>
-          }
+          )}
         </Flex>
       </div>
       {chunkUpdatingVisible && (
