@@ -76,15 +76,6 @@ const ChunkToolBar = ({
     setIsShowSearchBox(true);
   };
 
-  // const handleSearchChange: ChangeEventHandler<HTMLInputElement> = (e) => {
-  //   const val = e.target.value;
-  //   dispatch({ type: 'chunkModel/setSearchString', payload: val });
-  //   dispatch({
-  //     type: 'chunkModel/throttledGetChunkList',
-  //     payload: documentInfo.id,
-  //   });
-  // };
-
   const handleSearchBlur = () => {
     if (!searchString?.trim()) {
       setIsShowSearchBox(false);

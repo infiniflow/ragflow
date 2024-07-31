@@ -1,32 +1,19 @@
-import { ResponseGetType } from '@/interfaces/database/base';
+import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { PaginationProps } from 'antd';
+import { PaginationProps, message } from 'antd';
 import { useCallback, useState } from 'react';
-import { useDispatch } from 'umi';
+import { useTranslation } from 'react-i18next';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { useGetKnowledgeSearchParams } from './route-hook';
-
-export const useFetchChunkList = () => {
-  const dispatch = useDispatch();
-  const { documentId } = useGetKnowledgeSearchParams();
-
-  const fetchChunkList = useCallback(() => {
-    dispatch({
-      type: 'chunkModel/chunk_list',
-      payload: {
-        doc_id: documentId,
-      },
-    });
-  }, [dispatch, documentId]);
-
-  return fetchChunkList;
-};
+import {
+  useGetKnowledgeSearchParams,
+  useSetPaginationParams,
+} from './route-hook';
 
 export interface IChunkListResult {
   searchString?: string;
@@ -125,6 +112,97 @@ export const useSelectChunkList = () => {
     documentInfo: IKnowledgeFile;
   }>({ queryKey: ['fetchChunkList'] });
 
-  // console.log('🚀 ~ useSelectChunkList ~ data:', data);
   return data?.at(-1)?.[1];
+};
+
+export const useDeleteChunk = () => {
+  const queryClient = useQueryClient();
+  const { setPaginationParams } = useSetPaginationParams();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteChunk'],
+    mutationFn: async (params: { chunkIds: string[]; documentId: string }) => {
+      const { data } = await kbService.rm_chunk(params);
+      if (data.retcode === 0) {
+        setPaginationParams(1);
+        queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
+      }
+      return data?.retcode;
+    },
+  });
+
+  return { data, loading, deleteChunk: mutateAsync };
+};
+
+export const useSwitchChunk = () => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['switchChunk'],
+    mutationFn: async (params: {
+      chunk_ids?: string[];
+      available_int?: number;
+      doc_id: string;
+    }) => {
+      const { data } = await kbService.switch_chunk(params);
+      if (data.retcode === 0) {
+        message.success(t('message.modified'));
+        queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
+      }
+      return data?.retcode;
+    },
+  });
+
+  return { data, loading, switchChunk: mutateAsync };
+};
+
+export const useCreateChunk = () => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['createChunk'],
+    mutationFn: async (payload: any) => {
+      let service = kbService.create_chunk;
+      if (payload.chunk_id) {
+        service = kbService.set_chunk;
+      }
+      const { data } = await service(payload);
+      if (data.retcode === 0) {
+        message.success(t('message.created'));
+        queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
+      }
+      return data?.retcode;
+    },
+  });
+
+  return { data, loading, createChunk: mutateAsync };
+};
+
+export const useFetchChunk = (chunkId?: string): ResponseType<any> => {
+  const { data } = useQuery({
+    queryKey: ['fetchChunk'],
+    enabled: !!chunkId,
+    initialData: {},
+    queryFn: async () => {
+      const data = await kbService.get_chunk({
+        chunk_id: chunkId,
+      });
+
+      return data;
+    },
+  });
+
+  return data;
 };

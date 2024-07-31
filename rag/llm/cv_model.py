@@ -622,6 +622,26 @@ class NvidiaCV(Base):
             }
         ]
 
+class StepFunCV(Base):
+    def __init__(self, key, model_name="step-1v-8k", lang="Chinese", base_url="https://api.stepfun.com/v1"):
+        if not base_url: base_url="https://api.stepfun.com/v1"
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name
+        self.lang = lang
+
+    def describe(self, image, max_tokens=4096):
+        b64 = self.image2base64(image)
+        prompt = self.prompt(b64)
+        for i in range(len(prompt)):
+            for c in prompt[i]["content"]:
+                if "text" in c: c["type"] = "text"
+
+        res = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=prompt,
+            max_tokens=max_tokens,
+        )
+        return res.choices[0].message.content.strip(), res.usage.total_tokens
 
 class LmStudioCV(GptV4):
     def __init__(self, key, model_name, base_url, lang="Chinese"):
