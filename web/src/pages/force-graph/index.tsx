@@ -4,6 +4,17 @@ import { useEffect, useRef } from 'react';
 import { graphData } from './constant';
 
 import styles from './index.less';
+import { Converter } from './util';
+
+const converter = new Converter();
+
+const nextData = converter.buildNodesAndCombos(
+  graphData.nodes,
+  graphData.edges,
+);
+console.log('🚀 ~ nextData:', nextData);
+
+const finalData = { ...graphData, ...nextData };
 
 const ForceGraph = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -60,7 +71,7 @@ const ForceGraph = () => {
       //   data: graphData,
     });
 
-    graph.setData(graphData);
+    graph.setData(finalData);
 
     graph.render();
   };

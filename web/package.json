@@ -41,6 +41,7 @@
     "mammoth": "^1.7.2",
     "rc-tween-one": "^3.0.6",
     "react-copy-to-clipboard": "^5.1.0",
+    "react-force-graph": "^1.44.4",
     "react-i18next": "^14.0.0",
     "react-markdown": "^9.0.1",
     "react-pdf-highlighter": "^6.1.0",

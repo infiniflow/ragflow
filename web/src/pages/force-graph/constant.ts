@@ -121,7 +121,7 @@ const nodes = [
     entity_type: '"EVENT"',
     id: '"主要财务指标"',
   },
-].map(({ type, ...x }) => ({ ...x, combo: 'a' }));
+].map(({ type, ...x }) => ({ ...x }));
 
 const edges = [
   {
@@ -231,48 +231,11 @@ const edges = [
   },
 ];
 
-const chars = Array(26)
-  .fill(1)
-  .map((x, idx) => String.fromCharCode(97 + idx)); // 26 char
-
-const combos = [];
-
-const nextNodes = nodes.map((x) => ({ ...x }));
-
-let idx = 0;
-
-// edges.forEach((x) => {
-//   const sourceNode = nextNodes.find((y) => y.id === x.source);
-
-//   if (sourceNode) {
-//     if (!('combo' in sourceNode)) {
-//       sourceNode.combo = chars[idx];
-//     } else {
-//       const targetNode = nextNodes.find((y) => y.id === x.target);
-//       targetNode?.combo = chars[idx];
-//     }
-//     idx++;
-//   }
-// });
-
 export const graphData = {
   directed: false,
   multigraph: false,
   graph: {},
   nodes,
   edges,
-  combos: [
-    {
-      id: 'a',
-      data: {
-        label: 'Combo A',
-      },
-    },
-    {
-      id: 'b',
-      data: {
-        label: 'Combo B',
-      },
-    },
-  ],
+  combos: [],
 };
