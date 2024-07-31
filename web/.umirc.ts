@@ -9,11 +9,11 @@ export default defineConfig({
   npmClient: 'npm',
   base: '/',
   routes,
-  publicPath: '/',
+  publicPath: '/rag/',
   esbuildMinifyIIFE: true,
   icons: {},
   hash: true,
-  favicons: ['/logo.svg'],
+  favicons: ['/rag/logo.svg'],
   clickToComponent: {},
   history: {
     type: 'browser',
