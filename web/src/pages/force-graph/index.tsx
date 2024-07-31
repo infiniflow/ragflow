@@ -19,12 +19,22 @@ const finalData = { ...graphData, ...nextData };
 const ForceGraph = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const size = useSize(containerRef);
+  let graph: Graph;
 
   const render = () => {
-    const graph = new Graph({
+    graph = new Graph({
       container: containerRef.current!,
       autoFit: 'view',
-      behaviors: ['drag-element', 'drag-canvas', 'zoom-canvas'],
+      behaviors: [
+        'drag-element',
+        'drag-canvas',
+        'zoom-canvas',
+        'collapse-expand',
+        {
+          type: 'hover-activate',
+          degree: 1, // 👈🏻 Activate relations.
+        },
+      ],
       plugins: [
         {
           type: 'tooltip',
@@ -44,20 +54,34 @@ const ForceGraph = () => {
       ],
       layout: {
         type: 'combo-combined',
-        comboPadding: 2,
+        preventOverlap: true,
+        comboPadding: 1,
+        spacing: 20,
       },
       node: {
         style: {
           size: 20,
           labelText: (d) => d.id,
-          labelPadding: 20,
+          labelPadding: 30,
           //   labelOffsetX: 20,
-          labelOffsetY: 5,
+          // labelOffsetY: 5,
+          labelPlacement: 'center',
+          labelWordWrap: true,
         },
         palette: {
           type: 'group',
           field: (d) => d.combo,
         },
+        // state: {
+        //   highlight: {
+        //     fill: '#D580FF',
+        //     halo: true,
+        //     lineWidth: 0,
+        //   },
+        //   dim: {
+        //     fill: '#99ADD1',
+        //   },
+        // },
       },
       edge: {
         style: (model) => {
@@ -77,6 +101,7 @@ const ForceGraph = () => {
   };
 
   useEffect(() => {
+    console.info('rendered');
     render();
   }, []);
 
