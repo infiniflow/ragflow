@@ -7,7 +7,7 @@ export default defineConfig({
   outputPath: 'dist',
   // alias: { '@': './src' },
   npmClient: 'npm',
-  base: '/',
+  base: '/rag/',
   routes,
   publicPath: '/',
   esbuildMinifyIIFE: true,
@@ -31,6 +31,7 @@ export default defineConfig({
   proxy: {
     '/v1': {
       target: 'http://localhost:9380/',
+      // target: 'http://52.199.122.150:9080/',
       changeOrigin: true,
       ws: true,
       logger: console,
