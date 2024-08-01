@@ -65,9 +65,6 @@ export const buildNodesAndCombos = (nodes: any[]) => {
     if (combo && combos.every((y) => y.id !== combo)) {
       combos.push({
         id: combo,
-        data: {
-          label: `Combo ${combo}`,
-        },
       });
     }
     return {

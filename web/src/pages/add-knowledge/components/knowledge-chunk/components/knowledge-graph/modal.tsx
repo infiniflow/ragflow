@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import ForceGraph from './force-graph';
 
 import styles from './index.less';
+import { isDataExist } from './util';
 
 const KnowledgeGraphModal: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -18,8 +19,7 @@ const KnowledgeGraphModal: React.FC = () => {
   };
 
   useEffect(() => {
-    if (data?.data && typeof data?.data !== 'boolean') {
-      console.log('🚀 ~ useEffect ~ data:', data);
+    if (isDataExist(data)) {
       setIsModalOpen(true);
     }
   }, [setIsModalOpen, data]);
