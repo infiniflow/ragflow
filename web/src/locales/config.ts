@@ -7,7 +7,7 @@ import translation_vi from './vi';
 
 const resources = {
   en: translation_en,
-  vi: translation_vi,
+  vi: translation_vi, // vi_VN
 };
 
 i18n
