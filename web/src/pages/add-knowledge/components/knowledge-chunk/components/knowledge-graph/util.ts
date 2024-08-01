@@ -54,11 +54,6 @@ export class Converter {
   }
 }
 
-export const buildNodesAndCombos = (nodes: any[]) => {
-  const combos = [];
-  const nextNodes = nodes.map((x) => {
-    return { ...x, combo: x };
-  });
-
-  return {};
+export const isDataExist = (data: any) => {
+  return data?.data && typeof data?.data !== 'boolean';
 };

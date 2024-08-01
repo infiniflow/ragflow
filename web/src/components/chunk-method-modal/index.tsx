@@ -119,7 +119,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
       <Space size={[0, 8]} wrap>
         <Form.Item label={t('chunkMethod')} className={styles.chunkMethod}>
           <Select
-            style={{ width: 120 }}
+            style={{ width: 160 }}
             onChange={handleChange}
             value={selectedTag}
             options={parserList}

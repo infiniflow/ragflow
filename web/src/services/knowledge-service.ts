@@ -27,6 +27,7 @@ const {
   get_document_file,
   document_upload,
   web_crawl,
+  knowledge_graph,
 } = api;
 
 const methods = {
@@ -120,6 +121,10 @@ const methods = {
   retrieval_test: {
     url: retrieval_test,
     method: 'post',
+  },
+  knowledge_graph: {
+    url: knowledge_graph,
+    method: 'get',
   },
 };
 
