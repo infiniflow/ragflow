@@ -50,7 +50,7 @@ export default {
       review: 'from 500+ reviews',
     },
     header: {
-      knowledgeBase: 'CMC Knowledge Base',
+      knowledgeBase: 'Knowledge Base',
       chat: 'Chat',
       register: 'Register',
       signin: 'Sign in',
