@@ -57,3 +57,24 @@ export class Converter {
 export const isDataExist = (data: any) => {
   return data?.data && typeof data?.data !== 'boolean';
 };
+
+export const buildNodesAndCombos = (nodes: any[]) => {
+  const combos: any[] = [];
+  const nextNodes = nodes.map((x) => {
+    const combo = Array.isArray(x?.communities) ? x.communities[0] : undefined;
+    if (combo && combos.every((y) => y.id !== combo)) {
+      combos.push({
+        id: combo,
+        data: {
+          label: `Combo ${combo}`,
+        },
+      });
+    }
+    return {
+      ...x,
+      combo,
+    };
+  });
+
+  return { nodes: nextNodes, combos };
+};

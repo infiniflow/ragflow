@@ -26,7 +26,7 @@ const KnowledgeGraphModal: React.FC = () => {
 
   return (
     <Modal
-      title="Basic Modal"
+      title="Knowledge Graph"
       open={isModalOpen}
       onOk={handleOk}
       onCancel={handleCancel}

@@ -53,12 +53,3 @@ export class Converter {
     return { nodes: nextNodes, combos };
   }
 }
-
-export const buildNodesAndCombos = (nodes: any[]) => {
-  const combos = [];
-  const nextNodes = nodes.map((x) => {
-    return { ...x, combo: x };
-  });
-
-  return {};
-};

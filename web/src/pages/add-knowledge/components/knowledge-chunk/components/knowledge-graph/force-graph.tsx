@@ -2,7 +2,7 @@ import { Graph } from '@antv/g6';
 import { useSize } from 'ahooks';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { graphData } from './constant';
-import { Converter, isDataExist } from './util';
+import { Converter, buildNodesAndCombos, isDataExist } from './util';
 
 import { useFetchKnowledgeGraph } from '@/hooks/chunk-hooks';
 import styles from './index.less';
@@ -25,14 +25,12 @@ const ForceGraph = () => {
   const nextData = useMemo(() => {
     if (isDataExist(data)) {
       const graphData = data.data;
-      const mi = converter.buildNodesAndCombos(
-        graphData.nodes,
-        graphData.links,
-      );
-      return { ...graphData, ...mi };
+      const mi = buildNodesAndCombos(graphData.nodes);
+      return { edges: graphData.links, ...mi };
     }
     return { nodes: [], edges: [] };
   }, [data]);
+  console.log('🚀 ~ nextData ~ nextData:', nextData);
 
   const render = useCallback(() => {
     const graph = new Graph({
@@ -106,7 +104,6 @@ const ForceGraph = () => {
           };
         },
       },
-      //   data: graphData,
     });
 
     graph.setData(nextData);
