@@ -824,13 +824,12 @@ class Dialog(DataBaseModel):
     do_refer = CharField(
         max_length=1,
         null=False,
-        help_text="it needs to insert reference index into answer or not",
-        index=True)
+        help_text="it needs to insert reference index into answer or not")
+    
     rerank_id = CharField(
         max_length=128,
         null=False,
-        help_text="default rerank model ID",
-        index=True)
+        help_text="default rerank model ID")
 
     kb_ids = JSONField(null=False, default=[])
     status = CharField(
