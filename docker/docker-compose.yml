@@ -12,7 +12,6 @@ services:
     # image: infiniflow/ragflow:${RAGFLOW_VERSION}
     build:
       context: ../
-      dockerfile: Dockerfile
       target: web
     container_name: ragflow-server
     ports:
