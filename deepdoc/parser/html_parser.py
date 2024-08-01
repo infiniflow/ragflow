@@ -30,10 +30,15 @@ class RAGFlowHtmlParser:
         else:
             with open(fnm, "r",encoding=get_encoding(fnm)) as f:
                 txt = f.read()
+        return self.parser_txt(txt)
 
+    @classmethod
+    def parser_txt(cls, txt):
+        if type(txt) != str:
+            raise TypeError("txt type should be str!")
         html_doc = readability.Document(txt)
         title = html_doc.title()
         content = html_text.extract_text(html_doc.summary(html_partial=True))
-        txt = f'{title}\n{content}'
+        txt = f"{title}\n{content}"
         sections = txt.split("\n")
         return sections

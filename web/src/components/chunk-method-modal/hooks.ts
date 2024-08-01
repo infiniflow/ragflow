@@ -14,11 +14,12 @@ const ParserListMap = new Map([
       'presentation',
       'one',
       'qa',
+      'email'
     ],
   ],
   [
     ['doc', 'docx'],
-    ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'manual'],
+    ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'manual','email'],
   ],
   [
     ['xlsx', 'xls'],

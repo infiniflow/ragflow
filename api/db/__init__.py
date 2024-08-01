@@ -85,6 +85,7 @@ class ParserType(StrEnum):
     PICTURE = "picture"
     ONE = "one"
     AUDIO = "audio"
+    EMAIL = "email"
 
 
 class FileSource(StrEnum):
