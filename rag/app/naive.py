@@ -23,7 +23,7 @@ from rag.utils import num_tokens_from_string
 from PIL import Image
 from functools import reduce
 from markdown import markdown
-
+from docx.image.exceptions import UnrecognizedImageError
 
 class Docx(DocxParser):
     def __init__(self):
@@ -36,9 +36,16 @@ class Docx(DocxParser):
         img = img[0]
         embed = img.xpath('.//a:blip/@r:embed')[0]
         related_part = document.part.related_parts[embed]
-        image = related_part.image
-        image = Image.open(BytesIO(image.blob)).convert('RGB')
-        return image
+        try:
+            image_blob = related_part.image.blob
+        except UnrecognizedImageError:
+            print("Unrecognized image format. Skipping image.")
+            return None
+        try:
+            image = Image.open(BytesIO(image_blob)).convert('RGB')
+            return image
+        except Exception as e:
+            return None
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()

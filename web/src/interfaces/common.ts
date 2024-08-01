@@ -12,7 +12,7 @@ export interface BaseState {
 export interface IModalProps<T> {
   showModal?(): void;
   hideModal(): void;
-  visible: boolean;
+  visible?: boolean;
   loading?: boolean;
   onOk?(payload?: T): Promise<any> | void;
 }
