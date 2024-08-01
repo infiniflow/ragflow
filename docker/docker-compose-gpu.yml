@@ -9,12 +9,16 @@ services:
         condition: service_healthy
       es01:
         condition: service_healthy
-    image: infiniflow/ragflow:${RAGFLOW_VERSION}
+    # image: infiniflow/ragflow:${RAGFLOW_VERSION}
+    build:
+      context: ../
+      dockerfile: Dockerfile.cuda
+      # target: web
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
-      - 80:80
-      - 443:443
+      - 9080:9080
+      - 9443:9443
     volumes:
       - ./service_conf.yaml:/ragflow/conf/service_conf.yaml
       - ./ragflow-logs:/ragflow/logs
