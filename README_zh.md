@@ -46,10 +46,10 @@
 
 ## 🔥 近期更新
 
-- 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图.
-- 2024-07-23 支持解析音频文件.
-- 2024-07-21 支持更多的大模型供应商(LocalAI/OpenRouter/StepFun/Nvidia).
-- 2024-07-18 在Graph中支持算子：Wikipedia，PubMed，Baidu和Duckduckgo.
+- 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
+- 2024-07-23 支持解析音频文件。
+- 2024-07-21 支持更多的大模型供应商(LocalAI/OpenRouter/StepFun/Nvidia)。
+- 2024-07-18 在Graph中支持算子：Wikipedia、PubMed、Baidu和Duckduckgo。
 - 2024-07-08 支持 Agentic RAG: 基于 [Graph](./graph/README.md) 的工作流。
 - 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件。 
 - 2024-06-27 支持提取出 Docx 文件中的图片。
