@@ -3,9 +3,8 @@ import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon, useNavigate } from 'umi';
+import { useNavigate } from 'umi';
 
-import { Domain } from '@/constants/common';
 import styles from './index.less';
 
 const Login = () => {
@@ -160,7 +159,7 @@ const Login = () => {
                     Sign in with Google
                   </div>
                 </Button> */}
-                {location.host === Domain && (
+                {/*location.host === Domain && (
                   <Button
                     block
                     size="large"
@@ -175,7 +174,7 @@ const Login = () => {
                       Sign in with Github
                     </div>
                   </Button>
-                )}
+                )*/}
               </>
             )}
           </Form>
