@@ -1,5 +1,5 @@
 import { Skeleton } from 'antd';
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import {
   AreaHighlight,
   Highlight,
@@ -8,7 +8,6 @@ import {
   PdfLoader,
   Popup,
 } from 'react-pdf-highlighter';
-import { useGetChunkHighlights } from '../../hooks';
 import { useGetDocumentUrl } from './hooks';
 
 import { useCatchDocumentError } from '@/components/pdf-previewer/hooks';
@@ -16,7 +15,8 @@ import FileError from '@/pages/document-viewer/file-error';
 import styles from './index.less';
 
 interface IProps {
-  selectedChunkId: string;
+  highlights: IHighlight[];
+  setWidthAndHeight: (width: number, height: number) => void;
 }
 const HighlightPopup = ({
   comment,
@@ -30,11 +30,10 @@ const HighlightPopup = ({
   ) : null;
 
 // TODO: merge with DocumentPreviewer
-const Preview = ({ selectedChunkId }: IProps) => {
+const Preview = ({ highlights: state, setWidthAndHeight }: IProps) => {
   const url = useGetDocumentUrl();
   useCatchDocumentError(url);
-  const { highlights: state, setWidthAndHeight } =
-    useGetChunkHighlights(selectedChunkId);
+
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
   const error = useCatchDocumentError(url);
 
@@ -42,7 +41,7 @@ const Preview = ({ selectedChunkId }: IProps) => {
 
   useEffect(() => {
     if (state.length > 0) {
-      ref.current(state[0]);
+      ref?.current(state[0]);
     }
   }, [state]);
 
@@ -120,4 +119,12 @@ const Preview = ({ selectedChunkId }: IProps) => {
   );
 };
 
-export default Preview;
+const compare = (oldProps: IProps, newProps: IProps) => {
+  const arePropsEqual =
+    oldProps.highlights === newProps.highlights ||
+    (oldProps.highlights.length === 0 && newProps.highlights.length === 0);
+
+  return arePropsEqual;
+};
+
+export default memo(Preview);

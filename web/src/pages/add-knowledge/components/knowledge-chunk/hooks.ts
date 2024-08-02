@@ -1,24 +1,15 @@
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
-import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
+import {
+  useCreateChunk,
+  useDeleteChunk,
+  useSelectChunkList,
+} from '@/hooks/chunk-hooks';
+import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { IChunk } from '@/interfaces/database/knowledge';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
-import { useSelector } from 'umi';
 import { ChunkTextMode } from './constant';
-
-export const useSelectDocumentInfo = () => {
-  const documentInfo: IKnowledgeFile = useSelector(
-    (state: any) => state.chunkModel.documentInfo,
-  );
-  return documentInfo;
-};
-
-export const useSelectChunkList = () => {
-  const chunkList: IChunk[] = useSelector(
-    (state: any) => state.chunkModel.data,
-  );
-  return chunkList;
-};
 
 export const useHandleChunkCardClick = () => {
   const [selectedChunkId, setSelectedChunkId] = useState<string>('');
@@ -31,9 +22,9 @@ export const useHandleChunkCardClick = () => {
 };
 
 export const useGetSelectedChunk = (selectedChunkId: string) => {
-  const chunkList: IChunk[] = useSelectChunkList();
+  const data = useSelectChunkList();
   return (
-    chunkList.find((x) => x.chunk_id === selectedChunkId) ?? ({} as IChunk)
+    data?.data?.find((x) => x.chunk_id === selectedChunkId) ?? ({} as IChunk)
   );
 };
 
@@ -45,24 +36,16 @@ export const useGetChunkHighlights = (selectedChunkId: string) => {
     return buildChunkHighlights(selectedChunk, size);
   }, [selectedChunk, size]);
 
-  const setWidthAndHeight = (width: number, height: number) => {
+  const setWidthAndHeight = useCallback((width: number, height: number) => {
     setSize((pre) => {
       if (pre.height !== height || pre.width !== width) {
         return { height, width };
       }
       return pre;
     });
-  };
+  }, []);
 
   return { highlights, setWidthAndHeight };
-};
-
-export const useSelectChunkListLoading = () => {
-  return useOneNamespaceEffectsLoading('chunkModel', [
-    'create_hunk',
-    'chunk_list',
-    'switch_chunk',
-  ]);
 };
 
 // Switch chunk text to be fully displayed or ellipse
@@ -74,4 +57,74 @@ export const useChangeChunkTextMode = () => {
   }, []);
 
   return { textMode, changeChunkTextMode };
+};
+
+export const useDeleteChunkByIds = (): {
+  removeChunk: (chunkIds: string[], documentId: string) => Promise<number>;
+} => {
+  const { deleteChunk } = useDeleteChunk();
+  const showDeleteConfirm = useShowDeleteConfirm();
+
+  const removeChunk = useCallback(
+    (chunkIds: string[], documentId: string) => () => {
+      return deleteChunk({ chunkIds, documentId });
+    },
+    [deleteChunk],
+  );
+
+  const onRemoveChunk = useCallback(
+    (chunkIds: string[], documentId: string): Promise<number> => {
+      return showDeleteConfirm({ onOk: removeChunk(chunkIds, documentId) });
+    },
+    [removeChunk, showDeleteConfirm],
+  );
+
+  return {
+    removeChunk: onRemoveChunk,
+  };
+};
+
+export const useUpdateChunk = () => {
+  const [chunkId, setChunkId] = useState<string | undefined>('');
+  const {
+    visible: chunkUpdatingVisible,
+    hideModal: hideChunkUpdatingModal,
+    showModal,
+  } = useSetModalState();
+  const { createChunk, loading } = useCreateChunk();
+  const { documentId } = useGetKnowledgeSearchParams();
+
+  const onChunkUpdatingOk = useCallback(
+    async ({ content, keywords }: { content: string; keywords: string }) => {
+      const retcode = await createChunk({
+        content_with_weight: content,
+        doc_id: documentId,
+        chunk_id: chunkId,
+        important_kwd: keywords, // keywords
+      });
+
+      if (retcode === 0) {
+        hideChunkUpdatingModal();
+      }
+    },
+    [createChunk, hideChunkUpdatingModal, chunkId, documentId],
+  );
+
+  const handleShowChunkUpdatingModal = useCallback(
+    async (id?: string) => {
+      setChunkId(id);
+      showModal();
+    },
+    [showModal],
+  );
+
+  return {
+    chunkUpdatingLoading: loading,
+    onChunkUpdatingOk,
+    chunkUpdatingVisible,
+    hideChunkUpdatingModal,
+    showChunkUpdatingModal: handleShowChunkUpdatingModal,
+    chunkId,
+    documentId,
+  };
 };

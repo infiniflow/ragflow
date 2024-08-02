@@ -99,6 +99,11 @@ const routes = [
     layout: false,
   },
   {
+    path: 'force',
+    component: '@/pages/force-graph',
+    layout: false,
+  },
+  {
     path: '/*',
     component: '@/pages/404',
     layout: false,
