@@ -92,6 +92,13 @@ const OllamaModal = ({
         >
           <Input placeholder={t('baseUrlNameMessage')} />
         </Form.Item>
+        <Form.Item<FieldType>
+          label={t('apiKey')}
+          name="api_key"
+          rules={[{ required: false, message: t('apiKeyMessage') }]}
+        >
+          <Input placeholder={t('apiKeyMessage')} />
+        </Form.Item>
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>
             getFieldValue('model_type') === 'chat' && (
