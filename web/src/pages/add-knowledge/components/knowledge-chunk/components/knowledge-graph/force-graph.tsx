@@ -1,4 +1,5 @@
 import { ElementDatum, Graph, IElementEvent } from '@antv/g6';
+import isEmpty from 'lodash/isEmpty';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildNodesAndCombos } from './util';
 
@@ -20,7 +21,7 @@ const ForceGraph = ({ data, show }: IProps) => {
   const graphRef = useRef<Graph | null>(null);
 
   const nextData = useMemo(() => {
-    if (data) {
+    if (!isEmpty(data)) {
       const graphData = data;
       const mi = buildNodesAndCombos(graphData.nodes);
       return { edges: graphData.links, ...mi };
@@ -116,7 +117,7 @@ const ForceGraph = ({ data, show }: IProps) => {
   }, [nextData]);
 
   useEffect(() => {
-    if (data) {
+    if (!isEmpty(data)) {
       render();
     }
   }, [data, render]);
