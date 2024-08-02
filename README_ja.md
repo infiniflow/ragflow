@@ -47,6 +47,7 @@
 
 ## 🔥 最新情報
 
+- 2024-08-02 [GraphRAG](https://github.com/microsoft/graphrag) と脑図をサポートします。
 - 2024-07-23 音声ファイルの解析をサポートしました。
 - 2024-07-21 より多くの LLM サプライヤー (LocalAI/OpenRouter/StepFun/Nvidia) をサポートします。
 - 2024-07-18 グラフにコンポーネント(Wikipedia/PubMed/Baidu/Duckduckgo)を追加しました。

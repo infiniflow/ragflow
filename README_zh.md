@@ -46,6 +46,7 @@
 
 ## 🔥 近期更新
 
+- 2024-08-02 支持 [GraphRAG](https://github.com/microsoft/graphrag) 和脑图.
 - 2024-07-23 支持解析音频文件.
 - 2024-07-21 支持更多的大模型供应商(LocalAI/OpenRouter/StepFun/Nvidia).
 - 2024-07-18 在Graph中支持算子：Wikipedia，PubMed，Baidu和Duckduckgo.
