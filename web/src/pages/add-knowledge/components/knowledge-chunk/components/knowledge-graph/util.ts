@@ -1,3 +1,5 @@
+import { isEmpty } from 'lodash';
+
 class KeyGenerator {
   idx = 0;
   chars: string[] = [];
@@ -55,7 +57,9 @@ export class Converter {
 }
 
 export const isDataExist = (data: any) => {
-  return data?.data && typeof data?.data !== 'boolean';
+  return (
+    data?.data && typeof data?.data !== 'boolean' && !isEmpty(data?.data?.graph)
+  );
 };
 
 export const buildNodesAndCombos = (nodes: any[]) => {
