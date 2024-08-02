@@ -22,6 +22,7 @@ import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
 import { useTranslate } from '@/hooks/common-hooks';
+import EntityTypesForm from '../entity-types-form';
 import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
@@ -41,7 +42,14 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   documentId: string;
 }
 
-const hidePagesChunkMethods = ['qa', 'table', 'picture', 'resume', 'one'];
+const hidePagesChunkMethods = [
+  'qa',
+  'table',
+  'picture',
+  'resume',
+  'one',
+  'knowledge_graph',
+];
 
 const ChunkMethodModal: React.FC<IProps> = ({
   documentId,
@@ -80,7 +88,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
     return (
       isPdf &&
       hidePagesChunkMethods
-        .filter((x) => x !== 'one')
+        .filter((x) => x !== 'one' && x !== 'knowledge_graph')
         .every((x) => x !== selectedTag)
     );
   }, [selectedTag, isPdf]);
@@ -90,6 +98,8 @@ const ChunkMethodModal: React.FC<IProps> = ({
   const hideDivider = [showPages, showOne, showMaxTokenNumber].every(
     (x) => x === false,
   );
+
+  const showEntityTypes = selectedTag === 'knowledge_graph';
 
   const afterClose = () => {
     form.resetFields();
@@ -262,6 +272,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
         {showRaptorParseConfiguration(selectedTag) && (
           <ParseConfiguration></ParseConfiguration>
         )}
+        {showEntityTypes && <EntityTypesForm></EntityTypesForm>}
       </Form>
     </Modal>
   );

@@ -6,6 +6,7 @@ import {
   useSubmitKnowledgeConfiguration,
 } from './hooks';
 
+import EntityTypesForm from '@/components/entity-types-form';
 import LayoutRecognize from '@/components/layout-recognize';
 import MaxTokenNumber from '@/components/max-token-number';
 import ParseConfiguration, {
@@ -98,6 +99,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
           ))}
         </Select>
       </Form.Item>
+      <EntityTypesForm></EntityTypesForm>
       <Form.Item noStyle dependencies={['parser_id']}>
         {({ getFieldValue }) => {
           const parserId = getFieldValue('parser_id');
