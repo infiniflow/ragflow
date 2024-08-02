@@ -10,7 +10,7 @@ const initialEntityTypes = [
   'time',
 ];
 
-const EntityTypesForm = () => {
+const EntityTypesItem = () => {
   const { t } = useTranslate('knowledgeConfiguration');
   return (
     <Form.Item
@@ -26,4 +26,4 @@ const EntityTypesForm = () => {
   );
 };
 
-export default EntityTypesForm;
+export default EntityTypesItem;
