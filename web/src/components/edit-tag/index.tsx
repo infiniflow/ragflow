@@ -7,8 +7,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import styles from './index.less';
 
 interface EditTagsProps {
-  tags: string[];
-  setTags: (tags: string[]) => void;
+  tags?: string[];
+  setTags?: (tags: string[]) => void;
 }
 
 const EditTag = ({ tags, setTags }: EditTagsProps) => {
@@ -24,9 +24,8 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
   }, [inputVisible]);
 
   const handleClose = (removedTag: string) => {
-    const newTags = tags.filter((tag) => tag !== removedTag);
-    console.log(newTags);
-    setTags(newTags);
+    const newTags = tags?.filter((tag) => tag !== removedTag);
+    setTags?.(newTags ?? []);
   };
 
   const showInput = () => {
@@ -38,8 +37,8 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
   };
 
   const handleInputConfirm = () => {
-    if (inputValue && tags.indexOf(inputValue) === -1) {
-      setTags([...tags, inputValue]);
+    if (inputValue && tags?.indexOf(inputValue) === -1) {
+      setTags?.([...tags, inputValue]);
     }
     setInputVisible(false);
     setInputValue('');
@@ -64,7 +63,7 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
     );
   };
 
-  const tagChild = tags.map(forMap);
+  const tagChild = tags?.map(forMap);
 
   const tagPlusStyle: React.CSSProperties = {
     background: token.colorBgContainer,

@@ -291,6 +291,7 @@ The above is the content you need to summarize.`,
       maxClusterMessage: 'Max cluster is required',
       randomSeed: 'Random seed',
       randomSeedMessage: 'Random seed is required',
+      entityTypes: 'Entity types',
     },
     chunk: {
       chunk: 'Chunk',

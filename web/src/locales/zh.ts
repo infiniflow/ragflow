@@ -280,6 +280,7 @@ export default {
       maxTokenTip: '用于汇总的最大token数。',
       thresholdTip: '阈值越大，聚类越少。',
       maxClusterTip: '最大聚类数。',
+      entityTypes: '实体类型',
     },
     chunk: {
       chunk: '解析块',

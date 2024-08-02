@@ -12,7 +12,13 @@ import {
 } from 'antd';
 import random from 'lodash/random';
 
-export const excludedParseMethods = ['table', 'resume', 'one', 'picture'];
+export const excludedParseMethods = [
+  'table',
+  'resume',
+  'one',
+  'picture',
+  'knowledge_graph',
+];
 
 export const showRaptorParseConfiguration = (parserId: string) => {
   return !excludedParseMethods.includes(parserId);

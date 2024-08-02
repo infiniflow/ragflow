@@ -8,6 +8,7 @@ import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
 import ChunkToolBar from './components/chunk-toolbar';
 import DocumentPreview from './components/document-preview/preview';
+import KnowledgeGraphModal from './components/knowledge-graph/modal';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
@@ -52,7 +53,6 @@ const Chunk = () => {
   ) => {
     setSelectedChunkIds([]);
     pagination.onChange?.(page, size);
-    // getChunkList();
   };
 
   const selectAllChunk = useCallback(
@@ -110,16 +110,9 @@ const Chunk = () => {
         doc_id: documentId,
       });
       if (!chunkIds && resCode === 0) {
-        // getChunkList();
       }
     },
-    [
-      switchChunk,
-      documentId,
-      // getChunkList,
-      selectedChunkIds,
-      showSelectedChunkWarning,
-    ],
+    [switchChunk, documentId, selectedChunkIds, showSelectedChunkWarning],
   );
 
   const { highlights, setWidthAndHeight } =
@@ -202,6 +195,7 @@ const Chunk = () => {
           onOk={onChunkUpdatingOk}
         />
       )}
+      <KnowledgeGraphModal></KnowledgeGraphModal>
     </>
   );
 };
