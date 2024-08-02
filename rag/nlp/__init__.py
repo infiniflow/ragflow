@@ -228,7 +228,7 @@ def tokenize(d, t, eng):
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
 
 
-def tokenize_chunks(chunks, doc, eng, pdf_parser):
+def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
     res = []
     # wrap up as es documents
     for ck in chunks:

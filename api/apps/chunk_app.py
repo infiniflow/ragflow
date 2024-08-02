@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 import datetime
+import json
+import traceback
 
 from flask import request
 from flask_login import login_required, current_user
@@ -29,7 +31,7 @@ from api.db.services.llm_service import TenantLLMService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db.services.document_service import DocumentService
-from api.settings import RetCode, retrievaler
+from api.settings import RetCode, retrievaler, kg_retrievaler
 from api.utils.api_utils import get_json_result
 import hashlib
 import re
@@ -61,7 +63,8 @@ def list_chunk():
         for id in sres.ids:
             d = {
                 "chunk_id": id,
-                "content_with_weight": rmSpace(sres.highlight[id]) if question and id in  sres.highlight else sres.field[id].get(
+                "content_with_weight": rmSpace(sres.highlight[id]) if question and id in sres.highlight else sres.field[
+                    id].get(
                     "content_with_weight", ""),
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
@@ -136,11 +139,11 @@ def set():
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
         if not tenant_id:
             return get_data_error_result(retmsg="Tenant not found!")
-        
+
         embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = TenantLLMService.model_instance(
             tenant_id, LLMType.EMBEDDING.value, embd_id)
-        
+
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(retmsg="Document not found!")
@@ -185,7 +188,7 @@ def switch():
 
 @manager.route('/rm', methods=['POST'])
 @login_required
-@validate_request("chunk_ids","doc_id")
+@validate_request("chunk_ids", "doc_id")
 def rm():
     req = request.json
     try:
@@ -230,11 +233,11 @@ def create():
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
         if not tenant_id:
             return get_data_error_result(retmsg="Tenant not found!")
-        
+
         embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = TenantLLMService.model_instance(
             tenant_id, LLMType.EMBEDDING.value, embd_id)
-        
+
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
@@ -277,9 +280,10 @@ def retrieval_test():
             chat_mdl = TenantLLMService.model_instance(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
-        ranks = retrievaler.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size,
-                                      similarity_threshold, vector_similarity_weight, top,
-                                      doc_ids, rerank_mdl=rerank_mdl)
+        retr = retrievaler if kb.parser_id != ParserType.KG else kg_retrievaler
+        ranks = retr.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size,
+                               similarity_threshold, vector_similarity_weight, top,
+                               doc_ids, rerank_mdl=rerank_mdl)
         for c in ranks["chunks"]:
             if "vector" in c:
                 del c["vector"]
@@ -290,3 +294,25 @@ def retrieval_test():
             return get_json_result(data=False, retmsg=f'No chunk found! Check the chunk status please!',
                                    retcode=RetCode.DATA_ERROR)
         return server_error_response(e)
+
+
+@manager.route('/knowledge_graph', methods=['GET'])
+@login_required
+def knowledge_graph():
+    doc_id = request.args["doc_id"]
+    req = {
+        "doc_ids":[doc_id],
+        "knowledge_graph_kwd": ["graph", "mind_map"]
+    }
+    tenant_id = DocumentService.get_tenant_id(doc_id)
+    sres = retrievaler.search(req, search.index_name(tenant_id))
+    obj = {"graph": {}, "mind_map": {}}
+    for id in sres.ids[:2]:
+        ty = sres.field[id]["knowledge_graph_kwd"]
+        try:
+            obj[ty] = json.loads(sres.field[id]["content_with_weight"])
+        except Exception as e:
+            print(traceback.format_exc(), flush=True)
+
+    return get_json_result(data=obj)
+
