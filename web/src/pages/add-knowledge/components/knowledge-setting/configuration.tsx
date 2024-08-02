@@ -1,19 +1,18 @@
-import { normFile } from '@/utils/file-util';
-import { PlusOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Radio, Select, Space, Upload } from 'antd';
-import {
-  useFetchKnowledgeConfigurationOnMount,
-  useSubmitKnowledgeConfiguration,
-} from './hooks';
-
-import EntityTypesForm from '@/components/entity-types-form';
+import EntityTypesItem from '@/components/entity-types-item';
 import LayoutRecognize from '@/components/layout-recognize';
 import MaxTokenNumber from '@/components/max-token-number';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
 } from '@/components/parse-configuration';
 import { useTranslate } from '@/hooks/common-hooks';
+import { normFile } from '@/utils/file-util';
+import { PlusOutlined } from '@ant-design/icons';
+import { Button, Form, Input, Radio, Select, Space, Upload } from 'antd';
 import { FormInstance } from 'antd/lib';
+import {
+  useFetchKnowledgeConfigurationOnMount,
+  useSubmitKnowledgeConfiguration,
+} from './hooks';
 import styles from './index.less';
 
 const { Option } = Select;
@@ -99,7 +98,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
           ))}
         </Select>
       </Form.Item>
-      <EntityTypesForm></EntityTypesForm>
+      <EntityTypesItem></EntityTypesItem>
       <Form.Item noStyle dependencies={['parser_id']}>
         {({ getFieldValue }) => {
           const parserId = getFieldValue('parser_id');

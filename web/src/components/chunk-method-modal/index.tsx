@@ -22,7 +22,7 @@ import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
 import { useTranslate } from '@/hooks/common-hooks';
-import EntityTypesForm from '../entity-types-form';
+import EntityTypesItem from '../entity-types-item';
 import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
@@ -272,7 +272,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
         {showRaptorParseConfiguration(selectedTag) && (
           <ParseConfiguration></ParseConfiguration>
         )}
-        {showEntityTypes && <EntityTypesForm></EntityTypesForm>}
+        {showEntityTypes && <EntityTypesItem></EntityTypesItem>}
       </Form>
     </Modal>
   );
