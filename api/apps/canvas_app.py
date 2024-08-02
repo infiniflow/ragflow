@@ -15,15 +15,12 @@
 #
 import json
 from functools import partial
-
 from flask import request, Response
 from flask_login import login_required, current_user
-
-from api.db.db_models import UserCanvas
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request
-from graph.canvas import Canvas
+from agent.canvas import Canvas
 
 
 @manager.route('/templates', methods=['GET'])

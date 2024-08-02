@@ -273,6 +273,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         raise NotImplementedError(
             "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
+    if kwargs.get("section_only", False):
+        return [t for t, _ in sections]
+
     st = timer()
     chunks = naive_merge(
         sections, int(parser_config.get(
