@@ -1,7 +1,6 @@
-import { useFetchKnowledgeGraph } from '@/hooks/chunk-hooks';
 import { ElementDatum, Graph, IElementEvent } from '@antv/g6';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { buildNodesAndCombos, isDataExist } from './util';
+import { buildNodesAndCombos } from './util';
 
 import styles from './index.less';
 
@@ -11,14 +10,18 @@ const TooltipColorMap = {
   edge: 'blue',
 };
 
-const ForceGraph = () => {
+interface IProps {
+  data: any;
+  show: boolean;
+}
+
+const ForceGraph = ({ data, show }: IProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
-  const { data } = useFetchKnowledgeGraph();
 
   const nextData = useMemo(() => {
-    if (isDataExist(data)) {
-      const graphData = data.data;
+    if (data) {
+      const graphData = data;
       const mi = buildNodesAndCombos(graphData.nodes);
       return { edges: graphData.links, ...mi };
     }
@@ -113,7 +116,7 @@ const ForceGraph = () => {
   }, [nextData]);
 
   useEffect(() => {
-    if (isDataExist(data)) {
+    if (data) {
       render();
     }
   }, [data, render]);
@@ -122,7 +125,11 @@ const ForceGraph = () => {
     <div
       ref={containerRef}
       className={styles.forceContainer}
-      style={{ width: '100%', height: '80vh' }}
+      style={{
+        width: '90vh',
+        height: '80vh',
+        display: show ? 'block' : 'none',
+      }}
     />
   );
 };
