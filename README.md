@@ -65,7 +65,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2024-08-02 Supports [GraphRAG](https://github.com/microsoft/graphrag) and mind map.
+- 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) , and mind map.
   
 - 2024-07-23 Supports audio file parsing.
 
