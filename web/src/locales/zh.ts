@@ -58,7 +58,7 @@ export default {
       setting: '用户设置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: '图',
+      flow: 'Agent',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -556,7 +556,6 @@ export default {
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       loop: '循环上限',
-      createFlow: '创建工作流',
       yes: '是',
       no: '否',
       key: 'key',
@@ -580,7 +579,7 @@ export default {
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
 以上就是你需要总结的内容。`,
-      createGraph: '创建图表',
+      createGraph: '创建 Agent',
       createFromTemplates: '从模板创建',
       retrieval: '知识检索',
       generate: '生成回答',
