@@ -16,6 +16,7 @@ from .pubmed import PubMed, PubMedParam
 from .arxiv import ArXiv, ArXivParam
 from .google import Google, GoogleParam
 from .bing import Bing, BingParam
+from .googlescholar import GoogleScholar, GoogleScholarParam
 
 
 def component_class(class_name):
