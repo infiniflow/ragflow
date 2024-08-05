@@ -273,14 +273,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         raise NotImplementedError(
             "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
-    if kwargs.get("section_only", False):
-        return [t for t, _ in sections]
-
     st = timer()
     chunks = naive_merge(
         sections, int(parser_config.get(
             "chunk_token_num", 128)), parser_config.get(
             "delimiter", "\n!?。；！？"))
+    if kwargs.get("section_only", False):
+        return chunks
 
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
     cron_logger.info("naive_merge({}): {}".format(filename, timer() - st))
