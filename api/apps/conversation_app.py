@@ -117,11 +117,6 @@ def completion():
             continue
         if m["role"] == "assistant" and not msg:
             continue
-        content= [
-            {
-                "text": m["content"]
-            }
-        ]
         msg.append({"role": m["role"], "content": m["content"]})
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])

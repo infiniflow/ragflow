@@ -19,7 +19,7 @@ import os
 from api.utils.file_utils import get_project_base_directory
 from api.utils.log_utils import LoggerFactory, getLogger
 
-DEBUG = 0
+DEBUG = 10
 LoggerFactory.set_directory(
     os.path.join(
         get_project_base_directory(),
