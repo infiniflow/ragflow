@@ -46,7 +46,7 @@ const CreateFlowModal = ({
 
   return (
     <Modal
-      title={t('createFlow', { keyPrefix: 'flow' })}
+      title={t('createGraph', { keyPrefix: 'flow' })}
       open={visible}
       onOk={handleOk}
       width={600}

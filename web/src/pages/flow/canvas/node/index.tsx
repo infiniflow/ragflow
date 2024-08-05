@@ -1,7 +1,6 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import lowerFirst from 'lodash/lowerFirst';
 import pick from 'lodash/pick';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { Operator, operatorMap } from '../../constant';
@@ -32,7 +31,9 @@ export function RagNode({
         className={classNames(styles.ragNode, {
           [styles.selectedNode]: selected,
         })}
-        style={pick(style, ['backgroundColor', 'width', 'height', 'color'])}
+        style={{
+          ...pick(style, ['backgroundColor', 'color']),
+        }}
       >
         <Handle
           id="c"
@@ -54,23 +55,18 @@ export function RagNode({
           vertical
           align="center"
           justify={'space-around'}
-          gap={ZeroGapOperators.some((x) => x === data.label) ? 0 : 6}
+          // gap={ZeroGapOperators.some((x) => x === data.label) ? 0 : 6}
         >
           <Flex flex={1} justify="center" align="center">
-            <OperatorIcon
-              name={data.label as Operator}
-              fontSize={style?.iconFontSize ?? 24}
-              width={style?.iconWidth}
-            ></OperatorIcon>
+            <label htmlFor=""> </label>
           </Flex>
 
           <Flex flex={1}>
-            <span
-              className={styles.type}
-              style={{ fontSize: style?.fontSize ?? 14 }}
-            >
-              {t(lowerFirst(data.label))}
-            </span>
+            <OperatorIcon
+              name={data.label as Operator}
+              fontSize={style?.iconFontSize ?? 16}
+              width={style?.iconWidth}
+            ></OperatorIcon>
           </Flex>
           <Flex flex={1}>
             <NodeDropdown

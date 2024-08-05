@@ -93,12 +93,6 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "qwen-max-1201",
-                    "tags": "LLM,CHAT,6K",
-                    "max_tokens": 5899,
-                    "model_type": "chat"
-                },
-                {
                     "llm_name": "text-embedding-v2",
                     "tags": "TEXT EMBEDDING,2K",
                     "max_tokens": 2048,
@@ -1920,7 +1914,7 @@
                 {
                     "llm_name": "step-1v-8k",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
-                    "max_tokens": 8000,
+                    "max_tokens": 8192,
                     "model_type": "image2text"
                 }
             ]

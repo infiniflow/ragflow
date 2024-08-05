@@ -35,6 +35,7 @@ export default {
   switch_chunk: `${api_host}/chunk/switch`,
   rm_chunk: `${api_host}/chunk/rm`,
   retrieval_test: `${api_host}/chunk/retrieval_test`,
+  knowledge_graph: `${api_host}/chunk/knowledge_graph`,
 
   // document
   upload: `${api_host}/document/upload`,

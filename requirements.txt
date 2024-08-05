@@ -12,6 +12,7 @@ datrie==0.8.2
 demjson3==3.0.6
 discord.py==2.3.2
 duckduckgo_search==6.1.9
+editdistance==0.8.1
 elastic_transport==8.12.0
 elasticsearch==8.12.1
 elasticsearch_dsl==8.12.0
@@ -23,6 +24,7 @@ Flask==3.0.3
 Flask_Cors==4.0.1
 Flask_Login==0.6.3
 flask_session==0.8.0
+google_search_results==2.4.2
 groq==0.9.0
 hanziconv==0.3.2
 html_text==0.6.2
@@ -30,7 +32,9 @@ httpx==0.27.0
 huggingface_hub==0.20.3
 infinity_emb==0.0.51
 itsdangerous==2.1.2
+jina==3.27.2
 Markdown==3.6
+markdown_to_json==2.1.1
 minio==7.2.4
 mistralai==0.4.2
 nltk==3.8.1
@@ -38,7 +42,7 @@ numpy==1.26.4
 ollama==0.2.1
 onnxruntime==1.17.3
 onnxruntime_gpu==1.17.1
-openai==1.35.14
+openai==1.12.0
 opencv_python==4.9.0.80
 opencv_python_headless==4.9.0.80
 openpyxl==3.1.2
@@ -50,6 +54,7 @@ pipreqs==0.5.0
 protobuf==5.27.2
 pyclipper==1.3.0.post5
 pycryptodomex==3.20.0
+pypdf==4.3.0
 PyPDF2==3.0.1
 pytest==8.2.2
 python-dotenv==1.0.1
@@ -60,6 +65,7 @@ redis==5.0.3
 Requests==2.32.2
 roman_numbers==1.0.2
 ruamel.base==1.0.0
+scholarly==1.7.11
 scikit_learn==1.5.0
 selenium==4.22.0
 setuptools==70.0.0
@@ -79,4 +85,3 @@ word2number==1.1
 xgboost==2.1.0
 xpinyin==0.7.6
 zhipuai==2.0.1
-pypdf==4.3.0

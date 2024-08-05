@@ -48,37 +48,6 @@ export const useDeleteDocumentById = (): {
   };
 };
 
-export const useDeleteChunkByIds = (): {
-  removeChunk: (chunkIds: string[], documentId: string) => Promise<number>;
-} => {
-  const dispatch = useDispatch();
-  const showDeleteConfirm = useShowDeleteConfirm();
-
-  const removeChunk = useCallback(
-    (chunkIds: string[], documentId: string) => () => {
-      return dispatch({
-        type: 'chunkModel/rm_chunk',
-        payload: {
-          chunk_ids: chunkIds,
-          doc_id: documentId,
-        },
-      });
-    },
-    [dispatch],
-  );
-
-  const onRemoveChunk = useCallback(
-    (chunkIds: string[], documentId: string): Promise<number> => {
-      return showDeleteConfirm({ onOk: removeChunk(chunkIds, documentId) });
-    },
-    [removeChunk, showDeleteConfirm],
-  );
-
-  return {
-    removeChunk: onRemoveChunk,
-  };
-};
-
 export const useFetchKnowledgeBaseConfiguration = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
 

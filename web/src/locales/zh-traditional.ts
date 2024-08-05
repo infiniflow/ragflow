@@ -57,7 +57,7 @@ export default {
       setting: '用戶設置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: '圖',
+      flow: 'Agent',
     },
     knowledgeList: {
       welcome: '歡迎回來',
@@ -261,6 +261,7 @@ export default {
       maxTokenTip: '用於匯總的最大token數。',
       thresholdTip: '閾值越大，聚類越少。',
       maxClusterTip: '最大聚類數。',
+      entityTypes: '實體類型',
     },
     chunk: {
       chunk: '解析塊',
@@ -278,6 +279,8 @@ export default {
       chunkMessage: '請輸入值！',
       full: '全文',
       ellipse: '省略',
+      graph: '知識圖譜',
+      mind: '心智圖',
     },
     chat: {
       newConversation: '新會話',
@@ -534,7 +537,6 @@ export default {
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       loop: '循環上限',
-      createFlow: '创建工作流',
       yes: '是',
       no: '否',
       key: 'key',
@@ -559,7 +561,7 @@ export default {
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}
 以上就是你需要總結的內容。`,
-      createGraph: '建立圖表',
+      createGraph: '建立 Agent',
       createFromTemplates: '從模板創建',
       retrieval: '知識檢索',
       generate: '生成回答',
@@ -599,6 +601,15 @@ export default {
       submittedDate: '提交日期',
       lastUpdatedDate: '最後更新日期',
       relevance: '關聯',
+      google: 'Google',
+      googleTip:
+        '此元件用於從https://www.google.com/取得搜尋結果。通常，它作為知識庫的補充。 Top N 和 SerpApi API 金鑰指定您需要調整的搜尋結果數量。',
+      bing: 'Bing',
+      bingTip:
+        '此元件用於從 https://www.bing.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 和 Bing Subscription-Key 指定您需要適配的搜尋結果數量。',
+      apiKey: 'Api Key',
+      country: '國家',
+      language: '語言',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

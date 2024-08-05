@@ -1,4 +1,3 @@
-import { ChunkModelState } from '@/pages/add-knowledge/components/knowledge-chunk/model';
 import { KFModelState } from '@/pages/add-knowledge/components/knowledge-file/model';
 import { ChatModelState } from '@/pages/chat/model';
 
@@ -12,7 +11,6 @@ function useSelector<TState = RootState, TSelected = unknown>(
 export interface RootState {
   chatModel: ChatModelState;
   kFModel: KFModelState;
-  chunkModel: ChunkModelState;
 }
 
 declare global {

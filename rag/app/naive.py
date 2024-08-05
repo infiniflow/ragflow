@@ -23,6 +23,8 @@ from rag.utils import num_tokens_from_string
 from PIL import Image
 from functools import reduce
 from markdown import markdown
+from docx.image.exceptions import UnrecognizedImageError
+
 class Docx(DocxParser):
     def __init__(self):
         pass
@@ -34,9 +36,16 @@ class Docx(DocxParser):
         img = img[0]
         embed = img.xpath('.//a:blip/@r:embed')[0]
         related_part = document.part.related_parts[embed]
-        image = related_part.image
-        image = Image.open(BytesIO(image.blob)).convert('RGB')
-        return image
+        try:
+            image_blob = related_part.image.blob
+        except UnrecognizedImageError:
+            print("Unrecognized image format. Skipping image.")
+            return None
+        try:
+            image = Image.open(BytesIO(image_blob)).convert('RGB')
+            return image
+        except Exception as e:
+            return None
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -81,7 +90,8 @@ class Docx(DocxParser):
                     continue
                 if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
-        new_line = [(line[0], reduce(concat_img, line[1])) for line in lines]
+        new_line = [(line[0], reduce(concat_img, line[1]) if line[1] else None) for line in lines]
+
         tbls = []
         for tb in self.doc.tables:
             html= "<table>"
@@ -268,6 +278,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections, int(parser_config.get(
             "chunk_token_num", 128)), parser_config.get(
             "delimiter", "\n!?。；！？"))
+    if kwargs.get("section_only", False):
+        return chunks
 
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
     cron_logger.info("naive_merge({}): {}".format(filename, timer() - st))
