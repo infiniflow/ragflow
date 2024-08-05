@@ -117,7 +117,12 @@ def completion():
             continue
         if m["role"] == "assistant" and not msg:
             continue
-        msg.append({"role": m["role"], "content": m["content"]})
+        content= [
+            {
+                "text": m["content"]
+            }
+        ]
+        msg.append({"role": m["role"], "content": content })
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
@@ -131,7 +136,12 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        conv.message.append({"role": "assistant", "content": ""})
+        content= [
+            {
+                "text": ""
+            }
+        ]
+        conv.message.append({"role": "assistant", "content": content})
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def fillin_conv(ans):
@@ -139,7 +149,12 @@ def completion():
             if not conv.reference:
                 conv.reference.append(ans["reference"])
             else: conv.reference[-1] = ans["reference"]
-            conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+            content= [
+                {
+                    "text": ans["answer"]
+                }
+            ]
+            conv.message[-1] = {"role": "assistant", "content": content]}
 
         def stream():
             nonlocal dia, msg, req, conv
