@@ -30,8 +30,8 @@ export default defineConfig({
   copy: ['src/conf.json'],
   proxy: {
     '/v1': {
-      // target: 'http://localhost:9380/',
-      target: 'http://18.176.173.75:9080/',
+      target: 'http://localhost:9380/',
+      // target: 'http://18.176.173.75:9080/',
       changeOrigin: true,
       ws: true,
       logger: console,
