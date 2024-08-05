@@ -122,7 +122,7 @@ def completion():
                 "text": m["content"]
             }
         ]
-        msg.append({"role": m["role"], "content": content })
+        msg.append({"role": m["role"], "content": content})
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
@@ -154,7 +154,7 @@ def completion():
                     "text": ans["answer"]
                 }
             ]
-            conv.message[-1] = {"role": "assistant", "content": content]}
+            conv.message[-1] = {"role": "assistant", "content": content}
 
         def stream():
             nonlocal dia, msg, req, conv
