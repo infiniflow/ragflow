@@ -68,7 +68,7 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
     llm_bdl = LLMBundle(tenant_id, LLMType.CHAT)
     ext = GraphExtractor(llm_bdl)
     left_token_count = llm_bdl.max_length - ext.prompt_token_count - 1024
-    left_token_count = llm_bdl.max_length * 0.4
+    left_token_count = max(llm_bdl.max_length * 0.8, left_token_count)
 
     assert left_token_count > 0, f"The LLM context length({llm_bdl.max_length}) is smaller than prompt({ext.prompt_token_count})"
 
