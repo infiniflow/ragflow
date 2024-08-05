@@ -1,4 +1,5 @@
-FROM infiniflow/ragflow-base:v2.0
+# FROM infiniflow/ragflow-base:v2.0
+FROM infiniflow/ragflow:dev
 USER  root
 
 WORKDIR /ragflow
@@ -6,18 +7,19 @@ WORKDIR /ragflow
 ADD ./web ./web
 RUN cd ./web && npm i --force && npm run build
 
-ADD ./api ./api
-ADD ./conf ./conf
-ADD ./deepdoc ./deepdoc
-ADD ./rag ./rag
-ADD ./agent ./agent
-ADD ./graphrag ./graphrag
+ADD ./api/apps/llm_app.py ./api/apps/llm_app.py
+# ADD ./api ./api
+# ADD ./conf ./conf
+# ADD ./deepdoc ./deepdoc
+# ADD ./rag ./rag
+# ADD ./agent ./agent
+# ADD ./graphrag ./graphrag
 
-ENV PYTHONPATH=/ragflow/
-ENV HF_ENDPOINT=https://hf-mirror.com
+# ENV PYTHONPATH=/ragflow/
+# ENV HF_ENDPOINT=https://hf-mirror.com
 
-ADD docker/entrypoint.sh ./entrypoint.sh
-ADD docker/.env ./
-RUN chmod +x ./entrypoint.sh
+# ADD docker/entrypoint.sh ./entrypoint.sh
+# ADD docker/.env ./
+# RUN chmod +x ./entrypoint.sh
 
-ENTRYPOINT ["./entrypoint.sh"]
+# ENTRYPOINT ["./entrypoint.sh"]
