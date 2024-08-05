@@ -45,7 +45,7 @@ def graph_merge(g1, g2):
     g = g2.copy()
     for n, attr in g1.nodes(data=True):
         if n not in g2.nodes():
-            g2.add_node(n, **attr)
+            g.add_node(n, **attr)
             continue
 
         g.nodes[n]["weight"] += 1
