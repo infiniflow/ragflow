@@ -307,6 +307,8 @@ The above is the content you need to summarize.`,
       chunkMessage: 'Please input value!',
       full: 'Full text',
       ellipse: 'Ellipse',
+      graph: 'Knowledge graph',
+      mind: 'Mind map',
     },
     chat: {
       newConversation: 'New conversation',

@@ -296,6 +296,8 @@ export default {
       chunkMessage: '请输入值！',
       full: '全文',
       ellipse: '省略',
+      graph: '知识图谱',
+      mind: '思维导图',
     },
     chat: {
       newConversation: '新会话',

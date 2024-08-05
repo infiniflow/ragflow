@@ -127,7 +127,7 @@ const ForceGraph = ({ data, show }: IProps) => {
       ref={containerRef}
       className={styles.forceContainer}
       style={{
-        width: '90vh',
+        width: '90vw',
         height: '80vh',
         display: show ? 'block' : 'none',
       }}
