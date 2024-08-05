@@ -30,7 +30,8 @@ ADD ./conf ./conf
 ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
 ADD ./requirements.txt ./requirements.txt
-ADD ./graph ./graph
+ADD ./agent ./agent
+ADD ./graphrag ./graphrag
 
 RUN dnf install -y openmpi openmpi-devel python3-openmpi
 ENV C_INCLUDE_PATH /usr/include/openmpi-x86_64:$C_INCLUDE_PATH

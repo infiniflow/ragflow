@@ -7,13 +7,13 @@ export default defineConfig({
   outputPath: 'dist',
   // alias: { '@': './src' },
   npmClient: 'npm',
-  base: '/rag/',
+  base: '/',
   routes,
-  publicPath: '/rag/',
+  publicPath: '/',
   esbuildMinifyIIFE: true,
   icons: {},
   hash: true,
-  favicons: ['/rag/logo.svg'],
+  favicons: ['/logo.svg'],
   clickToComponent: {},
   history: {
     type: 'browser',
@@ -31,7 +31,6 @@ export default defineConfig({
   proxy: {
     '/v1': {
       target: 'http://localhost:9380/',
-      // target: 'http://52.199.122.150:9080/',
       changeOrigin: true,
       ws: true,
       logger: console,
