@@ -253,6 +253,7 @@ export const useHandleFormValuesChange = (id?: string) => {
   const handleValuesChange = useCallback(
     (changedValues: any, values: any) => {
       let nextValues: any = values;
+      // Fixed the issue that the related form value does not change after selecting the freedom field of the model
       if (
         Object.keys(changedValues).length === 1 &&
         'parameter' in changedValues &&
