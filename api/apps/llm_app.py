@@ -57,7 +57,12 @@ def set_api_key():
             mdl = ChatModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
-                m, tc = mdl.chat(None, [{"role": "user", "content": ["Hello! How are you doing!"]}], 
+                content= [
+                    {
+                        "text": "Hello! How are you doing!"  
+                    }
+                ]
+                m, tc = mdl.chat(None, [{"role": "user", "content": content}], 
                                  {"temperature": 0.9,'max_tokens':50})
                 if not tc:
                     raise Exception(m)
@@ -161,7 +166,12 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            m, tc = mdl.chat(None, [{"role": "user", "content": ["Hello! How are you doing!"]}], {
+            content= [
+                {
+                    "text": "Hello! How are you doing!"  
+                }
+            ]
+            m, tc = mdl.chat(None, [{"role": "user", "content": content}], {
                              "temperature": 0.9})
             if not tc:
                 raise Exception(m)
