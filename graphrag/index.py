@@ -29,14 +29,15 @@ from rag.nlp import rag_tokenizer
 from rag.utils import num_tokens_from_string
 
 
-def be_children(obj: dict):
+def be_children(obj: dict, keyset:set):
     arr = []
     for k,v in obj.items():
         k = re.sub(r"\*+", "", k)
-        if not k :continue
+        if not k or k in keyset:continue
+        keyset.add(k)
         arr.append({
             "id": k,
-            "children": be_children(v) if isinstance(v, dict) else []
+            "children": be_children(v, keyset) if isinstance(v, dict) else []
         })
     return arr
 
@@ -142,8 +143,12 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
     mg = mindmap(_chunks).output
     if not len(mg.keys()): return chunks
 
-    if len(mg.keys()) > 1: md_map = {"id": "root", "children": [{"id": re.sub(r"\*+", "", k), "children": be_children(v)} for k,v in mg.items() if isinstance(v, dict) and re.sub(r"\*+", "", k)]}
-    else: md_map = {"id": re.sub(r"\*+", "", list(mg.keys())[0]), "children": be_children(list(mg.items())[1])}
+    if len(mg.keys()) > 1:
+        keyset = set([re.sub(r"\*+", "", k) for k,v in mg.items() if isinstance(v, dict) and re.sub(r"\*+", "", k)])
+        md_map = {"id": "root", "children": [{"id": re.sub(r"\*+", "", k), "children": be_children(v, keyset)} for k,v in mg.items() if isinstance(v, dict) and re.sub(r"\*+", "", k)]}
+    else:
+        k = re.sub(r"\*+", "", list(mg.keys())[0])
+        md_map = {"id": k, "children": be_children(list(mg.items())[0][1], set([k]))}
     print(json.dumps(md_map, ensure_ascii=False, indent=2))
     chunks.append(
         {
