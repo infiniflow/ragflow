@@ -1,6 +1,7 @@
 import { useFetchKnowledgeGraph } from '@/hooks/chunk-hooks';
 import { Flex, Modal, Segmented } from 'antd';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import ForceGraph from './force-graph';
 import IndentedTree from './indented-tree';
 import styles from './index.less';
@@ -15,6 +16,14 @@ const KnowledgeGraphModal: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { data } = useFetchKnowledgeGraph();
   const [value, setValue] = useState<SegmentedValue>(SegmentedValue.Graph);
+  const { t } = useTranslation();
+
+  const options = useMemo(() => {
+    return [
+      { value: SegmentedValue.Graph, label: t('chunk.graph') },
+      { value: SegmentedValue.Mind, label: t('chunk.mind') },
+    ];
+  }, [t]);
 
   const handleOk = () => {
     setIsModalOpen(false);
@@ -32,7 +41,7 @@ const KnowledgeGraphModal: React.FC = () => {
 
   return (
     <Modal
-      title="Knowledge Graph"
+      title={t('chunk.graph')}
       open={isModalOpen}
       onOk={handleOk}
       onCancel={handleCancel}
@@ -43,7 +52,7 @@ const KnowledgeGraphModal: React.FC = () => {
         <Flex justify="end">
           <Segmented
             size="large"
-            options={[SegmentedValue.Graph, SegmentedValue.Mind]}
+            options={options}
             value={value}
             onChange={(v) => setValue(v as SegmentedValue)}
           />

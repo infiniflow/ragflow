@@ -279,6 +279,8 @@ export default {
       chunkMessage: '請輸入值！',
       full: '全文',
       ellipse: '省略',
+      graph: '知識圖譜',
+      mind: '心智圖',
     },
     chat: {
       newConversation: '新會話',

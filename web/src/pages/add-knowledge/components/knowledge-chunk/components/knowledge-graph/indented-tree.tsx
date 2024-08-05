@@ -18,7 +18,7 @@ import { TreeData } from '@antv/g6/lib/types';
 import isEmpty from 'lodash/isEmpty';
 import { useCallback, useEffect, useRef } from 'react';
 
-const rootId = 'Modeling Methods';
+const rootId = 'root';
 
 const COLORS = [
   '#5B8FF9',
@@ -35,7 +35,7 @@ const COLORS = [
 
 const TreeEvent = {
   COLLAPSE_EXPAND: 'collapse-expand',
-  ADD_CHILD: 'add-child',
+  WHEEL: 'canvas:wheel',
 };
 
 class IndentedNode extends BaseNode {
@@ -204,16 +204,6 @@ class IndentedNode extends BaseNode {
     };
   }
 
-  drawAddShape(attributes: any, container: any) {
-    const addStyle = this.getAddStyle(attributes);
-    const btn = this.upsert('add', Badge, addStyle as any, container);
-
-    this.forwardEvent(btn, CommonEvent.CLICK, (event: any) => {
-      event.stopPropagation();
-      attributes.context.graph.emit(TreeEvent.ADD_CHILD, { id: this.id });
-    });
-  }
-
   render(attributes = this.parsedAttributes, container = this) {
     super.render(attributes, container);
 
@@ -221,7 +211,6 @@ class IndentedNode extends BaseNode {
 
     this.drawIconArea(attributes, container);
     this.drawCollapseShape(attributes, container);
-    this.drawAddShape(attributes, container);
   }
 }
 
@@ -255,7 +244,6 @@ class CollapseExpandTree extends BaseBehavior {
     graph.on(NodeEvent.POINTER_ENTER, this.showIcon);
     graph.on(NodeEvent.POINTER_LEAVE, this.hideIcon);
     graph.on(TreeEvent.COLLAPSE_EXPAND, this.onCollapseExpand);
-    graph.on(TreeEvent.ADD_CHILD, this.addChild);
   }
 
   unbindEvents() {
@@ -264,7 +252,6 @@ class CollapseExpandTree extends BaseBehavior {
     graph.off(NodeEvent.POINTER_ENTER, this.showIcon);
     graph.off(NodeEvent.POINTER_LEAVE, this.hideIcon);
     graph.off(TreeEvent.COLLAPSE_EXPAND, this.onCollapseExpand);
-    graph.off(TreeEvent.ADD_CHILD, this.addChild);
   }
 
   status = 'idle';
@@ -294,28 +281,6 @@ class CollapseExpandTree extends BaseBehavior {
     else await graph.expandElement(id);
     this.status = 'idle';
   };
-
-  addChild(event: any) {
-    const {
-      onCreateChild = () => ({
-        id: `${Date.now()}`,
-        style: { labelText: 'new node' },
-      }),
-    } = this.options;
-    const { graph } = this.context;
-    const datum = onCreateChild(event.id);
-    graph.addNodeData([datum]);
-    graph.addEdgeData([{ source: event.id, target: datum.id }]);
-    const parent = graph.getNodeData(event.id);
-    graph.updateNodeData([
-      {
-        id: event.id,
-        children: [...(parent.children || []), datum.id],
-        style: { collapsed: false },
-      },
-    ]);
-    graph.render();
-  }
 }
 
 register(ExtensionCategory.NODE, 'indented', IndentedNode);
@@ -375,7 +340,7 @@ const IndentedTree = ({ data, show }: IProps) => {
           targetPort: 'in',
           stroke: (datum: any) => {
             const depth = graph.getAncestorsData(datum.source, 'tree').length;
-            return COLORS[depth % COLORS.length];
+            return COLORS[depth % COLORS.length] || 'black';
           },
         },
       },
@@ -389,7 +354,6 @@ const IndentedTree = ({ data, show }: IProps) => {
       },
       behaviors: [
         'scroll-canvas',
-        'drag-branch',
         'collapse-expand-tree',
         {
           type: 'click-select',
@@ -421,7 +385,7 @@ const IndentedTree = ({ data, show }: IProps) => {
       id="tree"
       ref={containerRef}
       style={{
-        width: '90vh',
+        width: '90vw',
         height: '80vh',
         display: show ? 'block' : 'none',
       }}
