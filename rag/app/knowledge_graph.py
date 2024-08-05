@@ -13,7 +13,8 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
     eng = lang.lower() == "english"
 
     parser_config["layout_recognize"] = False
-    sections = naive.chunk(filename, binary, from_page=from_page, to_page=to_page, section_only=True, parser_config=parser_config)
+    sections = naive.chunk(filename, binary, from_page=from_page, to_page=to_page, section_only=True,
+                           parser_config=parser_config, callback=callback)
     chunks = build_knowlege_graph_chunks(tenant_id, sections, callback,
                                          parser_config.get("entity_types", ["organization", "person", "location", "event", "time"])
                                          )
