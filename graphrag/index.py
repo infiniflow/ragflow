@@ -75,7 +75,7 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
     cnt = 0
     threads = []
     exe = ThreadPoolExecutor(max_workers=12)
-    for i in range(len(chunks[:512])):
+    for i in range(len(chunks)):
         tkn_cnt = num_tokens_from_string(chunks[i])
         if cnt+tkn_cnt >= left_token_count and texts:
             threads.append(exe.submit(ext, texts, {"entity_types": entity_types}))
