@@ -22,7 +22,6 @@ MIND_MAP_EXTRACTION_PROMPT = """
    3. If the subject matter is really complex, split them into sub-sections. 
 
  - Output requirement:
-   - Always try to maximize the number of sub-sections. 
    - In language of 
    - MUST IN FORMAT OF MARKDOWN
    
