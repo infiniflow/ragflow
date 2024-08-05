@@ -194,7 +194,7 @@ export interface AppConf {
 export const useFetchAppConf = () => {
   const [appConf, setAppConf] = useState<AppConf>({} as AppConf);
   const fetchAppConf = useCallback(async () => {
-    const ret = await axios.get('/conf.json');
+    const ret = await axios.get('/rag/conf.json');
 
     setAppConf(ret.data);
   }, []);

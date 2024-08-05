@@ -39,12 +39,11 @@ export const fileIconMap = {
   xml: 'xml.svg',
 };
 
-export const LanguageList = ['English', 'Chinese', 'Traditional Chinese'];
+export const LanguageList = ['Vietnamese', 'English'];
 
 export const LanguageTranslationMap = {
   English: 'en',
-  Chinese: 'zh',
-  'Traditional Chinese': 'zh-TRADITIONAL',
+  Vietnamese: 'vi',
 };
 
 export const FileMimeTypeMap = {
@@ -69,7 +68,7 @@ export const FileMimeTypeMap = {
   mp4: 'video/mp4',
 };
 
-export const Domain = 'demo.ragflow.io';
+export const Domain = 'stock.cmcts.com.vn';
 
 //#region file preview
 export const Images = [

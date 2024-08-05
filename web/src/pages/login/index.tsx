@@ -3,10 +3,8 @@ import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon, useNavigate } from 'umi';
-import RightPanel from './right-panel';
+import { useNavigate } from 'umi';
 
-import { Domain } from '@/constants/common';
 import styles from './index.less';
 
 const Login = () => {
@@ -119,14 +117,14 @@ const Login = () => {
               </Form.Item>
             )}
             <div>
-              {title === 'login' && (
+              {/*title === 'login' && (
                 <div>
                   {t('signInTip')}
                   <Button type="link" onClick={changeTitle}>
                     {t('signUp')}
                   </Button>
                 </div>
-              )}
+              )*/}
               {title === 'register' && (
                 <div>
                   {t('signUpTip')}
@@ -161,7 +159,7 @@ const Login = () => {
                     Sign in with Google
                   </div>
                 </Button> */}
-                {location.host === Domain && (
+                {/*location.host === Domain && (
                   <Button
                     block
                     size="large"
@@ -176,15 +174,15 @@ const Login = () => {
                       Sign in with Github
                     </div>
                   </Button>
-                )}
+                )*/}
               </>
             )}
           </Form>
         </div>
       </div>
-      <div className={styles.loginRight}>
+      {/* <div className={styles.loginRight}>
         <RightPanel></RightPanel>
-      </div>
+      </div> */}
     </div>
   );
 };
