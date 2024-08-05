@@ -11,6 +11,7 @@ ADD ./conf ./conf
 ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
 ADD ./agent ./agent
+ADD ./graphrag ./graphrag
 
 ENV PYTHONPATH=/ragflow/
 ENV HF_ENDPOINT=https://hf-mirror.com
