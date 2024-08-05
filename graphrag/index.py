@@ -45,7 +45,7 @@ def graph_merge(g1, g2):
     g = g2.copy()
     for n, attr in g1.nodes(data=True):
         if n not in g2.nodes():
-            g2.add_node(n, **attr)
+            g.add_node(n, **attr)
             continue
 
         g.nodes[n]["weight"] += 1
@@ -75,7 +75,7 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
     cnt = 0
     threads = []
     exe = ThreadPoolExecutor(max_workers=12)
-    for i in range(len(chunks[:512])):
+    for i in range(len(chunks)):
         tkn_cnt = num_tokens_from_string(chunks[i])
         if cnt+tkn_cnt >= left_token_count and texts:
             threads.append(exe.submit(ext, texts, {"entity_types": entity_types}))
