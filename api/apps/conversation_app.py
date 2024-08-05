@@ -136,12 +136,7 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        content= [
-            {
-                "text": ""
-            }
-        ]
-        conv.message.append({"role": "assistant", "content": content})
+        conv.message.append({"role": "assistant", "content": ""})
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def fillin_conv(ans):
@@ -149,12 +144,7 @@ def completion():
             if not conv.reference:
                 conv.reference.append(ans["reference"])
             else: conv.reference[-1] = ans["reference"]
-            content= [
-                {
-                    "text": ans["answer"]
-                }
-            ]
-            conv.message[-1] = {"role": "assistant", "content": content}
+            conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
 
         def stream():
             nonlocal dia, msg, req, conv
