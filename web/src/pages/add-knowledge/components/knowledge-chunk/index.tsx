@@ -195,7 +195,7 @@ const Chunk = () => {
           onOk={onChunkUpdatingOk}
         />
       )}
-      {false && <KnowledgeGraphModal></KnowledgeGraphModal>}
+      <KnowledgeGraphModal></KnowledgeGraphModal>
     </>
   );
 };

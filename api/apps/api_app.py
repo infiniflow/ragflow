@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from flask import request, Response
 from flask_login import login_required, current_user
 
-from api.db import FileType, ParserType, FileSource, LLMType
+from api.db import FileType, ParserType, FileSource
 from api.db.db_models import APIToken, API4Conversation, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
@@ -29,7 +29,6 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import TenantLLMService
 from api.db.services.task_service import queue_tasks, TaskService
 from api.db.services.user_service import UserTenantService
 from api.settings import RetCode, retrievaler
@@ -38,7 +37,6 @@ from api.utils.api_utils import server_error_response, get_data_error_result, ge
 from itsdangerous import URLSafeTimedSerializer
 
 from api.utils.file_utils import filename_type, thumbnail
-from rag.nlp import keyword_extraction
 from rag.utils.minio_conn import MINIO
 
 
