@@ -161,7 +161,7 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
+            m, tc = mdl.chat(None, [{"role": "user", "content": ["Hello! How are you doing!"]}], {
                              "temperature": 0.9})
             if not tc:
                 raise Exception(m)
