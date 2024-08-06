@@ -147,7 +147,7 @@ def completion():
                 for ans in chat(dia, msg, True, **req):
                     fillin_conv(ans)
                     yield "data:"+json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
-                ConversationService.update_by_id(conv.id, conv.to_dict())
+                # ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
                 yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
                                             "data": {"answer": "**ERROR**: "+str(e), "reference": []}},
@@ -167,7 +167,7 @@ def completion():
             for ans in chat(dia, msg, **req):
                 answer = ans
                 fillin_conv(ans)
-                ConversationService.update_by_id(conv.id, conv.to_dict())
+                # ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)
     except Exception as e:
