@@ -541,6 +541,7 @@ export default {
       s3: 'S3 上传',
       preview: '预览',
       fileError: '文件错误',
+      uploadLimit: '文件大小不能超过10M，文件总数不超过128个',
     },
     flow: {
       flow: '工作流',

@@ -523,6 +523,7 @@ export default {
       s3: 'S3 上傳',
       preview: '預覽',
       fileError: '文件錯誤',
+      uploadLimit: '文件大小不能超過10M，文件總數不超過128個',
     },
     flow: {
       cite: '引用',

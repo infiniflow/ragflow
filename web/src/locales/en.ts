@@ -562,6 +562,8 @@ The above is the content you need to summarize.`,
       s3: 'S3 uploads',
       preview: 'Preview',
       fileError: 'File error',
+      uploadLimit:
+        'The file size cannot exceed 10M, and the total number of files cannot exceed 128',
     },
     flow: {
       cite: 'Cite',
