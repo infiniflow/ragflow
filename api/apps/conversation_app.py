@@ -167,7 +167,7 @@ def completion():
             for ans in chat(dia, msg, **req):
                 answer = ans
                 fillin_conv(ans)
-                ConversationService.update_by_id(conv.id, conv.to_dict())
+                # ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)
     except Exception as e:
