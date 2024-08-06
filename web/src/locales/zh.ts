@@ -26,6 +26,7 @@ export default {
       download: '下载',
       close: '关闭',
       preview: '预览',
+      move: '移动',
     },
     login: {
       login: '登录',
@@ -542,6 +543,7 @@ export default {
       preview: '预览',
       fileError: '文件错误',
       uploadLimit: '文件大小不能超过10M，文件总数不超过128个',
+      destinationFolder: '目标文件夹',
     },
     flow: {
       flow: '工作流',

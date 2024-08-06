@@ -4,6 +4,7 @@ import {
   useCreateFolder,
   useDeleteFile,
   useFetchParentFolderList,
+  useMoveFile,
   useRenameFile,
   useUploadFile,
 } from '@/hooks/file-manager-hooks';
@@ -245,4 +246,49 @@ export const useHandleBreadcrumbClick = () => {
   );
 
   return { handleBreadcrumbClick };
+};
+
+export const useHandleMoveFile = (
+  setSelectedRowKeys: (keys: string[]) => void,
+) => {
+  const {
+    visible: moveFileVisible,
+    hideModal: hideMoveFileModal,
+    showModal: showMoveFileModal,
+  } = useSetModalState();
+  const { moveFile, loading } = useMoveFile();
+  const [sourceFileIds, setSourceFileIds] = useState<string[]>([]);
+
+  const onMoveFileOk = useCallback(
+    async (targetFolderId: string) => {
+      const ret = await moveFile({
+        src_file_ids: sourceFileIds,
+        dest_file_id: targetFolderId,
+      });
+
+      if (ret === 0) {
+        setSelectedRowKeys([]);
+        hideMoveFileModal();
+      }
+      return ret;
+    },
+    [moveFile, hideMoveFileModal, sourceFileIds, setSelectedRowKeys],
+  );
+
+  const handleShowMoveFileModal = useCallback(
+    (ids: string[]) => {
+      setSourceFileIds(ids);
+      showMoveFileModal();
+    },
+    [showMoveFileModal],
+  );
+
+  return {
+    initialValue: '',
+    moveFileLoading: loading,
+    onMoveFileOk,
+    moveFileVisible,
+    hideMoveFileModal,
+    showMoveFileModal: handleShowMoveFileModal,
+  };
 };

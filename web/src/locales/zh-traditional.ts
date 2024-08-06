@@ -26,6 +26,7 @@ export default {
       download: '下載',
       close: '關閉',
       preview: '預覽',
+      move: '移動',
     },
     login: {
       login: '登入',
@@ -524,6 +525,7 @@ export default {
       preview: '預覽',
       fileError: '文件錯誤',
       uploadLimit: '文件大小不能超過10M，文件總數不超過128個',
+      destinationFolder: '目標資料夾',
     },
     flow: {
       cite: '引用',
