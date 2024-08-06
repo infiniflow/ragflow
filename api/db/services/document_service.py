@@ -311,7 +311,8 @@ class DocumentService(CommonService):
                 prg = 0
                 finished = True
                 bad = 0
-                status = d["run"]#TaskStatus.RUNNING.value
+                e, doc = DocumentService.get_by_id(d["id"])
+                status = doc.run#TaskStatus.RUNNING.value
                 for t in tsks:
                     if 0 <= t.progress < 1:
                         finished = False
