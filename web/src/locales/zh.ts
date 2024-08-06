@@ -628,6 +628,12 @@ export default {
       apiKey: 'Api Key',
       country: '国家',
       language: '语言',
+      googleScholar: '谷歌学术',
+      googleScholarDescription: `此组件用于从 https://scholar.google.com/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
+      yearLow: '开始年份',
+      yearHigh: '结束年份',
+      patents: '专利',
+      data: '数据',
     },
     footer: {
       profile: 'All rights reserved @ React',

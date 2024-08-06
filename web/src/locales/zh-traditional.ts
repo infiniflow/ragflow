@@ -610,6 +610,12 @@ export default {
       apiKey: 'Api Key',
       country: '國家',
       language: '語言',
+      googleScholar: '谷歌學術',
+      googleScholarDescription: `該元件用於從 https://scholar.google.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要調整的搜尋結果的數量。`,
+      yearLow: '開始年份',
+      yearHigh: '結束年份',
+      patents: '專利',
+      data: '數據',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

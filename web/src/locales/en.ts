@@ -650,6 +650,13 @@ The above is the content you need to summarize.`,
       apiKey: 'Api Key',
       country: 'Country',
       language: 'Language',
+      googleScholar: 'Google Scholar',
+      googleScholarDescription:
+        'This component is used to get search result from https://scholar.google.com/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.',
+      yearLow: 'Year low',
+      yearHigh: 'Year high',
+      patents: 'Patents',
+      data: 'Data',
     },
     footer: {
       profile: 'All rights reserved @ React',
