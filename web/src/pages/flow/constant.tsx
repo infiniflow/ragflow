@@ -2,6 +2,7 @@ import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
+import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
@@ -44,6 +45,7 @@ export enum Operator {
   ArXiv = 'ArXiv',
   Google = 'Google',
   Bing = 'Bing',
+  GoogleScholar = 'GoogleScholar',
 }
 
 export const operatorIconMap = {
@@ -63,6 +65,7 @@ export const operatorIconMap = {
   [Operator.ArXiv]: ArXivIcon,
   [Operator.Google]: GoogleIcon,
   [Operator.Bing]: BingIcon,
+  [Operator.GoogleScholar]: GoogleScholarIcon,
 };
 
 export const operatorMap = {
@@ -145,6 +148,7 @@ export const operatorMap = {
     backgroundColor: 'pink',
   },
   [Operator.Bing]: {},
+  [Operator.GoogleScholar]: {},
 };
 
 export const componentMenuList = [
@@ -192,6 +196,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Bing,
+  },
+  {
+    name: Operator.GoogleScholar,
   },
 ];
 
@@ -291,6 +298,12 @@ export const initialBingValues = {
   language: 'en',
 };
 
+export const initialGoogleScholarValues = {
+  top_n: 5,
+  sort_by: 'relevance',
+  patents: true,
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -354,6 +367,7 @@ export const RestrictedUpstreamMap = {
   [Operator.ArXiv]: [Operator.Begin, Operator.Retrieval],
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
+  [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -373,6 +387,7 @@ export const NodeMap = {
   [Operator.ArXiv]: 'ragNode',
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
+  [Operator.GoogleScholar]: 'ragNode',
 };
 
 export const LanguageOptions = [

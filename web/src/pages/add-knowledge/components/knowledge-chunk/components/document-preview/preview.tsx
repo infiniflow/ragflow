@@ -41,7 +41,7 @@ const Preview = ({ highlights: state, setWidthAndHeight }: IProps) => {
 
   useEffect(() => {
     if (state.length > 0) {
-      ref.current(state[0]);
+      ref?.current(state[0]);
     }
   }, [state]);
 

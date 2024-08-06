@@ -34,6 +34,7 @@ chat_logger = getLogger("chat")
 
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.nlp import search
+from graphrag import search as kg_search
 from api.utils import get_base_config, decrypt_database_config
 
 API_VERSION = "v1"
@@ -131,7 +132,7 @@ IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
 API_KEY = LLM.get("api_key", "")
 PARSERS = LLM.get(
     "parsers",
-    "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email")
+    "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,knowledge_graph:Knowledge Graph,email:Email")
 
 # distribution
 DEPENDENT_DISTRIBUTION = get_base_config("dependent_distribution", False)
@@ -204,6 +205,7 @@ PRIVILEGE_COMMAND_WHITELIST = []
 CHECK_NODES_IDENTITY = False
 
 retrievaler = search.Dealer(ELASTICSEARCH)
+kg_retrievaler = kg_search.KGSearch(ELASTICSEARCH)
 
 
 class CustomEnum(Enum):

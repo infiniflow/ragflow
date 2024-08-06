@@ -14,26 +14,60 @@ const ParserListMap = new Map([
       'presentation',
       'one',
       'qa',
-      'email'
+      'knowledge_graph',
     ],
   ],
   [
     ['doc', 'docx'],
-    ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'manual','email'],
+    [
+      'naive',
+      'resume',
+      'book',
+      'laws',
+      'one',
+      'qa',
+      'manual',
+      'knowledge_graph'
+    ],
   ],
   [
     ['xlsx', 'xls'],
-    ['naive', 'qa', 'table', 'one'],
+    ['naive', 'qa', 'table', 'one', 'knowledge_graph'],
   ],
   [['ppt', 'pptx'], ['presentation']],
   [
     ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff', 'webp', 'svg', 'ico'],
     ['picture'],
   ],
-  [['txt'], ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'table']],
-  [['csv'], ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'table']],
-  [['md'], ['naive', 'qa']],
-  [['json'], ['naive']],
+  [
+    ['txt'],
+    [
+      'naive',
+      'resume',
+      'book',
+      'laws',
+      'one',
+      'qa',
+      'table',
+      'knowledge_graph',
+    ],
+  ],
+  [
+    ['csv'],
+    [
+      'naive',
+      'resume',
+      'book',
+      'laws',
+      'one',
+      'qa',
+      'table',
+      'knowledge_graph',
+    ],
+  ],
+  [['md'], ['naive', 'qa', 'knowledge_graph']],
+  [['json'], ['naive', 'knowledge_graph']],
+  [['eml'], ['email']]
 ]);
 
 const getParserList = (

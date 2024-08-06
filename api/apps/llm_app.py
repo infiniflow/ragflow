@@ -129,6 +129,9 @@ def add_llm():
     elif factory == "LocalAI":
         llm_name = req["llm_name"]+"___LocalAI"
         api_key = "xxxxxxxxxxxxxxx"
+    elif factory == "OpenAI-API-Compatible":
+        llm_name = req["llm_name"]+"___OpenAI-API"
+        api_key = req["api_key"]
     else:
         llm_name = req["llm_name"]
         api_key = "xxxxxxxxxxxxxxx"
@@ -145,7 +148,7 @@ def add_llm():
     msg = ""
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
-            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock"] else None,
+            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock","OpenAI-API-Compatible"] else None,
             model_name=llm["llm_name"], 
             base_url=llm["api_base"])
         try:
@@ -156,7 +159,7 @@ def add_llm():
             msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
-            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock"] else None,
+            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock","OpenAI-API-Compatible"] else None,
             model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
@@ -181,7 +184,7 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
-            key=None, model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"] if factory in ["OpenAI-API-Compatible"] else None, model_name=llm["llm_name"], base_url=llm["api_base"]
         )
         try:
             img_url = (

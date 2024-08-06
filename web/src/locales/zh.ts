@@ -57,7 +57,7 @@ export default {
       setting: '用户设置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: '图',
+      flow: 'Agent',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -278,6 +278,7 @@ export default {
       maxTokenTip: '用于汇总的最大token数。',
       thresholdTip: '阈值越大，聚类越少。',
       maxClusterTip: '最大聚类数。',
+      entityTypes: '实体类型',
     },
     chunk: {
       chunk: '解析块',
@@ -295,6 +296,8 @@ export default {
       chunkMessage: '请输入值！',
       full: '全文',
       ellipse: '省略',
+      graph: '知识图谱',
+      mind: '思维导图',
     },
     chat: {
       newConversation: '新会话',
@@ -538,6 +541,7 @@ export default {
       s3: 'S3 上传',
       preview: '预览',
       fileError: '文件错误',
+      uploadLimit: '文件大小不能超过10M，文件总数不超过128个',
     },
     flow: {
       flow: '工作流',
@@ -553,7 +557,6 @@ export default {
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       loop: '循环上限',
-      createFlow: '创建工作流',
       yes: '是',
       no: '否',
       key: 'key',
@@ -577,7 +580,7 @@ export default {
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
 以上就是你需要总结的内容。`,
-      createGraph: '创建图表',
+      createGraph: '创建 Agent',
       createFromTemplates: '从模板创建',
       retrieval: '知识检索',
       generate: '生成回答',
@@ -626,6 +629,12 @@ export default {
       apiKey: 'Api Key',
       country: '国家',
       language: '语言',
+      googleScholar: '谷歌学术',
+      googleScholarDescription: `此组件用于从 https://scholar.google.com/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
+      yearLow: '开始年份',
+      yearHigh: '结束年份',
+      patents: '专利',
+      data: '数据',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -93,12 +93,6 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "qwen-max-1201",
-                    "tags": "LLM,CHAT,6K",
-                    "max_tokens": 5899,
-                    "model_type": "chat"
-                },
-                {
                     "llm_name": "text-embedding-v2",
                     "tags": "TEXT EMBEDDING,2K",
                     "max_tokens": 2048,
@@ -159,6 +153,13 @@
         },
         {
             "name": "LocalAI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "OpenAI-API-Compatible",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",

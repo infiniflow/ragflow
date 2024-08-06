@@ -57,7 +57,7 @@ export default {
       setting: '用戶設置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: '圖',
+      flow: 'Agent',
     },
     knowledgeList: {
       welcome: '歡迎回來',
@@ -261,6 +261,7 @@ export default {
       maxTokenTip: '用於匯總的最大token數。',
       thresholdTip: '閾值越大，聚類越少。',
       maxClusterTip: '最大聚類數。',
+      entityTypes: '實體類型',
     },
     chunk: {
       chunk: '解析塊',
@@ -278,6 +279,8 @@ export default {
       chunkMessage: '請輸入值！',
       full: '全文',
       ellipse: '省略',
+      graph: '知識圖譜',
+      mind: '心智圖',
     },
     chat: {
       newConversation: '新會話',
@@ -520,6 +523,7 @@ export default {
       s3: 'S3 上傳',
       preview: '預覽',
       fileError: '文件錯誤',
+      uploadLimit: '文件大小不能超過10M，文件總數不超過128個',
     },
     flow: {
       cite: '引用',
@@ -534,7 +538,6 @@ export default {
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       loop: '循環上限',
-      createFlow: '创建工作流',
       yes: '是',
       no: '否',
       key: 'key',
@@ -559,7 +562,7 @@ export default {
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}
 以上就是你需要總結的內容。`,
-      createGraph: '建立圖表',
+      createGraph: '建立 Agent',
       createFromTemplates: '從模板創建',
       retrieval: '知識檢索',
       generate: '生成回答',
@@ -608,6 +611,12 @@ export default {
       apiKey: 'Api Key',
       country: '國家',
       language: '語言',
+      googleScholar: '谷歌學術',
+      googleScholarDescription: `該元件用於從 https://scholar.google.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要調整的搜尋結果的數量。`,
+      yearLow: '開始年份',
+      yearHigh: '結束年份',
+      patents: '專利',
+      data: '數據',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

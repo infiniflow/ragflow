@@ -206,3 +206,22 @@ export const useFetchChunk = (chunkId?: string): ResponseType<any> => {
 
   return data;
 };
+
+export const useFetchKnowledgeGraph = (): ResponseType<any> => {
+  const { documentId } = useGetKnowledgeSearchParams();
+
+  const { data } = useQuery({
+    queryKey: ['fetchKnowledgeGraph', documentId],
+    initialData: true,
+    gcTime: 0,
+    queryFn: async () => {
+      const data = await kbService.knowledge_graph({
+        doc_id: documentId,
+      });
+
+      return data;
+    },
+  });
+
+  return data;
+};

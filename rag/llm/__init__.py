@@ -36,7 +36,8 @@ EmbeddingModel = {
     "Bedrock": BedrockEmbed,
     "Gemini": GeminiEmbed,
     "NVIDIA": NvidiaEmbed,
-    "LM-Studio": LmStudioEmbed
+    "LM-Studio": LmStudioEmbed,
+    "OpenAI-API-Compatible": OpenAI_APIEmbed
 }
 
 
@@ -53,7 +54,8 @@ CvModel = {
     "LocalAI": LocalAICV,
     "NVIDIA": NvidiaCV,
     "LM-Studio": LmStudioCV,
-    "StepFun":StepFunCV
+    "StepFun":StepFunCV,
+    "OpenAI-API-Compatible": OpenAI_APICV
 }
 
 
@@ -78,7 +80,8 @@ ChatModel = {
     "OpenRouter": OpenRouterChat,
     "StepFun": StepFunChat,
     "NVIDIA": NvidiaChat,
-    "LM-Studio": LmStudioChat
+    "LM-Studio": LmStudioChat,
+    "OpenAI-API-Compatible": OpenAI_APIChat
 }
 
 
@@ -88,7 +91,8 @@ RerankModel = {
     "Youdao": YoudaoRerank,
     "Xinference": XInferenceRerank,
     "NVIDIA": NvidiaRerank,
-    "LM-Studio": LmStudioRerank
+    "LM-Studio": LmStudioRerank,
+    "OpenAI-API-Compatible": OpenAI_APIRerank
 }
 
 

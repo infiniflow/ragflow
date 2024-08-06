@@ -1,3 +1,4 @@
+import EditTag from '@/components/edit-tag';
 import { useFetchChunk } from '@/hooks/chunk-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { DeleteOutlined } from '@ant-design/icons';
@@ -5,7 +6,6 @@ import { Checkbox, Divider, Form, Input, Modal, Space } from 'antd';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDeleteChunkByIds } from '../../hooks';
-import EditTag from '../edit-tag';
 
 type FieldType = {
   content?: string;
