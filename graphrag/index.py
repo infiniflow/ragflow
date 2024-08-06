@@ -86,7 +86,7 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
     for i in range(len(chunks)):
         tkn_cnt = num_tokens_from_string(chunks[i])
         if cnt+tkn_cnt >= left_token_count and texts:
-            threads.append(exe.submit(ext, texts, {"entity_types": entity_types}))
+            threads.append(exe.submit(ext, texts, {"entity_types": entity_types}, callback))
             texts = []
             cnt = 0
         texts.append(chunks[i])
@@ -98,7 +98,7 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
     graphs = []
     for i, _ in enumerate(threads):
         graphs.append(_.result().output)
-        callback(0.5 + 0.1*i/len(threads))
+        callback(0.5 + 0.1*i/len(threads), f"Entities extraction progress ... {i+1}/{len(threads)}")
 
     graph = reduce(graph_merge, graphs)
     er = EntityResolution(llm_bdl)
@@ -125,7 +125,7 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
 
     callback(0.6, "Extracting community reports.")
     cr = CommunityReportsExtractor(llm_bdl)
-    cr = cr(graph)
+    cr = cr(graph, callback=callback)
     for community, desc in zip(cr.structured_output, cr.output):
         chunk = {
             "title_tks": rag_tokenizer.tokenize(community["title"]),
