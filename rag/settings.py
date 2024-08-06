@@ -30,7 +30,7 @@ try:
 except Exception as e:
     REDIS = {}
     pass
-DOC_MAXIMUM_SIZE = 128 * 1024 * 1024
+DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
 
 # Logger
 LoggerFactory.set_directory(
