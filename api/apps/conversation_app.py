@@ -113,7 +113,7 @@ def completion():
             "text": "Hello! How are you doing!"  
         }
     ]
-    req["messages"] = [{"role": "user", "content": content}]
+    # req["messages"] = [{"role": "user", "content": content}]
     msg = []
     for m in req["messages"]:
         if m["role"] == "system":
