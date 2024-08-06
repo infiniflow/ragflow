@@ -31,3 +31,9 @@ services:
     networks:
       - ragflow
     restart: 'no'
+
+networks:
+  ragflow:
+    name: ragflow
+    external: true
+    
