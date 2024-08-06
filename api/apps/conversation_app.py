@@ -107,29 +107,32 @@ def list_convsersation():
 @login_required
 #@validate_request("conversation_id", "messages")
 def completion():
-    req = request.json
-    #req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
-    #    {"role": "user", "content": "上海有吗？"}
-    #]}
-    msg = []
-    for m in req["messages"]:
-        if m["role"] == "system":
-            continue
-        if m["role"] == "assistant" and not msg:
-            continue
-        # msg.append({"role": m["role"], "content": m["content"]})
+    # req = request.json
+    content= [
+        {
+            "text": "Hello! How are you doing!"  
+        }
+    ]
+    req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
+       {"role": "user", "content": content}
+    ]}
+    # msg = []
+    content= [
+        {
+            "text": "Hello! How are you doing!"  
+        }
+    ]
+    msg = [{"role": "user", "content": content}]
+    # for m in req["messages"]:
+    #     if m["role"] == "system":
+    #         continue
+    #     if m["role"] == "assistant" and not msg:
+    #         continue
+    #     msg.append({"role": m["role"], "content": m["content"]})
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
             return get_data_error_result(retmsg="Conversation not found!")
-        
-        content= [
-            {
-                "text": "Hello! How are you doing!"  
-            }
-        ]
-        msg = [{"role": "user", "content": content}],
-                                 
         conv.message.append(deepcopy(msg[-1]))
         e, dia = DialogService.get_by_id(conv.dialog_id)
         if not e:
@@ -155,7 +158,7 @@ def completion():
                 for ans in chat(dia, msg, True, **req):
                     fillin_conv(ans)
                     yield "data:"+json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
-                # ConversationService.update_by_id(conv.id, conv.to_dict())
+                ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
                 yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
                                             "data": {"answer": "**ERROR**: "+str(e), "reference": []}},
@@ -175,7 +178,7 @@ def completion():
             for ans in chat(dia, msg, **req):
                 answer = ans
                 fillin_conv(ans)
-                # ConversationService.update_by_id(conv.id, conv.to_dict())
+                ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)
     except Exception as e:
