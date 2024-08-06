@@ -82,7 +82,7 @@ class Dealer:
     def search(self, req, idxnm, emb_mdl=None):
         qst = req.get("question", "")
         bqry, keywords = self.qryr.question(qst)
-        # bqry = self._add_filters(bqry, req)
+        bqry = self._add_filters(bqry, req)
         bqry.boost = 0.05
 
         s = Search()
@@ -138,7 +138,7 @@ class Dealer:
         es_logger.info("TOTAL: {}".format(self.es.getTotal(res)))
         if self.es.getTotal(res) == 0 and "knn" in s:
             bqry, _ = self.qryr.question(qst, min_match="10%")
-            # bqry = self._add_filters(bqry)
+            bqry = self._add_filters(bqry, req)
             s["query"] = bqry.to_dict()
             s["knn"]["filter"] = bqry.to_dict()
             s["knn"]["similarity"] = 0.17

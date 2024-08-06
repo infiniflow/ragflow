@@ -131,7 +131,7 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        # conv.message.append({"role": "assistant", "content": ""})
+        conv.message.append({"role": "assistant", "content": ""})
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def fillin_conv(ans):
@@ -139,7 +139,7 @@ def completion():
             if not conv.reference:
                 conv.reference.append(ans["reference"])
             else: conv.reference[-1] = ans["reference"]
-            # conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+            conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
 
         def stream():
             nonlocal dia, msg, req, conv
@@ -167,7 +167,7 @@ def completion():
             for ans in chat(dia, msg, **req):
                 answer = ans
                 fillin_conv(ans)
-                # ConversationService.update_by_id(conv.id, conv.to_dict())
+                ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)
     except Exception as e:
