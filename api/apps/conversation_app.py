@@ -107,21 +107,15 @@ def list_convsersation():
 @login_required
 #@validate_request("conversation_id", "messages")
 def completion():
-    # req = request.json
+    req = request.json
     content= [
         {
             "text": "Hello! How are you doing!"  
         }
     ]
-    req = {"conversation_id": "73739b7453bf11efa43f0242ac190006", "messages": [
-       {"role": "user", "content": content}
-    ]}
+    req["messages"] = [{"role": "user", "content": content}]
+    
     # msg = []
-    content= [
-        {
-            "text": "Hello! How are you doing!"  
-        }
-    ]
     msg = [{"role": "user", "content": content}]
     # for m in req["messages"]:
     #     if m["role"] == "system":
