@@ -26,16 +26,17 @@ services:
       - ./nginx/proxy.conf:/etc/nginx/proxy.conf
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
 
-      # - ../api/apps/llm_app.py:/ragflow/api/apps/llm_app.py
-      # - ../api/apps/conversation_app.py:/ragflow/api/apps/conversation_app.py
-      # - ../agent/settings.py:/ragflow/agent/settings.py
+      - ../api/apps/llm_app.py:/ragflow/api/apps/llm_app.py
+      - ../api/apps/conversation_app.py:/ragflow/api/apps/conversation_app.py
+      - ../agent/settings.py:/ragflow/agent/settings.py
+      - ../api/apps/conversation_app.py:/ragflow/api/apps/conversation_app.py
 
-      - ../api:/ragflow/api
-      - ../conf:/ragflow/conf
-      - ../deepdoc:/ragflow/deepdoc
-      - ../rag:/ragflow/rag
-      - ../agent:/ragflow/agent
-      - ../graphrag:/ragflow/graphrag
+      # - ../api:/ragflow/api
+      # - ../conf:/ragflow/conf
+      # - ../deepdoc:/ragflow/deepdoc
+      # - ../rag:/ragflow/rag
+      # - ../agent:/ragflow/agent
+      # - ../graphrag:/ragflow/graphrag
     environment:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=https://huggingface.co
