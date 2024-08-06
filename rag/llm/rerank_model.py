@@ -212,3 +212,11 @@ class LmStudioRerank(Base):
 
     def similarity(self, query: str, texts: list):
         raise NotImplementedError("The LmStudioRerank has not been implement")
+
+
+class OpenAI_APIRerank(Base):
+    def __init__(self, key, model_name, base_url):
+        pass
+
+    def similarity(self, query: str, texts: list):
+        raise NotImplementedError("The api has not been implement")
