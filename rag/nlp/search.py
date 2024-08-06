@@ -82,7 +82,7 @@ class Dealer:
     def search(self, req, idxnm, emb_mdl=None):
         qst = req.get("question", "")
         bqry, keywords = self.qryr.question(qst)
-        bqry = self._add_filters(bqry, req)
+        # bqry = self._add_filters(bqry, req)
         bqry.boost = 0.05
 
         s = Search()
