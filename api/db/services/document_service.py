@@ -317,7 +317,8 @@ class DocumentService(CommonService):
                     if 0 <= t.progress < 1:
                         finished = False
                     prg += t.progress if t.progress >= 0 else 0
-                    msg.append(t.progress_msg)
+                    if t.progress_msg not in msg:
+                        msg.append(t.progress_msg)
                     if t.progress == -1:
                         bad += 1
                 prg /= len(tsks)

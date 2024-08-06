@@ -85,6 +85,7 @@ class ParserType(StrEnum):
     PICTURE = "picture"
     ONE = "one"
     AUDIO = "audio"
+    EMAIL = "email"
     KG = "knowledge_graph"
 
 

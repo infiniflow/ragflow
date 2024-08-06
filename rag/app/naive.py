@@ -17,7 +17,7 @@ from timeit import default_timer as timer
 import re
 from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, naive_merge_docx, tokenize_chunks_docx
-from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser, MarkdownParser
+from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser, MarkdownParser, TxtParser
 from rag.settings import cron_logger
 from rag.utils import num_tokens_from_string
 from PIL import Image
@@ -170,6 +170,7 @@ class Markdown(MarkdownParser):
         return sections, tbls
 
 
+
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     """
@@ -222,25 +223,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        txt = ""
-        if binary:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
-        else:
-            with open(filename, "r") as f:
-                while True:
-                    l = f.readline()
-                    if not l:
-                        break
-                    txt += l
-        sections = []
-        for sec in txt.split("\n"):
-            if num_tokens_from_string(sec) > 10 * int(parser_config.get("chunk_token_num", 128)):
-                sections.append((sec[:int(len(sec)/2)], ""))
-                sections.append((sec[int(len(sec)/2):], ""))
-            else:
-                sections.append((sec, ""))
-
+        sections = TxtParser()(filename,binary,parser_config.get("chunk_token_num", 128))
         callback(0.8, "Finish parsing.")
     
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
