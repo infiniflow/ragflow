@@ -122,6 +122,14 @@ def completion():
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
             return get_data_error_result(retmsg="Conversation not found!")
+        
+        content= [
+            {
+                "text": "Hello! How are you doing!"  
+            }
+        ]
+        msg = [{"role": "user", "content": content}],
+                                 
         conv.message.append(deepcopy(msg[-1]))
         e, dia = DialogService.get_by_id(conv.dialog_id)
         if not e:
