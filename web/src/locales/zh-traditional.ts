@@ -523,6 +523,7 @@ export default {
       s3: 'S3 上傳',
       preview: '預覽',
       fileError: '文件錯誤',
+      uploadLimit: '文件大小不能超過10M，文件總數不超過128個',
     },
     flow: {
       cite: '引用',
@@ -610,6 +611,12 @@ export default {
       apiKey: 'Api Key',
       country: '國家',
       language: '語言',
+      googleScholar: '谷歌學術',
+      googleScholarDescription: `該元件用於從 https://scholar.google.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要調整的搜尋結果的數量。`,
+      yearLow: '開始年份',
+      yearHigh: '結束年份',
+      patents: '專利',
+      data: '數據',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

@@ -562,6 +562,8 @@ The above is the content you need to summarize.`,
       s3: 'S3 uploads',
       preview: 'Preview',
       fileError: 'File error',
+      uploadLimit:
+        'The file size cannot exceed 10M, and the total number of files cannot exceed 128',
     },
     flow: {
       cite: 'Cite',
@@ -650,6 +652,13 @@ The above is the content you need to summarize.`,
       apiKey: 'Api Key',
       country: 'Country',
       language: 'Language',
+      googleScholar: 'Google Scholar',
+      googleScholarDescription:
+        'This component is used to get search result from https://scholar.google.com/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.',
+      yearLow: 'Year low',
+      yearHigh: 'Year high',
+      patents: 'Patents',
+      data: 'Data',
     },
     footer: {
       profile: 'All rights reserved @ React',

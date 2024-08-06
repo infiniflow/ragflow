@@ -13,6 +13,7 @@ import { Operator } from '../constant';
 import DuckDuckGoForm from '../duckduckgo-form';
 import GenerateForm from '../generate-form';
 import GoogleForm from '../google-form';
+import GoogleScholarForm from '../google-scholar-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import KeywordExtractForm from '../keyword-extract-form';
 import MessageForm from '../message-form';
@@ -46,6 +47,7 @@ const FormMap = {
   [Operator.ArXiv]: ArXivForm,
   [Operator.Google]: GoogleForm,
   [Operator.Bing]: BingForm,
+  [Operator.GoogleScholar]: GoogleScholarForm,
 };
 
 const EmptyContent = () => <div>empty</div>;
