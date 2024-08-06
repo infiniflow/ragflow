@@ -17,7 +17,13 @@ const LLMSelect = ({ id, value, onChange }: IProps) => {
   );
 
   return (
-    <Popover content={content} trigger="click" placement="left" arrow={false}>
+    <Popover
+      content={content}
+      trigger="click"
+      placement="left"
+      arrow={false}
+      destroyTooltipOnHide
+    >
       <Select
         style={{ width: '100%' }}
         dropdownStyle={{ display: 'none' }}
