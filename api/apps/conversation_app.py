@@ -114,15 +114,13 @@ def completion():
         }
     ]
     req["messages"] = [{"role": "user", "content": content}]
-    
-    # msg = []
-    msg = [{"role": "user", "content": content}]
-    # for m in req["messages"]:
-    #     if m["role"] == "system":
-    #         continue
-    #     if m["role"] == "assistant" and not msg:
-    #         continue
-    #     msg.append({"role": m["role"], "content": m["content"]})
+    msg = []
+    for m in req["messages"]:
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
+        msg.append({"role": m["role"], "content": m["content"]})
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
@@ -136,7 +134,7 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        # conv.message.append({"role": "assistant", "content": ""})
+        conv.message.append({"role": "assistant", "content": ""})
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def fillin_conv(ans):
@@ -144,7 +142,7 @@ def completion():
             if not conv.reference:
                 conv.reference.append(ans["reference"])
             else: conv.reference[-1] = ans["reference"]
-            # conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+            conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
 
         def stream():
             nonlocal dia, msg, req, conv
