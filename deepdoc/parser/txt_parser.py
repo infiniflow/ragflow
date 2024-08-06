@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -11,34 +10,33 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from rag.nlp import find_codec
-import readability
-import html_text
-import chardet
 
-def get_encoding(file):
-    with open(file,'rb') as f:
-        tmp = chardet.detect(f.read())
-        return tmp['encoding']
+from rag.nlp import find_codec,num_tokens_from_string
 
-class RAGFlowHtmlParser:
-    def __call__(self, fnm, binary=None):
+class RAGFlowTxtParser:
+    def __call__(self, fnm, binary=None, chunk_token_num=128):
         txt = ""
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
-            with open(fnm, "r",encoding=get_encoding(fnm)) as f:
-                txt = f.read()
-        return self.parser_txt(txt)
+            with open(fnm, "r") as f:
+                while True:
+                    l = f.readline()
+                    if not l:
+                        break
+                    txt += l
+        return self.parser_txt(txt, chunk_token_num)
 
     @classmethod
-    def parser_txt(cls, txt):
+    def parser_txt(cls, txt, chunk_token_num=128):
         if type(txt) != str:
             raise TypeError("txt type should be str!")
-        html_doc = readability.Document(txt)
-        title = html_doc.title()
-        content = html_text.extract_text(html_doc.summary(html_partial=True))
-        txt = f"{title}\n{content}"
-        sections = txt.split("\n")
+        sections = []
+        for sec in txt.split("\n"):
+            if num_tokens_from_string(sec) > 10 * int(chunk_token_num):
+                sections.append((sec[: int(len(sec) / 2)], ""))
+                sections.append((sec[int(len(sec) / 2) :], ""))
+            else:
+                sections.append((sec, ""))
         return sections
