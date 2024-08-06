@@ -20,9 +20,6 @@ import peewee
 from api.db.db_models import DB
 from api.utils import datetime_format, current_timestamp, get_uuid
 
-from api.settings import (
-    access_logger, stat_logger,
-)
 
 class CommonService:
     model = None
@@ -109,9 +106,6 @@ class CommonService:
     def update_by_id(cls, pid, data):
         data["update_time"] = current_timestamp()
         data["update_date"] = datetime_format(datetime.now())
-        stat_logger.info(
-            f'update_by_id: {data}'
-        )
         num = cls.model.update(data).where(cls.model.id == pid).execute()
         return num
 
