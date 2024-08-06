@@ -113,7 +113,7 @@ def completion():
             "text": "Hello! How are you doing!"  
         }
     ]
-    req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
+    req = {"conversation_id": "73739b7453bf11efa43f0242ac190006", "messages": [
        {"role": "user", "content": content}
     ]}
     # msg = []
