@@ -244,15 +244,20 @@ export const useEditDialog = () => {
     showModal: showDialogEditModal,
   } = useSetModalState();
 
+  const hideModal = useCallback(() => {
+    setDialog({} as IDialog);
+    hideDialogEditModal();
+  }, [hideDialogEditModal]);
+
   const onDialogEditOk = useCallback(
     async (dialog: IDialog) => {
       const ret = await submitDialog(dialog);
 
       if (ret === 0) {
-        hideDialogEditModal();
+        hideModal();
       }
     },
-    [submitDialog, hideDialogEditModal],
+    [submitDialog, hideModal],
   );
 
   const handleShowDialogEditModal = useCallback(
@@ -277,7 +282,7 @@ export const useEditDialog = () => {
     initialDialog: dialog,
     onDialogEditOk,
     dialogEditVisible,
-    hideDialogEditModal,
+    hideDialogEditModal: hideModal,
     showDialogEditModal: handleShowDialogEditModal,
     clearDialog,
   };
