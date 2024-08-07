@@ -43,7 +43,7 @@ def be_children(obj: dict, keyset:set):
         keyset.add(k)
         arr.append({
             "id": k,
-            "children": be_children(v, keyset) if isinstance(v, dict) else []
+            "children": be_children(v, keyset)
         })
     return arr
 
