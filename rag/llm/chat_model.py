@@ -71,8 +71,8 @@ class Base(ABC):
                         total_tokens
                         + num_tokens_from_string(resp.choices[0].delta.content)
                     )
-                    if not hasattr(resp, "usage")
-                    else resp.usage["total_tokens"]
+                    if (not hasattr(resp, "usage")) or (resp.usage is None)
+                    else resp.usage.total_tokens
                 )
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
@@ -188,8 +188,8 @@ class BaiChuanChat(Base):
                         total_tokens
                         + num_tokens_from_string(resp.choices[0].delta.content)
                     )
-                    if not hasattr(resp, "usage")
-                    else resp.usage["total_tokens"]
+                    if (not hasattr(resp, "usage")) or (resp.usage is None)
+                    else resp.usage.total_tokens
                 )
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
