@@ -1,8 +1,9 @@
+import { LlmModelType } from '@/constants/knowledge';
 import {
   useFetchKnowledgeBaseConfiguration,
   useUpdateKnowledge,
 } from '@/hooks/knowledge-hooks';
-import { useSelectLlmOptions } from '@/hooks/llm-hooks';
+import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
 import { useNavigateToDataset } from '@/hooks/route-hook';
 import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import {
@@ -38,7 +39,7 @@ export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
 
 export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
   const parserList = useSelectParserList();
-  const embeddingModelOptions = useSelectLlmOptions();
+  const allOptions = useSelectLlmOptionsByModelType();
 
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
@@ -62,7 +63,7 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
 
   return {
     parserList,
-    embeddingModelOptions,
+    embeddingModelOptions: allOptions[LlmModelType.Embedding],
     disabled: knowledgeDetails.chunk_num > 0,
   };
 };
