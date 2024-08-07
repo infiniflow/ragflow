@@ -35,7 +35,7 @@ def be_children(obj: dict, keyset:set):
         obj = [obj]
     if isinstance(obj, list):
         for i in obj: keyset.add(i)
-        return [{"id": i, "children":[]} for i in obj]
+        return [{"id": re.sub(r"\*+", "", i), "children":[]} for i in obj]
     arr = []
     for k,v in obj.items():
         k = re.sub(r"\*+", "", k)
