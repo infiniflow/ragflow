@@ -203,7 +203,9 @@ class NvidiaRerank(Base):
             "top_n": len(texts),
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
-        return (np.array([d["logit"] for d in res["rankings"]]), token_count)
+        rank = np.array([d["logit"] for d in res["rankings"]])
+        indexs = [d["index"] for d in res["rankings"]]
+        return rank[indexs], token_count
 
 
 class LmStudioRerank(Base):
@@ -212,3 +214,34 @@ class LmStudioRerank(Base):
 
     def similarity(self, query: str, texts: list):
         raise NotImplementedError("The LmStudioRerank has not been implement")
+
+
+class OpenAI_APIRerank(Base):
+    def __init__(self, key, model_name, base_url):
+        pass
+
+    def similarity(self, query: str, texts: list):
+        raise NotImplementedError("The api has not been implement")
+
+
+class CoHereRerank(Base):
+    def __init__(self, key, model_name, base_url=None):
+        from cohere import Client
+
+        self.client = Client(api_key=key)
+        self.model_name = model_name
+
+    def similarity(self, query: str, texts: list):
+        token_count = num_tokens_from_string(query) + sum(
+            [num_tokens_from_string(t) for t in texts]
+        )
+        res = self.client.rerank(
+            model=self.model_name,
+            query=query,
+            documents=texts,
+            top_n=len(texts),
+            return_documents=False,
+        )
+        rank = np.array([d.relevance_score for d in res.results])
+        indexs = [d.index for d in res.results]
+        return rank[indexs], token_count

@@ -37,6 +37,7 @@ import {
   initialCategorizeValues,
   initialDuckValues,
   initialGenerateValues,
+  initialGoogleScholarValues,
   initialGoogleValues,
   initialKeywordExtractValues,
   initialMessageValues,
@@ -97,6 +98,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.ArXiv]: initialArXivValues,
       [Operator.Google]: initialGoogleValues,
       [Operator.Bing]: initialBingValues,
+      [Operator.GoogleScholar]: initialGoogleScholarValues,
     };
   }, [llmId]);
 

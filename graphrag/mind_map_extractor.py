@@ -13,7 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import collections
+import logging
+import re
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -65,7 +67,7 @@ class MindMapExtractor:
         try:
             exe = ThreadPoolExecutor(max_workers=12)
             threads = []
-            token_count = self._llm.max_length * 0.7
+            token_count = max(self._llm.max_length * 0.8, self._llm.max_length-512)
             texts = []
             res = []
             cnt = 0
@@ -122,6 +124,19 @@ class MindMapExtractor:
                 continue
         return data
 
+    def _todict(self, layer:collections.OrderedDict):
+        to_ret = layer
+        if isinstance(layer, collections.OrderedDict):
+            to_ret = dict(layer)
+
+        try:
+            for key, value in to_ret.items():
+                to_ret[key] = self._todict(value)
+        except AttributeError:
+            pass
+
+        return self._list_to_kv(to_ret)
+
     def _process_document(
             self, text: str, prompt_variables: dict[str, str]
     ) -> str:
@@ -132,6 +147,7 @@ class MindMapExtractor:
         text = perform_variable_replacements(self._mind_map_prompt, variables=variables)
         gen_conf = {"temperature": 0.5}
         response = self._llm.chat(text, [], gen_conf)
+        response = re.sub(r"```[^\n]*", "", response)
         print(response)
-        print("---------------------------------------------------\n", markdown_to_json.dictify(response))
-        return dict(markdown_to_json.dictify(response))
+        print("---------------------------------------------------\n", self._todict(markdown_to_json.dictify(response)))
+        return self._todict(markdown_to_json.dictify(response))

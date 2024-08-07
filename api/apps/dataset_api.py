@@ -39,7 +39,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import construct_json_result, construct_error_response
 from api.utils.api_utils import construct_result, validate_request
 from api.utils.file_utils import filename_type, thumbnail
-from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture, audio
+from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture, audio, email
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
@@ -652,6 +652,8 @@ def doc_parse(binary, doc_name, parser_name, tenant_id, doc_id):
             table.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case "audio":
             audio.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
+        case "email":
+            email.chunk(doc_name, binary=binary, callback=partial(doc_parse_callback, doc_id))
         case _:
             return False
 
