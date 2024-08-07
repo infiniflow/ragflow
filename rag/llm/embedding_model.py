@@ -523,3 +523,33 @@ class OpenAI_APIEmbed(OpenAIEmbed):
             base_url = os.path.join(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
+
+
+class CoHereEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        from cohere import Client
+
+        self.client = Client(api_key=key)
+        self.model_name = model_name
+
+    def encode(self, texts: list, batch_size=32):
+        res = self.client.embed(
+            texts=texts,
+            model=self.model_name,
+            input_type="search_query",
+            embedding_types=["float"],
+        )
+        return np.array([d for d in res.embeddings.float]), int(
+            res.meta.billed_units.input_tokens
+        )
+
+    def encode_queries(self, text):
+        res = self.client.embed(
+            texts=[text],
+            model=self.model_name,
+            input_type="search_query",
+            embedding_types=["float"],
+        )
+        return np.array([d for d in res.embeddings.float]), int(
+            res.meta.billed_units.input_tokens
+        )

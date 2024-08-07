@@ -22,7 +22,8 @@ export const IconMap = {
   StepFun: 'stepfun',
   NVIDIA:'nvidia',
   'LM-Studio':'lm-studio',
-  'OpenAI-API-Compatible':'openai-api'
+  'OpenAI-API-Compatible':'openai-api',
+  'cohere':'cohere'
 };
 
 export const BedrockRegionList = [
