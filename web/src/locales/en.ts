@@ -26,6 +26,7 @@ export default {
       download: 'Download',
       close: 'Close',
       preview: 'Preview',
+      move: 'Move',
     },
     login: {
       login: 'Sign in',
@@ -564,6 +565,7 @@ The above is the content you need to summarize.`,
       fileError: 'File error',
       uploadLimit:
         'The file size cannot exceed 10M, and the total number of files cannot exceed 128',
+      destinationFolder: 'Destination folder',
     },
     flow: {
       cite: 'Cite',

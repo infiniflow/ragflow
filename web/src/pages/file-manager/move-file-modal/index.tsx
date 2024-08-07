@@ -1,15 +1,16 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Input, Modal } from 'antd';
+import { Form, Modal } from 'antd';
+import AsyncTreeSelect from './async-tree-select';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
-  onOk: (name: string) => void;
+  onOk: (id: string) => void;
 }
 
-const FolderCreateModal = ({ visible, hideModal, loading, onOk }: IProps) => {
+const FileMovingModal = ({ visible, hideModal, loading, onOk }: IProps) => {
   const [form] = Form.useForm();
-  const { t } = useTranslate('common');
+  const { t } = useTranslate('fileManager');
 
   type FieldType = {
     name?: string;
@@ -23,31 +24,31 @@ const FolderCreateModal = ({ visible, hideModal, loading, onOk }: IProps) => {
 
   return (
     <Modal
-      title={t('newFolder', { keyPrefix: 'fileManager' })}
+      title={t('move', { keyPrefix: 'common' })}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
       okButtonProps={{ loading }}
       confirmLoading={loading}
+      width={600}
     >
       <Form
         name="basic"
-        labelCol={{ span: 4 }}
-        wrapperCol={{ span: 20 }}
-        style={{ maxWidth: 600 }}
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
         autoComplete="off"
         form={form}
       >
         <Form.Item<FieldType>
-          label={t('name')}
+          label={t('destinationFolder')}
           name="name"
-          rules={[{ required: true, message: t('namePlaceholder') }]}
+          rules={[{ required: true, message: t('pleaseSelect') }]}
         >
-          <Input />
+          <AsyncTreeSelect></AsyncTreeSelect>
         </Form.Item>
       </Form>
     </Modal>
   );
 };
 
-export default FolderCreateModal;
+export default FileMovingModal;

@@ -13,6 +13,7 @@ const {
   connectFileToKnowledge,
   get_document_file,
   getFile,
+  moveFile,
 } = api;
 
 const methods = {
@@ -48,6 +49,10 @@ const methods = {
     url: getFile,
     method: 'get',
     responseType: 'blob',
+  },
+  moveFile: {
+    url: moveFile,
+    method: 'post',
   },
 } as const;
 
