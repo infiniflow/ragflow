@@ -17,7 +17,9 @@ from .arxiv import ArXiv, ArXivParam
 from .google import Google, GoogleParam
 from .bing import Bing, BingParam
 from .googlescholar import GoogleScholar, GoogleScholarParam
-
+from .deepl import DeepL, DeepLParam
+from .github import GitHub, GitHubParam
+from .baidufanyi import BaiduFanyi, BaiduFanyiParam
 
 def component_class(class_name):
     m = importlib.import_module("agent.component")
