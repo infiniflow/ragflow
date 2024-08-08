@@ -20,7 +20,8 @@ import pandas as pd
 import requests
 import re
 from graph.settings import DEBUG
-from graph.component.base import ComponentBase, ComponentParamBase
+from agent.component.base import ComponentBase, ComponentParamBase
+
 
 
 class GitHubParam(ComponentParamBase):
