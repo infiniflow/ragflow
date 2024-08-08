@@ -7,6 +7,12 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "gpt-4o-mini",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "image2text"
+                },
+                {
                     "llm_name": "gpt-4o",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
@@ -540,6 +546,12 @@
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
             "llm": [
+                {
+                    "llm_name": "azure-gpt-4o-mini",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "image2text"
+                },
                 {
                     "llm_name": "azure-gpt-4o",
                     "tags": "LLM,CHAT,128K",
