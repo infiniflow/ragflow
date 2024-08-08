@@ -62,7 +62,7 @@ class FileService(CommonService):
                     (cls.model.parent_id == file["id"]),
                     ~(cls.model.id == file["id"]),
                 ).dicts())
-                file["has_child_folder"] = any(value["type"] == "folder" for value in children)               
+                file["has_child_folder"] = any(value["type"] == FileType.FOLDER.value for value in children)                       
                 continue
             kbs_info = cls.get_kb_id_by_file_id(file['id'])
             file['kbs_info'] = kbs_info
