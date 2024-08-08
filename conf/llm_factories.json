@@ -2216,6 +2216,116 @@
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "cohere",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING, TEXT RE-RANK",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "command-r-plus",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command-r",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command-nightly",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command-light",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command-light-nightly",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "embed-english-v3.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-english-light-v3.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-multilingual-v3.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-multilingual-light-v3.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-english-v2.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-english-light-v2.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-multilingual-v2.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 256,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "rerank-english-v3.0",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4096,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-multilingual-v3.0",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4096,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-english-v2.0",
+                    "tags": "RE-RANK,512",
+                    "max_tokens": 8196,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-multilingual-v2.0",
+                    "tags": "RE-RANK,512",
+                    "max_tokens": 512,
+                    "model_type": "rerank"
+                }
+            ]
         }
     ]
 }

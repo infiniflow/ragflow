@@ -35,7 +35,7 @@ def be_children(obj: dict, keyset:set):
         obj = [obj]
     if isinstance(obj, list):
         for i in obj: keyset.add(i)
-        return [{"id": i, "children":[]} for i in obj]
+        return [{"id": re.sub(r"\*+", "", i), "children":[]} for i in obj]
     arr = []
     for k,v in obj.items():
         k = re.sub(r"\*+", "", k)
@@ -43,7 +43,7 @@ def be_children(obj: dict, keyset:set):
         keyset.add(k)
         arr.append({
             "id": k,
-            "children": be_children(v, keyset) if isinstance(v, dict) else []
+            "children": be_children(v, keyset)
         })
     return arr
 
@@ -86,13 +86,15 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
     for i in range(len(chunks)):
         tkn_cnt = num_tokens_from_string(chunks[i])
         if cnt+tkn_cnt >= left_token_count and texts:
-            threads.append(exe.submit(ext, texts, {"entity_types": entity_types}, callback))
+            for b in range(0, len(texts), 16):
+                threads.append(exe.submit(ext, ["\n".join(texts[b:b+16])], {"entity_types": entity_types}, callback))
             texts = []
             cnt = 0
         texts.append(chunks[i])
         cnt += tkn_cnt
     if texts:
-        threads.append(exe.submit(ext, texts))
+        for b in range(0, len(texts), 16):
+            threads.append(exe.submit(ext, ["\n".join(texts[b:b+16])], {"entity_types": entity_types}, callback))
 
     callback(0.5, "Extracting entities.")
     graphs = []
