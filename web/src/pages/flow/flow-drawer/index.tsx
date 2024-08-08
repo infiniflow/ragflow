@@ -12,6 +12,7 @@ import CategorizeForm from '../categorize-form';
 import { Operator } from '../constant';
 import DuckDuckGoForm from '../duckduckgo-form';
 import GenerateForm from '../generate-form';
+import GithubForm from '../github-form';
 import GoogleForm from '../google-form';
 import GoogleScholarForm from '../google-scholar-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
@@ -50,6 +51,7 @@ const FormMap = {
   [Operator.Bing]: BingForm,
   [Operator.GoogleScholar]: GoogleScholarForm,
   [Operator.DeepL]: DeepLForm,
+  [Operator.GitHub]: GithubForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

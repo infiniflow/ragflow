@@ -38,6 +38,7 @@ import {
   initialDeepLValues,
   initialDuckValues,
   initialGenerateValues,
+  initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
   initialKeywordExtractValues,
@@ -101,6 +102,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Bing]: initialBingValues,
       [Operator.GoogleScholar]: initialGoogleScholarValues,
       [Operator.DeepL]: initialDeepLValues,
+      [Operator.GitHub]: initialGithubValues,
     };
   }, [llmId]);
 
