@@ -3,6 +3,7 @@ import { IFile } from '@/interfaces/database/file-manager';
 import type { GetProp, TreeSelectProps } from 'antd';
 import { TreeSelect } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 type DefaultOptionType = GetProp<TreeSelectProps, 'treeData'>[number];
 
@@ -12,6 +13,7 @@ interface IProps {
 }
 
 const AsyncTreeSelect = ({ value, onChange }: IProps) => {
+  const { t } = useTranslation();
   const { fetchList } = useFetchPureFileList();
   const [treeData, setTreeData] = useState<Omit<DefaultOptionType, 'label'>[]>(
     [],
@@ -30,7 +32,10 @@ const AsyncTreeSelect = ({ value, onChange }: IProps) => {
                 pId: x.parent_id,
                 value: x.id,
                 title: x.name,
-                isLeaf: false,
+                isLeaf:
+                  typeof x.has_child_folder === 'boolean'
+                    ? !x.has_child_folder
+                    : false,
               })),
           );
         });
@@ -53,7 +58,7 @@ const AsyncTreeSelect = ({ value, onChange }: IProps) => {
       style={{ width: '100%' }}
       value={value}
       dropdownStyle={{ maxHeight: 400, overflow: 'auto' }}
-      placeholder="Please select"
+      placeholder={t('fileManager.pleaseSelect')}
       onChange={handleChange}
       loadData={onLoadData}
       treeData={treeData}
