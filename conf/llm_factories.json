@@ -550,7 +550,7 @@
                     "llm_name": "azure-gpt-4o-mini",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
-                    "model_type": "chat,image2text"
+                    "model_type": "image2text"
                 },
                 {
                     "llm_name": "azure-gpt-4o",
