@@ -83,7 +83,8 @@ ChatModel = {
     "NVIDIA": NvidiaChat,
     "LM-Studio": LmStudioChat,
     "OpenAI-API-Compatible": OpenAI_APIChat,
-    "cohere": CoHereChat
+    "cohere": CoHereChat,
+    "LeptonAI": LeptonAIChat
 }
 
 

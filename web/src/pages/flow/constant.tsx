@@ -1,7 +1,9 @@
 import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
+import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
+import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
@@ -46,6 +48,8 @@ export enum Operator {
   Google = 'Google',
   Bing = 'Bing',
   GoogleScholar = 'GoogleScholar',
+  DeepL = 'DeepL',
+  GitHub = 'GitHub',
 }
 
 export const operatorIconMap = {
@@ -66,6 +70,8 @@ export const operatorIconMap = {
   [Operator.Google]: GoogleIcon,
   [Operator.Bing]: BingIcon,
   [Operator.GoogleScholar]: GoogleScholarIcon,
+  [Operator.DeepL]: DeepLIcon,
+  [Operator.GitHub]: GithubIcon,
 };
 
 export const operatorMap = {
@@ -149,6 +155,8 @@ export const operatorMap = {
   },
   [Operator.Bing]: {},
   [Operator.GoogleScholar]: {},
+  [Operator.DeepL]: {},
+  [Operator.GitHub]: {},
 };
 
 export const componentMenuList = [
@@ -199,6 +207,12 @@ export const componentMenuList = [
   },
   {
     name: Operator.GoogleScholar,
+  },
+  {
+    name: Operator.DeepL,
+  },
+  {
+    name: Operator.GitHub,
   },
 ];
 
@@ -304,6 +318,15 @@ export const initialGoogleScholarValues = {
   patents: true,
 };
 
+export const initialDeepLValues = {
+  text: 5,
+  auth_key: 'relevance',
+};
+
+export const initialGithubValues = {
+  top_n: 5,
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -368,6 +391,8 @@ export const RestrictedUpstreamMap = {
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
+  [Operator.DeepL]: [Operator.Begin, Operator.Retrieval],
+  [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -388,6 +413,8 @@ export const NodeMap = {
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
+  [Operator.DeepL]: 'ragNode',
+  [Operator.GitHub]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -1299,6 +1326,7 @@ export const GoogleLanguageOptions = [
     language_name: 'Zulu',
   },
 ].map((x) => ({ label: x.language_name, value: x.language_code }));
+
 export const GoogleCountryOptions = [
   {
     country_code: 'af',
@@ -2352,4 +2380,75 @@ export const BingLanguageOptions = [
   { label: 'Turkish tr', value: 'tr' },
   { label: 'Ukrainian uk', value: 'uk' },
   { label: 'Vietnamese vi', value: 'vi' },
+];
+
+export const DeepLSourceLangOptions = [
+  { label: 'Arabic [1]', value: 'AR' },
+  { label: 'Bulgarian', value: 'BG' },
+  { label: 'Czech', value: 'CS' },
+  { label: 'Danish', value: 'DA' },
+  { label: 'German', value: 'DE' },
+  { label: 'Greek', value: 'EL' },
+  { label: 'English', value: 'EN' },
+  { label: 'Spanish', value: 'ES' },
+  { label: 'Estonian', value: 'ET' },
+  { label: 'Finnish', value: 'FI' },
+  { label: 'French', value: 'FR' },
+  { label: 'Hungarian', value: 'HU' },
+  { label: 'Indonesian', value: 'ID' },
+  { label: 'Italian', value: 'IT' },
+  { label: 'Japanese', value: 'JA' },
+  { label: 'Korean', value: 'KO' },
+  { label: 'Lithuanian', value: 'LT' },
+  { label: 'Latvian', value: 'LV' },
+  { label: 'Norwegian Bokmål', value: 'NB' },
+  { label: 'Dutch', value: 'NL' },
+  { label: 'Polish', value: 'PL' },
+  { label: 'Portuguese (all Portuguese varieties mixed)', value: 'PT' },
+  { label: 'Romanian', value: 'RO' },
+  { label: 'Russian', value: 'RU' },
+  { label: 'Slovak', value: 'SK' },
+  { label: 'Slovenian', value: 'SL' },
+  { label: 'Swedish', value: 'SV' },
+  { label: 'Turkish', value: 'TR' },
+  { label: 'Ukrainian', value: 'UK' },
+  { label: 'Chinese', value: 'ZH' },
+];
+export const DeepLTargetLangOptions = [
+  { label: 'Arabic [1]', value: 'AR' },
+  { label: 'Bulgarian', value: 'BG' },
+  { label: 'Czech', value: 'CS' },
+  { label: 'Danish', value: 'DA' },
+  { label: 'German', value: 'DE' },
+  { label: 'Greek', value: 'EL' },
+  { label: 'English (British)', value: 'EN-GB' },
+  { label: 'English (American)', value: 'EN-US' },
+  { label: 'Spanish', value: 'ES' },
+  { label: 'Estonian', value: 'ET' },
+  { label: 'Finnish', value: 'FI' },
+  { label: 'French', value: 'FR' },
+  { label: 'Hungarian', value: 'HU' },
+  { label: 'Indonesian', value: 'ID' },
+  { label: 'Italian', value: 'IT' },
+  { label: 'Japanese', value: 'JA' },
+  { label: 'Korean', value: 'KO' },
+  { label: 'Lithuanian', value: 'LT' },
+  { label: 'Latvian', value: 'LV' },
+  { label: 'Norwegian Bokmål', value: 'NB' },
+  { label: 'Dutch', value: 'NL' },
+  { label: 'Polish', value: 'PL' },
+  { label: 'Portuguese (Brazilian)', value: 'PT-BR' },
+  {
+    label:
+      'Portuguese (all Portuguese varieties excluding Brazilian Portuguese)',
+    value: 'PT-PT',
+  },
+  { label: 'Romanian', value: 'RO' },
+  { label: 'Russian', value: 'RU' },
+  { label: 'Slovak', value: 'SK' },
+  { label: 'Slovenian', value: 'SL' },
+  { label: 'Swedish', value: 'SV' },
+  { label: 'Turkish', value: 'TR' },
+  { label: 'Ukrainian', value: 'UK' },
+  { label: 'Chinese (simplified)', value: 'ZH' },
 ];

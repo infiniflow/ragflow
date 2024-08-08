@@ -637,6 +637,15 @@ export default {
       yearHigh: '结束年份',
       patents: '专利',
       data: '数据',
+      deepL: 'DeepL',
+      deepLDescription:
+        '该组件用于从 https://www.deepl.com/ 获取翻译。通常，它提供更专业的翻译结果。',
+      authKey: '授权键',
+      sourceLang: '源语言',
+      targetLang: '目标语言',
+      gitHub: 'GitHub',
+      githubDescription:
+        '该组件用于从 https://github.com/ 搜索仓库。Top N 指定需要调整的搜索结果数量。',
     },
     footer: {
       profile: 'All rights reserved @ React',

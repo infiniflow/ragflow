@@ -661,6 +661,15 @@ The above is the content you need to summarize.`,
       yearHigh: 'Year high',
       patents: 'Patents',
       data: 'Data',
+      deepL: 'DeepL',
+      deepLDescription:
+        'This component is used to get translations from https://www.deepl.com/. Typically, it provides a more specialized translation result.',
+      authKey: 'Auth key',
+      sourceLang: 'Source language',
+      targetLang: 'Target language',
+      gitHub: 'GitHub',
+      githubDescription:
+        'This component is used to search the repository from https://github.com/. Top N specifies the number of search results to be adjusted.',
     },
     footer: {
       profile: 'All rights reserved @ React',

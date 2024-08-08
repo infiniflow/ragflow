@@ -619,6 +619,15 @@ export default {
       yearHigh: '結束年份',
       patents: '專利',
       data: '數據',
+      deepL: 'DeepL',
+      deepLDescription:
+        '此元件用於從 https://www.deepl.com/ 取得翻譯。通常，它提供更專業的翻譯結果。',
+      authKey: '授權鍵',
+      sourceLang: '原始語言',
+      targetLang: '目標語言',
+      gitHub: 'GitHub',
+      gitHubDescription:
+        '此元件用於從 https://github.com/ 搜尋儲存庫。 Top N 指定要調整的搜尋結果的數量。',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
