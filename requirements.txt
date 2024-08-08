@@ -10,6 +10,7 @@ cn2an==0.5.22
 cohere==5.6.2
 dashscope==1.14.1
 datrie==0.8.2
+deepl==1.18.0
 demjson3==3.0.6
 discord.py==2.3.2
 duckduckgo_search==6.1.9
