@@ -20,6 +20,7 @@ from .googlescholar import GoogleScholar, GoogleScholarParam
 from .deepl import DeepL, DeepLParam
 from .github import GitHub, GitHubParam
 from .baidufanyi import BaiduFanyi, BaiduFanyiParam
+from .qweather import QWeather, QWeatherParam
 
 def component_class(class_name):
     m = importlib.import_module("agent.component")
