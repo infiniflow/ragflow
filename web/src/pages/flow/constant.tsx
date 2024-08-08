@@ -1,4 +1,5 @@
 import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
+import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
@@ -50,6 +51,7 @@ export enum Operator {
   GoogleScholar = 'GoogleScholar',
   DeepL = 'DeepL',
   GitHub = 'GitHub',
+  BaiduFanyi = 'BaiduFanyi',
 }
 
 export const operatorIconMap = {
@@ -72,6 +74,7 @@ export const operatorIconMap = {
   [Operator.GoogleScholar]: GoogleScholarIcon,
   [Operator.DeepL]: DeepLIcon,
   [Operator.GitHub]: GithubIcon,
+  [Operator.BaiduFanyi]: baiduFanyiIcon,
 };
 
 export const operatorMap = {
@@ -157,6 +160,7 @@ export const operatorMap = {
   [Operator.GoogleScholar]: {},
   [Operator.DeepL]: {},
   [Operator.GitHub]: {},
+  [Operator.BaiduFanyi]: {},
 };
 
 export const componentMenuList = [
@@ -213,6 +217,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.GitHub,
+  },
+  {
+    name: Operator.BaiduFanyi,
   },
 ];
 
@@ -327,6 +334,12 @@ export const initialGithubValues = {
   top_n: 5,
 };
 
+export const initialBaiduFanyiValues = {
+  appid: 'xxx',
+  secret_key: 'xxx',
+  trans_type: 'translate',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -393,6 +406,7 @@ export const RestrictedUpstreamMap = {
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.DeepL]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
+  [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -415,6 +429,7 @@ export const NodeMap = {
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.DeepL]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
+  [Operator.BaiduFanyi]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -2451,4 +2466,50 @@ export const DeepLTargetLangOptions = [
   { label: 'Turkish', value: 'TR' },
   { label: 'Ukrainian', value: 'UK' },
   { label: 'Chinese (simplified)', value: 'ZH' },
+];
+
+export const BaiduFanyiDomainOptions = [
+  'it',
+  'finance',
+  'machinery',
+  'senimed',
+  'novel',
+  'academic',
+  'aerospace',
+  'wiki',
+  'news',
+  'law',
+  'contract',
+];
+
+export const BaiduFanyiSourceLangOptions = [
+  'auto',
+  'zh',
+  'en',
+  'yue',
+  'wyw',
+  'jp',
+  'kor',
+  'fra',
+  'spa',
+  'th',
+  'ara',
+  'ru',
+  'pt',
+  'de',
+  'it',
+  'el',
+  'nl',
+  'pl',
+  'bul',
+  'est',
+  'dan',
+  'fin',
+  'cs',
+  'rom',
+  'slo',
+  'swe',
+  'hu',
+  'cht',
+  'vie',
 ];
