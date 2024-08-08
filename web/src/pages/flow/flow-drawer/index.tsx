@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
 import ArXivForm from '../arxiv-form';
+import BaiduFanyiForm from '../baidu-fanyi-form';
 import BaiduForm from '../baidu-form';
 import BeginForm from '../begin-form';
 import BingForm from '../bing-form';
@@ -52,6 +53,7 @@ const FormMap = {
   [Operator.GoogleScholar]: GoogleScholarForm,
   [Operator.DeepL]: DeepLForm,
   [Operator.GitHub]: GithubForm,
+  [Operator.BaiduFanyi]: BaiduFanyiForm,
 };
 
 const EmptyContent = () => <div>empty</div>;
