@@ -13,16 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
 from abc import ABC
-from functools import partial
-import pandas as pd
-import requests
 import re
-from agent.settings import DEBUG
-
-from graph.component.base import ComponentBase, ComponentParamBase
+from agent.component.base import ComponentBase, ComponentParamBase
 import deepl
+
 
 class DeepLParam(ComponentParamBase):
     """
@@ -36,24 +31,29 @@ class DeepLParam(ComponentParamBase):
         self.parameters = []
         self.source_lang = 'ZH'
         self.target_lang = 'EN-GB'
+
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
-        self.check_valid_value(self.source_lang, "Source language", ['AR', 'BG', 'CS', 'DA', 'DE', 'EL', 'EN', 'ES', 'ET', 'FI', 'FR', 'HU', 'ID', 'IT', 'JA', 'KO', 'LT', 'LV', 'NB', 'NL', 'PL', 'PT', 'RO', 'RU', 'SK', 'SL', 'SV', 'TR', 'UK', 'ZH'])
-        self.check_valid_value(self.target_lang, "Target language",['AR', 'BG', 'CS', 'DA', 'DE', 'EL', 'EN-GB', 'EN-US', 'ES', 'ET', 'FI', 'FR', 'HU', 'ID', 'IT', 'JA', 'KO', 'LT', 'LV', 'NB', 'NL', 'PL', 'PT-BR', 'PT-PT', 'RO', 'RU', 'SK', 'SL', 'SV', 'TR', 'UK', 'ZH'])
+        self.check_valid_value(self.source_lang, "Source language",
+                               ['AR', 'BG', 'CS', 'DA', 'DE', 'EL', 'EN', 'ES', 'ET', 'FI', 'FR', 'HU', 'ID', 'IT',
+                                'JA', 'KO', 'LT', 'LV', 'NB', 'NL', 'PL', 'PT', 'RO', 'RU', 'SK', 'SL', 'SV', 'TR',
+                                'UK', 'ZH'])
+        self.check_valid_value(self.target_lang, "Target language",
+                               ['AR', 'BG', 'CS', 'DA', 'DE', 'EL', 'EN-GB', 'EN-US', 'ES', 'ET', 'FI', 'FR', 'HU',
+                                'ID', 'IT', 'JA', 'KO', 'LT', 'LV', 'NB', 'NL', 'PL', 'PT-BR', 'PT-PT', 'RO', 'RU',
+                                'SK', 'SL', 'SV', 'TR', 'UK', 'ZH'])
 
 
 class DeepL(ComponentBase, ABC):
-    component_name = "DeepL"
+    component_name = "GitHub"
 
     def _run(self, history, **kwargs):
         prompt = self._param.prompt
-
 
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
             return DeepL.be_output("")
-
 
         for para in self._param.parameters:
             cpn = self._canvas.get_component(para["component_id"])["obj"]
@@ -69,8 +69,9 @@ class DeepL(ComponentBase, ABC):
 
         try:
             translator = deepl.Translator(self._param.auth_key)
-            result = translator.translate_text(prompt,source_lang=self._param.source_lang, target_lang=self._param.target_lang)
+            result = translator.translate_text(prompt, source_lang=self._param.source_lang,
+                                               target_lang=self._param.target_lang)
 
             return DeepL.be_output(result.text)
         except Exception as e:
-            DeepL.be_output("**Error**:"+str(e))
+            DeepL.be_output("**Error**:" + str(e))
