@@ -3,6 +3,7 @@ import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
+import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
@@ -48,6 +49,7 @@ export enum Operator {
   Bing = 'Bing',
   GoogleScholar = 'GoogleScholar',
   DeepL = 'DeepL',
+  GitHub = 'GitHub',
 }
 
 export const operatorIconMap = {
@@ -69,6 +71,7 @@ export const operatorIconMap = {
   [Operator.Bing]: BingIcon,
   [Operator.GoogleScholar]: GoogleScholarIcon,
   [Operator.DeepL]: DeepLIcon,
+  [Operator.GitHub]: GithubIcon,
 };
 
 export const operatorMap = {
@@ -153,6 +156,7 @@ export const operatorMap = {
   [Operator.Bing]: {},
   [Operator.GoogleScholar]: {},
   [Operator.DeepL]: {},
+  [Operator.GitHub]: {},
 };
 
 export const componentMenuList = [
@@ -206,6 +210,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.DeepL,
+  },
+  {
+    name: Operator.GitHub,
   },
 ];
 
@@ -316,6 +323,10 @@ export const initialDeepLValues = {
   auth_key: 'relevance',
 };
 
+export const initialGithubValues = {
+  top_n: 5,
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -381,6 +392,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.DeepL]: [Operator.Begin, Operator.Retrieval],
+  [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -402,6 +414,7 @@ export const NodeMap = {
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.DeepL]: 'ragNode',
+  [Operator.GitHub]: 'ragNode',
 };
 
 export const LanguageOptions = [
