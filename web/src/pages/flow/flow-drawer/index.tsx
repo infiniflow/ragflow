@@ -24,6 +24,7 @@ import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
 import WikipediaForm from '../wikipedia-form';
 
+import DeepLForm from '../deepl-form';
 import styles from './index.less';
 
 interface IProps {
@@ -48,6 +49,7 @@ const FormMap = {
   [Operator.Google]: GoogleForm,
   [Operator.Bing]: BingForm,
   [Operator.GoogleScholar]: GoogleScholarForm,
+  [Operator.DeepL]: DeepLForm,
 };
 
 const EmptyContent = () => <div>empty</div>;
