@@ -3,6 +3,18 @@ sidebar_position: 5
 slug: /deploy_local_llm
 ---
 
+# Deploy a local LLM
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+RAGFlow supports deploying models locally using Ollama or Xinference. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
+
+RAGFlow seamlessly integrates with Ollama and Xinference, without the need for further environment configurations. You can use them to deploy two types of local models in RAGFlow: chat models and embedding models.
+
+:::tip NOTE
+This user guide does not intend to cover much of the installation or configuration details of Ollama or Xinference; its focus is on configurations inside RAGFlow. For the most current information, you may need to check out the official site of Ollama or Xinference.
+:::
+
 # Deploy a local model using jina 
 
 [Jina](https://github.com/jina-ai/jina) lets you build AI services and pipelines that communicate via gRPC, HTTP and WebSockets, then scale them up and deploy to production.
