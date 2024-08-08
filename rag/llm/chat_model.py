@@ -71,7 +71,7 @@ class Base(ABC):
                         total_tokens
                         + num_tokens_from_string(resp.choices[0].delta.content)
                     )
-                    if not hasattr(resp, "usage")
+                    if not hasattr(resp, "usage") or not resp.usage
                     else resp.usage["total_tokens"]
                 )
                 if resp.choices[0].finish_reason == "length":
@@ -981,3 +981,10 @@ class CoHereChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
+
+
+class LeptonAIChat(Base):
+    def __init__(self, key, model_name, base_url=None):
+        if not base_url:
+            base_url = os.path.join("https://"+model_name+".lepton.run","api","v1")
+        super().__init__(key, model_name, base_url)

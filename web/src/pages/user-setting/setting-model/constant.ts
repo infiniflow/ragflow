@@ -23,7 +23,8 @@ export const IconMap = {
   NVIDIA:'nvidia',
   'LM-Studio':'lm-studio',
   'OpenAI-API-Compatible':'openai-api',
-  'cohere':'cohere'
+  'cohere':'cohere',
+  'LeptonAI':'lepton'
 };
 
 export const BedrockRegionList = [
