@@ -26,7 +26,6 @@ class QWeatherParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
-        self.location = "shanghai"
         self.web_apikey = "xxx"
         self.lang = "zh"
         self.type = "weather"
@@ -41,13 +40,11 @@ class QWeatherParam(ComponentParamBase):
             "429": "Exceeded the limited QPM (number of accesses per minute), please refer to the QPM description",
             "500": "No response or timeout, interface service abnormality please contact us"
             }
-
         # Weather
         self.time_period = 'now'
 
     def check(self):
         self.check_empty(self.web_apikey, "BaiduFanyi APPID")
-        self.check_empty(self.location, "Location")
         self.check_valid_value(self.type, "Type", ["weather", "indices", "airquality"])
         self.check_valid_value(self.user_type, "Free subscription or paid subscription", ["free", "paid"])
         self.check_valid_value(self.lang, "Use language",
@@ -62,11 +59,11 @@ class QWeather(ComponentBase, ABC):
 
     def _run(self, history, **kwargs):
         ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
+        ans = "".join(ans["content"]) if "content" in ans else ""
 
         try:
             response = requests.get(
-                url="https://geoapi.qweather.com/v2/city/lookup?location=" + self._param.location + "&key=" + self._param.web_apikey).json()
+                url="https://geoapi.qweather.com/v2/city/lookup?location=" + ans + "&key=" + self._param.web_apikey).json()
             if response["code"] == "200":
                 location_id = response["location"][0]["id"]
             else:
