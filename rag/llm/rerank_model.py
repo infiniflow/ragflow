@@ -245,3 +245,11 @@ class CoHereRerank(Base):
         rank = np.array([d.relevance_score for d in res.results])
         indexs = [d.index for d in res.results]
         return rank[indexs], token_count
+
+
+class TogetherAIRerank(Base):
+    def __init__(self, key, model_name, base_url):
+        pass
+
+    def similarity(self, query: str, texts: list):
+        raise NotImplementedError("The api has not been implement")
