@@ -38,7 +38,8 @@ EmbeddingModel = {
     "NVIDIA": NvidiaEmbed,
     "LM-Studio": LmStudioEmbed,
     "OpenAI-API-Compatible": OpenAI_APIEmbed,
-    "cohere": CoHereEmbed
+    "cohere": CoHereEmbed,
+    "PerfXCloud": PerfXCloudEmbed,
 }
 
 
@@ -84,7 +85,8 @@ ChatModel = {
     "LM-Studio": LmStudioChat,
     "OpenAI-API-Compatible": OpenAI_APIChat,
     "cohere": CoHereChat,
-    "LeptonAI": LeptonAIChat
+    "LeptonAI": LeptonAIChat,
+    "PerfXCloud": PerfXCloudChat
 }
 
 
