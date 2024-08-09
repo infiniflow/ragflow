@@ -759,6 +759,7 @@ export default {
         '15d': '12天',
         '30d': '30天',
       },
+      publish: '发布',
     },
     footer: {
       profile: 'All rights reserved @ React',
