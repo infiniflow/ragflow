@@ -26,7 +26,6 @@ class DeepLParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
-        self.prompt = ""
         self.auth_key = "xxx"
         self.parameters = []
         self.source_lang = 'ZH'
@@ -48,28 +47,14 @@ class DeepL(ComponentBase, ABC):
     component_name = "GitHub"
 
     def _run(self, history, **kwargs):
-        prompt = self._param.prompt
-
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
             return DeepL.be_output("")
 
-        for para in self._param.parameters:
-            cpn = self._canvas.get_component(para["component_id"])["obj"]
-            _, out = cpn.output(allow_partial=False)
-            if "content" not in out.columns:
-                kwargs[para["key"]] = "Nothing"
-            else:
-                kwargs[para["key"]] = "  - " + "\n  - ".join(out["content"])
-
-        kwargs["input"] = ans
-        for n, v in kwargs.items():
-            prompt = re.sub(r"\{%s\}" % n, str(v), prompt)
-
         try:
             translator = deepl.Translator(self._param.auth_key)
-            result = translator.translate_text(prompt, source_lang=self._param.source_lang,
+            result = translator.translate_text(ans, source_lang=self._param.source_lang,
                                                target_lang=self._param.target_lang)
 
             return DeepL.be_output(result.text)

@@ -1,4 +1,5 @@
 import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
+import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
@@ -8,6 +9,7 @@ import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
+import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 
 import { variableEnabledFieldMap } from '@/constants/chat';
@@ -50,6 +52,8 @@ export enum Operator {
   GoogleScholar = 'GoogleScholar',
   DeepL = 'DeepL',
   GitHub = 'GitHub',
+  BaiduFanyi = 'BaiduFanyi',
+  QWeather = 'QWeather',
 }
 
 export const operatorIconMap = {
@@ -72,6 +76,8 @@ export const operatorIconMap = {
   [Operator.GoogleScholar]: GoogleScholarIcon,
   [Operator.DeepL]: DeepLIcon,
   [Operator.GitHub]: GithubIcon,
+  [Operator.BaiduFanyi]: baiduFanyiIcon,
+  [Operator.QWeather]: QWeatherIcon,
 };
 
 export const operatorMap = {
@@ -157,6 +163,8 @@ export const operatorMap = {
   [Operator.GoogleScholar]: {},
   [Operator.DeepL]: {},
   [Operator.GitHub]: {},
+  [Operator.BaiduFanyi]: {},
+  [Operator.QWeather]: {},
 };
 
 export const componentMenuList = [
@@ -213,6 +221,12 @@ export const componentMenuList = [
   },
   {
     name: Operator.GitHub,
+  },
+  {
+    name: Operator.BaiduFanyi,
+  },
+  {
+    name: Operator.QWeather,
   },
 ];
 
@@ -327,6 +341,19 @@ export const initialGithubValues = {
   top_n: 5,
 };
 
+export const initialBaiduFanyiValues = {
+  appid: 'xxx',
+  secret_key: 'xxx',
+  trans_type: 'translate',
+};
+
+export const initialQWeatherValues = {
+  web_apikey: 'xxx',
+  type: 'weather',
+  user_type: 'free',
+  time_period: 'now',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -393,6 +420,8 @@ export const RestrictedUpstreamMap = {
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.DeepL]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
+  [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
+  [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -415,6 +444,8 @@ export const NodeMap = {
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.DeepL]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
+  [Operator.BaiduFanyi]: 'ragNode',
+  [Operator.QWeather]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -2451,4 +2482,97 @@ export const DeepLTargetLangOptions = [
   { label: 'Turkish', value: 'TR' },
   { label: 'Ukrainian', value: 'UK' },
   { label: 'Chinese (simplified)', value: 'ZH' },
+];
+
+export const BaiduFanyiDomainOptions = [
+  'it',
+  'finance',
+  'machinery',
+  'senimed',
+  'novel',
+  'academic',
+  'aerospace',
+  'wiki',
+  'news',
+  'law',
+  'contract',
+];
+
+export const BaiduFanyiSourceLangOptions = [
+  'auto',
+  'zh',
+  'en',
+  'yue',
+  'wyw',
+  'jp',
+  'kor',
+  'fra',
+  'spa',
+  'th',
+  'ara',
+  'ru',
+  'pt',
+  'de',
+  'it',
+  'el',
+  'nl',
+  'pl',
+  'bul',
+  'est',
+  'dan',
+  'fin',
+  'cs',
+  'rom',
+  'slo',
+  'swe',
+  'hu',
+  'cht',
+  'vie',
+];
+
+export const QWeatherLangOptions = [
+  'zh',
+  'zh-hant',
+  'en',
+  'de',
+  'es',
+  'fr',
+  'it',
+  'ja',
+  'ko',
+  'ru',
+  'hi',
+  'th',
+  'ar',
+  'pt',
+  'bn',
+  'ms',
+  'nl',
+  'el',
+  'la',
+  'sv',
+  'id',
+  'pl',
+  'tr',
+  'cs',
+  'et',
+  'vi',
+  'fil',
+  'fi',
+  'he',
+  'is',
+  'nb',
+];
+
+export const QWeatherTypeOptions = ['weather', 'indices', 'airquality'];
+
+export const QWeatherUserTypeOptions = ['free', 'paid'];
+
+export const QWeatherTimePeriodOptions = [
+  'now',
+  '3d',
+  '7d',
+  '10d',
+  '15d',
+  '30d',
 ];

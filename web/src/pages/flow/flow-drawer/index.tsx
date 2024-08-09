@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import AnswerForm from '../answer-form';
 import ArXivForm from '../arxiv-form';
+import BaiduFanyiForm from '../baidu-fanyi-form';
 import BaiduForm from '../baidu-form';
 import BeginForm from '../begin-form';
 import BingForm from '../bing-form';
@@ -20,6 +21,7 @@ import KeywordExtractForm from '../keyword-extract-form';
 import MessageForm from '../message-form';
 import OperatorIcon from '../operator-icon';
 import PubMedForm from '../pubmed-form';
+import QWeatherForm from '../qweather-form';
 import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
@@ -52,6 +54,8 @@ const FormMap = {
   [Operator.GoogleScholar]: GoogleScholarForm,
   [Operator.DeepL]: DeepLForm,
   [Operator.GitHub]: GithubForm,
+  [Operator.BaiduFanyi]: BaiduFanyiForm,
+  [Operator.QWeather]: QWeatherForm,
 };
 
 const EmptyContent = () => <div>empty</div>;
