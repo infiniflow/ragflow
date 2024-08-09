@@ -61,7 +61,7 @@ default_llm = {
     "Tongyi-Qianwen": {
         "chat_model": "qwen-plus",
         "embedding_model": "text-embedding-v2",
-        "image2text_model": "qwen-vl-max",
+        "image2text_model": "",
         "asr_model": "paraformer-realtime-8k-v1",
     },
     "OpenAI": {
