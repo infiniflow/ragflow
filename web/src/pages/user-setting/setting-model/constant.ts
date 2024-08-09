@@ -20,11 +20,11 @@ export const IconMap = {
   OpenRouter: 'open-router',
   LocalAI: 'local-ai',
   StepFun: 'stepfun',
-  NVIDIA:'nvidia',
-  'LM-Studio':'lm-studio',
-  'OpenAI-API-Compatible':'openai-api',
-  'cohere':'cohere',
-  'LeptonAI':'lepton'
+  NVIDIA: 'nvidia',
+  'LM-Studio': 'lm-studio',
+  'OpenAI-API-Compatible': 'openai-api',
+  cohere: 'cohere',
+  Lepton: 'lepton',
 };
 
 export const BedrockRegionList = [
