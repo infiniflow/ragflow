@@ -30,24 +30,6 @@ from rag.nlp import rag_tokenizer
 from rag.utils import num_tokens_from_string
 
 
-def be_children(obj: dict, keyset:set):
-    if isinstance(obj, str):
-        obj = [obj]
-    if isinstance(obj, list):
-        for i in obj: keyset.add(i)
-        return [{"id": re.sub(r"\*+", "", i), "children":[]} for i in obj]
-    arr = []
-    for k,v in obj.items():
-        k = re.sub(r"\*+", "", k)
-        if not k or k in keyset:continue
-        keyset.add(k)
-        arr.append({
-            "id": k,
-            "children": be_children(v, keyset)
-        })
-    return arr
-
-
 def graph_merge(g1, g2):
     g = g2.copy()
     for n, attr in g1.nodes(data=True):
@@ -153,16 +135,10 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
     mg = mindmap(_chunks).output
     if not len(mg.keys()): return chunks
 
-    if len(mg.keys()) > 1:
-        keyset = set([re.sub(r"\*+", "", k) for k,v in mg.items() if isinstance(v, dict) and re.sub(r"\*+", "", k)])
-        md_map = {"id": "root", "children": [{"id": re.sub(r"\*+", "", k), "children": be_children(v, keyset)} for k,v in mg.items() if isinstance(v, dict) and re.sub(r"\*+", "", k)]}
-    else:
-        k = re.sub(r"\*+", "", list(mg.keys())[0])
-        md_map = {"id": k, "children": be_children(list(mg.items())[0][1], set([k]))}
-    print(json.dumps(md_map, ensure_ascii=False, indent=2))
+    print(json.dumps(mg, ensure_ascii=False, indent=2))
     chunks.append(
         {
-            "content_with_weight": json.dumps(md_map, ensure_ascii=False, indent=2),
+            "content_with_weight": json.dumps(mg, ensure_ascii=False, indent=2),
             "knowledge_graph_kwd": "mind_map"
         })
 
