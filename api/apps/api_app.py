@@ -205,6 +205,23 @@ def completion():
             continue
         msg.append({"role": m["role"], "content": m["content"]})
 
+    def fillin_conv(ans):
+        nonlocal conv
+        if not conv.reference:
+            conv.reference.append(ans["reference"])
+        else:
+            conv.reference[-1] = ans["reference"]
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+
+    def rename_field(ans):
+        reference = ans['reference']
+        if not isinstance(reference, dict):
+            return
+        for chunk_i in reference.get('chunks', []):
+            if 'docnm_kwd' in chunk_i:
+                chunk_i['doc_name'] = chunk_i['docnm_kwd']
+                chunk_i.pop('docnm_kwd')
+
     try:
         if conv.source == "agent":
             stream = req.get("stream", True)
@@ -222,23 +239,6 @@ def completion():
                 conv.reference = []
             conv.message.append({"role": "assistant", "content": ""})
             conv.reference.append({"chunks": [], "doc_aggs": []})
-
-            def fillin_conv(ans):
-                nonlocal conv
-                if not conv.reference:
-                    conv.reference.append(ans["reference"])
-                else:
-                    conv.reference[-1] = ans["reference"]
-                conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
-
-            def rename_field(ans):
-                reference = ans['reference']
-                if not isinstance(reference, dict):
-                    return
-                for chunk_i in reference.get('chunks', []):
-                    if 'docnm_kwd' in chunk_i:
-                        chunk_i['doc_name'] = chunk_i['docnm_kwd']
-                        chunk_i.pop('docnm_kwd')
 
             final_ans = {"reference": [], "content": ""}
             canvas = Canvas(cvs.dsl, objs[0].tenant_id)
@@ -310,23 +310,6 @@ def completion():
             conv.message.append({"role": "assistant", "content": ""})
             conv.reference.append({"chunks": [], "doc_aggs": []})
 
-            def fillin_conv(ans):
-                nonlocal conv
-                if not conv.reference:
-                    conv.reference.append(ans["reference"])
-                else:
-                    conv.reference[-1] = ans["reference"]
-                conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
-
-            def rename_field(ans):
-                reference = ans['reference']
-                if not isinstance(reference, dict):
-                    return
-                for chunk_i in reference.get('chunks', []):
-                    if 'docnm_kwd' in chunk_i:
-                        chunk_i['doc_name'] = chunk_i['docnm_kwd']
-                        chunk_i.pop('docnm_kwd')
-
             def stream():
                 nonlocal dia, msg, req, conv
                 try:
@@ -349,16 +332,16 @@ def completion():
                 resp.headers.add_header("X-Accel-Buffering", "no")
                 resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
                 return resp
-            else:
-                answer = None
-                for ans in chat(dia, msg, **req):
-                    answer = ans
-                    fillin_conv(ans)
-                    API4ConversationService.append_message(conv.id, conv.to_dict())
-                    break
+                
+            answer = None
+            for ans in chat(dia, msg, **req):
+                answer = ans
+                fillin_conv(ans)
+                API4ConversationService.append_message(conv.id, conv.to_dict())
+                break
 
-                rename_field(answer)
-                return get_json_result(data=answer)
+            rename_field(answer)
+            return get_json_result(data=answer)
 
     except Exception as e:
         return server_error_response(e)
