@@ -131,7 +131,7 @@ def add_llm():
         api_key = "xxxxxxxxxxxxxxx"
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"]+"___OpenAI-API"
-        api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
+        api_key = req["api_key"]
     else:
         llm_name = req["llm_name"]
         api_key = "xxxxxxxxxxxxxxx"
