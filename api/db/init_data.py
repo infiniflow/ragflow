@@ -116,6 +116,7 @@ def init_llm_factory():
 
     LLMFactoriesService.filter_delete([LLMFactories.name == "Local"])
     LLMService.filter_delete([LLM.fid == "Local"])
+    LLMService.filter_delete([LLM.llm_name == "qwen-vl-max"])
     LLMService.filter_delete([LLM.fid == "Moonshot", LLM.llm_name == "flag-embedding"])
     TenantLLMService.filter_delete([TenantLLM.llm_factory == "Moonshot", TenantLLM.llm_name == "flag-embedding"])
     LLMFactoriesService.filter_delete([LLMFactoriesService.model.name == "QAnything"])
