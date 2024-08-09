@@ -45,6 +45,7 @@ import {
   initialKeywordExtractValues,
   initialMessageValues,
   initialPubMedValues,
+  initialQWeatherValues,
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
@@ -105,6 +106,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.DeepL]: initialDeepLValues,
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
+      [Operator.QWeather]: initialQWeatherValues,
     };
   }, [llmId]);
 

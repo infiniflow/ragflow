@@ -9,6 +9,7 @@ import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
+import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 
 import { variableEnabledFieldMap } from '@/constants/chat';
@@ -52,6 +53,7 @@ export enum Operator {
   DeepL = 'DeepL',
   GitHub = 'GitHub',
   BaiduFanyi = 'BaiduFanyi',
+  QWeather = 'QWeather',
 }
 
 export const operatorIconMap = {
@@ -75,6 +77,7 @@ export const operatorIconMap = {
   [Operator.DeepL]: DeepLIcon,
   [Operator.GitHub]: GithubIcon,
   [Operator.BaiduFanyi]: baiduFanyiIcon,
+  [Operator.QWeather]: QWeatherIcon,
 };
 
 export const operatorMap = {
@@ -161,6 +164,7 @@ export const operatorMap = {
   [Operator.DeepL]: {},
   [Operator.GitHub]: {},
   [Operator.BaiduFanyi]: {},
+  [Operator.QWeather]: {},
 };
 
 export const componentMenuList = [
@@ -220,6 +224,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.BaiduFanyi,
+  },
+  {
+    name: Operator.QWeather,
   },
 ];
 
@@ -340,6 +347,13 @@ export const initialBaiduFanyiValues = {
   trans_type: 'translate',
 };
 
+export const initialQWeatherValues = {
+  web_apikey: 'xxx',
+  type: 'weather',
+  user_type: 'free',
+  time_period: 'now',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -407,6 +421,7 @@ export const RestrictedUpstreamMap = {
   [Operator.DeepL]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
+  [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
 };
 
 export const NodeMap = {
@@ -430,6 +445,7 @@ export const NodeMap = {
   [Operator.DeepL]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
   [Operator.BaiduFanyi]: 'ragNode',
+  [Operator.QWeather]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -2512,4 +2528,51 @@ export const BaiduFanyiSourceLangOptions = [
   'hu',
   'cht',
   'vie',
+];
+
+export const QWeatherLangOptions = [
+  'zh',
+  'zh-hant',
+  'en',
+  'de',
+  'es',
+  'fr',
+  'it',
+  'ja',
+  'ko',
+  'ru',
+  'hi',
+  'th',
+  'ar',
+  'pt',
+  'bn',
+  'ms',
+  'nl',
+  'el',
+  'la',
+  'sv',
+  'id',
+  'pl',
+  'tr',
+  'cs',
+  'et',
+  'vi',
+  'fil',
+  'fi',
+  'he',
+  'is',
+  'nb',
+];
+
+export const QWeatherTypeOptions = ['weather', 'indices', 'airquality'];
+
+export const QWeatherUserTypeOptions = ['free', 'paid'];
+
+export const QWeatherTimePeriodOptions = [
+  'now',
+  '3d',
+  '7d',
+  '10d',
+  '15d',
+  '30d',
 ];
