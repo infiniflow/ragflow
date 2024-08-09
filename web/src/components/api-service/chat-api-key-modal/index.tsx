@@ -9,12 +9,12 @@ import { Button, Modal, Space, Table } from 'antd';
 import { useOperateApiKey } from '../hooks';
 
 const ChatApiKeyModal = ({
-  visible,
   dialogId,
   hideModal,
-}: IModalProps<any> & { dialogId: string }) => {
+  idKey,
+}: IModalProps<any> & { dialogId: string; idKey: string }) => {
   const { createToken, removeToken, tokenList, listLoading, creatingLoading } =
-    useOperateApiKey(visible, dialogId);
+    useOperateApiKey(dialogId, idKey);
   const { t } = useTranslate('chat');
 
   const columns: TableProps<IToken>['columns'] = [
@@ -48,7 +48,7 @@ const ChatApiKeyModal = ({
     <>
       <Modal
         title={t('apiKey')}
-        open={visible}
+        open
         onCancel={hideModal}
         cancelButtonProps={{ style: { display: 'none' } }}
         style={{ top: 300 }}
