@@ -2436,6 +2436,13 @@
                     "model_type": "chat"
                 }
             ]
+        },
+        {
+            "name": "TogetherAI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": []
         }
     ]
 }
