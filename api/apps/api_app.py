@@ -65,8 +65,8 @@ def new_token():
                "update_time": None,
                "update_date": None
                }
-        if req.get("canvas_ids"):
-            obj["dialog_id"] = req["canvas_ids"]
+        if req.get("canvas_id"):
+            obj["dialog_id"] = req["canvas_id"]
             obj["source"] = "agent"
         else:
             obj["dialog_id"] = req["dialog_id"]
