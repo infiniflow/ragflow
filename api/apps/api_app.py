@@ -158,10 +158,6 @@ def set_conversation():
                 "source": "agent"
             }
             API4ConversationService.save(**conv)
-            e, conv = API4ConversationService.get_by_id(conv["id"])
-            if not e:
-                return get_data_error_result(retmsg="Fail to new a conversation!")
-            conv = conv.to_dict()
             return get_json_result(data=conv)
         else:
             e, dia = DialogService.get_by_id(objs[0].dialog_id)
@@ -174,10 +170,6 @@ def set_conversation():
                 "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
             }
             API4ConversationService.save(**conv)
-            e, conv = API4ConversationService.get_by_id(conv["id"])
-            if not e:
-                return get_data_error_result(retmsg="Fail to new a conversation!")
-            conv = conv.to_dict()
             return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
@@ -297,51 +289,51 @@ def completion():
                 break
             rename_field(result)
             return get_json_result(data=result)
-        else:
-            conv.message.append(msg[-1])
-            e, dia = DialogService.get_by_id(conv.dialog_id)
-            if not e:
-                return get_data_error_result(retmsg="Dialog not found!")
-            del req["conversation_id"]
-            del req["messages"]
+        
+        #******************For dialog******************
+        conv.message.append(msg[-1])
+        e, dia = DialogService.get_by_id(conv.dialog_id)
+        if not e:
+            return get_data_error_result(retmsg="Dialog not found!")
+        del req["conversation_id"]
+        del req["messages"]
 
-            if not conv.reference:
-                conv.reference = []
-            conv.message.append({"role": "assistant", "content": ""})
-            conv.reference.append({"chunks": [], "doc_aggs": []})
+        if not conv.reference:
+            conv.reference = []
+        conv.message.append({"role": "assistant", "content": ""})
+        conv.reference.append({"chunks": [], "doc_aggs": []})
 
-            def stream():
-                nonlocal dia, msg, req, conv
-                try:
-                    for ans in chat(dia, msg, True, **req):
-                        fillin_conv(ans)
-                        rename_field(ans)
-                        yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans},
-                                                   ensure_ascii=False) + "\n\n"
-                    API4ConversationService.append_message(conv.id, conv.to_dict())
-                except Exception as e:
-                    yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
-                                                "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
+        def stream():
+            nonlocal dia, msg, req, conv
+            try:
+                for ans in chat(dia, msg, True, **req):
+                    fillin_conv(ans)
+                    rename_field(ans)
+                    yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans},
                                                ensure_ascii=False) + "\n\n"
-                yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": True}, ensure_ascii=False) + "\n\n"
-
-            if req.get("stream", True):
-                resp = Response(stream(), mimetype="text/event-stream")
-                resp.headers.add_header("Cache-control", "no-cache")
-                resp.headers.add_header("Connection", "keep-alive")
-                resp.headers.add_header("X-Accel-Buffering", "no")
-                resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-                return resp
-                
-            answer = None
-            for ans in chat(dia, msg, **req):
-                answer = ans
-                fillin_conv(ans)
                 API4ConversationService.append_message(conv.id, conv.to_dict())
-                break
+            except Exception as e:
+                yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
+                                            "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
+                                           ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": True}, ensure_ascii=False) + "\n\n"
 
-            rename_field(answer)
-            return get_json_result(data=answer)
+        if req.get("stream", True):
+            resp = Response(stream(), mimetype="text/event-stream")
+            resp.headers.add_header("Cache-control", "no-cache")
+            resp.headers.add_header("Connection", "keep-alive")
+            resp.headers.add_header("X-Accel-Buffering", "no")
+            resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+            return resp
+            
+        answer = None
+        for ans in chat(dia, msg, **req):
+            answer = ans
+            fillin_conv(ans)
+            API4ConversationService.append_message(conv.id, conv.to_dict())
+            break
+        rename_field(answer)
+        return get_json_result(data=answer)
 
     except Exception as e:
         return server_error_response(e)
