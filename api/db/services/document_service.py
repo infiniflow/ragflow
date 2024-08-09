@@ -26,7 +26,7 @@ from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 from rag.nlp import search
 
-from api.db import FileType, TaskStatus
+from api.db import FileType, TaskStatus, ParserType
 from api.db.db_models import DB, Knowledgebase, Tenant, Task
 from api.db.db_models import Document
 from api.db.services.common_service import CommonService
