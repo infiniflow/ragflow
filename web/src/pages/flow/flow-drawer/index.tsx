@@ -21,6 +21,7 @@ import KeywordExtractForm from '../keyword-extract-form';
 import MessageForm from '../message-form';
 import OperatorIcon from '../operator-icon';
 import PubMedForm from '../pubmed-form';
+import QWeatherForm from '../qweather-form';
 import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
@@ -54,6 +55,7 @@ const FormMap = {
   [Operator.DeepL]: DeepLForm,
   [Operator.GitHub]: GithubForm,
   [Operator.BaiduFanyi]: BaiduFanyiForm,
+  [Operator.QWeather]: QWeatherForm,
 };
 
 const EmptyContent = () => <div>empty</div>;
