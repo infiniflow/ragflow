@@ -13,16 +13,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import re
+
 from flask_login import current_user
 from peewee import fn
 
-from api.db import FileType, KNOWLEDGEBASE_FOLDER_NAME, FileSource
+from api.db import FileType, KNOWLEDGEBASE_FOLDER_NAME, FileSource, ParserType
 from api.db.db_models import DB, File2Document, Knowledgebase
 from api.db.db_models import File, Document
+from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
+from api.utils.file_utils import filename_type, thumbnail
+from rag.utils.minio_conn import MINIO
 
 
 class FileService(CommonService):
@@ -319,3 +324,59 @@ class FileService(CommonService):
         except Exception as e:
             print(e)
             raise RuntimeError("Database error (File move)!")
+
+    @classmethod
+    @DB.connection_context()
+    def upload_document(self, kb, file_objs):
+        root_folder = self.get_root_folder(current_user.id)
+        pf_id = root_folder["id"]
+        self.init_knowledgebase_docs(pf_id, current_user.id)
+        kb_root_folder = self.get_kb_folder(current_user.id)
+        kb_folder = self.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
+
+        err, files = [], []
+        for file in file_objs:
+            try:
+                MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
+                if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
+                    raise RuntimeError("Exceed the maximum file number of a free user!")
+
+                filename = duplicate_name(
+                    DocumentService.query,
+                    name=file.filename,
+                    kb_id=kb.id)
+                filetype = filename_type(filename)
+                if filetype == FileType.OTHER.value:
+                    raise RuntimeError("This type of file has not been supported yet!")
+
+                location = filename
+                while MINIO.obj_exist(kb.id, location):
+                    location += "_"
+                blob = file.read()
+                MINIO.put(kb.id, location, blob)
+                doc = {
+                    "id": get_uuid(),
+                    "kb_id": kb.id,
+                    "parser_id": kb.parser_id,
+                    "parser_config": kb.parser_config,
+                    "created_by": current_user.id,
+                    "type": filetype,
+                    "name": filename,
+                    "location": location,
+                    "size": len(blob),
+                    "thumbnail": thumbnail(filename, blob)
+                }
+                if doc["type"] == FileType.VISUAL:
+                    doc["parser_id"] = ParserType.PICTURE.value
+                if doc["type"] == FileType.AURAL:
+                    doc["parser_id"] = ParserType.AUDIO.value
+                if re.search(r"\.(ppt|pptx|pages)$", filename):
+                    doc["parser_id"] = ParserType.PRESENTATION.value
+                DocumentService.insert(doc)
+
+                FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
+                files.append((doc, blob))
+            except Exception as e:
+                err.append(file.filename + ": " + str(e))
+
+        return err, files

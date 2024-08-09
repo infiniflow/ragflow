@@ -23,6 +23,7 @@ MIND_MAP_EXTRACTION_PROMPT = """
   4. Add a shot content summary of the bottom level section.
 
 - Output requirement:
+  - Generate at least 4 levels.
   - Always try to maximize the number of sub-sections. 
   - In language of 'Text'
   - MUST IN FORMAT OF MARKDOWN
