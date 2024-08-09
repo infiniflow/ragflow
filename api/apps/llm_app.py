@@ -22,6 +22,7 @@ from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
 from rag.llm import EmbeddingModel, ChatModel, RerankModel,CvModel
 import requests
+import ast
 
 @manager.route('/factories', methods=['GET'])
 @login_required
@@ -48,7 +49,7 @@ def set_api_key():
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
                 arr, tc = mdl.encode(["Test if the api key is available"])
-                if len(arr[0]) == 0 or tc == 0:
+                if len(arr[0]) == 0:
                     raise Exception("Fail")
                 embd_passed = True
             except Exception as e:
@@ -64,7 +65,7 @@ def set_api_key():
                 ]
                 m, tc = mdl.chat(None, [{"role": "user", "content": content}], 
                                  {"temperature": 0.9,'max_tokens':50})
-                if not tc:
+                if m.find("**ERROR**") >=0:
                     raise Exception(m)
             except Exception as e:
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
@@ -118,7 +119,7 @@ def add_llm():
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
         # Assemble volc_ak, volc_sk, endpoint_id into api_key
-        temp = list(eval(req["llm_name"]).items())[0]
+        temp = list(ast.literal_eval(req["llm_name"]).items())[0]
         llm_name = temp[0]
         endpoint_id = temp[1]
         api_key = '{' + f'"volc_ak": "{req.get("volc_ak", "")}", ' \
@@ -136,7 +137,7 @@ def add_llm():
         api_key = "xxxxxxxxxxxxxxx"
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"]+"___OpenAI-API"
-        api_key = req["api_key"]
+        api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
     else:
         llm_name = req["llm_name"]
         api_key = "xxxxxxxxxxxxxxx"

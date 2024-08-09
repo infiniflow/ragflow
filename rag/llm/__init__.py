@@ -37,7 +37,8 @@ EmbeddingModel = {
     "Gemini": GeminiEmbed,
     "NVIDIA": NvidiaEmbed,
     "LM-Studio": LmStudioEmbed,
-    "OpenAI-API-Compatible": OpenAI_APIEmbed
+    "OpenAI-API-Compatible": OpenAI_APIEmbed,
+    "cohere": CoHereEmbed
 }
 
 
@@ -81,7 +82,9 @@ ChatModel = {
     "StepFun": StepFunChat,
     "NVIDIA": NvidiaChat,
     "LM-Studio": LmStudioChat,
-    "OpenAI-API-Compatible": OpenAI_APIChat
+    "OpenAI-API-Compatible": OpenAI_APIChat,
+    "cohere": CoHereChat,
+    "LeptonAI": LeptonAIChat
 }
 
 
@@ -92,7 +95,8 @@ RerankModel = {
     "Xinference": XInferenceRerank,
     "NVIDIA": NvidiaRerank,
     "LM-Studio": LmStudioRerank,
-    "OpenAI-API-Compatible": OpenAI_APIRerank
+    "OpenAI-API-Compatible": OpenAI_APIRerank,
+    "cohere": CoHereRerank
 }
 
 

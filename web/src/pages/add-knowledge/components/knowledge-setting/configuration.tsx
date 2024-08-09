@@ -98,13 +98,16 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
           ))}
         </Select>
       </Form.Item>
-      <EntityTypesItem></EntityTypesItem>
+
       <Form.Item noStyle dependencies={['parser_id']}>
         {({ getFieldValue }) => {
           const parserId = getFieldValue('parser_id');
 
           return (
             <>
+              {parserId === 'knowledge_graph' && (
+                <EntityTypesItem></EntityTypesItem>
+              )}
               {parserId === 'naive' && (
                 <>
                   <MaxTokenNumber></MaxTokenNumber>

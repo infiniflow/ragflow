@@ -7,10 +7,16 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "gpt-4o-mini",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "gpt-4o",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
-                    "model_type": "chat,image2text"
+                    "model_type": "chat"
                 },
                 {
                     "llm_name": "gpt-3.5-turbo",
@@ -540,6 +546,12 @@
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
             "llm": [
+                {
+                    "llm_name": "azure-gpt-4o-mini",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "image2text"
+                },
                 {
                     "llm_name": "azure-gpt-4o",
                     "tags": "LLM,CHAT,128K",
@@ -2216,6 +2228,214 @@
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "cohere",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING, TEXT RE-RANK",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "command-r-plus",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command-r",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command-nightly",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command-light",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "command-light-nightly",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "embed-english-v3.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-english-light-v3.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-multilingual-v3.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-multilingual-light-v3.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-english-v2.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-english-light-v2.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embed-multilingual-v2.0",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 256,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "rerank-english-v3.0",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4096,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-multilingual-v3.0",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4096,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-english-v2.0",
+                    "tags": "RE-RANK,512",
+                    "max_tokens": 8196,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-multilingual-v2.0",
+                    "tags": "RE-RANK,512",
+                    "max_tokens": 512,
+                    "model_type": "rerank"
+                }
+            ]
+        },
+        {
+            "name": "Lepton",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "dolphin-mixtral-8x7b",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "gemma-7b",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama3-1-8b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama3-8b",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama2-13b",
+                    "tags": "LLM,CHAT,4K",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama3-1-70b",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama3-70b",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama3-1-405b",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "mistral-7b",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "mistral-8x7b",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "nous-hermes-llama2",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "openchat-3-5",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "toppy-m-7b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "wizardlm-2-7b",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "wizardlm-2-8x22b",
+                    "tags": "LLM,CHAT,64K",
+                    "max_tokens": 65536,
+                    "model_type": "chat"
+                }
+            ]
         }
     ]
 }

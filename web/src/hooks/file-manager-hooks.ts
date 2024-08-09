@@ -28,6 +28,23 @@ export interface IListResult {
   loading: boolean;
 }
 
+export const useFetchPureFileList = () => {
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: ['fetchPureFileList'],
+    gcTime: 0,
+
+    mutationFn: async (parentId: string) => {
+      const { data } = await fileManagerService.listFile({
+        parent_id: parentId,
+      });
+
+      return data;
+    },
+  });
+
+  return { loading, fetchList: mutateAsync };
+};
+
 export const useFetchFileList = (): ResponseType<any> & IListResult => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -224,4 +241,32 @@ export const useConnectToKnowledge = () => {
   });
 
   return { data, loading, connectFileToKnowledge: mutateAsync };
+};
+
+export interface IMoveFileBody {
+  src_file_ids: string[];
+  dest_file_id: string; // target folder id
+}
+
+export const useMoveFile = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['moveFile'],
+    mutationFn: async (params: IMoveFileBody) => {
+      const { data } = await fileManagerService.moveFile(params);
+      if (data.retcode === 0) {
+        message.success(t('message.operated'));
+        queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
+      }
+      return data.retcode;
+    },
+  });
+
+  return { data, loading, moveFile: mutateAsync };
 };

@@ -205,6 +205,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"))
 
+        if kwargs.get("section_only", False):
+            return chunks
+
         res.extend(tokenize_chunks_docx(chunks, doc, eng, images))
         cron_logger.info("naive_merge({}): {}".format(filename, timer() - st))
         return res

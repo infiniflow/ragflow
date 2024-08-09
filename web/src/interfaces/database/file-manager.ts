@@ -13,6 +13,7 @@ export interface IFile {
   update_date: string;
   update_time: number;
   source_type: string;
+  has_child_folder?: boolean;
 }
 
 export interface IFolder {

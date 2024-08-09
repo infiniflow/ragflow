@@ -157,7 +157,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3. Build the pre-built Docker images and start up the server:
 
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.8.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.9.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker

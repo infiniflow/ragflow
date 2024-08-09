@@ -9,6 +9,7 @@ import {
   useGetRowSelection,
   useHandleConnectToKnowledge,
   useHandleCreateFolder,
+  useHandleMoveFile,
   useHandleUploadFile,
   useNavigateToOtherFolder,
   useRenameCurrentFile,
@@ -23,6 +24,7 @@ import { getExtension } from '@/utils/document-util';
 import ConnectToKnowledgeModal from './connect-to-knowledge-modal';
 import FolderCreateModal from './folder-create-modal';
 import styles from './index.less';
+import FileMovingModal from './move-file-modal';
 
 const { Text } = Typography;
 
@@ -61,7 +63,13 @@ const FileManager = () => {
     initialValue,
     connectToKnowledgeLoading,
   } = useHandleConnectToKnowledge();
-  // const { pagination } = useGetFilesPagination();
+  const {
+    showMoveFileModal,
+    moveFileVisible,
+    onMoveFileOk,
+    hideMoveFileModal,
+    moveFileLoading,
+  } = useHandleMoveFile(setSelectedRowKeys);
   const { pagination, data, searchString, handleInputChange, loading } =
     useFetchFileList();
   const columns: ColumnsType<IFile> = [
@@ -139,6 +147,7 @@ const FileManager = () => {
             console.info(record);
           }}
           showRenameModal={showFileRenameModal}
+          showMoveFileModal={showMoveFileModal}
           showConnectToKnowledgeModal={showConnectToKnowledgeModal}
           setSelectedRowKeys={setSelectedRowKeys}
         ></ActionCell>
@@ -155,6 +164,7 @@ const FileManager = () => {
         showFolderCreateModal={showFolderCreateModal}
         showFileUploadModal={showFileUploadModal}
         setSelectedRowKeys={setSelectedRowKeys}
+        showMoveFileModal={showMoveFileModal}
       ></FileToolbar>
       <Table
         dataSource={data?.files}
@@ -191,6 +201,14 @@ const FileManager = () => {
         onOk={onConnectToKnowledgeOk}
         loading={connectToKnowledgeLoading}
       ></ConnectToKnowledgeModal>
+      {moveFileVisible && (
+        <FileMovingModal
+          visible={moveFileVisible}
+          hideModal={hideMoveFileModal}
+          onOk={onMoveFileOk}
+          loading={moveFileLoading}
+        ></FileMovingModal>
+      )}
     </section>
   );
 };

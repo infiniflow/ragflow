@@ -203,7 +203,7 @@
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.8.0 .
+$ docker build -t infiniflow/ragflow:v0.9.0 .
 $ cd ragflow/docker
 $ chmod +x ./entrypoint.sh
 $ docker compose up -d
