@@ -1,8 +1,9 @@
-import { useTranslate } from '@/hooks/common-hooks';
+import ChatOverviewModal from '@/components/api-service/chat-overview-modal';
+import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { Button, Flex, Space } from 'antd';
-import { Link } from 'umi';
+import { Link, useParams } from 'umi';
 import { useSaveGraph, useSaveGraphBeforeOpeningDebugDrawer } from '../hooks';
 import styles from './index.less';
 
@@ -15,6 +16,12 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
   const handleRun = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const { data } = useFetchFlow();
   const { t } = useTranslate('flow');
+  const {
+    visible: overviewVisible,
+    hideModal: hideOverviewModal,
+    showModal: showOverviewModal,
+  } = useSetModalState();
+  const { id } = useParams();
 
   return (
     <>
@@ -37,8 +44,19 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
           <Button type="primary" onClick={saveGraph}>
             <b>{t('save')}</b>
           </Button>
+          <Button type="primary" onClick={showOverviewModal}>
+            <b>{t('publish')}</b>
+          </Button>
         </Space>
       </Flex>
+      {overviewVisible && (
+        <ChatOverviewModal
+          visible={overviewVisible}
+          hideModal={hideOverviewModal}
+          id={id!}
+          idKey="canvasId"
+        ></ChatOverviewModal>
+      )}
     </>
   );
 };

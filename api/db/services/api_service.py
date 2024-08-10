@@ -45,7 +45,7 @@ class API4ConversationService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def stats(cls, tenant_id, from_date, to_date):
+    def stats(cls, tenant_id, from_date, to_date, source=None):
         return cls.model.select(
             cls.model.create_date.truncate("day").alias("dt"),
             peewee.fn.COUNT(
@@ -62,5 +62,6 @@ class API4ConversationService(CommonService):
                 cls.model.thumb_up).alias("thumb_up")
         ).join(Dialog, on=(cls.model.dialog_id == Dialog.id & Dialog.tenant_id == tenant_id)).where(
             cls.model.create_date >= from_date,
-            cls.model.create_date <= to_date
+            cls.model.create_date <= to_date,
+            cls.model.source == source
         ).group_by(cls.model.create_date.truncate("day")).dicts()

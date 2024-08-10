@@ -785,6 +785,7 @@ The above is the content you need to summarize.`,
         '15d': '12 days',
         '30d': '30 days',
       },
+      publish: 'Publish',
     },
     footer: {
       profile: 'All rights reserved @ React',

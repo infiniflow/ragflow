@@ -115,6 +115,12 @@
                     "tags": "LLM,CHAT,IMAGE2TEXT",
                     "max_tokens": 765,
                     "model_type": "image2text"
+                },
+                {
+                    "llm_name": "qwen-vl-plus",
+                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "max_tokens": 765,
+                    "model_type": "image2text"
                 }
             ]
         },

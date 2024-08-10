@@ -4,7 +4,10 @@ import {
   IStats,
   IToken,
 } from '@/interfaces/database/chat';
-import { useCallback } from 'react';
+import chatService from '@/services/chat-service';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs, { Dayjs } from 'dayjs';
+import { useCallback, useState } from 'react';
 import { useDispatch, useSelector } from 'umi';
 
 export const useFetchDialogList = () => {
@@ -175,79 +178,108 @@ export const useCompleteConversation = () => {
 
 // #region API provided for external calls
 
-export const useCreateToken = (dialogId: string) => {
+export const useCreateToken = (params: Record<string, any>) => {
   const dispatch = useDispatch();
 
   const createToken = useCallback(() => {
     return dispatch<any>({
       type: 'chatModel/createToken',
-      payload: { dialogId },
+      payload: params,
     });
-  }, [dispatch, dialogId]);
+  }, [dispatch, params]);
 
   return createToken;
 };
 
-export const useListToken = () => {
-  const dispatch = useDispatch();
-
-  const listToken = useCallback(
-    (dialogId: string) => {
-      return dispatch<any>({
-        type: 'chatModel/listToken',
-        payload: { dialogId },
-      });
+export const useCreateNextToken = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['createToken'],
+    mutationFn: async (params: Record<string, any>) => {
+      const { data } = await chatService.createToken(params);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['fetchTokenList'] });
+      }
+      return data?.data ?? [];
     },
-    [dispatch],
-  );
+  });
 
-  return listToken;
+  return { data, loading, createToken: mutateAsync };
 };
 
-export const useSelectTokenList = () => {
-  const tokenList: IToken[] = useSelector(
-    (state: any) => state.chatModel.tokenList,
-  );
+export const useFetchTokenList = (params: Record<string, any>) => {
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IToken[]>({
+    queryKey: ['fetchTokenList', params],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await chatService.listToken(params);
 
-  return tokenList;
-};
-
-export const useRemoveToken = () => {
-  const dispatch = useDispatch();
-
-  const removeToken = useCallback(
-    (payload: { tenantId: string; dialogId: string; tokens: string[] }) => {
-      return dispatch<any>({
-        type: 'chatModel/removeToken',
-        payload: payload,
-      });
+      return data?.data ?? [];
     },
-    [dispatch],
-  );
+  });
 
-  return removeToken;
+  return { data, loading, refetch };
 };
 
-export const useFetchStats = () => {
-  const dispatch = useDispatch();
-
-  const fetchStats = useCallback(
-    (payload: any) => {
-      return dispatch<any>({
-        type: 'chatModel/getStats',
-        payload,
-      });
+export const useRemoveNextToken = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['removeToken'],
+    mutationFn: async (params: {
+      tenantId: string;
+      dialogId: string;
+      tokens: string[];
+    }) => {
+      const { data } = await chatService.removeToken(params);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['fetchTokenList'] });
+      }
+      return data?.data ?? [];
     },
-    [dispatch],
-  );
+  });
 
-  return fetchStats;
+  return { data, loading, removeToken: mutateAsync };
 };
 
-export const useSelectStats = () => {
-  const stats: IStats = useSelector((state: any) => state.chatModel.stats);
+type RangeValue = [Dayjs | null, Dayjs | null] | null;
 
-  return stats;
+const getDay = (date?: Dayjs) => date?.format('YYYY-MM-DD');
+
+export const useFetchNextStats = () => {
+  const [pickerValue, setPickerValue] = useState<RangeValue>([
+    dayjs(),
+    dayjs().subtract(7, 'day'),
+  ]);
+  const { data, isFetching: loading } = useQuery<IStats>({
+    queryKey: ['fetchStats', pickerValue],
+    initialData: {} as IStats,
+    gcTime: 0,
+    queryFn: async () => {
+      if (Array.isArray(pickerValue) && pickerValue[0]) {
+        const { data } = await chatService.getStats({
+          fromDate: getDay(pickerValue[0]),
+          toDate: getDay(pickerValue[1] ?? dayjs()),
+        });
+        return data?.data ?? {};
+      }
+      return {};
+    },
+  });
+
+  return { data, loading, pickerValue, setPickerValue };
 };
 
 //#endregion
