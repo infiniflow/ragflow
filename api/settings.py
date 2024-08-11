@@ -64,6 +64,13 @@ default_llm = {
         "image2text_model": "qwen-vl-max",
         "asr_model": "paraformer-realtime-8k-v1",
     },
+    "FastEmbed": {
+        "chat_model": "",
+        "embedding_model": "nomic-ai/nomic-embed-text-v1.5",
+        "image2text_model": "",
+        "asr_model": "",
+        "rerank_model": "",
+    },
     "OpenAI": {
         "chat_model": "gpt-3.5-turbo",
         "embedding_model": "text-embedding-ada-002",
@@ -122,10 +129,10 @@ if LLM_FACTORY not in default_llm:
     print(
         "\33[91m【ERROR】\33[0m:",
         f"LLM factory {LLM_FACTORY} has not supported yet, switch to 'Tongyi-Qianwen/QWen' automatically, and please check the API_KEY in service_conf.yaml.")
-    LLM_FACTORY = "Tongyi-Qianwen"
+    LLM_FACTORY = "FastEmbed"
 CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"]
-EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"]
-RERANK_MDL = default_llm["BAAI"]["rerank_model"]
+EMBEDDING_MDL = default_llm[LLM_FACTORY]["embedding_model"]
+RERANK_MDL = default_llm[LLM_FACTORY]["rerank_model"]
 ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
 IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
 
