@@ -30,6 +30,8 @@ services:
       - ../api/apps/conversation_app.py:/ragflow/api/apps/conversation_app.py
       - ../agent/settings.py:/ragflow/agent/settings.py
       - ../api/apps/conversation_app.py:/ragflow/api/apps/conversation_app.py
+      - ../api/settings.py:/ragflow/api/settings.py
+      - ../api/db/db_models.py:/ragflow/api/db/db_models.py
 
       # - ../api:/ragflow/api
       # - ../conf:/ragflow/conf
