@@ -29,7 +29,10 @@ import ast
 def factories():
     try:
         fac = LLMFactoriesService.get_all()
-        return get_json_result(data=[f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]])
+        # return get_json_result(data=[f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]])
+        return get_json_result(data=[f.to_dict() for f in fac if f.name not in 
+            ["Youdao", "FastEmbed", "BAAI", "Moonshot", "ZHIPU-AI", "Xinference", "BaiChuan", "cohere", "DeepSeek", 
+             "Groq", "Lepton", "LocalAI", "MiniMax", "OpenAI-API-Compatible", "OpenRouter", "StepFun", "VolcEngine"]])
     except Exception as e:
         return server_error_response(e)
 
