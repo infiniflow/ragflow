@@ -22,8 +22,8 @@ redis:
   password: 'infini_rag_flow'
   host: 'redis:6379'
 user_default_llm:
-  factory: 'Tongyi-Qianwen'
-  api_key: 'sk-xxxxxxxxxxxxx'
+  factory: 'Bedrock'
+  api_key: ''
   base_url: ''
 oauth:
   github:
