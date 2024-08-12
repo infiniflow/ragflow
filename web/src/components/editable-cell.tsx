@@ -1,7 +1,8 @@
-import { Form, FormInstance, Input, InputRef } from 'antd';
+import { Form, FormInstance, Input, InputRef, Typography } from 'antd';
 import React, { useContext, useEffect, useRef, useState } from 'react';
 
 const EditableContext = React.createContext<FormInstance<any> | null>(null);
+const { Paragraph, Text } = Typography;
 
 interface EditableRowProps {
   index: number;
@@ -77,7 +78,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
   if (editable) {
     childNode = editing ? (
       <Form.Item
-        style={{ margin: 0 }}
+        style={{ margin: 0, width: 100 }}
         name={dataIndex}
         rules={[
           {
@@ -91,10 +92,12 @@ export const EditableCell: React.FC<EditableCellProps> = ({
     ) : (
       <div
         className="editable-cell-value-wrap"
-        style={{ paddingRight: 24 }}
+        // style={{ paddingRight: 24 }}
         onClick={toggleEdit}
       >
-        {children}
+        <Text ellipsis={{ tooltip: children }} style={{ width: 100 }}>
+          {children}
+        </Text>
       </div>
     );
   }
