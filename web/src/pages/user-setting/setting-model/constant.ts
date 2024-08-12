@@ -26,7 +26,8 @@ export const IconMap = {
   cohere: 'cohere',
   Lepton: 'lepton',
   TogetherAI:'together-ai',
-  PerfXCould: 'perfx-could'
+  PerfXCould: 'perfx-could',
+  Upstage: 'upstage'
 };
 
 export const BedrockRegionList = [
