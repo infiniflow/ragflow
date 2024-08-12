@@ -1,7 +1,8 @@
 import LineChart from '@/components/line-chart';
+import { useFetchNextStats } from '@/hooks/chat-hooks';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { IDialog, IStats } from '@/interfaces/database/chat';
+import { IStats } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';
 import { Button, Card, DatePicker, Flex, Modal, Space, Typography } from 'antd';
 import { RangePickerProps } from 'antd/es/date-picker';
@@ -10,7 +11,6 @@ import camelCase from 'lodash/camelCase';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import EmbedModal from '../embed-modal';
 import {
-  useFetchStatsOnMount,
   usePreviewChat,
   useSelectChartStatsList,
   useShowEmbedModal,
@@ -40,8 +40,10 @@ const StatsLineChart = ({ statsType }: { statsType: keyof IStats }) => {
 const ChatOverviewModal = ({
   visible,
   hideModal,
-  dialog,
-}: IModalProps<any> & { dialog: IDialog }) => {
+  id,
+  name = '',
+  idKey,
+}: IModalProps<any> & { id: string; name?: string; idKey: string }) => {
   const { t } = useTranslate('chat');
   const {
     visible: apiKeyVisible,
@@ -54,15 +56,15 @@ const ChatOverviewModal = ({
     showEmbedModal,
     embedToken,
     errorContextHolder,
-  } = useShowEmbedModal(dialog.id);
+  } = useShowEmbedModal(id, idKey);
 
-  const { pickerValue, setPickerValue } = useFetchStatsOnMount(visible);
+  const { pickerValue, setPickerValue } = useFetchNextStats();
 
   const disabledDate: RangePickerProps['disabledDate'] = (current) => {
     return current && current > dayjs().endOf('day');
   };
 
-  const { handlePreview, contextHolder } = usePreviewChat(dialog.id);
+  const { handlePreview, contextHolder } = usePreviewChat(id, idKey);
 
   return (
     <>
@@ -97,7 +99,7 @@ const ChatOverviewModal = ({
               </a>
             </Space>
           </Card>
-          <Card title={`${dialog.name} Web App`}>
+          <Card title={`${name} Web App`}>
             <Flex gap={8} vertical>
               <Space size={'middle'}>
                 <Button onClick={handlePreview}>{t('preview')}</Button>
@@ -124,11 +126,13 @@ const ChatOverviewModal = ({
             <StatsLineChart statsType={'uv'}></StatsLineChart>
           </div>
         </Flex>
-        <ChatApiKeyModal
-          visible={apiKeyVisible}
-          hideModal={hideApiKeyModal}
-          dialogId={dialog.id}
-        ></ChatApiKeyModal>
+        {apiKeyVisible && (
+          <ChatApiKeyModal
+            hideModal={hideApiKeyModal}
+            dialogId={id}
+            idKey={idKey}
+          ></ChatApiKeyModal>
+        )}
         <EmbedModal
           token={embedToken}
           visible={embedVisible}

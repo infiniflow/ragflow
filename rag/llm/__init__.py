@@ -39,7 +39,8 @@ EmbeddingModel = {
     "LM-Studio": LmStudioEmbed,
     "OpenAI-API-Compatible": OpenAI_APIEmbed,
     "cohere": CoHereEmbed,
-    "TogetherAI": TogetherAIEmbed
+    "TogetherAI": TogetherAIEmbed,
+    "PerfXCloud": PerfXCloudEmbed,
 }
 
 
@@ -87,7 +88,8 @@ ChatModel = {
     "OpenAI-API-Compatible": OpenAI_APIChat,
     "cohere": CoHereChat,
     "LeptonAI": LeptonAIChat,
-    "TogetherAI": TogetherAIChat
+    "TogetherAI": TogetherAIChat,
+    "PerfXCloud": PerfXCloudChat
 }
 
 
