@@ -25,6 +25,7 @@ export const IconMap = {
   'OpenAI-API-Compatible': 'openai-api',
   cohere: 'cohere',
   Lepton: 'lepton',
+  PerfXCould: 'perfx-could'
 };
 
 export const BedrockRegionList = [
