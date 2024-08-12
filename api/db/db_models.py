@@ -966,9 +966,7 @@ def migrate_db():
         except Exception as e:
             pass
         try:
-            migrate(
-                migrator.add_column("llm","llm_name",
-                    CharField(max_length=128, null=False, help_text="LLM name", index=True),)
-            )
+            DB.execute_sql('ALTER TABLE llm DROP PRIMARY KEY;')
+            DB.execute_sql('ALTER TABLE llm ADD PRIMARY KEY (llm_name,fid);')
         except Exception as e:
             pass
