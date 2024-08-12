@@ -27,7 +27,8 @@ export const IconMap = {
   Lepton: 'lepton',
   TogetherAI:'together-ai',
   PerfXCould: 'perfx-could',
-  Upstage: 'upstage'
+  Upstage: 'upstage',
+  "novita.ai": 'novita-ai'
 };
 
 export const BedrockRegionList = [

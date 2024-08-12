@@ -91,7 +91,8 @@ ChatModel = {
     "LeptonAI": LeptonAIChat,
     "TogetherAI": TogetherAIChat,
     "PerfXCloud": PerfXCloudChat,
-    "Upstage":UpstageChat
+    "Upstage":UpstageChat,
+    "novita.ai": NovitaAIChat
 }
 
 

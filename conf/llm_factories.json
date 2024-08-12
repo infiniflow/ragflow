@@ -2633,6 +2633,140 @@
                     "model_type": "embedding"
                 }
             ]
+        },
+        {
+            "name": "novita.ai",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "meta-llama/llama-3-8b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3-70b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "mistralai/mistral-nemo",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "microsoft/wizardlm-2-7b",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "openchat/openchat-7b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.1-8b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.1-70b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.1-405b-instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "google/gemma-2-9b-it",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "jondurbin/airoboros-l2-70b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "nousresearch/hermes-2-pro-llama-3-8b",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "mistralai/mistral-7b-instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "cognitivecomputations/dolphin-mixtral-8x22b",
+                    "tags": "LLM,CHAT,15k",
+                    "max_tokens": 16000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "sao10k/l3-70b-euryale-v2.1",
+                    "tags": "LLM,CHAT,15k",
+                    "max_tokens": 16000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "sophosympatheia/midnight-rose-70b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "gryphe/mythomax-l2-13b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "nousresearch/nous-hermes-llama2-13b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Nous-Hermes-2-Mixtral-8x7B-DPO",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "lzlv_70b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "teknium/openhermes-2.5-mistral-7b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "microsoft/wizardlm-2-8x22b",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 65535,
+                    "model_type": "chat"
+                }
+            ]
         }
     ]
 }
