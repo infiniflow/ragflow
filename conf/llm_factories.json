@@ -115,6 +115,12 @@
                     "tags": "LLM,CHAT,IMAGE2TEXT",
                     "max_tokens": 765,
                     "model_type": "image2text"
+                },
+                {
+                    "llm_name": "qwen-vl-plus",
+                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "max_tokens": 765,
+                    "model_type": "image2text"
                 }
             ]
         },
@@ -2434,6 +2440,197 @@
                     "tags": "LLM,CHAT,64K",
                     "max_tokens": 65536,
                     "model_type": "chat"
+                }
+            ]
+        },
+        {
+            "name": "TogetherAI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "PerfXCloud",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "deepseek-v2-chat",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama3.1:405b",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen2-72B-Instruct",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen2-72B-Instruct-GPTQ-Int4",
+                    "tags": "LLM,CHAT,2k",
+                    "max_tokens": 2048,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen2-72B-Instruct-awq-int4",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Llama3-Chinese_v2",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Yi-1_5-9B-Chat-16K",
+                    "tags": "LLM,CHAT,16k",
+                    "max_tokens": 16384,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen1.5-72B-Chat-GPTQ-Int4",
+                    "tags": "LLM,CHAT,2k",
+                    "max_tokens": 2048,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Meta-Llama-3.1-8B-Instruct",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen2-7B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-v2-lite-chat",
+                    "tags": "LLM,CHAT,2k",
+                    "max_tokens": 2048,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen2-7B",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "chatglm3-6b",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Meta-Llama-3-70B-Instruct-GPTQ-Int4",
+                    "tags": "LLM,CHAT,1k",
+                    "max_tokens": 1024,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Meta-Llama-3-8B-Instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Mistral-7B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "MindChat-Qwen-7B-v2",
+                    "tags": "LLM,CHAT,2k",
+                    "max_tokens": 2048,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "phi-2",
+                    "tags": "LLM,CHAT,2k",
+                    "max_tokens": 2048,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "SOLAR-10_7B-Instruct",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Mixtral-8x7B-Instruct-v0.1-GPTQ",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen1.5-7B",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "BAAI/bge-large-en-v1.5",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "BAAI/bge-large-zh-v1.5",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 1024,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "BAAI/bge-m3",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 8192,
+                    "model_type": "embedding"
+                }
+            ]
+        },
+        {
+            "name": "Upstage",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "solar-1-mini-chat",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "solar-1-mini-chat-ja",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "solar-embedding-1-large-query",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 4000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "solar-embedding-1-large-passage",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 4000,
+                    "model_type": "embedding"
                 }
             ]
         }
