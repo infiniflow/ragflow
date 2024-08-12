@@ -282,13 +282,9 @@ def completion():
                 canvas.reference.append(final_ans["reference"])
             cvs.dsl = json.loads(str(canvas))
 
-            result = None
-            for ans in answer():
-                ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
-                result = ans
-                fillin_conv(ans)
-                API4ConversationService.append_message(conv.id, conv.to_dict())
-                break
+            result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])}
+            fillin_conv(result)
+            API4ConversationService.append_message(conv.id, conv.to_dict())
             rename_field(result)
             return get_json_result(data=result)
         
