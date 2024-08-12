@@ -144,6 +144,7 @@ export default {
       rerankTip: `如果是空的。它使用查詢和塊的嵌入來構成矢量餘弦相似性。否則，它使用rerank評分代替矢量餘弦相似性。`,
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
+      delimiter: `分段標識符`,
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
