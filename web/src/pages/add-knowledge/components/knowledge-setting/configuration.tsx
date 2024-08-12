@@ -1,3 +1,4 @@
+import Delimiter from '@/components/delimiter';
 import EntityTypesItem from '@/components/entity-types-item';
 import LayoutRecognize from '@/components/layout-recognize';
 import MaxTokenNumber from '@/components/max-token-number';
@@ -111,6 +112,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
               {parserId === 'naive' && (
                 <>
                   <MaxTokenNumber></MaxTokenNumber>
+                  <Delimiter></Delimiter>
                   <LayoutRecognize></LayoutRecognize>
                 </>
               )}

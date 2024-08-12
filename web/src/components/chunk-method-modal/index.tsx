@@ -22,6 +22,7 @@ import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
 import { useTranslate } from '@/hooks/common-hooks';
+import Delimiter from '../delimiter';
 import EntityTypesItem from '../entity-types-item';
 import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
@@ -268,7 +269,12 @@ const ChunkMethodModal: React.FC<IProps> = ({
             }
           </Form.Item>
         )}
-        {showMaxTokenNumber && <MaxTokenNumber></MaxTokenNumber>}
+        {showMaxTokenNumber && (
+          <>
+            <MaxTokenNumber></MaxTokenNumber>
+            <Delimiter></Delimiter>
+          </>
+        )}
         {showRaptorParseConfiguration(selectedTag) && (
           <ParseConfiguration></ParseConfiguration>
         )}

@@ -148,6 +148,7 @@ export default {
       rerankTip: `If it's empty. It uses embeddings of query and chunks to compuste vector cosine similarity. Otherwise, it uses rerank score in place of  vector cosine similarity.`,
       topK: 'Top-K',
       topKTip: `K chunks will be fed into rerank models.`,
+      delimiter: `Delimiter`,
     },
     knowledgeConfiguration: {
       titleDescription:
