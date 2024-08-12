@@ -19,14 +19,14 @@ import os
 from api.utils.file_utils import get_project_base_directory
 from api.utils.log_utils import LoggerFactory, getLogger
 
-DEBUG = 10
+DEBUG = True
 LoggerFactory.set_directory(
     os.path.join(
         get_project_base_directory(),
         "logs",
         "flow"))
 # {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
-LoggerFactory.LEVEL = 30
+LoggerFactory.LEVEL = 10
 
 flow_logger = getLogger("flow")
 database_logger = getLogger("database")

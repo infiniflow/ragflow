@@ -39,7 +39,7 @@ LoggerFactory.set_directory(
         "logs",
         "rag"))
 # {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
-LoggerFactory.LEVEL = 30
+LoggerFactory.LEVEL = 10
 
 es_logger = getLogger("es")
 minio_logger = getLogger("minio")

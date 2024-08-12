@@ -25,7 +25,7 @@ LoggerFactory.set_directory(
         "logs",
         "api"))
 # {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
-LoggerFactory.LEVEL = 30
+LoggerFactory.LEVEL = 10
 
 stat_logger = getLogger("stat")
 access_logger = getLogger("access")
