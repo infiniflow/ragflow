@@ -41,6 +41,7 @@ EmbeddingModel = {
     "cohere": CoHereEmbed,
     "TogetherAI": TogetherAIEmbed,
     "PerfXCloud": PerfXCloudEmbed,
+    "Upstage": UpstageEmbed
 }
 
 
@@ -89,7 +90,8 @@ ChatModel = {
     "cohere": CoHereChat,
     "LeptonAI": LeptonAIChat,
     "TogetherAI": TogetherAIChat,
-    "PerfXCloud": PerfXCloudChat
+    "PerfXCloud": PerfXCloudChat,
+    "Upstage":UpstageChat
 }
 
 

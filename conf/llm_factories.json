@@ -2601,6 +2601,38 @@
                     "model_type": "embedding"
                 }
             ]
+        },
+        {
+            "name": "Upstage",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "solar-1-mini-chat",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "solar-1-mini-chat-ja",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "solar-embedding-1-large-query",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 4000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "solar-embedding-1-large-passage",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 4000,
+                    "model_type": "embedding"
+                }
+            ]
         }
     ]
 }
