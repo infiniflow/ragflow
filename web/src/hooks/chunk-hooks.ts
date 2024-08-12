@@ -124,7 +124,7 @@ export const useDeleteChunk = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: ['deleteChunk'],
-    mutationFn: async (params: { chunkIds: string[]; documentId: string }) => {
+    mutationFn: async (params: { chunkIds: string[]; doc_id: string }) => {
       const { data } = await kbService.rm_chunk(params);
       if (data.retcode === 0) {
         setPaginationParams(1);
