@@ -39,6 +39,7 @@ EmbeddingModel = {
     "LM-Studio": LmStudioEmbed,
     "OpenAI-API-Compatible": OpenAI_APIEmbed,
     "cohere": CoHereEmbed,
+    "TogetherAI": TogetherAIEmbed,
     "PerfXCloud": PerfXCloudEmbed,
 }
 
@@ -57,7 +58,8 @@ CvModel = {
     "NVIDIA": NvidiaCV,
     "LM-Studio": LmStudioCV,
     "StepFun":StepFunCV,
-    "OpenAI-API-Compatible": OpenAI_APICV
+    "OpenAI-API-Compatible": OpenAI_APICV,
+    "TogetherAI": TogetherAICV
 }
 
 
@@ -86,6 +88,7 @@ ChatModel = {
     "OpenAI-API-Compatible": OpenAI_APIChat,
     "cohere": CoHereChat,
     "LeptonAI": LeptonAIChat,
+    "TogetherAI": TogetherAIChat,
     "PerfXCloud": PerfXCloudChat
 }
 
@@ -98,7 +101,8 @@ RerankModel = {
     "NVIDIA": NvidiaRerank,
     "LM-Studio": LmStudioRerank,
     "OpenAI-API-Compatible": OpenAI_APIRerank,
-    "cohere": CoHereRerank
+    "cohere": CoHereRerank,
+    "TogetherAI": TogetherAIRerank
 }
 
 

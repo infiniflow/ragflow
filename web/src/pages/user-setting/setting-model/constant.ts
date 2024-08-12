@@ -25,6 +25,7 @@ export const IconMap = {
   'OpenAI-API-Compatible': 'openai-api',
   cohere: 'cohere',
   Lepton: 'lepton',
+  TogetherAI:'together-ai',
   PerfXCould: 'perfx-could'
 };
 
