@@ -12,6 +12,7 @@
 #
 
 from rag.nlp import find_codec,num_tokens_from_string
+import re
 
 class RAGFlowTxtParser:
     def __call__(self, fnm, binary=None, chunk_token_num=128):
@@ -29,14 +30,17 @@ class RAGFlowTxtParser:
         return self.parser_txt(txt, chunk_token_num)
 
     @classmethod
-    def parser_txt(cls, txt, chunk_token_num=128):
+    def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？"):
         if type(txt) != str:
             raise TypeError("txt type should be str!")
         sections = []
-        for sec in txt.split("\n"):
+        for sec in re.split(r"[%s]+"%delimiter, txt):
+            if sections and sec in delimiter:
+                sections[-1][0] += sec
+                continue
             if num_tokens_from_string(sec) > 10 * int(chunk_token_num):
-                sections.append((sec[: int(len(sec) / 2)], ""))
-                sections.append((sec[int(len(sec) / 2) :], ""))
+                sections.append([sec[: int(len(sec) / 2)], ""])
+                sections.append([sec[int(len(sec) / 2) :], ""])
             else:
-                sections.append((sec, ""))
+                sections.append([sec, ""])
         return sections
