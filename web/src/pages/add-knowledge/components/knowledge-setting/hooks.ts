@@ -37,6 +37,9 @@ export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
   };
 };
 
+// The value that does not need to be displayed in the analysis method Select
+const HiddenFields = ['email', 'picture', 'audio'];
+
 export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
   const parserList = useSelectParserList();
   const allOptions = useSelectLlmOptionsByModelType();
@@ -62,7 +65,9 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
   }, [form, knowledgeDetails]);
 
   return {
-    parserList,
+    parserList: parserList.filter(
+      (x) => !HiddenFields.some((y) => y === x.value),
+    ),
     embeddingModelOptions: allOptions[LlmModelType.Embedding],
     disabled: knowledgeDetails.chunk_num > 0,
   };

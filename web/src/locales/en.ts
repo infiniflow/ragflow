@@ -199,7 +199,7 @@ export default {
       We assume manual has hierarchical section structure. We use the lowest section titles as pivots to slice documents.
       So, the figures and tables in the same section will not be sliced apart, and chunk size might be large.
       </p>`,
-      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT</b>.</p>
+      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>.</p>
       <p>This method apply the naive ways to chunk files: </p>
       <p>
       <li>Successive text will be sliced into pieces using vision detection model.</li>
@@ -271,6 +271,13 @@ export default {
     </p><p>
     If you want to summarize something that needs all the context of an article and the selected LLM's context length covers the document length, you can try this method.
     </p>`,
+      knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
+
+<p>After files being chunked, it uses chunks to extract knowledge graph and mind map of the entire document. This method apply the naive ways to chunk files:
+Successive text will be sliced into pieces each of which is around 512 token number.</p>
+<p>Next, chunks will be transmited to LLM to extract nodes and relationships of a knowledge graph, and a mind map.</p>
+
+Mind the entiry type you need to specify.</p>`,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, please refer to https://huggingface.co/papers/2401.18059',
