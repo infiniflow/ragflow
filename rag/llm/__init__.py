@@ -61,7 +61,8 @@ CvModel = {
     "LM-Studio": LmStudioCV,
     "StepFun":StepFunCV,
     "OpenAI-API-Compatible": OpenAI_APICV,
-    "TogetherAI": TogetherAICV
+    "TogetherAI": TogetherAICV,
+    "01.AI": YiCV
 }
 
 
@@ -94,7 +95,8 @@ ChatModel = {
     "PerfXCloud": PerfXCloudChat,
     "Upstage":UpstageChat,
     "novita.ai": NovitaAIChat,
-    "SILICONFLOW": SILICONFLOWChat
+    "SILICONFLOW": SILICONFLOWChat,
+    "01.AI": YiChat
 }
 
 

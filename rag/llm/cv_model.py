@@ -622,6 +622,7 @@ class NvidiaCV(Base):
             }
         ]
 
+
 class StepFunCV(GptV4):
     def __init__(self, key, model_name="step-1v-8k", lang="Chinese", base_url="https://api.stepfun.com/v1"):
         if not base_url: base_url="https://api.stepfun.com/v1"
@@ -629,8 +630,9 @@ class StepFunCV(GptV4):
         self.model_name = model_name
         self.lang = lang
 
+
 class LmStudioCV(GptV4):
-    def __init__(self, key, model_name, base_url, lang="Chinese"):
+    def __init__(self, key, model_name, lang="Chinese", base_url=""):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -641,7 +643,7 @@ class LmStudioCV(GptV4):
 
 
 class OpenAI_APICV(GptV4):
-    def __init__(self, key, model_name, base_url, lang="Chinese"):
+    def __init__(self, key, model_name, lang="Chinese", base_url=""):
         if not base_url:
             raise ValueError("url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -652,7 +654,14 @@ class OpenAI_APICV(GptV4):
 
 
 class TogetherAICV(GptV4):
-    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1"):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.together.xyz/v1"):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
-        super().__init__(key, model_name, base_url)
+        super().__init__(key, model_name,lang,base_url)
+
+
+class YiCV(GptV4):
+    def __init__(self, key, model_name, lang="Chinese",base_url="https://api.lingyiwanwu.com/v1",):
+        if not base_url:
+            base_url = "https://api.lingyiwanwu.com/v1"
+        super().__init__(key, model_name,lang,base_url)
