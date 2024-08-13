@@ -574,3 +574,10 @@ class UpstageEmbed(OpenAIEmbed):
         if not base_url:
             base_url = "https://api.upstage.ai/v1/solar"
         super().__init__(key, model_name, base_url)
+
+
+class SILICONFLOWEmbed(OpenAIEmbed):
+    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1"):
+        if not base_url:
+            base_url = "https://api.siliconflow.cn/v1"
+        super().__init__(key, model_name, base_url)
