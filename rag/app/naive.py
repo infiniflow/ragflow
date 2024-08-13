@@ -61,9 +61,8 @@ class Docx(DocxParser):
             if pn > to_page:
                 break
             if from_page <= pn < to_page:
-                current_image = None
                 if p.text.strip():
-                    if p.style.name == 'Caption':
+                    if p.style and p.style.name == 'Caption':
                         former_image = None
                         if lines and lines[-1][1] and lines[-1][2] != 'Caption':
                             former_image = lines[-1][1].pop()
