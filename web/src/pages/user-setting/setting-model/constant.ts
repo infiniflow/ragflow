@@ -25,11 +25,11 @@ export const IconMap = {
   'OpenAI-API-Compatible': 'openai-api',
   cohere: 'cohere',
   Lepton: 'lepton',
-  TogetherAI:'together-ai',
-  PerfXCould: 'perfx-cloud',
+  TogetherAI: 'together-ai',
+  PerfXCloud: 'perfx-cloud',
   Upstage: 'upstage',
-  "novita.ai": 'novita-ai',
-  "SILICONFLOW": 'siliconflow'
+  'novita.ai': 'novita-ai',
+  SILICONFLOW: 'siliconflow',
 };
 
 export const BedrockRegionList = [
