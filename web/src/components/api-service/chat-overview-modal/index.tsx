@@ -115,6 +115,7 @@ const ChatOverviewModal = ({
               value={pickerValue}
               onChange={setPickerValue}
               allowClear={false}
+              // onPanelChange={setPickerValue}
             />
           </Space>
           <div className={styles.chartWrapper}>

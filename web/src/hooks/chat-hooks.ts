@@ -260,8 +260,8 @@ const getDay = (date?: Dayjs) => date?.format('YYYY-MM-DD');
 
 export const useFetchNextStats = () => {
   const [pickerValue, setPickerValue] = useState<RangeValue>([
-    dayjs(),
     dayjs().subtract(7, 'day'),
+    dayjs(),
   ]);
   const { data, isFetching: loading } = useQuery<IStats>({
     queryKey: ['fetchStats', pickerValue],
