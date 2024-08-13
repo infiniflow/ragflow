@@ -487,7 +487,7 @@ def upload_and_parse():
     def dummy(prog=None, msg=""):
         pass
 
-    parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?。；！？", "layout_recognize": False}
+    parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": False}
     exe = ThreadPoolExecutor(max_workers=12)
     threads = []
     for d, blob in files:
