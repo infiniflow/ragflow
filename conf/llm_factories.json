@@ -2793,25 +2793,25 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "THUDM/glm\u20144\u20149b\u2014chat",
+                    "llm_name": "THUDM/glm-4-9b-chat",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "THUDM/chatglm3\u20146b",
+                    "llm_name": "THUDM/chatglm3-6b",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "01\u2014ai/Yi\u20141.5\u20149B\u2014Chat\u201416K",
+                    "llm_name": "01-ai/Yi-1.5-9B-Chat-16K",
                     "tags": "LLM,CHAT,16k",
                     "max_tokens": 16384,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "01\u2014ai/Yi\u20141.5\u20146B\u2014Chat",
+                    "llm_name": "01-ai/Yi-1.5-6B-Chat",
                     "tags": "LLM,CHAT,4k",
                     "max_tokens": 4096,
                     "model_type": "chat"
