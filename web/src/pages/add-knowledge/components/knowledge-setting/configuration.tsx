@@ -6,6 +6,7 @@ import ParseConfiguration, {
   showRaptorParseConfiguration,
 } from '@/components/parse-configuration';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useHandleChunkMethodSelectChange } from '@/hooks/logic-hooks';
 import { normFile } from '@/utils/file-util';
 import { PlusOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Radio, Select, Space, Upload } from 'antd';
@@ -24,6 +25,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
   const { parserList, embeddingModelOptions, disabled } =
     useFetchKnowledgeConfigurationOnMount(form);
   const { t } = useTranslate('knowledgeConfiguration');
+  const handleChunkMethodSelectChange = useHandleChunkMethodSelectChange(form);
 
   return (
     <Form form={form} name="validateOnly" layout="vertical" autoComplete="off">
@@ -91,7 +93,11 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
         tooltip={t('chunkMethodTip')}
         rules={[{ required: true }]}
       >
-        <Select placeholder={t('chunkMethodPlaceholder')} disabled={disabled}>
+        <Select
+          placeholder={t('chunkMethodPlaceholder')}
+          disabled={disabled}
+          onChange={handleChunkMethodSelectChange}
+        >
           {parserList.map((x) => (
             <Option value={x.value} key={x.value}>
               {x.label}
@@ -107,7 +113,11 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
           return (
             <>
               {parserId === 'knowledge_graph' && (
-                <EntityTypesItem></EntityTypesItem>
+                <>
+                  <EntityTypesItem></EntityTypesItem>
+                  <MaxTokenNumber max={8192 * 2}></MaxTokenNumber>
+                  <Delimiter></Delimiter>
+                </>
               )}
               {parserId === 'naive' && (
                 <>

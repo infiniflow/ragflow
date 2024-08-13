@@ -80,5 +80,9 @@ export const useHandleChunkMethodChange = () => {
   const [form] = Form.useForm();
   const chunkMethod = Form.useWatch('parser_id', form);
 
+  useEffect(() => {
+    console.log('🚀 ~ useHandleChunkMethodChange ~ chunkMethod:', chunkMethod);
+  }, [chunkMethod]);
+
   return { form, chunkMethod };
 };
