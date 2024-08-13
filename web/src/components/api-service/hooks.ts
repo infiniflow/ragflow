@@ -48,9 +48,7 @@ type ChartStatsType = {
 export const useSelectChartStatsList = (): ChartStatsType => {
   const queryClient = useQueryClient();
   const data = queryClient.getQueriesData({ queryKey: ['fetchStats'] });
-  console.log('🚀 ~ useSelectChartStatsList ~ data:', data);
-  // const { data: stats } = useFetchNextStats();
-  const stats = data[0][1];
+  const stats: IStats = data[0][1] as IStats;
 
   return Object.keys(stats).reduce((pre, cur) => {
     const item = stats[cur as keyof IStats];
