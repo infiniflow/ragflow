@@ -87,7 +87,7 @@ def token_list():
         if not tenants:
             return get_data_error_result(retmsg="Tenant not found!")
 
-        id = request.args.get("dialog_id", request.args["canvas_id"])
+        id = request.args["dialog_id"] if "dialog_id" in request.args else request.args["canvas_id"]
         objs = APITokenService.query(tenant_id=tenants[0].tenant_id, dialog_id=id)
         return get_json_result(data=[o.to_dict() for o in objs])
     except Exception as e:
@@ -121,11 +121,11 @@ def stats():
                 "from_date",
                 (datetime.now() -
                  timedelta(
-                     days=7)).strftime("%Y-%m-%d 24:00:00")),
+                     days=7)).strftime("%Y-%m-%d 00:00:00")),
             request.args.get(
                 "to_date",
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            "agent" if request.args.get("canvas_id") else None)
+            "agent" if "canvas_id" in request.args else None)
         res = {
             "pv": [(o["dt"], o["pv"]) for o in objs],
             "uv": [(o["dt"], o["uv"]) for o in objs],

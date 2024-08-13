@@ -372,6 +372,8 @@ class FileService(CommonService):
                     doc["parser_id"] = ParserType.AUDIO.value
                 if re.search(r"\.(ppt|pptx|pages)$", filename):
                     doc["parser_id"] = ParserType.PRESENTATION.value
+                if re.search(r"\.(eml)$", filename):
+                    doc["parser_id"] = ParserType.EMAIL.value
                 DocumentService.insert(doc)
 
                 FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
