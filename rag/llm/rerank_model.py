@@ -253,3 +253,38 @@ class TogetherAIRerank(Base):
 
     def similarity(self, query: str, texts: list):
         raise NotImplementedError("The api has not been implement")
+
+
+class SILICONFLOWRerank(Base):
+    def __init__(
+        self, key, model_name, base_url="https://api.siliconflow.cn/v1/rerank"
+    ):
+        if not base_url:
+            base_url = "https://api.siliconflow.cn/v1/rerank"
+        self.model_name = model_name
+        self.base_url = base_url
+        self.headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "authorization": f"Bearer {key}",
+        }
+
+    def similarity(self, query: str, texts: list):
+        payload = {
+            "model": self.model_name,
+            "query": query,
+            "documents": texts,
+            "top_n": len(texts),
+            "return_documents": False,
+            "max_chunks_per_doc": 1024,
+            "overlap_tokens": 80,
+        }
+        response = requests.post(
+            self.base_url, json=payload, headers=self.headers
+        ).json()
+        rank = np.array([d["relevance_score"] for d in response["results"]])
+        indexs = [d["index"] for d in response["results"]]
+        return (
+            rank[indexs],
+            response["meta"]["tokens"]["input_tokens"] + response["meta"]["tokens"]["output_tokens"],
+        )

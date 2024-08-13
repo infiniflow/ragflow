@@ -41,7 +41,8 @@ EmbeddingModel = {
     "cohere": CoHereEmbed,
     "TogetherAI": TogetherAIEmbed,
     "PerfXCloud": PerfXCloudEmbed,
-    "Upstage": UpstageEmbed
+    "Upstage": UpstageEmbed,
+    "SILICONFLOW": SILICONFLOWEmbed
 }
 
 
@@ -92,7 +93,8 @@ ChatModel = {
     "TogetherAI": TogetherAIChat,
     "PerfXCloud": PerfXCloudChat,
     "Upstage":UpstageChat,
-    "novita.ai": NovitaAIChat
+    "novita.ai": NovitaAIChat,
+    "SILICONFLOW": SILICONFLOWChat
 }
 
 
@@ -105,7 +107,8 @@ RerankModel = {
     "LM-Studio": LmStudioRerank,
     "OpenAI-API-Compatible": OpenAI_APIRerank,
     "cohere": CoHereRerank,
-    "TogetherAI": TogetherAIRerank
+    "TogetherAI": TogetherAIRerank,
+    "SILICONFLOW": SILICONFLOWRerank
 }
 
 

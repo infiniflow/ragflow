@@ -28,7 +28,8 @@ export const IconMap = {
   TogetherAI:'together-ai',
   PerfXCould: 'perfx-could',
   Upstage: 'upstage',
-  "novita.ai": 'novita-ai'
+  "novita.ai": 'novita-ai',
+  "SILICONFLOW": 'siliconflow'
 };
 
 export const BedrockRegionList = [
