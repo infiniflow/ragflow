@@ -46,6 +46,7 @@ class API4ConversationService(CommonService):
     @classmethod
     @DB.connection_context()
     def stats(cls, tenant_id, from_date, to_date, source=None):
+        if len(to_date) == 10: to_date += " 23:59:59"
         return cls.model.select(
             cls.model.create_date.truncate("day").alias("dt"),
             peewee.fn.COUNT(
