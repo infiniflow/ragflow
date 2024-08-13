@@ -26,7 +26,7 @@ export const IconMap = {
   cohere: 'cohere',
   Lepton: 'lepton',
   TogetherAI: 'together-ai',
-  PerfXCloud: 'perfx-could',
+  PerfXCloud: 'perfx-cloud',
   Upstage: 'upstage',
   'novita.ai': 'novita-ai',
   SILICONFLOW: 'siliconflow',
