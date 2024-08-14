@@ -34,7 +34,7 @@ class SwitchParam(ComponentParamBase):
         }
         """
         self.conditions = []
-        self.end_cpn_id = ""
+        self.end_cpn_id = "answer:0"
         self.operators = ['contains', 'not contains', 'start with', 'end with', 'empty', 'not empty', '=', '≠', '>',
                           '<', '≥', '≤']
 
@@ -42,32 +42,37 @@ class SwitchParam(ComponentParamBase):
         self.check_empty(self.conditions, "[Switch] conditions")
         for cond in self.conditions:
             if not cond["to"]: raise ValueError(f"[Switch] 'To' can not be empty!")
-            if cond["logical_operator"] not in ["and", "or"] and len(cond["items"]) == 1:
+            if cond["logical_operator"] not in ["and", "or"] and len(cond["items"]) > 1:
                 raise ValueError(f"[Switch] Please set logical_operator correctly!")
 
 
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
-    def _run(self, **kwargs):
-
+    def _run(self, history, **kwargs):
+        print(self._param.conditions)
+        print("len_conditions::::", len(self._param.conditions))
         for cond in self._param.conditions:
+
             if len(cond["items"]) == 1:
                 out = self._canvas.get_component(cond["items"][0]["cpn_id"])["obj"].output()[1]
                 cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
                 if self.process_operator(cpn_input, cond["items"][0]["operator"], cond["items"][0]["value"]):
                     return Switch.be_output(cond["to"])
+                continue
 
             if cond["logical_operator"] == "and":
                 res = True
                 for item in cond["items"]:
                     out = self._canvas.get_component(item["cpn_id"])["obj"].output()[1]
                     cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
+                    print(str(self.process_operator(cpn_input, item["operator"], item["value"])))
                     if not self.process_operator(cpn_input, item["operator"], item["value"]):
                         res = False
                         break
                 if res:
                     return Switch.be_output(cond["to"])
+                continue
 
             res = False
             for item in cond["items"]:
@@ -82,17 +87,18 @@ class Switch(ComponentBase, ABC):
         return Switch.be_output(self._param.end_cpn_id)
 
     def process_operator(self, input: str, operator: str, value: str) -> bool:
+        print("input:", input, "operator:", operator, "value:", value)
         if not isinstance(input, str) or not isinstance(value, str):
             raise ValueError('Invalid input or value type: string')
 
         if operator == "contains":
-            return True if value in input else False
+            return True if value.lower() in input.lower() else False
         elif operator == "not contains":
-            return True if value not in input else False
+            return True if value.lower() not in input.lower() else False
         elif operator == "start with":
-            return True if input.startswith(value) else False
+            return True if input.lower().startswith(value.lower()) else False
         elif operator == "end with":
-            return True if input.endswith(value) else False
+            return True if input.lower().endswith(value.lower()) else False
         elif operator == "empty":
             return True if not input else False
         elif operator == "not empty":
@@ -102,12 +108,24 @@ class Switch(ComponentBase, ABC):
         elif operator == "≠":
             return True if input != value else False
         elif operator == ">":
-            return True if input > value else False
+            try:
+                return True if float(input) > float(value) else False
+            except Exception as e:
+                return True if input > value else False
         elif operator == "<":
-            return True if input < value else False
+            try:
+                return True if float(input) < float(value) else False
+            except Exception as e:
+                return True if input < value else False
         elif operator == "≥":
-            return True if input >= value else False
+            try:
+                return True if float(input) >= float(value) else False
+            except Exception as e:
+                return True if input >= value else False
         elif operator == "≤":
-            return True if input <= value else False
+            try:
+                return True if float(input) <= float(value) else False
+            except Exception as e:
+                return True if input <= value else False
 
         raise ValueError('Not supported operator' + operator)
