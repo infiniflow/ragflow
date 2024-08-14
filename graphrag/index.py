@@ -85,7 +85,7 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
         graphs.append(_.result().output)
         callback(0.5 + 0.1*i/len(threads), f"Entities extraction progress ... {i+1}/{len(threads)}")
 
-    graph = reduce(graph_merge, graphs)
+    graph = reduce(graph_merge, graphs) if graphs else nx.Graph()
     er = EntityResolution(llm_bdl)
     graph = er(graph).output
 
