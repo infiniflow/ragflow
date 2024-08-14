@@ -108,6 +108,9 @@ def chat(dialog, messages, stream=True, **kwargs):
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None
     if "doc_ids" in messages[-1]:
         attachments = messages[-1]["doc_ids"]
+        for m in messages[:-1]:
+            if "doc_ids" in m:
+                attachments.extend(m["doc_ids"])
 
     embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING, embd_nms[0])
     if llm_id2llm_type(dialog.llm_id) == "image2text":
