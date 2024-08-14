@@ -1,9 +1,10 @@
+import IndentedTree from '@/components/indented-tree/indented-tree';
 import { useFetchKnowledgeGraph } from '@/hooks/chunk-hooks';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { Flex, Modal, Segmented } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ForceGraph from './force-graph';
-import IndentedTree from './indented-tree';
 import styles from './index.less';
 import { isDataExist } from './util';
 
@@ -14,7 +15,8 @@ enum SegmentedValue {
 
 const KnowledgeGraphModal: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { data } = useFetchKnowledgeGraph();
+  const { documentId } = useGetKnowledgeSearchParams();
+  const { data } = useFetchKnowledgeGraph(documentId);
   const [value, setValue] = useState<SegmentedValue>(SegmentedValue.Graph);
   const { t } = useTranslation();
 

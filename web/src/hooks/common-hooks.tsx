@@ -7,16 +7,16 @@ import { useTranslation } from 'react-i18next';
 export const useSetModalState = () => {
   const [visible, setVisible] = useState(false);
 
-  const showModal = () => {
+  const showModal = useCallback(() => {
     setVisible(true);
-  };
-  const hideModal = () => {
+  }, []);
+  const hideModal = useCallback(() => {
     setVisible(false);
-  };
+  }, []);
 
-  const switchVisible = () => {
+  const switchVisible = useCallback(() => {
     setVisible(!visible);
-  };
+  }, [visible]);
 
   return { visible, showModal, hideModal, switchVisible };
 };
