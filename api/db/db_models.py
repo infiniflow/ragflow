@@ -532,8 +532,7 @@ class LLM(DataBaseModel):
         max_length=128,
         null=False,
         help_text="LLM name",
-        index=True,
-        primary_key=True)
+        index=True)
     model_type = CharField(
         max_length=128,
         null=False,
@@ -558,6 +557,7 @@ class LLM(DataBaseModel):
         return self.llm_name
 
     class Meta:
+        primary_key = CompositeKey('fid', 'llm_name')
         db_table = "llm"
 
 
@@ -963,5 +963,10 @@ def migrate_db():
                 migrator.add_column('api_4_conversation', 'source',
                                     CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
             )
+        except Exception as e:
+            pass
+        try:
+            DB.execute_sql('ALTER TABLE llm DROP PRIMARY KEY;')
+            DB.execute_sql('ALTER TABLE llm ADD PRIMARY KEY (llm_name,fid);')
         except Exception as e:
             pass

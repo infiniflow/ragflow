@@ -144,6 +144,7 @@ export default {
       rerankTip: `如果是空的。它使用查詢和塊的嵌入來構成矢量餘弦相似性。否則，它使用rerank評分代替矢量餘弦相似性。`,
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
+      delimiter: `分段標識符`,
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
@@ -189,7 +190,7 @@ export default {
         我們假設手冊具有分層部分結構。我們使用最低的部分標題作為對文檔進行切片的樞軸。
         因此，同一部分中的圖和表不會被分割，並且塊大小可能會很大。
         </p>`,
-      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT</b>。</p>
+      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>。</p>
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
@@ -243,6 +244,13 @@ export default {
         </p><p>
         如果你要總結的東西需要一篇文章的全部上下文，並且所選LLM的上下文長度覆蓋了文檔長度，你可以嘗試這種方法。
         </p>`,
+      knowledgeGraph: `<p>支援的檔案格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>
+
+<p>文件分塊後，使用分塊擷取整個文件的知識圖譜和心智圖。此方法將簡單的方法應用於區塊檔案：
+連續的文字將被分割成多個片段，每個片段大約有 512 個令牌數。
+<p>接下來，區塊將傳送到LLM以提取知識圖譜和思維導圖的節點和關係。
+
+<p>請注意您需要指定的條目類型。</p></p>`,
       useRaptor: '使用RAPTOR文件增強策略',
       useRaptorTip: '請參考 https://huggingface.co/papers/2401.18059',
       prompt: '提示詞',
@@ -741,7 +749,7 @@ export default {
         '15d': '12天',
         '30d': '30天',
       },
-      publish: '發布',
+      publish: 'API',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

@@ -1,6 +1,5 @@
 import {
   useCreateNextToken,
-  useFetchNextStats,
   useFetchTokenList,
   useRemoveNextToken,
 } from '@/hooks/chat-hooks';
@@ -10,6 +9,7 @@ import {
   useTranslate,
 } from '@/hooks/common-hooks';
 import { IStats } from '@/interfaces/database/chat';
+import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useCallback } from 'react';
 
@@ -46,7 +46,9 @@ type ChartStatsType = {
 };
 
 export const useSelectChartStatsList = (): ChartStatsType => {
-  const { data: stats } = useFetchNextStats();
+  const queryClient = useQueryClient();
+  const data = queryClient.getQueriesData({ queryKey: ['fetchStats'] });
+  const stats: IStats = data[0][1] as IStats;
 
   return Object.keys(stats).reduce((pre, cur) => {
     const item = stats[cur as keyof IStats];

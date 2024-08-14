@@ -61,11 +61,11 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
 
     assert left_token_count > 0, f"The LLM context length({llm_bdl.max_length}) is smaller than prompt({ext.prompt_token_count})"
 
-    BATCH_SIZE=1
+    BATCH_SIZE=4
     texts, graphs = [], []
     cnt = 0
     threads = []
-    exe = ThreadPoolExecutor(max_workers=12)
+    exe = ThreadPoolExecutor(max_workers=50)
     for i in range(len(chunks)):
         tkn_cnt = num_tokens_from_string(chunks[i])
         if cnt+tkn_cnt >= left_token_count and texts:
@@ -85,7 +85,7 @@ def build_knowlege_graph_chunks(tenant_id: str, chunks: List[str], callback, ent
         graphs.append(_.result().output)
         callback(0.5 + 0.1*i/len(threads), f"Entities extraction progress ... {i+1}/{len(threads)}")
 
-    graph = reduce(graph_merge, graphs)
+    graph = reduce(graph_merge, graphs) if graphs else nx.Graph()
     er = EntityResolution(llm_bdl)
     graph = er(graph).output
 

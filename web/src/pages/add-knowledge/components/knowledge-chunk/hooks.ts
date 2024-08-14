@@ -67,7 +67,7 @@ export const useDeleteChunkByIds = (): {
 
   const removeChunk = useCallback(
     (chunkIds: string[], documentId: string) => () => {
-      return deleteChunk({ chunkIds, documentId });
+      return deleteChunk({ chunkIds, doc_id: documentId });
     },
     [deleteChunk],
   );
