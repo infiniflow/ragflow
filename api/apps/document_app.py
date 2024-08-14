@@ -501,7 +501,9 @@ def upload_and_parse():
             "callback": dummy,
             "parser_config": parser_config,
             "from_page": 0,
-            "to_page": 100000
+            "to_page": 100000,
+            "tenant_id": kb.tenant_id,
+            "lang": kb.language
         }
         threads.append(exe.submit(FACTORY.get(d["parser_id"], naive).chunk, d["name"], blob, **kwargs))
 
