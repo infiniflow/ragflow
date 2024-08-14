@@ -66,6 +66,7 @@ export interface IConversation {
 export interface Message {
   content: string;
   role: MessageType;
+  doc_ids?: string[];
 }
 
 export interface IReference {

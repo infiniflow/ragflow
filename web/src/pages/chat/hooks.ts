@@ -547,7 +547,7 @@ export const useSendMessage = (
   const { send, answer, done, setDone } = useSendMessageWithSse();
 
   const sendMessage = useCallback(
-    async (message: string, id?: string) => {
+    async (message: string, documentIds: string[], id?: string) => {
       const res = await send({
         conversation_id: id ?? conversationId,
         messages: [
@@ -555,6 +555,7 @@ export const useSendMessage = (
           {
             role: MessageType.User,
             content: message,
+            doc_ids: documentIds,
           },
         ],
       });
@@ -586,14 +587,14 @@ export const useSendMessage = (
   );
 
   const handleSendMessage = useCallback(
-    async (message: string) => {
+    async (message: string, documentIds: string[]) => {
       if (conversationId !== '') {
-        sendMessage(message);
+        return sendMessage(message, documentIds);
       } else {
         const data = await setConversation(message);
         if (data.retcode === 0) {
           const id = data.data.id;
-          sendMessage(message, id);
+          return sendMessage(message, documentIds, id);
         }
       }
     },
@@ -614,15 +615,19 @@ export const useSendMessage = (
     }
   }, [setDone, conversationId]);
 
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-
-    if (done) {
-      setValue('');
-      handleSendMessage(value.trim());
-    }
-    addNewestConversation(value);
-  }, [addNewestConversation, handleSendMessage, done, setValue, value]);
+  const handlePressEnter = useCallback(
+    async (documentIds: string[]) => {
+      if (trim(value) === '') return;
+      let ret;
+      if (done) {
+        setValue('');
+        ret = await handleSendMessage(value.trim(), documentIds);
+      }
+      addNewestConversation(value);
+      return ret;
+    },
+    [addNewestConversation, handleSendMessage, done, setValue, value],
+  );
 
   return {
     handlePressEnter,

@@ -1,15 +1,17 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { useTranslate } from '@/hooks/common-hooks';
+import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference, Message } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';
-import { useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useFetchDocumentInfosByIds } from '@/hooks/document-hooks';
 import MarkdownContent from '@/pages/chat/markdown-content';
-import { getExtension } from '@/utils/document-util';
-import { Avatar, Flex, List } from 'antd';
+import { getExtension, isImage } from '@/utils/document-util';
+import { Avatar, Button, Flex, List } from 'antd';
+import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
 import SvgIcon from '../svg-icon';
 import styles from './index.less';
@@ -32,8 +34,13 @@ const MessageItem = ({
   clickDocumentButton,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
+  const isUser = item.role === MessageType.User;
   const { t } = useTranslate('chat');
   const fileThumbnails = useSelectFileThumbnails();
+  const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
+  console.log('🚀 ~ documentList:', documentList);
+  const { visible, hideModal, showModal } = useSetModalState();
+  const [clickedDocumentId, setClickedDocumentId] = useState('');
 
   const referenceDocumentList = useMemo(() => {
     return reference?.doc_aggs ?? [];
@@ -46,6 +53,21 @@ const MessageItem = ({
     }
     return loading ? text?.concat('~~2$$') : text;
   }, [item.content, loading, t]);
+
+  const handleUserDocumentClick = useCallback(
+    (id: string) => () => {
+      setClickedDocumentId(id);
+      showModal();
+    },
+    [showModal],
+  );
+
+  useEffect(() => {
+    const ids = item?.doc_ids ?? [];
+    if (ids.length) {
+      setDocumentIds(ids);
+    }
+  }, [item.doc_ids, setDocumentIds]);
 
   return (
     <div
@@ -124,11 +146,62 @@ const MessageItem = ({
                 }}
               />
             )}
+            {isUser && documentList.length > 0 && (
+              <List
+                bordered
+                dataSource={documentList}
+                renderItem={(item) => {
+                  const fileThumbnail = fileThumbnails[item.id];
+                  const fileExtension = getExtension(item.name);
+                  return (
+                    <List.Item>
+                      <Flex gap={'small'} align="center">
+                        {fileThumbnail ? (
+                          <img
+                            src={fileThumbnail}
+                            className={styles.thumbnailImg}
+                          ></img>
+                        ) : (
+                          <SvgIcon
+                            name={`file-icon/${fileExtension}`}
+                            width={24}
+                          ></SvgIcon>
+                        )}
+
+                        {isImage(fileExtension) ? (
+                          <NewDocumentLink
+                            documentId={item.id}
+                            documentName={item.name}
+                            prefix="document"
+                          >
+                            {item.name}
+                          </NewDocumentLink>
+                        ) : (
+                          <Button
+                            type={'text'}
+                            onClick={handleUserDocumentClick(item.id)}
+                          >
+                            {item.name}
+                          </Button>
+                        )}
+                      </Flex>
+                    </List.Item>
+                  );
+                }}
+              />
+            )}
           </Flex>
         </div>
       </section>
+      {visible && (
+        <IndentedTreeModal
+          visible={visible}
+          hideModal={hideModal}
+          documentId={clickedDocumentId}
+        ></IndentedTreeModal>
+      )}
     </div>
   );
 };
 
-export default MessageItem;
+export default memo(MessageItem);

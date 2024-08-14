@@ -1,4 +1,4 @@
-import { SupportedPreviewDocumentTypes } from '@/constants/common';
+import { Images, SupportedPreviewDocumentTypes } from '@/constants/common';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { UploadFile } from 'antd';
 import { v4 as uuid } from 'uuid';
@@ -50,4 +50,8 @@ export const getUnSupportedFilesCount = (message: string) => {
 
 export const isSupportedPreviewDocumentType = (fileExtension: string) => {
   return SupportedPreviewDocumentTypes.includes(fileExtension);
+};
+
+export const isImage = (image: string) => {
+  return [...Images, 'svg'].some((x) => x === image);
 };
