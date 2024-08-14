@@ -7,14 +7,19 @@ import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { useFetchDocumentInfosByIds } from '@/hooks/document-hooks';
+import {
+  useFetchDocumentInfosByIds,
+  useFetchDocumentThumbnailsByIds,
+} from '@/hooks/document-hooks';
 import MarkdownContent from '@/pages/chat/markdown-content';
 import { getExtension, isImage } from '@/utils/document-util';
-import { Avatar, Button, Flex, List } from 'antd';
+import { Avatar, Button, Flex, List, Typography } from 'antd';
 import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
 import SvgIcon from '../svg-icon';
 import styles from './index.less';
+
+const { Text } = Typography;
 
 interface IProps {
   item: Message;
@@ -38,7 +43,8 @@ const MessageItem = ({
   const { t } = useTranslate('chat');
   const fileThumbnails = useSelectFileThumbnails();
   const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
-  console.log('🚀 ~ documentList:', documentList);
+  const { data: documentThumbnails, setDocumentIds: setIds } =
+    useFetchDocumentThumbnailsByIds();
   const { visible, hideModal, showModal } = useSetModalState();
   const [clickedDocumentId, setClickedDocumentId] = useState('');
 
@@ -66,8 +72,12 @@ const MessageItem = ({
     const ids = item?.doc_ids ?? [];
     if (ids.length) {
       setDocumentIds(ids);
+      const documentIds = ids.filter((x) => !(x in fileThumbnails));
+      if (documentIds.length) {
+        setIds(documentIds);
+      }
     }
-  }, [item.doc_ids, setDocumentIds]);
+  }, [item.doc_ids, setDocumentIds, setIds, fileThumbnails]);
 
   return (
     <div
@@ -117,6 +127,7 @@ const MessageItem = ({
                 dataSource={referenceDocumentList}
                 renderItem={(item) => {
                   const fileThumbnail = fileThumbnails[item.doc_id];
+
                   const fileExtension = getExtension(item.doc_name);
                   return (
                     <List.Item>
@@ -151,7 +162,8 @@ const MessageItem = ({
                 bordered
                 dataSource={documentList}
                 renderItem={(item) => {
-                  const fileThumbnail = fileThumbnails[item.id];
+                  const fileThumbnail =
+                    documentThumbnails[item.id] || fileThumbnails[item.id];
                   const fileExtension = getExtension(item.name);
                   return (
                     <List.Item>
@@ -181,7 +193,12 @@ const MessageItem = ({
                             type={'text'}
                             onClick={handleUserDocumentClick(item.id)}
                           >
-                            {item.name}
+                            <Text
+                              style={{ maxWidth: '40vw' }}
+                              ellipsis={{ tooltip: item.name }}
+                            >
+                              {item.name}
+                            </Text>
                           </Button>
                         )}
                       </Flex>

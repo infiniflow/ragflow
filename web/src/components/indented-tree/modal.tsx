@@ -15,7 +15,7 @@ const IndentedTreeModal = ({
 
   return (
     <Modal
-      title={t('chunk.graph')}
+      title={t('chunk.mind')}
       open={visible}
       onCancel={hideModal}
       width={'90vw'}

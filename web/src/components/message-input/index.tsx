@@ -1,5 +1,6 @@
 import { Authorization } from '@/constants/authorization';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useRemoveNextDocument } from '@/hooks/document-hooks';
 import { getAuthorization } from '@/utils/authorization-util';
 import { PlusOutlined } from '@ant-design/icons';
 import type { GetProp, UploadFile } from 'antd';
@@ -14,7 +15,7 @@ interface IProps {
   value: string;
   sendDisabled: boolean;
   sendLoading: boolean;
-  onPressEnter(documentIds: string[]): Promise<any>;
+  onPressEnter(documentIds: string[]): void;
   onInputChange: ChangeEventHandler<HTMLInputElement>;
   conversationId: string;
 }
@@ -37,50 +38,41 @@ const MessageInput = ({
   conversationId,
 }: IProps) => {
   const { t } = useTranslate('chat');
+  const { removeDocument } = useRemoveNextDocument();
 
-  const [fileList, setFileList] = useState<UploadFile[]>([
-    // {
-    //   uid: '-1',
-    //   name: 'image.png',
-    //   status: 'done',
-    //   url: 'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png',
-    // },
-    // {
-    //   uid: '-xxx',
-    //   percent: 50,
-    //   name: 'image.png',
-    //   status: 'uploading',
-    //   url: 'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png',
-    // },
-    // {
-    //   uid: '-5',
-    //   name: 'image.png',
-    //   status: 'error',
-    // },
-  ]);
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
 
   const handlePreview = async (file: UploadFile) => {
     if (!file.url && !file.preview) {
       file.preview = await getBase64(file.originFileObj as FileType);
     }
-
-    // setPreviewImage(file.url || (file.preview as string));
-    // setPreviewOpen(true);
   };
 
   const handleChange: UploadProps['onChange'] = ({ fileList: newFileList }) => {
     console.log('🚀 ~ newFileList:', newFileList);
     setFileList(newFileList);
   };
+  const isUploadingFile = fileList.some((x) => x.status === 'uploading');
 
   const handlePressEnter = useCallback(async () => {
+    if (isUploadingFile) return;
     const ids = fileList.reduce((pre, cur) => {
       return pre.concat(get(cur, 'response.data', []));
     }, []);
 
-    await onPressEnter(ids);
+    onPressEnter(ids);
     setFileList([]);
-  }, [fileList, onPressEnter]);
+  }, [fileList, onPressEnter, isUploadingFile]);
+
+  const handleRemove = useCallback(
+    (file: UploadFile) => {
+      const ids = get(file, 'response.data', []);
+      if (ids.length) {
+        removeDocument(ids[0]);
+      }
+    },
+    [removeDocument],
+  );
 
   const uploadButton = (
     <button style={{ border: 0, background: 'none' }} type="button">
@@ -101,7 +93,7 @@ const MessageInput = ({
             type="primary"
             onClick={handlePressEnter}
             loading={sendLoading}
-            disabled={sendDisabled}
+            disabled={sendDisabled || isUploadingFile}
           >
             {t('send')}
           </Button>
@@ -119,6 +111,7 @@ const MessageInput = ({
         headers={{ [Authorization]: getAuthorization() }}
         data={{ conversation_id: conversationId }}
         method="post"
+        onRemove={handleRemove}
       >
         {fileList.length >= 8 ? null : uploadButton}
       </Upload>
