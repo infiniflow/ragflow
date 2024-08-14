@@ -59,8 +59,7 @@
                                             "logical_operator" : "or",
                                             "items" : [
                                                           {"cpn_id": "generate:0", "operator": "contains", "value": "yes"},
-                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "YES"},
-                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "Yes"}
+                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "yeah"}
                                                       ],
                                              "to": "message:0"
                                         },
