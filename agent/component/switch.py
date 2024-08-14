@@ -50,8 +50,6 @@ class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
     def _run(self, history, **kwargs):
-        print(self._param.conditions)
-        print("len_conditions::::", len(self._param.conditions))
         for cond in self._param.conditions:
 
             if len(cond["items"]) == 1:
@@ -66,7 +64,6 @@ class Switch(ComponentBase, ABC):
                 for item in cond["items"]:
                     out = self._canvas.get_component(item["cpn_id"])["obj"].output()[1]
                     cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
-                    print(str(self.process_operator(cpn_input, item["operator"], item["value"])))
                     if not self.process_operator(cpn_input, item["operator"], item["value"]):
                         res = False
                         break
@@ -87,7 +84,6 @@ class Switch(ComponentBase, ABC):
         return Switch.be_output(self._param.end_cpn_id)
 
     def process_operator(self, input: str, operator: str, value: str) -> bool:
-        print("input:", input, "operator:", operator, "value:", value)
         if not isinstance(input, str) or not isinstance(value, str):
             raise ValueError('Invalid input or value type: string')
 
