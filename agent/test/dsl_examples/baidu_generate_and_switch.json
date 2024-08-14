@@ -68,7 +68,7 @@
                                             "items" : [
                                                           {"cpn_id": "generate:0", "operator": "contains", "value": "no"},
                                                           {"cpn_id": "generate:0", "operator": "not contains", "value": "yes"},
-							                              {"cpn_id": "generate:0", "operator": "not contains", "value": "know"}
+							  {"cpn_id": "generate:0", "operator": "not contains", "value": "know"}
                                                       ],
                                             "to": "message:1"
                                         },
