@@ -14,64 +14,100 @@
 #  limitations under the License.
 #
 from abc import ABC
-
-import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
 class SwitchParam(ComponentParamBase):
-
     """
     Define the Switch component parameters.
     """
+
     def __init__(self):
         super().__init__()
         """
         {
-            "cpn_id": "categorize:0",
-            "not": False,
-            "operator": "gt/gte/lt/lte/eq/in",
-            "value": "",
+            "logical_operator" : "and | or"
+            "items" : [
+                            {"cpn_id": "categorize:0", "operator": "contains", "value": ""},
+                            {"cpn_id": "categorize:0", "operator": "contains", "value": ""},...],
             "to": ""
         }
         """
         self.conditions = []
-        self.default = ""
+        self.end_cpn_id = ""
+        self.operators = ['contains', 'not contains', 'start with', 'end with', 'empty', 'not empty', '=', '≠', '>',
+                          '<', '≥', '≤']
 
     def check(self):
         self.check_empty(self.conditions, "[Switch] conditions")
-        self.check_empty(self.default, "[Switch] Default path")
         for cond in self.conditions:
             if not cond["to"]: raise ValueError(f"[Switch] 'To' can not be empty!")
-
-    def operators(self, field, op, value):
-        if op == "gt":
-            return float(field) > float(value)
-        if op == "gte":
-            return float(field) >= float(value)
-        if op == "lt":
-            return float(field) < float(value)
-        if op == "lte":
-            return float(field) <= float(value)
-        if op == "eq":
-            return str(field) == str(value)
-        if op == "in":
-            return str(field).find(str(value)) >= 0
-        return False
+            if cond["logical_operator"] not in ["and", "or"] and len(cond["items"]) == 1:
+                raise ValueError(f"[Switch] Please set logical_operator correctly!")
 
 
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
-    def _run(self, history, **kwargs):
+    def _run(self, **kwargs):
+
         for cond in self._param.conditions:
-            input = self._canvas.get_component(cond["cpn_id"])["obj"].output()[1]
-            if self._param.operators(input.iloc[0, 0], cond["operator"], cond["value"]):
-                if not cond["not"]:
-                    return pd.DataFrame([{"content": cond["to"]}])
+            if len(cond["items"]) == 1:
+                out = self._canvas.get_component(cond["items"][0]["cpn_id"])["obj"].output()[1]
+                cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
+                if self.process_operator(cpn_input, cond["items"][0]["operator"], cond["items"][0]["value"]):
+                    return Switch.be_output(cond["to"])
 
-        return pd.DataFrame([{"content": self._param.default}])
+            if cond["logical_operator"] == "and":
+                res = True
+                for item in cond["items"]:
+                    out = self._canvas.get_component(item["cpn_id"])["obj"].output()[1]
+                    cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
+                    if not self.process_operator(cpn_input, item["operator"], item["value"]):
+                        res = False
+                        break
+                if res:
+                    return Switch.be_output(cond["to"])
 
+            res = False
+            for item in cond["items"]:
+                out = self._canvas.get_component(item["cpn_id"])["obj"].output()[1]
+                cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
+                if self.process_operator(cpn_input, item["operator"], item["value"]):
+                    res = True
+                    break
+            if res:
+                return Switch.be_output(cond["to"])
 
+        return Switch.be_output(self._param.end_cpn_id)
 
+    def process_operator(self, input: str, operator: str, value: str) -> bool:
+        if not isinstance(input, str) or not isinstance(value, str):
+            raise ValueError('Invalid input or value type: string')
 
+        if operator == "contains":
+            return True if value in input else False
+        elif operator == "not contains":
+            return True if value not in input else False
+        elif operator == "start with":
+            return True if input.startswith(value) else False
+        elif operator == "end with":
+            return True if input.endswith(value) else False
+        elif operator == "empty":
+            return True if not input else False
+        elif operator == "not empty":
+            return True if input else False
+        elif operator == "=":
+            return True if input == value else False
+        elif operator == "≠":
+            return True if input != value else False
+        elif operator == ">":
+            return True if input > value else False
+        elif operator == "<":
+            return True if input < value else False
+        elif operator == "≥":
+            return True if input >= value else False
+        elif operator == "≤":
+            return True if input <= value else False
+
+        raise ValueError('Not supported operator' + operator)
