@@ -146,27 +146,32 @@ def build(row):
         binary = get_minio_binary(bucket, name)
         cron_logger.info(
             "From minio({}) {}/{}".format(timer() - st, row["location"], row["name"]))
+    except TimeoutError as e:
+        callback(-1, f"Internal server error: Fetch file from minio timeout. Could you try it again.")
+        cron_logger.error(
+            "Minio {}/{}: Fetch file from minio timeout.".format(row["location"], row["name"]))
+        return
+    except Exception as e:
+        if re.search("(No such file|not found)", str(e)):
+            callback(-1, "Can not find file <%s> from minio. Could you try it again?" % row["name"])
+        else:
+            callback(-1, f"Get file from minio: %s" %
+                     str(e).replace("'", ""))
+        traceback.print_exc()
+        return
+
+    try:
         cks = chunker.chunk(row["name"], binary=binary, from_page=row["from_page"],
                             to_page=row["to_page"], lang=row["language"], callback=callback,
                             kb_id=row["kb_id"], parser_config=row["parser_config"], tenant_id=row["tenant_id"])
         cron_logger.info(
-            "Chunkking({}) {}/{}".format(timer() - st, row["location"], row["name"]))
-    except TimeoutError as e:
-        callback(-1, f"Internal server error: Fetch file timeout. Could you try it again.")
-        cron_logger.error(
-            "Chunkking {}/{}: Fetch file timeout.".format(row["location"], row["name"]))
-        return
+            "Chunking({}) {}/{}".format(timer() - st, row["location"], row["name"]))
     except Exception as e:
-        if re.search("(No such file|not found)", str(e)):
-            callback(-1, "Can not find file <%s>" % row["name"])
-        else:
-            callback(-1, f"Internal server error: %s" %
+        callback(-1, f"Internal server error while chunking: %s" %
                      str(e).replace("'", ""))
-        traceback.print_exc()
-
         cron_logger.error(
-            "Chunkking {}/{}: {}".format(row["location"], row["name"], str(e)))
-
+            "Chunking {}/{}: {}".format(row["location"], row["name"], str(e)))
+        traceback.print_exc()
         return
 
     docs = []
