@@ -409,6 +409,8 @@ export default {
       extensionTitle: 'Chrome 插件',
       tokenError: '请先创建 Api Token!',
       searching: '搜索中',
+      parsing: '解析中',
+      uploading: '上传中',
     },
     setting: {
       profile: '概要',

@@ -50,13 +50,8 @@ const ChatOverviewModal = ({
     hideModal: hideApiKeyModal,
     showModal: showApiKeyModal,
   } = useSetModalState();
-  const {
-    embedVisible,
-    hideEmbedModal,
-    showEmbedModal,
-    embedToken,
-    errorContextHolder,
-  } = useShowEmbedModal(id, idKey);
+  const { embedVisible, hideEmbedModal, showEmbedModal, embedToken } =
+    useShowEmbedModal(id, idKey);
 
   const { pickerValue, setPickerValue } = useFetchNextStats();
 
@@ -64,7 +59,7 @@ const ChatOverviewModal = ({
     return current && current > dayjs().endOf('day');
   };
 
-  const { handlePreview, contextHolder } = usePreviewChat(id, idKey);
+  const { handlePreview } = usePreviewChat(id, idKey);
 
   return (
     <>
@@ -138,8 +133,6 @@ const ChatOverviewModal = ({
           visible={embedVisible}
           hideModal={hideEmbedModal}
         ></EmbedModal>
-        {contextHolder}
-        {errorContextHolder}
       </Modal>
     </>
   );
