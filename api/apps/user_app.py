@@ -39,21 +39,24 @@ from api.utils.api_utils import get_json_result, construct_response
 def login():
     login_channel = "password"
     if not request.json:
-        return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
-                               retmsg='Unautherized!')
+        return get_json_result(data=False,
+                               retcode=RetCode.AUTHENTICATION_ERROR,
+                               retmsg='Unauthorized!')
 
     email = request.json.get('email', "")
     users = UserService.query(email=email)
     if not users:
-        return get_json_result(
-            data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg=f'This Email is not registered!')
+        return get_json_result(data=False,
+                               retcode=RetCode.AUTHENTICATION_ERROR,
+                               retmsg=f'This Email is not registered!')
 
     password = request.json.get('password')
     try:
         password = decrypt(password)
     except BaseException:
-        return get_json_result(
-            data=False, retcode=RetCode.SERVER_ERROR, retmsg='Fail to crypt password')
+        return get_json_result(data=False,
+                               retcode=RetCode.SERVER_ERROR,
+                               retmsg='Fail to crypt password')
 
     user = UserService.query_user(email, password)
     if user:
@@ -73,11 +76,12 @@ def login():
 @manager.route('/github_callback', methods=['GET'])
 def github_callback():
     import requests
-    res = requests.post(GITHUB_OAUTH.get("url"), data={
-        "client_id": GITHUB_OAUTH.get("client_id"),
-        "client_secret": GITHUB_OAUTH.get("secret_key"),
-        "code": request.args.get('code')
-    }, headers={"Accept": "application/json"})
+    res = requests.post(GITHUB_OAUTH.get("url"),
+                        data={
+                            "client_id": GITHUB_OAUTH.get("client_id"),
+                            "client_secret": GITHUB_OAUTH.get("secret_key"),
+                            "code": request.args.get('code')},
+                        headers={"Accept": "application/json"})
     res = res.json()
     if "error" in res:
         return redirect("/?error=%s" % res["error_description"])
@@ -87,29 +91,33 @@ def github_callback():
 
     session["access_token"] = res["access_token"]
     session["access_token_from"] = "github"
-    userinfo = user_info_from_github(session["access_token"])
-    users = UserService.query(email=userinfo["email"])
+    user_info = user_info_from_github(session["access_token"])
+    email_address = user_info["email"]
+    users = UserService.query(email=email_address)
     user_id = get_uuid()
     if not users:
+        # User isn't try to register
         try:
             try:
-                avatar = download_img(userinfo["avatar_url"])
+                avatar = download_img(user_info["avatar_url"])
             except Exception as e:
                 stat_logger.exception(e)
                 avatar = ""
             users = user_register(user_id, {
                 "access_token": session["access_token"],
-                "email": userinfo["email"],
+                "email": email_address,
                 "avatar": avatar,
-                "nickname": userinfo["login"],
+                "nickname": user_info["login"],
                 "login_channel": "github",
                 "last_login_time": get_format_time(),
                 "is_superuser": False,
             })
             if not users:
-                raise Exception('Register user failure.')
+                raise Exception(f'Fail to register {email_address}.')
             if len(users) > 1:
-                raise Exception('Same E-mail exist!')
+                raise Exception(f'Same E-mail: {email_address} exists!')
+
+            # Try to log in
             user = users[0]
             login_user(user)
             return redirect("/?auth=%s" % user.get_id())
@@ -117,6 +125,8 @@ def github_callback():
             rollback_user_registration(user_id)
             stat_logger.exception(e)
             return redirect("/?error=%s" % str(e))
+
+    # User has already registered, try to log in
     user = users[0]
     user.access_token = get_uuid()
     login_user(user)
@@ -127,19 +137,25 @@ def github_callback():
 @manager.route('/feishu_callback', methods=['GET'])
 def feishu_callback():
     import requests
-    app_access_token_res = requests.post(FEISHU_OAUTH.get("app_access_token_url"), data=json.dumps({
-        "app_id": FEISHU_OAUTH.get("app_id"),
-        "app_secret": FEISHU_OAUTH.get("app_secret")
-    }), headers={"Content-Type": "application/json; charset=utf-8"})
+    app_access_token_res = requests.post(FEISHU_OAUTH.get("app_access_token_url"),
+                                         data=json.dumps({
+                                             "app_id": FEISHU_OAUTH.get("app_id"),
+                                             "app_secret": FEISHU_OAUTH.get("app_secret")
+                                         }),
+                                         headers={"Content-Type": "application/json; charset=utf-8"})
     app_access_token_res = app_access_token_res.json()
     if app_access_token_res['code'] != 0:
         return redirect("/?error=%s" % app_access_token_res)
 
-    res = requests.post(FEISHU_OAUTH.get("user_access_token_url"), data=json.dumps({
-        "grant_type": FEISHU_OAUTH.get("grant_type"),
-        "code": request.args.get('code')
-    }), headers={"Content-Type": "application/json; charset=utf-8",
-                 'Authorization': f"Bearer {app_access_token_res['app_access_token']}"})
+    res = requests.post(FEISHU_OAUTH.get("user_access_token_url"),
+                        data=json.dumps({
+                            "grant_type": FEISHU_OAUTH.get("grant_type"),
+                            "code": request.args.get('code')
+                        }),
+                        headers={
+                            "Content-Type": "application/json; charset=utf-8",
+                            'Authorization': f"Bearer {app_access_token_res['app_access_token']}"
+                        })
     res = res.json()
     if res['code'] != 0:
         return redirect("/?error=%s" % res["message"])
@@ -148,29 +164,33 @@ def feishu_callback():
         return redirect("/?error=contact:user.email:readonly not in scope")
     session["access_token"] = res["data"]["access_token"]
     session["access_token_from"] = "feishu"
-    userinfo = user_info_from_feishu(session["access_token"])
-    users = UserService.query(email=userinfo["email"])
+    user_info = user_info_from_feishu(session["access_token"])
+    email_address = user_info["email"]
+    users = UserService.query(email=email_address)
     user_id = get_uuid()
     if not users:
+        # User isn't try to register
         try:
             try:
-                avatar = download_img(userinfo["avatar_url"])
+                avatar = download_img(user_info["avatar_url"])
             except Exception as e:
                 stat_logger.exception(e)
                 avatar = ""
             users = user_register(user_id, {
                 "access_token": session["access_token"],
-                "email": userinfo["email"],
+                "email": email_address,
                 "avatar": avatar,
-                "nickname": userinfo["en_name"],
+                "nickname": user_info["en_name"],
                 "login_channel": "feishu",
                 "last_login_time": get_format_time(),
                 "is_superuser": False,
             })
             if not users:
-                raise Exception('Register user failure.')
+                raise Exception(f'Fail to register {email_address}.')
             if len(users) > 1:
-                raise Exception('Same E-mail exist!')
+                raise Exception(f'Same E-mail: {email_address} exists!')
+
+            # Try to log in
             user = users[0]
             login_user(user)
             return redirect("/?auth=%s" % user.get_id())
@@ -178,6 +198,8 @@ def feishu_callback():
             rollback_user_registration(user_id)
             stat_logger.exception(e)
             return redirect("/?error=%s" % str(e))
+
+    # User has already registered, try to log in
     user = users[0]
     user.access_token = get_uuid()
     login_user(user)
@@ -255,7 +277,7 @@ def setting_user():
 
 @manager.route("/info", methods=["GET"])
 @login_required
-def user_info():
+def user_profile():
     return get_json_result(data=current_user.to_dict())
 
 
