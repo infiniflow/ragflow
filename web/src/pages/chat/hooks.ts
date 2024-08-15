@@ -19,7 +19,12 @@ import {
 } from '@/hooks/common-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
-import { IAnswer, IConversation, IDialog } from '@/interfaces/database/chat';
+import {
+  IAnswer,
+  IConversation,
+  IDialog,
+  Message,
+} from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
 import omit from 'lodash/omit';
@@ -379,7 +384,7 @@ export const useSelectCurrentConversation = () => {
   const { conversationId, dialogId } = useGetChatSearchParams();
 
   const addNewestConversation = useCallback(
-    (message: string, answer: string = '') => {
+    (message: Partial<Message>, answer: string = '') => {
       setCurrentConversation((pre) => {
         return {
           ...pre,
@@ -387,7 +392,8 @@ export const useSelectCurrentConversation = () => {
             ...pre.message,
             {
               role: MessageType.User,
-              content: message,
+              content: message.content,
+              doc_ids: message.doc_ids,
               id: uuid(),
             } as IMessage,
             {
@@ -535,7 +541,7 @@ export const useHandleMessageInputChange = () => {
 
 export const useSendMessage = (
   conversation: IClientConversation,
-  addNewestConversation: (message: string, answer?: string) => void,
+  addNewestConversation: (message: Partial<Message>, answer?: string) => void,
   removeLatestMessage: () => void,
   addNewestAnswer: (answer: IAnswer) => void,
 ) => {
@@ -589,12 +595,12 @@ export const useSendMessage = (
   const handleSendMessage = useCallback(
     async (message: string, documentIds: string[]) => {
       if (conversationId !== '') {
-        return sendMessage(message, documentIds);
+        sendMessage(message, documentIds);
       } else {
         const data = await setConversation(message);
         if (data.retcode === 0) {
           const id = data.data.id;
-          return sendMessage(message, documentIds, id);
+          sendMessage(message, documentIds, id);
         }
       }
     },
@@ -616,15 +622,14 @@ export const useSendMessage = (
   }, [setDone, conversationId]);
 
   const handlePressEnter = useCallback(
-    async (documentIds: string[]) => {
+    (documentIds: string[]) => {
       if (trim(value) === '') return;
-      let ret;
+
+      addNewestConversation({ content: value, doc_ids: documentIds });
       if (done) {
         setValue('');
-        ret = await handleSendMessage(value.trim(), documentIds);
+        handleSendMessage(value.trim(), documentIds);
       }
-      addNewestConversation(value);
-      return ret;
     },
     [addNewestConversation, handleSendMessage, done, setValue, value],
   );

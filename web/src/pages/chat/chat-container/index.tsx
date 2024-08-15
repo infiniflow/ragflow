@@ -80,24 +80,6 @@ const ChatContainer = () => {
           onPressEnter={handlePressEnter}
           conversationId={conversation.id}
         ></MessageInput>
-        {/* <Input
-          size="large"
-          placeholder={t('sendPlaceholder')}
-          value={value}
-          disabled={disabled}
-          suffix={
-            <Button
-              type="primary"
-              onClick={handlePressEnter}
-              loading={sendLoading}
-              disabled={sendDisabled}
-            >
-              {t('send')}
-            </Button>
-          }
-          onPressEnter={handlePressEnter}
-          onChange={handleInputChange}
-        /> */}
       </Flex>
       <Drawer
         title="Document Previewer"

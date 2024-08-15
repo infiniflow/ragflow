@@ -4,7 +4,7 @@ import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import kbService from '@/services/knowledge-service';
 import { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { UploadFile } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
@@ -278,15 +278,38 @@ export const useFetchDocumentInfosByIds = () => {
 
 export const useFetchDocumentThumbnailsByIds = () => {
   const [ids, setDocumentIds] = useState<string[]>([]);
-  const { data } = useQuery({
+  const { data } = useQuery<Record<string, string>>({
     queryKey: ['fetchDocumentThumbnails', ids],
-    initialData: [],
+    enabled: ids.length > 0,
+    initialData: {},
     queryFn: async () => {
       const { data } = await kbService.document_thumbnails({ doc_ids: ids });
-
-      return data;
+      if (data.retcode === 0) {
+        return data.data;
+      }
+      return {};
     },
   });
 
   return { data, setDocumentIds };
+};
+
+export const useRemoveNextDocument = () => {
+  // const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['removeDocument'],
+    mutationFn: async (documentId: string) => {
+      const data = await kbService.document_rm({ doc_id: documentId });
+      // if (data.retcode === 0) {
+      //   queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
+      // }
+      return data;
+    },
+  });
+
+  return { data, loading, removeDocument: mutateAsync };
 };
