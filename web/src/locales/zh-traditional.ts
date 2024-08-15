@@ -394,6 +394,7 @@ export default {
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上傳中',
+      uploadFailed: '上傳失敗',
     },
     setting: {
       profile: '概述',

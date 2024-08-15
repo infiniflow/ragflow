@@ -424,6 +424,7 @@ The above is the content you need to summarize.`,
       searching: 'searching...',
       parsing: 'Parsing',
       uploading: 'Uploading',
+      uploadFailed: 'Upload failed',
     },
     setting: {
       profile: 'Profile',

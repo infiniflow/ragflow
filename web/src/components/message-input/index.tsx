@@ -1,13 +1,18 @@
 import { Authorization } from '@/constants/authorization';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
+  useDeleteDocument,
   useFetchDocumentInfosByIds,
   useRemoveNextDocument,
 } from '@/hooks/document-hooks';
 import { getAuthorization } from '@/utils/authorization-util';
 import { getExtension } from '@/utils/document-util';
 import { formatBytes } from '@/utils/file-util';
-import { CloseCircleOutlined, LoadingOutlined } from '@ant-design/icons';
+import {
+  CloseCircleOutlined,
+  InfoCircleOutlined,
+  LoadingOutlined,
+} from '@ant-design/icons';
 import type { GetProp, UploadFile } from 'antd';
 import {
   Button,
@@ -41,6 +46,16 @@ const getFileIds = (fileList: UploadFile[]) => {
   return ids;
 };
 
+const isUploadError = (file: UploadFile) => {
+  const retcode = get(file, 'response.retcode');
+  return typeof retcode === 'number' && retcode !== 0;
+};
+
+const isUploadSuccess = (file: UploadFile) => {
+  const retcode = get(file, 'response.retcode');
+  return typeof retcode === 'number' && retcode === 0;
+};
+
 interface IProps {
   disabled: boolean;
   value: string;
@@ -50,6 +65,7 @@ interface IProps {
   onInputChange: ChangeEventHandler<HTMLInputElement>;
   conversationId: string;
   uploadUrl?: string;
+  isShared?: boolean;
 }
 
 const getBase64 = (file: FileType): Promise<string> =>
@@ -61,6 +77,7 @@ const getBase64 = (file: FileType): Promise<string> =>
   });
 
 const MessageInput = ({
+  isShared = false,
   disabled,
   value,
   onPressEnter,
@@ -72,6 +89,7 @@ const MessageInput = ({
 }: IProps) => {
   const { t } = useTranslate('chat');
   const { removeDocument } = useRemoveNextDocument();
+  const { deleteDocument } = useDeleteDocument();
   const { data: documentInfos, setDocumentIds } = useFetchDocumentInfosByIds();
 
   const [fileList, setFileList] = useState<UploadFile[]>([]);
@@ -89,7 +107,7 @@ const MessageInput = ({
 
   const handlePressEnter = useCallback(async () => {
     if (isUploadingFile) return;
-    const ids = getFileIds(fileList);
+    const ids = getFileIds(fileList.filter((x) => isUploadSuccess(x)));
 
     onPressEnter(ids);
     setFileList([]);
@@ -98,14 +116,24 @@ const MessageInput = ({
   const handleRemove = useCallback(
     async (file: UploadFile) => {
       const ids = get(file, 'response.data', []);
-      if (ids.length) {
-        await removeDocument(ids[0]);
+      // Upload Successfully
+      if (Array.isArray(ids) && ids.length) {
+        if (isShared) {
+          await deleteDocument(ids);
+        } else {
+          await removeDocument(ids[0]);
+        }
         setFileList((preList) => {
           return preList.filter((x) => getFileId(x) !== ids[0]);
         });
+      } else {
+        // Upload failed
+        setFileList((preList) => {
+          return preList.filter((x) => x.uid !== file.uid);
+        });
       }
     },
-    [removeDocument],
+    [removeDocument, deleteDocument, isShared],
   );
 
   const getDocumentInfoById = useCallback(
@@ -192,6 +220,11 @@ const MessageInput = ({
                           <LoadingOutlined style={{ fontSize: 24 }} spin />
                         }
                       />
+                    ) : !getFileId(item) ? (
+                      <InfoCircleOutlined
+                        size={30}
+                        // width={30}
+                      ></InfoCircleOutlined>
                     ) : (
                       <FileIcon id={id} name={item.name}></FileIcon>
                     )}
@@ -202,26 +235,33 @@ const MessageInput = ({
                       >
                         <b> {item.name}</b>
                       </Text>
-                      {item.percent !== 100 ? (
-                        t('uploading')
-                      ) : !item.response ? (
-                        t('parsing')
+                      {isUploadError(item) ? (
+                        t('uploadFailed')
                       ) : (
-                        <Space>
-                          <span>{fileExtension?.toUpperCase()},</span>
-                          <span>
-                            {formatBytes(getDocumentInfoById(id)?.size ?? 0)}
-                          </span>
-                        </Space>
+                        <>
+                          {item.percent !== 100 ? (
+                            t('uploading')
+                          ) : !item.response ? (
+                            t('parsing')
+                          ) : (
+                            <Space>
+                              <span>{fileExtension?.toUpperCase()},</span>
+                              <span>
+                                {formatBytes(
+                                  getDocumentInfoById(id)?.size ?? 0,
+                                )}
+                              </span>
+                            </Space>
+                          )}
+                        </>
                       )}
                     </Flex>
                   </Flex>
 
                   {item.status !== 'uploading' && (
-                    <CloseCircleOutlined
-                      className={styles.deleteIcon}
-                      onClick={() => handleRemove(item)}
-                    />
+                    <span className={styles.deleteIcon}>
+                      <CloseCircleOutlined onClick={() => handleRemove(item)} />
+                    </span>
                   )}
                 </Card>
               </List.Item>

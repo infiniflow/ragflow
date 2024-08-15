@@ -411,6 +411,7 @@ export default {
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上传中',
+      uploadFailed: '上传失败',
     },
     setting: {
       profile: '概要',
