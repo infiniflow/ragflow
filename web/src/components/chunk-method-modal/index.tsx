@@ -22,6 +22,8 @@ import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
 import { useTranslate } from '@/hooks/common-hooks';
+import Delimiter from '../delimiter';
+import EntityTypesItem from '../entity-types-item';
 import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
@@ -41,7 +43,14 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   documentId: string;
 }
 
-const hidePagesChunkMethods = ['qa', 'table', 'picture', 'resume', 'one'];
+const hidePagesChunkMethods = [
+  'qa',
+  'table',
+  'picture',
+  'resume',
+  'one',
+  'knowledge_graph',
+];
 
 const ChunkMethodModal: React.FC<IProps> = ({
   documentId,
@@ -53,12 +62,13 @@ const ChunkMethodModal: React.FC<IProps> = ({
   parserConfig,
   loading,
 }) => {
+  const [form] = Form.useForm();
   const { parserList, handleChange, selectedTag } = useFetchParserListOnMount(
     documentId,
     parserId,
     documentExtension,
+    form,
   );
-  const [form] = Form.useForm();
   const { t } = useTranslate('knowledgeDetails');
 
   const handleOk = async () => {
@@ -85,11 +95,14 @@ const ChunkMethodModal: React.FC<IProps> = ({
     );
   }, [selectedTag, isPdf]);
 
-  const showMaxTokenNumber = selectedTag === 'naive';
+  const showMaxTokenNumber =
+    selectedTag === 'naive' || selectedTag === 'knowledge_graph';
 
   const hideDivider = [showPages, showOne, showMaxTokenNumber].every(
     (x) => x === false,
   );
+
+  const showEntityTypes = selectedTag === 'knowledge_graph';
 
   const afterClose = () => {
     form.resetFields();
@@ -119,7 +132,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
       <Space size={[0, 8]} wrap>
         <Form.Item label={t('chunkMethod')} className={styles.chunkMethod}>
           <Select
-            style={{ width: 120 }}
+            style={{ width: 160 }}
             onChange={handleChange}
             value={selectedTag}
             options={parserList}
@@ -258,10 +271,18 @@ const ChunkMethodModal: React.FC<IProps> = ({
             }
           </Form.Item>
         )}
-        {showMaxTokenNumber && <MaxTokenNumber></MaxTokenNumber>}
+        {showMaxTokenNumber && (
+          <>
+            <MaxTokenNumber
+              max={selectedTag === 'knowledge_graph' ? 8192 * 2 : 2048}
+            ></MaxTokenNumber>
+            <Delimiter></Delimiter>
+          </>
+        )}
         {showRaptorParseConfiguration(selectedTag) && (
           <ParseConfiguration></ParseConfiguration>
         )}
+        {showEntityTypes && <EntityTypesItem></EntityTypesItem>}
       </Form>
     </Modal>
   );

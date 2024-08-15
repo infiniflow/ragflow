@@ -45,7 +45,7 @@ from rag.nlp import search, rag_tokenizer
 from io import BytesIO
 import pandas as pd
 
-from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio
+from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, knowledge_graph, email
 
 from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
@@ -68,7 +68,9 @@ FACTORY = {
     ParserType.RESUME.value: resume,
     ParserType.PICTURE.value: picture,
     ParserType.ONE.value: one,
-    ParserType.AUDIO.value: audio
+    ParserType.AUDIO.value: audio,
+    ParserType.EMAIL.value: email,
+    ParserType.KG.value: knowledge_graph
 }
 
 
@@ -144,27 +146,32 @@ def build(row):
         binary = get_minio_binary(bucket, name)
         cron_logger.info(
             "From minio({}) {}/{}".format(timer() - st, row["location"], row["name"]))
+    except TimeoutError as e:
+        callback(-1, f"Internal server error: Fetch file from minio timeout. Could you try it again.")
+        cron_logger.error(
+            "Minio {}/{}: Fetch file from minio timeout.".format(row["location"], row["name"]))
+        return
+    except Exception as e:
+        if re.search("(No such file|not found)", str(e)):
+            callback(-1, "Can not find file <%s> from minio. Could you try it again?" % row["name"])
+        else:
+            callback(-1, f"Get file from minio: %s" %
+                     str(e).replace("'", ""))
+        traceback.print_exc()
+        return
+
+    try:
         cks = chunker.chunk(row["name"], binary=binary, from_page=row["from_page"],
                             to_page=row["to_page"], lang=row["language"], callback=callback,
                             kb_id=row["kb_id"], parser_config=row["parser_config"], tenant_id=row["tenant_id"])
         cron_logger.info(
-            "Chunkking({}) {}/{}".format(timer() - st, row["location"], row["name"]))
-    except TimeoutError as e:
-        callback(-1, f"Internal server error: Fetch file timeout. Could you try it again.")
-        cron_logger.error(
-            "Chunkking {}/{}: Fetch file timeout.".format(row["location"], row["name"]))
-        return
+            "Chunking({}) {}/{}".format(timer() - st, row["location"], row["name"]))
     except Exception as e:
-        if re.search("(No such file|not found)", str(e)):
-            callback(-1, "Can not find file <%s>" % row["name"])
-        else:
-            callback(-1, f"Internal server error: %s" %
+        callback(-1, f"Internal server error while chunking: %s" %
                      str(e).replace("'", ""))
-        traceback.print_exc()
-
         cron_logger.error(
-            "Chunkking {}/{}: {}".format(row["location"], row["name"], str(e)))
-
+            "Chunking {}/{}: {}".format(row["location"], row["name"], str(e)))
+        traceback.print_exc()
         return
 
     docs = []

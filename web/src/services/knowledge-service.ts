@@ -27,6 +27,8 @@ const {
   get_document_file,
   document_upload,
   web_crawl,
+  knowledge_graph,
+  document_infos,
 } = api;
 
 const methods = {
@@ -92,6 +94,10 @@ const methods = {
     url: web_crawl,
     method: 'post',
   },
+  document_infos: {
+    url: document_infos,
+    method: 'post',
+  },
   // chunk管理
   chunk_list: {
     url: chunk_list,
@@ -120,6 +126,10 @@ const methods = {
   retrieval_test: {
     url: retrieval_test,
     method: 'post',
+  },
+  knowledge_graph: {
+    url: knowledge_graph,
+    method: 'get',
   },
 };
 

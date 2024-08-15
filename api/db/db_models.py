@@ -532,8 +532,7 @@ class LLM(DataBaseModel):
         max_length=128,
         null=False,
         help_text="LLM name",
-        index=True,
-        primary_key=True)
+        index=True)
     model_type = CharField(
         max_length=128,
         null=False,
@@ -558,6 +557,7 @@ class LLM(DataBaseModel):
         return self.llm_name
 
     class Meta:
+        primary_key = CompositeKey('fid', 'llm_name')
         db_table = "llm"
 
 
@@ -858,6 +858,7 @@ class APIToken(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, index=True)
     token = CharField(max_length=255, null=False, index=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
+    source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
 
     class Meta:
         db_table = "api_token"
@@ -871,6 +872,7 @@ class API4Conversation(DataBaseModel):
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0)
+    source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
 
     duration = FloatField(default=0, index=True)
     round = IntegerField(default=0, index=True)
@@ -947,5 +949,24 @@ def migrate_db():
                 migrator.alter_column_type('tenant_llm', 'api_key',
                                            CharField(max_length=1024, null=True, help_text="API KEY", index=True))
             )
+        except Exception as e:
+            pass
+        try:
+            migrate(
+                migrator.add_column('api_token', 'source',
+                                    CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
+            )
+        except Exception as e:
+            pass
+        try:
+            migrate(
+                migrator.add_column('api_4_conversation', 'source',
+                                    CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
+            )
+        except Exception as e:
+            pass
+        try:
+            DB.execute_sql('ALTER TABLE llm DROP PRIMARY KEY;')
+            DB.execute_sql('ALTER TABLE llm ADD PRIMARY KEY (llm_name,fid);')
         except Exception as e:
             pass

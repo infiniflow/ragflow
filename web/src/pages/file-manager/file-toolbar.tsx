@@ -17,13 +17,14 @@ import {
   MenuProps,
   Space,
 } from 'antd';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   useHandleBreadcrumbClick,
   useHandleDeleteFile,
   useSelectBreadcrumbItems,
 } from './hooks';
 
+import SvgIcon from '@/components/svg-icon';
 import {
   IListResult,
   useFetchParentFolderList,
@@ -36,6 +37,7 @@ interface IProps
   showFolderCreateModal: () => void;
   showFileUploadModal: () => void;
   setSelectedRowKeys: (keys: string[]) => void;
+  showMoveFileModal: (ids: string[]) => void;
 }
 
 const FileToolbar = ({
@@ -45,6 +47,7 @@ const FileToolbar = ({
   setSelectedRowKeys,
   searchString,
   handleInputChange,
+  showMoveFileModal,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
   const breadcrumbItems = useSelectBreadcrumbItems();
@@ -111,6 +114,10 @@ const FileToolbar = ({
     setSelectedRowKeys,
   );
 
+  const handleShowMoveFileModal = useCallback(() => {
+    showMoveFileModal(selectedRowKeys);
+  }, [selectedRowKeys, showMoveFileModal]);
+
   const disabled = selectedRowKeys.length === 0;
 
   const items: MenuProps['items'] = useMemo(() => {
@@ -127,8 +134,20 @@ const FileToolbar = ({
           </Flex>
         ),
       },
+      {
+        key: '5',
+        onClick: handleShowMoveFileModal,
+        label: (
+          <Flex gap={10}>
+            <span className={styles.deleteIconWrapper}>
+              <SvgIcon name={`move`} width={18}></SvgIcon>
+            </span>
+            <b>{t('move', { keyPrefix: 'common' })}</b>
+          </Flex>
+        ),
+      },
     ];
-  }, [handleRemoveFile, t]);
+  }, [handleShowMoveFileModal, t, handleRemoveFile]);
 
   return (
     <div className={styles.filter}>

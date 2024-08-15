@@ -30,7 +30,8 @@ ADD ./conf ./conf
 ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
 ADD ./requirements.txt ./requirements.txt
-ADD ./graph ./graph
+ADD ./agent ./agent
+ADD ./graphrag ./graphrag
 
 RUN apt install openmpi-bin openmpi-common libopenmpi-dev
 ENV LD_LIBRARY_PATH /usr/lib/x86_64-linux-gnu/openmpi/lib:$LD_LIBRARY_PATH

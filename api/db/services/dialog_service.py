@@ -18,12 +18,12 @@ import json
 import re
 from copy import deepcopy
 
-from api.db import LLMType
+from api.db import LLMType, ParserType
 from api.db.db_models import Dialog, Conversation
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
-from api.settings import chat_logger, retrievaler
+from api.settings import chat_logger, retrievaler, kg_retrievaler
 from rag.app.resume import forbidden_select_fields4resume
 from rag.nlp import keyword_extraction
 from rag.nlp.search import index_name
@@ -101,7 +101,17 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
         return {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
 
-    questions = [m["content"] for m in messages if m["role"] == "user"]
+    is_kg = all([kb.parser_id == ParserType.KG for kb in kbs])
+    retr = retrievaler if not is_kg else kg_retrievaler
+
+    questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
+    attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None
+    if "doc_ids" in messages[-1]:
+        attachments = messages[-1]["doc_ids"]
+        for m in messages[:-1]:
+            if "doc_ids" in m:
+                attachments.extend(m["doc_ids"])
+
     embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING, embd_nms[0])
     if llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
@@ -138,19 +148,19 @@ def chat(dialog, messages, stream=True, **kwargs):
     else:
         if prompt_config.get("keyword", False):
             questions[-1] += keyword_extraction(chat_mdl, questions[-1])
-        kbinfos = retrievaler.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
+        kbinfos = retr.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
                                         dialog.similarity_threshold,
                                         dialog.vector_similarity_weight,
-                                        doc_ids=kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None,
+                                        doc_ids=attachments,
                                         top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
     #self-rag
     if dialog.prompt_config.get("self_rag") and not relevant(dialog.tenant_id, dialog.llm_id, questions[-1], knowledges):
         questions[-1] = rewrite(dialog.tenant_id, dialog.llm_id, questions[-1])
-        kbinfos = retrievaler.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
+        kbinfos = retr.retrieval(" ".join(questions), embd_mdl, dialog.tenant_id, dialog.kb_ids, 1, dialog.top_n,
                                         dialog.similarity_threshold,
                                         dialog.vector_similarity_weight,
-                                        doc_ids=kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None,
+                                        doc_ids=attachments,
                                         top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl)
         knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
 
@@ -165,7 +175,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
-    msg.extend([{"role": m["role"], "content": m["content"]}
+    msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])}
                 for m in messages if m["role"] != "system"])
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.97))
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
@@ -179,7 +189,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         nonlocal prompt_config, knowledges, kwargs, kbinfos
         refs = []
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
-            answer, idx = retrievaler.insert_citations(answer,
+            answer, idx = retr.insert_citations(answer,
                                                        [ck["content_ltks"]
                                                         for ck in kbinfos["chunks"]],
                                                        [ck["vector"]

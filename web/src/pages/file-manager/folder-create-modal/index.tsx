@@ -21,24 +21,12 @@ const FolderCreateModal = ({ visible, hideModal, loading, onOk }: IProps) => {
     return onOk(ret.name);
   };
 
-  const handleCancel = () => {
-    hideModal();
-  };
-
-  const onFinish = (values: any) => {
-    console.log('Success:', values);
-  };
-
-  const onFinishFailed = (errorInfo: any) => {
-    console.log('Failed:', errorInfo);
-  };
-
   return (
     <Modal
       title={t('newFolder', { keyPrefix: 'fileManager' })}
       open={visible}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={hideModal}
       okButtonProps={{ loading }}
       confirmLoading={loading}
     >
@@ -47,8 +35,6 @@ const FolderCreateModal = ({ visible, hideModal, loading, onOk }: IProps) => {
         labelCol={{ span: 4 }}
         wrapperCol={{ span: 20 }}
         style={{ maxWidth: 600 }}
-        onFinish={onFinish}
-        onFinishFailed={onFinishFailed}
         autoComplete="off"
         form={form}
       >

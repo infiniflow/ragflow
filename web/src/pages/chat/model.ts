@@ -1,14 +1,7 @@
-import {
-  IConversation,
-  IDialog,
-  IStats,
-  IToken,
-  Message,
-} from '@/interfaces/database/chat';
+import { IConversation, IDialog, Message } from '@/interfaces/database/chat';
 import i18n from '@/locales/config';
 import chatService from '@/services/chat-service';
 import { message } from 'antd';
-import omit from 'lodash/omit';
 import { DvaModel } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { IClientConversation, IMessage } from './interface';
@@ -20,8 +13,6 @@ export interface ChatModelState {
   currentDialog: IDialog;
   conversationList: IConversation[];
   currentConversation: IClientConversation;
-  tokenList: IToken[];
-  stats: IStats;
 }
 
 const model: DvaModel<ChatModelState> = {
@@ -32,8 +23,6 @@ const model: DvaModel<ChatModelState> = {
     currentDialog: <IDialog>{},
     conversationList: [],
     currentConversation: {} as IClientConversation,
-    tokenList: [],
-    stats: {} as IStats,
   },
   reducers: {
     save(state, action) {
@@ -69,18 +58,6 @@ const model: DvaModel<ChatModelState> = {
       return {
         ...state,
         currentConversation: { ...payload, message: messageList },
-      };
-    },
-    setTokenList(state, { payload }) {
-      return {
-        ...state,
-        tokenList: payload,
-      };
-    },
-    setStats(state, { payload }) {
-      return {
-        ...state,
-        stats: payload,
       };
     },
   },
@@ -180,51 +157,6 @@ const model: DvaModel<ChatModelState> = {
           payload: { dialog_id: payload.dialog_id },
         });
         message.success(i18n.t('message.deleted'));
-      }
-      return data.retcode;
-    },
-    *createToken({ payload }, { call, put }) {
-      const { data } = yield call(chatService.createToken, payload);
-      if (data.retcode === 0) {
-        yield put({
-          type: 'listToken',
-          payload: payload,
-        });
-        message.success(i18n.t('message.created'));
-      }
-      return data;
-    },
-    *listToken({ payload }, { call, put }) {
-      const { data } = yield call(chatService.listToken, payload);
-      if (data.retcode === 0) {
-        yield put({
-          type: 'setTokenList',
-          payload: data.data,
-        });
-      }
-      return data;
-    },
-    *removeToken({ payload }, { call, put }) {
-      const { data } = yield call(
-        chatService.removeToken,
-        omit(payload, ['dialogId']),
-      );
-      if (data.retcode === 0) {
-        message.success(i18n.t('message.deleted'));
-        yield put({
-          type: 'listToken',
-          payload: { dialog_id: payload.dialogId },
-        });
-      }
-      return data.retcode;
-    },
-    *getStats({ payload }, { call, put }) {
-      const { data } = yield call(chatService.getStats, payload);
-      if (data.retcode === 0) {
-        yield put({
-          type: 'setStats',
-          payload: data.data,
-        });
       }
       return data.retcode;
     },

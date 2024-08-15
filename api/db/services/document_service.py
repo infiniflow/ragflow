@@ -26,7 +26,7 @@ from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
 from rag.nlp import search
 
-from api.db import FileType, TaskStatus
+from api.db import FileType, TaskStatus, ParserType
 from api.db.db_models import DB, Knowledgebase, Tenant, Task
 from api.db.db_models import Document
 from api.db.services.common_service import CommonService
@@ -142,7 +142,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_unfinished_docs(cls):
-        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg]
+        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg, cls.model.run]
         docs = cls.model.select(*fields) \
             .where(
                 cls.model.status == StatusEnum.VALID.value,
@@ -311,12 +311,14 @@ class DocumentService(CommonService):
                 prg = 0
                 finished = True
                 bad = 0
-                status = TaskStatus.RUNNING.value
+                e, doc = DocumentService.get_by_id(d["id"])
+                status = doc.run#TaskStatus.RUNNING.value
                 for t in tsks:
                     if 0 <= t.progress < 1:
                         finished = False
                     prg += t.progress if t.progress >= 0 else 0
-                    msg.append(t.progress_msg)
+                    if t.progress_msg not in msg:
+                        msg.append(t.progress_msg)
                     if t.progress == -1:
                         bad += 1
                 prg /= len(tsks)

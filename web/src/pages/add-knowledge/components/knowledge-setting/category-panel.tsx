@@ -3,6 +3,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { Col, Divider, Empty, Row, Typography } from 'antd';
 import DOMPurify from 'dompurify';
+import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 import styles from './index.less';
 import { ImageMap } from './utils';
@@ -18,7 +19,7 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
     if (item) {
       return {
         title: item.label,
-        description: t(item.value),
+        description: t(camelCase(item.value)),
       };
     }
     return { title: '', description: '' };

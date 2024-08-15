@@ -139,6 +139,8 @@ def queue_tasks(doc, bucket, name):
             page_size = doc["parser_config"].get("task_page_size", 22)
         if doc["parser_id"] == "one":
             page_size = 1000000000
+        if doc["parser_id"] == "knowledge_graph":
+            page_size = 1000000000
         if not do_layout:
             page_size = 1000000000
         page_ranges = doc["parser_config"].get("pages")

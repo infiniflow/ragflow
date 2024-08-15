@@ -36,7 +36,13 @@ EmbeddingModel = {
     "Bedrock": BedrockEmbed,
     "Gemini": GeminiEmbed,
     "NVIDIA": NvidiaEmbed,
-    "LM-Studio": LmStudioEmbed
+    "LM-Studio": LmStudioEmbed,
+    "OpenAI-API-Compatible": OpenAI_APIEmbed,
+    "cohere": CoHereEmbed,
+    "TogetherAI": TogetherAIEmbed,
+    "PerfXCloud": PerfXCloudEmbed,
+    "Upstage": UpstageEmbed,
+    "SILICONFLOW": SILICONFLOWEmbed
 }
 
 
@@ -53,7 +59,10 @@ CvModel = {
     "LocalAI": LocalAICV,
     "NVIDIA": NvidiaCV,
     "LM-Studio": LmStudioCV,
-    "StepFun":StepFunCV
+    "StepFun":StepFunCV,
+    "OpenAI-API-Compatible": OpenAI_APICV,
+    "TogetherAI": TogetherAICV,
+    "01.AI": YiCV
 }
 
 
@@ -78,7 +87,16 @@ ChatModel = {
     "OpenRouter": OpenRouterChat,
     "StepFun": StepFunChat,
     "NVIDIA": NvidiaChat,
-    "LM-Studio": LmStudioChat
+    "LM-Studio": LmStudioChat,
+    "OpenAI-API-Compatible": OpenAI_APIChat,
+    "cohere": CoHereChat,
+    "LeptonAI": LeptonAIChat,
+    "TogetherAI": TogetherAIChat,
+    "PerfXCloud": PerfXCloudChat,
+    "Upstage":UpstageChat,
+    "novita.ai": NovitaAIChat,
+    "SILICONFLOW": SILICONFLOWChat,
+    "01.AI": YiChat
 }
 
 
@@ -88,7 +106,11 @@ RerankModel = {
     "Youdao": YoudaoRerank,
     "Xinference": XInferenceRerank,
     "NVIDIA": NvidiaRerank,
-    "LM-Studio": LmStudioRerank
+    "LM-Studio": LmStudioRerank,
+    "OpenAI-API-Compatible": OpenAI_APIRerank,
+    "cohere": CoHereRerank,
+    "TogetherAI": TogetherAIRerank,
+    "SILICONFLOW": SILICONFLOWRerank
 }
 
 

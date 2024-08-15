@@ -26,6 +26,7 @@ export default {
       download: '下载',
       close: '关闭',
       preview: '预览',
+      move: '移动',
     },
     login: {
       login: '登录',
@@ -57,7 +58,7 @@ export default {
       setting: '用户设置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: '图',
+      flow: 'Agent',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -144,6 +145,7 @@ export default {
       rerankTip: `如果是空的。它使用查询和块的嵌入来构成矢量余弦相似性。否则，它使用rerank评分代替矢量余弦相似性。`,
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
+      delimiter: `分段标识符`,
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
@@ -189,7 +191,7 @@ export default {
       我们假设手册具有分层部分结构。 我们使用最低的部分标题作为对文档进行切片的枢轴。
       因此，同一部分中的图和表不会被分割，并且块大小可能会很大。
       </p>`,
-      naive: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT</b>。</p>
+      naive: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>。</p>
       <p>此方法将简单的方法应用于块文件：</p>
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
@@ -259,6 +261,13 @@ export default {
       </p><p>
       如果你要总结的东西需要一篇文章的全部上下文，并且所选LLM的上下文长度覆盖了文档长度，你可以尝试这种方法。
       </p>`,
+      knowledgeGraph: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>
+
+<p>文件分块后，使用分块提取整个文档的知识图谱和思维导图。此方法将简单的方法应用于分块文件：
+连续的文本将被切成大约 512 个 token 数的块。</p>
+<p>接下来，将分块传输到 LLM 以提取知识图谱和思维导图的节点和关系。</p>
+
+注意您需要指定的条目类型。</p>`,
       useRaptor: '使用召回增强RAPTOR策略',
       useRaptorTip: '请参考 https://huggingface.co/papers/2401.18059',
       prompt: '提示词',
@@ -278,6 +287,7 @@ export default {
       maxTokenTip: '用于汇总的最大token数。',
       thresholdTip: '阈值越大，聚类越少。',
       maxClusterTip: '最大聚类数。',
+      entityTypes: '实体类型',
     },
     chunk: {
       chunk: '解析块',
@@ -295,6 +305,8 @@ export default {
       chunkMessage: '请输入值！',
       full: '全文',
       ellipse: '省略',
+      graph: '知识图谱',
+      mind: '思维导图',
     },
     chat: {
       newConversation: '新会话',
@@ -538,6 +550,8 @@ export default {
       s3: 'S3 上传',
       preview: '预览',
       fileError: '文件错误',
+      uploadLimit: '文件大小不能超过10M，文件总数不超过128个',
+      destinationFolder: '目标文件夹',
     },
     flow: {
       flow: '工作流',
@@ -553,7 +567,6 @@ export default {
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       loop: '循环上限',
-      createFlow: '创建工作流',
       yes: '是',
       no: '否',
       key: 'key',
@@ -577,7 +590,7 @@ export default {
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
 以上就是你需要总结的内容。`,
-      createGraph: '创建图表',
+      createGraph: '创建 Agent',
       createFromTemplates: '从模板创建',
       retrieval: '知识检索',
       generate: '生成回答',
@@ -626,6 +639,135 @@ export default {
       apiKey: 'Api Key',
       country: '国家',
       language: '语言',
+      googleScholar: '谷歌学术',
+      googleScholarDescription: `此组件用于从 https://scholar.google.com/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
+      yearLow: '开始年份',
+      yearHigh: '结束年份',
+      patents: '专利',
+      data: '数据',
+      deepL: 'DeepL',
+      deepLDescription:
+        '该组件用于从 https://www.deepl.com/ 获取翻译。通常，它提供更专业的翻译结果。',
+      authKey: '授权键',
+      sourceLang: '源语言',
+      targetLang: '目标语言',
+      gitHub: 'GitHub',
+      githubDescription:
+        '该组件用于从 https://github.com/ 搜索仓库。Top N 指定需要调整的搜索结果数量。',
+      baiduFanyi: '百度翻译',
+      baiduFanyiDescription:
+        '该组件用于从 https://fanyi.baidu.com/ 获取翻译。通常，它提供更专业的翻译结果',
+      appid: 'App id',
+      secretKey: '秘钥',
+      domain: '领域',
+      transType: '翻译类型',
+      baiduSecretKeyOptions: {
+        translate: '通用翻译',
+        fieldtranslate: '领域翻译',
+      },
+      baiduDomainOptions: {
+        it: '信息技术领域',
+        finance: '金融财经领域',
+        machinery: '机械制造领域',
+        senimed: '生物医药领域',
+        novel: '网络文学领域',
+        academic: '学术论文领域',
+        aerospace: '航空航天领域',
+        wiki: '人文社科领域',
+        news: '新闻资讯领域',
+        law: '法律法规领域',
+        contract: '合同领域',
+      },
+      baiduSourceLangOptions: {
+        auto: '自动检测',
+        zh: '中文',
+        en: '英语',
+        yue: '粤语',
+        wyw: '文言文',
+        jp: '日语',
+        kor: '韩语',
+        fra: '法语',
+        spa: '西班牙语',
+        th: '泰语',
+        ara: '阿拉伯语',
+        ru: '俄语',
+        pt: '葡萄牙语',
+        de: '德语',
+        it: '意大利语',
+        el: '希腊语',
+        nl: '荷兰语',
+        pl: '波兰语',
+        bul: '保加利亚语',
+        est: '爱沙尼亚语',
+        dan: '丹麦语',
+        fin: '芬兰语',
+        cs: '捷克语',
+        rom: '罗马尼亚语',
+        slo: '斯洛文尼亚语',
+        swe: '瑞典语',
+        hu: '匈牙利语',
+        cht: '繁体中文',
+        vie: '越南语',
+      },
+      qWeather: '和风天气',
+      qWeatherDescription:
+        '该组件用于从 https://www.qweather.com/ 获取天气相关信息。您可以获取天气、指数、空气质量。',
+      lang: '语言',
+      type: '类型',
+      webApiKey: 'Web API 密钥',
+      userType: '用户类型',
+      timePeriod: '时间段',
+      qWeatherLangOptions: {
+        zh: '简体中文',
+        'zh-hant': '繁体中文',
+        en: '英文',
+        de: '德语',
+        es: '西班牙语',
+        fr: '法语',
+        it: '意大利语',
+        ja: '日语',
+        ko: '韩语',
+        ru: '俄语',
+        hi: '印地语',
+        th: '泰语',
+        ar: '阿拉伯语',
+        pt: '葡萄牙语',
+        bn: '孟加拉语',
+        ms: '马来语',
+        nl: '荷兰语',
+        el: '希腊语',
+        la: '拉丁语',
+        sv: '瑞典语',
+        id: '印尼语',
+        pl: '波兰语',
+        tr: '土耳其语',
+        cs: '捷克语',
+        et: '爱沙尼亚语',
+        vi: '越南语',
+        fil: '菲律宾语',
+        fi: '芬兰语',
+        he: '希伯来语',
+        is: '冰岛语',
+        nb: '挪威语',
+      },
+      qWeatherTypeOptions: {
+        weather: '天气预报',
+        indices: '天气生活指数',
+        airquality: '空气质量',
+      },
+      qWeatherUserTypeOptions: {
+        free: '免费订阅用户',
+        paid: '付费订阅用户',
+      },
+      qWeatherTimePeriodOptions: {
+        now: '现在',
+        '3d': '3天',
+        '7d': '7天',
+        '10d': '10天',
+        '15d': '12天',
+        '30d': '30天',
+      },
+      publish: 'API',
     },
     footer: {
       profile: 'All rights reserved @ React',

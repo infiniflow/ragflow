@@ -41,10 +41,10 @@ import {
   useSelectFirstDialogOnMount,
 } from './hooks';
 
+import ChatOverviewModal from '@/components/api-service/chat-overview-modal';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { IDialog } from '@/interfaces/database/chat';
-import ChatOverviewModal from './chat-overview-modal';
 import styles from './index.less';
 
 const { Text } = Typography;
@@ -371,11 +371,15 @@ const Chat = () => {
         initialName={initialConversationName}
         loading={conversationRenameLoading}
       ></RenameModal>
-      <ChatOverviewModal
-        visible={overviewVisible}
-        hideModal={hideOverviewModal}
-        dialog={currentRecord}
-      ></ChatOverviewModal>
+      {overviewVisible && (
+        <ChatOverviewModal
+          visible={overviewVisible}
+          hideModal={hideOverviewModal}
+          id={currentRecord.id}
+          name={currentRecord.name}
+          idKey="dialogId"
+        ></ChatOverviewModal>
+      )}
     </Flex>
   );
 };

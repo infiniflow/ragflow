@@ -26,6 +26,7 @@ export default {
       download: '下載',
       close: '關閉',
       preview: '預覽',
+      move: '移動',
     },
     login: {
       login: '登入',
@@ -57,7 +58,7 @@ export default {
       setting: '用戶設置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: '圖',
+      flow: 'Agent',
     },
     knowledgeList: {
       welcome: '歡迎回來',
@@ -143,6 +144,7 @@ export default {
       rerankTip: `如果是空的。它使用查詢和塊的嵌入來構成矢量餘弦相似性。否則，它使用rerank評分代替矢量餘弦相似性。`,
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
+      delimiter: `分段標識符`,
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
@@ -188,7 +190,7 @@ export default {
         我們假設手冊具有分層部分結構。我們使用最低的部分標題作為對文檔進行切片的樞軸。
         因此，同一部分中的圖和表不會被分割，並且塊大小可能會很大。
         </p>`,
-      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT</b>。</p>
+      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>。</p>
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
@@ -242,6 +244,13 @@ export default {
         </p><p>
         如果你要總結的東西需要一篇文章的全部上下文，並且所選LLM的上下文長度覆蓋了文檔長度，你可以嘗試這種方法。
         </p>`,
+      knowledgeGraph: `<p>支援的檔案格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>
+
+<p>文件分塊後，使用分塊擷取整個文件的知識圖譜和心智圖。此方法將簡單的方法應用於區塊檔案：
+連續的文字將被分割成多個片段，每個片段大約有 512 個令牌數。
+<p>接下來，區塊將傳送到LLM以提取知識圖譜和思維導圖的節點和關係。
+
+<p>請注意您需要指定的條目類型。</p></p>`,
       useRaptor: '使用RAPTOR文件增強策略',
       useRaptorTip: '請參考 https://huggingface.co/papers/2401.18059',
       prompt: '提示詞',
@@ -261,6 +270,7 @@ export default {
       maxTokenTip: '用於匯總的最大token數。',
       thresholdTip: '閾值越大，聚類越少。',
       maxClusterTip: '最大聚類數。',
+      entityTypes: '實體類型',
     },
     chunk: {
       chunk: '解析塊',
@@ -278,6 +288,8 @@ export default {
       chunkMessage: '請輸入值！',
       full: '全文',
       ellipse: '省略',
+      graph: '知識圖譜',
+      mind: '心智圖',
     },
     chat: {
       newConversation: '新會話',
@@ -520,6 +532,8 @@ export default {
       s3: 'S3 上傳',
       preview: '預覽',
       fileError: '文件錯誤',
+      uploadLimit: '文件大小不能超過10M，文件總數不超過128個',
+      destinationFolder: '目標資料夾',
     },
     flow: {
       cite: '引用',
@@ -534,7 +548,6 @@ export default {
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       loop: '循環上限',
-      createFlow: '创建工作流',
       yes: '是',
       no: '否',
       key: 'key',
@@ -559,7 +572,7 @@ export default {
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}
 以上就是你需要總結的內容。`,
-      createGraph: '建立圖表',
+      createGraph: '建立 Agent',
       createFromTemplates: '從模板創建',
       retrieval: '知識檢索',
       generate: '生成回答',
@@ -608,6 +621,135 @@ export default {
       apiKey: 'Api Key',
       country: '國家',
       language: '語言',
+      googleScholar: '谷歌學術',
+      googleScholarDescription: `該元件用於從 https://scholar.google.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要調整的搜尋結果的數量。`,
+      yearLow: '開始年份',
+      yearHigh: '結束年份',
+      patents: '專利',
+      data: '數據',
+      deepL: 'DeepL',
+      deepLDescription:
+        '此元件用於從 https://www.deepl.com/ 取得翻譯。通常，它提供更專業的翻譯結果。',
+      authKey: '授權鍵',
+      sourceLang: '原始語言',
+      targetLang: '目標語言',
+      gitHub: 'GitHub',
+      gitHubDescription:
+        '此元件用於從 https://github.com/ 搜尋儲存庫。 Top N 指定要調整的搜尋結果的數量。',
+      baiduFanyi: '百度翻譯',
+      baiduFanyiDescription:
+        '此組件用於從https://fanyi.baidu.com/取得翻譯。通常，它提供更專業的翻譯結果',
+      appid: 'App id',
+      secretKey: '秘鑰',
+      domain: '領域',
+      transType: '翻譯類型',
+      baiduSecretKeyOptions: {
+        translate: '一般翻譯',
+        fieldtranslate: '領域翻譯',
+      },
+      baiduDomainOptions: {
+        it: '資訊科技領域',
+        finance: '金融財經領域',
+        machinery: '機械製造領域',
+        senimed: '生物醫藥領域',
+        novel: '網路文學領域',
+        academic: '學術論文領域',
+        aerospace: '航空航太領域',
+        wiki: '人文社科領域',
+        news: '新聞資訊領域',
+        law: '法律法規領域',
+        contract: '合約領域',
+      },
+      baiduSourceLangOptions: {
+        auto: '自動偵測',
+        zh: '中文',
+        en: '英語',
+        yue: '粵語',
+        wyw: '文言文',
+        jp: '日文',
+        kor: '韓文',
+        fra: '法文',
+        spa: '西班牙文',
+        th: '泰語',
+        ara: '阿拉伯語',
+        ru: '俄文',
+        pt: '葡萄牙語',
+        de: '德語',
+        it: '義大利語',
+        el: '希臘文',
+        nl: '荷蘭語',
+        pl: '波蘭語',
+        bul: '保加利亞語',
+        est: '愛沙尼亞語',
+        dan: '丹麥語',
+        fin: '芬蘭語',
+        cs: '捷克語',
+        rom: '羅馬尼亞語',
+        slo: '斯洛維尼亞語',
+        swe: '瑞典語',
+        hu: '匈牙利語',
+        cht: '繁體中文',
+        vie: '越南語',
+      },
+      qWeather: '和風天氣',
+      qWeatherDescription:
+        '此元件用於從 https://www.qweather.com/ 取得天氣相關資訊。您可以獲得天氣、指數、空氣品質。',
+      lang: '語言',
+      type: '類型',
+      webApiKey: 'Web API 密鑰',
+      userType: '使用者類型',
+      timePeriod: '時間段',
+      qWeatherLangOptions: {
+        zh: '簡體中文',
+        'zh-hant': '繁體中文',
+        en: '英文',
+        de: '德語',
+        es: '西班牙語',
+        fr: '法文',
+        it: '義大利語',
+        ja: '日文',
+        ko: '韓語',
+        ru: '俄文',
+        hi: '印地語',
+        th: '泰語',
+        ar: '阿拉伯語',
+        pt: '葡萄牙語',
+        bn: '孟加拉語',
+        ms: '馬來語',
+        nl: '荷蘭語',
+        el: '希臘文',
+        la: '拉丁文',
+        sv: '瑞典語',
+        id: '印尼語',
+        pl: '波蘭語',
+        tr: '土耳其語',
+        cs: '捷克語',
+        et: '愛沙尼亞語',
+        vi: '越南語',
+        fil: '菲律賓語',
+        fi: '芬蘭語',
+        he: '希伯來文',
+        is: '冰島語',
+        nb: '挪威語',
+      },
+      qWeatherTypeOptions: {
+        weather: '天氣預報',
+        indices: '天氣生活指數',
+        airquality: '空氣品質',
+      },
+      qWeatherUserTypeOptions: {
+        free: '免費訂閱用戶',
+        paid: '付費訂閱用戶',
+      },
+      qWeatherTimePeriodOptions: {
+        now: '現在',
+        '3d': '3天',
+        '7d': '7天',
+        '10d': '10天',
+        '15d': '12天',
+        '30d': '30天',
+      },
+      publish: 'API',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

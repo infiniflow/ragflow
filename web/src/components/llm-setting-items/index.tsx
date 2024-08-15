@@ -28,9 +28,13 @@ const LlmSettingItems = ({ prefix, formItemLayout = {} }: IProps) => {
   const handleParametersChange = useCallback(
     (value: ModelVariableType) => {
       const variable = settledModelVariableMap[value];
-      form?.setFieldsValue(variable);
+      let nextVariable: Record<string, any> = variable;
+      if (prefix) {
+        nextVariable = { [prefix]: variable };
+      }
+      form.setFieldsValue(nextVariable);
     },
-    [form],
+    [form, prefix],
   );
 
   const memorizedPrefix = useMemo(() => (prefix ? [prefix] : []), [prefix]);
@@ -46,7 +50,13 @@ const LlmSettingItems = ({ prefix, formItemLayout = {} }: IProps) => {
         {...formItemLayout}
         rules={[{ required: true, message: t('modelMessage') }]}
       >
-        <Select options={[...modelOptions[LlmModelType.Chat], ...modelOptions[LlmModelType.Image2text],]} showSearch/>
+        <Select
+          options={[
+            ...modelOptions[LlmModelType.Chat],
+            ...modelOptions[LlmModelType.Image2text],
+          ]}
+          showSearch
+        />
       </Form.Item>
       <Divider></Divider>
       <Form.Item
