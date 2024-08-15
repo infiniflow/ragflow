@@ -26,10 +26,10 @@ export const IconMap = {
   cohere: 'cohere',
   Lepton: 'lepton',
   TogetherAI:'together-ai',
-  PerfXCould: 'perfx-could',
+  PerfXCould: 'perfx-cloud',
   Upstage: 'upstage',
   "novita.ai": 'novita-ai',
-  "SILICONFLOW": 'siliconflow',
+  SILICONFLOW: 'siliconflow',
   "01.AI": 'yi'
 };
 
