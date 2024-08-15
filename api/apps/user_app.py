@@ -37,7 +37,6 @@ from api.utils.api_utils import get_json_result, construct_response
 
 @manager.route('/login', methods=['POST', 'GET'])
 def login():
-    login_channel = "password"
     if not request.json:
         return get_json_result(data=False,
                                retcode=RetCode.AUTHENTICATION_ERROR,
@@ -48,7 +47,7 @@ def login():
     if not users:
         return get_json_result(data=False,
                                retcode=RetCode.AUTHENTICATION_ERROR,
-                               retmsg=f'This Email is not registered!')
+                               retmsg=f'Email: {email} is not registered!')
 
     password = request.json.get('password')
     try:
@@ -69,8 +68,9 @@ def login():
         msg = "Welcome back!"
         return construct_response(data=response_data, auth=user.get_id(), retmsg=msg)
     else:
-        return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR,
-                               retmsg='Email and Password do not match!')
+        return get_json_result(data=False,
+                               retcode=RetCode.AUTHENTICATION_ERROR,
+                               retmsg='Email and password do not match!')
 
 
 @manager.route('/github_callback', methods=['GET'])
@@ -115,7 +115,7 @@ def github_callback():
             if not users:
                 raise Exception(f'Fail to register {email_address}.')
             if len(users) > 1:
-                raise Exception(f'Same E-mail: {email_address} exists!')
+                raise Exception(f'Same email: {email_address} exists!')
 
             # Try to log in
             user = users[0]
@@ -188,7 +188,7 @@ def feishu_callback():
             if not users:
                 raise Exception(f'Fail to register {email_address}.')
             if len(users) > 1:
-                raise Exception(f'Same E-mail: {email_address} exists!')
+                raise Exception(f'Same email: {email_address} exists!')
 
             # Try to log in
             user = users[0]
@@ -254,12 +254,10 @@ def setting_user():
         new_password = request_data.get("new_password")
         if not check_password_hash(
                 current_user.password, decrypt(request_data["password"])):
-            return get_json_result(
-                data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg='Password error!')
+            return get_json_result(data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg='Password error!')
 
         if new_password:
-            update_dict["password"] = generate_password_hash(
-                decrypt(new_password))
+            update_dict["password"] = generate_password_hash(decrypt(new_password))
 
     for k in request_data.keys():
         if k in ["password", "new_password"]:
@@ -271,8 +269,7 @@ def setting_user():
         return get_json_result(data=True)
     except Exception as e:
         stat_logger.exception(e)
-        return get_json_result(
-            data=False, retmsg='Update failure!', retcode=RetCode.EXCEPTION_ERROR)
+        return get_json_result(data=False, retmsg='Update failure!', retcode=RetCode.EXCEPTION_ERROR)
 
 
 @manager.route("/info", methods=["GET"])
@@ -359,7 +356,7 @@ def user_add():
     # Validate the email address
     if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,4}$", email_address):
         return get_json_result(data=False,
-                               retmsg=f'Invalid Email address: {email_address}!',
+                               retmsg=f'Invalid email address: {email_address}!',
                                retcode=RetCode.OPERATING_ERROR)
 
     # Check if the email address is already used
@@ -387,7 +384,7 @@ def user_add():
         if not users:
             raise Exception(f'Fail to register {email_address}.')
         if len(users) > 1:
-            raise Exception(f'Same E-mail: {email_address} exists!')
+            raise Exception(f'Same email: {email_address} exists!')
         user = users[0]
         login_user(user)
         return construct_response(data=user.to_json(),
