@@ -422,6 +422,8 @@ The above is the content you need to summarize.`,
       extensionTitle: 'Chrome Extension',
       tokenError: 'Please create API Token first!',
       searching: 'searching...',
+      parsing: 'Parsing',
+      uploading: 'Uploading',
     },
     setting: {
       profile: 'Profile',

@@ -1,14 +1,13 @@
 import { Authorization } from '@/constants/authorization';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useRemoveNextDocument } from '@/hooks/document-hooks';
+import {
+  useFetchDocumentInfosByIds,
+  useRemoveNextDocument,
+} from '@/hooks/document-hooks';
 import { getAuthorization } from '@/utils/authorization-util';
 import { getExtension } from '@/utils/document-util';
-import {
-  CloseCircleOutlined,
-  LoadingOutlined,
-  PlusOutlined,
-  UploadOutlined,
-} from '@ant-design/icons';
+import { formatBytes } from '@/utils/file-util';
+import { CloseCircleOutlined, LoadingOutlined } from '@ant-design/icons';
 import type { GetProp, UploadFile } from 'antd';
 import {
   Button,
@@ -22,16 +21,25 @@ import {
   Upload,
   UploadProps,
 } from 'antd';
+import classNames from 'classnames';
 import get from 'lodash/get';
-import { ChangeEventHandler, useCallback, useState } from 'react';
+import { ChangeEventHandler, useCallback, useEffect, useState } from 'react';
 import FileIcon from '../file-icon';
-
+import SvgIcon from '../svg-icon';
 import styles from './index.less';
 
 type FileType = Parameters<GetProp<UploadProps, 'beforeUpload'>>[0];
 const { Text } = Typography;
 
 const getFileId = (file: UploadFile) => get(file, 'response.data.0');
+
+const getFileIds = (fileList: UploadFile[]) => {
+  const ids = fileList.reduce((pre, cur) => {
+    return pre.concat(get(cur, 'response.data', []));
+  }, []);
+
+  return ids;
+};
 
 interface IProps {
   disabled: boolean;
@@ -41,6 +49,7 @@ interface IProps {
   onPressEnter(documentIds: string[]): void;
   onInputChange: ChangeEventHandler<HTMLInputElement>;
   conversationId: string;
+  uploadUrl?: string;
 }
 
 const getBase64 = (file: FileType): Promise<string> =>
@@ -59,9 +68,11 @@ const MessageInput = ({
   sendLoading,
   onInputChange,
   conversationId,
+  uploadUrl = '/v1/document/upload_and_parse',
 }: IProps) => {
   const { t } = useTranslate('chat');
   const { removeDocument } = useRemoveNextDocument();
+  const { data: documentInfos, setDocumentIds } = useFetchDocumentInfosByIds();
 
   const [fileList, setFileList] = useState<UploadFile[]>([]);
 
@@ -78,9 +89,7 @@ const MessageInput = ({
 
   const handlePressEnter = useCallback(async () => {
     if (isUploadingFile) return;
-    const ids = fileList.reduce((pre, cur) => {
-      return pre.concat(get(cur, 'response.data', []));
-    }, []);
+    const ids = getFileIds(fileList);
 
     onPressEnter(ids);
     setFileList([]);
@@ -99,12 +108,17 @@ const MessageInput = ({
     [removeDocument],
   );
 
-  const uploadButton = (
-    <button style={{ border: 0, background: 'none' }} type="button">
-      <PlusOutlined />
-      <div style={{ marginTop: 8 }}>Upload</div>
-    </button>
+  const getDocumentInfoById = useCallback(
+    (id: string) => {
+      return documentInfos.find((x) => x.id === id);
+    },
+    [documentInfos],
   );
+
+  useEffect(() => {
+    const ids = getFileIds(fileList);
+    setDocumentIds(ids);
+  }, [fileList, setDocumentIds]);
 
   return (
     <Flex gap={20} vertical className={styles.messageInputWrapper}>
@@ -113,23 +127,30 @@ const MessageInput = ({
         placeholder={t('sendPlaceholder')}
         value={value}
         disabled={disabled}
+        className={classNames({ [styles.inputWrapper]: fileList.length === 0 })}
         suffix={
           <Space>
-            <Upload
-              action="/v1/document/upload_and_parse"
-              // listType="picture-card"
-              fileList={fileList}
-              onPreview={handlePreview}
-              onChange={handleChange}
-              multiple
-              headers={{ [Authorization]: getAuthorization() }}
-              data={{ conversation_id: conversationId }}
-              method="post"
-              onRemove={handleRemove}
-              showUploadList={false}
-            >
-              <Button icon={<UploadOutlined />}></Button>
-            </Upload>
+            {conversationId && (
+              <Upload
+                action={uploadUrl}
+                fileList={fileList}
+                onPreview={handlePreview}
+                onChange={handleChange}
+                multiple
+                headers={{ [Authorization]: getAuthorization() }}
+                data={{ conversation_id: conversationId }}
+                method="post"
+                onRemove={handleRemove}
+                showUploadList={false}
+              >
+                <Button
+                  type={'text'}
+                  icon={
+                    <SvgIcon name="paper-clip" width={18} height={22}></SvgIcon>
+                  }
+                ></Button>
+              </Upload>
+            )}
             <Button
               type="primary"
               onClick={handlePressEnter}
@@ -143,71 +164,58 @@ const MessageInput = ({
         onPressEnter={handlePressEnter}
         onChange={onInputChange}
       />
-      {/* <Upload
-        action="/v1/document/upload_and_parse"
-        listType="picture-card"
-        fileList={fileList}
-        onPreview={handlePreview}
-        onChange={handleChange}
-        multiple
-        headers={{ [Authorization]: getAuthorization() }}
-        data={{ conversation_id: conversationId }}
-        method="post"
-        onRemove={handleRemove}
-      >
-        {fileList.length >= 8 ? null : uploadButton}
-      </Upload> */}
+
       {fileList.length > 0 && (
         <List
           grid={{
             gutter: 16,
             xs: 1,
-            sm: 2,
-            md: 2,
+            sm: 1,
+            md: 1,
             lg: 1,
             xl: 2,
             xxl: 4,
           }}
           dataSource={fileList}
+          className={styles.listWrapper}
           renderItem={(item) => {
             const fileExtension = getExtension(item.name);
+            const id = getFileId(item);
 
             return (
               <List.Item>
                 <Card className={styles.documentCard}>
-                  <>
-                    <Flex gap={10} align="center">
-                      {item.status === 'uploading' || !item.response ? (
-                        <Spin
-                          indicator={
-                            <LoadingOutlined style={{ fontSize: 24 }} spin />
-                          }
-                        />
+                  <Flex gap={10} align="center">
+                    {item.status === 'uploading' || !item.response ? (
+                      <Spin
+                        indicator={
+                          <LoadingOutlined style={{ fontSize: 24 }} spin />
+                        }
+                      />
+                    ) : (
+                      <FileIcon id={id} name={item.name}></FileIcon>
+                    )}
+                    <Flex vertical style={{ width: '90%' }}>
+                      <Text
+                        ellipsis={{ tooltip: item.name }}
+                        className={styles.nameText}
+                      >
+                        <b> {item.name}</b>
+                      </Text>
+                      {item.percent !== 100 ? (
+                        t('uploading')
+                      ) : !item.response ? (
+                        t('parsing')
                       ) : (
-                        <FileIcon
-                          id={getFileId(item)}
-                          name={item.name}
-                        ></FileIcon>
+                        <Space>
+                          <span>{fileExtension?.toUpperCase()},</span>
+                          <span>
+                            {formatBytes(getDocumentInfoById(id)?.size ?? 0)}
+                          </span>
+                        </Space>
                       )}
-                      <Flex vertical style={{ width: '90%' }}>
-                        <Text
-                          ellipsis={{ tooltip: item.name }}
-                          className={styles.nameText}
-                        >
-                          <b> {item.name}</b>
-                        </Text>
-                        {item.percent !== 100 ? (
-                          '上传中'
-                        ) : !item.response ? (
-                          '解析中'
-                        ) : (
-                          <Space>
-                            <span>{fileExtension?.toUpperCase()},</span>
-                          </Space>
-                        )}
-                      </Flex>
                     </Flex>
-                  </>
+                  </Flex>
 
                   {item.status !== 'uploading' && (
                     <CloseCircleOutlined
