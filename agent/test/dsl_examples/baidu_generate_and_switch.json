@@ -1,0 +1,129 @@
+{
+  "components": {
+            "begin": {
+                "obj":{
+                    "component_name": "Begin",
+                    "params": {
+                      "prologue": "Hi there!"
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": []
+            },
+            "answer:0": {
+                "obj": {
+                    "component_name": "Answer",
+                    "params": {}
+                },
+                "downstream": ["baidu:0"],
+                "upstream": ["begin", "message:0","message:1"]
+            },
+            "baidu:0": {
+                "obj": {
+                    "component_name": "Baidu",
+                    "params": {}
+                },
+                "downstream": ["generate:0"],
+                "upstream": ["answer:0"]
+            },
+            "generate:0": {
+                "obj": {
+                    "component_name": "Generate",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+		              "prompt": "You are an intelligent assistant. Please answer the user's question based on what Baidu searched. First, please output the user's question and the content searched by Baidu, and then answer yes, no, or i don't know.Here is the user's question:{user_input}The above is the user's question.Here is what Baidu searched for:{baidu}The above is the content searched by Baidu.",
+                      "temperature": 0.2
+                    },
+                    "parameters": [
+                                      {
+                                          "component_id": "answer:0",
+                                          "id": "69415446-49bf-4d4b-8ec9-ac86066f7709",
+                                          "key": "user_input"
+                                      },
+                                      {
+                                          "component_id": "baidu:0",
+                                          "id": "83363c2a-00a8-402f-a45c-ddc4097d7d8b",
+                                          "key": "baidu"
+                                      }
+                                  ]
+                        },
+                "downstream": ["switch:0"],
+                "upstream": ["baidu:0"]
+            },
+            "switch:0": {
+                "obj": {
+                    "component_name": "Switch",
+                    "params": {
+                      "conditions": [
+                                        {
+                                            "logical_operator" : "or",
+                                            "items" : [
+                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "yes"},
+                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "yeah"}
+                                                      ],
+                                             "to": "message:0"
+                                        },
+                                        {
+                                            "logical_operator" : "and",
+                                            "items" : [
+                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "no"},
+                                                          {"cpn_id": "generate:0", "operator": "not contains", "value": "yes"},
+							  {"cpn_id": "generate:0", "operator": "not contains", "value": "know"}
+                                                      ],
+                                            "to": "message:1"
+                                        },
+                                        {
+                                            "logical_operator" : "",
+                                            "items" : [
+                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "know"}
+                                                      ],
+                                             "to": "message:2"
+                                        }
+                                    ],
+                      "end_cpn_id": "answer:0"
+
+                    }
+                },
+                "downstream": ["message:0","message:1"],
+                "upstream": ["generate:0"]
+            },
+            "message:0": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                        "messages": ["YES YES YES YES YES YES YES YES YES YES YES YES"]
+                    }
+                },
+
+                "upstream": ["switch:0"],
+                "downstream": ["answer:0"]
+            },
+            "message:1": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                        "messages": ["NO NO NO NO NO NO NO NO NO NO NO NO NO NO"]
+                    }
+                },
+
+                "upstream": ["switch:0"],
+                "downstream": ["answer:0"]
+            },
+            "message:2": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                        "messages": ["I DON'T KNOW---------------------------"]
+                    }
+                },
+
+                "upstream": ["switch:0"],
+                "downstream": ["answer:0"]
+            }
+  },
+  "history": [],
+  "messages": [],
+  "reference": {},
+  "path": [],
+  "answer": []
+}
