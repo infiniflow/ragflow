@@ -203,6 +203,14 @@ def list_docs():
         return server_error_response(e)
 
 
+@manager.route('/infos', methods=['POST'])
+def docinfos():
+    req = request.json
+    doc_ids = req["doc_ids"]
+    docs = DocumentService.get_by_ids(doc_ids)
+    return get_json_result(data=list(docs.dicts()))
+
+
 @manager.route('/thumbnails', methods=['GET'])
 @login_required
 def thumbnails():
@@ -452,7 +460,7 @@ def get_image(image_id):
 @login_required
 @validate_request("conversation_id")
 def upload_and_parse():
-    req = request.json
+    from rag.app import presentation, picture, naive, audio, email
     if 'file' not in request.files:
         return get_json_result(
             data=False, retmsg='No file part!', retcode=RetCode.ARGUMENT_ERROR)
@@ -463,7 +471,7 @@ def upload_and_parse():
             return get_json_result(
                 data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
 
-    e, conv = ConversationService.get_by_id(req["conversation_id"])
+    e, conv = ConversationService.get_by_id(request.form.get("conversation_id"))
     if not e:
         return get_data_error_result(retmsg="Conversation not found!")
     e, dia = DialogService.get_by_id(conv.dialog_id)
@@ -487,6 +495,12 @@ def upload_and_parse():
     def dummy(prog=None, msg=""):
         pass
 
+    FACTORY = {
+        ParserType.PRESENTATION.value: presentation,
+        ParserType.PICTURE.value: picture,
+        ParserType.AUDIO.value: audio,
+        ParserType.EMAIL.value: email
+    }
     parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": False}
     exe = ThreadPoolExecutor(max_workers=12)
     threads = []
@@ -495,9 +509,11 @@ def upload_and_parse():
             "callback": dummy,
             "parser_config": parser_config,
             "from_page": 0,
-            "to_page": 100000
+            "to_page": 100000,
+            "tenant_id": kb.tenant_id,
+            "lang": kb.language
         }
-        threads.append(exe.submit(naive.chunk, d["name"], blob, **kwargs))
+        threads.append(exe.submit(FACTORY.get(d["parser_id"], naive).chunk, d["name"], blob, **kwargs))
 
     for (docinfo,_), th in zip(files, threads):
         docs = []
@@ -550,7 +566,7 @@ def upload_and_parse():
     for doc_id in docids:
         cks = [c for c in docs if c["doc_id"] == doc_id]
 
-        if parser_ids[doc_id] != ParserType.PICTURE.value:
+        if False and parser_ids[doc_id] != ParserType.PICTURE.value:
             mindmap = MindMapExtractor(llm_bdl)
             try:
                 mind_map = json.dumps(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]).output, ensure_ascii=False, indent=2)
@@ -564,7 +580,7 @@ def upload_and_parse():
             except Exception as e:
                 stat_logger.error("Mind map generation error:", traceback.format_exc())
 
-        vects = embedding(doc_id, cks)
+        vects = embedding(doc_id, [c["content_with_weight"] for c in cks])
         assert len(cks) == len(vects)
         for i, d in enumerate(cks):
             v = vects[i]
@@ -575,4 +591,4 @@ def upload_and_parse():
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)
 
-    return get_json_result(data=[d["id"] for d in files])
+    return get_json_result(data=[d["id"] for d,_ in files])

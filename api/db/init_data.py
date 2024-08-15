@@ -107,6 +107,7 @@ def init_llm_factory():
             LLMFactoriesService.save(**factory_llm_info)
         except Exception as e:
             pass
+        LLMService.filter_delete([LLM.fid == factory_llm_info["name"]])
         for llm_info in llm_infos:
             llm_info["fid"] = factory_llm_info["name"]
             try:
