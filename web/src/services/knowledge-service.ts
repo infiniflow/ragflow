@@ -12,6 +12,7 @@ const {
   get_document_list,
   document_change_status,
   document_rm,
+  document_delete,
   document_create,
   document_change_parser,
   document_thumbnails,
@@ -130,6 +131,10 @@ const methods = {
   knowledge_graph: {
     url: knowledge_graph,
     method: 'get',
+  },
+  document_delete: {
+    url: document_delete,
+    method: 'delete',
   },
 };
 

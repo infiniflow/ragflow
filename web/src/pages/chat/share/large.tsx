@@ -65,6 +65,7 @@ const ChatContainer = () => {
         </Flex>
 
         <MessageInput
+          isShared
           value={value}
           disabled={false}
           sendDisabled={sendDisabled}
