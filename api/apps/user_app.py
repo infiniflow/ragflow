@@ -332,16 +332,24 @@ def user_register(user_id, user):
 @validate_request("nickname", "email", "password")
 def user_add():
     req = request.json
-    if UserService.query(email=req["email"]):
-        return get_json_result(
-            data=False, retmsg=f'Email: {req["email"]} has already registered!', retcode=RetCode.OPERATING_ERROR)
-    if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,4}$", req["email"]):
-        return get_json_result(data=False, retmsg=f'Invaliad e-mail: {req["email"]}!',
+    email_address = req["email"]
+
+    # Validate the email address
+    if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,4}$", email_address):
+        return get_json_result(data=False,
+                               retmsg=f'Invalid Email address: {email_address}!',
                                retcode=RetCode.OPERATING_ERROR)
+
+    # Check if the email address is already used
+    if UserService.query(email=email_address):
+        return get_json_result(
+            data=False,
+            retmsg=f'Email: {email_address} has already registered!',
+            retcode=RetCode.OPERATING_ERROR)
 
     user_dict = {
         "access_token": get_uuid(),
-        "email": req["email"],
+        "email": email_address,
         "nickname": req["nickname"],
         "password": decrypt(req["password"]),
         "login_channel": "password",
