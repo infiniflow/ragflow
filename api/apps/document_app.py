@@ -203,6 +203,14 @@ def list_docs():
         return server_error_response(e)
 
 
+@manager.route('/infos', methods=['POST'])
+def docinfos():
+    req = request.json
+    doc_ids = req["doc_ids"]
+    docs = DocumentService.get_by_ids(doc_ids)
+    return get_json_result(data=list(docs.dicts()))
+
+
 @manager.route('/thumbnails', methods=['GET'])
 @login_required
 def thumbnails():
