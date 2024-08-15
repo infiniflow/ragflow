@@ -678,6 +678,10 @@ class BedrockChat(Base):
         if "top_p" in gen_conf:
             gen_conf["topP"] = gen_conf["top_p"]
             _ = gen_conf.pop("top_p")
+        for item in history:
+            if not isinstance(item["content"],list) and not isinstance(item["content"],tuple):
+                item["content"] = [item["content"]]
+            
 
         try:
             # Send the message to the model, using a basic inference configuration.
@@ -707,7 +711,10 @@ class BedrockChat(Base):
         if "top_p" in gen_conf:
             gen_conf["topP"] = gen_conf["top_p"]
             _ = gen_conf.pop("top_p")
-
+        for item in history:
+            if not isinstance(item["content"],list) and not isinstance(item["content"],tuple):
+                item["content"] = [item["content"]]
+                
         if self.model_name.split('.')[0] == 'ai21':
             try:
                 response = self.client.converse(
