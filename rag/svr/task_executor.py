@@ -374,7 +374,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # NOTE: 获取名为 'peewee' 的日志记录器。peewee 是一个轻量级的 Python ORM（对象关系映射）库，这个日志记录器用于记录 peewee 库的日志信息
     peewee_logger = logging.getLogger('peewee')
+    # 通常，日志记录器会将日志信息向上传递给父记录器，这样就可能会导致重复的日志输出。将 propagate 设置为 False 可以避免这种情况
     peewee_logger.propagate = False
     peewee_logger.addHandler(database_logger.handlers[0])
     peewee_logger.setLevel(database_logger.level)

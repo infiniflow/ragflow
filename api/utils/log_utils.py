@@ -29,15 +29,22 @@ class LoggerFactory(object):
     LOG_FORMAT = "[%(levelname)s] [%(asctime)s] [%(module)s.%(funcName)s] [line:%(lineno)d]: %(message)s"
     logging.basicConfig(format=LOG_FORMAT)
     LEVEL = logging.DEBUG
+    # 用于存储已经创建的日志记录器以及它们的处理器
+    # 管理每个具体的日志记录器及其关联的处理器，确保程序中的日志记录器被正确配置和使用
     logger_dict = {}
+    # 用于存储全局处理器
+    # 负责管理共享的全局处理器，确保同类型或同级别的日志由相同的处理器处理
     global_handler_dict = {}
 
     LOG_DIR = None
     PARENT_LOG_DIR = None
+    # 控制日志是否共享
     log_share = True
 
+    # 是否将日志追加到父日志目录中
     append_to_parent_log = None
 
+    # 可重入锁，用于在多线程环境中保证线程安全
     lock = RLock()
     # CRITICAL = 50
     # FATAL = CRITICAL
@@ -48,6 +55,7 @@ class LoggerFactory(object):
     # DEBUG = 10
     # NOTSET = 0
     levels = (10, 20, 30, 40)
+    # 用于存储调度日志记录器
     schedule_logger_dict = {}
 
     @staticmethod
@@ -63,8 +71,11 @@ class LoggerFactory(object):
             if not LoggerFactory.LOG_DIR or force:
                 LoggerFactory.LOG_DIR = directory
             if LoggerFactory.log_share:
+                # 这行代码将当前的文件权限掩码（umask）设置为 000，并保存之前的 umask 值
+                # umask(000) 表示在创建新文件或目录时，不会禁止任何权限，即新建的文件或目录将具有最宽松的权限设置
                 oldmask = os.umask(000)
                 os.makedirs(LoggerFactory.LOG_DIR, exist_ok=True)
+                # 将 umask 恢复为之前的值（即 oldmask）
                 os.umask(oldmask)
             else:
                 os.makedirs(LoggerFactory.LOG_DIR, exist_ok=True)
@@ -89,6 +100,7 @@ class LoggerFactory(object):
     @staticmethod
     def new_logger(name):
         logger = logging.getLogger(name)
+        # 不允许日志消息向上传播到父记录器
         logger.propagate = False
         logger.setLevel(LoggerFactory.LEVEL)
         return logger
