@@ -680,7 +680,7 @@ class BedrockChat(Base):
             _ = gen_conf.pop("top_p")
         for item in history:
             if not isinstance(item["content"],list) and not isinstance(item["content"],tuple):
-                item["content"] = [item["content"]]
+                item["content"] = [{"text":item["content"]}]
             
 
         try:
@@ -713,7 +713,7 @@ class BedrockChat(Base):
             _ = gen_conf.pop("top_p")
         for item in history:
             if not isinstance(item["content"],list) and not isinstance(item["content"],tuple):
-                item["content"] = [item["content"]]
+                item["content"] = [{"text":item["content"]}]
                 
         if self.model_name.split('.')[0] == 'ai21':
             try:
