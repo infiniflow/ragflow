@@ -369,9 +369,9 @@ const IndentedTree = ({ data, show }: IProps) => {
 
     graphRef.current = graph;
 
-    graph.setData(treeToGraphData(data));
+    graph?.setData(treeToGraphData(data));
 
-    graph.render();
+    graph?.render();
   }, []);
 
   useEffect(() => {

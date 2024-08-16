@@ -21,6 +21,7 @@ from api.db.services.canvas_service import CanvasTemplateService, UserCanvasServ
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request
 from agent.canvas import Canvas
+from peewee import MySQLDatabase, PostgresqlDatabase
 
 
 @manager.route('/templates', methods=['GET'])
@@ -158,3 +159,22 @@ def reset():
         return get_json_result(data=req["dsl"])
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/test_db_connect', methods=['POST'])
+@validate_request("db_type", "database", "username", "host", "port", "password")
+@login_required
+def test_db_connect():
+    req = request.json
+    try:
+        if req["db_type"] in ["mysql", "mariadb"]:
+            db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
+                               password=req["password"])
+        elif req["db_type"] == 'postgresql':
+            db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
+                                    password=req["password"])
+        db.connect()
+        db.close()
+        return get_json_result(retmsg="Database Connection Successful!")
+    except Exception as e:
+        return server_error_response(str(e))
