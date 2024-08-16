@@ -771,6 +771,15 @@ export default {
         '30d': '30天',
       },
       publish: 'API',
+      exeSQL: 'ExeSQL',
+      exeSQLDescription:
+        '该组件通过SQL语句从相应的关系数据库中查询结果。支持MySQL，PostgreSQL，MariaDB。',
+      dbType: '数据库类型',
+      database: '数据库',
+      username: '用户名',
+      host: '主机',
+      port: '端口',
+      password: '密码',
     },
     footer: {
       profile: 'All rights reserved @ React',
