@@ -42,7 +42,8 @@ EmbeddingModel = {
     "TogetherAI": TogetherAIEmbed,
     "PerfXCloud": PerfXCloudEmbed,
     "Upstage": UpstageEmbed,
-    "SILICONFLOW": SILICONFLOWEmbed
+    "SILICONFLOW": SILICONFLOWEmbed,
+    "Replicate": ReplicateEmbed
 }
 
 
@@ -96,7 +97,8 @@ ChatModel = {
     "Upstage":UpstageChat,
     "novita.ai": NovitaAIChat,
     "SILICONFLOW": SILICONFLOWChat,
-    "01.AI": YiChat
+    "01.AI": YiChat,
+    "Replicate": ReplicateChat
 }
 
 

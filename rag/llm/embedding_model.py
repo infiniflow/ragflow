@@ -581,3 +581,26 @@ class SILICONFLOWEmbed(OpenAIEmbed):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
         super().__init__(key, model_name, base_url)
+
+
+class ReplicateEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        from replicate.client import Client
+        
+        self.model_name = model_name 
+        self.client = Client(api_token=key)
+
+    def encode(self, texts: list, batch_size=32):
+        from json import dumps
+        res = self.client.run(
+            self.model_name,
+            input={"texts":dumps(texts)}
+        )
+        return np.array(res),sum([num_tokens_from_string(text) for text in texts])
+
+    def encode_queries(self, text):
+        res = self.client.embed(
+            self.model_name,
+            input={"texts":[text]}
+        )
+        return np.array(res),num_tokens_from_string(text)
