@@ -50,7 +50,12 @@ const ExeSQLForm = ({ onValuesChange, form }: IOperatorForm) => {
       >
         <Input.Password></Input.Password>
       </Form.Item>
-      <Form.Item label={t('loop')} name={'loop'} rules={[{ required: true }]}>
+      <Form.Item
+        label={t('loop')}
+        name={'loop'}
+        tooltip={t('loopTip')}
+        rules={[{ required: true }]}
+      >
         <InputNumber></InputNumber>
       </Form.Item>
       <TopNItem initialValue={30} max={100000}></TopNItem>

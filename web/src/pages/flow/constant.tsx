@@ -163,13 +163,21 @@ export const operatorMap = {
   [Operator.Google]: {
     backgroundColor: 'pink',
   },
-  [Operator.Bing]: {},
-  [Operator.GoogleScholar]: {},
-  [Operator.DeepL]: {},
-  [Operator.GitHub]: {},
-  [Operator.BaiduFanyi]: {},
-  [Operator.QWeather]: {},
-  [Operator.ExeSQL]: {},
+  [Operator.Bing]: {
+    backgroundColor: '#c0dcc4',
+  },
+  [Operator.GoogleScholar]: {
+    backgroundColor: '#b4e4f6',
+  },
+  [Operator.DeepL]: {
+    backgroundColor: '#f5e8e6',
+  },
+  [Operator.GitHub]: {
+    backgroundColor: '#c7c7f8',
+  },
+  [Operator.BaiduFanyi]: { backgroundColor: '#e5f2d3' },
+  [Operator.QWeather]: { backgroundColor: '#a4bbf3' },
+  [Operator.ExeSQL]: { backgroundColor: '#b9efe8' },
 };
 
 export const componentMenuList = [

@@ -551,6 +551,8 @@ export default {
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       loop: '循環上限',
+      loopTip:
+        'loop為目前元件循環次數上限，當循環次數超過loop的值時，表示元件無法完成目前任務，請重新最佳化agent',
       yes: '是',
       no: '否',
       key: 'key',

@@ -591,6 +591,8 @@ The above is the content you need to summarize.`,
       messageMsg: 'Please input message or delete this field.',
       addField: 'Add field',
       loop: 'Loop',
+      loopTip:
+        'Loop is the upper limit of the number of loops of the current component, when the number of loops exceeds the value of loop, it means that the component can not complete the current task, please re-optimize agent',
       yes: 'Yes',
       no: 'No',
       key: 'key',
