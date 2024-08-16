@@ -31,7 +31,7 @@ class ExeSQLParam(ComponentParamBase):
         self.host = ""
         self.port = 1
         self.password = ""
-        self.loop = 5
+        self.loop = 3
 
     def check(self):
         self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgresql', 'mariadb'])
