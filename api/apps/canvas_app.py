@@ -21,6 +21,7 @@ from api.db.services.canvas_service import CanvasTemplateService, UserCanvasServ
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request
 from agent.canvas import Canvas
+from peewee import MySQLDatabase, PostgresqlDatabase
 
 
 @manager.route('/templates', methods=['GET'])
