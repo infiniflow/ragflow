@@ -10,3 +10,8 @@ export const variableEnabledFieldMap = {
   frequencyPenaltyEnabled: 'frequency_penalty',
   maxTokensEnabled: 'max_tokens',
 };
+
+export enum SharedFrom {
+  Agent = 'agent',
+  Chat = 'chat',
+}
