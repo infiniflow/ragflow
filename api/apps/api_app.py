@@ -26,7 +26,7 @@ from api.db.db_models import APIToken, API4Conversation, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.dialog_service import DialogService, chat
-from api.db.services.document_service import DocumentService
+from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -470,6 +470,29 @@ def upload():
     return get_json_result(data=doc_result.to_json())
 
 
+@manager.route('/document/upload_and_parse', methods=['POST'])
+@validate_request("conversation_id")
+def upload_parse():
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+
+    if 'file' not in request.files:
+        return get_json_result(
+            data=False, retmsg='No file part!', retcode=RetCode.ARGUMENT_ERROR)
+
+    file_objs = request.files.getlist('file')
+    for file_obj in file_objs:
+        if file_obj.filename == '':
+            return get_json_result(
+                data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
+
+    doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, objs[0].tenant_id)
+    return get_json_result(data=doc_ids)
+
+
 @manager.route('/list_chunks', methods=['POST'])
 # @login_required
 def list_chunks():
@@ -560,7 +583,6 @@ def document_rm():
 
     tenant_id = objs[0].tenant_id
     req = request.json
-    doc_ids = []
     try:
         doc_ids = [DocumentService.get_doc_id_by_doc_name(doc_name) for doc_name in req.get("doc_names", [])]
         for doc_id in req.get("doc_ids", []):
