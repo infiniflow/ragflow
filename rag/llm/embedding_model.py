@@ -99,7 +99,7 @@ class OpenAIEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=32):
-        texts = [truncate(t, 8196) for t in texts]
+        texts = [truncate(t, 8191) for t in texts]
         res = self.client.embeddings.create(input=texts,
                                             model=self.model_name)
         return np.array([d.embedding for d in res.data]
