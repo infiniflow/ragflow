@@ -161,3 +161,4 @@ markdown_to_json==2.1.1
 scholarly==1.7.11
 deepl==1.18.0
 psycopg2==2.9.9
+tabulate-0.9.0
