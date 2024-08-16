@@ -106,7 +106,7 @@ class OpenAIEmbed(Base):
                         ), res.usage.total_tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(input=[truncate(text, 8196)],
+        res = self.client.embeddings.create(input=[truncate(text, 8191)],
                                             model=self.model_name)
         return np.array(res.data[0].embedding), res.usage.total_tokens
 
