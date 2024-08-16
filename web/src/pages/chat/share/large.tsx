@@ -1,11 +1,12 @@
 import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/message-item';
-import { MessageType } from '@/constants/chat';
+import { MessageType, SharedFrom } from '@/constants/chat';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
 import { forwardRef } from 'react';
 import {
   useCreateSharedConversationOnMount,
+  useGetSharedChatSearchParams,
   useSelectCurrentSharedConversation,
   useSendSharedMessage,
 } from '../shared-hooks';
@@ -37,6 +38,7 @@ const ChatContainer = () => {
     addNewestAnswer,
   );
   const sendDisabled = useSendButtonDisabled(value);
+  const { from } = useGetSharedChatSearchParams();
 
   return (
     <>
@@ -65,6 +67,7 @@ const ChatContainer = () => {
         </Flex>
 
         <MessageInput
+          isShared
           value={value}
           disabled={false}
           sendDisabled={sendDisabled}
@@ -73,6 +76,7 @@ const ChatContainer = () => {
           onPressEnter={handlePressEnter}
           sendLoading={sendLoading}
           uploadUrl="/v1/api/document/upload_and_parse"
+          showUploadIcon={from === SharedFrom.Chat}
         ></MessageInput>
       </Flex>
     </>

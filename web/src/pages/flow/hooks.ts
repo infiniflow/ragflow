@@ -38,6 +38,7 @@ import {
   initialCategorizeValues,
   initialDeepLValues,
   initialDuckValues,
+  initialExeSqlValues,
   initialGenerateValues,
   initialGithubValues,
   initialGoogleScholarValues,
@@ -107,6 +108,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
+      [Operator.ExeSQL]: initialExeSqlValues,
     };
   }, [llmId]);
 

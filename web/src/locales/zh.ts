@@ -411,6 +411,7 @@ export default {
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上传中',
+      uploadFailed: '上传失败',
     },
     setting: {
       profile: '概要',
@@ -569,6 +570,8 @@ export default {
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       loop: '循环上限',
+      loopTip:
+        'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化agent',
       yes: '是',
       no: '否',
       key: 'key',
@@ -770,6 +773,15 @@ export default {
         '30d': '30天',
       },
       publish: 'API',
+      exeSQL: 'ExeSQL',
+      exeSQLDescription:
+        '该组件通过SQL语句从相应的关系数据库中查询结果。支持MySQL，PostgreSQL，MariaDB。',
+      dbType: '数据库类型',
+      database: '数据库',
+      username: '用户名',
+      host: '主机',
+      port: '端口',
+      password: '密码',
     },
     footer: {
       profile: 'All rights reserved @ React',

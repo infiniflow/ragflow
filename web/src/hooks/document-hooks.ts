@@ -313,3 +313,23 @@ export const useRemoveNextDocument = () => {
 
   return { data, loading, removeDocument: mutateAsync };
 };
+
+export const useDeleteDocument = () => {
+  // const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteDocument'],
+    mutationFn: async (documentIds: string[]) => {
+      const data = await kbService.document_delete({ doc_ids: documentIds });
+      // if (data.retcode === 0) {
+      //   queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
+      // }
+      return data;
+    },
+  });
+
+  return { data, loading, deleteDocument: mutateAsync };
+};
