@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 from abc import ABC
+
+import pandas as pd
 from peewee import MySQLDatabase, PostgresqlDatabase
 from agent.component.base import ComponentBase, ComponentParamBase
 
@@ -29,9 +31,10 @@ class ExeSQLParam(ComponentParamBase):
         self.database = ""
         self.username = ""
         self.host = ""
-        self.port = 1
+        self.port = 3306
         self.password = ""
         self.loop = 3
+        self.top_n = 30
 
     def check(self):
         self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgresql', 'mariadb'])
@@ -40,6 +43,7 @@ class ExeSQLParam(ComponentParamBase):
         self.check_empty(self.host, "IP Address")
         self.check_positive_integer(self.port, "IP Port")
         self.check_empty(self.password, "Database password")
+        self.check_positive_integer(self.top_n, "Number of records")
 
 
 class ExeSQL(ComponentBase, ABC):
@@ -56,7 +60,8 @@ class ExeSQL(ComponentBase, ABC):
         ans = self.get_input()
         ans = "".join(ans["content"]) if "content" in ans else ""
         if not ans:
-            return ExeSQL.be_output("")
+            return ExeSQL.be_output("SQL statement not found!")
+
         if self._param.db_type in ["mysql", "mariadb"]:
             db = MySQLDatabase(self._param.database, user=self._param.username, host=self._param.host,
                                port=self._param.port, password=self._param.password)
@@ -67,9 +72,14 @@ class ExeSQL(ComponentBase, ABC):
         try:
             db.connect()
             query = db.execute_sql(ans)
-            res = "\n".join([str(i) for i in query.fetchall()])
+            sql_res = [{"content": rec + "\n"} for rec in [str(i) for i in query.fetchall()]]
             db.close()
-            return ExeSQL.be_output(res)
         except Exception as e:
             return ExeSQL.be_output("**Error**:" + str(e))
 
+        if not sql_res:
+            return ExeSQL.be_output("No record in the database!")
+
+        sql_res.insert(0, {"content": "Number of records retrieved from the database is " + str(len(sql_res)) + "\n"})
+        df = pd.DataFrame(sql_res[0:self._param.top_n + 1])
+        return ExeSQL.be_output(df.to_markdown())
