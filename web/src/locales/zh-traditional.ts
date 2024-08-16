@@ -753,6 +753,15 @@ export default {
         '30d': '30天',
       },
       publish: 'API',
+      exeSQL: 'ExeSQL',
+      exeSQLDescription:
+        '此元件透過SQL語句從對應的關聯式資料庫中查詢結果。支援 MySQL、PostgreSQL、MariaDB。 ',
+      dbType: '資料庫類型',
+      database: '資料庫',
+      username: '使用者名稱',
+      host: '主機',
+      port: '端口',
+      password: '密碼',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
