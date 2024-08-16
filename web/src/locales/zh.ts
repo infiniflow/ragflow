@@ -570,6 +570,8 @@ export default {
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       loop: '循环上限',
+      loopTip:
+        'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化agent',
       yes: '是',
       no: '否',
       key: 'key',
