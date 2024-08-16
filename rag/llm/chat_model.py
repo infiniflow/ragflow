@@ -1033,7 +1033,7 @@ class SILICONFLOWChat(Base):
 
 
 class YiChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.lingyiwanwu.com/v1"):
+    def __init__(self, key, model_name, base_url="https://api.01.ai/v1/"):
         if not base_url:
-            base_url = "https://api.lingyiwanwu.com/v1"
+            base_url = "https://api.01.ai/v1/"
         super().__init__(key, model_name, base_url)
