@@ -571,6 +571,13 @@ def list_kb_docs():
     except Exception as e:
         return server_error_response(e)
 
+@manager.route('/document/infos', methods=['POST'])
+def docinfos():
+    req = request.json
+    doc_ids = req["doc_ids"]
+    docs = DocumentService.get_by_ids(doc_ids)
+    return get_json_result(data=list(docs.dicts()))
+
 
 @manager.route('/document', methods=['DELETE'])
 # @login_required
