@@ -6,7 +6,12 @@ import { IGenerateParameter } from '../interface';
 import useGraphStore from '../store';
 
 // exclude nodes with branches
-const ExcludedNodes = [Operator.Categorize, Operator.Relevant];
+const ExcludedNodes = [
+  Operator.Categorize,
+  Operator.Relevant,
+  Operator.Begin,
+  Operator.Answer,
+];
 
 export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
   const nodes = useGraphStore((state) => state.nodes);

@@ -551,6 +551,8 @@ export default {
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       loop: '循環上限',
+      loopTip:
+        'loop為目前元件循環次數上限，當循環次數超過loop的值時，表示元件無法完成目前任務，請重新最佳化agent',
       yes: '是',
       no: '否',
       key: 'key',
@@ -753,6 +755,15 @@ export default {
         '30d': '30天',
       },
       publish: 'API',
+      exeSQL: 'ExeSQL',
+      exeSQLDescription:
+        '此元件透過SQL語句從對應的關聯式資料庫中查詢結果。支援 MySQL、PostgreSQL、MariaDB。 ',
+      dbType: '資料庫類型',
+      database: '資料庫',
+      username: '使用者名稱',
+      host: '主機',
+      port: '端口',
+      password: '密碼',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

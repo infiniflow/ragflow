@@ -1,4 +1,4 @@
-import { MessageType } from '@/constants/chat';
+import { MessageType, SharedFrom } from '@/constants/chat';
 import {
   useCreateSharedConversation,
   useFetchSharedConversation,
@@ -223,5 +223,14 @@ export const useSendSharedMessage = (
     handleInputChange,
     value,
     loading: !done,
+  };
+};
+
+export const useGetSharedChatSearchParams = () => {
+  const [searchParams] = useSearchParams();
+
+  return {
+    from: searchParams.get('from') as SharedFrom,
+    sharedId: searchParams.get('shared_id'),
   };
 };

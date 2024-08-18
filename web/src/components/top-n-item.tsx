@@ -7,9 +7,10 @@ type FieldType = {
 
 interface IProps {
   initialValue?: number;
+  max?: number;
 }
 
-const TopNItem = ({ initialValue = 8 }: IProps) => {
+const TopNItem = ({ initialValue = 8, max = 30 }: IProps) => {
   const { t } = useTranslate('chat');
 
   return (
@@ -19,7 +20,7 @@ const TopNItem = ({ initialValue = 8 }: IProps) => {
       initialValue={initialValue}
       tooltip={t('topNTip')}
     >
-      <Slider max={30} />
+      <Slider max={max} />
     </Form.Item>
   );
 };

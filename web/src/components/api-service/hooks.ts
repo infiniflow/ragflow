@@ -1,3 +1,4 @@
+import { SharedFrom } from '@/constants/chat';
 import {
   useCreateNextToken,
   useFetchTokenList,
@@ -71,9 +72,9 @@ export const useShowTokenEmptyError = () => {
   return { showTokenEmptyError };
 };
 
-const getUrlWithToken = (token: string) => {
+const getUrlWithToken = (token: string, from: string = 'chat') => {
   const { protocol, host } = window.location;
-  return `${protocol}//${host}/chat/share?shared_id=${token}`;
+  return `${protocol}//${host}/chat/share?shared_id=${token}&from=${from}`;
 };
 
 const useFetchTokenListBeforeOtherStep = (dialogId: string, idKey: string) => {
@@ -131,9 +132,18 @@ export const useShowEmbedModal = (dialogId: string, idKey: string) => {
 export const usePreviewChat = (dialogId: string, idKey: string) => {
   const { handleOperate } = useFetchTokenListBeforeOtherStep(dialogId, idKey);
 
-  const open = useCallback((t: string) => {
-    window.open(getUrlWithToken(t), '_blank');
-  }, []);
+  const open = useCallback(
+    (t: string) => {
+      window.open(
+        getUrlWithToken(
+          t,
+          idKey === 'canvasId' ? SharedFrom.Agent : SharedFrom.Chat,
+        ),
+        '_blank',
+      );
+    },
+    [idKey],
+  );
 
   const handlePreview = useCallback(async () => {
     const token = await handleOperate();

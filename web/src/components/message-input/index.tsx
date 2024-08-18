@@ -66,6 +66,7 @@ interface IProps {
   conversationId: string;
   uploadUrl?: string;
   isShared?: boolean;
+  showUploadIcon?: boolean;
 }
 
 const getBase64 = (file: FileType): Promise<string> =>
@@ -85,6 +86,7 @@ const MessageInput = ({
   sendLoading,
   onInputChange,
   conversationId,
+  showUploadIcon = true,
   uploadUrl = '/v1/document/upload_and_parse',
 }: IProps) => {
   const { t } = useTranslate('chat');
@@ -158,7 +160,7 @@ const MessageInput = ({
         className={classNames({ [styles.inputWrapper]: fileList.length === 0 })}
         suffix={
           <Space>
-            {conversationId && (
+            {conversationId && showUploadIcon && (
               <Upload
                 action={uploadUrl}
                 fileList={fileList}
