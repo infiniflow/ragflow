@@ -3113,6 +3113,13 @@
                     "model_type": "image2text"
                 }
             ]
+        },
+        {
+            "name": "Replicate",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
         }
     ]
 }
