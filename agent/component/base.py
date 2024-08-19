@@ -448,8 +448,6 @@ class ComponentBase(ABC):
             if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
                 o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
                 if o is not None:
-                    if not "".join(o["content"]):
-                        continue
                     upstream_outs.append(o)
                     continue
             if u not in self._canvas.get_component(self._id)["upstream"]: continue
