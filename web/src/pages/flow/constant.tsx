@@ -11,6 +11,7 @@ import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
+import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 
 import { variableEnabledFieldMap } from '@/constants/chat';
@@ -57,6 +58,7 @@ export enum Operator {
   BaiduFanyi = 'BaiduFanyi',
   QWeather = 'QWeather',
   ExeSQL = 'ExeSQL',
+  Switch = 'Switch',
 }
 
 export const operatorIconMap = {
@@ -82,6 +84,7 @@ export const operatorIconMap = {
   [Operator.BaiduFanyi]: baiduFanyiIcon,
   [Operator.QWeather]: QWeatherIcon,
   [Operator.ExeSQL]: ExeSqlIcon,
+  [Operator.Switch]: SwitchIcon,
 };
 
 export const operatorMap = {
@@ -178,6 +181,7 @@ export const operatorMap = {
   [Operator.BaiduFanyi]: { backgroundColor: '#e5f2d3' },
   [Operator.QWeather]: { backgroundColor: '#a4bbf3' },
   [Operator.ExeSQL]: { backgroundColor: '#b9efe8' },
+  [Operator.Switch]: { backgroundColor: '#dbaff6' },
 };
 
 export const componentMenuList = [
@@ -204,6 +208,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.KeywordExtract,
+  },
+  {
+    name: Operator.Switch,
   },
   {
     name: Operator.DuckDuckGo,
@@ -381,6 +388,8 @@ export const initialExeSqlValues = {
   top_n: 30,
 };
 
+export const initialSwitchValues = {};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -450,6 +459,7 @@ export const RestrictedUpstreamMap = {
   [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
+  [Operator.Switch]: [Operator.Begin, Operator.Answer, Operator.Relevant],
 };
 
 export const NodeMap = {
@@ -475,6 +485,7 @@ export const NodeMap = {
   [Operator.BaiduFanyi]: 'ragNode',
   [Operator.QWeather]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
+  [Operator.Switch]: 'logicNode',
 };
 
 export const LanguageOptions = [

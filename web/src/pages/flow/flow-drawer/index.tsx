@@ -27,7 +27,9 @@ import QWeatherForm from '../qweather-form';
 import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
+import SwitchForm from '../switch-form';
 import WikipediaForm from '../wikipedia-form';
+
 import styles from './index.less';
 
 interface IProps {
@@ -57,6 +59,7 @@ const FormMap = {
   [Operator.BaiduFanyi]: BaiduFanyiForm,
   [Operator.QWeather]: QWeatherForm,
   [Operator.ExeSQL]: ExeSQLForm,
+  [Operator.Switch]: SwitchForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

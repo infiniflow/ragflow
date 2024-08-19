@@ -782,6 +782,7 @@ export default {
       host: '主机',
       port: '端口',
       password: '密码',
+      switch: '条件',
     },
     footer: {
       profile: 'All rights reserved @ React',
