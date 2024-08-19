@@ -30,7 +30,8 @@ export const IconMap = {
   Upstage: 'upstage',
   'novita.ai': 'novita-ai',
   SILICONFLOW: 'siliconflow',
-  "01.AI": 'yi'
+  "01.AI": 'yi',
+  "Replicate": 'replicate'
 };
 
 export const BedrockRegionList = [

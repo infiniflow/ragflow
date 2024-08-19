@@ -1003,7 +1003,7 @@ class TogetherAIChat(Base):
             base_url = "https://api.together.xyz/v1"
         super().__init__(key, model_name, base_url)
 
-      
+
 class PerfXCloudChat(Base):
     def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1"):
         if not base_url:
@@ -1037,3 +1037,54 @@ class YiChat(Base):
         if not base_url:
             base_url = "https://api.01.ai/v1"
         super().__init__(key, model_name, base_url)
+
+
+class ReplicateChat(Base):
+    def __init__(self, key, model_name, base_url=None):
+        from replicate.client import Client
+
+        self.model_name = model_name
+        self.client = Client(api_token=key)
+        self.system = ""
+
+    def chat(self, system, history, gen_conf):
+        if "max_tokens" in gen_conf:
+            gen_conf["max_new_tokens"] = gen_conf.pop("max_tokens")
+        if system:
+            self.system = system
+        prompt = "\n".join(
+            [item["role"] + ":" + item["content"] for item in history[-5:]]
+        )
+        ans = ""
+        try:
+            response = self.client.run(
+                self.model_name,
+                input={"system_prompt": self.system, "prompt": prompt, **gen_conf},
+            )
+            ans = "".join(response)
+            return ans, num_tokens_from_string(ans)
+        except Exception as e:
+            return ans + "\n**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf):
+        if "max_tokens" in gen_conf:
+            gen_conf["max_new_tokens"] = gen_conf.pop("max_tokens")
+        if system:
+            self.system = system
+        prompt = "\n".join(
+            [item["role"] + ":" + item["content"] for item in history[-5:]]
+        )
+        ans = ""
+        try:
+            response = self.client.run(
+                self.model_name,
+                input={"system_prompt": self.system, "prompt": prompt, **gen_conf},
+            )
+            for resp in response:
+                ans += resp
+                yield ans
+
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield num_tokens_from_string(ans)
