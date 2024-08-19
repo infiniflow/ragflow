@@ -807,6 +807,7 @@ The above is the content you need to summarize.`,
       port: 'Port',
       password: 'Password',
       switch: 'Switch',
+      logicalOperator: 'Logical operator',
     },
     footer: {
       profile: 'All rights reserved @ React',

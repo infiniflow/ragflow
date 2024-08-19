@@ -783,6 +783,7 @@ export default {
       port: '端口',
       password: '密码',
       switch: '条件',
+      logicalOperator: '操作符',
     },
     footer: {
       profile: 'All rights reserved @ React',
