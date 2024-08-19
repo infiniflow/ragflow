@@ -147,7 +147,6 @@ const useGraphStore = create<RFState>()(
           ]);
         }
       },
-
       addNode: (node: Node) => {
         set({ nodes: get().nodes.concat(node) });
       },
