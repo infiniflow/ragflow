@@ -1,66 +1,21 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import { pick } from 'lodash';
-import get from 'lodash/get';
-import intersectionWith from 'lodash/intersectionWith';
-import isEqual from 'lodash/isEqual';
 import lowerFirst from 'lodash/lowerFirst';
-import { useEffect, useMemo, useState } from 'react';
-import { Handle, NodeProps, Position, useUpdateNodeInternals } from 'reactflow';
+import { Handle, NodeProps, Position } from 'reactflow';
 import { Operator, operatorMap } from '../../constant';
-import { IPosition, NodeData } from '../../interface';
+import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
-import { buildNewPositionMap } from '../../utils';
 import CategorizeHandle from './categorize-handle';
 import NodeDropdown from './dropdown';
+import { useBuildCategorizeHandlePositions } from './hooks';
 import styles from './index.less';
 import NodePopover from './popover';
 
 export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
-  const updateNodeInternals = useUpdateNodeInternals();
-  const [postionMap, setPositionMap] = useState<Record<string, IPosition>>({});
-  const categoryData = useMemo(
-    () => get(data, 'form.category_description') ?? {},
-    [data],
-  );
   const style = operatorMap[data.label as Operator];
   const { t } = useTranslate('flow');
-
-  useEffect(() => {
-    // Cache used coordinates
-    setPositionMap((state) => {
-      // index in use
-      const indexesInUse = Object.values(state).map((x) => x.idx);
-      const categoryDataKeys = Object.keys(categoryData);
-      const stateKeys = Object.keys(state);
-      if (!isEqual(categoryDataKeys.sort(), stateKeys.sort())) {
-        const intersectionKeys = intersectionWith(
-          stateKeys,
-          categoryDataKeys,
-          (categoryDataKey, postionMapKey) => categoryDataKey === postionMapKey,
-        );
-        const newPositionMap = buildNewPositionMap(
-          categoryDataKeys.filter(
-            (x) => !intersectionKeys.some((y) => y === x),
-          ),
-          indexesInUse,
-        );
-
-        const nextPostionMap = {
-          ...pick(state, intersectionKeys),
-          ...newPositionMap,
-        };
-
-        return nextPostionMap;
-      }
-      return state;
-    });
-  }, [categoryData]);
-
-  useEffect(() => {
-    updateNodeInternals(id);
-  }, [id, updateNodeInternals, postionMap]);
+  const { positions } = useBuildCategorizeHandlePositions({ data, id });
 
   return (
     <NodePopover nodeId={id}>
@@ -94,18 +49,15 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
           className={styles.handle}
           id={'c'}
         ></Handle>
-        {Object.keys(categoryData).map((x, idx) => {
-          const position = postionMap[x];
+        {positions.map((position, idx) => {
           return (
-            position && (
-              <CategorizeHandle
-                top={position.top}
-                right={position.right}
-                key={idx}
-                text={x}
-                idx={idx}
-              ></CategorizeHandle>
-            )
+            <CategorizeHandle
+              top={position.top}
+              right={position.right}
+              key={idx}
+              text={position.text}
+              idx={idx}
+            ></CategorizeHandle>
           );
         })}
         <Flex vertical align="center" justify="center" gap={6}>

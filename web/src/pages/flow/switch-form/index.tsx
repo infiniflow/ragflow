@@ -1,7 +1,9 @@
 import { CloseOutlined } from '@ant-design/icons';
-import { Button, Card, Form, Input, Typography } from 'antd';
+import { Button, Card, Form, Input, Select, Typography } from 'antd';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { Operator } from '../constant';
+import { useBuildFormSelectOptions } from '../form-hooks';
 import { IOperatorForm } from '../interface';
 
 const subLabelCol = {
@@ -12,8 +14,16 @@ const subWrapperCol = {
   span: 17,
 };
 
-const SwitchForm: React.FC = ({ form, onValuesChange }: IOperatorForm) => {
+const SwitchForm: React.FC = ({
+  form,
+  onValuesChange,
+  nodeId,
+}: IOperatorForm) => {
   const { t } = useTranslation();
+  const buildCategorizeToOptions = useBuildFormSelectOptions(
+    Operator.Categorize,
+    nodeId,
+  );
 
   return (
     <Form
@@ -26,7 +36,7 @@ const SwitchForm: React.FC = ({ form, onValuesChange }: IOperatorForm) => {
       onValuesChange={onValuesChange}
     >
       <Form.Item label={t('flow.to')} name={['end_cpn_id']}>
-        <Input />
+        <Select options={buildCategorizeToOptions([])} />
       </Form.Item>
       <Form.Item label={t('flow.no')} name={['no']}>
         <Input />
@@ -55,9 +65,8 @@ const SwitchForm: React.FC = ({ form, onValuesChange }: IOperatorForm) => {
                 </Form.Item>
 
                 <Form.Item label={t('flow.to')} name={[field.name, 'to']}>
-                  <Input />
+                  <Select options={buildCategorizeToOptions([])} />
                 </Form.Item>
-                {/* Nest Form.List */}
                 <Form.Item label="Items">
                   <Form.List name={[field.name, 'items']}>
                     {(subFields, subOpt) => (
