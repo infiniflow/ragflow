@@ -130,8 +130,8 @@ class Generate(ComponentBase):
 
     def stream_output(self, chat_mdl, prompt, retrieval_res):
         res = None
-        if "empty_response" in retrieval_res.columns and "\n- ".join(retrieval_res["content"]):
-            res = {"content": "\n- ".join(retrieval_res["content"]), "reference": []}
+        if "empty_response" in retrieval_res.columns and not "\n- ".join(retrieval_res["content"]):
+            res = {"content": "\n- ".join(retrieval_res["empty_response"]), "reference": []}
             yield res
             self.set_output(res)
             return

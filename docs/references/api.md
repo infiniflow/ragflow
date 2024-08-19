@@ -30,13 +30,13 @@ To get your Chat API key or Agent API key:
 For Chat API key:
    1. In RAGFlow, click **Chat** tab in the middle top of the page.
    2. Hover over the corresponding dialogue **>** **Chat Bot API** to show the chatbot API configuration page.
-   3. Click **Api Key** **>** **Create new key** to create your API key.
+   3. Click **API Key** **>** **Create new key** to create your API key.
    4. Copy and keep your API key safe. 
 
 For Agent API key:
    1. In RAGFlow, click **Agent** tab in the middle top of the page.
    2. Click your agent **>** ** Chat Bot API** to show the chatbot API configuration page.
-   3. Click **Api Key** **>** **Create new key** to create your API key.
+   3. Click **API Key** **>** **Create new key** to create your API key.
    4. Copy and keep your API key safe. 
 
 ## Create conversation

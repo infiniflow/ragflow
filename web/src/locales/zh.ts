@@ -407,7 +407,7 @@ export default {
       fullScreenDescription: '将以下iframe嵌入您的网站处于所需位置',
       partialTitle: '部分嵌入',
       extensionTitle: 'Chrome 插件',
-      tokenError: '请先创建 Api Token!',
+      tokenError: '请先创建 API Token!',
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上传中',
@@ -641,7 +641,7 @@ export default {
       bing: 'Bing',
       bingTip:
         '此组件用于从 https://www.bing.com/ 获取搜索结果。通常，它作为知识库的补充。Top N 和 Bing Subscription-Key 指定您需要调整的搜索结果数量。',
-      apiKey: 'Api Key',
+      apiKey: 'API Key',
       country: '国家',
       language: '语言',
       googleScholar: '谷歌学术',
@@ -782,6 +782,7 @@ export default {
       host: '主机',
       port: '端口',
       password: '密码',
+      switch: '条件',
     },
     footer: {
       profile: 'All rights reserved @ React',
