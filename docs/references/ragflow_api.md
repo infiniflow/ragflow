@@ -29,7 +29,7 @@ To get your API key:
 
 1. In RAGFlow, click **Chat** tab in the middle top of the page.
 2. Hover over the corresponding dialogue **>** **Chat Bot API** to show the chatbot API configuration page.
-3. Click **Api Key** **>** **Create new key** to create your API key.
+3. Click **API Key** **>** **Create new key** to create your API key.
 4. Copy and keep your API key safe. 
 
 ## Create dataset
