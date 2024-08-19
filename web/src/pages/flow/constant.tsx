@@ -485,7 +485,7 @@ export const NodeMap = {
   [Operator.BaiduFanyi]: 'ragNode',
   [Operator.QWeather]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
-  [Operator.Switch]: 'logicNode',
+  [Operator.Switch]: 'categorizeNode',
 };
 
 export const LanguageOptions = [
