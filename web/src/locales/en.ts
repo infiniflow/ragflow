@@ -806,6 +806,7 @@ The above is the content you need to summarize.`,
       host: 'Host',
       port: 'Port',
       password: 'Password',
+      switch: 'Switch',
     },
     footer: {
       profile: 'All rights reserved @ React',

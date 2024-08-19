@@ -50,6 +50,7 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialSwitchValues,
   initialWikipediaValues,
 } from './constant';
 import { ICategorizeForm, IRelevantForm } from './interface';
@@ -109,6 +110,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
       [Operator.ExeSQL]: initialExeSqlValues,
+      [Operator.Switch]: initialSwitchValues,
     };
   }, [llmId]);
 
