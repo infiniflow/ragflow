@@ -121,7 +121,7 @@ class Generate(ComponentBase):
 
         if "empty_response" in retrieval_res.columns and not "".join(retrieval_res["content"]):
             res = {"content": "\n- ".join(retrieval_res["empty_response"]) if "\n- ".join(
-                retrieval_res["empty_response"]) else "NOT FOUND IN kb", "reference": []}
+                retrieval_res["empty_response"]) else "Nothing found in knowledgebase!", "reference": []}
             return Generate.be_output(res)
 
         ans = chat_mdl.chat(prompt, self._canvas.get_history(self._param.message_history_window_size),
@@ -136,7 +136,7 @@ class Generate(ComponentBase):
         res = None
         if "empty_response" in retrieval_res.columns and not "".join(retrieval_res["content"]):
             res = {"content": "\n- ".join(retrieval_res["empty_response"]) if "\n- ".join(
-                retrieval_res["empty_response"]) else "NOT FOUND IN kb", "reference": []}
+                retrieval_res["empty_response"]) else "Nothing found in knowledgebase!", "reference": []}
             yield res
             self.set_output(res)
             return
