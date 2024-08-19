@@ -1,7 +1,12 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Flex, Form, InputNumber, Slider } from 'antd';
 
-const MaxTokenNumber = () => {
+interface IProps {
+  initialValue?: number;
+  max?: number;
+}
+
+const MaxTokenNumber = ({ initialValue = 128, max = 2048 }: IProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
 
   return (
@@ -11,18 +16,19 @@ const MaxTokenNumber = () => {
           <Form.Item
             name={['parser_config', 'chunk_token_num']}
             noStyle
-            initialValue={128}
+            initialValue={initialValue}
             rules={[{ required: true, message: t('chunkTokenNumberMessage') }]}
           >
-            <Slider max={2048} style={{ width: '100%' }} />
+            <Slider max={max} style={{ width: '100%' }} />
           </Form.Item>
         </Flex>
         <Form.Item
           name={['parser_config', 'chunk_token_num']}
           noStyle
+          initialValue={initialValue}
           rules={[{ required: true, message: t('chunkTokenNumberMessage') }]}
         >
-          <InputNumber max={2048} min={0} />
+          <InputNumber max={max} min={0} />
         </Form.Item>
       </Flex>
     </Form.Item>

@@ -124,7 +124,7 @@ export const useDeleteChunk = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: ['deleteChunk'],
-    mutationFn: async (params: { chunkIds: string[]; documentId: string }) => {
+    mutationFn: async (params: { chunkIds: string[]; doc_id: string }) => {
       const { data } = await kbService.rm_chunk(params);
       if (data.retcode === 0) {
         setPaginationParams(1);
@@ -207,12 +207,13 @@ export const useFetchChunk = (chunkId?: string): ResponseType<any> => {
   return data;
 };
 
-export const useFetchKnowledgeGraph = (): ResponseType<any> => {
-  const { documentId } = useGetKnowledgeSearchParams();
-
+export const useFetchKnowledgeGraph = (
+  documentId: string,
+): ResponseType<any> => {
   const { data } = useQuery({
     queryKey: ['fetchKnowledgeGraph', documentId],
     initialData: true,
+    enabled: !!documentId,
     gcTime: 0,
     queryFn: async () => {
       const data = await kbService.knowledge_graph({

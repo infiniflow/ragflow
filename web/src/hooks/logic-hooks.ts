@@ -8,6 +8,7 @@ import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { PaginationProps } from 'antd';
+import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import {
@@ -336,4 +337,26 @@ export const useFetchModelId = () => {
   const { data: tenantInfo } = useFetchTenantInfo();
 
   return tenantInfo?.llm_id ?? '';
+};
+
+const ChunkTokenNumMap = {
+  naive: 128,
+  knowledge_graph: 8192,
+};
+
+export const useHandleChunkMethodSelectChange = (form: FormInstance) => {
+  // const form = Form.useFormInstance();
+  const handleChange = useCallback(
+    (value: string) => {
+      if (value in ChunkTokenNumMap) {
+        form.setFieldValue(
+          ['parser_config', 'chunk_token_num'],
+          ChunkTokenNumMap[value as keyof typeof ChunkTokenNumMap],
+        );
+      }
+    },
+    [form],
+  );
+
+  return handleChange;
 };

@@ -1,11 +1,11 @@
-import { MessageType } from '@/constants/chat';
+import { MessageType, SharedFrom } from '@/constants/chat';
 import {
   useCreateSharedConversation,
   useFetchSharedConversation,
 } from '@/hooks/chat-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
-import { IAnswer } from '@/interfaces/database/chat';
+import { IAnswer, Message } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import omit from 'lodash/omit';
 import trim from 'lodash/trim';
@@ -57,7 +57,7 @@ export const useSelectCurrentSharedConversation = (conversationId: string) => {
 
   const ref = useScrollToBottom(currentConversation);
 
-  const addNewestConversation = useCallback((message: string) => {
+  const addNewestConversation = useCallback((message: Partial<Message>) => {
     setCurrentConversation((pre) => {
       return {
         ...pre,
@@ -65,14 +65,15 @@ export const useSelectCurrentSharedConversation = (conversationId: string) => {
           ...(pre.message ?? []),
           {
             role: MessageType.User,
-            content: message,
+            content: message.content,
+            doc_ids: message.doc_ids,
             id: uuid(),
           } as IMessage,
           {
             role: MessageType.Assistant,
             content: '',
             id: uuid(),
-            reference: [],
+            reference: {},
           } as IMessage,
         ],
       };
@@ -140,7 +141,7 @@ export const useSendButtonDisabled = (value: string) => {
 
 export const useSendSharedMessage = (
   conversation: IClientConversation,
-  addNewestConversation: (message: string) => void,
+  addNewestConversation: (message: Partial<Message>, answer?: string) => void,
   removeLatestMessage: () => void,
   setCurrentConversation: Dispatch<SetStateAction<IClientConversation>>,
   addNewestAnswer: (answer: IAnswer) => void,
@@ -205,19 +206,31 @@ export const useSendSharedMessage = (
     }
   }, [answer, addNewestAnswer]);
 
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    if (done) {
-      setValue('');
-      addNewestConversation(value);
-      handleSendMessage(value.trim());
-    }
-  }, [addNewestConversation, done, handleSendMessage, setValue, value]);
+  const handlePressEnter = useCallback(
+    (documentIds: string[]) => {
+      if (trim(value) === '') return;
+      if (done) {
+        setValue('');
+        addNewestConversation({ content: value, doc_ids: documentIds });
+        handleSendMessage(value.trim());
+      }
+    },
+    [addNewestConversation, done, handleSendMessage, setValue, value],
+  );
 
   return {
     handlePressEnter,
     handleInputChange,
     value,
     loading: !done,
+  };
+};
+
+export const useGetSharedChatSearchParams = () => {
+  const [searchParams] = useSearchParams();
+
+  return {
+    from: searchParams.get('from') as SharedFrom,
+    sharedId: searchParams.get('shared_id'),
   };
 };

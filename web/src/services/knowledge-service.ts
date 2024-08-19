@@ -12,6 +12,7 @@ const {
   get_document_list,
   document_change_status,
   document_rm,
+  document_delete,
   document_create,
   document_change_parser,
   document_thumbnails,
@@ -28,6 +29,7 @@ const {
   document_upload,
   web_crawl,
   knowledge_graph,
+  document_infos,
 } = api;
 
 const methods = {
@@ -93,6 +95,10 @@ const methods = {
     url: web_crawl,
     method: 'post',
   },
+  document_infos: {
+    url: document_infos,
+    method: 'post',
+  },
   // chunk管理
   chunk_list: {
     url: chunk_list,
@@ -125,6 +131,10 @@ const methods = {
   knowledge_graph: {
     url: knowledge_graph,
     method: 'get',
+  },
+  document_delete: {
+    url: document_delete,
+    method: 'delete',
   },
 };
 

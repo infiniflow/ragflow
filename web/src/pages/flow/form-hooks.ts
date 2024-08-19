@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useCallback, useMemo } from 'react';
 import { Operator } from './constant';
 import useGraphStore from './store';
 
@@ -70,4 +71,16 @@ export const useHandleFormSelectChange = (nodeId?: string) => {
   );
 
   return { handleSelectChange };
+};
+
+export const useBuildSortOptions = () => {
+  const { t } = useTranslate('flow');
+
+  const options = useMemo(() => {
+    return ['data', 'relevance'].map((x) => ({
+      value: x,
+      label: t(x),
+    }));
+  }, [t]);
+  return options;
 };

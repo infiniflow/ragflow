@@ -2,6 +2,7 @@ import { Graph } from '@antv/g6';
 import { useSize } from 'ahooks';
 import { useEffect, useRef } from 'react';
 import { graphData } from './constant';
+import InputWithUpload from './input-upload';
 
 import styles from './index.less';
 import { Converter } from './util';
@@ -108,4 +109,4 @@ const ForceGraph = () => {
   return <div ref={containerRef} className={styles.container} />;
 };
 
-export default ForceGraph;
+export default InputWithUpload;

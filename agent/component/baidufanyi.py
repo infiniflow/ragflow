@@ -16,7 +16,6 @@
 import random
 from abc import ABC
 import requests
-import re
 from agent.component.base import ComponentBase, ComponentParamBase
 from hashlib import md5
 
@@ -28,7 +27,6 @@ class BaiduFanyiParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
-        self.prompt = ""
         self.appid = "xxx"
         self.secret_key = "xxx"
         self.trans_type = 'translate'
@@ -62,24 +60,11 @@ class BaiduFanyi(ComponentBase, ABC):
     component_name = "BaiduFanyi"
 
     def _run(self, history, **kwargs):
-        prompt = self._param.prompt
 
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
             return BaiduFanyi.be_output("")
-
-        for para in self._param.parameters:
-            cpn = self._canvas.get_component(para["component_id"])["obj"]
-            _, out = cpn.output(allow_partial=False)
-            if "content" not in out.columns:
-                kwargs[para["key"]] = "Nothing"
-            else:
-                kwargs[para["key"]] = "  - " + "\n  - ".join(out["content"])
-
-        kwargs["input"] = ans
-        for n, v in kwargs.items():
-            prompt = re.sub(r"\{%s\}" % n, str(v), prompt)
 
         try:
             source_lang = self._param.source_lang
@@ -89,8 +74,8 @@ class BaiduFanyi(ComponentBase, ABC):
             secret_key = self._param.secret_key
 
             if self._param.trans_type == 'translate':
-                sign = md5((appid + prompt + salt + secret_key).encode('utf-8')).hexdigest()
-                url = 'http://api.fanyi.baidu.com/api/trans/vip/translate?' + 'q=' + prompt + '&from=' + source_lang + '&to=' + target_lang + '&appid=' + appid + '&salt=' + salt + '&sign=' + sign
+                sign = md5((appid + ans + salt + secret_key).encode('utf-8')).hexdigest()
+                url = 'http://api.fanyi.baidu.com/api/trans/vip/translate?' + 'q=' + ans + '&from=' + source_lang + '&to=' + target_lang + '&appid=' + appid + '&salt=' + salt + '&sign=' + sign
                 headers = {"Content-Type": "application/x-www-form-urlencoded"}
                 response = requests.post(url=url, headers=headers).json()
 
@@ -100,8 +85,8 @@ class BaiduFanyi(ComponentBase, ABC):
                 return BaiduFanyi.be_output(response['trans_result'][0]['dst'])
             elif self._param.trans_type == 'fieldtranslate':
                 domain = self._param.domain
-                sign = md5((appid + prompt + salt + domain + secret_key).encode('utf-8')).hexdigest()
-                url = 'http://api.fanyi.baidu.com/api/trans/vip/fieldtranslate?' + 'q=' + prompt + '&from=' + source_lang + '&to=' + target_lang + '&appid=' + appid + '&salt=' + salt + '&domain=' + domain + '&sign=' + sign
+                sign = md5((appid + ans + salt + domain + secret_key).encode('utf-8')).hexdigest()
+                url = 'http://api.fanyi.baidu.com/api/trans/vip/fieldtranslate?' + 'q=' + ans + '&from=' + source_lang + '&to=' + target_lang + '&appid=' + appid + '&salt=' + salt + '&domain=' + domain + '&sign=' + sign
                 headers = {"Content-Type": "application/x-www-form-urlencoded"}
                 response = requests.post(url=url, headers=headers).json()
 

@@ -38,10 +38,10 @@ export default {
   knowledge_graph: `${api_host}/chunk/knowledge_graph`,
 
   // document
-  upload: `${api_host}/document/upload`,
   get_document_list: `${api_host}/document/list`,
   document_change_status: `${api_host}/document/change_status`,
   document_rm: `${api_host}/document/rm`,
+  document_delete: `${api_host}/api/document`,
   document_rename: `${api_host}/document/rename`,
   document_create: `${api_host}/document/create`,
   document_run: `${api_host}/document/run`,
@@ -50,6 +50,7 @@ export default {
   get_document_file: `${api_host}/document/get`,
   document_upload: `${api_host}/document/upload`,
   web_crawl: `${api_host}/document/web_crawl`,
+  document_infos: `${api_host}/document/infos`,
 
   // chat
   setDialog: `${api_host}/dialog/set`,

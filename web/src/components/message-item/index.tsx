@@ -1,18 +1,25 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { useTranslate } from '@/hooks/common-hooks';
+import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference, Message } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';
-import { useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
+import {
+  useFetchDocumentInfosByIds,
+  useFetchDocumentThumbnailsByIds,
+} from '@/hooks/document-hooks';
 import MarkdownContent from '@/pages/chat/markdown-content';
-import { getExtension } from '@/utils/document-util';
-import { Avatar, Flex, List } from 'antd';
+import { getExtension, isImage } from '@/utils/document-util';
+import { Avatar, Button, Flex, List, Typography } from 'antd';
+import FileIcon from '../file-icon';
+import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
-import SvgIcon from '../svg-icon';
 import styles from './index.less';
+
+const { Text } = Typography;
 
 interface IProps {
   item: Message;
@@ -32,8 +39,14 @@ const MessageItem = ({
   clickDocumentButton,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
+  const isUser = item.role === MessageType.User;
   const { t } = useTranslate('chat');
   const fileThumbnails = useSelectFileThumbnails();
+  const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
+  const { data: documentThumbnails, setDocumentIds: setIds } =
+    useFetchDocumentThumbnailsByIds();
+  const { visible, hideModal, showModal } = useSetModalState();
+  const [clickedDocumentId, setClickedDocumentId] = useState('');
 
   const referenceDocumentList = useMemo(() => {
     return reference?.doc_aggs ?? [];
@@ -46,6 +59,25 @@ const MessageItem = ({
     }
     return loading ? text?.concat('~~2$$') : text;
   }, [item.content, loading, t]);
+
+  const handleUserDocumentClick = useCallback(
+    (id: string) => () => {
+      setClickedDocumentId(id);
+      showModal();
+    },
+    [showModal],
+  );
+
+  useEffect(() => {
+    const ids = item?.doc_ids ?? [];
+    if (ids.length) {
+      setDocumentIds(ids);
+      const documentIds = ids.filter((x) => !(x in fileThumbnails));
+      if (documentIds.length) {
+        setIds(documentIds);
+      }
+    }
+  }, [item.doc_ids, setDocumentIds, setIds, fileThumbnails]);
 
   return (
     <div
@@ -94,22 +126,13 @@ const MessageItem = ({
                 bordered
                 dataSource={referenceDocumentList}
                 renderItem={(item) => {
-                  const fileThumbnail = fileThumbnails[item.doc_id];
-                  const fileExtension = getExtension(item.doc_name);
                   return (
                     <List.Item>
                       <Flex gap={'small'} align="center">
-                        {fileThumbnail ? (
-                          <img
-                            src={fileThumbnail}
-                            className={styles.thumbnailImg}
-                          ></img>
-                        ) : (
-                          <SvgIcon
-                            name={`file-icon/${fileExtension}`}
-                            width={24}
-                          ></SvgIcon>
-                        )}
+                        <FileIcon
+                          id={item.doc_id}
+                          name={item.doc_name}
+                        ></FileIcon>
 
                         <NewDocumentLink
                           documentId={item.doc_id}
@@ -124,11 +147,59 @@ const MessageItem = ({
                 }}
               />
             )}
+            {isUser && documentList.length > 0 && (
+              <List
+                bordered
+                dataSource={documentList}
+                renderItem={(item) => {
+                  // TODO:
+                  const fileThumbnail =
+                    documentThumbnails[item.id] || fileThumbnails[item.id];
+                  const fileExtension = getExtension(item.name);
+                  return (
+                    <List.Item>
+                      <Flex gap={'small'} align="center">
+                        <FileIcon id={item.id} name={item.name}></FileIcon>
+
+                        {isImage(fileExtension) ? (
+                          <NewDocumentLink
+                            documentId={item.id}
+                            documentName={item.name}
+                            prefix="document"
+                          >
+                            {item.name}
+                          </NewDocumentLink>
+                        ) : (
+                          <Button
+                            type={'text'}
+                            onClick={handleUserDocumentClick(item.id)}
+                          >
+                            <Text
+                              style={{ maxWidth: '40vw' }}
+                              ellipsis={{ tooltip: item.name }}
+                            >
+                              {item.name}
+                            </Text>
+                          </Button>
+                        )}
+                      </Flex>
+                    </List.Item>
+                  );
+                }}
+              />
+            )}
           </Flex>
         </div>
       </section>
+      {visible && (
+        <IndentedTreeModal
+          visible={visible}
+          hideModal={hideModal}
+          documentId={clickedDocumentId}
+        ></IndentedTreeModal>
+      )}
     </div>
   );
 };
 
-export default MessageItem;
+export default memo(MessageItem);

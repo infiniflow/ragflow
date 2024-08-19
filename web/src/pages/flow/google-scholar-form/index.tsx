@@ -3,6 +3,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { DatePicker, DatePickerProps, Form, Select, Switch } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useMemo } from 'react';
+import { useBuildSortOptions } from '../form-hooks';
 import { IOperatorForm } from '../interface';
 
 const YearPicker = ({
@@ -33,12 +34,7 @@ const YearPicker = ({
 const GoogleScholarForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
-  const options = useMemo(() => {
-    return ['data', 'relevance'].map((x) => ({
-      value: x,
-      label: t(x),
-    }));
-  }, [t]);
+  const options = useBuildSortOptions();
 
   return (
     <Form

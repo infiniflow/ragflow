@@ -72,7 +72,7 @@ class Base(ABC):
                         + num_tokens_from_string(resp.choices[0].delta.content)
                     )
                     if not hasattr(resp, "usage") or not resp.usage
-                    else resp.usage["total_tokens"]
+                    else resp.usage.get("total_tokens",total_tokens)
                 )
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
@@ -678,6 +678,10 @@ class BedrockChat(Base):
         if "top_p" in gen_conf:
             gen_conf["topP"] = gen_conf["top_p"]
             _ = gen_conf.pop("top_p")
+        for item in history:
+            if not isinstance(item["content"],list) and not isinstance(item["content"],tuple):
+                item["content"] = [{"text":item["content"]}]
+            
 
         try:
             # Send the message to the model, using a basic inference configuration.
@@ -707,7 +711,10 @@ class BedrockChat(Base):
         if "top_p" in gen_conf:
             gen_conf["topP"] = gen_conf["top_p"]
             _ = gen_conf.pop("top_p")
-
+        for item in history:
+            if not isinstance(item["content"],list) and not isinstance(item["content"],tuple):
+                item["content"] = [{"text":item["content"]}]
+                
         if self.model_name.split('.')[0] == 'ai21':
             try:
                 response = self.client.converse(
@@ -987,4 +994,46 @@ class LeptonAIChat(Base):
     def __init__(self, key, model_name, base_url=None):
         if not base_url:
             base_url = os.path.join("https://"+model_name+".lepton.run","api","v1")
+        super().__init__(key, model_name, base_url)
+
+
+class TogetherAIChat(Base):
+    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1"):
+        if not base_url:
+            base_url = "https://api.together.xyz/v1"
+        super().__init__(key, model_name, base_url)
+
+      
+class PerfXCloudChat(Base):
+    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1"):
+        if not base_url:
+            base_url = "https://cloud.perfxlab.cn/v1"
+        super().__init__(key, model_name, base_url)
+
+
+class UpstageChat(Base):
+    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar"):
+        if not base_url:
+            base_url = "https://api.upstage.ai/v1/solar"
+        super().__init__(key, model_name, base_url)
+
+
+class NovitaAIChat(Base):
+    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai"):
+        if not base_url:
+            base_url = "https://api.novita.ai/v3/openai"
+        super().__init__(key, model_name, base_url)
+
+
+class SILICONFLOWChat(Base):
+    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1"):
+        if not base_url:
+            base_url = "https://api.siliconflow.cn/v1"
+        super().__init__(key, model_name, base_url)
+
+
+class YiChat(Base):
+    def __init__(self, key, model_name, base_url="https://api.01.ai/v1"):
+        if not base_url:
+            base_url = "https://api.01.ai/v1"
         super().__init__(key, model_name, base_url)

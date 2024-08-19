@@ -57,6 +57,26 @@ class MindMapExtractor:
         self._mind_map_prompt = prompt or MIND_MAP_EXTRACTION_PROMPT
         self._on_error = on_error or (lambda _e, _s, _d: None)
 
+    def _key(self, k):
+        return re.sub(r"\*+", "", k)
+
+    def _be_children(self, obj: dict, keyset: set):
+        if isinstance(obj, str):
+            obj = [obj]
+        if isinstance(obj, list):
+            for i in obj: keyset.add(i)
+            return [{"id": re.sub(r"\*+", "", i), "children": []} for i in obj]
+        arr = []
+        for k, v in obj.items():
+            k = self._key(k)
+            if not k or k in keyset: continue
+            keyset.add(k)
+            arr.append({
+                "id": k,
+                "children": self._be_children(v, keyset)
+            })
+        return arr
+
     def __call__(
             self, sections: list[str], prompt_variables: dict[str, Any] | None = None
     ) -> MindMapResult:
@@ -86,13 +106,23 @@ class MindMapExtractor:
                 res.append(_.result())
 
             merge_json = reduce(self._merge, res)
-            merge_json = self._list_to_kv(merge_json)
+            if len(merge_json.keys()) > 1:
+                keyset = set(
+                    [re.sub(r"\*+", "", k) for k, v in merge_json.items() if isinstance(v, dict) and re.sub(r"\*+", "", k)])
+                merge_json = {"id": "root",
+                          "children": [{"id": self._key(k), "children": self._be_children(v, keyset)} for k, v in
+                                       merge_json.items() if isinstance(v, dict) and self._key(k)]}
+            else:
+                k = self._key(list(merge_json.keys())[0])
+                merge_json = {"id": k, "children": self._be_children(list(merge_json.items())[0][1], set([k]))}
+
         except Exception as e:
             logging.exception("error mind graph")
             self._on_error(
                 e,
                 traceback.format_exc(), None
             )
+            merge_json = {"error": str(e)}
 
         return MindMapResult(output=merge_json)
 

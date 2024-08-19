@@ -22,6 +22,7 @@ import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
 import { useTranslate } from '@/hooks/common-hooks';
+import Delimiter from '../delimiter';
 import EntityTypesItem from '../entity-types-item';
 import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
@@ -61,12 +62,13 @@ const ChunkMethodModal: React.FC<IProps> = ({
   parserConfig,
   loading,
 }) => {
+  const [form] = Form.useForm();
   const { parserList, handleChange, selectedTag } = useFetchParserListOnMount(
     documentId,
     parserId,
     documentExtension,
+    form,
   );
-  const [form] = Form.useForm();
   const { t } = useTranslate('knowledgeDetails');
 
   const handleOk = async () => {
@@ -88,12 +90,13 @@ const ChunkMethodModal: React.FC<IProps> = ({
     return (
       isPdf &&
       hidePagesChunkMethods
-        .filter((x) => x !== 'one' && x !== 'knowledge_graph')
+        .filter((x) => x !== 'one')
         .every((x) => x !== selectedTag)
     );
   }, [selectedTag, isPdf]);
 
-  const showMaxTokenNumber = selectedTag === 'naive';
+  const showMaxTokenNumber =
+    selectedTag === 'naive' || selectedTag === 'knowledge_graph';
 
   const hideDivider = [showPages, showOne, showMaxTokenNumber].every(
     (x) => x === false,
@@ -268,7 +271,14 @@ const ChunkMethodModal: React.FC<IProps> = ({
             }
           </Form.Item>
         )}
-        {showMaxTokenNumber && <MaxTokenNumber></MaxTokenNumber>}
+        {showMaxTokenNumber && (
+          <>
+            <MaxTokenNumber
+              max={selectedTag === 'knowledge_graph' ? 8192 * 2 : 2048}
+            ></MaxTokenNumber>
+            <Delimiter></Delimiter>
+          </>
+        )}
         {showRaptorParseConfiguration(selectedTag) && (
           <ParseConfiguration></ParseConfiguration>
         )}

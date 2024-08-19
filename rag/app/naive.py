@@ -61,9 +61,8 @@ class Docx(DocxParser):
             if pn > to_page:
                 break
             if from_page <= pn < to_page:
-                current_image = None
                 if p.text.strip():
-                    if p.style.name == 'Caption':
+                    if p.style and p.style.name == 'Caption':
                         former_image = None
                         if lines and lines[-1][1] and lines[-1][2] != 'Caption':
                             former_image = lines[-1][1].pop()
@@ -224,9 +223,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         excel_parser = ExcelParser()
         sections = [(l, "") for l in excel_parser.html(binary) if l]
 
-    elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = TxtParser()(filename,binary,parser_config.get("chunk_token_num", 128))
+        sections = TxtParser()(filename,binary,
+                               parser_config.get("chunk_token_num", 128),
+                               parser_config.get("delimiter", "\n!?;。；！？"))
         callback(0.8, "Finish parsing.")
     
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):

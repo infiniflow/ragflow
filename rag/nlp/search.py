@@ -138,6 +138,8 @@ class Dealer:
         es_logger.info("TOTAL: {}".format(self.es.getTotal(res)))
         if self.es.getTotal(res) == 0 and "knn" in s:
             bqry, _ = self.qryr.question(qst, min_match="10%")
+            if req.get("doc_ids"):
+                bqry = Q("bool", must=[])
             bqry = self._add_filters(bqry, req)
             s["query"] = bqry.to_dict()
             s["knn"]["filter"] = bqry.to_dict()
