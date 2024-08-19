@@ -388,7 +388,7 @@ export const initialExeSqlValues = {
   top_n: 30,
 };
 
-export const initialSwitchValues = {};
+export const initialSwitchValues = { conditions: [{}] };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },

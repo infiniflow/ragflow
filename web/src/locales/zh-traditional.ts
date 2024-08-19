@@ -765,6 +765,7 @@ export default {
       port: '端口',
       password: '密碼',
       switch: '條件',
+      logicalOperator: '操作符',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
