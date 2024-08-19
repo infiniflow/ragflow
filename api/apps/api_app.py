@@ -572,7 +572,13 @@ def list_kb_docs():
         return server_error_response(e)
 
 @manager.route('/document/infos', methods=['POST'])
+@validate_request("doc_ids")
 def docinfos():
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
     req = request.json
     doc_ids = req["doc_ids"]
     docs = DocumentService.get_by_ids(doc_ids)
