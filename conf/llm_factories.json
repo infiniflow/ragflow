@@ -137,12 +137,6 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "glm-3-turbo",
-                    "tags": "LLM,CHAT,",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
                     "llm_name": "glm-4",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 128000,
@@ -171,7 +165,13 @@
                     "tags": "LLM,CHAT,",
                     "max_tokens": 1000000,
                     "model_type": "chat"
-                }, 
+                },
+                {
+                    "llm_name": "glm-3-turbo",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
                 {
                     "llm_name": "glm-4v",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
