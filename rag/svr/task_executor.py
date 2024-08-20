@@ -348,7 +348,7 @@ def main():
         chunk_count = len(set([c["_id"] for c in cks]))
         st = timer()
         es_r = ""
-        es_bulk_size = 16
+        es_bulk_size = 4
         for b in range(0, len(cks), es_bulk_size):
             es_r = ELASTICSEARCH.bulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]))
             if b % 128 == 0:
