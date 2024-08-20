@@ -4,7 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useUpdateNodeInternals } from 'reactflow';
 import { Operator } from '../../constant';
 import { IPosition, NodeData } from '../../interface';
-import { buildNewPositionMap, isKeysEqual } from '../../utils';
+import {
+  buildNewPositionMap,
+  generateSwitchHandleText,
+  isKeysEqual,
+} from '../../utils';
 
 export const useBuildCategorizeHandlePositions = ({
   data,
@@ -32,7 +36,7 @@ export const useBuildCategorizeHandlePositions = ({
         const position = positionMap[x];
         let text = x;
         if (operatorName === Operator.Switch) {
-          text = `Item ${idx + 1}`;
+          text = generateSwitchHandleText(idx);
         }
         return { text, ...position };
       })

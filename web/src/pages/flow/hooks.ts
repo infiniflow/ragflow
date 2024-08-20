@@ -53,10 +53,11 @@ import {
   initialSwitchValues,
   initialWikipediaValues,
 } from './constant';
-import { ICategorizeForm, IRelevantForm } from './interface';
+import { ICategorizeForm, IRelevantForm, ISwitchForm } from './interface';
 import useGraphStore, { RFState } from './store';
 import {
   buildDslComponentsByGraph,
+  generateSwitchHandleText,
   receiveMessageError,
   replaceIdWithText,
 } from './utils';
@@ -498,6 +499,31 @@ export const useWatchNodeFormDataChange = () => {
     [setEdgesByNodeId],
   );
 
+  const buildSwitchEdgesByFormData = useCallback(
+    (nodeId: string, form: ISwitchForm) => {
+      // add
+      // delete
+      // edit
+      const conditions = form.conditions;
+      const downstreamEdges = conditions.reduce<Edge[]>((pre, _, idx) => {
+        const target = conditions[idx]?.to;
+        if (target) {
+          pre.push({
+            id: uuid(),
+            source: nodeId,
+            target,
+            sourceHandle: generateSwitchHandleText(idx),
+          });
+        }
+
+        return pre;
+      }, []);
+
+      setEdgesByNodeId(nodeId, downstreamEdges);
+    },
+    [setEdgesByNodeId],
+  );
+
   useEffect(() => {
     nodes.forEach((node) => {
       const currentNode = getNode(node.id);
@@ -510,6 +536,9 @@ export const useWatchNodeFormDataChange = () => {
         case Operator.Categorize:
           buildCategorizeEdgesByFormData(node.id, form as ICategorizeForm);
           break;
+        case Operator.Switch:
+          buildSwitchEdgesByFormData(node.id, form as ISwitchForm);
+          break;
         default:
           break;
       }
@@ -519,5 +548,6 @@ export const useWatchNodeFormDataChange = () => {
     buildCategorizeEdgesByFormData,
     getNode,
     buildRelevantEdgesByFormData,
+    buildSwitchEdgesByFormData,
   ]);
 };
