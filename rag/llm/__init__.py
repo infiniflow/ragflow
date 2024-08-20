@@ -100,7 +100,8 @@ ChatModel = {
     "SILICONFLOW": SILICONFLOWChat,
     "01.AI": YiChat,
     "Replicate": ReplicateChat,
-    "Tencent Hunyuan": HunyuanChat
+    "Tencent Hunyuan": HunyuanChat,
+    "XunFei Spark": SparkChat
 }
 
 

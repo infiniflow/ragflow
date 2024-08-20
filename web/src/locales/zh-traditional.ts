@@ -488,6 +488,9 @@ export default {
       HunyuanSIDMessage: '請輸入 Secret ID',
       addHunyuanSK: '混元 Secret Key',
       HunyuanSKMessage: '請輸入 Secret Key',
+      SparkModelNameMessage: '請選擇星火模型!',
+      addSparkAPIPassword: '星火 APIPassword',
+      SparkAPIPasswordMessage: '請輸入 APIPassword',
     },
     message: {
       registered: '註冊成功',
