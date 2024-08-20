@@ -87,7 +87,19 @@ export const operatorIconMap = {
   [Operator.Switch]: SwitchIcon,
 };
 
-export const operatorMap = {
+export const operatorMap: Record<
+  Operator,
+  {
+    backgroundColor?: string;
+    color?: string;
+    width?: number;
+    height?: number;
+    fontSize?: number;
+    iconFontSize?: number;
+    iconWidth?: number;
+    moreIconColor?: number;
+  }
+> = {
   [Operator.Retrieval]: {
     backgroundColor: '#cad6e0',
     color: '#385974',
@@ -388,7 +400,7 @@ export const initialExeSqlValues = {
   top_n: 30,
 };
 
-export const initialSwitchValues = { conditions: [{}] };
+export const initialSwitchValues = { conditions: [] };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },

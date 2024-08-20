@@ -1,11 +1,10 @@
 import get from 'lodash/get';
-import intersectionWith from 'lodash/intersectionWith';
-import isEqual from 'lodash/isEqual';
 import pick from 'lodash/pick';
 import { useEffect, useMemo, useState } from 'react';
 import { useUpdateNodeInternals } from 'reactflow';
+import { Operator } from '../../constant';
 import { IPosition, NodeData } from '../../interface';
-import { buildNewPositionMap } from '../../utils';
+import { buildNewPositionMap, isKeysEqual } from '../../utils';
 
 export const useBuildCategorizeHandlePositions = ({
   data,
@@ -14,40 +13,41 @@ export const useBuildCategorizeHandlePositions = ({
   id: string;
   data: NodeData;
 }) => {
+  const operatorName = data.label as Operator;
   const updateNodeInternals = useUpdateNodeInternals();
   const [positionMap, setPositionMap] = useState<Record<string, IPosition>>({});
-  const categoryData = useMemo(
-    () => get(data, 'form.category_description') ?? {},
-    [data],
-  );
+
+  const categoryData = useMemo(() => {
+    if (operatorName === Operator.Categorize) {
+      return get(data, `form.category_description`, {});
+    } else if (operatorName === Operator.Switch) {
+      return get(data, 'form.conditions', []);
+    }
+    return {};
+  }, [data, operatorName]);
 
   const positions = useMemo(() => {
     return Object.keys(categoryData)
-      .map((x) => {
+      .map((x, idx) => {
         const position = positionMap[x];
-        return { text: x, ...position };
+        let text = x;
+        if (operatorName === Operator.Switch) {
+          text = `Item ${idx + 1}`;
+        }
+        return { text, ...position };
       })
       .filter((x) => typeof x?.right === 'number');
-  }, [categoryData, positionMap]);
+  }, [categoryData, positionMap, operatorName]);
 
   useEffect(() => {
     // Cache used coordinates
     setPositionMap((state) => {
-      // index in use
-      const indexesInUse = Object.values(state).map((x) => x.idx);
       const categoryDataKeys = Object.keys(categoryData);
       const stateKeys = Object.keys(state);
-      if (!isEqual(categoryDataKeys.sort(), stateKeys.sort())) {
-        const intersectionKeys = intersectionWith(
-          stateKeys,
+      if (!isKeysEqual(categoryDataKeys, stateKeys)) {
+        const { newPositionMap, intersectionKeys } = buildNewPositionMap(
           categoryDataKeys,
-          (categoryDataKey, postionMapKey) => categoryDataKey === postionMapKey,
-        );
-        const newPositionMap = buildNewPositionMap(
-          categoryDataKeys.filter(
-            (x) => !intersectionKeys.some((y) => y === x),
-          ),
-          indexesInUse,
+          state,
         );
 
         const nextPositionMap = {
@@ -68,10 +68,30 @@ export const useBuildCategorizeHandlePositions = ({
   return { positions };
 };
 
-export const useBuildSwitchHandlePositions = ({
-  data,
-  id,
-}: {
-  id: string;
-  data: NodeData;
-}) => {};
+// export const useBuildSwitchHandlePositions = ({
+//   data,
+//   id,
+// }: {
+//   id: string;
+//   data: NodeData;
+// }) => {
+//   const [positionMap, setPositionMap] = useState<Record<string, IPosition>>({});
+//   const conditions = useMemo(() => get(data, 'form.conditions', []), [data]);
+//   const updateNodeInternals = useUpdateNodeInternals();
+
+//   const positions = useMemo(() => {
+//     return conditions
+//       .map((x, idx) => {
+//         const text = `Item ${idx}`;
+//         const position = positionMap[text];
+//         return { text: text, ...position };
+//       })
+//       .filter((x) => typeof x?.right === 'number');
+//   }, [conditions, positionMap]);
+
+//   useEffect(() => {
+//     updateNodeInternals(id);
+//   }, [id, updateNodeInternals, positionMap]);
+
+//   return { positions };
+// };
