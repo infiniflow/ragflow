@@ -190,6 +190,33 @@ export const useSubmitHunyuan = () => {
   };
 };
 
+export const useSubmitSpark = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: SparkAddingVisible,
+    hideModal: hideSparkAddingModal,
+    showModal: showSparkAddingModal,
+  } = useSetModalState();
+
+  const onSparkAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideSparkAddingModal();
+      }
+    },
+    [hideSparkAddingModal, addLlm],
+  );
+
+  return {
+    SparkAddingLoading: loading,
+    onSparkAddingOk,
+    SparkAddingVisible,
+    hideSparkAddingModal,
+    showSparkAddingModal,
+  };
+};
+
 export const useSubmitBedrock = () => {
   const { addLlm, loading } = useAddLlm();
   const {

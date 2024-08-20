@@ -3194,6 +3194,13 @@
                     "model_type": "image2text"
                 }
             ]
+        },
+        {
+            "name": "XunFei Spark",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
         }
     ]
 }
