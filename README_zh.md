@@ -51,7 +51,7 @@
 - 2024-07-21 支持更多的大模型供应商(LocalAI/OpenRouter/StepFun/Nvidia)。
 - 2024-07-18 在Graph中支持算子：Wikipedia、PubMed、Baidu和Duckduckgo。
 - 2024-07-08 支持 Agentic RAG: 基于 [Graph](./graph/README.md) 的工作流。
-- 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件。 
+- 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件。
 - 2024-06-27 支持提取出 Docx 文件中的图片。
 - 2024-06-27 支持提取出 Markdown 文件中的表格。
 - 2024-06-06 支持 [Self-RAG](https://huggingface.co/papers/2310.11511) ，在对话设置里面默认勾选。
@@ -213,24 +213,27 @@ $ docker compose up -d
 如需从源码启动服务，请参考以下步骤：
 
 1. 克隆仓库
+
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
 ```
 
 2. 创建虚拟环境（确保已安装 Anaconda 或 Miniconda）
+
 ```bash
 $ conda create -n ragflow python=3.11.0
 $ conda activate ragflow
 $ pip install -r requirements.txt
 ```
-如果cuda > 12.0，需额外执行以下命令：
+如果 cuda > 12.0，需额外执行以下命令：
 ```bash
 $ pip uninstall -y onnxruntime-gpu
 $ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
 ```
 
 3. 拷贝入口脚本并配置环境变量
+
 ```bash
 $ cp docker/entrypoint.sh .
 $ vi entrypoint.sh
@@ -241,19 +244,20 @@ $ which python
 $ pwd
 ```
 
-将上述`which python`的输出作为`PY`的值，将`pwd`的输出作为`PYTHONPATH`的值。
+将上述 `which python` 的输出作为 `PY` 的值，将 `pwd` 的输出作为 `PYTHONPATH` 的值。
 
-`LD_LIBRARY_PATH`如果环境已经配置好，可以注释掉。
+`LD_LIBRARY_PATH` 如果环境已经配置好，可以注释掉。
 
 ```bash
-# 此处配置需要按照实际情况调整，两个export为新增配置
+# 此处配置需要按照实际情况调整，两个 export 为新增配置
 PY=${PY}
 export PYTHONPATH=${PYTHONPATH}
-# 可选：添加Hugging Face镜像
+# 可选：添加 Hugging Face 镜像
 export HF_ENDPOINT=https://hf-mirror.com
 ```
 
 4. 启动基础服务
+
 ```bash
 $ cd docker
 $ docker compose -f docker-compose-base.yml up -d 
@@ -263,11 +267,14 @@ $ docker compose -f docker-compose-base.yml up -d
 确保**docker/.env**中的配置与**conf/service_conf.yaml**中配置一致， **service_conf.yaml**中相关服务的IP地址与端口应该改成本机IP地址及容器映射出来的端口。
 
 6. 启动服务
+
 ```bash
 $ chmod +x ./entrypoint.sh
 $ bash ./entrypoint.sh
 ```
+
 7. 启动WebUI服务
+
 ```bash
 $ cd web
 $ npm install --registry=https://registry.npmmirror.com --force
@@ -277,6 +284,7 @@ $ npm run dev
 ```
 
 8. 部署WebUI服务
+
 ```bash
 $ cd web
 $ npm install --registry=https://registry.npmmirror.com --force
@@ -308,7 +316,7 @@ $ systemctl start nginx
 
 ## 🙌 贡献指南
 
-RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的[贡献者指南](./docs/references/CONTRIBUTING.md) 。
+RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的 [贡献者指南](./docs/references/CONTRIBUTING.md) 。
 
 ## 🤝 商务合作
 
