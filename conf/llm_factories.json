@@ -105,6 +105,12 @@
                     "model_type": "embedding"
                 },
                 {
+                    "llm_name": "text-embedding-v3",
+                    "tags": "TEXT EMBEDDING,2K",
+                    "max_tokens": 2048,
+                    "model_type": "embedding"
+                },
+                {
                     "llm_name": "paraformer-realtime-8k-v1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
@@ -131,13 +137,37 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "glm-3-turbo",
+                    "llm_name": "glm-4",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 128000,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "glm-4",
+                    "llm_name": "glm-4-airx",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 8000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "glm-4-air",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "glm-4-flash",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "glm-4-long",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 1000000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "glm-3-turbo",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 128000,
                     "model_type": "chat"
@@ -150,6 +180,12 @@
                 },
                 {
                     "llm_name": "embedding-2",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embedding-3",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 512,
                     "model_type": "embedding"
