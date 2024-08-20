@@ -184,6 +184,14 @@ const useGraphStore = create<RFState>()(
                   'to',
                 ]);
               break;
+            // case Operator.Switch:
+            //   if (sourceHandle)
+            //     updateNodeForm(source, target, [
+            //       'conditions',
+            //       sourceHandle,
+            //       'to',
+            //     ]);
+            //   break;
             default:
               break;
           }
