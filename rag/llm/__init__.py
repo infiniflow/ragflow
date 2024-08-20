@@ -63,7 +63,8 @@ CvModel = {
     "StepFun":StepFunCV,
     "OpenAI-API-Compatible": OpenAI_APICV,
     "TogetherAI": TogetherAICV,
-    "01.AI": YiCV
+    "01.AI": YiCV,
+    "Tencent Hunyuan": HunyuanCV
 }
 
 
@@ -98,7 +99,8 @@ ChatModel = {
     "novita.ai": NovitaAIChat,
     "SILICONFLOW": SILICONFLOWChat,
     "01.AI": YiChat,
-    "Replicate": ReplicateChat
+    "Replicate": ReplicateChat,
+    "Tencent Hunyuan": HunyuanChat
 }
 
 
