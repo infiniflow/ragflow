@@ -23,7 +23,7 @@ import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { Operator } from './constant';
 import { NodeData } from './interface';
-import { isEdgeEqual } from './utils';
+import { getOperatorIndex, isEdgeEqual } from './utils';
 
 export type RFState = {
   nodes: Node<NodeData>[];
@@ -184,14 +184,19 @@ const useGraphStore = create<RFState>()(
                   'to',
                 ]);
               break;
-            // case Operator.Switch:
-            //   if (sourceHandle)
-            //     updateNodeForm(source, target, [
-            //       'conditions',
-            //       sourceHandle,
-            //       'to',
-            //     ]);
-            //   break;
+            case Operator.Switch: {
+              if (sourceHandle) {
+                const operatorIndex = getOperatorIndex(sourceHandle);
+                if (operatorIndex) {
+                  updateNodeForm(source, target, [
+                    'conditions',
+                    operatorIndex,
+                    'to',
+                  ]);
+                }
+              }
+              break;
+            }
             default:
               break;
           }
@@ -201,7 +206,11 @@ const useGraphStore = create<RFState>()(
         // Delete the edge on the classification node or relevant node anchor when the anchor is connected to other nodes
         const { edges, getOperatorTypeFromId, deleteEdgeById } = get();
         // the node containing the anchor
-        const anchoredNodes = [Operator.Categorize, Operator.Relevant];
+        const anchoredNodes = [
+          Operator.Categorize,
+          Operator.Relevant,
+          Operator.Switch,
+        ];
         if (
           anchoredNodes.some(
             (x) => x === getOperatorTypeFromId(connection.source),
@@ -265,6 +274,19 @@ const useGraphStore = create<RFState>()(
                   'to',
                 ]);
               break;
+            case Operator.Switch: {
+              if (sourceHandle) {
+                const operatorIndex = getOperatorIndex(sourceHandle);
+                if (operatorIndex) {
+                  updateNodeForm(source, undefined, [
+                    'conditions',
+                    operatorIndex,
+                    'to',
+                  ]);
+                }
+              }
+              break;
+            }
             default:
               break;
           }

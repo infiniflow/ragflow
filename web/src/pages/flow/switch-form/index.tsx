@@ -1,10 +1,10 @@
 import { CloseOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select, Typography } from 'antd';
-import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Operator } from '../constant';
 import { useBuildFormSelectOptions } from '../form-hooks';
-import { IOperatorForm } from '../interface';
+import { IOperatorForm, ISwitchForm } from '../interface';
+import { getOtherFieldValues } from '../utils';
 
 const subLabelCol = {
   span: 7,
@@ -14,16 +14,19 @@ const subWrapperCol = {
   span: 17,
 };
 
-const SwitchForm: React.FC = ({
-  form,
-  onValuesChange,
-  nodeId,
-}: IOperatorForm) => {
+const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
   const { t } = useTranslation();
   const buildCategorizeToOptions = useBuildFormSelectOptions(
-    Operator.Categorize,
-    nodeId,
+    Operator.Switch,
+    node?.id,
   );
+
+  const getSelectedConditionTos = () => {
+    const conditions: ISwitchForm['conditions'] =
+      form?.getFieldValue('conditions');
+
+    return conditions?.filter((x) => !!x).map((x) => x?.to) ?? [];
+  };
 
   return (
     <Form
@@ -36,7 +39,10 @@ const SwitchForm: React.FC = ({
       onValuesChange={onValuesChange}
     >
       <Form.Item label={t('flow.to')} name={['end_cpn_id']}>
-        <Select options={buildCategorizeToOptions([])} />
+        <Select
+          allowClear
+          options={buildCategorizeToOptions(getSelectedConditionTos())}
+        />
       </Form.Item>
       <Form.Item label={t('flow.no')} name={['no']}>
         <Input />
@@ -65,7 +71,13 @@ const SwitchForm: React.FC = ({
                 </Form.Item>
 
                 <Form.Item label={t('flow.to')} name={[field.name, 'to']}>
-                  <Select options={buildCategorizeToOptions([])} />
+                  <Select
+                    allowClear
+                    options={buildCategorizeToOptions([
+                      form?.getFieldValue('end_cpn_id'),
+                      ...getOtherFieldValues(form!, 'conditions', field, 'to'),
+                    ])}
+                  />
                 </Form.Item>
                 <Form.Item label="Items">
                   <Form.List name={[field.name, 'items']}>
