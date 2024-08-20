@@ -34,10 +34,12 @@ import {
   useHandleDeleteLlm,
   useSubmitApiKey,
   useSubmitBedrock,
+  useSubmitHunyuan,
   useSubmitOllama,
   useSubmitSystemModelSetting,
   useSubmitVolcEngine,
 } from './hooks';
+import HunyuanModal from './hunyuan-modal';
 import styles from './index.less';
 import OllamaModal from './ollama-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
@@ -88,7 +90,9 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
           <Col span={12} className={styles.factoryOperationWrapper}>
             <Space size={'middle'}>
               <Button onClick={handleApiKeyClick}>
-                {isLocalLlmFactory(item.name) || item.name === 'VolcEngine'
+                {isLocalLlmFactory(item.name) ||
+                item.name === 'VolcEngine' ||
+                item.name === 'Tencent Hunyuan'
                   ? t('addTheModel')
                   : 'API-Key'}
                 <SettingOutlined />
@@ -163,6 +167,14 @@ const UserSettingModel = () => {
   } = useSubmitVolcEngine();
 
   const {
+    HunyuanAddingVisible,
+    hideHunyuanAddingModal,
+    showHunyuanAddingModal,
+    onHunyuanAddingOk,
+    HunyuanAddingLoading,
+  } = useSubmitHunyuan();
+
+  const {
     bedrockAddingLoading,
     onBedrockAddingOk,
     bedrockAddingVisible,
@@ -174,8 +186,9 @@ const UserSettingModel = () => {
     () => ({
       Bedrock: showBedrockAddingModal,
       VolcEngine: showVolcAddingModal,
+      'Tencent Hunyuan': showHunyuanAddingModal,
     }),
-    [showBedrockAddingModal, showVolcAddingModal],
+    [showBedrockAddingModal, showVolcAddingModal, showHunyuanAddingModal],
   );
 
   const handleAddModel = useCallback(
@@ -286,6 +299,13 @@ const UserSettingModel = () => {
         loading={volcAddingLoading}
         llmFactory={'VolcEngine'}
       ></VolcEngineModal>
+      <HunyuanModal
+        visible={HunyuanAddingVisible}
+        hideModal={hideHunyuanAddingModal}
+        onOk={onHunyuanAddingOk}
+        loading={HunyuanAddingLoading}
+        llmFactory={'Tencent Hunyuan'}
+      ></HunyuanModal>
       <BedrockModal
         visible={bedrockAddingVisible}
         hideModal={hideBedrockAddingModal}

@@ -3120,6 +3120,44 @@
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "Tencent Hunyuan",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "hunyuan-pro",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hunyuan-standard",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hunyuan-standard-256K",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hunyuan-lite",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hunyuan-vision",
+                    "tags": "LLM,IMAGE2TEXT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "image2text"
+                }
+            ]
         }
     ]
 }

@@ -484,6 +484,10 @@ export default {
       'eu-central-1': '歐洲 (法蘭克福)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': '亞太地區 (雪梨)',
+      addHunyuanSID: '混元 Secret ID',
+      HunyuanSIDMessage: '請輸入 Secret ID',
+      addHunyuanSK: '混元 Secret Key',
+      HunyuanSKMessage: '請輸入 Secret Key',
     },
     message: {
       registered: '註冊成功',

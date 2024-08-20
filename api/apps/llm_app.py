@@ -106,7 +106,7 @@ def set_api_key():
 
 @manager.route('/add_llm', methods=['POST'])
 @login_required
-@validate_request("llm_factory", "llm_name", "model_type")
+@validate_request("llm_factory")
 def add_llm():
     req = request.json
     factory = req["llm_factory"]
@@ -120,6 +120,11 @@ def add_llm():
         api_key = '{' + f'"volc_ak": "{req.get("volc_ak", "")}", ' \
                         f'"volc_sk": "{req.get("volc_sk", "")}", ' \
                         f'"ep_id": "{endpoint_id}", ' + '}'
+    elif factory == "Tencent Hunyuan":
+        api_key = '{' + f'"hunyuan_sid": "{req.get("hunyuan_sid", "")}", ' \
+                        f'"hunyuan_sk": "{req.get("hunyuan_sk", "")}"' + '}'
+        req["api_key"] = api_key
+        return set_api_key()
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region
@@ -132,7 +137,7 @@ def add_llm():
         api_key = "xxxxxxxxxxxxxxx"
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"]+"___OpenAI-API"
-        api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
+        api_key = req.get("api_key","xxxxxxxxxxxxxxx")
     else:
         llm_name = req["llm_name"]
         api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
