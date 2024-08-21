@@ -177,4 +177,4 @@ def test_db_connect():
         db.close()
         return get_json_result(retmsg="Database Connection Successful!")
     except Exception as e:
-        return server_error_response(str(e))
+        return server_error_response(e)
