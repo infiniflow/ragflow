@@ -2635,3 +2635,20 @@ export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb'].map((x) => ({
 }));
 
 export const SwitchElseTo = 'end_cpn_id';
+
+export const SwitchOperatorOptions = [
+  { value: '=', label: 'equal' },
+  { value: '≠', label: 'notEqual' },
+  { value: '>', label: 'gt' },
+  { value: '≥', label: 'ge' },
+  { value: '<', label: 'lt' },
+  { value: '≤', label: 'le' },
+  { value: 'contains', label: 'contains' },
+  { value: 'not contains', label: 'notContains' },
+  { value: 'start with', label: 'startWith' },
+  { value: 'end with', label: 'endWith' },
+  { value: 'empty', label: 'empty' },
+  { value: 'not empty', label: 'notEmpty' },
+];
+
+export const SwitchLogicOperatorOptions = ['and', 'or'];
