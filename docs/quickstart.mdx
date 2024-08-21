@@ -67,16 +67,61 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```
   </TabItem>
   <TabItem value="macos">
-   If you are on macOS with Docker Desktop, then you *must* use docker-machine to update `vm.max_map_count`:
+   If you are on macOS with Docker Desktop, run the following command to update `vm.max_map_count`:
 
    ```bash
-   $ docker-machine ssh
-   $ sudo sysctl -w vm.max_map_count=262144
+   docker run --rm --privileged --pid=host alpine sysctl -w vm.max_map_count=262144
    ```
 
    :::caution WARNING
    This change will be reset after a system reboot. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
    :::
+
+   To make your change persistent, create a file with proper settings:
+
+   1.1. Create a file:
+
+   ```shell
+   sudo nano /Library/LaunchDaemons/com.user.vmmaxmap.plist
+   ```
+
+   1.2. Open the file:
+
+   ```shell
+   sudo launchctl load /Library/LaunchDaemons/com.user.vmmaxmap.plist
+   ```
+
+   1.3. Add settings:
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+       <key>Label</key>
+       <string>com.user.vmmaxmap</string>
+       <key>ProgramArguments</key>
+       <array>
+           <string>/usr/sbin/sysctl</string>
+           <string>-w</string>
+           <string>vm.max_map_count=262144</string>
+       </array>
+       <key>RunAtLoad</key>
+       <true/>
+   </dict>
+   </plist>
+   ```
+
+   1.4. After saving the file, load the new daemon:
+
+   ```shell
+   sudo launchctl load /Library/LaunchDaemons/com.user.vmmaxmap.plist
+   ```
+
+   :::note
+   If the above steps does not work, consider using [this workaround](https://github.com/docker/for-mac/issues/7047#issuecomment-1791912053), which employs a container and does not require manual editing of macOS settings.
+   :::
+
   </TabItem>
   <TabItem value="windows">
 
