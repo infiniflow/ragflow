@@ -471,7 +471,7 @@ export const RestrictedUpstreamMap = {
   [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
-  [Operator.Switch]: [Operator.Begin, Operator.Answer, Operator.Relevant],
+  [Operator.Switch]: [Operator.Begin],
 };
 
 export const NodeMap = {

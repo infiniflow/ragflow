@@ -1,5 +1,5 @@
 import { CloseOutlined } from '@ant-design/icons';
-import { Button, Card, Form, Input, Select, Typography } from 'antd';
+import { Button, Card, Divider, Form, Input, Select, Typography } from 'antd';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -14,11 +14,11 @@ import { IOperatorForm, ISwitchForm } from '../interface';
 import { getOtherFieldValues } from '../utils';
 
 const subLabelCol = {
-  span: 9,
+  span: 11,
 };
 
 const subWrapperCol = {
-  span: 15,
+  span: 13,
 };
 
 const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
@@ -53,27 +53,21 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
 
   return (
     <Form
-      labelCol={{ span: 4 }}
-      wrapperCol={{ span: 20 }}
+      labelCol={{ span: 8 }}
+      wrapperCol={{ span: 16 }}
       form={form}
       name="dynamic_form_complex"
       autoComplete="off"
       initialValues={{ conditions: [{}] }}
       onValuesChange={onValuesChange}
     >
-      <Form.Item label={t('flow.to')} name={[SwitchElseTo]}>
-        <Select
-          allowClear
-          options={buildCategorizeToOptions(getSelectedConditionTos())}
-        />
-      </Form.Item>
       <Form.List name="conditions">
         {(fields, { add, remove }) => (
           <div style={{ display: 'flex', rowGap: 16, flexDirection: 'column' }}>
             {fields.map((field) => (
               <Card
                 size="small"
-                title={`Item ${field.name + 1}`}
+                title={`Case ${field.name + 1}`}
                 key={field.key}
                 extra={
                   <CloseOutlined
@@ -105,7 +99,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                     ])}
                   />
                 </Form.Item>
-                <Form.Item label=" " colon={false}>
+                <Form.Item label="Condition">
                   <Form.List name={[field.name, 'items']}>
                     {(subFields, subOpt) => (
                       <div
@@ -165,7 +159,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                           onClick={() => subOpt.add()}
                           block
                         >
-                          + {t('flow.addSubItem')}
+                          + Add Condition
                         </Button>
                       </div>
                     )}
@@ -175,11 +169,18 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
             ))}
 
             <Button type="dashed" onClick={() => add()} block>
-              + {t('flow.addItem')}
+              + Add Case
             </Button>
           </div>
         )}
       </Form.List>
+      <Divider />
+      <Form.Item label={'ELSE'} name={[SwitchElseTo]}>
+        <Select
+          allowClear
+          options={buildCategorizeToOptions(getSelectedConditionTos())}
+        />
+      </Form.Item>
 
       <Form.Item noStyle shouldUpdate>
         {() => (
