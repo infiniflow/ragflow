@@ -563,7 +563,7 @@ export default {
       yes: '是',
       no: '否',
       key: 'key',
-      componentId: '組件id',
+      componentId: '組件ID',
       add: '新增',
       operation: '操作',
       run: '運行',

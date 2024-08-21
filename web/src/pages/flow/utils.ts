@@ -232,5 +232,5 @@ export const getOtherFieldValues = (
     );
 
 export const generateSwitchHandleText = (idx: number) => {
-  return `Item ${idx + 1}`;
+  return `Case ${idx + 1}`;
 };
