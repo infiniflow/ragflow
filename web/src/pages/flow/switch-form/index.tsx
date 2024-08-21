@@ -9,15 +9,16 @@ import {
   SwitchOperatorOptions,
 } from '../constant';
 import { useBuildFormSelectOptions } from '../form-hooks';
+import { useBuildComponentIdSelectOptions } from '../hooks';
 import { IOperatorForm, ISwitchForm } from '../interface';
 import { getOtherFieldValues } from '../utils';
 
 const subLabelCol = {
-  span: 7,
+  span: 9,
 };
 
 const subWrapperCol = {
-  span: 17,
+  span: 15,
 };
 
 const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
@@ -48,10 +49,12 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
     }));
   }, [t]);
 
+  const componentIdOptions = useBuildComponentIdSelectOptions(node?.id);
+
   return (
     <Form
-      labelCol={{ span: 8 }}
-      wrapperCol={{ span: 16 }}
+      labelCol={{ span: 4 }}
+      wrapperCol={{ span: 20 }}
       form={form}
       name="dynamic_form_complex"
       autoComplete="off"
@@ -102,7 +105,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                     ])}
                   />
                 </Form.Item>
-                <Form.Item label="Items">
+                <Form.Item label=" " colon={false}>
                   <Form.List name={[field.name, 'items']}>
                     {(subFields, subOpt) => (
                       <div
@@ -126,31 +129,34 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                             }
                           >
                             <Form.Item
-                              label={'cpn_id'}
+                              label={t('flow.componentId')}
                               name={[subField.name, 'cpn_id']}
                               labelCol={subLabelCol}
                               wrapperCol={subWrapperCol}
                             >
-                              <Input placeholder="cpn_id" />
+                              <Select
+                                placeholder={t('flow.componentId')}
+                                options={componentIdOptions}
+                              />
                             </Form.Item>
                             <Form.Item
-                              label={'operator'}
+                              label={t('flow.operator')}
                               name={[subField.name, 'operator']}
                               labelCol={subLabelCol}
                               wrapperCol={subWrapperCol}
                             >
                               <Select
-                                placeholder="operator"
+                                placeholder={t('flow.operator')}
                                 options={switchOperatorOptions}
                               />
                             </Form.Item>
                             <Form.Item
-                              label={'value'}
+                              label={t('flow.value')}
                               name={[subField.name, 'value']}
                               labelCol={subLabelCol}
                               wrapperCol={subWrapperCol}
                             >
-                              <Input placeholder="value" />
+                              <Input placeholder={t('flow.value')} />
                             </Form.Item>
                           </Card>
                         ))}
@@ -159,7 +165,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                           onClick={() => subOpt.add()}
                           block
                         >
-                          + Add Sub Item
+                          + {t('flow.addSubItem')}
                         </Button>
                       </div>
                     )}
@@ -169,7 +175,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
             ))}
 
             <Button type="dashed" onClick={() => add()} block>
-              + Add Item
+              + {t('flow.addItem')}
             </Button>
           </div>
         )}

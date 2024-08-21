@@ -45,8 +45,8 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
           className={styles.handle}
           id={'c'}
         ></Handle>
-        <CategorizeHandle top={20} right={6} text={'yes'}></CategorizeHandle>
-        <CategorizeHandle top={80} right={6} text={'no'}></CategorizeHandle>
+        <CategorizeHandle top={20} right={6} id={'yes'}></CategorizeHandle>
+        <CategorizeHandle top={80} right={6} id={'no'}></CategorizeHandle>
         <Flex vertical align="center" justify="center" gap={0}>
           <Flex flex={1}>
             <OperatorIcon

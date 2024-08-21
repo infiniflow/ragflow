@@ -563,3 +563,26 @@ export const useWatchNodeFormDataChange = () => {
     buildSwitchEdgesByFormData,
   ]);
 };
+
+// exclude nodes with branches
+const ExcludedNodes = [
+  Operator.Categorize,
+  Operator.Relevant,
+  Operator.Begin,
+  Operator.Answer,
+];
+
+export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
+  const nodes = useGraphStore((state) => state.nodes);
+
+  const options = useMemo(() => {
+    return nodes
+      .filter(
+        (x) =>
+          x.id !== nodeId && !ExcludedNodes.some((y) => y === x.data.label),
+      )
+      .map((x) => ({ label: x.data.name, value: x.id }));
+  }, [nodes, nodeId]);
+
+  return options;
+};
