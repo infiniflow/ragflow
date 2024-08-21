@@ -58,7 +58,7 @@ const ExeSQLForm = ({ onValuesChange, form }: IOperatorForm) => {
       >
         <InputNumber></InputNumber>
       </Form.Item>
-      <TopNItem initialValue={30} max={100000}></TopNItem>
+      <TopNItem initialValue={30} max={1000}></TopNItem>
     </Form>
   );
 };

@@ -1,7 +1,13 @@
 import { CloseOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select, Typography } from 'antd';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Operator, SwitchElseTo } from '../constant';
+import {
+  Operator,
+  SwitchElseTo,
+  SwitchLogicOperatorOptions,
+  SwitchOperatorOptions,
+} from '../constant';
 import { useBuildFormSelectOptions } from '../form-hooks';
 import { IOperatorForm, ISwitchForm } from '../interface';
 import { getOtherFieldValues } from '../utils';
@@ -27,6 +33,20 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
 
     return conditions?.filter((x) => !!x).map((x) => x?.to) ?? [];
   };
+
+  const switchOperatorOptions = useMemo(() => {
+    return SwitchOperatorOptions.map((x) => ({
+      value: x.value,
+      label: t(`flow.switchOperatorOptions.${x.label}`),
+    }));
+  }, [t]);
+
+  const switchLogicOperatorOptions = useMemo(() => {
+    return SwitchLogicOperatorOptions.map((x) => ({
+      value: x,
+      label: t(`flow.switchLogicOperatorOptions.${x}`),
+    }));
+  }, [t]);
 
   return (
     <Form
@@ -60,13 +80,19 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                   />
                 }
               >
-                <Form.Item
-                  label={t('flow.logicalOperator')}
-                  name={[field.name, 'logical_operator']}
-                >
-                  <Input />
+                <Form.Item noStyle dependencies={[field.name, 'items']}>
+                  {({ getFieldValue }) =>
+                    getFieldValue(['conditions', field.name, 'items'])?.length >
+                      1 && (
+                      <Form.Item
+                        label={t('flow.logicalOperator')}
+                        name={[field.name, 'logical_operator']}
+                      >
+                        <Select options={switchLogicOperatorOptions} />
+                      </Form.Item>
+                    )
+                  }
                 </Form.Item>
-
                 <Form.Item label={t('flow.to')} name={[field.name, 'to']}>
                   <Select
                     allowClear
@@ -113,7 +139,10 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                               labelCol={subLabelCol}
                               wrapperCol={subWrapperCol}
                             >
-                              <Input placeholder="operator" />
+                              <Select
+                                placeholder="operator"
+                                options={switchOperatorOptions}
+                              />
                             </Form.Item>
                             <Form.Item
                               label={'value'}
