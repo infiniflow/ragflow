@@ -1,11 +1,19 @@
 import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Input, InputNumber, Select } from 'antd';
+import { useTestDbConnect } from '@/hooks/flow-hooks';
+import { Button, Flex, Form, Input, InputNumber, Select } from 'antd';
+import { useCallback } from 'react';
 import { ExeSQLOptions } from '../constant';
 import { IOperatorForm } from '../interface';
 
 const ExeSQLForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
+  const { testDbConnect, loading } = useTestDbConnect();
+
+  const handleTest = useCallback(async () => {
+    const ret = await form?.validateFields();
+    testDbConnect(ret);
+  }, [form, testDbConnect]);
 
   return (
     <Form
@@ -59,6 +67,11 @@ const ExeSQLForm = ({ onValuesChange, form }: IOperatorForm) => {
         <InputNumber></InputNumber>
       </Form.Item>
       <TopNItem initialValue={30} max={1000}></TopNItem>
+      <Flex justify={'end'}>
+        <Button type={'primary'} loading={loading} onClick={handleTest}>
+          Test
+        </Button>
+      </Flex>
     </Form>
   );
 };
