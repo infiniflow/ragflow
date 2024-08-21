@@ -1,7 +1,7 @@
 import { CloseOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { Operator } from '../constant';
+import { Operator, SwitchElseTo } from '../constant';
 import { useBuildFormSelectOptions } from '../form-hooks';
 import { IOperatorForm, ISwitchForm } from '../interface';
 import { getOtherFieldValues } from '../utils';
@@ -38,14 +38,11 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
       initialValues={{ conditions: [{}] }}
       onValuesChange={onValuesChange}
     >
-      <Form.Item label={t('flow.to')} name={['end_cpn_id']}>
+      <Form.Item label={t('flow.to')} name={[SwitchElseTo]}>
         <Select
           allowClear
           options={buildCategorizeToOptions(getSelectedConditionTos())}
         />
-      </Form.Item>
-      <Form.Item label={t('flow.no')} name={['no']}>
-        <Input />
       </Form.Item>
       <Form.List name="conditions">
         {(fields, { add, remove }) => (
@@ -74,7 +71,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                   <Select
                     allowClear
                     options={buildCategorizeToOptions([
-                      form?.getFieldValue('end_cpn_id'),
+                      form?.getFieldValue(SwitchElseTo),
                       ...getOtherFieldValues(form!, 'conditions', field, 'to'),
                     ])}
                   />

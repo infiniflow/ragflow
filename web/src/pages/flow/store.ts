@@ -21,7 +21,7 @@ import {
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { Operator } from './constant';
+import { Operator, SwitchElseTo } from './constant';
 import { NodeData } from './interface';
 import { getOperatorIndex, isEdgeEqual } from './utils';
 
@@ -37,13 +37,22 @@ export type RFState = {
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   setEdgesByNodeId: (nodeId: string, edges: Edge[]) => void;
-  updateNodeForm: (nodeId: string, values: any, path?: string[]) => void;
+  updateNodeForm: (
+    nodeId: string,
+    values: any,
+    path?: (string | number)[],
+  ) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
   getNode: (id?: string | null) => Node<NodeData> | undefined;
   addEdge: (connection: Connection) => void;
   getEdge: (id: string) => Edge | undefined;
   updateFormDataOnConnect: (connection: Connection) => void;
+  updateSwitchFormData: (
+    source: string,
+    sourceHandle?: string | null,
+    target?: string | null,
+  ) => void;
   deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
   duplicateNode: (id: string) => void;
   deleteEdge: () => void;
@@ -132,8 +141,6 @@ const useGraphStore = create<RFState>()(
         if (isDifferent) {
           // other operator's edges
           const irrelevantEdges = edges.filter((x) => x.source !== nodeId);
-          // the abandoned edges
-          const selfAbandonedEdges = [];
           // the added downstream edges
           const selfAddedDownstreamEdges = differenceWith(
             currentDownstreamEdges,
@@ -168,7 +175,8 @@ const useGraphStore = create<RFState>()(
         return get().edges.find((x) => x.id === id);
       },
       updateFormDataOnConnect: (connection: Connection) => {
-        const { getOperatorTypeFromId, updateNodeForm } = get();
+        const { getOperatorTypeFromId, updateNodeForm, updateSwitchFormData } =
+          get();
         const { source, target, sourceHandle } = connection;
         const operatorType = getOperatorTypeFromId(source);
         if (source) {
@@ -185,16 +193,7 @@ const useGraphStore = create<RFState>()(
                 ]);
               break;
             case Operator.Switch: {
-              if (sourceHandle) {
-                const operatorIndex = getOperatorIndex(sourceHandle);
-                if (operatorIndex) {
-                  updateNodeForm(source, target, [
-                    'conditions',
-                    operatorIndex,
-                    'to',
-                  ]);
-                }
-              }
+              updateSwitchFormData(source, sourceHandle, target);
               break;
             }
             default:
@@ -253,7 +252,12 @@ const useGraphStore = create<RFState>()(
         });
       },
       deleteEdgeById: (id: string) => {
-        const { edges, updateNodeForm, getOperatorTypeFromId } = get();
+        const {
+          edges,
+          updateNodeForm,
+          getOperatorTypeFromId,
+          updateSwitchFormData,
+        } = get();
         const currentEdge = edges.find((x) => x.id === id);
 
         if (currentEdge) {
@@ -275,16 +279,7 @@ const useGraphStore = create<RFState>()(
                 ]);
               break;
             case Operator.Switch: {
-              if (sourceHandle) {
-                const operatorIndex = getOperatorIndex(sourceHandle);
-                if (operatorIndex) {
-                  updateNodeForm(source, undefined, [
-                    'conditions',
-                    operatorIndex,
-                    'to',
-                  ]);
-                }
-              }
+              updateSwitchFormData(source, sourceHandle, undefined);
               break;
             }
             default:
@@ -320,7 +315,11 @@ const useGraphStore = create<RFState>()(
       findNodeByName: (name: Operator) => {
         return get().nodes.find((x) => x.data.label === name);
       },
-      updateNodeForm: (nodeId: string, values: any, path: string[] = []) => {
+      updateNodeForm: (
+        nodeId: string,
+        values: any,
+        path: (string | number)[] = [],
+      ) => {
         set({
           nodes: get().nodes.map((node) => {
             if (node.id === nodeId) {
@@ -342,6 +341,23 @@ const useGraphStore = create<RFState>()(
             return node;
           }),
         });
+      },
+      updateSwitchFormData: (source, sourceHandle, target) => {
+        const { updateNodeForm } = get();
+        if (sourceHandle) {
+          if (sourceHandle === SwitchElseTo) {
+            updateNodeForm(source, target, [SwitchElseTo]);
+          } else {
+            const operatorIndex = getOperatorIndex(sourceHandle);
+            if (operatorIndex) {
+              updateNodeForm(source, target, [
+                'conditions',
+                Number(operatorIndex) - 1, // The index is the conditions form index
+                'to',
+              ]);
+            }
+          }
+        }
       },
       updateMutableNodeFormItem: (id: string, field: string, value: any) => {
         const { nodes } = get();
