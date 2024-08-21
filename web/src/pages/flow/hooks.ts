@@ -30,6 +30,7 @@ import {
   NodeMap,
   Operator,
   RestrictedUpstreamMap,
+  SwitchElseTo,
   initialArXivValues,
   initialBaiduFanyiValues,
   initialBaiduValues,
@@ -518,6 +519,17 @@ export const useWatchNodeFormDataChange = () => {
 
         return pre;
       }, []);
+
+      // Splice the else condition of the conditional judgment to the edge list
+      const elseTo = form[SwitchElseTo];
+      if (elseTo) {
+        downstreamEdges.push({
+          id: uuid(),
+          source: nodeId,
+          target: elseTo,
+          sourceHandle: SwitchElseTo,
+        });
+      }
 
       setEdgesByNodeId(nodeId, downstreamEdges);
     },

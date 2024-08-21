@@ -2633,3 +2633,5 @@ export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb'].map((x) => ({
   label: upperFirst(x),
   value: x,
 }));
+
+export const SwitchElseTo = 'end_cpn_id';

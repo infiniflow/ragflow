@@ -3,7 +3,7 @@ import { Flex } from 'antd';
 import classNames from 'classnames';
 import lowerFirst from 'lodash/lowerFirst';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { Operator, operatorMap } from '../../constant';
+import { Operator, SwitchElseTo, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import CategorizeHandle from './categorize-handle';
@@ -16,6 +16,7 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
   const style = operatorMap[data.label as Operator];
   const { t } = useTranslate('flow');
   const { positions } = useBuildCategorizeHandlePositions({ data, id });
+  const operatorName = data.label;
 
   return (
     <NodePopover nodeId={id}>
@@ -49,13 +50,18 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
           className={styles.handle}
           id={'c'}
         ></Handle>
+        {operatorName === Operator.Switch && (
+          <CategorizeHandle top={50} right={-4} id={SwitchElseTo}>
+            To
+          </CategorizeHandle>
+        )}
         {positions.map((position, idx) => {
           return (
             <CategorizeHandle
               top={position.top}
               right={position.right}
               key={idx}
-              text={position.text}
+              id={position.text}
               idx={idx}
             ></CategorizeHandle>
           );
