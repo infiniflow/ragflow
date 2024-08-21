@@ -597,6 +597,7 @@ export default {
       blank: '空',
       createFromNothing: '從無到有',
       addItem: '新增',
+      addSubItem: '新增子項',
       nameRequiredMsg: '名稱不能為空',
       nameRepeatedMsg: '名稱不能重複',
       keywordExtract: '關鍵字',
@@ -791,6 +792,8 @@ export default {
         and: '與',
         or: '或',
       },
+      operator: '操作符',
+      value: '值',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

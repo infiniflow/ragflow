@@ -615,6 +615,7 @@ export default {
       blank: '空',
       createFromNothing: '从无到有',
       addItem: '新增',
+      addSubItem: '新增子项',
       nameRequiredMsg: '名称不能为空',
       nameRepeatedMsg: '名称不能重复',
       keywordExtract: '关键词',
@@ -809,6 +810,8 @@ export default {
         and: '与',
         or: '或',
       },
+      operator: '操作符',
+      value: '值',
     },
     footer: {
       profile: 'All rights reserved @ React',

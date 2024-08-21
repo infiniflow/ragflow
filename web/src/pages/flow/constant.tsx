@@ -97,7 +97,7 @@ export const operatorMap: Record<
     fontSize?: number;
     iconFontSize?: number;
     iconWidth?: number;
-    moreIconColor?: number;
+    moreIconColor?: string;
   }
 > = {
   [Operator.Retrieval]: {
