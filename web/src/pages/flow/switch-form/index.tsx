@@ -99,7 +99,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                     ])}
                   />
                 </Form.Item>
-                <Form.Item label=" " colon={false}>
+                <Form.Item label="Condition">
                   <Form.List name={[field.name, 'items']}>
                     {(subFields, subOpt) => (
                       <div
