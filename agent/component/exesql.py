@@ -59,7 +59,8 @@ class ExeSQL(ComponentBase, ABC):
 
         ans = self.get_input()
         ans = "".join(ans["content"]) if "content" in ans else ""
-        ans = re.sub(r'^.*?(SELECT.*?);.*?$', r'\1;', repr(ans))
+        ans = re.sub(r'^.*?SELECT ', r'SELECT ', repr(ans), flag=re.IGNORECASE)
+        ans = re.sub(r';[^;]*$', r';', repr(ans))
         if not ans:
             return ExeSQL.be_output("SQL statement not found!")
 
