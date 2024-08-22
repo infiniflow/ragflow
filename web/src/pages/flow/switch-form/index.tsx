@@ -1,29 +1,55 @@
 import { CloseOutlined } from '@ant-design/icons';
-import { Button, Card, Form, Input, Select, Typography } from 'antd';
-import React from 'react';
+import { Button, Card, Divider, Form, Input, Select, Typography } from 'antd';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Operator } from '../constant';
+import {
+  Operator,
+  SwitchElseTo,
+  SwitchLogicOperatorOptions,
+  SwitchOperatorOptions,
+} from '../constant';
 import { useBuildFormSelectOptions } from '../form-hooks';
-import { IOperatorForm } from '../interface';
+import { useBuildComponentIdSelectOptions } from '../hooks';
+import { IOperatorForm, ISwitchForm } from '../interface';
+import { getOtherFieldValues } from '../utils';
 
 const subLabelCol = {
-  span: 7,
+  span: 11,
 };
 
 const subWrapperCol = {
-  span: 17,
+  span: 13,
 };
 
-const SwitchForm: React.FC = ({
-  form,
-  onValuesChange,
-  nodeId,
-}: IOperatorForm) => {
+const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
   const { t } = useTranslation();
   const buildCategorizeToOptions = useBuildFormSelectOptions(
-    Operator.Categorize,
-    nodeId,
+    Operator.Switch,
+    node?.id,
   );
+
+  const getSelectedConditionTos = () => {
+    const conditions: ISwitchForm['conditions'] =
+      form?.getFieldValue('conditions');
+
+    return conditions?.filter((x) => !!x).map((x) => x?.to) ?? [];
+  };
+
+  const switchOperatorOptions = useMemo(() => {
+    return SwitchOperatorOptions.map((x) => ({
+      value: x.value,
+      label: t(`flow.switchOperatorOptions.${x.label}`),
+    }));
+  }, [t]);
+
+  const switchLogicOperatorOptions = useMemo(() => {
+    return SwitchLogicOperatorOptions.map((x) => ({
+      value: x,
+      label: t(`flow.switchLogicOperatorOptions.${x}`),
+    }));
+  }, [t]);
+
+  const componentIdOptions = useBuildComponentIdSelectOptions(node?.id);
 
   return (
     <Form
@@ -35,19 +61,13 @@ const SwitchForm: React.FC = ({
       initialValues={{ conditions: [{}] }}
       onValuesChange={onValuesChange}
     >
-      <Form.Item label={t('flow.to')} name={['end_cpn_id']}>
-        <Select options={buildCategorizeToOptions([])} />
-      </Form.Item>
-      <Form.Item label={t('flow.no')} name={['no']}>
-        <Input />
-      </Form.Item>
       <Form.List name="conditions">
         {(fields, { add, remove }) => (
           <div style={{ display: 'flex', rowGap: 16, flexDirection: 'column' }}>
             {fields.map((field) => (
               <Card
                 size="small"
-                title={`Item ${field.name + 1}`}
+                title={`Case ${field.name + 1}`}
                 key={field.key}
                 extra={
                   <CloseOutlined
@@ -57,17 +77,29 @@ const SwitchForm: React.FC = ({
                   />
                 }
               >
-                <Form.Item
-                  label={t('flow.logicalOperator')}
-                  name={[field.name, 'logical_operator']}
-                >
-                  <Input />
+                <Form.Item noStyle dependencies={[field.name, 'items']}>
+                  {({ getFieldValue }) =>
+                    getFieldValue(['conditions', field.name, 'items'])?.length >
+                      1 && (
+                      <Form.Item
+                        label={t('flow.logicalOperator')}
+                        name={[field.name, 'logical_operator']}
+                      >
+                        <Select options={switchLogicOperatorOptions} />
+                      </Form.Item>
+                    )
+                  }
                 </Form.Item>
-
                 <Form.Item label={t('flow.to')} name={[field.name, 'to']}>
-                  <Select options={buildCategorizeToOptions([])} />
+                  <Select
+                    allowClear
+                    options={buildCategorizeToOptions([
+                      form?.getFieldValue(SwitchElseTo),
+                      ...getOtherFieldValues(form!, 'conditions', field, 'to'),
+                    ])}
+                  />
                 </Form.Item>
-                <Form.Item label="Items">
+                <Form.Item label="Condition">
                   <Form.List name={[field.name, 'items']}>
                     {(subFields, subOpt) => (
                       <div
@@ -91,28 +123,34 @@ const SwitchForm: React.FC = ({
                             }
                           >
                             <Form.Item
-                              label={'cpn_id'}
+                              label={t('flow.componentId')}
                               name={[subField.name, 'cpn_id']}
                               labelCol={subLabelCol}
                               wrapperCol={subWrapperCol}
                             >
-                              <Input placeholder="cpn_id" />
+                              <Select
+                                placeholder={t('flow.componentId')}
+                                options={componentIdOptions}
+                              />
                             </Form.Item>
                             <Form.Item
-                              label={'operator'}
+                              label={t('flow.operator')}
                               name={[subField.name, 'operator']}
                               labelCol={subLabelCol}
                               wrapperCol={subWrapperCol}
                             >
-                              <Input placeholder="operator" />
+                              <Select
+                                placeholder={t('flow.operator')}
+                                options={switchOperatorOptions}
+                              />
                             </Form.Item>
                             <Form.Item
-                              label={'value'}
+                              label={t('flow.value')}
                               name={[subField.name, 'value']}
                               labelCol={subLabelCol}
                               wrapperCol={subWrapperCol}
                             >
-                              <Input placeholder="value" />
+                              <Input placeholder={t('flow.value')} />
                             </Form.Item>
                           </Card>
                         ))}
@@ -121,7 +159,7 @@ const SwitchForm: React.FC = ({
                           onClick={() => subOpt.add()}
                           block
                         >
-                          + Add Sub Item
+                          + Add Condition
                         </Button>
                       </div>
                     )}
@@ -131,11 +169,18 @@ const SwitchForm: React.FC = ({
             ))}
 
             <Button type="dashed" onClick={() => add()} block>
-              + Add Item
+              + Add Case
             </Button>
           </div>
         )}
       </Form.List>
+      <Divider />
+      <Form.Item label={'ELSE'} name={[SwitchElseTo]}>
+        <Select
+          allowClear
+          options={buildCategorizeToOptions(getSelectedConditionTos())}
+        />
+      </Form.Item>
 
       <Form.Item noStyle shouldUpdate>
         {() => (

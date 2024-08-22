@@ -87,7 +87,19 @@ export const operatorIconMap = {
   [Operator.Switch]: SwitchIcon,
 };
 
-export const operatorMap = {
+export const operatorMap: Record<
+  Operator,
+  {
+    backgroundColor?: string;
+    color?: string;
+    width?: number;
+    height?: number;
+    fontSize?: number;
+    iconFontSize?: number;
+    iconWidth?: number;
+    moreIconColor?: string;
+  }
+> = {
   [Operator.Retrieval]: {
     backgroundColor: '#cad6e0',
     color: '#385974',
@@ -388,7 +400,7 @@ export const initialExeSqlValues = {
   top_n: 30,
 };
 
-export const initialSwitchValues = { conditions: [{}] };
+export const initialSwitchValues = { conditions: [] };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -459,7 +471,7 @@ export const RestrictedUpstreamMap = {
   [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
-  [Operator.Switch]: [Operator.Begin, Operator.Answer, Operator.Relevant],
+  [Operator.Switch]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -2621,3 +2633,22 @@ export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb'].map((x) => ({
   label: upperFirst(x),
   value: x,
 }));
+
+export const SwitchElseTo = 'end_cpn_id';
+
+export const SwitchOperatorOptions = [
+  { value: '=', label: 'equal' },
+  { value: '≠', label: 'notEqual' },
+  { value: '>', label: 'gt' },
+  { value: '≥', label: 'ge' },
+  { value: '<', label: 'lt' },
+  { value: '≤', label: 'le' },
+  { value: 'contains', label: 'contains' },
+  { value: 'not contains', label: 'notContains' },
+  { value: 'start with', label: 'startWith' },
+  { value: 'end with', label: 'endWith' },
+  { value: 'empty', label: 'empty' },
+  { value: 'not empty', label: 'notEmpty' },
+];
+
+export const SwitchLogicOperatorOptions = ['and', 'or'];

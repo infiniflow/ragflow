@@ -64,11 +64,34 @@ export interface IRelevantForm extends IGenerateForm {
   no: string;
 }
 
+interface Condition {
+  items: Item[];
+  logical_operator: string;
+  to: string;
+}
+
+interface Item {
+  cpn_id: string;
+  operator: string;
+  value: string;
+}
+
+export interface ISwitchForm {
+  conditions: Condition[];
+  end_cpn_id: string;
+  no: string;
+}
+
 export type NodeData = {
   label: string; // operator type
   name: string; // operator name
   color: string;
-  form: IBeginForm | IRetrievalForm | IGenerateForm | ICategorizeForm;
+  form:
+    | IBeginForm
+    | IRetrievalForm
+    | IGenerateForm
+    | ICategorizeForm
+    | ISwitchForm;
 };
 
 export type IPosition = { top: number; right: number; idx: number };

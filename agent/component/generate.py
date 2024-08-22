@@ -66,7 +66,7 @@ class Generate(ComponentBase):
         return cpnts
 
     def set_cite(self, retrieval_res, answer):
-        retrieval_res.dropna(subset=["vector", "content_ltks"], inplace=True)
+        retrieval_res = retrieval_res.dropna(subset=["vector", "content_ltks"]).reset_index(drop=True)
         if "empty_response" in retrieval_res.columns:
             retrieval_res["empty_response"].fillna("", inplace=True)
         answer, idx = retrievaler.insert_citations(answer, [ck["content_ltks"] for _, ck in retrieval_res.iterrows()],
