@@ -93,4 +93,3 @@ class ExeSQL(ComponentBase, ABC):
             return ExeSQL.be_output("No record in the database!")
 
         return pd.DataFrame(sql_res)
-        return df
