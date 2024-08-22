@@ -76,7 +76,7 @@ class ExeSQL(ComponentBase, ABC):
             sql_res = [{"content": rec + "\n"} for rec in [str(i) for i in query.fetchall()]]
             db.close()
         except Exception as e:
-            return ExeSQL.be_output("**Error**:" + str(e) + "Error SQL Statement:" + ans)
+            return ExeSQL.be_output("**Error**:" + str(e) + "\nError SQL Statement:" + ans)
 
         if not sql_res:
             return ExeSQL.be_output("No record in the database!")
