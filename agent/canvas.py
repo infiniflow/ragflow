@@ -274,7 +274,7 @@ class Canvas(ABC):
     def get_embedding_model(self):
         return self._embed_id
 
-    def _find_loop(self, max_loops=2):
+    def _find_loop(self, max_loops=6):
         path = self.path[-1][::-1]
         if len(path) < 2: return False
 
