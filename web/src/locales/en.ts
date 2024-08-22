@@ -467,7 +467,7 @@ The above is the content you need to summarize.`,
       addTheModel: 'Add the model',
       apiKey: 'API-Key',
       apiKeyMessage:
-        'Please enter the API key (if it is a locally deployed model, you can ignore this).',
+        'Please enter the API key (for locally deployed model,ignore this).',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
       showMoreModels: 'Show more models',
