@@ -520,6 +520,7 @@ export const useFetchConversationOnMount = () => {
     ref,
     removeLatestMessage,
     addNewestAnswer,
+    conversationId,
   };
 };
 
@@ -768,5 +769,29 @@ export const useGetSendButtonDisabled = () => {
 
 export const useSendButtonDisabled = (value: string) => {
   return trim(value) === '';
+};
+
+export const useCreateConversationBeforeUploadDocument = () => {
+  const { setConversation } = useSetConversation();
+  const { dialogId } = useGetChatSearchParams();
+
+  const { handleClickConversation } = useClickConversationCard();
+
+  const createConversationBeforeUploadDocument = useCallback(
+    async (message: string) => {
+      const data = await setConversation(message);
+      if (data.retcode === 0) {
+        const id = data.data.id;
+        handleClickConversation(id);
+      }
+      return data;
+    },
+    [setConversation, handleClickConversation],
+  );
+
+  return {
+    createConversationBeforeUploadDocument,
+    dialogId,
+  };
 };
 //#endregion

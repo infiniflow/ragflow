@@ -1,11 +1,10 @@
-import { Authorization } from '@/constants/authorization';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
   useDeleteDocument,
   useFetchDocumentInfosByIds,
   useRemoveNextDocument,
+  useUploadAndParseDocument,
 } from '@/hooks/document-hooks';
-import { getAuthorization } from '@/utils/authorization-util';
 import { getExtension } from '@/utils/document-util';
 import { formatBytes } from '@/utils/file-util';
 import {
@@ -28,7 +27,14 @@ import {
 } from 'antd';
 import classNames from 'classnames';
 import get from 'lodash/get';
-import { ChangeEventHandler, useCallback, useEffect, useState } from 'react';
+import {
+  ChangeEventHandler,
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import FileIcon from '../file-icon';
 import SvgIcon from '../svg-icon';
 import styles from './index.less';
@@ -64,9 +70,10 @@ interface IProps {
   onPressEnter(documentIds: string[]): void;
   onInputChange: ChangeEventHandler<HTMLInputElement>;
   conversationId: string;
-  uploadUrl?: string;
+  uploadMethod?: string;
   isShared?: boolean;
   showUploadIcon?: boolean;
+  createConversationBeforeUploadDocument?(message: string): Promise<any>;
 }
 
 const getBase64 = (file: FileType): Promise<string> =>
@@ -87,12 +94,15 @@ const MessageInput = ({
   onInputChange,
   conversationId,
   showUploadIcon = true,
-  uploadUrl = '/v1/document/upload_and_parse',
+  createConversationBeforeUploadDocument,
+  uploadMethod = 'upload_and_parse',
 }: IProps) => {
   const { t } = useTranslate('chat');
   const { removeDocument } = useRemoveNextDocument();
   const { deleteDocument } = useDeleteDocument();
   const { data: documentInfos, setDocumentIds } = useFetchDocumentInfosByIds();
+  const { uploadAndParseDocument } = useUploadAndParseDocument(uploadMethod);
+  const conversationIdRef = useRef(conversationId);
 
   const [fileList, setFileList] = useState<UploadFile[]>([]);
 
@@ -102,9 +112,44 @@ const MessageInput = ({
     }
   };
 
-  const handleChange: UploadProps['onChange'] = ({ fileList: newFileList }) => {
-    setFileList(newFileList);
+  const handleChange: UploadProps['onChange'] = async ({
+    // fileList: newFileList,
+    file,
+  }) => {
+    let nextConversationId: string = conversationId;
+    if (createConversationBeforeUploadDocument && !conversationId) {
+      const creatingRet = await createConversationBeforeUploadDocument(
+        file.name,
+      );
+      if (creatingRet.retcode === 0) {
+        nextConversationId = creatingRet.data.id;
+      }
+    }
+    setFileList((list) => {
+      list.push({
+        ...file,
+        status: 'uploading',
+        originFileObj: file as any,
+      });
+      return [...list];
+    });
+    const ret = await uploadAndParseDocument({
+      conversationId: nextConversationId,
+      fileList: [file],
+    });
+    setFileList((list) => {
+      const nextList = list.filter((x) => x.uid !== file.uid);
+      nextList.push({
+        ...file,
+        originFileObj: file as any,
+        response: ret,
+        percent: 100,
+        status: ret?.retcode === 0 ? 'done' : 'error',
+      });
+      return nextList;
+    });
   };
+
   const isUploadingFile = fileList.some((x) => x.status === 'uploading');
 
   const handlePressEnter = useCallback(async () => {
@@ -150,6 +195,16 @@ const MessageInput = ({
     setDocumentIds(ids);
   }, [fileList, setDocumentIds]);
 
+  useEffect(() => {
+    if (
+      conversationIdRef.current &&
+      conversationId !== conversationIdRef.current
+    ) {
+      setFileList([]);
+    }
+    conversationIdRef.current = conversationId;
+  }, [conversationId, setFileList]);
+
   return (
     <Flex gap={20} vertical className={styles.messageInputWrapper}>
       <Input
@@ -160,18 +215,22 @@ const MessageInput = ({
         className={classNames({ [styles.inputWrapper]: fileList.length === 0 })}
         suffix={
           <Space>
-            {conversationId && showUploadIcon && (
+            {showUploadIcon && (
               <Upload
-                action={uploadUrl}
-                fileList={fileList}
+                // action={uploadUrl}
+                // fileList={fileList}
                 onPreview={handlePreview}
                 onChange={handleChange}
-                multiple
-                headers={{ [Authorization]: getAuthorization() }}
-                data={{ conversation_id: conversationId }}
-                method="post"
+                multiple={false}
+                // headers={{ [Authorization]: getAuthorization() }}
+                // data={{ conversation_id: conversationId }}
+                // method="post"
                 onRemove={handleRemove}
                 showUploadList={false}
+                beforeUpload={(file, fileList) => {
+                  console.log('🚀 ~ beforeUpload:', fileList);
+                  return false;
+                }}
               >
                 <Button
                   type={'text'}
@@ -209,8 +268,10 @@ const MessageInput = ({
           dataSource={fileList}
           className={styles.listWrapper}
           renderItem={(item) => {
-            const fileExtension = getExtension(item.name);
             const id = getFileId(item);
+            const documentInfo = getDocumentInfoById(id);
+            const fileExtension = getExtension(documentInfo?.name ?? '');
+            const fileName = item.originFileObj?.name ?? '';
 
             return (
               <List.Item>
@@ -228,14 +289,14 @@ const MessageInput = ({
                         // width={30}
                       ></InfoCircleOutlined>
                     ) : (
-                      <FileIcon id={id} name={item.name}></FileIcon>
+                      <FileIcon id={id} name={fileName}></FileIcon>
                     )}
                     <Flex vertical style={{ width: '90%' }}>
                       <Text
-                        ellipsis={{ tooltip: item.name }}
+                        ellipsis={{ tooltip: fileName }}
                         className={styles.nameText}
                       >
-                        <b> {item.name}</b>
+                        <b> {fileName}</b>
                       </Text>
                       {isUploadError(item) ? (
                         t('uploadFailed')
@@ -275,4 +336,4 @@ const MessageInput = ({
   );
 };
 
-export default MessageInput;
+export default memo(MessageInput);
