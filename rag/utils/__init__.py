@@ -85,6 +85,6 @@ def num_tokens_from_string(string: str) -> int:
     return 0
 
 
-def truncate(string: str, max_len: int) -> int:
+def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
     return encoder.decode(encoder.encode(string)[:max_len])
