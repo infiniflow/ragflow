@@ -3201,6 +3201,13 @@
             "tags": "LLM",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "BaiduYiyan",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
         }
     ]
 }

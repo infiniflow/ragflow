@@ -62,6 +62,7 @@ pytest==8.2.2
 python-dotenv==1.0.1
 python_dateutil==2.8.2
 python_pptx==0.6.23
+qianfan==0.4.6
 readability_lxml==0.8.1
 redis==5.0.3
 Requests==2.32.2

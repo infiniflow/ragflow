@@ -39,6 +39,7 @@ import {
   useSubmitSpark,
   useSubmitSystemModelSetting,
   useSubmitVolcEngine,
+  useSubmityiyan,
 } from './hooks';
 import HunyuanModal from './hunyuan-modal';
 import styles from './index.less';
@@ -46,6 +47,7 @@ import OllamaModal from './ollama-modal';
 import SparkModal from './spark-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
 import VolcEngineModal from './volcengine-modal';
+import YiyanModal from './yiyan-modal';
 
 const LlmIcon = ({ name }: { name: string }) => {
   const icon = IconMap[name as keyof typeof IconMap];
@@ -95,7 +97,8 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
                 {isLocalLlmFactory(item.name) ||
                 item.name === 'VolcEngine' ||
                 item.name === 'Tencent Hunyuan' ||
-                item.name === 'XunFei Spark'
+                item.name === 'XunFei Spark' ||
+                item.name === 'BaiduYiyan'
                   ? t('addTheModel')
                   : 'API-Key'}
                 <SettingOutlined />
@@ -186,6 +189,14 @@ const UserSettingModel = () => {
   } = useSubmitSpark();
 
   const {
+    yiyanAddingVisible,
+    hideyiyanAddingModal,
+    showyiyanAddingModal,
+    onyiyanAddingOk,
+    yiyanAddingLoading,
+  } = useSubmityiyan();
+
+  const {
     bedrockAddingLoading,
     onBedrockAddingOk,
     bedrockAddingVisible,
@@ -199,12 +210,14 @@ const UserSettingModel = () => {
       VolcEngine: showVolcAddingModal,
       'Tencent Hunyuan': showHunyuanAddingModal,
       'XunFei Spark': showSparkAddingModal,
+      BaiduYiyan: showyiyanAddingModal,
     }),
     [
       showBedrockAddingModal,
       showVolcAddingModal,
       showHunyuanAddingModal,
       showSparkAddingModal,
+      showyiyanAddingModal,
     ],
   );
 
@@ -330,6 +343,13 @@ const UserSettingModel = () => {
         loading={SparkAddingLoading}
         llmFactory={'XunFei Spark'}
       ></SparkModal>
+      <YiyanModal
+        visible={yiyanAddingVisible}
+        hideModal={hideyiyanAddingModal}
+        onOk={onyiyanAddingOk}
+        loading={yiyanAddingLoading}
+        llmFactory={'BaiduYiyan'}
+      ></YiyanModal>
       <BedrockModal
         visible={bedrockAddingVisible}
         hideModal={hideBedrockAddingModal}
