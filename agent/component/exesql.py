@@ -74,15 +74,23 @@ class ExeSQL(ComponentBase, ABC):
 
         try:
             db.connect()
-            query = db.execute_sql(ans)
-            sql_res = [{"content": rec + "\n"} for rec in [str(i) for i in query.fetchall()]]
-            db.close()
         except Exception as e:
-            return ExeSQL.be_output("**Error**:" + str(e) + "\nError SQL Statement:" + ans)
+            return ExeSQL.be_output("**Error**: \nDatabase Connection Failed! \n" + str(e))
+        sql_res = []
+        for single_sql in re.split(r';', ans):
+            if not single_sql:
+                continue
+            try:
+                query = db.execute_sql(single_sql)
+                sql_res.append(
+                    {"content": "\n##Total: " + str(query.rowcount) + "\n" + pd.DataFrame(
+                        [i for i in query.fetchmany(size=self._param.top_n)]).to_markdown()})
+            except Exception as e:
+                sql_res.append({"content": "**Error**:" + str(e) + "\nError SQL Statement:" + single_sql})
+                pass
+        db.close()
 
         if not sql_res:
             return ExeSQL.be_output("No record in the database!")
 
-        sql_res.insert(0, {"content": "Number of records retrieved from the database is " + str(len(sql_res)) + "\n"})
-        df = pd.DataFrame(sql_res[0:self._param.top_n + 1])
-        return ExeSQL.be_output(df.to_markdown())
+        return pd.DataFrame(sql_res)
