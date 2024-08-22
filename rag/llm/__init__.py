@@ -43,7 +43,8 @@ EmbeddingModel = {
     "PerfXCloud": PerfXCloudEmbed,
     "Upstage": UpstageEmbed,
     "SILICONFLOW": SILICONFLOWEmbed,
-    "Replicate": ReplicateEmbed
+    "Replicate": ReplicateEmbed,
+    "Baidu yiyan": yiyanEmbed
 }
 
 
@@ -101,7 +102,8 @@ ChatModel = {
     "01.AI": YiChat,
     "Replicate": ReplicateChat,
     "Tencent Hunyuan": HunyuanChat,
-    "XunFei Spark": SparkChat
+    "XunFei Spark": SparkChat,
+    "Baidu yiyan": yiyanChat
 }
 
 
@@ -115,7 +117,8 @@ RerankModel = {
     "OpenAI-API-Compatible": OpenAI_APIRerank,
     "cohere": CoHereRerank,
     "TogetherAI": TogetherAIRerank,
-    "SILICONFLOW": SILICONFLOWRerank
+    "SILICONFLOW": SILICONFLOWRerank,
+    "Baidu yiyan": yiyanRerank
 }
 
 

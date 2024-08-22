@@ -491,6 +491,11 @@ export default {
       SparkModelNameMessage: '請選擇星火模型!',
       addSparkAPIPassword: '星火 APIPassword',
       SparkAPIPasswordMessage: '請輸入 APIPassword',
+      yiyanModelNameMessage: '輸入模型名稱',
+      addyiyanAK: '一言 API KEY',
+      yiyanAKMessage: '請輸入 API KEY',
+      addyiyanSK: '一言 Secret KEY',
+      yiyanSKMessage: '請輸入 Secret KEY',
     },
     message: {
       registered: '註冊成功',

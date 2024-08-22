@@ -217,6 +217,33 @@ export const useSubmitSpark = () => {
   };
 };
 
+export const useSubmityiyan = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: yiyanAddingVisible,
+    hideModal: hideyiyanAddingModal,
+    showModal: showyiyanAddingModal,
+  } = useSetModalState();
+
+  const onyiyanAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideyiyanAddingModal();
+      }
+    },
+    [hideyiyanAddingModal, addLlm],
+  );
+
+  return {
+    yiyanAddingLoading: loading,
+    onyiyanAddingOk,
+    yiyanAddingVisible,
+    hideyiyanAddingModal,
+    showyiyanAddingModal,
+  };
+};
+
 export const useSubmitBedrock = () => {
   const { addLlm, loading } = useAddLlm();
   const {

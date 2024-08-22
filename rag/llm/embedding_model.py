@@ -599,3 +599,23 @@ class ReplicateEmbed(Base):
     def encode_queries(self, text):
         res = self.client.embed(self.model_name, input={"texts": [text]})
         return np.array(res), num_tokens_from_string(text)
+
+
+class yiyanEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        import qianfan
+        import json
+        
+        key = json.loads(key)
+        ak = key.get("yiyan_ak","")
+        sk = key.get("yiyan_sk","")
+        self.client = qianfan.Embedding(ak=ak,sk=sk)
+        self.model_name = model_name
+
+    def encode(self, texts: list, batch_size=32):
+        res = self.client.do(model=self.model_name, texts=texts).body
+        return np.array([r["embedding"] for r in res["data"]]), res["usage"]["total_tokens"]
+
+    def encode_queries(self, text):
+        res = self.client.do(model=self.model_name, texts=[text]).body
+        return np.array([r["embedding"] for r in res["data"]]), res["usage"]["total_tokens"]

@@ -140,7 +140,11 @@ def add_llm():
         api_key = req.get("api_key","xxxxxxxxxxxxxxx")
     elif factory =="XunFei Spark":
         llm_name = req["llm_name"]
-        api_key = req.get("spark_api_password","") 
+        api_key = req.get("spark_api_password","xxxxxxxxxxxxxxx") 
+    elif factory == "Baidu yiyan":
+        llm_name = req["llm_name"]
+        api_key = '{' + f'"yiyan_ak": "{req.get("yiyan_ak", "")}", ' \
+                f'"yiyan_sk": "{req.get("yiyan_sk", "")}"' + '}'
     else:
         llm_name = req["llm_name"]
         api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
@@ -157,7 +161,7 @@ def add_llm():
     msg = ""
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
-            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock","OpenAI-API-Compatible","Replicate"] else None,
+            key=llm['api_key'],
             model_name=llm["llm_name"], 
             base_url=llm["api_base"])
         try:
@@ -168,7 +172,7 @@ def add_llm():
             msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
-            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock","OpenAI-API-Compatible","Replicate","XunFei Spark"] else None,
+            key=llm['api_key'],
             model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
@@ -182,7 +186,9 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.RERANK:
         mdl = RerankModel[factory](
-            key=None, model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"], 
+            model_name=llm["llm_name"], 
+            base_url=llm["api_base"]
         )
         try:
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!"])
@@ -193,7 +199,9 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
-            key=llm["api_key"] if factory in ["OpenAI-API-Compatible"] else None, model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"], 
+            model_name=llm["llm_name"], 
+            base_url=llm["api_base"]
         )
         try:
             img_url = (

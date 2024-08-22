@@ -100,6 +100,7 @@ python-docx==1.1.0
 python-dotenv==1.0.1
 python-pptx==0.6.23
 PyYAML==6.0.1
+qianfan==0.4.6
 redis==5.0.3
 regex==2023.12.25
 replicate==0.31.0
