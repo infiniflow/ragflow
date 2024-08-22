@@ -1190,6 +1190,7 @@ class SparkChat(Base):
 class BaiduYiyanChat(Base):
     def __init__(self, key, model_name, base_url=None):
         import qianfan
+        
         key = json.loads(key)
         ak = key.get("yiyan_ak","")
         sk = key.get("yiyan_sk","")
