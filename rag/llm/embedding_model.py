@@ -601,7 +601,7 @@ class ReplicateEmbed(Base):
         return np.array(res), num_tokens_from_string(text)
 
 
-class yiyanEmbed(Base):
+class BaiduYiyanEmbed(Base):
     def __init__(self, key, model_name, base_url=None):
         import qianfan
         import json

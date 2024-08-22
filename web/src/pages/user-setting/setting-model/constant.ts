@@ -34,7 +34,7 @@ export const IconMap = {
   Replicate: 'replicate',
   'Tencent Hunyuan': 'hunyuan',
   'XunFei Spark': 'spark',
-  'Baidu yiyan': 'yiyan',
+  BaiduYiyan: 'yiyan',
 };
 
 export const BedrockRegionList = [

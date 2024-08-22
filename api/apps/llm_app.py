@@ -141,7 +141,7 @@ def add_llm():
     elif factory =="XunFei Spark":
         llm_name = req["llm_name"]
         api_key = req.get("spark_api_password","xxxxxxxxxxxxxxx") 
-    elif factory == "Baidu yiyan":
+    elif factory == "BaiduYiyan":
         llm_name = req["llm_name"]
         api_key = '{' + f'"yiyan_ak": "{req.get("yiyan_ak", "")}", ' \
                 f'"yiyan_sk": "{req.get("yiyan_sk", "")}"' + '}'

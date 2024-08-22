@@ -1187,7 +1187,7 @@ class SparkChat(Base):
         super().__init__(key, model_version, base_url)
 
 
-class yiyanChat(Base):
+class BaiduYiyanChat(Base):
     def __init__(self, key, model_name, base_url=None):
         import qianfan
         key = json.loads(key)

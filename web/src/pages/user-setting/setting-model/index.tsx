@@ -98,7 +98,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
                 item.name === 'VolcEngine' ||
                 item.name === 'Tencent Hunyuan' ||
                 item.name === 'XunFei Spark' ||
-                item.name === 'Baidu yiyan'
+                item.name === 'BaiduYiyan'
                   ? t('addTheModel')
                   : 'API-Key'}
                 <SettingOutlined />
@@ -210,7 +210,7 @@ const UserSettingModel = () => {
       VolcEngine: showVolcAddingModal,
       'Tencent Hunyuan': showHunyuanAddingModal,
       'XunFei Spark': showSparkAddingModal,
-      'Baidu yiyan': showyiyanAddingModal,
+      BaiduYiyan: showyiyanAddingModal,
     }),
     [
       showBedrockAddingModal,
@@ -348,7 +348,7 @@ const UserSettingModel = () => {
         hideModal={hideyiyanAddingModal}
         onOk={onyiyanAddingOk}
         loading={yiyanAddingLoading}
-        llmFactory={'Baidu yiyan'}
+        llmFactory={'BaiduYiyan'}
       ></YiyanModal>
       <BedrockModal
         visible={bedrockAddingVisible}

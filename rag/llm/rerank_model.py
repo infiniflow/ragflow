@@ -290,7 +290,7 @@ class SILICONFLOWRerank(Base):
         )
 
 
-class yiyanRerank(Base):
+class BaiduYiyanRerank(Base):
     def __init__(self, key, model_name, base_url=None):
         import json
         from qianfan.resources import Reranker

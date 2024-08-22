@@ -44,7 +44,7 @@ EmbeddingModel = {
     "Upstage": UpstageEmbed,
     "SILICONFLOW": SILICONFLOWEmbed,
     "Replicate": ReplicateEmbed,
-    "Baidu yiyan": yiyanEmbed
+    "BaiduYiyan": BaiduYiyanEmbed
 }
 
 
@@ -103,7 +103,7 @@ ChatModel = {
     "Replicate": ReplicateChat,
     "Tencent Hunyuan": HunyuanChat,
     "XunFei Spark": SparkChat,
-    "Baidu yiyan": yiyanChat
+    "BaiduYiyan": BaiduYiyanChat
 }
 
 
@@ -118,7 +118,7 @@ RerankModel = {
     "cohere": CoHereRerank,
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,
-    "Baidu yiyan": yiyanRerank
+    "BaiduYiyan": BaiduYiyanRerank
 }
 
 
