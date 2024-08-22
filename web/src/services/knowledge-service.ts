@@ -30,6 +30,7 @@ const {
   web_crawl,
   knowledge_graph,
   document_infos,
+  upload_and_parse,
 } = api;
 
 const methods = {
@@ -135,6 +136,10 @@ const methods = {
   document_delete: {
     url: document_delete,
     method: 'delete',
+  },
+  upload_and_parse: {
+    url: upload_and_parse,
+    method: 'post',
   },
 };
 
