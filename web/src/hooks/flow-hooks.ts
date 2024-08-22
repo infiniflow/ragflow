@@ -201,7 +201,7 @@ export const useTestDbConnect = () => {
     mutationKey: ['testDbConnect'],
     mutationFn: async (params: any) => {
       const ret = await flowService.testDbConnect(params);
-      if (ret?.retcode === 0) {
+      if (ret?.data?.retcode === 0) {
         message.success(ret?.data?.data);
       } else {
         message.error(ret?.data?.data);
