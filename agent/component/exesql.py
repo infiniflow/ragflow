@@ -92,5 +92,5 @@ class ExeSQL(ComponentBase, ABC):
         if not sql_res:
             return ExeSQL.be_output("No record in the database!")
 
-        df = pd.DataFrame(sql_res)
+        return pd.DataFrame(sql_res)
         return df
