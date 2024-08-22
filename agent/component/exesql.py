@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 from abc import ABC
-
+import re
 import pandas as pd
 from peewee import MySQLDatabase, PostgresqlDatabase
 from agent.component.base import ComponentBase, ComponentParamBase
@@ -59,6 +59,9 @@ class ExeSQL(ComponentBase, ABC):
 
         ans = self.get_input()
         ans = "".join(ans["content"]) if "content" in ans else ""
+        ans = re.sub(r'^.*?SELECT ', 'SELECT ', repr(ans), flags=re.IGNORECASE)
+        ans = re.sub(r';.*?SELECT ', '; SELECT ', ans, flags=re.IGNORECASE)
+        ans = re.sub(r';[^;]*$', r';', ans)
         if not ans:
             return ExeSQL.be_output("SQL statement not found!")
 
@@ -75,7 +78,7 @@ class ExeSQL(ComponentBase, ABC):
             sql_res = [{"content": rec + "\n"} for rec in [str(i) for i in query.fetchall()]]
             db.close()
         except Exception as e:
-            return ExeSQL.be_output("**Error**:" + str(e))
+            return ExeSQL.be_output("**Error**:" + str(e) + "\nError SQL Statement:" + ans)
 
         if not sql_res:
             return ExeSQL.be_output("No record in the database!")
