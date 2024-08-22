@@ -450,7 +450,7 @@ export default {
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加模型',
       apiKey: 'API-Key',
-      apiKeyMessage: '请输入 api key!',
+      apiKeyMessage: '请输入api key（如果是本地部署的模型，请忽略它）',
       apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',
       showMoreModels: '展示更多模型',
       baseUrl: 'Base-Url',
