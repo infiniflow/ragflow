@@ -667,8 +667,6 @@ class BedrockChat(Base):
 
     def chat(self, system, history, gen_conf):
         from botocore.exceptions import ClientError
-        if system:
-            history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
             if k not in ["temperature", "top_p", "max_tokens"]:
                 del gen_conf[k]
@@ -688,7 +686,8 @@ class BedrockChat(Base):
             response = self.client.converse(
                 modelId=self.model_name,
                 messages=history,
-                inferenceConfig=gen_conf
+                inferenceConfig=gen_conf,
+                system=[{"text": system}] if system else None,
             )
             
             # Extract and print the response text.
@@ -700,8 +699,6 @@ class BedrockChat(Base):
 
     def chat_streamly(self, system, history, gen_conf):
         from botocore.exceptions import ClientError
-        if system:
-            history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
             if k not in ["temperature", "top_p", "max_tokens"]:
                 del gen_conf[k]
@@ -720,7 +717,8 @@ class BedrockChat(Base):
                 response = self.client.converse(
                     modelId=self.model_name,
                     messages=history,
-                    inferenceConfig=gen_conf
+                    inferenceConfig=gen_conf,
+                    system=[{"text": system}] if system else None,
                 )
                 ans = response["output"]["message"]["content"][0]["text"]
                 return ans, num_tokens_from_string(ans)
