@@ -82,9 +82,9 @@ class ExeSQL(ComponentBase, ABC):
                 continue
             try:
                 query = db.execute_sql(single_sql)
-                sql_res.append(
-                    {"content": "\n##Total: " + str(query.rowcount) + "\n" + pd.DataFrame(
-                        [i for i in query.fetchmany(size=self._param.top_n)]).to_markdown()})
+                single_res = pd.DataFrame([i for i in query.fetchmany(size=self._param.top_n)])
+                single_res.columns = [i[0] for i in query.description]
+                sql_res.append({"content": "\n##Total: " + str(query.rowcount) + "\n" + single_res.to_markdown()})
             except Exception as e:
                 sql_res.append({"content": "**Error**:" + str(e) + "\nError SQL Statement:" + single_sql})
                 pass
