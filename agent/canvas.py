@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import importlib
+
 import json
 import traceback
 from abc import ABC
@@ -24,7 +24,7 @@ import pandas as pd
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
-from agent.settings import DEBUG, flow_logger
+from agent.settings import DEBUG
 
 
 class Canvas(ABC):
