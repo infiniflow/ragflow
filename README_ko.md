@@ -18,7 +18,7 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.9.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.9.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.10.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.10.0"></a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
@@ -49,6 +49,8 @@
 
 ## 🔥 업데이트
 
+- 2024-08-22 RAG를 통해 SQL 문에 텍스트를 지원합니다.
+  
 - 2024-08-02: [graphrag](https://github.com/microsoft/graphrag)와 마인드맵에서 영감을 받은 GraphRAG를 지원합니다.
 
 - 2024-07-23: 오디오 파일 분석을 지원합니다.
@@ -145,7 +147,7 @@
 
 3. 미리 빌드된 Docker 이미지를 생성하고 서버를 시작하세요:
 
-   > 다음 명령어를 실행하면 *dev* 버전의 RAGFlow Docker 이미지가 자동으로 다운로드됩니다. 특정 Docker 버전을 다운로드하고 실행하려면, **docker/.env** 파일에서 `RAGFLOW_VERSION`을 원하는 버전으로 업데이트한 후, 예를 들어 `RAGFLOW_VERSION=v0.9.0`로 업데이트 한 뒤, 다음 명령어를 실행하세요.
+   > 다음 명령어를 실행하면 *dev* 버전의 RAGFlow Docker 이미지가 자동으로 다운로드됩니다. 특정 Docker 버전을 다운로드하고 실행하려면, **docker/.env** 파일에서 `RAGFLOW_VERSION`을 원하는 버전으로 업데이트한 후, 예를 들어 `RAGFLOW_VERSION=v0.10.0`로 업데이트 한 뒤, 다음 명령어를 실행하세요.
    ```bash
    $ cd ragflow/docker
    $ chmod +x ./entrypoint.sh
