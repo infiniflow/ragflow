@@ -15,11 +15,13 @@
 #
 import re
 from functools import partial
+
 import pandas as pd
+
+from agent.component.base import ComponentBase, ComponentParamBase
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.settings import retrievaler
-from agent.component.base import ComponentBase, ComponentParamBase
 
 
 class GenerateParam(ComponentParamBase):

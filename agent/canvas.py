@@ -24,7 +24,7 @@ import pandas as pd
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
-from agent.settings import flow_logger, DEBUG
+from agent.settings import DEBUG, flow_logger
 
 
 class Canvas(ABC):

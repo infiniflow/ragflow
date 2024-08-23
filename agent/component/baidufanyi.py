@@ -15,9 +15,11 @@
 #
 import random
 from abc import ABC
-import requests
-from agent.component.base import ComponentBase, ComponentParamBase
 from hashlib import md5
+
+import requests
+
+from agent.component.base import ComponentBase, ComponentParamBase
 
 
 class BaiduFanyiParam(ComponentParamBase):

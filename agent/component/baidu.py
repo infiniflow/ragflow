@@ -13,14 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
+
+import re
 from abc import ABC
-from functools import partial
+
 import pandas as pd
 import requests
-import re
-from agent.settings import DEBUG
+
 from agent.component.base import ComponentBase, ComponentParamBase
+from agent.settings import DEBUG
 
 
 class BaiduParam(ComponentParamBase):

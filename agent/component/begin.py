@@ -14,7 +14,9 @@
 #  limitations under the License.
 #
 from functools import partial
+
 import pandas as pd
+
 from agent.component.base import ComponentBase, ComponentParamBase
 
 

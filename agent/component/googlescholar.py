@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 from abc import ABC
+
 import pandas as pd
-from agent.settings import DEBUG
-from agent.component.base import ComponentBase, ComponentParamBase
 from scholarly import scholarly
+
+from agent.component.base import ComponentBase, ComponentParamBase
+from agent.settings import DEBUG
 
 
 class GoogleScholarParam(ComponentParamBase):

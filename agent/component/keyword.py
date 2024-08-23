@@ -15,10 +15,11 @@
 #
 import re
 from abc import ABC
+
+from agent.component import Generate, GenerateParam
+from agent.settings import DEBUG
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from agent.component import GenerateParam, Generate
-from agent.settings import DEBUG
 
 
 class KeywordExtractParam(GenerateParam):

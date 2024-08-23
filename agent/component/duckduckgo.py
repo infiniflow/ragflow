@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 from abc import ABC
-from duckduckgo_search import DDGS
+
 import pandas as pd
-from agent.settings import DEBUG
+from duckduckgo_search import DDGS
+
 from agent.component.base import ComponentBase, ComponentParamBase
+from agent.settings import DEBUG
 
 
 class DuckDuckGoParam(ComponentParamBase):

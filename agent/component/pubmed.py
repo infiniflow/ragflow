@@ -13,12 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from abc import ABC
-from Bio import Entrez
-import pandas as pd
 import xml.etree.ElementTree as ET
-from agent.settings import DEBUG
+from abc import ABC
+
+import pandas as pd
+from Bio import Entrez
+
 from agent.component.base import ComponentBase, ComponentParamBase
+from agent.settings import DEBUG
 
 
 class PubMedParam(ComponentParamBase):

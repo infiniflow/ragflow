@@ -16,6 +16,7 @@
 import argparse
 import os
 from functools import partial
+
 from agent.canvas import Canvas
 from agent.settings import DEBUG
 

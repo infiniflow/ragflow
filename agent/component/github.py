@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 from abc import ABC
+
 import pandas as pd
 import requests
-from agent.settings import DEBUG
+
 from agent.component.base import ComponentBase, ComponentParamBase
+from agent.settings import DEBUG
 
 
 class GitHubParam(ComponentParamBase):

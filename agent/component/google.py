@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 from abc import ABC
-from serpapi import GoogleSearch
+
 import pandas as pd
-from agent.settings import DEBUG
+from serpapi import GoogleSearch
+
 from agent.component.base import ComponentBase, ComponentParamBase
+from agent.settings import DEBUG
 
 
 class GoogleParam(ComponentParamBase):

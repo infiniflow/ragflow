@@ -13,13 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
 from abc import ABC
-from functools import partial
-import wikipedia
+
 import pandas as pd
-from agent.settings import DEBUG
+import wikipedia
+
 from agent.component.base import ComponentBase, ComponentParamBase
+from agent.settings import DEBUG
 
 
 class WikipediaParam(ComponentParamBase):

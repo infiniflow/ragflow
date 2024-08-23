@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 from abc import ABC
-import requests
+
 import pandas as pd
-from agent.settings import DEBUG
+import requests
+
 from agent.component.base import ComponentBase, ComponentParamBase
+from agent.settings import DEBUG
 
 
 class BingParam(ComponentParamBase):

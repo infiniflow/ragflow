@@ -14,10 +14,11 @@
 #  limitations under the License.
 #
 from abc import ABC
+
+from agent.component import Generate, GenerateParam
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from agent.component import GenerateParam, Generate
-from rag.utils import num_tokens_from_string, encoder
+from rag.utils import encoder, num_tokens_from_string
 
 
 class RelevantParam(GenerateParam):

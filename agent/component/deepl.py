@@ -13,10 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 from abc import ABC
-import re
-from agent.component.base import ComponentBase, ComponentParamBase
+
 import deepl
+
+from agent.component.base import ComponentBase, ComponentParamBase
 
 
 class DeepLParam(ComponentParamBase):

@@ -16,6 +16,7 @@
 import random
 from abc import ABC
 from functools import partial
+
 from agent.component.base import ComponentBase, ComponentParamBase
 
 

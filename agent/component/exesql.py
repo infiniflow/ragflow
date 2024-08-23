@@ -13,10 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from abc import ABC
 import re
+from abc import ABC
+
 import pandas as pd
 from peewee import MySQLDatabase, PostgresqlDatabase
+
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
