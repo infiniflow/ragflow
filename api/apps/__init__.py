@@ -65,7 +65,7 @@ commands.register_commands(app)
 
 def search_pages_path(pages_dir):
     app_path_list = [path for path in pages_dir.glob('*_app.py') if not path.name.startswith('.')]
-    api_path_list = [path for path in pages_dir.glob('*_api.py') if not path.name.startswith('.')]
+    api_path_list = [path for path in pages_dir.glob('*sdk/*.py') if not path.name.startswith('.')]
     app_path_list.extend(api_path_list)
     return app_path_list
 
@@ -73,7 +73,7 @@ def search_pages_path(pages_dir):
 def register_page(page_path):
     path = f'{page_path}'
 
-    page_name = page_path.stem.rstrip('_api') if "_api" in path else page_path.stem.rstrip('_app')
+    page_name = page_path.stem.rstrip('_app')
     module_name = '.'.join(page_path.parts[page_path.parts.index('api'):-1] + (page_name,))
 
     spec = spec_from_file_location(module_name, page_path)
@@ -83,7 +83,7 @@ def register_page(page_path):
     sys.modules[module_name] = page
     spec.loader.exec_module(page)
     page_name = getattr(page, 'page_name', page_name)
-    url_prefix = f'/api/{API_VERSION}/{page_name}' if "_api" in path else f'/{API_VERSION}/{page_name}'
+    url_prefix = f'/api/{API_VERSION}/{page_name}' if "/sdk/" in path else f'/{API_VERSION}/{page_name}'
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
     return url_prefix
@@ -91,7 +91,8 @@ def register_page(page_path):
 
 pages_dir = [
     Path(__file__).parent,
-    Path(__file__).parent.parent / 'api' / 'apps', # FIXME: ragflow/api/api/apps, can be remove?
+    Path(__file__).parent.parent / 'api' / 'apps',
+    Path(__file__).parent.parent / 'api' / 'apps' / 'sdk',
 ]
 
 client_urls_prefix = [
