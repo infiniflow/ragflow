@@ -68,7 +68,10 @@ def status():
         res["redis"] = {"status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}
 
     try:
-        obj = json.loads(REDIS_CONN.get("TASKEXE"))
+        v = REDIS_CONN.get("TASKEXE")
+        if not v:
+            raise Exception("No task executor running!")
+        obj = json.loads(v)
         color = "green"
         for id in obj.keys():
             arr = obj[id]
