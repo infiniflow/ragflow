@@ -1,5 +1,5 @@
 import { CloseOutlined } from '@ant-design/icons';
-import { Button, Card, Divider, Form, Input, Select, Typography } from 'antd';
+import { Button, Card, Divider, Form, Input, Select } from 'antd';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -180,14 +180,6 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
           allowClear
           options={buildCategorizeToOptions(getSelectedConditionTos())}
         />
-      </Form.Item>
-
-      <Form.Item noStyle shouldUpdate>
-        {() => (
-          <Typography>
-            <pre>{JSON.stringify(form?.getFieldsValue(), null, 2)}</pre>
-          </Typography>
-        )}
       </Form.Item>
     </Form>
   );
