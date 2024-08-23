@@ -17,6 +17,8 @@ import hashlib
 import json
 import os
 import random
+import re
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
@@ -33,7 +35,7 @@ from graphrag.mind_map_extractor import MindMapExtractor
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.minio_conn import MINIO
-from rag.nlp import search
+from rag.nlp import search, rag_tokenizer
 
 from api.db import FileType, TaskStatus, ParserType, LLMType
 from api.db.db_models import DB, Knowledgebase, Tenant, Task
@@ -432,6 +434,9 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": False}
     exe = ThreadPoolExecutor(max_workers=12)
     threads = []
+    doc_nm = {}
+    for d, blob in files:
+        doc_nm[d["id"]] = d["name"]
     for d, blob in files:
         kwargs = {
             "callback": dummy,
@@ -504,6 +509,9 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                     "id": get_uuid(),
                     "doc_id": doc_id,
                     "kb_id": [kb.id],
+                    "docnm_kwd": doc_nm[doc_id],
+                    "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc_nm[doc_id])),
+                    "content_ltks": "",
                     "content_with_weight": mind_map,
                     "knowledge_graph_kwd": "mind_map"
                 })
