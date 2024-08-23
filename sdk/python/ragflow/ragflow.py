@@ -14,6 +14,7 @@
 #  limitations under the License.
 
 import requests
+
 from .modules.dataset import DataSet
 
 
@@ -46,9 +47,19 @@ class RAGFlow:
         res_create_data = res_create.json()['data']
         res_detail = self.get("/detail", {"kb_id": res_create_data["kb_id"]})
         res_detail_data = res_detail.json()['data']
-        dataset = DataSet(self, res_detail_data)
+        result = {}
+        result['id'] = res_detail_data['id']
+        result['name'] = res_detail_data['name']
+        result['avatar'] = res_detail_data['avatar']
+        result['description'] = res_detail_data['description']
+        result['language'] = res_detail_data['language']
+        result['embedding_model'] = res_detail_data['embd_id']
+        result['permission'] = res_detail_data['permission']
+        result['document_count'] = res_detail_data['doc_num']
+        result['chunk_count'] = res_detail_data['chunk_num']
+        result['parser_config'] = res_detail_data['parser_config']
+        dataset = DataSet(self, result)
         return dataset
-
 
     """
     def delete_dataset(self, dataset_name):

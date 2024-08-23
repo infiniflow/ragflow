@@ -1,20 +1,28 @@
 from .base import Base
-import os
+
 
 class DataSet(Base):
+    class ParseConfig(Base):
+        def __init__(self, rag, res_dict):
+            self.chunk_token_count = 128
+            self.layout_recognize = True
+            self.delimiter = '\n!?。；！？'
+            self.task_page_size = 12
+            super().__init__(rag, res_dict)
+
     def __init__(self, rag, res_dict):
-        self.avatar = None
-        self.chunk_num = 0
-        self.description = None
-        self.doc_num = 0
-        self.embd_id = None
-        self.id = None
-        self.language = "Chinese" if "zh_CN" in os.getenv("LANG","") else "English"
-        self.name = None
-        self.parser_config = {"pages": [[1, 1000000]]}
-        self.parser_id = "naive"
+        self.id = ""
+        self.name = ""
+        self.avatar = ""
+        self.tenant_id = None
+        self.description = ""
+        self.language = "English"
+        self.embedding_model = ""
         self.permission = "me"
-        self.token_num = 0
+        self.document_count = 0
+        self.chunk_count = 0
+        self.parse_method = 0
+        self.parser_config = None
         super().__init__(rag, res_dict)
 
     def delete(self):
@@ -23,4 +31,3 @@ class DataSet(Base):
             return True
         except Exception:
             return False
-
