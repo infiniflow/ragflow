@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 MIND_MAP_EXTRACTION_PROMPT = """
 - Role: You're a talent text processor to summarize a piece of text into a mind map.
 
