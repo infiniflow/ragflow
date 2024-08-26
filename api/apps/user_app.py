@@ -410,7 +410,7 @@ def tenant_info():
 
 @manager.route("/set_tenant_info", methods=["POST"])
 @login_required
-@validate_request("tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id","tts_id")
+@validate_request("tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id", "tts_id")
 def set_tenant_info():
     req = request.json
     try:

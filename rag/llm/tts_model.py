@@ -1,10 +1,11 @@
-from typing import Annotated,Literal
+from typing import Annotated, Literal
 from abc import ABC
 import httpx
 import ormsgpack
 from pydantic import BaseModel, conint
 from rag.utils import num_tokens_from_string
 import json
+
 
 class ServeReferenceAudio(BaseModel):
     audio: bytes
@@ -30,18 +31,18 @@ class ServeTTSRequest(BaseModel):
 
 
 class Base(ABC):
-    def __init__(self,key,model_name,base_url):
+    def __init__(self, key, model_name, base_url):
         pass
 
-    def transcription(self,audio):
-        pass 
+    def transcription(self, audio):
+        pass
 
 
 class FishAudioTTS(Base):
     def __init__(self, key, model_name, base_url="https://api.fish.audio/v1/tts"):
         if not base_url:
-            base_url="https://api.fish.audio/v1/tts"
-        key = json.loads(key)   
+            base_url = "https://api.fish.audio/v1/tts"
+        key = json.loads(key)
         self.headers = {
             "api-key": key.get("fish_audio_ak"),
             "content-type": "application/msgpack",
@@ -51,12 +52,9 @@ class FishAudioTTS(Base):
 
     def transcription(self, text):
         from http import HTTPStatus
-        
-        request = request = ServeTTSRequest(
-            text=text,
-            reference_id=self.ref_id
-        )
-        
+
+        request = request = ServeTTSRequest(text=text, reference_id=self.ref_id)
+
         with httpx.Client() as client:
             try:
                 with client.stream(
@@ -66,18 +64,15 @@ class FishAudioTTS(Base):
                         request, option=ormsgpack.OPT_SERIALIZE_PYDANTIC
                     ),
                     headers=self.headers,
-                    timeout=None
+                    timeout=None,
                 ) as response:
                     if response.status_code == HTTPStatus.OK:
                         for chunk in response.iter_bytes():
                             yield chunk
                     else:
                         response.raise_for_status()
-                        
+
                 yield num_tokens_from_string(text)
-                
+
             except httpx.HTTPStatusError as e:
                 raise RuntimeError(f"**ERROR**: {e}")
-            
-                    
-

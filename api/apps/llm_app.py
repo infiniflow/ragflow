@@ -221,16 +221,13 @@ def add_llm():
             msg += f"\nFail to access model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         mdl = TTSModel[factory](
-            key=llm["api_key"], 
-            model_name=llm["llm_name"], 
-            base_url=llm["api_base"]
+            key=llm["api_key"], model_name=llm["llm_name"], base_url=llm["api_base"]
         )
         try:
-           for resp in mdl.transcription("Hello~ Ragflower!"):
-               pass
+            for resp in mdl.transcription("Hello~ Ragflower!"):
+                pass
         except RuntimeError as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
-                e)
+            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
     else:
         # TODO: check other type of models
         pass
