@@ -3214,6 +3214,13 @@
             "tags": "LLM",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "Fish Audio",
+            "logo": "",
+            "tags": "TTS",
+            "status": "1",
+            "llm": []
         }
     ]
 }

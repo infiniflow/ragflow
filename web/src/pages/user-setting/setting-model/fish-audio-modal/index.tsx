@@ -1,17 +1,17 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, Modal, Select } from 'antd';
+import { Flex, Form, Input, Modal, Select, Space } from 'antd';
 import omit from 'lodash/omit';
 
 type FieldType = IAddLlmRequestBody & {
-  vision: boolean;
-  spark_api_password: string;
+  fish_audio_ak: string;
+  fish_audio_refid: string;
 };
 
 const { Option } = Select;
 
-const SparkModal = ({
+const FishAudioModal = ({
   visible,
   hideModal,
   onOk,
@@ -24,13 +24,10 @@ const SparkModal = ({
 
   const handleOk = async () => {
     const values = await form.validateFields();
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
+    const modelType = values.model_type;
 
     const data = {
-      ...omit(values, ['vision']),
+      ...omit(values),
       model_type: modelType,
       llm_factory: llmFactory,
     };
@@ -46,6 +43,16 @@ const SparkModal = ({
       onOk={handleOk}
       onCancel={hideModal}
       okButtonProps={{ loading }}
+      footer={(originNode: React.ReactNode) => {
+        return (
+          <Flex justify={'space-between'}>
+            <a href={`https://fish.audio`} target="_blank" rel="noreferrer">
+              {t('FishAudioLink')}
+            </a>
+            <Space>{originNode}</Space>
+          </Flex>
+        );
+      }}
       confirmLoading={loading}
     >
       <Form
@@ -58,37 +65,37 @@ const SparkModal = ({
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
-          initialValue={'chat'}
+          initialValue={'tts'}
           rules={[{ required: true, message: t('modelTypeMessage') }]}
         >
           <Select placeholder={t('modelTypeMessage')}>
-            <Option value="chat">chat</Option>
+            <Option value="tts">tts</Option>
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
           label={t('modelName')}
           name="llm_name"
-          initialValue={'Spark-Max'}
-          rules={[{ required: true, message: t('SparkModelNameMessage') }]}
+          rules={[{ required: true, message: t('FishAudioModelNameMessage') }]}
         >
-          <Select placeholder={t('modelTypeMessage')}>
-            <Option value="Spark-Max">Spark-Max</Option>
-            <Option value="Spark-Lite">Spark-Lite</Option>
-            <Option value="Spark-Pro">Spark-Pro</Option>
-            <Option value="Spark-Pro-128K">Spark-Pro-128K</Option>
-            <Option value="Spark-4.0-Ultra">Spark-4.0-Ultra</Option>
-          </Select>
+          <Input placeholder={t('FishAudioModelNameMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
-          label={t('addSparkAPIPassword')}
-          name="spark_api_password"
-          rules={[{ required: true, message: t('SparkAPIPasswordMessage') }]}
+          label={t('addFishAudioAK')}
+          name="FishAudio_ak"
+          rules={[{ required: true, message: t('FishAudioAKMessage') }]}
         >
-          <Input placeholder={t('SparkAPIPasswordMessage')} />
+          <Input placeholder={t('FishAudioAKMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addFishAudioRefID')}
+          name="FishAudio_refid"
+          rules={[{ required: false, message: t('FishAudioRefIDMessage') }]}
+        >
+          <Input placeholder={t('FishAudioRefIDMessage')} />
         </Form.Item>
       </Form>
     </Modal>
   );
 };
 
-export default SparkModal;
+export default FishAudioModal;

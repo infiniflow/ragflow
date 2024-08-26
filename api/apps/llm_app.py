@@ -20,7 +20,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
-from rag.llm import EmbeddingModel, ChatModel, RerankModel,CvModel
+from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 import requests
 import ast
 
@@ -142,6 +142,10 @@ def add_llm():
         llm_name = req["llm_name"]
         api_key = '{' + f'"yiyan_ak": "{req.get("yiyan_ak", "")}", ' \
                 f'"yiyan_sk": "{req.get("yiyan_sk", "")}"' + '}'
+    elif factory == "Fish Audio":
+        llm_name = req["llm_name"]
+        api_key = '{' + f'"fish_audio_ak": "{req.get("fish_audio_ak", "")}", ' \
+                f'"fish_audio_refid": "{req.get("fish_audio_refid", "59cb5986671546eaa6ca8ae6f29f6d22")}"' + '}'
     else:
         llm_name = req["llm_name"]
         api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
@@ -214,6 +218,15 @@ def add_llm():
             else:
                 pass
         except Exception as e:
+            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+    elif llm["model_type"] == LLMType.TTS:
+        mdl = TTSModel[factory](
+            key=llm["api_key"], model_name=llm["llm_name"], base_url=llm["api_base"]
+        )
+        try:
+            for resp in mdl.transcription("Hello~ Ragflower!"):
+                pass
+        except RuntimeError as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(e)
     else:
         # TODO: check other type of models

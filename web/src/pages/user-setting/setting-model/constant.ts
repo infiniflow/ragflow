@@ -35,6 +35,7 @@ export const IconMap = {
   'Tencent Hunyuan': 'hunyuan',
   'XunFei Spark': 'spark',
   BaiduYiyan: 'yiyan',
+  'Fish Audio': 'fish-audio',
 };
 
 export const BedrockRegionList = [

@@ -74,6 +74,7 @@ ollama==0.1.9
 openai==1.12.0
 opencv-python==4.9.0.80
 openpyxl==3.1.2
+ormsgpack==1.5.0   
 packaging==23.2
 pandas==2.2.1
 pdfminer.six==20221105

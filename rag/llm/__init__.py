@@ -18,6 +18,7 @@ from .chat_model import *
 from .cv_model import *
 from .rerank_model import *
 from .sequence2txt_model import *
+from .tts_model import * 
 
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
@@ -128,4 +129,8 @@ Seq2txtModel = {
     "Ollama": OllamaSeq2txt,
     "Azure-OpenAI": AzureSeq2txt,
     "Xinference": XinferenceSeq2txt
+}
+
+TTSModel = {
+    "Fish Audio": FishAudioTTS
 }
