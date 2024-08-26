@@ -357,7 +357,7 @@ def main():
 
         cron_logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
         if es_r:
-            callback(-1, "Index failure!")
+            callback(-1, f"Insert chunk error, detail info please check ragflow-logs/api/cron_logger.log. Please also check ES status!")
             ELASTICSEARCH.deleteByQuery(
                 Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
             cron_logger.error(str(es_r))
