@@ -244,6 +244,33 @@ export const useSubmityiyan = () => {
   };
 };
 
+export const useSubmitFishAudio = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: FishAudioAddingVisible,
+    hideModal: hideFishAudioAddingModal,
+    showModal: showFishAudioAddingModal,
+  } = useSetModalState();
+
+  const onFishAudioAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideFishAudioAddingModal();
+      }
+    },
+    [hideFishAudioAddingModal, addLlm],
+  );
+
+  return {
+    FishAudioAddingLoading: loading,
+    onFishAudioAddingOk,
+    FishAudioAddingVisible,
+    hideFishAudioAddingModal,
+    showFishAudioAddingModal,
+  };
+};
+
 export const useSubmitBedrock = () => {
   const { addLlm, loading } = useAddLlm();
   const {

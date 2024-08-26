@@ -83,6 +83,13 @@ const SystemModelSettingModal = ({
         >
           <Select options={allOptions[LlmModelType.Rerank]} />
         </Form.Item>
+        <Form.Item
+          label={t('ttsModel')}
+          name="tts_id"
+          tooltip={t('ttsModelTip')}
+        >
+          <Select options={allOptions[LlmModelType.TTS]} />
+        </Form.Item>
       </Form>
     </Modal>
   );

@@ -87,6 +87,7 @@ export const useSelectLlmOptionsByModelType = () => {
       LlmModelType.Speech2text,
     ),
     [LlmModelType.Rerank]: groupOptionsByModelType(LlmModelType.Rerank),
+    [LlmModelType.TTS]: groupOptionsByModelType(LlmModelType.TTS),
   };
 };
 

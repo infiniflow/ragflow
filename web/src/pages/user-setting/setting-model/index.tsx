@@ -30,10 +30,12 @@ import { isLocalLlmFactory } from '../utils';
 import ApiKeyModal from './api-key-modal';
 import BedrockModal from './bedrock-modal';
 import { IconMap } from './constant';
+import FishAudioModal from './fish-audio-modal';
 import {
   useHandleDeleteLlm,
   useSubmitApiKey,
   useSubmitBedrock,
+  useSubmitFishAudio,
   useSubmitHunyuan,
   useSubmitOllama,
   useSubmitSpark,
@@ -98,7 +100,8 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
                 item.name === 'VolcEngine' ||
                 item.name === 'Tencent Hunyuan' ||
                 item.name === 'XunFei Spark' ||
-                item.name === 'BaiduYiyan'
+                item.name === 'BaiduYiyan' ||
+                item.name === 'Fish Audio'
                   ? t('addTheModel')
                   : 'API-Key'}
                 <SettingOutlined />
@@ -197,6 +200,14 @@ const UserSettingModel = () => {
   } = useSubmityiyan();
 
   const {
+    FishAudioAddingVisible,
+    hideFishAudioAddingModal,
+    showFishAudioAddingModal,
+    onFishAudioAddingOk,
+    FishAudioAddingLoading,
+  } = useSubmitFishAudio();
+
+  const {
     bedrockAddingLoading,
     onBedrockAddingOk,
     bedrockAddingVisible,
@@ -211,6 +222,7 @@ const UserSettingModel = () => {
       'Tencent Hunyuan': showHunyuanAddingModal,
       'XunFei Spark': showSparkAddingModal,
       BaiduYiyan: showyiyanAddingModal,
+      'Fish Audio': showFishAudioAddingModal,
     }),
     [
       showBedrockAddingModal,
@@ -218,6 +230,7 @@ const UserSettingModel = () => {
       showHunyuanAddingModal,
       showSparkAddingModal,
       showyiyanAddingModal,
+      showFishAudioAddingModal,
     ],
   );
 
@@ -350,6 +363,13 @@ const UserSettingModel = () => {
         loading={yiyanAddingLoading}
         llmFactory={'BaiduYiyan'}
       ></YiyanModal>
+      <FishAudioModal
+        visible={FishAudioAddingVisible}
+        hideModal={hideFishAudioAddingModal}
+        onOk={onFishAudioAddingOk}
+        loading={FishAudioAddingLoading}
+        llmFactory={'Fish Audio'}
+      ></FishAudioModal>
       <BedrockModal
         visible={bedrockAddingVisible}
         hideModal={hideBedrockAddingModal}
