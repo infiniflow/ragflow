@@ -3221,6 +3221,13 @@
             "tags": "TTS",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "Tencent Cloud",
+            "logo": "",
+            "tags": "SPEECH2TEXT",
+            "status": "1",
+            "llm": []
         }
     ]
 }
