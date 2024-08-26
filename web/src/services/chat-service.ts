@@ -19,6 +19,7 @@ const {
   createExternalConversation,
   getExternalConversation,
   completeExternalConversation,
+  uploadAndParseExternal,
 } = api;
 
 const methods = {
@@ -84,6 +85,10 @@ const methods = {
   },
   completeExternalConversation: {
     url: completeExternalConversation,
+    method: 'post',
+  },
+  uploadAndParseExternal: {
+    url: uploadAndParseExternal,
     method: 'post',
   },
 } as const;

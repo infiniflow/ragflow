@@ -51,6 +51,7 @@ export default {
   document_upload: `${api_host}/document/upload`,
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,
+  upload_and_parse: `${api_host}/document/upload_and_parse`,
 
   // chat
   setDialog: `${api_host}/dialog/set`,
@@ -70,6 +71,7 @@ export default {
   createExternalConversation: `${api_host}/api/new_conversation`,
   getExternalConversation: `${api_host}/api/conversation`,
   completeExternalConversation: `${api_host}/api/completion`,
+  uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
   // file manager
   listFile: `${api_host}/file/list`,
