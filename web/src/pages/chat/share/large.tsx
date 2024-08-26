@@ -75,7 +75,7 @@ const ChatContainer = () => {
           onInputChange={handleInputChange}
           onPressEnter={handlePressEnter}
           sendLoading={sendLoading}
-          uploadUrl="/v1/api/document/upload_and_parse"
+          uploadMethod="external_upload_and_parse"
           showUploadIcon={from === SharedFrom.Chat}
         ></MessageInput>
       </Flex>

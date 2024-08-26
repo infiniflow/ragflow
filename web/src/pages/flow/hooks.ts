@@ -30,6 +30,7 @@ import {
   NodeMap,
   Operator,
   RestrictedUpstreamMap,
+  SwitchElseTo,
   initialArXivValues,
   initialBaiduFanyiValues,
   initialBaiduValues,
@@ -50,12 +51,14 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialSwitchValues,
   initialWikipediaValues,
 } from './constant';
-import { ICategorizeForm, IRelevantForm } from './interface';
+import { ICategorizeForm, IRelevantForm, ISwitchForm } from './interface';
 import useGraphStore, { RFState } from './store';
 import {
   buildDslComponentsByGraph,
+  generateSwitchHandleText,
   receiveMessageError,
   replaceIdWithText,
 } from './utils';
@@ -109,6 +112,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
       [Operator.ExeSQL]: initialExeSqlValues,
+      [Operator.Switch]: initialSwitchValues,
     };
   }, [llmId]);
 
@@ -496,6 +500,42 @@ export const useWatchNodeFormDataChange = () => {
     [setEdgesByNodeId],
   );
 
+  const buildSwitchEdgesByFormData = useCallback(
+    (nodeId: string, form: ISwitchForm) => {
+      // add
+      // delete
+      // edit
+      const conditions = form.conditions;
+      const downstreamEdges = conditions.reduce<Edge[]>((pre, _, idx) => {
+        const target = conditions[idx]?.to;
+        if (target) {
+          pre.push({
+            id: uuid(),
+            source: nodeId,
+            target,
+            sourceHandle: generateSwitchHandleText(idx),
+          });
+        }
+
+        return pre;
+      }, []);
+
+      // Splice the else condition of the conditional judgment to the edge list
+      const elseTo = form[SwitchElseTo];
+      if (elseTo) {
+        downstreamEdges.push({
+          id: uuid(),
+          source: nodeId,
+          target: elseTo,
+          sourceHandle: SwitchElseTo,
+        });
+      }
+
+      setEdgesByNodeId(nodeId, downstreamEdges);
+    },
+    [setEdgesByNodeId],
+  );
+
   useEffect(() => {
     nodes.forEach((node) => {
       const currentNode = getNode(node.id);
@@ -508,6 +548,9 @@ export const useWatchNodeFormDataChange = () => {
         case Operator.Categorize:
           buildCategorizeEdgesByFormData(node.id, form as ICategorizeForm);
           break;
+        case Operator.Switch:
+          buildSwitchEdgesByFormData(node.id, form as ISwitchForm);
+          break;
         default:
           break;
       }
@@ -517,5 +560,29 @@ export const useWatchNodeFormDataChange = () => {
     buildCategorizeEdgesByFormData,
     getNode,
     buildRelevantEdgesByFormData,
+    buildSwitchEdgesByFormData,
   ]);
+};
+
+// exclude nodes with branches
+const ExcludedNodes = [
+  Operator.Categorize,
+  Operator.Relevant,
+  Operator.Begin,
+  Operator.Answer,
+];
+
+export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
+  const nodes = useGraphStore((state) => state.nodes);
+
+  const options = useMemo(() => {
+    return nodes
+      .filter(
+        (x) =>
+          x.id !== nodeId && !ExcludedNodes.some((y) => y === x.data.label),
+      )
+      .map((x) => ({ label: x.data.name, value: x.id }));
+  }, [nodes, nodeId]);
+
+  return options;
 };

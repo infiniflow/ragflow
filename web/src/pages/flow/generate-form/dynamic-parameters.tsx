@@ -4,10 +4,8 @@ import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Flex, Select, Table, TableProps } from 'antd';
 import { IGenerateParameter } from '../interface';
 
-import {
-  useBuildComponentIdSelectOptions,
-  useHandleOperateParameters,
-} from './hooks';
+import { useBuildComponentIdSelectOptions } from '../hooks';
+import { useHandleOperateParameters } from './hooks';
 import styles from './index.less';
 
 interface IProps {

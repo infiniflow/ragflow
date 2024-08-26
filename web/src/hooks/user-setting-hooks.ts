@@ -1,7 +1,7 @@
 import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
-import { ISystemStatus, IUserInfo } from '@/interfaces/database/userSetting';
+import { ISystemStatus, IUserInfo } from '@/interfaces/database/user-setting';
 import userService from '@/services/user-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';

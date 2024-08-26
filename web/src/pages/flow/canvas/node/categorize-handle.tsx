@@ -1,6 +1,6 @@
 import { Handle, Position } from 'reactflow';
-// import { v4 as uuid } from 'uuid';
 
+import React from 'react';
 import styles from './index.less';
 
 const DEFAULT_HANDLE_STYLE = {
@@ -10,20 +10,19 @@ const DEFAULT_HANDLE_STYLE = {
   fontSize: 8,
 };
 
-interface IProps {
+interface IProps extends React.PropsWithChildren {
   top: number;
   right: number;
-  text: string;
+  id: string;
   idx?: number;
 }
 
-const CategorizeHandle = ({ top, right, text, idx }: IProps) => {
+const CategorizeHandle = ({ top, right, id, children }: IProps) => {
   return (
     <Handle
       type="source"
       position={Position.Right}
-      // id={`CategorizeHandle${idx}`}
-      id={text}
+      id={id}
       isConnectable
       style={{
         ...DEFAULT_HANDLE_STYLE,
@@ -33,7 +32,7 @@ const CategorizeHandle = ({ top, right, text, idx }: IProps) => {
         color: 'black',
       }}
     >
-      <span className={styles.categorizeAnchorPointText}>{text}</span>
+      <span className={styles.categorizeAnchorPointText}>{children || id}</span>
     </Handle>
   );
 };

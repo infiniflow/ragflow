@@ -125,6 +125,23 @@ export const useUpdateConversation = () => {
   return updateConversation;
 };
 
+export const useUpdateNextConversation = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['updateConversation'],
+    mutationFn: async (params: Record<string, any>) => {
+      const { data } = await chatService.setConversation(params);
+
+      return data;
+    },
+  });
+
+  return { data, loading, updateConversation: mutateAsync };
+};
+
 export const useSetDialog = () => {
   const dispatch = useDispatch();
 

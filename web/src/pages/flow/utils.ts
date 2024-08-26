@@ -1,7 +1,8 @@
 import { DSLComponents } from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
+import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
-import { curry, sample } from 'lodash';
+import { curry, get, intersectionWith, isEqual, sample } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import { Edge, Node, Position } from 'reactflow';
@@ -172,10 +173,24 @@ export const isEdgeEqual = (previous: Edge, current: Edge) =>
   previous.sourceHandle === current.sourceHandle;
 
 export const buildNewPositionMap = (
-  categoryDataKeys: string[],
-  indexesInUse: number[],
+  currentKeys: string[],
+  previousPositionMap: Record<string, IPosition>,
 ) => {
-  return categoryDataKeys.reduce<Record<string, IPosition>>((pre, cur) => {
+  // index in use
+  const indexesInUse = Object.values(previousPositionMap).map((x) => x.idx);
+  const previousKeys = Object.keys(previousPositionMap);
+  const intersectionKeys = intersectionWith(
+    previousKeys,
+    currentKeys,
+    (categoryDataKey, positionMapKey) => categoryDataKey === positionMapKey,
+  );
+  // difference set
+  const currentDifferenceKeys = currentKeys.filter(
+    (x) => !intersectionKeys.some((y) => y === x),
+  );
+  const newPositionMap = currentDifferenceKeys.reduce<
+    Record<string, IPosition>
+  >((pre, cur) => {
     // take a coordinate
     const effectiveIdxes = CategorizeAnchorPointPositions.map(
       (x, idx) => idx,
@@ -188,4 +203,34 @@ export const buildNewPositionMap = (
 
     return pre;
   }, {});
+
+  return { intersectionKeys, newPositionMap };
+};
+
+export const isKeysEqual = (currentKeys: string[], previousKeys: string[]) => {
+  return isEqual(currentKeys.sort(), previousKeys.sort());
+};
+
+export const getOperatorIndex = (handleTitle: string) => {
+  return handleTitle.split(' ').at(-1);
+};
+
+// Get the value of other forms except itself
+export const getOtherFieldValues = (
+  form: FormInstance,
+  formListName: string = 'items',
+  field: FormListFieldData,
+  latestField: string,
+) =>
+  (form.getFieldValue([formListName]) ?? [])
+    .map((x: any) => {
+      return get(x, latestField);
+    })
+    .filter(
+      (x: string) =>
+        x !== form.getFieldValue([formListName, field.name, latestField]),
+    );
+
+export const generateSwitchHandleText = (idx: number) => {
+  return `Case ${idx + 1}`;
 };

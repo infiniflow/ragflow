@@ -106,7 +106,7 @@ def set_api_key():
 
 @manager.route('/add_llm', methods=['POST'])
 @login_required
-@validate_request("llm_factory", "llm_name", "model_type")
+@validate_request("llm_factory")
 def add_llm():
     req = request.json
     factory = req["llm_factory"]
@@ -120,6 +120,11 @@ def add_llm():
         api_key = '{' + f'"volc_ak": "{req.get("volc_ak", "")}", ' \
                         f'"volc_sk": "{req.get("volc_sk", "")}", ' \
                         f'"ep_id": "{endpoint_id}", ' + '}'
+    elif factory == "Tencent Hunyuan":
+        api_key = '{' + f'"hunyuan_sid": "{req.get("hunyuan_sid", "")}", ' \
+                        f'"hunyuan_sk": "{req.get("hunyuan_sk", "")}"' + '}'
+        req["api_key"] = api_key
+        return set_api_key()
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region
@@ -132,7 +137,14 @@ def add_llm():
         api_key = "xxxxxxxxxxxxxxx"
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"]+"___OpenAI-API"
-        api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
+        api_key = req.get("api_key","xxxxxxxxxxxxxxx")
+    elif factory =="XunFei Spark":
+        llm_name = req["llm_name"]
+        api_key = req.get("spark_api_password","xxxxxxxxxxxxxxx") 
+    elif factory == "BaiduYiyan":
+        llm_name = req["llm_name"]
+        api_key = '{' + f'"yiyan_ak": "{req.get("yiyan_ak", "")}", ' \
+                f'"yiyan_sk": "{req.get("yiyan_sk", "")}"' + '}'
     else:
         llm_name = req["llm_name"]
         api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
@@ -149,7 +161,7 @@ def add_llm():
     msg = ""
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
-            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock","OpenAI-API-Compatible"] else None,
+            key=llm['api_key'],
             model_name=llm["llm_name"], 
             base_url=llm["api_base"])
         try:
@@ -160,7 +172,7 @@ def add_llm():
             msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
-            key=llm['api_key'] if factory in ["VolcEngine", "Bedrock","OpenAI-API-Compatible"] else None,
+            key=llm['api_key'],
             model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
@@ -174,7 +186,9 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.RERANK:
         mdl = RerankModel[factory](
-            key=None, model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"], 
+            model_name=llm["llm_name"], 
+            base_url=llm["api_base"]
         )
         try:
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!"])
@@ -185,7 +199,9 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
-            key=llm["api_key"] if factory in ["OpenAI-API-Compatible"] else None, model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"], 
+            model_name=llm["llm_name"], 
+            base_url=llm["api_base"]
         )
         try:
             img_url = (

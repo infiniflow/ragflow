@@ -62,9 +62,11 @@ pytest==8.2.2
 python-dotenv==1.0.1
 python_dateutil==2.8.2
 python_pptx==0.6.23
+qianfan==0.4.6
 readability_lxml==0.8.1
 redis==5.0.3
 Requests==2.32.2
+replicate==0.31.0
 roman_numbers==1.0.2
 ruamel.base==1.0.0
 scholarly==1.7.11
@@ -75,6 +77,7 @@ Shapely==2.0.5
 six==1.16.0
 StrEnum==0.4.15
 tabulate==0.9.0
+tencentcloud-sdk-python==3.0.1215
 tika==2.6.0
 tiktoken==0.6.0
 torch==2.3.0

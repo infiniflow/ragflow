@@ -32,6 +32,7 @@ import asyncio
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai 
+import json
 
 class Base(ABC):
     def __init__(self, key, model_name):
@@ -561,7 +562,7 @@ class TogetherAIEmbed(OllamaEmbed):
             base_url = "https://api.together.xyz/v1"
         super().__init__(key, model_name, base_url)
 
-      
+
 class PerfXCloudEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1"):
         if not base_url:
@@ -581,3 +582,44 @@ class SILICONFLOWEmbed(OpenAIEmbed):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
         super().__init__(key, model_name, base_url)
+
+
+class ReplicateEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        from replicate.client import Client
+
+        self.model_name = model_name
+        self.client = Client(api_token=key)
+
+    def encode(self, texts: list, batch_size=32):
+        res = self.client.run(self.model_name, input={"texts": json.dumps(texts)})
+        return np.array(res), sum([num_tokens_from_string(text) for text in texts])
+
+    def encode_queries(self, text):
+        res = self.client.embed(self.model_name, input={"texts": [text]})
+        return np.array(res), num_tokens_from_string(text)
+
+
+class BaiduYiyanEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        import qianfan
+
+        key = json.loads(key)
+        ak = key.get("yiyan_ak", "")
+        sk = key.get("yiyan_sk", "")
+        self.client = qianfan.Embedding(ak=ak, sk=sk)
+        self.model_name = model_name
+
+    def encode(self, texts: list, batch_size=32):
+        res = self.client.do(model=self.model_name, texts=texts).body
+        return (
+            np.array([r["embedding"] for r in res["data"]]),
+            res["usage"]["total_tokens"],
+        )
+
+    def encode_queries(self, text):
+        res = self.client.do(model=self.model_name, texts=[text]).body
+        return (
+            np.array([r["embedding"] for r in res["data"]]),
+            res["usage"]["total_tokens"],
+        )
