@@ -113,13 +113,10 @@ def add_llm():
 
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
-        # Assemble volc_ak, volc_sk, endpoint_id into api_key
-        temp = list(ast.literal_eval(req["llm_name"]).items())[0]
-        llm_name = temp[0]
-        endpoint_id = temp[1]
-        api_key = '{' + f'"volc_ak": "{req.get("volc_ak", "")}", ' \
-                        f'"volc_sk": "{req.get("volc_sk", "")}", ' \
-                        f'"ep_id": "{endpoint_id}", ' + '}'
+        # Assemble ark_api_key endpoint_id into api_key
+        llm_name = req["llm_name"]
+        api_key = '{' + f'"ark_api_key": "{req.get("ark_api_key", "")}", ' \
+                        f'"ep_id": "{req.get("endpoint_id", "")}", ' + '}'
     elif factory == "Tencent Hunyuan":
         api_key = '{' + f'"hunyuan_sid": "{req.get("hunyuan_sid", "")}", ' \
                         f'"hunyuan_sk": "{req.get("hunyuan_sk", "")}"' + '}'

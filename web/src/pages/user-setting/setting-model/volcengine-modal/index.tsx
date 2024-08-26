@@ -8,6 +8,8 @@ type FieldType = IAddLlmRequestBody & {
   vision: boolean;
   volc_ak: string;
   volc_sk: string;
+  endpoint_id: string;
+  ark_api_key: string;
 };
 
 const { Option } = Select;
@@ -51,7 +53,7 @@ const VolcEngineModal = ({
         return (
           <Flex justify={'space-between'}>
             <a
-              href="https://www.volcengine.com/docs/82379/1095322"
+              href="https://www.volcengine.com/docs/82379/1302008"
               target="_blank"
               rel="noreferrer"
             >
@@ -88,18 +90,18 @@ const VolcEngineModal = ({
           <Input placeholder={t('volcModelNameMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
-          label={t('addVolcEngineAK')}
-          name="volc_ak"
-          rules={[{ required: true, message: t('volcAKMessage') }]}
+          label={t('addEndpointID')}
+          name="endpoint_id"
+          rules={[{ required: true, message: t('endpointIDMessage') }]}
         >
-          <Input placeholder={t('volcAKMessage')} />
+          <Input placeholder={t('endpointIDMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
-          label={t('addVolcEngineSK')}
-          name="volc_sk"
-          rules={[{ required: true, message: t('volcAKMessage') }]}
+          label={t('addArkApiKey')}
+          name="ark_api_key"
+          rules={[{ required: true, message: t('ArkApiKeyMessage') }]}
         >
-          <Input placeholder={t('volcAKMessage')} />
+          <Input placeholder={t('ArkApiKeyMessage')} />
         </Form.Item>
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>

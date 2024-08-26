@@ -349,13 +349,19 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "Skylark2-pro-32k",
+                    "llm_name": "Doubao-pro-128k",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Doubao-pro-32k",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "Skylark2-pro-4k",
+                    "llm_name": "Doubao-pro-4k",
                     "tags": "LLM,CHAT,4k",
                     "max_tokens": 4096,
                     "model_type": "chat"
