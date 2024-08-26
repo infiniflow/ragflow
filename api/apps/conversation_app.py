@@ -178,7 +178,7 @@ def completion():
 @manager.route('/delete_msg', methods=['POST'])
 @login_required
 @validate_request("conversation_id", "message_id")
-def completion():
+def delete_msg():
     req = request.json
     e, conv = ConversationService.get_by_id(req["conversation_id"])
     if not e:
@@ -193,6 +193,29 @@ def completion():
         conv["message"].pop(i)
         conv["reference"].pop(i)
         break
+
+    ConversationService.update_by_id(conv["id"], conv)
+    return get_json_result(data=conv)
+
+
+@manager.route('/thumbup', methods=['POST'])
+@login_required
+@validate_request("conversation_id", "message_id")
+def thumbup():
+    req = request.json
+    e, conv = ConversationService.get_by_id(req["conversation_id"])
+    if not e:
+        return get_data_error_result(retmsg="Conversation not found!")
+    up_down = req.get("set")
+    feedback = req.get("feedback", "")
+    conv = conv.to_dict()
+    for i, msg in enumerate(conv["message"]):
+        if req["message_id"] == msg.get("id", "") and msg.get("role", "") == "assistant":
+            if up_down: msg["thumbup"] = True
+            else:
+                msg["thumbup"] = False
+                msg["feedback"] = feedback
+            break
 
     ConversationService.update_by_id(conv["id"], conv)
     return get_json_result(data=conv)
