@@ -8,7 +8,6 @@ import {
   useFetchConversationOnMount,
   useGetFileIcon,
   useGetSendButtonDisabled,
-  useSelectConversationLoading,
   useSendButtonDisabled,
   useSendMessage,
 } from '../hooks';
@@ -26,6 +25,7 @@ const ChatContainer = () => {
     removeLatestMessage,
     addNewestAnswer,
     conversationId,
+    loading,
   } = useFetchConversationOnMount();
   const {
     handleInputChange,
@@ -43,7 +43,6 @@ const ChatContainer = () => {
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
   useGetFileIcon();
-  const loading = useSelectConversationLoading();
   const { data: userInfo } = useFetchUserInfo();
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();

@@ -26,22 +26,20 @@ import ChatConfigurationModal from './chat-configuration-modal';
 import ChatContainer from './chat-container';
 import {
   useClickConversationCard,
-  useClickDialogCard,
   useDeleteConversation,
   useDeleteDialog,
   useEditDialog,
-  useFetchConversationListOnMount,
-  useFetchDialogOnMount,
-  useGetChatSearchParams,
   useHandleItemHover,
   useRenameConversation,
-  useSelectConversationListLoading,
   useSelectDerivedConversationList,
-  useSelectDialogListLoading,
-  useSelectFirstDialogOnMount,
 } from './hooks';
 
 import ChatOverviewModal from '@/components/api-service/chat-overview-modal';
+import {
+  useClickDialogCard,
+  useFetchNextDialogList,
+  useGetChatSearchParams,
+} from '@/hooks/chat-hooks';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { IDialog } from '@/interfaces/database/chat';
@@ -50,14 +48,17 @@ import styles from './index.less';
 const { Text } = Typography;
 
 const Chat = () => {
-  const dialogList = useSelectFirstDialogOnMount();
+  const { data: dialogList, loading: dialogLoading } = useFetchNextDialogList();
   const { onRemoveDialog } = useDeleteDialog();
   const { onRemoveConversation } = useDeleteConversation();
   const { handleClickDialog } = useClickDialogCard();
   const { handleClickConversation } = useClickConversationCard();
   const { dialogId, conversationId } = useGetChatSearchParams();
-  const { list: conversationList, addTemporaryConversation } =
-    useSelectDerivedConversationList();
+  const {
+    list: conversationList,
+    addTemporaryConversation,
+    loading: conversationLoading,
+  } = useSelectDerivedConversationList();
   const { activated, handleItemEnter, handleItemLeave } = useHandleItemHover();
   const {
     activated: conversationActivated,
@@ -81,8 +82,6 @@ const Chat = () => {
     hideDialogEditModal,
     showDialogEditModal,
   } = useEditDialog();
-  const dialogLoading = useSelectDialogListLoading();
-  const conversationLoading = useSelectConversationListLoading();
   const { t } = useTranslate('chat');
   const {
     visible: overviewVisible,
@@ -90,8 +89,6 @@ const Chat = () => {
     showModal: showOverviewModal,
   } = useSetModalState();
   const { currentRecord, setRecord } = useSetSelectedRecord<IDialog>();
-
-  useFetchDialogOnMount(dialogId, true);
 
   const handleAppCardEnter = (id: string) => () => {
     handleItemEnter(id);
@@ -235,8 +232,6 @@ const Chat = () => {
 
     return appItems;
   };
-
-  useFetchConversationListOnMount();
 
   return (
     <Flex className={styles.chatWrapper}>
