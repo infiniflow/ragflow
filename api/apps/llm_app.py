@@ -20,7 +20,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
-from rag.llm import EmbeddingModel, ChatModel, RerankModel,CvModel,TTSModel
+from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 import requests
 import ast
 
