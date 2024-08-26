@@ -211,10 +211,12 @@ def thumbup():
     conv = conv.to_dict()
     for i, msg in enumerate(conv["message"]):
         if req["message_id"] == msg.get("id", "") and msg.get("role", "") == "assistant":
-            if up_down: msg["thumbup"] = True
+            if up_down:
+                msg["thumbup"] = True
+                if "feedback" in msg: del msg["feedback"]
             else:
                 msg["thumbup"] = False
-                msg["feedback"] = feedback
+                if feedback: msg["feedback"] = feedback
             break
 
     ConversationService.update_by_id(conv["id"], conv)
