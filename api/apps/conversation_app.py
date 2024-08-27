@@ -209,8 +209,6 @@ def tts():
     return resp
 
     
-    
-
 @manager.route('/delete_msg', methods=['POST'])
 @login_required
 @validate_request("conversation_id", "message_id")
