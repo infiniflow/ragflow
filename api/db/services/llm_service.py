@@ -15,7 +15,7 @@
 #
 from api.db.services.user_service import TenantService
 from api.settings import database_logger
-from rag.llm import EmbeddingModel, CvModel, ChatModel, RerankModel, Seq2txtModel
+from rag.llm import EmbeddingModel, CvModel, ChatModel, RerankModel, Seq2txtModel, TTSModel
 from api.db import LLMType
 from api.db.db_models import DB, UserTenant
 from api.db.db_models import LLMFactories, LLM, TenantLLM
@@ -75,6 +75,8 @@ class TenantLLMService(CommonService):
             mdlnm = tenant.llm_id if not llm_name else llm_name
         elif llm_type == LLMType.RERANK:
             mdlnm = tenant.rerank_id if not llm_name else llm_name
+        elif llm_type == LLMType.TTS:
+            mdlnm = tenant.tts_id if not llm_name else llm_name
         else:
             assert False, "LLM type error"
 
@@ -127,6 +129,14 @@ class TenantLLMService(CommonService):
                 model_config["api_key"], model_config["llm_name"], lang,
                 base_url=model_config["api_base"]
             )
+        if llm_type == LLMType.TTS:
+            if model_config["llm_factory"] not in TTSModel:
+                return
+            return TTSModel[model_config["llm_factory"]](
+                model_config["api_key"],
+                model_config["llm_name"],
+                base_url=model_config["api_base"],
+            )
 
     @classmethod
     @DB.connection_context()
@@ -144,7 +154,9 @@ class TenantLLMService(CommonService):
         elif llm_type == LLMType.CHAT.value:
             mdlnm = tenant.llm_id if not llm_name else llm_name
         elif llm_type == LLMType.RERANK:
-            mdlnm = tenant.llm_id if not llm_name else llm_name
+            mdlnm = tenant.rerank_id if not llm_name else llm_name
+        elif llm_type == LLMType.TTS:
+            mdlnm = tenant.tts_id if not llm_name else llm_name
         else:
             assert False, "LLM type error"
 

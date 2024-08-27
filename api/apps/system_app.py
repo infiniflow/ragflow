@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import json
+
 from flask_login import login_required
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -64,5 +66,24 @@ def status():
         res["redis"] = {"status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.)}
     except Exception as e:
         res["redis"] = {"status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}
+
+    try:
+        v = REDIS_CONN.get("TASKEXE")
+        if not v:
+            raise Exception("No task executor running!")
+        obj = json.loads(v)
+        color = "green"
+        for id in obj.keys():
+            arr = obj[id]
+            if len(arr) == 1:
+                obj[id] = [0]
+            else:
+                obj[id] = [arr[i+1]-arr[i] for i in range(len(arr)-1)]
+            elapsed = max(obj[id])
+            if elapsed > 50: color = "yellow"
+            if elapsed > 120: color = "red"
+        res["task_executor"] = {"status": color, "elapsed": obj}
+    except Exception as e:
+        res["task_executor"] = {"status": "red", "error": str(e)}
 
     return get_json_result(data=res)

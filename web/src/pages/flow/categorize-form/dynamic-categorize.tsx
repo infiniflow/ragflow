@@ -28,14 +28,15 @@ interface INameInputProps {
 
 const getOtherFieldValues = (
   form: FormInstance,
+  formListName: string = 'items',
   field: FormListFieldData,
   latestField: string,
 ) =>
-  (form.getFieldValue(['items']) ?? [])
+  (form.getFieldValue([formListName]) ?? [])
     .map((x: any) => x[latestField])
     .filter(
       (x: string) =>
-        x !== form.getFieldValue(['items', field.name, latestField]),
+        x !== form.getFieldValue([formListName, field.name, latestField]),
     );
 
 const NameInput = ({
@@ -132,7 +133,12 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                     ]}
                   >
                     <NameInput
-                      otherNames={getOtherFieldValues(form, field, 'name')}
+                      otherNames={getOtherFieldValues(
+                        form,
+                        'items',
+                        field,
+                        'name',
+                      )}
                       validate={(errors: string[]) =>
                         form.setFields([
                           {
@@ -159,7 +165,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                     <Select
                       allowClear
                       options={buildCategorizeToOptions(
-                        getOtherFieldValues(form, field, 'to'),
+                        getOtherFieldValues(form, 'items', field, 'to'),
                       )}
                     />
                   </Form.Item>
@@ -173,14 +179,6 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
           );
         }}
       </Form.List>
-
-      {/* <Form.Item noStyle shouldUpdate>
-        {() => (
-          <Typography>
-            <pre>{JSON.stringify(form.getFieldsValue(), null, 2)}</pre>
-          </Typography>
-        )}
-      </Form.Item> */}
     </>
   );
 };

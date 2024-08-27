@@ -327,11 +327,11 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs):
-        root_folder = self.get_root_folder(current_user.id)
+    def upload_document(self, kb, file_objs, user_id):
+        root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
-        self.init_knowledgebase_docs(pf_id, current_user.id)
-        kb_root_folder = self.get_kb_folder(current_user.id)
+        self.init_knowledgebase_docs(pf_id, user_id)
+        kb_root_folder = self.get_kb_folder(user_id)
         kb_folder = self.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
 
         err, files = [], []
@@ -359,7 +359,7 @@ class FileService(CommonService):
                     "kb_id": kb.id,
                     "parser_id": kb.parser_id,
                     "parser_config": kb.parser_config,
-                    "created_by": current_user.id,
+                    "created_by": user_id,
                     "type": filetype,
                     "name": filename,
                     "location": location,

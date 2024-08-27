@@ -4,10 +4,10 @@ import { MessageType } from '@/constants/chat';
 import { Drawer, Flex, Spin } from 'antd';
 import {
   useClickDrawer,
+  useCreateConversationBeforeUploadDocument,
   useFetchConversationOnMount,
   useGetFileIcon,
   useGetSendButtonDisabled,
-  useSelectConversationLoading,
   useSendButtonDisabled,
   useSendMessage,
 } from '../hooks';
@@ -15,6 +15,7 @@ import { buildMessageItemReference } from '../utils';
 
 import MessageInput from '@/components/message-input';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { memo } from 'react';
 import styles from './index.less';
 
 const ChatContainer = () => {
@@ -24,6 +25,8 @@ const ChatContainer = () => {
     addNewestConversation,
     removeLatestMessage,
     addNewestAnswer,
+    conversationId,
+    loading,
   } = useFetchConversationOnMount();
   const {
     handleInputChange,
@@ -41,8 +44,9 @@ const ChatContainer = () => {
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
   useGetFileIcon();
-  const loading = useSelectConversationLoading();
   const { data: userInfo } = useFetchUserInfo();
+  const { createConversationBeforeUploadDocument } =
+    useCreateConversationBeforeUploadDocument();
 
   return (
     <>
@@ -78,7 +82,10 @@ const ChatContainer = () => {
           value={value}
           onInputChange={handleInputChange}
           onPressEnter={handlePressEnter}
-          conversationId={conversation.id}
+          conversationId={conversationId}
+          createConversationBeforeUploadDocument={
+            createConversationBeforeUploadDocument
+          }
         ></MessageInput>
       </Flex>
       <Drawer
@@ -97,4 +104,4 @@ const ChatContainer = () => {
   );
 };
 
-export default ChatContainer;
+export default memo(ChatContainer);

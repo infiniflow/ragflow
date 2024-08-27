@@ -25,12 +25,19 @@ Authorization: Bearer {API_KEY}
 In the current design, the RESTful API key you get from RAGFlow does not expire.
 :::
 
-To get your API key:
+To get your Chat API key or Agent API key:
 
-1. In RAGFlow, click **Chat** tab in the middle top of the page.
-2. Hover over the corresponding dialogue **>** **Chat Bot API** to show the chatbot API configuration page.
-3. Click **Api Key** **>** **Create new key** to create your API key.
-4. Copy and keep your API key safe. 
+For Chat API key:
+   1. In RAGFlow, click **Chat** tab in the middle top of the page.
+   2. Hover over the corresponding dialogue **>** **Chat Bot API** to show the chatbot API configuration page.
+   3. Click **API Key** **>** **Create new key** to create your API key.
+   4. Copy and keep your API key safe. 
+
+For Agent API key:
+   1. In RAGFlow, click **Agent** tab in the middle top of the page.
+   2. Click your agent **>** ** Chat Bot API** to show the chatbot API configuration page.
+   3. Click **API Key** **>** **Create new key** to create your API key.
+   4. Copy and keep your API key safe. 
 
 ## Create conversation
 
@@ -212,7 +219,7 @@ This method retrieves the history of a specified conversation session.
     
 ## Get answer
 
-This method retrieves from RAGFlow the answer to the user's latest question.
+This method retrieves from RAGFlow Chat or RAGFlow Agent the answer to the user's latest question.
 
 ### Request
 

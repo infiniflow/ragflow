@@ -21,6 +21,7 @@ from .deepl import DeepL, DeepLParam
 from .github import GitHub, GitHubParam
 from .baidufanyi import BaiduFanyi, BaiduFanyiParam
 from .qweather import QWeather, QWeatherParam
+from .exesql import ExeSQL, ExeSQLParam
 
 def component_class(class_name):
     m = importlib.import_module("agent.component")

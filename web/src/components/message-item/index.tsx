@@ -13,10 +13,11 @@ import {
 } from '@/hooks/document-hooks';
 import MarkdownContent from '@/pages/chat/markdown-content';
 import { getExtension, isImage } from '@/utils/document-util';
-import { Avatar, Button, Flex, List, Typography } from 'antd';
+import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
+import FileIcon from '../file-icon';
 import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
-import SvgIcon from '../svg-icon';
+// import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 
 const { Text } = Typography;
@@ -109,7 +110,15 @@ const MessageItem = ({
             <AssistantIcon></AssistantIcon>
           )}
           <Flex vertical gap={8} flex={1}>
-            <b>{isAssistant ? '' : nickname}</b>
+            <Space>
+              {/* {isAssistant ? (
+                <AssistantGroupButton></AssistantGroupButton>
+              ) : (
+                <UserGroupButton></UserGroupButton>
+              )} */}
+
+              <b>{isAssistant ? '' : nickname}</b>
+            </Space>
             <div
               className={
                 isAssistant ? styles.messageText : styles.messageUserText
@@ -126,23 +135,13 @@ const MessageItem = ({
                 bordered
                 dataSource={referenceDocumentList}
                 renderItem={(item) => {
-                  const fileThumbnail = fileThumbnails[item.doc_id];
-
-                  const fileExtension = getExtension(item.doc_name);
                   return (
                     <List.Item>
                       <Flex gap={'small'} align="center">
-                        {fileThumbnail ? (
-                          <img
-                            src={fileThumbnail}
-                            className={styles.thumbnailImg}
-                          ></img>
-                        ) : (
-                          <SvgIcon
-                            name={`file-icon/${fileExtension}`}
-                            width={24}
-                          ></SvgIcon>
-                        )}
+                        <FileIcon
+                          id={item.doc_id}
+                          name={item.doc_name}
+                        ></FileIcon>
 
                         <NewDocumentLink
                           documentId={item.doc_id}
@@ -162,23 +161,14 @@ const MessageItem = ({
                 bordered
                 dataSource={documentList}
                 renderItem={(item) => {
+                  // TODO:
                   const fileThumbnail =
                     documentThumbnails[item.id] || fileThumbnails[item.id];
                   const fileExtension = getExtension(item.name);
                   return (
                     <List.Item>
                       <Flex gap={'small'} align="center">
-                        {fileThumbnail ? (
-                          <img
-                            src={fileThumbnail}
-                            className={styles.thumbnailImg}
-                          ></img>
-                        ) : (
-                          <SvgIcon
-                            name={`file-icon/${fileExtension}`}
-                            width={24}
-                          ></SvgIcon>
-                        )}
+                        <FileIcon id={item.id} name={item.name}></FileIcon>
 
                         {isImage(fileExtension) ? (
                           <NewDocumentLink

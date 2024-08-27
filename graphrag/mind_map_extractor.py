@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import collections
 import logging
 import re
@@ -104,6 +105,9 @@ class MindMapExtractor:
 
             for i, _ in enumerate(threads):
                 res.append(_.result())
+
+            if not res:
+                return MindMapResult(output={"root":{}})
 
             merge_json = reduce(self._merge, res)
             if len(merge_json.keys()) > 1:

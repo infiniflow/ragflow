@@ -191,3 +191,24 @@ export const useResetFlow = () => {
 
   return { data, loading, resetFlow: mutateAsync };
 };
+
+export const useTestDbConnect = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['testDbConnect'],
+    mutationFn: async (params: any) => {
+      const ret = await flowService.testDbConnect(params);
+      if (ret?.data?.retcode === 0) {
+        message.success(ret?.data?.data);
+      } else {
+        message.error(ret?.data?.data);
+      }
+      return ret;
+    },
+  });
+
+  return { data, loading, testDbConnect: mutateAsync };
+};

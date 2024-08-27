@@ -163,6 +163,141 @@ export const useSubmitVolcEngine = () => {
   };
 };
 
+export const useSubmitHunyuan = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: HunyuanAddingVisible,
+    hideModal: hideHunyuanAddingModal,
+    showModal: showHunyuanAddingModal,
+  } = useSetModalState();
+
+  const onHunyuanAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideHunyuanAddingModal();
+      }
+    },
+    [hideHunyuanAddingModal, addLlm],
+  );
+
+  return {
+    HunyuanAddingLoading: loading,
+    onHunyuanAddingOk,
+    HunyuanAddingVisible,
+    hideHunyuanAddingModal,
+    showHunyuanAddingModal,
+  };
+};
+
+export const useSubmitTencentCloud = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: TencentCloudAddingVisible,
+    hideModal: hideTencentCloudAddingModal,
+    showModal: showTencentCloudAddingModal,
+  } = useSetModalState();
+
+  const onTencentCloudAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideTencentCloudAddingModal();
+      }
+    },
+    [hideTencentCloudAddingModal, addLlm],
+  );
+
+  return {
+    TencentCloudAddingLoading: loading,
+    onTencentCloudAddingOk,
+    TencentCloudAddingVisible,
+    hideTencentCloudAddingModal,
+    showTencentCloudAddingModal,
+  };
+};
+
+export const useSubmitSpark = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: SparkAddingVisible,
+    hideModal: hideSparkAddingModal,
+    showModal: showSparkAddingModal,
+  } = useSetModalState();
+
+  const onSparkAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideSparkAddingModal();
+      }
+    },
+    [hideSparkAddingModal, addLlm],
+  );
+
+  return {
+    SparkAddingLoading: loading,
+    onSparkAddingOk,
+    SparkAddingVisible,
+    hideSparkAddingModal,
+    showSparkAddingModal,
+  };
+};
+
+export const useSubmityiyan = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: yiyanAddingVisible,
+    hideModal: hideyiyanAddingModal,
+    showModal: showyiyanAddingModal,
+  } = useSetModalState();
+
+  const onyiyanAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideyiyanAddingModal();
+      }
+    },
+    [hideyiyanAddingModal, addLlm],
+  );
+
+  return {
+    yiyanAddingLoading: loading,
+    onyiyanAddingOk,
+    yiyanAddingVisible,
+    hideyiyanAddingModal,
+    showyiyanAddingModal,
+  };
+};
+
+export const useSubmitFishAudio = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: FishAudioAddingVisible,
+    hideModal: hideFishAudioAddingModal,
+    showModal: showFishAudioAddingModal,
+  } = useSetModalState();
+
+  const onFishAudioAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideFishAudioAddingModal();
+      }
+    },
+    [hideFishAudioAddingModal, addLlm],
+  );
+
+  return {
+    FishAudioAddingLoading: loading,
+    onFishAudioAddingOk,
+    FishAudioAddingVisible,
+    hideFishAudioAddingModal,
+    showFishAudioAddingModal,
+  };
+};
+
 export const useSubmitBedrock = () => {
   const { addLlm, loading } = useAddLlm();
   const {

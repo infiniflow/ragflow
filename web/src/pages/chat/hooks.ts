@@ -1,16 +1,16 @@
 import { MessageType } from '@/constants/chat';
 import { fileIconMap } from '@/constants/common';
 import {
-  useFetchConversation,
-  useFetchConversationList,
-  useFetchDialog,
-  useFetchDialogList,
-  useRemoveConversation,
-  useRemoveDialog,
-  useSelectConversationList,
-  useSelectDialogList,
-  useSetDialog,
-  useUpdateConversation,
+  useFetchManualConversation,
+  useFetchManualDialog,
+  useFetchNextConversation,
+  useFetchNextConversationList,
+  useFetchNextDialog,
+  useGetChatSearchParams,
+  useRemoveNextConversation,
+  useRemoveNextDialog,
+  useSetNextDialog,
+  useUpdateNextConversation,
 } from '@/hooks/chat-hooks';
 import {
   useSetModalState,
@@ -18,7 +18,6 @@ import {
   useTranslate,
 } from '@/hooks/common-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import {
   IAnswer,
   IConversation,
@@ -27,6 +26,8 @@ import {
 } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
+import { useMutationState } from '@tanstack/react-query';
+import { get } from 'lodash';
 import omit from 'lodash/omit';
 import trim from 'lodash/trim';
 import {
@@ -37,7 +38,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useDispatch, useSearchParams, useSelector } from 'umi';
+import { useSearchParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { ChatSearchParams } from './constants';
 import {
@@ -45,70 +46,20 @@ import {
   IMessage,
   VariableTableDataType,
 } from './interface';
-import { ChatModelState } from './model';
-import { isConversationIdExist } from './utils';
 
 export const useSelectCurrentDialog = () => {
-  const currentDialog: IDialog = useSelector(
-    (state: any) => state.chatModel.currentDialog,
-  );
-
-  return currentDialog;
-};
-
-export const useFetchDialogOnMount = (
-  dialogId: string,
-  visible: boolean,
-): IDialog => {
-  const currentDialog: IDialog = useSelectCurrentDialog();
-  const fetchDialog = useFetchDialog();
-
-  useEffect(() => {
-    if (dialogId && visible) {
-      fetchDialog(dialogId);
-    }
-  }, [dialogId, fetchDialog, visible]);
-
-  return currentDialog;
-};
-
-export const useSetCurrentDialog = () => {
-  const dispatch = useDispatch();
-
-  const currentDialog: IDialog = useSelector(
-    (state: any) => state.chatModel.currentDialog,
-  );
-
-  const setCurrentDialog = useCallback(
-    (dialogId: string) => {
-      dispatch({
-        type: 'chatModel/setCurrentDialog',
-        payload: { id: dialogId },
-      });
+  const data = useMutationState({
+    filters: { mutationKey: ['fetchDialog'] },
+    select: (mutation) => {
+      return get(mutation, 'state.data.data', {});
     },
-    [dispatch],
-  );
+  });
 
-  return { currentDialog, setCurrentDialog };
-};
-
-export const useResetCurrentDialog = () => {
-  const dispatch = useDispatch();
-
-  const resetCurrentDialog = useCallback(() => {
-    dispatch({
-      type: 'chatModel/setCurrentDialog',
-      payload: {},
-    });
-  }, [dispatch]);
-
-  return { resetCurrentDialog };
+  return (data.at(-1) ?? {}) as IDialog;
 };
 
 export const useSelectPromptConfigParameters = (): VariableTableDataType[] => {
-  const currentDialog: IDialog = useSelector(
-    (state: any) => state.chatModel.currentDialog,
-  );
+  const { data: currentDialog } = useFetchNextDialog();
 
   const finalParameters: VariableTableDataType[] = useMemo(() => {
     const parameters = currentDialog?.prompt_config?.parameters ?? [];
@@ -129,81 +80,13 @@ export const useSelectPromptConfigParameters = (): VariableTableDataType[] => {
 export const useDeleteDialog = () => {
   const showDeleteConfirm = useShowDeleteConfirm();
 
-  const removeDocument = useRemoveDialog();
+  const { removeDialog } = useRemoveNextDialog();
 
   const onRemoveDialog = (dialogIds: Array<string>) => {
-    showDeleteConfirm({ onOk: () => removeDocument(dialogIds) });
+    showDeleteConfirm({ onOk: () => removeDialog(dialogIds) });
   };
 
   return { onRemoveDialog };
-};
-
-export const useGetChatSearchParams = () => {
-  const [currentQueryParameters] = useSearchParams();
-
-  return {
-    dialogId: currentQueryParameters.get(ChatSearchParams.DialogId) || '',
-    conversationId:
-      currentQueryParameters.get(ChatSearchParams.ConversationId) || '',
-  };
-};
-
-export const useSetCurrentConversation = () => {
-  const dispatch = useDispatch();
-
-  const setCurrentConversation = useCallback(
-    (currentConversation: IClientConversation) => {
-      dispatch({
-        type: 'chatModel/setCurrentConversation',
-        payload: currentConversation,
-      });
-    },
-    [dispatch],
-  );
-
-  return setCurrentConversation;
-};
-
-export const useClickDialogCard = () => {
-  const [currentQueryParameters, setSearchParams] = useSearchParams();
-
-  const newQueryParameters: URLSearchParams = useMemo(() => {
-    return new URLSearchParams();
-  }, []);
-
-  const handleClickDialog = useCallback(
-    (dialogId: string) => {
-      newQueryParameters.set(ChatSearchParams.DialogId, dialogId);
-      // newQueryParameters.set(
-      //   ChatSearchParams.ConversationId,
-      //   EmptyConversationId,
-      // );
-      setSearchParams(newQueryParameters);
-    },
-    [newQueryParameters, setSearchParams],
-  );
-
-  return { handleClickDialog };
-};
-
-export const useSelectFirstDialogOnMount = () => {
-  const fetchDialogList = useFetchDialogList();
-  const dialogList = useSelectDialogList();
-
-  const { handleClickDialog } = useClickDialogCard();
-
-  const fetchList = useCallback(async () => {
-    const data = await fetchDialogList();
-    if (data.retcode === 0 && data.data.length > 0) {
-      handleClickDialog(data.data[0].id);
-    }
-  }, [fetchDialogList, handleClickDialog]);
-
-  useEffect(() => {
-    fetchList();
-  }, [fetchList]);
-
-  return dialogList;
 };
 
 export const useHandleItemHover = () => {
@@ -226,9 +109,8 @@ export const useHandleItemHover = () => {
 
 export const useEditDialog = () => {
   const [dialog, setDialog] = useState<IDialog>({} as IDialog);
-  const fetchDialog = useFetchDialog();
-  const submitDialog = useSetDialog();
-  const loading = useOneNamespaceEffectsLoading('chatModel', ['setDialog']);
+  const { fetchDialog } = useFetchManualDialog();
+  const { setDialog: submitDialog, loading } = useSetNextDialog();
 
   const {
     visible: dialogEditVisible,
@@ -255,7 +137,7 @@ export const useEditDialog = () => {
   const handleShowDialogEditModal = useCallback(
     async (dialogId?: string) => {
       if (dialogId) {
-        const ret = await fetchDialog(dialogId, false);
+        const ret = await fetchDialog(dialogId);
         if (ret.retcode === 0) {
           setDialog(ret.data);
         }
@@ -282,25 +164,15 @@ export const useEditDialog = () => {
 
 //#region conversation
 
-export const useFetchConversationListOnMount = () => {
-  const conversationList = useSelectConversationList();
-  const { dialogId } = useGetChatSearchParams();
-  const fetchConversationList = useFetchConversationList();
-
-  useEffect(() => {
-    fetchConversationList(dialogId);
-  }, [fetchConversationList, dialogId]);
-
-  return conversationList;
-};
-
 export const useSelectDerivedConversationList = () => {
+  const { t } = useTranslate('chat');
+
   const [list, setList] = useState<Array<IConversation>>([]);
-  let chatModel: ChatModelState = useSelector((state: any) => state.chatModel);
-  const { conversationList, currentDialog } = chatModel;
+  const { data: currentDialog } = useFetchNextDialog();
+  const { data: conversationList, loading } = useFetchNextConversationList();
   const { dialogId } = useGetChatSearchParams();
   const prologue = currentDialog?.prompt_config?.prologue ?? '';
-  const { t } = useTranslate('chat');
+
   const addTemporaryConversation = useCallback(() => {
     setList((pre) => {
       if (dialogId) {
@@ -329,7 +201,7 @@ export const useSelectDerivedConversationList = () => {
     addTemporaryConversation();
   }, [addTemporaryConversation]);
 
-  return { list, addTemporaryConversation };
+  return { list, addTemporaryConversation, loading };
 };
 
 export const useClickConversationCard = () => {
@@ -352,7 +224,7 @@ export const useClickConversationCard = () => {
 
 export const useSetConversation = () => {
   const { dialogId } = useGetChatSearchParams();
-  const updateConversation = useUpdateConversation();
+  const { updateConversation } = useUpdateNextConversation();
 
   const setConversation = useCallback(
     (message: string) => {
@@ -376,11 +248,8 @@ export const useSetConversation = () => {
 export const useSelectCurrentConversation = () => {
   const [currentConversation, setCurrentConversation] =
     useState<IClientConversation>({} as IClientConversation);
-
-  const conversation: IClientConversation = useSelector(
-    (state: any) => state.chatModel.currentConversation,
-  );
-  const dialog = useSelectCurrentDialog();
+  const { data: conversation, loading } = useFetchNextConversation();
+  const { data: dialog } = useFetchNextDialog();
   const { conversationId, dialogId } = useGetChatSearchParams();
 
   const addNewestConversation = useCallback(
@@ -474,6 +343,7 @@ export const useSelectCurrentConversation = () => {
     addNewestConversation,
     removeLatestMessage,
     addNewestAnswer,
+    loading,
   };
 };
 
@@ -495,24 +365,14 @@ export const useScrollToBottom = (currentConversation: IClientConversation) => {
 
 export const useFetchConversationOnMount = () => {
   const { conversationId } = useGetChatSearchParams();
-  const fetchConversation = useFetchConversation();
   const {
     currentConversation,
     addNewestConversation,
     removeLatestMessage,
     addNewestAnswer,
+    loading,
   } = useSelectCurrentConversation();
   const ref = useScrollToBottom(currentConversation);
-
-  const fetchConversationOnMount = useCallback(() => {
-    if (isConversationIdExist(conversationId)) {
-      fetchConversation(conversationId);
-    }
-  }, [fetchConversation, conversationId]);
-
-  useEffect(() => {
-    fetchConversationOnMount();
-  }, [fetchConversationOnMount]);
 
   return {
     currentConversation,
@@ -520,6 +380,8 @@ export const useFetchConversationOnMount = () => {
     ref,
     removeLatestMessage,
     addNewestAnswer,
+    conversationId,
+    loading,
   };
 };
 
@@ -654,13 +516,12 @@ export const useGetFileIcon = () => {
 };
 
 export const useDeleteConversation = () => {
-  const { dialogId } = useGetChatSearchParams();
   const { handleClickConversation } = useClickConversationCard();
   const showDeleteConfirm = useShowDeleteConfirm();
-  const removeConversation = useRemoveConversation();
+  const { removeConversation } = useRemoveNextConversation();
 
   const deleteConversation = (conversationIds: Array<string>) => async () => {
-    const ret = await removeConversation(conversationIds, dialogId);
+    const ret = await removeConversation(conversationIds);
     if (ret === 0) {
       handleClickConversation('');
     }
@@ -678,13 +539,13 @@ export const useRenameConversation = () => {
   const [conversation, setConversation] = useState<IClientConversation>(
     {} as IClientConversation,
   );
-  const fetchConversation = useFetchConversation();
+  const { fetchConversation } = useFetchManualConversation();
   const {
     visible: conversationRenameVisible,
     hideModal: hideConversationRenameModal,
     showModal: showConversationRenameModal,
   } = useSetModalState();
-  const updateConversation = useUpdateConversation();
+  const { updateConversation, loading } = useUpdateNextConversation();
 
   const onConversationRenameOk = useCallback(
     async (name: string) => {
@@ -701,13 +562,9 @@ export const useRenameConversation = () => {
     [updateConversation, conversation, hideConversationRenameModal],
   );
 
-  const loading = useOneNamespaceEffectsLoading('chatModel', [
-    'setConversation',
-  ]);
-
   const handleShowConversationRenameModal = useCallback(
     async (conversationId: string) => {
-      const ret = await fetchConversation(conversationId, false);
+      const ret = await fetchConversation(conversationId);
       if (ret.retcode === 0) {
         setConversation(ret.data);
       }
@@ -750,16 +607,6 @@ export const useClickDrawer = () => {
   };
 };
 
-export const useSelectDialogListLoading = () => {
-  return useOneNamespaceEffectsLoading('chatModel', ['listDialog']);
-};
-export const useSelectConversationListLoading = () => {
-  return useOneNamespaceEffectsLoading('chatModel', ['listConversation']);
-};
-export const useSelectConversationLoading = () => {
-  return useOneNamespaceEffectsLoading('chatModel', ['getConversation']);
-};
-
 export const useGetSendButtonDisabled = () => {
   const { dialogId, conversationId } = useGetChatSearchParams();
 
@@ -768,5 +615,29 @@ export const useGetSendButtonDisabled = () => {
 
 export const useSendButtonDisabled = (value: string) => {
   return trim(value) === '';
+};
+
+export const useCreateConversationBeforeUploadDocument = () => {
+  const { setConversation } = useSetConversation();
+  const { dialogId } = useGetChatSearchParams();
+
+  const { handleClickConversation } = useClickConversationCard();
+
+  const createConversationBeforeUploadDocument = useCallback(
+    async (message: string) => {
+      const data = await setConversation(message);
+      if (data.retcode === 0) {
+        const id = data.data.id;
+        handleClickConversation(id);
+      }
+      return data;
+    },
+    [setConversation, handleClickConversation],
+  );
+
+  return {
+    createConversationBeforeUploadDocument,
+    dialogId,
+  };
 };
 //#endregion

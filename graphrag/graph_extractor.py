@@ -1,21 +1,10 @@
-#
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
+# Copyright (c) 2024 Microsoft Corporation.
+# Licensed under the MIT License
 """
 Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
 """
+
 import logging
 import numbers
 import re
@@ -142,6 +131,7 @@ class GraphExtractor:
                 total_token_count += token_count
                 if callback: callback(msg=f"{doc_index+1}/{total}, elapsed: {timer() - st}s, used tokens: {total_token_count}")
             except Exception as e:
+                if callback: callback(msg="Knowledge graph extraction error:{}".format(str(e)))
                 logging.exception("error extracting graph")
                 self._on_error(
                     e,
@@ -184,6 +174,7 @@ class GraphExtractor:
             text = perform_variable_replacements(CONTINUE_PROMPT, history=history, variables=variables)
             history.append({"role": "user", "content": text})
             response = self._llm.chat("", history, gen_conf)
+            if response.find("**ERROR**") >=0: raise Exception(response)
             results += response or ""
 
             # if this is the final glean, don't bother updating the continuation flag

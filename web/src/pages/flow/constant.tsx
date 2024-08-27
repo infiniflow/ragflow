@@ -4,12 +4,14 @@ import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
+import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
 import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
+import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 
 import { variableEnabledFieldMap } from '@/constants/chat';
@@ -31,6 +33,7 @@ import {
   SendOutlined,
   SlidersOutlined,
 } from '@ant-design/icons';
+import upperFirst from 'lodash/upperFirst';
 
 export enum Operator {
   Begin = 'Begin',
@@ -54,6 +57,8 @@ export enum Operator {
   GitHub = 'GitHub',
   BaiduFanyi = 'BaiduFanyi',
   QWeather = 'QWeather',
+  ExeSQL = 'ExeSQL',
+  Switch = 'Switch',
 }
 
 export const operatorIconMap = {
@@ -78,9 +83,23 @@ export const operatorIconMap = {
   [Operator.GitHub]: GithubIcon,
   [Operator.BaiduFanyi]: baiduFanyiIcon,
   [Operator.QWeather]: QWeatherIcon,
+  [Operator.ExeSQL]: ExeSqlIcon,
+  [Operator.Switch]: SwitchIcon,
 };
 
-export const operatorMap = {
+export const operatorMap: Record<
+  Operator,
+  {
+    backgroundColor?: string;
+    color?: string;
+    width?: number;
+    height?: number;
+    fontSize?: number;
+    iconFontSize?: number;
+    iconWidth?: number;
+    moreIconColor?: string;
+  }
+> = {
   [Operator.Retrieval]: {
     backgroundColor: '#cad6e0',
     color: '#385974',
@@ -159,12 +178,22 @@ export const operatorMap = {
   [Operator.Google]: {
     backgroundColor: 'pink',
   },
-  [Operator.Bing]: {},
-  [Operator.GoogleScholar]: {},
-  [Operator.DeepL]: {},
-  [Operator.GitHub]: {},
-  [Operator.BaiduFanyi]: {},
-  [Operator.QWeather]: {},
+  [Operator.Bing]: {
+    backgroundColor: '#c0dcc4',
+  },
+  [Operator.GoogleScholar]: {
+    backgroundColor: '#b4e4f6',
+  },
+  [Operator.DeepL]: {
+    backgroundColor: '#f5e8e6',
+  },
+  [Operator.GitHub]: {
+    backgroundColor: '#c7c7f8',
+  },
+  [Operator.BaiduFanyi]: { backgroundColor: '#e5f2d3' },
+  [Operator.QWeather]: { backgroundColor: '#a4bbf3' },
+  [Operator.ExeSQL]: { backgroundColor: '#b9efe8' },
+  [Operator.Switch]: { backgroundColor: '#dbaff6' },
 };
 
 export const componentMenuList = [
@@ -191,6 +220,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.KeywordExtract,
+  },
+  {
+    name: Operator.Switch,
   },
   {
     name: Operator.DuckDuckGo,
@@ -227,6 +259,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.QWeather,
+  },
+  {
+    name: Operator.ExeSQL,
   },
 ];
 
@@ -354,6 +389,19 @@ export const initialQWeatherValues = {
   time_period: 'now',
 };
 
+export const initialExeSqlValues = {
+  db_type: 'mysql',
+  database: '',
+  username: '',
+  host: '',
+  port: 3306,
+  password: '',
+  loop: 3,
+  top_n: 30,
+};
+
+export const initialSwitchValues = { conditions: [] };
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -422,6 +470,8 @@ export const RestrictedUpstreamMap = {
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
+  [Operator.ExeSQL]: [Operator.Begin],
+  [Operator.Switch]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -446,6 +496,8 @@ export const NodeMap = {
   [Operator.GitHub]: 'ragNode',
   [Operator.BaiduFanyi]: 'ragNode',
   [Operator.QWeather]: 'ragNode',
+  [Operator.ExeSQL]: 'ragNode',
+  [Operator.Switch]: 'categorizeNode',
 };
 
 export const LanguageOptions = [
@@ -2576,3 +2628,27 @@ export const QWeatherTimePeriodOptions = [
   '15d',
   '30d',
 ];
+
+export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb'].map((x) => ({
+  label: upperFirst(x),
+  value: x,
+}));
+
+export const SwitchElseTo = 'end_cpn_id';
+
+export const SwitchOperatorOptions = [
+  { value: '=', label: 'equal' },
+  { value: '≠', label: 'notEqual' },
+  { value: '>', label: 'gt' },
+  { value: '≥', label: 'ge' },
+  { value: '<', label: 'lt' },
+  { value: '≤', label: 'le' },
+  { value: 'contains', label: 'contains' },
+  { value: 'not contains', label: 'notContains' },
+  { value: 'start with', label: 'startWith' },
+  { value: 'end with', label: 'endWith' },
+  { value: 'empty', label: 'empty' },
+  { value: 'not empty', label: 'notEmpty' },
+];
+
+export const SwitchLogicOperatorOptions = ['and', 'or'];

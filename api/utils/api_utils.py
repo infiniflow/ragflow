@@ -216,7 +216,7 @@ def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None):
     return jsonify(response)
 
 
-def cors_reponse(retcode=RetCode.SUCCESS,
+def construct_response(retcode=RetCode.SUCCESS,
                  retmsg='success', data=None, auth=None):
     result_dict = {"retcode": retcode, "retmsg": retmsg, "data": data}
     response_dict = {}

@@ -20,11 +20,18 @@ export interface IUserInfo {
   update_time: number;
 }
 
+export type TaskExecutorElapsed = Record<string, number[]>;
+
 export interface ISystemStatus {
   es: Es;
   minio: Minio;
   mysql: Minio;
   redis: Redis;
+  task_executor: {
+    error?: string;
+    status: string;
+    elapsed?: TaskExecutorElapsed;
+  };
 }
 
 interface Redis {

@@ -27,21 +27,31 @@ import {
 import { useCallback, useMemo } from 'react';
 import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
+import TencentCloudModal from './Tencent-modal';
 import ApiKeyModal from './api-key-modal';
 import BedrockModal from './bedrock-modal';
 import { IconMap } from './constant';
+import FishAudioModal from './fish-audio-modal';
 import {
   useHandleDeleteLlm,
   useSubmitApiKey,
   useSubmitBedrock,
+  useSubmitFishAudio,
+  useSubmitHunyuan,
   useSubmitOllama,
+  useSubmitSpark,
   useSubmitSystemModelSetting,
+  useSubmitTencentCloud,
   useSubmitVolcEngine,
+  useSubmityiyan,
 } from './hooks';
+import HunyuanModal from './hunyuan-modal';
 import styles from './index.less';
 import OllamaModal from './ollama-modal';
+import SparkModal from './spark-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
 import VolcEngineModal from './volcengine-modal';
+import YiyanModal from './yiyan-modal';
 
 const LlmIcon = ({ name }: { name: string }) => {
   const icon = IconMap[name as keyof typeof IconMap];
@@ -88,7 +98,13 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
           <Col span={12} className={styles.factoryOperationWrapper}>
             <Space size={'middle'}>
               <Button onClick={handleApiKeyClick}>
-                {isLocalLlmFactory(item.name) || item.name === 'VolcEngine'
+                {isLocalLlmFactory(item.name) ||
+                item.name === 'VolcEngine' ||
+                item.name === 'Tencent Hunyuan' ||
+                item.name === 'XunFei Spark' ||
+                item.name === 'BaiduYiyan' ||
+                item.name === 'Fish Audio' ||
+                item.name === 'Tencent Cloud'
                   ? t('addTheModel')
                   : 'API-Key'}
                 <SettingOutlined />
@@ -163,6 +179,46 @@ const UserSettingModel = () => {
   } = useSubmitVolcEngine();
 
   const {
+    HunyuanAddingVisible,
+    hideHunyuanAddingModal,
+    showHunyuanAddingModal,
+    onHunyuanAddingOk,
+    HunyuanAddingLoading,
+  } = useSubmitHunyuan();
+
+  const {
+    TencentCloudAddingVisible,
+    hideTencentCloudAddingModal,
+    showTencentCloudAddingModal,
+    onTencentCloudAddingOk,
+    TencentCloudAddingLoading,
+  } = useSubmitTencentCloud();
+
+  const {
+    SparkAddingVisible,
+    hideSparkAddingModal,
+    showSparkAddingModal,
+    onSparkAddingOk,
+    SparkAddingLoading,
+  } = useSubmitSpark();
+
+  const {
+    yiyanAddingVisible,
+    hideyiyanAddingModal,
+    showyiyanAddingModal,
+    onyiyanAddingOk,
+    yiyanAddingLoading,
+  } = useSubmityiyan();
+
+  const {
+    FishAudioAddingVisible,
+    hideFishAudioAddingModal,
+    showFishAudioAddingModal,
+    onFishAudioAddingOk,
+    FishAudioAddingLoading,
+  } = useSubmitFishAudio();
+
+  const {
     bedrockAddingLoading,
     onBedrockAddingOk,
     bedrockAddingVisible,
@@ -174,8 +230,21 @@ const UserSettingModel = () => {
     () => ({
       Bedrock: showBedrockAddingModal,
       VolcEngine: showVolcAddingModal,
+      'Tencent Hunyuan': showHunyuanAddingModal,
+      'XunFei Spark': showSparkAddingModal,
+      BaiduYiyan: showyiyanAddingModal,
+      'Fish Audio': showFishAudioAddingModal,
+      'Tencent Cloud': showTencentCloudAddingModal,
     }),
-    [showBedrockAddingModal, showVolcAddingModal],
+    [
+      showBedrockAddingModal,
+      showVolcAddingModal,
+      showHunyuanAddingModal,
+      showTencentCloudAddingModal,
+      showSparkAddingModal,
+      showyiyanAddingModal,
+      showFishAudioAddingModal,
+    ],
   );
 
   const handleAddModel = useCallback(
@@ -217,20 +286,22 @@ const UserSettingModel = () => {
             md: 3,
             lg: 4,
             xl: 4,
-            xxl: 8,
+            xxl: 10,
           }}
           dataSource={factoryList}
           renderItem={(item) => (
             <List.Item>
               <Card className={styles.toBeAddedCard}>
-                <Flex vertical gap={'large'}>
+                <Flex vertical gap={'middle'}>
                   <LlmIcon name={item.name} />
                   <Flex vertical gap={'middle'}>
-                    <b>{item.name}</b>
-                    <Text>{item.tags}</Text>
+                    <b>
+                      <Text ellipsis={{ tooltip: item.name }}>{item.name}</Text>
+                    </b>
+                    <Text className={styles.modelTags}>{item.tags}</Text>
                   </Flex>
                 </Flex>
-                <Divider></Divider>
+                <Divider className={styles.modelDivider}></Divider>
                 <Button type="link" onClick={() => handleAddModel(item.name)}>
                   {t('addTheModel')}
                 </Button>
@@ -286,6 +357,41 @@ const UserSettingModel = () => {
         loading={volcAddingLoading}
         llmFactory={'VolcEngine'}
       ></VolcEngineModal>
+      <HunyuanModal
+        visible={HunyuanAddingVisible}
+        hideModal={hideHunyuanAddingModal}
+        onOk={onHunyuanAddingOk}
+        loading={HunyuanAddingLoading}
+        llmFactory={'Tencent Hunyuan'}
+      ></HunyuanModal>
+      <TencentCloudModal
+        visible={TencentCloudAddingVisible}
+        hideModal={hideTencentCloudAddingModal}
+        onOk={onTencentCloudAddingOk}
+        loading={TencentCloudAddingLoading}
+        llmFactory={'Tencent TencentCloud'}
+      ></TencentCloudModal>
+      <SparkModal
+        visible={SparkAddingVisible}
+        hideModal={hideSparkAddingModal}
+        onOk={onSparkAddingOk}
+        loading={SparkAddingLoading}
+        llmFactory={'XunFei Spark'}
+      ></SparkModal>
+      <YiyanModal
+        visible={yiyanAddingVisible}
+        hideModal={hideyiyanAddingModal}
+        onOk={onyiyanAddingOk}
+        loading={yiyanAddingLoading}
+        llmFactory={'BaiduYiyan'}
+      ></YiyanModal>
+      <FishAudioModal
+        visible={FishAudioAddingVisible}
+        hideModal={hideFishAudioAddingModal}
+        onOk={onFishAudioAddingOk}
+        loading={FishAudioAddingLoading}
+        llmFactory={'Fish Audio'}
+      ></FishAudioModal>
       <BedrockModal
         visible={bedrockAddingVisible}
         hideModal={hideBedrockAddingModal}
