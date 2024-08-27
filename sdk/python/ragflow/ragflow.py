@@ -46,7 +46,8 @@ class RAGFlow:
                                "parser_config":parser_config
                                }
                      )
-        if "data" in res.json():
+        res = res.json()
+        if "data" in res:
             data = res.json()["data"]
             dataset = DataSet(self, data)
             return dataset
