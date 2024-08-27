@@ -18,6 +18,7 @@ from flask import request, Response
 from flask_login import login_required,current_user
 from api.db.services.dialog_service import DialogService, ConversationService, chat
 from api.db.services.llm_service import LLMBundle, TenantService
+from api.db import LLMType
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
