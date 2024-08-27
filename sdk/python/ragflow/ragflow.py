@@ -47,7 +47,7 @@ class RAGFlow:
                                }
                      )
         res = res.json()
-        if "data" in res:
+        if not res.get("retmsg"):
             return DataSet(self, res["data"])
         raise Exception(res["retmsg"])
 
