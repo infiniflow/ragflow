@@ -80,7 +80,8 @@ def save():
 
         if kb.chunk_num > 0 and req['parser_id'] != kb.parser_id:
             return get_data_error_result(
-                retmsg="if chunk_num > 0, parser method is not changable. ")
+                retmsg="if chunk count is not 0, parser method is not changable. ")
+
 
         if req["name"].lower() != kb.name.lower() \
                 and len(KnowledgebaseService.query(name=req["name"], tenant_id=req['tenant_id'],
