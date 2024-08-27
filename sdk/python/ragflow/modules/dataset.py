@@ -34,6 +34,6 @@ class DataSet(Base):
                          "parser_config": self.parser_config.to_json()
                          })
         res = res.json()
-        if not res.get("retmsg"):
+        if not res.get("retmsg"): return True
         else:
             return res.json()['retmsg']
