@@ -4,7 +4,6 @@ import {
   useFetchNextSharedConversation,
 } from '@/hooks/chat-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { IAnswer, Message } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import omit from 'lodash/omit';
@@ -50,10 +49,7 @@ export const useCreateSharedConversationOnMount = () => {
 export const useSelectCurrentSharedConversation = (conversationId: string) => {
   const [currentConversation, setCurrentConversation] =
     useState<IClientConversation>({} as IClientConversation);
-  const { fetchConversation } = useFetchNextSharedConversation();
-  const loading = useOneNamespaceEffectsLoading('chatModel', [
-    'getExternalConversation',
-  ]);
+  const { fetchConversation, loading } = useFetchNextSharedConversation();
 
   const ref = useScrollToBottom(currentConversation);
 

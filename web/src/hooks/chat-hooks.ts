@@ -4,19 +4,23 @@ import {
   IDialog,
   IStats,
   IToken,
+  Message,
 } from '@/interfaces/database/chat';
 import i18n from '@/locales/config';
+import { IClientConversation, IMessage } from '@/pages/chat/interface';
 import chatService from '@/services/chat-service';
 import { isConversationIdExist } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { useCallback, useMemo, useState } from 'react';
-import { useDispatch, useSearchParams } from 'umi';
+import { useSearchParams } from 'umi';
+import { v4 as uuid } from 'uuid';
 
 //#region logic
+
 export const useClickDialogCard = () => {
-  const [currentQueryParameters, setSearchParams] = useSearchParams();
+  const [, setSearchParams] = useSearchParams();
 
   const newQueryParameters: URLSearchParams = useMemo(() => {
     return new URLSearchParams();
@@ -46,6 +50,7 @@ export const useGetChatSearchParams = () => {
       currentQueryParameters.get(ChatSearchParams.ConversationId) || '',
   };
 };
+
 //#endregion
 
 //#region dialog
@@ -61,6 +66,7 @@ export const useFetchNextDialogList = () => {
     queryKey: ['fetchDialogList'],
     initialData: [],
     gcTime: 0,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data } = await chatService.listDialog();
 
@@ -106,6 +112,7 @@ export const useFetchNextDialog = () => {
     gcTime: 0,
     initialData: {} as IDialog,
     enabled: !!dialogId,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data } = await chatService.getDialog({ dialogId });
 
@@ -170,6 +177,7 @@ export const useFetchNextConversationList = () => {
     queryKey: ['fetchConversationList', dialogId],
     initialData: [],
     gcTime: 0,
+    refetchOnWindowFocus: false,
     enabled: !!dialogId,
     queryFn: async () => {
       const { data } = await chatService.listConversation({ dialogId });
@@ -187,23 +195,35 @@ export const useFetchNextConversation = () => {
     data,
     isFetching: loading,
     refetch,
-  } = useQuery<IConversation>({
+  } = useQuery<IClientConversation>({
     queryKey: ['fetchConversation', conversationId],
-    initialData: {} as IConversation,
-    enabled: isConversationIdExist(conversationId),
+    initialData: {} as IClientConversation,
+    // enabled: isConversationIdExist(conversationId),
     gcTime: 0,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
-      const { data } = await chatService.getConversation({ conversationId });
-      // if (data.retcode === 0 && needToBeSaved) {
-      //   yield put({
-      //     type: 'kFModel/fetch_document_thumbnails',
-      //     payload: {
-      //       doc_ids: getDocumentIdsFromConversionReference(data.data),
-      //     },
-      //   });
-      //   yield put({ type: 'setCurrentConversation', payload: data.data });
-      // }
-      return data?.data ?? {};
+      if (isConversationIdExist(conversationId)) {
+        const { data } = await chatService.getConversation({ conversationId });
+        // if (data.retcode === 0 && needToBeSaved) {
+        //   yield put({
+        //     type: 'kFModel/fetch_document_thumbnails',
+        //     payload: {
+        //       doc_ids: getDocumentIdsFromConversionReference(data.data),
+        //     },
+        //   });
+        //   yield put({ type: 'setCurrentConversation', payload: data.data });
+        // }
+        const conversation = data?.data ?? {};
+
+        const messageList =
+          conversation?.message?.map((x: Message | IMessage) => ({
+            ...x,
+            id: 'id' in x && x.id ? x.id : uuid(),
+          })) ?? [];
+
+        return { ...conversation, message: messageList };
+      }
+      return { message: [] };
     },
   });
 
@@ -371,22 +391,6 @@ export const useFetchNextStats = () => {
 
 //#region shared chat
 
-export const useCreateSharedConversation = () => {
-  const dispatch = useDispatch();
-
-  const createSharedConversation = useCallback(
-    (userId?: string) => {
-      return dispatch<any>({
-        type: 'chatModel/createExternalConversation',
-        payload: { userId },
-      });
-    },
-    [dispatch],
-  );
-
-  return createSharedConversation;
-};
-
 export const useCreateNextSharedConversation = () => {
   const {
     data,
@@ -404,22 +408,6 @@ export const useCreateNextSharedConversation = () => {
   return { data, loading, createSharedConversation: mutateAsync };
 };
 
-export const useFetchSharedConversation = () => {
-  const dispatch = useDispatch();
-
-  const fetchSharedConversation = useCallback(
-    (conversationId: string) => {
-      return dispatch<any>({
-        type: 'chatModel/getExternalConversation',
-        payload: conversationId,
-      });
-    },
-    [dispatch],
-  );
-
-  return fetchSharedConversation;
-};
-
 export const useFetchNextSharedConversation = () => {
   const {
     data,
@@ -428,9 +416,10 @@ export const useFetchNextSharedConversation = () => {
   } = useMutation({
     mutationKey: ['fetchSharedConversation'],
     mutationFn: async (conversationId: string) => {
-      const { data } = await chatService.getExternalConversation({
+      const { data } = await chatService.getExternalConversation(
+        null,
         conversationId,
-      });
+      );
 
       return data;
     },

@@ -15,6 +15,7 @@ import { buildMessageItemReference } from '../utils';
 
 import MessageInput from '@/components/message-input';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { memo } from 'react';
 import styles from './index.less';
 
 const ChatContainer = () => {
@@ -103,4 +104,4 @@ const ChatContainer = () => {
   );
 };
 
-export default ChatContainer;
+export default memo(ChatContainer);
