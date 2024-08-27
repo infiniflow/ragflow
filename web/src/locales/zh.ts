@@ -830,6 +830,7 @@ export default {
       },
       operator: '操作符',
       value: '值',
+      useTemplate: '使用该模板',
     },
     footer: {
       profile: 'All rights reserved @ React',

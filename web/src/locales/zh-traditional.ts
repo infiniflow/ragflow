@@ -812,6 +812,7 @@ export default {
       },
       operator: '操作符',
       value: '值',
+      useTemplate: '使用該模板',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

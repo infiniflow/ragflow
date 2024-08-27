@@ -86,10 +86,6 @@ const TestingResult = ({ handleTesting }: IProps) => {
                   </span>
                   {t('filesSelected')}
                 </Space>
-                <Space size={52}>
-                  <b>{t('hits')}</b>
-                  <b>{t('view')}</b>
-                </Space>
               </Flex>
             ),
             children: (

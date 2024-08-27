@@ -47,15 +47,53 @@
   }
 }
 
-.flowTemplateCard {
-  cursor: pointer;
-}
-
-.selectedFlowTemplateCard {
-  background-color: @selectedBackgroundColor;
-}
-
 .templatesBox {
   max-height: 70vh;
   overflow: auto;
+}
+
+.agentTemplateModal {
+  top: 0;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100vh;
+  max-height: 100vh;
+  padding: 0;
+
+  :global(.ant-modal-content) {
+    // width: 100vw;
+    height: 100%;
+    border-radius: 0;
+  }
+  .agentDescription {
+    padding-top: 18px;
+    height: 110px;
+  }
+  .createModalContent {
+    height: 90vh;
+  }
+  .agentTitleWrapper {
+    width: 80%;
+  }
+  .flowTemplateCard {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .selectedFlowTemplateCard {
+    background-color: @selectedBackgroundColor;
+  }
+  .useButton {
+    position: absolute;
+    width: 84%;
+    left: 0;
+    right: 0;
+    bottom: 10px;
+    margin: auto;
+  }
+}
+
+.agentTemplateModalWrapper {
+  margin: 0;
 }
