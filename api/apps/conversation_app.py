@@ -191,7 +191,7 @@ def tts():
     if not tts_id:
         return get_data_error_result(retmsg="No default TTS model is set")
     
-    tts_mdl = LLMBundle(tenants[0]["tenant_id"],"tts",tts_id)
+    tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
     def stream_audio():
         try:
             for chunk in tts_mdl(text):  
