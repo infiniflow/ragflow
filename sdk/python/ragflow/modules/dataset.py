@@ -36,4 +36,3 @@ class DataSet(Base):
         res = res.json()
         if not res.get("retmsg"): return True
         raise Exception(res["retmsg"])
-            return res.json()['retmsg']
