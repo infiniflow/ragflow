@@ -33,7 +33,9 @@ class DataSet(Base):
                          "doc_num": self.document_count, "chunk_num": self.chunk_count, "parser_id": self.parser_method,
                          "parser_config": self.parser_config.to_json()
                          })
-        if "data" in res.json():
+        res = res.json()
+        if not res.get("retmsg"):
+
             return res.json()['data']
         else:
             return res.json()['retmsg']
