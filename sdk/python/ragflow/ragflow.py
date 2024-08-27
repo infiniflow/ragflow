@@ -50,7 +50,7 @@ class RAGFlow:
         if "data" in res:
             data = res["data"]
             dataset = DataSet(self, data)
-            return dataset
+            return DataSet(self, res["data"])
         else :
             return res.json()["retmsg"]
 
