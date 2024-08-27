@@ -1,6 +1,6 @@
 import { PlusOutlined } from '@ant-design/icons';
 import { Button, Empty, Flex, Spin } from 'antd';
-import CreateFlowModal from './create-flow-modal';
+import AgentTemplateModal from './agent-template-modal';
 import FlowCard from './flow-card';
 import { useFetchDataOnMount, useSaveFlow } from './hooks';
 
@@ -42,13 +42,12 @@ const FlowList = () => {
         </Flex>
       </Spin>
       {flowSettingVisible && (
-        <CreateFlowModal
+        <AgentTemplateModal
           visible={flowSettingVisible}
           onOk={onFlowOk}
           loading={flowSettingLoading}
           hideModal={hideFlowSettingModal}
-          initialName=""
-        ></CreateFlowModal>
+        ></AgentTemplateModal>
       )}
     </Flex>
   );

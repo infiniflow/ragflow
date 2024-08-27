@@ -857,6 +857,7 @@ The above is the content you need to summarize.`,
       },
       operator: 'Operator',
       value: 'Value',
+      useTemplate: 'Use this template',
     },
     footer: {
       profile: 'All rights reserved @ React',
