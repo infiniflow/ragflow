@@ -36,6 +36,7 @@ export const IconMap = {
   'XunFei Spark': 'spark',
   BaiduYiyan: 'yiyan',
   'Fish Audio': 'fish-audio',
+  'Tencent Cloud': 'tencent-cloud',
 };
 
 export const BedrockRegionList = [
