@@ -3240,6 +3240,56 @@
             "tags": "SPEECH2TEXT",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "Anthropic",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "claude-3-5-sonnet-20240620",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-3-opus-20240229",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-3-sonnet-20240229",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-3-haiku-20240307",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-2.1",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-2.0",
+                    "tags": "LLM,CHAT,100k",
+                    "max_tokens": 102400,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-instant-1.2",
+                    "tags": "LLM,CHAT,100k",
+                    "max_tokens": 102400,
+                    "model_type": "chat"
+                }
+            ]
         }
     ]
 }

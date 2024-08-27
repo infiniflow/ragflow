@@ -37,6 +37,7 @@ export const IconMap = {
   BaiduYiyan: 'yiyan',
   'Fish Audio': 'fish-audio',
   'Tencent Cloud': 'tencent-cloud',
+  Anthropic: 'anthropic',
 };
 
 export const BedrockRegionList = [
