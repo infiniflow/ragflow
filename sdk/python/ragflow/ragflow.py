@@ -21,14 +21,14 @@ from .modules.dataset import DataSet
 class RAGFlow:
     def __init__(self, user_key, base_url, version='v1'):
         """
-        api_url: http://<host_address>/v1
-        dataset_url: http://<host_address>/v1/kb
-        document_url: http://<host_address>/v1/dataset/{dataset_id}/documents
+        api_url: http://<host_address>/api/v1
+        dataset_url: http://<host_address>/api/v1/kb
+        document_url: http://<host_address>/api/v1/dataset/{dataset_id}/documents
         """
         self.user_key = user_key
-        self.api_url = f"{base_url}/{version}"
-        self.dataset_url = f"{self.api_url}/kb"
-        self.authorization_header = {"Authorization": "{}".format(self.user_key)}
+        self.api_url = f"{base_url}/api/{version}"
+        self.dataset_url = f"{self.api_url}/dataset"
+        self.authorization_header = {"Authorization": "{} {}".format("Bearer",self.user_key)}
         self.base_url = base_url
 
     def post(self, path, param):
@@ -39,11 +39,28 @@ class RAGFlow:
         res = requests.get(self.dataset_url + path, params=params, headers=self.authorization_header)
         return res
 
-    def create_dataset(self, dataset_name):
-        """
-        name: dataset name
-        """
-        res_create = self.post("/create", {"name": dataset_name})
+    def create_dataset(self, name:str,avatar:str="",description:str="",language:str="English",permission:str="me",
+                       document_count:int=0,chunk_count:int=0,parse_method:str="0",
+                       parser_config:DataSet.ParseConfig=None):
+        if parser_config is None:
+            parser_config = DataSet.ParseConfig(self, {"chunk_token_count":128,"layout_recognize": True, "delimiter":"\n!?。；！？","task_page_size":12})
+        parser_config=parser_config.to_json()
+        res=self.post("/save",{"name":name,"avatar":avatar,"description":description,"language":language,"permission":permission,
+                               "document_count": document_count,"chunk_count":chunk_count,"parse_method":parse_method,
+                               "parser_config":parser_config
+                               }
+                     )
+        if "data" in res.json():
+            data = res.json()["data"]
+            dataset = DataSet(self, data)
+            return dataset
+        else :
+            return res.json()["retmsg"]
+
+
+'''
+    def create_dataset(self, name:str):
+        res_create = self.post("/create", {"name": name})
         res_create_data = res_create.json()['data']
         res_detail = self.get("/detail", {"kb_id": res_create_data["kb_id"]})
         res_detail_data = res_detail.json()['data']
@@ -60,8 +77,9 @@ class RAGFlow:
         result['parser_config'] = res_detail_data['parser_config']
         dataset = DataSet(self, result)
         return dataset
+        '''
 
-    """
+"""
     def delete_dataset(self, dataset_name):
         dataset_id = self.find_dataset_id_by_name(dataset_name)
 
