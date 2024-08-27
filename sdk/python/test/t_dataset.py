@@ -30,4 +30,3 @@ class TestDataset(TestSdk):
 
         else:
             assert False, f"Failed to create dataset, error: {ds}"
-
