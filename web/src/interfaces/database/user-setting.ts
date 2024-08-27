@@ -28,8 +28,9 @@ export interface ISystemStatus {
   mysql: Minio;
   redis: Redis;
   task_executor: {
+    error?: string;
     status: string;
-    elapsed: TaskExecutorElapsed;
+    elapsed?: TaskExecutorElapsed;
   };
 }
 

@@ -8,7 +8,6 @@ import {
   useFetchConversationOnMount,
   useGetFileIcon,
   useGetSendButtonDisabled,
-  useSelectConversationLoading,
   useSendButtonDisabled,
   useSendMessage,
 } from '../hooks';
@@ -16,6 +15,7 @@ import { buildMessageItemReference } from '../utils';
 
 import MessageInput from '@/components/message-input';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { memo } from 'react';
 import styles from './index.less';
 
 const ChatContainer = () => {
@@ -26,6 +26,7 @@ const ChatContainer = () => {
     removeLatestMessage,
     addNewestAnswer,
     conversationId,
+    loading,
   } = useFetchConversationOnMount();
   const {
     handleInputChange,
@@ -43,7 +44,6 @@ const ChatContainer = () => {
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
   useGetFileIcon();
-  const loading = useSelectConversationLoading();
   const { data: userInfo } = useFetchUserInfo();
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
@@ -104,4 +104,4 @@ const ChatContainer = () => {
   );
 };
 
-export default ChatContainer;
+export default memo(ChatContainer);
