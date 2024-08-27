@@ -907,6 +907,18 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "llama-3.1-70b-versatile",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama-3.1-8b-instant",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "mixtral-8x7b-32768",
                     "tags": "LLM,CHAT,5k",
                     "max_tokens": 32768,
