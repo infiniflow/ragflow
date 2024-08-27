@@ -122,6 +122,10 @@ def add_llm():
                         f'"hunyuan_sk": "{req.get("hunyuan_sk", "")}"' + '}'
         req["api_key"] = api_key
         return set_api_key()
+    elif factory == "Tencent Cloud":
+        api_key = '{' + f'"tencent_cloud_sid": "{req.get("tencent_cloud_sid", "")}", ' \
+                f'"tencent_cloud_sk": "{req.get("tencent_cloud_sk", "")}"' + '}'
+        req["api_key"] = api_key
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region

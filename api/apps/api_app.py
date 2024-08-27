@@ -344,12 +344,22 @@ def completion():
 @manager.route('/conversation/<conversation_id>', methods=['GET'])
 # @login_required
 def get(conversation_id):
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+    
     try:
         e, conv = API4ConversationService.get_by_id(conversation_id)
         if not e:
             return get_data_error_result(retmsg="Conversation not found!")
 
         conv = conv.to_dict()
+        if token != APIToken.query(dialog_id=conv['dialog_id'])[0].token:
+            return get_json_result(data=False, retmsg='Token is not valid for this conversation_id!"',
+                                   retcode=RetCode.AUTHENTICATION_ERROR)
+            
         for referenct_i in conv['reference']:
             if referenct_i is None or len(referenct_i) == 0:
                 continue
