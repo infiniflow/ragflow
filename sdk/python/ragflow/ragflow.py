@@ -50,6 +50,5 @@ class RAGFlow:
         if "data" in res:
             return DataSet(self, res["data"])
         raise Exception(res["retmsg"])
-            return res.json()["retmsg"]
 
 
