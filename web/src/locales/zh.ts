@@ -521,6 +521,7 @@ export default {
       yiyanAKMessage: '请输入 API KEY',
       addyiyanSK: '一言 Secret KEY',
       yiyanSKMessage: '请输入 Secret KEY',
+      FishAudioModelNameMessage: '请为你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       FishAudioAKMessage: '请输入 API KEY',
       addFishAudioRefID: 'FishAudio Refrence ID',
