@@ -17,7 +17,7 @@ import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
 import FileIcon from '../file-icon';
 import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
-import { AssistantGroupButton, UserGroupButton } from './group-button';
+// import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 
 const { Text } = Typography;
@@ -111,13 +111,13 @@ const MessageItem = ({
           )}
           <Flex vertical gap={8} flex={1}>
             <Space>
-              {isAssistant ? (
+              {/* {isAssistant ? (
                 <AssistantGroupButton></AssistantGroupButton>
               ) : (
                 <UserGroupButton></UserGroupButton>
-              )}
+              )} */}
 
-              {/* <b>{isAssistant ? '' : nickname}</b> */}
+              <b>{isAssistant ? '' : nickname}</b>
             </Space>
             <div
               className={

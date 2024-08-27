@@ -94,7 +94,7 @@ export const useSetNextDialog = () => {
       if (data.retcode === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchDialogList'] });
         message.success(
-          i18n.t(`message.${params.id ? 'modified' : 'created'}`),
+          i18n.t(`message.${params.dialog_id ? 'modified' : 'created'}`),
         );
       }
       return data?.retcode;
