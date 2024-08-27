@@ -286,20 +286,22 @@ const UserSettingModel = () => {
             md: 3,
             lg: 4,
             xl: 4,
-            xxl: 8,
+            xxl: 10,
           }}
           dataSource={factoryList}
           renderItem={(item) => (
             <List.Item>
               <Card className={styles.toBeAddedCard}>
-                <Flex vertical gap={'large'}>
+                <Flex vertical gap={'middle'}>
                   <LlmIcon name={item.name} />
                   <Flex vertical gap={'middle'}>
-                    <b>{item.name}</b>
-                    <Text>{item.tags}</Text>
+                    <b>
+                      <Text ellipsis={{ tooltip: item.name }}>{item.name}</Text>
+                    </b>
+                    <Text className={styles.modelTags}>{item.tags}</Text>
                   </Flex>
                 </Flex>
-                <Divider></Divider>
+                <Divider className={styles.modelDivider}></Divider>
                 <Button type="link" onClick={() => handleAddModel(item.name)}>
                   {t('addTheModel')}
                 </Button>
