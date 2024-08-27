@@ -18,6 +18,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from flask import request, Response
+import flask
 from api.db.services.llm_service import TenantLLMService
 from flask_login import login_required, current_user
 
@@ -504,6 +505,16 @@ def upload_parse():
     doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, objs[0].tenant_id)
     return get_json_result(data=doc_ids)
 
+@manager.route('/image/<image_id>', methods=['GET'])
+# @login_required
+def get_image(image_id):
+    try:
+        bkt, nm = image_id.split("-")
+        response = flask.make_response(MINIO.get(bkt, nm))
+        response.headers.set('Content-Type', 'image/JPEG')
+        return response
+    except Exception as e:
+        return server_error_response(e)
 
 @manager.route('/list_chunks', methods=['POST'])
 # @login_required
