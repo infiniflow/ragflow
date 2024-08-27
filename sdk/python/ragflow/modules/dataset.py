@@ -35,7 +35,6 @@ class DataSet(Base):
                          })
         res = res.json()
         if not res.get("retmsg"):
-
             return res.json()['data']
         else:
             return res.json()['retmsg']
