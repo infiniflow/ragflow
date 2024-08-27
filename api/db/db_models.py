@@ -449,6 +449,11 @@ class Tenant(DataBaseModel):
         null=False,
         help_text="default rerank model ID",
         index=True)
+    tts_id = CharField(
+        max_length=256,
+        null=True,
+        help_text="default tts model ID",
+        index=True)
     parser_ids = CharField(
         max_length=256,
         null=False,
@@ -955,6 +960,13 @@ def migrate_db():
             migrate(
                 migrator.add_column('api_token', 'source',
                                     CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
+            )
+        except Exception as e:
+            pass
+        try:
+            migrate(
+                migrator.add_column("tenant","tts_id",
+                    CharField(max_length=256,null=True,help_text="default tts model ID",index=True))
             )
         except Exception as e:
             pass

@@ -24,4 +24,5 @@ export const LocalLlmFactories = [
   'LM-Studio',
   'OpenAI-API-Compatible',
   'TogetherAI',
+  'Replicate',
 ];

@@ -12,6 +12,7 @@ const {
   get_document_list,
   document_change_status,
   document_rm,
+  document_delete,
   document_create,
   document_change_parser,
   document_thumbnails,
@@ -29,6 +30,7 @@ const {
   web_crawl,
   knowledge_graph,
   document_infos,
+  upload_and_parse,
 } = api;
 
 const methods = {
@@ -130,6 +132,14 @@ const methods = {
   knowledge_graph: {
     url: knowledge_graph,
     method: 'get',
+  },
+  document_delete: {
+    url: document_delete,
+    method: 'delete',
+  },
+  upload_and_parse: {
+    url: upload_and_parse,
+    method: 'post',
   },
 };
 

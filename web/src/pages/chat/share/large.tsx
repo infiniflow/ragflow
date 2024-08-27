@@ -1,20 +1,19 @@
+import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/message-item';
-import { MessageType } from '@/constants/chat';
-import { useTranslate } from '@/hooks/common-hooks';
+import { MessageType, SharedFrom } from '@/constants/chat';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
-import { Button, Flex, Input, Spin } from 'antd';
+import { Flex, Spin } from 'antd';
 import { forwardRef } from 'react';
 import {
   useCreateSharedConversationOnMount,
+  useGetSharedChatSearchParams,
   useSelectCurrentSharedConversation,
   useSendSharedMessage,
 } from '../shared-hooks';
 import { buildMessageItemReference } from '../utils';
-
 import styles from './index.less';
 
 const ChatContainer = () => {
-  const { t } = useTranslate('chat');
   const { conversationId } = useCreateSharedConversationOnMount();
   const {
     currentConversation: conversation,
@@ -39,6 +38,7 @@ const ChatContainer = () => {
     addNewestAnswer,
   );
   const sendDisabled = useSendButtonDisabled(value);
+  const { from } = useGetSharedChatSearchParams();
 
   return (
     <>
@@ -65,24 +65,19 @@ const ChatContainer = () => {
           </div>
           <div ref={ref} />
         </Flex>
-        <Input
-          size="large"
-          placeholder={t('sendPlaceholder')}
+
+        <MessageInput
+          isShared
           value={value}
-          //   disabled={disabled}
-          suffix={
-            <Button
-              type="primary"
-              onClick={handlePressEnter}
-              loading={sendLoading}
-              disabled={sendDisabled}
-            >
-              {t('send')}
-            </Button>
-          }
+          disabled={false}
+          sendDisabled={sendDisabled}
+          conversationId={conversationId}
+          onInputChange={handleInputChange}
           onPressEnter={handlePressEnter}
-          onChange={handleInputChange}
-        />
+          sendLoading={sendLoading}
+          uploadMethod="external_upload_and_parse"
+          showUploadIcon={from === SharedFrom.Chat}
+        ></MessageInput>
       </Flex>
     </>
   );

@@ -32,7 +32,7 @@ class EsQueryer:
 
     @staticmethod
     def subSpecialChar(line):
-        return re.sub(r"([:\{\}/\[\]\-\*\"\(\)\|~\^])", r"\\\1", line).strip()
+        return re.sub(r"([:\{\}/\[\]\-\*\"\(\)\|\+~\^])", r"\\\1", line).strip()
 
     @staticmethod
     def isChinese(line):

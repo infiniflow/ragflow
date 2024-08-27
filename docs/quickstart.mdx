@@ -34,7 +34,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abmornal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation. 
 
-   RAGFlow v0.9.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.10.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -67,16 +67,61 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```
   </TabItem>
   <TabItem value="macos">
-   If you are on macOS with Docker Desktop, then you *must* use docker-machine to update `vm.max_map_count`:
+   If you are on macOS with Docker Desktop, run the following command to update `vm.max_map_count`:
 
    ```bash
-   $ docker-machine ssh
-   $ sudo sysctl -w vm.max_map_count=262144
+   docker run --rm --privileged --pid=host alpine sysctl -w vm.max_map_count=262144
    ```
 
    :::caution WARNING
    This change will be reset after a system reboot. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
    :::
+
+   To make your change persistent, create a file with proper settings:
+
+   1.1. Create a file:
+
+   ```shell
+   sudo nano /Library/LaunchDaemons/com.user.vmmaxmap.plist
+   ```
+
+   1.2. Open the file:
+
+   ```shell
+   sudo launchctl load /Library/LaunchDaemons/com.user.vmmaxmap.plist
+   ```
+
+   1.3. Add settings:
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+       <key>Label</key>
+       <string>com.user.vmmaxmap</string>
+       <key>ProgramArguments</key>
+       <array>
+           <string>/usr/sbin/sysctl</string>
+           <string>-w</string>
+           <string>vm.max_map_count=262144</string>
+       </array>
+       <key>RunAtLoad</key>
+       <true/>
+   </dict>
+   </plist>
+   ```
+
+   1.4. After saving the file, load the new daemon:
+
+   ```shell
+   sudo launchctl load /Library/LaunchDaemons/com.user.vmmaxmap.plist
+   ```
+
+   :::note
+   If the above steps do not work, consider using [this workaround](https://github.com/docker/for-mac/issues/7047#issuecomment-1791912053), which employs a container and does not require manual editing of the macOS settings.
+   :::
+
   </TabItem>
   <TabItem value="windows">
 
@@ -132,7 +177,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 3. Build the pre-built Docker images and start up the server:
 
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.9.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.10.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
@@ -253,7 +298,7 @@ Once you have selected an embedding model and used it to parse a file, you are n
 
    _When the file parsing completes, its parsing status changes to **SUCCESS**._
 
-:::alert NOTE 
+:::caution NOTE 
 - If your file parsing gets stuck at below 1%, see [FAQ 4.3](https://ragflow.io/docs/dev/faq#43-why-does-my-document-parsing-stall-at-under-one-percent). 
 - If your file parsing gets stuck at near completion, see [FAQ 4.4](https://ragflow.io/docs/dev/faq#44-why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
 :::

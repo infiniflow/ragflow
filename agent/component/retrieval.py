@@ -75,8 +75,8 @@ class Retrieval(ComponentBase, ABC):
                                         aggs=False, rerank_mdl=rerank_mdl)
 
         if not kbinfos["chunks"]:
-            df = Retrieval.be_output(self._param.empty_response)
-            df["empty_response"] = True
+            df = Retrieval.be_output("")
+            df["empty_response"] = self._param.empty_response
             return df
 
         df = pd.DataFrame(kbinfos["chunks"])

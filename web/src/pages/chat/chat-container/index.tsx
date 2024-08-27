@@ -4,6 +4,7 @@ import { MessageType } from '@/constants/chat';
 import { Drawer, Flex, Spin } from 'antd';
 import {
   useClickDrawer,
+  useCreateConversationBeforeUploadDocument,
   useFetchConversationOnMount,
   useGetFileIcon,
   useGetSendButtonDisabled,
@@ -24,6 +25,7 @@ const ChatContainer = () => {
     addNewestConversation,
     removeLatestMessage,
     addNewestAnswer,
+    conversationId,
   } = useFetchConversationOnMount();
   const {
     handleInputChange,
@@ -43,6 +45,8 @@ const ChatContainer = () => {
   useGetFileIcon();
   const loading = useSelectConversationLoading();
   const { data: userInfo } = useFetchUserInfo();
+  const { createConversationBeforeUploadDocument } =
+    useCreateConversationBeforeUploadDocument();
 
   return (
     <>
@@ -78,7 +82,10 @@ const ChatContainer = () => {
           value={value}
           onInputChange={handleInputChange}
           onPressEnter={handlePressEnter}
-          conversationId={conversation.id}
+          conversationId={conversationId}
+          createConversationBeforeUploadDocument={
+            createConversationBeforeUploadDocument
+          }
         ></MessageInput>
       </Flex>
       <Drawer

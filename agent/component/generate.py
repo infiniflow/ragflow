@@ -66,6 +66,9 @@ class Generate(ComponentBase):
         return cpnts
 
     def set_cite(self, retrieval_res, answer):
+        retrieval_res = retrieval_res.dropna(subset=["vector", "content_ltks"]).reset_index(drop=True)
+        if "empty_response" in retrieval_res.columns:
+            retrieval_res["empty_response"].fillna("", inplace=True)
         answer, idx = retrievaler.insert_citations(answer, [ck["content_ltks"] for _, ck in retrieval_res.iterrows()],
                                                    [ck["vector"] for _, ck in retrieval_res.iterrows()],
                                                    LLMBundle(self._canvas.get_tenant_id(), LLMType.EMBEDDING,
@@ -117,8 +120,10 @@ class Generate(ComponentBase):
             "obj"].component_name.lower() == "answer":
             return partial(self.stream_output, chat_mdl, prompt, retrieval_res)
 
-        if "empty_response" in retrieval_res.columns:
-            return Generate.be_output(input)
+        if "empty_response" in retrieval_res.columns and not "".join(retrieval_res["content"]):
+            res = {"content": "\n- ".join(retrieval_res["empty_response"]) if "\n- ".join(
+                retrieval_res["empty_response"]) else "Nothing found in knowledgebase!", "reference": []}
+            return Generate.be_output(res)
 
         ans = chat_mdl.chat(prompt, self._canvas.get_history(self._param.message_history_window_size),
                             self._param.gen_conf())
@@ -130,8 +135,9 @@ class Generate(ComponentBase):
 
     def stream_output(self, chat_mdl, prompt, retrieval_res):
         res = None
-        if "empty_response" in retrieval_res.columns and "\n- ".join(retrieval_res["content"]):
-            res = {"content": "\n- ".join(retrieval_res["content"]), "reference": []}
+        if "empty_response" in retrieval_res.columns and not "".join(retrieval_res["content"]):
+            res = {"content": "\n- ".join(retrieval_res["empty_response"]) if "\n- ".join(
+                retrieval_res["empty_response"]) else "Nothing found in knowledgebase!", "reference": []}
             yield res
             self.set_output(res)
             return

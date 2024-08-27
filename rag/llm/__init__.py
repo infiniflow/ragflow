@@ -18,6 +18,7 @@ from .chat_model import *
 from .cv_model import *
 from .rerank_model import *
 from .sequence2txt_model import *
+from .tts_model import * 
 
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
@@ -42,7 +43,9 @@ EmbeddingModel = {
     "TogetherAI": TogetherAIEmbed,
     "PerfXCloud": PerfXCloudEmbed,
     "Upstage": UpstageEmbed,
-    "SILICONFLOW": SILICONFLOWEmbed
+    "SILICONFLOW": SILICONFLOWEmbed,
+    "Replicate": ReplicateEmbed,
+    "BaiduYiyan": BaiduYiyanEmbed
 }
 
 
@@ -62,7 +65,8 @@ CvModel = {
     "StepFun":StepFunCV,
     "OpenAI-API-Compatible": OpenAI_APICV,
     "TogetherAI": TogetherAICV,
-    "01.AI": YiCV
+    "01.AI": YiCV,
+    "Tencent Hunyuan": HunyuanCV
 }
 
 
@@ -96,7 +100,11 @@ ChatModel = {
     "Upstage":UpstageChat,
     "novita.ai": NovitaAIChat,
     "SILICONFLOW": SILICONFLOWChat,
-    "01.AI": YiChat
+    "01.AI": YiChat,
+    "Replicate": ReplicateChat,
+    "Tencent Hunyuan": HunyuanChat,
+    "XunFei Spark": SparkChat,
+    "BaiduYiyan": BaiduYiyanChat
 }
 
 
@@ -110,7 +118,8 @@ RerankModel = {
     "OpenAI-API-Compatible": OpenAI_APIRerank,
     "cohere": CoHereRerank,
     "TogetherAI": TogetherAIRerank,
-    "SILICONFLOW": SILICONFLOWRerank
+    "SILICONFLOW": SILICONFLOWRerank,
+    "BaiduYiyan": BaiduYiyanRerank
 }
 
 
@@ -120,4 +129,8 @@ Seq2txtModel = {
     "Ollama": OllamaSeq2txt,
     "Azure-OpenAI": AzureSeq2txt,
     "Xinference": XinferenceSeq2txt
+}
+
+TTSModel = {
+    "Fish Audio": FishAudioTTS
 }

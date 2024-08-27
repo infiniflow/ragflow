@@ -1,6 +1,7 @@
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import chatService from '@/services/chat-service';
 import kbService from '@/services/knowledge-service';
 import { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
@@ -312,4 +313,55 @@ export const useRemoveNextDocument = () => {
   });
 
   return { data, loading, removeDocument: mutateAsync };
+};
+
+export const useDeleteDocument = () => {
+  // const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteDocument'],
+    mutationFn: async (documentIds: string[]) => {
+      const data = await kbService.document_delete({ doc_ids: documentIds });
+      // if (data.retcode === 0) {
+      //   queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
+      // }
+      return data;
+    },
+  });
+
+  return { data, loading, deleteDocument: mutateAsync };
+};
+
+export const useUploadAndParseDocument = (uploadMethod: string) => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['uploadAndParseDocument'],
+    mutationFn: async ({
+      conversationId,
+      fileList,
+    }: {
+      conversationId: string;
+      fileList: UploadFile[];
+    }) => {
+      const formData = new FormData();
+      formData.append('conversation_id', conversationId);
+      fileList.forEach((file: UploadFile) => {
+        formData.append('file', file as any);
+      });
+      if (uploadMethod === 'upload_and_parse') {
+        const data = await kbService.upload_and_parse(formData);
+        return data?.data;
+      }
+      const data = await chatService.uploadAndParseExternal(formData);
+      return data?.data;
+    },
+  });
+
+  return { data, loading, uploadAndParseDocument: mutateAsync };
 };

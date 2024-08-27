@@ -11,7 +11,9 @@ import BeginForm from '../begin-form';
 import BingForm from '../bing-form';
 import CategorizeForm from '../categorize-form';
 import { Operator } from '../constant';
+import DeepLForm from '../deepl-form';
 import DuckDuckGoForm from '../duckduckgo-form';
+import ExeSQLForm from '../exesql-form';
 import GenerateForm from '../generate-form';
 import GithubForm from '../github-form';
 import GoogleForm from '../google-form';
@@ -25,9 +27,9 @@ import QWeatherForm from '../qweather-form';
 import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
+import SwitchForm from '../switch-form';
 import WikipediaForm from '../wikipedia-form';
 
-import DeepLForm from '../deepl-form';
 import styles from './index.less';
 
 interface IProps {
@@ -56,6 +58,8 @@ const FormMap = {
   [Operator.GitHub]: GithubForm,
   [Operator.BaiduFanyi]: BaiduFanyiForm,
   [Operator.QWeather]: QWeatherForm,
+  [Operator.ExeSQL]: ExeSQLForm,
+  [Operator.Switch]: SwitchForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

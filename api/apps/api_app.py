@@ -26,7 +26,7 @@ from api.db.db_models import APIToken, API4Conversation, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.dialog_service import DialogService, chat
-from api.db.services.document_service import DocumentService
+from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -199,15 +199,17 @@ def completion():
             continue
         if m["role"] == "assistant" and not msg:
             continue
-        msg.append({"role": m["role"], "content": m["content"]})
+        msg.append(m)
+    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    message_id = msg[-1]["id"]
 
     def fillin_conv(ans):
-        nonlocal conv
+        nonlocal conv, message_id
         if not conv.reference:
             conv.reference.append(ans["reference"])
         else:
             conv.reference[-1] = ans["reference"]
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
 
     def rename_field(ans):
         reference = ans['reference']
@@ -233,7 +235,7 @@ def completion():
 
             if not conv.reference:
                 conv.reference = []
-            conv.message.append({"role": "assistant", "content": ""})
+            conv.message.append({"role": "assistant", "content": "", "id": message_id})
             conv.reference.append({"chunks": [], "doc_aggs": []})
 
             final_ans = {"reference": [], "content": ""}
@@ -260,7 +262,7 @@ def completion():
                             yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans},
                                                        ensure_ascii=False) + "\n\n"
 
-                        canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
+                        canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
                         if final_ans.get("reference"):
                             canvas.reference.append(final_ans["reference"])
                         cvs.dsl = json.loads(str(canvas))
@@ -279,7 +281,7 @@ def completion():
                 return resp
 
             final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
-            canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
+            canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])
             cvs.dsl = json.loads(str(canvas))
@@ -300,7 +302,7 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        conv.message.append({"role": "assistant", "content": ""})
+        conv.message.append({"role": "assistant", "content": "", "id": message_id})
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def stream():
@@ -342,12 +344,22 @@ def completion():
 @manager.route('/conversation/<conversation_id>', methods=['GET'])
 # @login_required
 def get(conversation_id):
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+    
     try:
         e, conv = API4ConversationService.get_by_id(conversation_id)
         if not e:
             return get_data_error_result(retmsg="Conversation not found!")
 
         conv = conv.to_dict()
+        if token != APIToken.query(dialog_id=conv['dialog_id'])[0].token:
+            return get_json_result(data=False, retmsg='Token is not valid for this conversation_id!"',
+                                   retcode=RetCode.AUTHENTICATION_ERROR)
+            
         for referenct_i in conv['reference']:
             if referenct_i is None or len(referenct_i) == 0:
                 continue
@@ -470,6 +482,29 @@ def upload():
     return get_json_result(data=doc_result.to_json())
 
 
+@manager.route('/document/upload_and_parse', methods=['POST'])
+@validate_request("conversation_id")
+def upload_parse():
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+
+    if 'file' not in request.files:
+        return get_json_result(
+            data=False, retmsg='No file part!', retcode=RetCode.ARGUMENT_ERROR)
+
+    file_objs = request.files.getlist('file')
+    for file_obj in file_objs:
+        if file_obj.filename == '':
+            return get_json_result(
+                data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
+
+    doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, objs[0].tenant_id)
+    return get_json_result(data=doc_ids)
+
+
 @manager.route('/list_chunks', methods=['POST'])
 # @login_required
 def list_chunks():
@@ -548,6 +583,19 @@ def list_kb_docs():
     except Exception as e:
         return server_error_response(e)
 
+@manager.route('/document/infos', methods=['POST'])
+@validate_request("doc_ids")
+def docinfos():
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+    req = request.json
+    doc_ids = req["doc_ids"]
+    docs = DocumentService.get_by_ids(doc_ids)
+    return get_json_result(data=list(docs.dicts()))
+
 
 @manager.route('/document', methods=['DELETE'])
 # @login_required
@@ -560,7 +608,6 @@ def document_rm():
 
     tenant_id = objs[0].tenant_id
     req = request.json
-    doc_ids = []
     try:
         doc_ids = [DocumentService.get_doc_id_by_doc_name(doc_name) for doc_name in req.get("doc_names", [])]
         for doc_id in req.get("doc_ids", []):

@@ -64,8 +64,10 @@ export const useSelectLlmOptionsByModelType = () => {
         return {
           label: key,
           options: value
-            .filter((x) =>
-              modelType ? x.model_type.includes(modelType) : true,
+            .filter(
+              (x) =>
+                (modelType ? x.model_type.includes(modelType) : true) &&
+                x.available,
             )
             .map((x) => ({
               label: x.llm_name,
@@ -73,7 +75,8 @@ export const useSelectLlmOptionsByModelType = () => {
               disabled: !x.available,
             })),
         };
-      });
+      })
+      .filter((x) => x.options.length > 0);
   };
 
   return {
@@ -84,6 +87,7 @@ export const useSelectLlmOptionsByModelType = () => {
       LlmModelType.Speech2text,
     ),
     [LlmModelType.Rerank]: groupOptionsByModelType(LlmModelType.Rerank),
+    [LlmModelType.TTS]: groupOptionsByModelType(LlmModelType.TTS),
   };
 };
 

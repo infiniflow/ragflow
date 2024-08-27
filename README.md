@@ -7,7 +7,8 @@
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
-  <a href="./README_ja.md">日本語</a>
+  <a href="./README_ja.md">日本語</a> |
+  <a href="./README_ko.md">한국어</a>
 </p>
 
 <p align="center">
@@ -17,7 +18,7 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.9.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.9.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.10.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.10.0"></a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
@@ -65,7 +66,9 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) , and mind map.
+- 2024-08-22 Support text to SQL statements through RAG.
+  
+- 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.
   
 - 2024-07-23 Supports audio file parsing.
 
@@ -157,7 +160,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3. Build the pre-built Docker images and start up the server:
 
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.9.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.10.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
