@@ -15,3 +15,10 @@ export enum SharedFrom {
   Agent = 'agent',
   Chat = 'chat',
 }
+
+export enum ChatSearchParams {
+  DialogId = 'dialogId',
+  ConversationId = 'conversationId',
+}
+
+export const EmptyConversationId = 'empty';

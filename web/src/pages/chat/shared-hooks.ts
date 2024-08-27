@@ -1,10 +1,9 @@
 import { MessageType, SharedFrom } from '@/constants/chat';
 import {
-  useCreateSharedConversation,
-  useFetchSharedConversation,
+  useCreateNextSharedConversation,
+  useFetchNextSharedConversation,
 } from '@/hooks/chat-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
-import { useOneNamespaceEffectsLoading } from '@/hooks/store-hooks';
 import { IAnswer, Message } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import omit from 'lodash/omit';
@@ -25,12 +24,12 @@ export const useCreateSharedConversationOnMount = () => {
   const [currentQueryParameters] = useSearchParams();
   const [conversationId, setConversationId] = useState('');
 
-  const createConversation = useCreateSharedConversation();
+  const { createSharedConversation: createConversation } =
+    useCreateNextSharedConversation();
   const sharedId = currentQueryParameters.get('shared_id');
   const userId = currentQueryParameters.get('user_id');
 
   const setConversation = useCallback(async () => {
-    console.info(sharedId);
     if (sharedId) {
       const data = await createConversation(userId ?? undefined);
       const id = data.data?.id;
@@ -50,10 +49,7 @@ export const useCreateSharedConversationOnMount = () => {
 export const useSelectCurrentSharedConversation = (conversationId: string) => {
   const [currentConversation, setCurrentConversation] =
     useState<IClientConversation>({} as IClientConversation);
-  const fetchConversation = useFetchSharedConversation();
-  const loading = useOneNamespaceEffectsLoading('chatModel', [
-    'getExternalConversation',
-  ]);
+  const { fetchConversation, loading } = useFetchNextSharedConversation();
 
   const ref = useScrollToBottom(currentConversation);
 
@@ -147,7 +143,8 @@ export const useSendSharedMessage = (
   addNewestAnswer: (answer: IAnswer) => void,
 ) => {
   const conversationId = conversation.id;
-  const setConversation = useCreateSharedConversation();
+  const { createSharedConversation: setConversation } =
+    useCreateNextSharedConversation();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
   const { send, answer, done } = useSendMessageWithSse(

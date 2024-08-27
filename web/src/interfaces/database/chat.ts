@@ -34,6 +34,7 @@ export interface IDialog {
   description: string;
   icon: string;
   id: string;
+  dialog_id?: string;
   kb_ids: string[];
   kb_names: string[];
   language: string;

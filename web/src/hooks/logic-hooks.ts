@@ -243,7 +243,7 @@ export const useSendMessageWithSse = (
               const val = JSON.parse(value?.data || '');
               const d = val?.data;
               if (typeof d !== 'boolean') {
-                console.info('data:', d);
+                // console.info('data:', d);
                 setAnswer({
                   ...d,
                   conversationId: body?.conversation_id,
