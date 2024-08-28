@@ -217,7 +217,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         answer = ""
         for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
             answer = ans
-            yield {"answer": answer, "reference": {}, "prompt": prompt}
+            yield {"answer": answer, "reference": {}}
         yield decorate_answer(answer)
     else:
         answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
