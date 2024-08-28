@@ -91,7 +91,7 @@ def run():
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
     final_ans = {"reference": [], "content": ""}
-    message_id = get_uuid()
+    message_id = req.get("message_id", get_uuid())
     try:
         canvas = Canvas(cvs.dsl, current_user.id)
         if "message" in req:
