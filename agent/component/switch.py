@@ -42,8 +42,6 @@ class SwitchParam(ComponentParamBase):
         self.check_empty(self.conditions, "[Switch] conditions")
         for cond in self.conditions:
             if not cond["to"]: raise ValueError(f"[Switch] 'To' can not be empty!")
-            if cond["logical_operator"] not in ["and", "or"] and len(cond["items"]) > 1:
-                raise ValueError(f"[Switch] Please set logical_operator correctly!")
 
 
 class Switch(ComponentBase, ABC):
