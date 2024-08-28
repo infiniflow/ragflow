@@ -158,7 +158,9 @@ class RedisDB:
             _, payload = msg[0]
             return Payload(self.REDIS, queue_name, group_name, msg_id, payload)
         except Exception as e:
-            logging.warning("[EXCEPTION]xpending_range" + consumer_name + "||" + str(e))
+            if 'key' in str(e):
+                return
+            logging.warning("[EXCEPTION]xpending_range: " + consumer_name + "||" + str(e))
             self.__open__()
 
 REDIS_CONN = RedisDB()
