@@ -115,6 +115,7 @@ const MessageItem = ({
                 <AssistantGroupButton
                   messageId={item.id}
                   content={item.content}
+                  prompt={item.prompt}
                 ></AssistantGroupButton>
               ) : (
                 <UserGroupButton></UserGroupButton>
