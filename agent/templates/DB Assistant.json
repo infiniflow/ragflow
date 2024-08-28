@@ -63,7 +63,7 @@
                                 }
                             ],
                             "presence_penalty": 0.4,
-                            "prompt": "## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.\n\n## The contents of the SQL query error report and the original SQL statement are as follows:\n{exesql_input}\n\n## Answer only the modified SQL statement. Please do not give any explanation, just answer the code.",
+                            "prompt": "## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.\n\n## The contents of the SQL query error report and the original SQL statement are as follows:\n{exesql_input}\n\n## Answer only the modified SQL statement. Each SQL statement ends with ; and do not give any explanation, just answer the code.",
                             "temperature": 0.1,
                             "top_p": 0.3
                         }
@@ -102,7 +102,7 @@
                                 }
                             ],
                             "presence_penalty": 0.4,
-                            "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
+                            "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Each SQL code ends with ; and do not give any explanation -- just the code.",
                             "temperature": 0.1,
                             "top_p": 0.3
                         }
