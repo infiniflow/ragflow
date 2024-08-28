@@ -77,7 +77,7 @@ class ExeSQL(ComponentBase, ABC):
         except Exception as e:
             return ExeSQL.be_output("**Error**: \nDatabase Connection Failed! \n" + str(e))
         sql_res = []
-        for single_sql in re.split(r';', ans):
+        for single_sql in re.split(r';', ans.replace(r"\n", " ")):
             if not single_sql:
                 continue
             try:
