@@ -63,7 +63,7 @@
                                 }
                             ],
                             "presence_penalty": 0.4,
-                            "prompt": "## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.\n\n## The contents of the SQL query error report and the original SQL statement are as follows:\n{exesql_input}\n\n## Answer only the modified SQL statement. Each SQL statement ends with ; and do not give any explanation, just answer the code.",
+                            "prompt": "## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.\n\n## The contents of the SQL query error report and the original SQL statement are as follows:\n{exesql_input}\n\n## Answer only the modified SQL statement. Each SQL statement ends with semicolon and do not give any explanation, just answer the code.",
                             "temperature": 0.1,
                             "top_p": 0.3
                         }
