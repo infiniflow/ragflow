@@ -144,6 +144,7 @@ def completion():
             else: conv.reference[-1] = ans["reference"]
             conv.message[-1] = {"role": "assistant", "content": ans["answer"],
                                 "id": message_id, "prompt": ans.get("prompt", "")}
+            ans["id"] = message_id
 
         def stream():
             nonlocal dia, msg, req, conv
