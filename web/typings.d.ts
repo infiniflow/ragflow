@@ -1,5 +1,4 @@
 import { KFModelState } from '@/pages/add-knowledge/components/knowledge-file/model';
-import { ChatModelState } from '@/pages/chat/model';
 
 declare module 'lodash';
 
@@ -9,7 +8,6 @@ function useSelector<TState = RootState, TSelected = unknown>(
 ): TSelected;
 
 export interface RootState {
-  chatModel: ChatModelState;
   kFModel: KFModelState;
 }
 
