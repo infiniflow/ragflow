@@ -106,8 +106,8 @@
                 },
                 {
                     "llm_name": "text-embedding-v3",
-                    "tags": "TEXT EMBEDDING,2K",
-                    "max_tokens": 2048,
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8192,
                     "model_type": "embedding"
                 },
                 {
