@@ -2,7 +2,7 @@ import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
-import { IReference, Message } from '@/interfaces/database/chat';
+import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
@@ -11,19 +11,20 @@ import {
   useFetchDocumentInfosByIds,
   useFetchDocumentThumbnailsByIds,
 } from '@/hooks/document-hooks';
+import { IMessage } from '@/pages/chat/interface';
 import MarkdownContent from '@/pages/chat/markdown-content';
 import { getExtension, isImage } from '@/utils/document-util';
 import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
 import FileIcon from '../file-icon';
 import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
-// import { AssistantGroupButton, UserGroupButton } from './group-button';
+import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 
 const { Text } = Typography;
 
 interface IProps {
-  item: Message;
+  item: IMessage;
   reference: IReference;
   loading?: boolean;
   nickname?: string;
@@ -36,7 +37,6 @@ const MessageItem = ({
   reference,
   loading = false,
   avatar = '',
-  nickname = '',
   clickDocumentButton,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
@@ -111,13 +111,16 @@ const MessageItem = ({
           )}
           <Flex vertical gap={8} flex={1}>
             <Space>
-              {/* {isAssistant ? (
-                <AssistantGroupButton></AssistantGroupButton>
+              {isAssistant ? (
+                <AssistantGroupButton
+                  messageId={item.id}
+                  content={item.content}
+                ></AssistantGroupButton>
               ) : (
                 <UserGroupButton></UserGroupButton>
-              )} */}
+              )}
 
-              <b>{isAssistant ? '' : nickname}</b>
+              {/* <b>{isAssistant ? '' : nickname}</b> */}
             </Space>
             <div
               className={
