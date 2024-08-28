@@ -102,7 +102,7 @@
                                 }
                             ],
                             "presence_penalty": 0.4,
-                            "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Each SQL code ends with ; and do not give any explanation -- just the code.",
+                            "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Each SQL code ends with semicolon and do not give any explanation -- just the code.",
                             "temperature": 0.1,
                             "top_p": 0.3
                         }
