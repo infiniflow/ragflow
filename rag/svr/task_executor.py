@@ -394,7 +394,7 @@ def report_status():
             if not obj: obj = {}
             else: obj = json.loads(obj)
             if CONSUMEER_NAME not in obj: obj[CONSUMEER_NAME] = []
-            obj[CONSUMEER_NAME].append(timer()*1000)
+            obj[CONSUMEER_NAME].append(timer())
             obj[CONSUMEER_NAME] = obj[CONSUMEER_NAME][-60:]
             REDIS_CONN.set_obj("TASKEXE", obj, 60*2)
         except Exception as e:
