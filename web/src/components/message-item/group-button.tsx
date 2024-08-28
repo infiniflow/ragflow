@@ -1,4 +1,5 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
   DeleteOutlined,
   DislikeOutlined,
@@ -8,17 +9,29 @@ import {
 } from '@ant-design/icons';
 import { Radio } from 'antd';
 import { useCallback } from 'react';
+import SvgIcon from '../svg-icon';
 import FeedbackModal from './feedback-modal';
 import { useSendFeedback } from './hooks';
+import PromptModal from './prompt-modal';
 
 interface IProps {
   messageId: string;
   content: string;
+  prompt?: string;
 }
 
-export const AssistantGroupButton = ({ messageId, content }: IProps) => {
+export const AssistantGroupButton = ({
+  messageId,
+  content,
+  prompt,
+}: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
+  const {
+    visible: promptVisible,
+    hideModal: hidePromptModal,
+    showModal: showPromptModal,
+  } = useSetModalState();
 
   const handleLike = useCallback(() => {
     onFeedbackOk({ thumbup: true });
@@ -39,6 +52,11 @@ export const AssistantGroupButton = ({ messageId, content }: IProps) => {
         <Radio.Button value="d" onClick={showModal}>
           <DislikeOutlined />
         </Radio.Button>
+        {prompt && (
+          <Radio.Button value="e" onClick={showPromptModal}>
+            <SvgIcon name={`prompt`} width={16}></SvgIcon>
+          </Radio.Button>
+        )}
       </Radio.Group>
       {visible && (
         <FeedbackModal
@@ -47,6 +65,13 @@ export const AssistantGroupButton = ({ messageId, content }: IProps) => {
           onOk={onFeedbackOk}
           loading={loading}
         ></FeedbackModal>
+      )}
+      {promptVisible && (
+        <PromptModal
+          visible={promptVisible}
+          hideModal={hidePromptModal}
+          prompt={prompt}
+        ></PromptModal>
       )}
     </>
   );
