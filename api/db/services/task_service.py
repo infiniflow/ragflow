@@ -42,6 +42,7 @@ class TaskService(CommonService):
             cls.model.doc_id,
             cls.model.from_page,
             cls.model.to_page,
+            cls.model.retry_count,
             Document.kb_id,
             Document.parser_id,
             Document.parser_config,
