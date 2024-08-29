@@ -28,17 +28,20 @@ const ChatContainer = () => {
     conversationId,
     loading,
     removeMessageById,
+    removeMessagesAfterCurrentMessage,
   } = useFetchConversationOnMount();
   const {
     handleInputChange,
     handlePressEnter,
     value,
     loading: sendLoading,
+    regenerateMessage,
   } = useSendMessage(
     conversation,
     addNewestConversation,
     removeLatestMessage,
     addNewestAnswer,
+    removeMessagesAfterCurrentMessage,
   );
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
@@ -71,6 +74,8 @@ const ChatContainer = () => {
                     clickDocumentButton={clickDocumentButton}
                     index={i}
                     removeMessageById={removeMessageById}
+                    regenerateMessage={regenerateMessage}
+                    sendLoading={sendLoading}
                   ></MessageItem>
                 );
               })}

@@ -18,7 +18,9 @@ import {
   useTranslate,
 } from '@/hooks/common-hooks';
 import {
+  useRegenerateMessage,
   useRemoveMessageById,
+  useRemoveMessagesAfterCurrentMessage,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
 import {
@@ -255,6 +257,8 @@ export const useSelectCurrentConversation = () => {
   const { data: dialog } = useFetchNextDialog();
   const { conversationId, dialogId } = useGetChatSearchParams();
   const { removeMessageById } = useRemoveMessageById(setCurrentConversation);
+  const { removeMessagesAfterCurrentMessage } =
+    useRemoveMessagesAfterCurrentMessage(setCurrentConversation);
 
   // Show the entered message in the conversation immediately after sending the message
   const addNewestConversation = useCallback(
@@ -353,6 +357,7 @@ export const useSelectCurrentConversation = () => {
     removeLatestMessage,
     addNewestAnswer,
     removeMessageById,
+    removeMessagesAfterCurrentMessage,
     loading,
   };
 };
@@ -382,6 +387,7 @@ export const useFetchConversationOnMount = () => {
     addNewestAnswer,
     loading,
     removeMessageById,
+    removeMessagesAfterCurrentMessage,
   } = useSelectCurrentConversation();
   const ref = useScrollToBottom(currentConversation);
 
@@ -394,6 +400,7 @@ export const useFetchConversationOnMount = () => {
     conversationId,
     loading,
     removeMessageById,
+    removeMessagesAfterCurrentMessage,
   };
 };
 
@@ -418,6 +425,7 @@ export const useSendMessage = (
   addNewestConversation: (message: Message, answer?: string) => void,
   removeLatestMessage: () => void,
   addNewestAnswer: (answer: IAnswer) => void,
+  removeMessagesAfterCurrentMessage: (messageId: string) => void,
 ) => {
   const { setConversation } = useSetConversation();
   const { conversationId } = useGetChatSearchParams();
@@ -427,16 +435,18 @@ export const useSendMessage = (
   const { send, answer, done, setDone } = useSendMessageWithSse();
 
   const sendMessage = useCallback(
-    async (message: Message, documentIds: string[], id?: string) => {
+    async ({
+      message,
+      currentConversationId,
+      messages,
+    }: {
+      message: Message;
+      currentConversationId?: string;
+      messages?: Message[];
+    }) => {
       const res = await send({
-        conversation_id: id ?? conversationId,
-        messages: [
-          ...(conversation?.message ?? []),
-          {
-            ...message,
-            doc_ids: documentIds,
-          },
-        ],
+        conversation_id: currentConversationId ?? conversationId,
+        messages: [...(messages ?? conversation?.message ?? []), message],
       });
 
       if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
@@ -445,10 +455,10 @@ export const useSendMessage = (
         console.info('removeLatestMessage111');
         removeLatestMessage();
       } else {
-        if (id) {
+        if (currentConversationId) {
           console.info('111');
           // new conversation
-          handleClickConversation(id);
+          handleClickConversation(currentConversationId);
         } else {
           console.info('222');
           // fetchConversation(conversationId);
@@ -466,19 +476,25 @@ export const useSendMessage = (
   );
 
   const handleSendMessage = useCallback(
-    async (message: Message, documentIds: string[]) => {
+    async (message: Message) => {
       if (conversationId !== '') {
-        sendMessage(message, documentIds);
+        sendMessage({ message });
       } else {
         const data = await setConversation(message.content);
         if (data.retcode === 0) {
           const id = data.data.id;
-          sendMessage(message, documentIds, id);
+          sendMessage({ message, currentConversationId: id });
         }
       }
     },
     [conversationId, setConversation, sendMessage],
   );
+
+  const { regenerateMessage } = useRegenerateMessage({
+    removeMessagesAfterCurrentMessage,
+    sendMessage,
+    messages: conversation.message,
+  });
 
   useEffect(() => {
     //  #1289
@@ -507,10 +523,12 @@ export const useSendMessage = (
       });
       if (done) {
         setValue('');
-        handleSendMessage(
-          { id, content: value.trim(), role: MessageType.User },
-          documentIds,
-        );
+        handleSendMessage({
+          id,
+          content: value.trim(),
+          role: MessageType.User,
+          doc_ids: documentIds,
+        });
       }
     },
     [addNewestConversation, handleSendMessage, done, setValue, value],
@@ -521,6 +539,7 @@ export const useSendMessage = (
     handleInputChange,
     value,
     setValue,
+    regenerateMessage,
     loading: !done,
   };
 };

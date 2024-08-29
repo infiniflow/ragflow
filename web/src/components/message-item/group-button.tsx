@@ -8,8 +8,9 @@ import {
   SoundOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
-import { Radio } from 'antd';
+import { Radio, Tooltip } from 'antd';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import SvgIcon from '../svg-icon';
 import FeedbackModal from './feedback-modal';
 import { useRemoveMessage, useSendFeedback } from './hooks';
@@ -33,6 +34,7 @@ export const AssistantGroupButton = ({
     hideModal: hidePromptModal,
     showModal: showPromptModal,
   } = useSetModalState();
+  const { t } = useTranslation();
 
   const handleLike = useCallback(() => {
     onFeedbackOk({ thumbup: true });
@@ -45,7 +47,9 @@ export const AssistantGroupButton = ({
           <CopyToClipboard text={content}></CopyToClipboard>
         </Radio.Button>
         <Radio.Button value="b">
-          <SoundOutlined />
+          <Tooltip title={t('chat.read')}>
+            <SoundOutlined />
+          </Tooltip>
         </Radio.Button>
         <Radio.Button value="c" onClick={handleLike}>
           <LikeOutlined />
@@ -81,27 +85,41 @@ export const AssistantGroupButton = ({
 interface UserGroupButtonProps extends IRemoveMessageById {
   messageId: string;
   content: string;
+  regenerateMessage(): void;
+  sendLoading: boolean;
 }
 
 export const UserGroupButton = ({
   content,
   messageId,
+  sendLoading,
   removeMessageById,
+  regenerateMessage,
 }: UserGroupButtonProps) => {
   const { onRemoveMessage, loading } = useRemoveMessage(
     messageId,
     removeMessageById,
   );
+  const { t } = useTranslation();
+
   return (
     <Radio.Group size="small">
       <Radio.Button value="a">
         <CopyToClipboard text={content}></CopyToClipboard>
       </Radio.Button>
-      <Radio.Button value="b">
-        <SyncOutlined />
+      <Radio.Button
+        value="b"
+        onClick={regenerateMessage}
+        disabled={sendLoading}
+      >
+        <Tooltip title={t('chat.regenerate')}>
+          <SyncOutlined spin={sendLoading} />
+        </Tooltip>
       </Radio.Button>
       <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
-        <DeleteOutlined spin={loading} />
+        <Tooltip title={t('common.delete')}>
+          <DeleteOutlined spin={loading} />
+        </Tooltip>
       </Radio.Button>
     </Radio.Group>
   );

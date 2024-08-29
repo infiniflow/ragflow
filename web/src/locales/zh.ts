@@ -412,6 +412,8 @@ export default {
       parsing: '解析中',
       uploading: '上传中',
       uploadFailed: '上传失败',
+      regenerate: '重新生成',
+      read: '朗读内容',
     },
     setting: {
       profile: '概要',

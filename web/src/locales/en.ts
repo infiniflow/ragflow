@@ -425,6 +425,8 @@ The above is the content you need to summarize.`,
       parsing: 'Parsing',
       uploading: 'Uploading',
       uploadFailed: 'Upload failed',
+      regenerate: 'Regenerate',
+      read: 'Read content',
     },
     setting: {
       profile: 'Profile',

@@ -395,6 +395,8 @@ export default {
       parsing: '解析中',
       uploading: '上傳中',
       uploadFailed: '上傳失敗',
+      regenerate: '重新生成',
+      read: '朗讀內容',
     },
     setting: {
       profile: '概述',

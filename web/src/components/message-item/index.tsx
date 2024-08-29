@@ -11,7 +11,7 @@ import {
   useFetchDocumentInfosByIds,
   useFetchDocumentThumbnailsByIds,
 } from '@/hooks/document-hooks';
-import { IRemoveMessageById } from '@/hooks/logic-hooks';
+import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { IMessage } from '@/pages/chat/interface';
 import MarkdownContent from '@/pages/chat/markdown-content';
 import { getExtension, isImage } from '@/utils/document-util';
@@ -24,10 +24,11 @@ import styles from './index.less';
 
 const { Text } = Typography;
 
-interface IProps extends IRemoveMessageById {
+interface IProps extends IRemoveMessageById, IRegenerateMessage {
   item: IMessage;
   reference: IReference;
   loading?: boolean;
+  sendLoading?: boolean;
   nickname?: string;
   avatar?: string;
   clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
@@ -39,9 +40,11 @@ const MessageItem = ({
   reference,
   loading = false,
   avatar = '',
+  sendLoading = false,
   clickDocumentButton,
   index,
   removeMessageById,
+  regenerateMessage,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -72,6 +75,10 @@ const MessageItem = ({
     },
     [showModal],
   );
+
+  const handleRegenerateMessage = useCallback(() => {
+    regenerateMessage(item);
+  }, [regenerateMessage, item]);
 
   useEffect(() => {
     const ids = item?.doc_ids ?? [];
@@ -128,6 +135,8 @@ const MessageItem = ({
                   content={item.content}
                   messageId={item.id}
                   removeMessageById={removeMessageById}
+                  regenerateMessage={handleRegenerateMessage}
+                  sendLoading={sendLoading}
                 ></UserGroupButton>
               )}
 
