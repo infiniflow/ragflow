@@ -403,9 +403,9 @@ class BedrockEmbed(Base):
     def __init__(self, key, model_name,
                  **kwargs):
         import boto3
-        self.bedrock_ak = eval(key).get('bedrock_ak', '')
-        self.bedrock_sk = eval(key).get('bedrock_sk', '')
-        self.bedrock_region = eval(key).get('bedrock_region', '')
+        self.bedrock_ak = json.loads(key).get('bedrock_ak', '')
+        self.bedrock_sk = json.loads(key).get('bedrock_sk', '')
+        self.bedrock_region = json.loads(key).get('bedrock_region', '')
         self.model_name = model_name
         self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
                                    aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)

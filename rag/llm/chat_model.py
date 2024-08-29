@@ -457,8 +457,8 @@ class VolcEngineChat(Base):
         model_name is for display only
         """
         base_url = base_url if base_url else 'https://ark.cn-beijing.volces.com/api/v3'
-        ark_api_key = eval(key).get('ark_api_key', '')
-        model_name = eval(key).get('ep_id', '')
+        ark_api_key = json.loads(key).get('ark_api_key', '')
+        model_name = json.loads(key).get('ep_id', '')
         super().__init__(ark_api_key, model_name, base_url)
 
 
@@ -602,9 +602,9 @@ class BedrockChat(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
-        self.bedrock_ak = eval(key).get('bedrock_ak', '')
-        self.bedrock_sk = eval(key).get('bedrock_sk', '')
-        self.bedrock_region = eval(key).get('bedrock_region', '')
+        self.bedrock_ak = json.loads(key).get('bedrock_ak', '')
+        self.bedrock_sk = json.loads(key).get('bedrock_sk', '')
+        self.bedrock_region = json.loads(key).get('bedrock_region', '')
         self.model_name = model_name
         self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
                                    aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
