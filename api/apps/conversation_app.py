@@ -227,7 +227,7 @@ def delete_msg():
         assert conv["message"][i+1]["id"] == req["message_id"]
         conv["message"].pop(i)
         conv["message"].pop(i)
-        conv["reference"].pop(i)
+        conv["reference"].pop(max(0, i//2-1))
         break
 
     ConversationService.update_by_id(conv["id"], conv)
