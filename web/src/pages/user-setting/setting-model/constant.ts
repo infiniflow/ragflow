@@ -38,6 +38,7 @@ export const IconMap = {
   'Fish Audio': 'fish-audio',
   'Tencent Cloud': 'tencent-cloud',
   Anthropic: 'anthropic',
+  'Voyage AI': 'voyage',
 };
 
 export const BedrockRegionList = [
