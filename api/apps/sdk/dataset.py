@@ -127,10 +127,10 @@ def delete(tenant_id):
 @manager.route('/list', methods=['GET'])
 @token_required
 def list_datasets(tenant_id):
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 150))
-    orderby = request.args.get("orderby", "create_time")
-    desc = bool(request.args.get("desc", True))
+    page_number = int(request.args.get("page"))
+    items_per_page = int(request.args.get("page_size"))
+    orderby = request.args.get("orderby")
+    desc = bool(request.args.get("desc"))
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
     kbs = KnowledgebaseService.get_by_tenant_ids(
         [m["tenant_id"] for m in tenants], tenant_id, page_number, items_per_page, orderby, desc)

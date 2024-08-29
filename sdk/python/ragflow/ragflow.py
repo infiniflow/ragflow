@@ -61,8 +61,9 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["retmsg"])
 
-    def list_datasets(self) -> List[DataSet]:
-        res = self.get("/dataset/list")
+    def list_datasets(self, page: int = 1, page_size: int = 150, orderby: str = "create_time", desc: bool = True) -> \
+            List[DataSet]:
+        res = self.get("/dataset/list", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
         res = res.json()
         result_list = []
         if res.get("retmsg") == "success":
