@@ -125,7 +125,7 @@ def completion():
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
             return get_data_error_result(retmsg="Conversation not found!")
-        conv.message.append(deepcopy(msg[-1]))
+        conv.message = deepcopy(req["messages"])
         e, dia = DialogService.get_by_id(conv.dialog_id)
         if not e:
             return get_data_error_result(retmsg="Dialog not found!")
