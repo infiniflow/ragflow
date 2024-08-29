@@ -24,6 +24,7 @@ from flask import (
 )
 from werkzeug.http import HTTP_STATUS_CODES
 
+from api.db.db_models import APIToken
 from api.utils import json_dumps
 from api.settings import RetCode
 from api.settings import (
@@ -267,3 +268,17 @@ def construct_error_response(e):
         return construct_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
 
     return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+
+def token_required(func):
+    @wraps(func)
+    def decorated_function(*args, **kwargs):
+        token = flask_request.headers.get('Authorization').split()[1]
+        objs = APIToken.query(token=token)
+        if not objs:
+            return get_json_result(
+                data=False, retmsg='Token is not valid!', retcode=RetCode.AUTHENTICATION_ERROR
+            )
+        kwargs['tenant_id'] = objs[0].tenant_id
+        return func(*args, **kwargs)
+
+    return decorated_function
