@@ -77,11 +77,16 @@ export const AssistantGroupButton = ({
   );
 };
 
-export const UserGroupButton = () => {
+interface UserGroupButtonProps {
+  messageId: string;
+  content: string;
+}
+
+export const UserGroupButton = ({ content }: UserGroupButtonProps) => {
   return (
     <Radio.Group size="small">
       <Radio.Button value="a">
-        <CopyToClipboard text="xxx"></CopyToClipboard>
+        <CopyToClipboard text={content}></CopyToClipboard>
       </Radio.Button>
       <Radio.Button value="b">
         <SyncOutlined />

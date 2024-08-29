@@ -14,8 +14,18 @@ import { buildMessageUuid, isConversationIdExist } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
+import { set } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'umi';
+
+const buildMessageListWithUuid = (messages?: Message[]) => {
+  return (
+    messages?.map((x: Message | IMessage) => ({
+      ...x,
+      id: buildMessageUuid(x),
+    })) ?? []
+  );
+};
 
 //#region logic
 
@@ -215,11 +225,7 @@ export const useFetchNextConversation = () => {
         // }
         const conversation = data?.data ?? {};
 
-        const messageList =
-          conversation?.message?.map((x: Message | IMessage) => ({
-            ...x,
-            id: buildMessageUuid(x),
-          })) ?? [];
+        const messageList = buildMessageListWithUuid(conversation?.message);
 
         return { ...conversation, message: messageList };
       }
@@ -294,7 +300,6 @@ export const useRemoveNextConversation = () => {
 };
 
 export const useDeleteMessage = () => {
-  // const queryClient = useQueryClient();
   const { conversationId } = useGetChatSearchParams();
 
   const {
@@ -308,9 +313,7 @@ export const useDeleteMessage = () => {
         messageId,
         conversationId,
       });
-      if (data.retcode === 0) {
-        // queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
-      }
+
       return data.retcode;
     },
   });
@@ -470,6 +473,10 @@ export const useFetchNextSharedConversation = () => {
         null,
         conversationId,
       );
+
+      const messageList = buildMessageListWithUuid(data?.data?.message);
+
+      set(data, 'data.message', messageList);
 
       return data;
     },
