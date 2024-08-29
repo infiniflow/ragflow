@@ -421,6 +421,7 @@ export const useSendMessage = (
         messages: [
           ...(conversation?.message ?? []).map((x: IMessage) => omit(x, 'id')),
           {
+            id: uuid(),
             role: MessageType.User,
             content: message,
             doc_ids: documentIds,

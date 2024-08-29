@@ -11,13 +11,13 @@ fi
 
 function task_exe(){
     while [ 1 -eq 1 ];do
-      $PY rag/svr/task_executor.py ;
+      $PY rag/svr/task_executor.py $1;
     done
 }
 
 for ((i=0;i<WS;i++))
 do
-  task_exe  &
+  task_exe  $i &
 done
 
 while [ 1 -eq 1 ];do

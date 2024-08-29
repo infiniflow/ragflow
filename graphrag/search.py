@@ -93,9 +93,9 @@ class KGSearch(Dealer):
         s = s.query(bqry)[0: 6]
         s = s.to_dict()
         txt_res = self.es.search(deepcopy(s), idxnm=idxnm, timeout="600s", src=src)
-        txt_ids = self.es.getDocIds(comm_res)
+        txt_ids = self.es.getDocIds(txt_res)
         if merge_into_first(txt_res, "-Original Content-"):
-            txt_ids = comm_ids[0:1]
+            txt_ids = txt_ids[0:1]
 
         return self.SearchResult(
             total=len(ent_ids) + len(comm_ids) + len(txt_ids),

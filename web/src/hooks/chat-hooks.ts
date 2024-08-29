@@ -6,16 +6,16 @@ import {
   IToken,
   Message,
 } from '@/interfaces/database/chat';
+import { IFeedbackRequestBody } from '@/interfaces/request/chat';
 import i18n from '@/locales/config';
 import { IClientConversation, IMessage } from '@/pages/chat/interface';
 import chatService from '@/services/chat-service';
-import { isConversationIdExist } from '@/utils/chat';
+import { buildMessageUuid, isConversationIdExist } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'umi';
-import { v4 as uuid } from 'uuid';
 
 //#region logic
 
@@ -218,7 +218,7 @@ export const useFetchNextConversation = () => {
         const messageList =
           conversation?.message?.map((x: Message | IMessage) => ({
             ...x,
-            id: 'id' in x && x.id ? x.id : uuid(),
+            id: buildMessageUuid(x),
           })) ?? [];
 
         return { ...conversation, message: messageList };
@@ -292,6 +292,56 @@ export const useRemoveNextConversation = () => {
 
   return { data, loading, removeConversation: mutateAsync };
 };
+
+export const useDeleteMessage = () => {
+  // const queryClient = useQueryClient();
+  const { conversationId } = useGetChatSearchParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteMessage'],
+    mutationFn: async (messageId: string) => {
+      const { data } = await chatService.deleteMessage({
+        messageId,
+        conversationId,
+      });
+      if (data.retcode === 0) {
+        // queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
+      }
+      return data.retcode;
+    },
+  });
+
+  return { data, loading, deleteMessage: mutateAsync };
+};
+
+export const useFeedback = () => {
+  const { conversationId } = useGetChatSearchParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['feedback'],
+    mutationFn: async (params: IFeedbackRequestBody) => {
+      const { data } = await chatService.thumbup({
+        ...params,
+        conversationId,
+      });
+      if (data.retcode === 0) {
+        message.success(i18n.t(`message.operated`));
+      }
+      return data.retcode;
+    },
+  });
+
+  return { data, loading, feedback: mutateAsync };
+};
+
 //#endregion
 
 // #region API provided for external calls
