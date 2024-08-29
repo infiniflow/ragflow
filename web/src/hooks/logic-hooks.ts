@@ -2,7 +2,7 @@ import { Authorization } from '@/constants/authorization';
 import { LanguageTranslationMap } from '@/constants/common';
 import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
-import { IAnswer } from '@/interfaces/database/chat';
+import { IAnswer, Message } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { IClientConversation } from '@/pages/chat/interface';
@@ -23,6 +23,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
+import { v4 as uuid } from 'uuid';
 import { useSetModalState, useTranslate } from './common-hooks';
 import { useSetDocumentParser } from './document-hooks';
 import { useSetPaginationParams } from './route-hook';
@@ -334,6 +335,77 @@ export const useRemoveMessageById = (
   );
 
   return { removeMessageById };
+};
+
+export const useRemoveMessagesAfterCurrentMessage = (
+  setCurrentConversation: (
+    callback: (state: IClientConversation) => IClientConversation,
+  ) => void,
+) => {
+  const removeMessagesAfterCurrentMessage = useCallback(
+    (messageId: string) => {
+      setCurrentConversation((pre) => {
+        const index = pre.message?.findIndex((x) => x.id === messageId);
+        if (index !== -1) {
+          let nextMessages = pre.message?.slice(0, index + 2) ?? [];
+          const latestMessage = nextMessages.at(-1);
+          nextMessages = latestMessage
+            ? [
+                ...nextMessages.slice(0, -1),
+                {
+                  ...latestMessage,
+                  content: '',
+                  reference: undefined,
+                  prompt: undefined,
+                },
+              ]
+            : nextMessages;
+          return {
+            ...pre,
+            message: nextMessages,
+          };
+        }
+        return pre;
+      });
+    },
+    [setCurrentConversation],
+  );
+
+  return { removeMessagesAfterCurrentMessage };
+};
+
+export interface IRegenerateMessage {
+  regenerateMessage(message: Message): void;
+}
+
+export const useRegenerateMessage = ({
+  removeMessagesAfterCurrentMessage,
+  sendMessage,
+  messages,
+}: {
+  removeMessagesAfterCurrentMessage(messageId: string): void;
+  sendMessage({ message }: { message: Message; messages?: Message[] }): void;
+  messages: Message[];
+}) => {
+  const regenerateMessage = useCallback(
+    async (message: Message) => {
+      if (message.id) {
+        removeMessagesAfterCurrentMessage(message.id);
+        const index = messages.findIndex((x) => x.id === message.id);
+        let nextMessages;
+        if (index !== -1) {
+          nextMessages = messages.slice(0, index);
+        }
+        sendMessage({
+          message: { ...message, id: uuid() },
+          messages: nextMessages,
+        });
+      }
+    },
+    [removeMessagesAfterCurrentMessage, sendMessage, messages],
+  );
+
+  return { regenerateMessage };
 };
 
 // #endregion
