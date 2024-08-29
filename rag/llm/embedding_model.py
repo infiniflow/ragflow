@@ -623,3 +623,24 @@ class BaiduYiyanEmbed(Base):
             np.array([r["embedding"] for r in res["data"]]),
             res["usage"]["total_tokens"],
         )
+
+
+class VoyageEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        import voyageai
+
+        self.client = voyageai.Client(api_key=key)
+        self.model_name = model_name
+
+    def encode(self, texts: list, batch_size=32):
+        res = self.client.embed(
+            texts=texts, model=self.model_name, input_type="document"
+        )
+        return np.array(res.embeddings), res.total_tokens
+
+    def encode_queries(self, text):
+        res = self.client.embed
+        res = self.client.embed(
+            texts=text, model=self.model_name, input_type="query"
+            )
+        return np.array(res.embeddings), res.total_tokens

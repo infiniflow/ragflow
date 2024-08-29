@@ -141,6 +141,7 @@ loguru==0.7.2
 umap-learn
 fasttext==0.9.2
 volcengine==1.0.141
+voyageai==0.2.3
 opencv-python-headless==4.9.0.80
 readability-lxml==0.8.1
 html_text==0.6.2

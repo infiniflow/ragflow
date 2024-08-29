@@ -24,7 +24,7 @@ export const IconMap = {
   'LM-Studio': 'lm-studio',
   'OpenAI-API-Compatible': 'openai-api',
   cohere: 'cohere',
-  Lepton: 'lepton',
+  LeptonAI: 'lepton-ai',
   TogetherAI: 'together-ai',
   PerfXCloud: 'perfx-cloud',
   Upstage: 'upstage',
@@ -38,6 +38,7 @@ export const IconMap = {
   'Fish Audio': 'fish-audio',
   'Tencent Cloud': 'tencent-cloud',
   Anthropic: 'anthropic',
+  'Voyage AI': 'voyage',
 };
 
 export const BedrockRegionList = [
