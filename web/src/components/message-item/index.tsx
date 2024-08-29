@@ -11,6 +11,7 @@ import {
   useFetchDocumentInfosByIds,
   useFetchDocumentThumbnailsByIds,
 } from '@/hooks/document-hooks';
+import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { IMessage } from '@/pages/chat/interface';
 import MarkdownContent from '@/pages/chat/markdown-content';
 import { getExtension, isImage } from '@/utils/document-util';
@@ -23,7 +24,7 @@ import styles from './index.less';
 
 const { Text } = Typography;
 
-interface IProps {
+interface IProps extends IRemoveMessageById {
   item: IMessage;
   reference: IReference;
   loading?: boolean;
@@ -40,6 +41,7 @@ const MessageItem = ({
   avatar = '',
   clickDocumentButton,
   index,
+  removeMessageById,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -125,6 +127,7 @@ const MessageItem = ({
                 <UserGroupButton
                   content={item.content}
                   messageId={item.id}
+                  removeMessageById={removeMessageById}
                 ></UserGroupButton>
               )}
 

@@ -1,5 +1,6 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import { useSetModalState } from '@/hooks/common-hooks';
+import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import {
   DeleteOutlined,
   DislikeOutlined,
@@ -11,7 +12,7 @@ import { Radio } from 'antd';
 import { useCallback } from 'react';
 import SvgIcon from '../svg-icon';
 import FeedbackModal from './feedback-modal';
-import { useSendFeedback } from './hooks';
+import { useRemoveMessage, useSendFeedback } from './hooks';
 import PromptModal from './prompt-modal';
 
 interface IProps {
@@ -77,12 +78,20 @@ export const AssistantGroupButton = ({
   );
 };
 
-interface UserGroupButtonProps {
+interface UserGroupButtonProps extends IRemoveMessageById {
   messageId: string;
   content: string;
 }
 
-export const UserGroupButton = ({ content }: UserGroupButtonProps) => {
+export const UserGroupButton = ({
+  content,
+  messageId,
+  removeMessageById,
+}: UserGroupButtonProps) => {
+  const { onRemoveMessage, loading } = useRemoveMessage(
+    messageId,
+    removeMessageById,
+  );
   return (
     <Radio.Group size="small">
       <Radio.Button value="a">
@@ -91,8 +100,8 @@ export const UserGroupButton = ({ content }: UserGroupButtonProps) => {
       <Radio.Button value="b">
         <SyncOutlined />
       </Radio.Button>
-      <Radio.Button value="c">
-        <DeleteOutlined />
+      <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
+        <DeleteOutlined spin={loading} />
       </Radio.Button>
     </Radio.Group>
   );

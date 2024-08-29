@@ -314,6 +314,10 @@ export const useDeleteMessage = () => {
         conversationId,
       });
 
+      if (data.retcode === 0) {
+        message.success(i18n.t(`message.deleted`));
+      }
+
       return data.retcode;
     },
   });

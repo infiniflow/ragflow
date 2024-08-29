@@ -17,7 +17,10 @@ import {
   useShowDeleteConfirm,
   useTranslate,
 } from '@/hooks/common-hooks';
-import { useSendMessageWithSse } from '@/hooks/logic-hooks';
+import {
+  useRemoveMessageById,
+  useSendMessageWithSse,
+} from '@/hooks/logic-hooks';
 import {
   IAnswer,
   IConversation,
@@ -251,6 +254,7 @@ export const useSelectCurrentConversation = () => {
   const { data: conversation, loading } = useFetchNextConversation();
   const { data: dialog } = useFetchNextDialog();
   const { conversationId, dialogId } = useGetChatSearchParams();
+  const { removeMessageById } = useRemoveMessageById(setCurrentConversation);
 
   // Show the entered message in the conversation immediately after sending the message
   const addNewestConversation = useCallback(
@@ -348,6 +352,7 @@ export const useSelectCurrentConversation = () => {
     addNewestConversation,
     removeLatestMessage,
     addNewestAnswer,
+    removeMessageById,
     loading,
   };
 };
@@ -376,6 +381,7 @@ export const useFetchConversationOnMount = () => {
     removeLatestMessage,
     addNewestAnswer,
     loading,
+    removeMessageById,
   } = useSelectCurrentConversation();
   const ref = useScrollToBottom(currentConversation);
 
@@ -387,6 +393,7 @@ export const useFetchConversationOnMount = () => {
     addNewestAnswer,
     conversationId,
     loading,
+    removeMessageById,
   };
 };
 
@@ -408,7 +415,7 @@ export const useHandleMessageInputChange = () => {
 
 export const useSendMessage = (
   conversation: IClientConversation,
-  addNewestConversation: (message: Partial<Message>, answer?: string) => void,
+  addNewestConversation: (message: Message, answer?: string) => void,
   removeLatestMessage: () => void,
   addNewestAnswer: (answer: IAnswer) => void,
 ) => {

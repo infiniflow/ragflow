@@ -5,8 +5,10 @@ import { ResponseType } from '@/interfaces/database/base';
 import { IAnswer } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { IClientConversation } from '@/pages/chat/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
+import { getMessagePureId } from '@/utils/chat';
 import { PaginationProps } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
@@ -304,6 +306,34 @@ export const useHandleMessageInputChange = () => {
     value,
     setValue,
   };
+};
+
+export interface IRemoveMessageById {
+  removeMessageById(messageId: string): void;
+}
+
+export const useRemoveMessageById = (
+  setCurrentConversation: (
+    callback: (state: IClientConversation) => IClientConversation,
+  ) => void,
+) => {
+  const removeMessageById = useCallback(
+    (messageId: string) => {
+      setCurrentConversation((pre) => {
+        const nextMessages =
+          pre.message?.filter(
+            (x) => getMessagePureId(x.id) !== getMessagePureId(messageId),
+          ) ?? [];
+        return {
+          ...pre,
+          message: nextMessages,
+        };
+      });
+    },
+    [setCurrentConversation],
+  );
+
+  return { removeMessageById };
 };
 
 // #endregion
