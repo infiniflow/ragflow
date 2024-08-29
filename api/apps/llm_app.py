@@ -22,7 +22,7 @@ from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 import requests
-import ast
+
 
 @manager.route('/factories', methods=['GET'])
 @login_required
