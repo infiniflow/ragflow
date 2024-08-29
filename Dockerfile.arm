@@ -4,6 +4,10 @@ USER  root
 WORKDIR /ragflow
 
 COPY requirements_arm.txt /ragflow/requirements.txt
+
+
+RUN pip install nltk --default-timeout=10000
+
 RUN pip install -i https://mirrors.aliyun.com/pypi/simple/ --default-timeout=1000 -r requirements.txt &&\
 python -c "import nltk;nltk.download('punkt');nltk.download('wordnet')"
 
