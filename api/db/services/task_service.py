@@ -64,9 +64,20 @@ class TaskService(CommonService):
         docs = list(docs.dicts())
         if not docs: return []
 
-        cls.model.update(progress_msg=cls.model.progress_msg + "\n" + "Task has been received.",
-                         progress=random.random() / 10.).where(
+        msg = "\nTask has been received."
+        prog = random.random() / 10.
+        if docs[0]["retry_count"] >= 3:
+            msg = "\nERROR: Task is abandoned after 3 times attempts."
+            prog = -1
+
+        cls.model.update(progress_msg=cls.model.progress_msg + msg,
+                         progress=prog,
+                         retry_count=docs[0]["retry_count"]+1
+                         ).where(
             cls.model.id == docs[0]["id"]).execute()
+
+        if docs[0]["retry_count"] >= 3: return []
+
         return docs
 
     @classmethod
