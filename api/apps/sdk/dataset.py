@@ -129,7 +129,7 @@ def delete(tenant_id):
 def list_datasets(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 1024))
-    orderby = request.args.get("orderby")
+    orderby = request.args.get("orderby", "create_time")
     desc = bool(request.args.get("desc"))
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
     kbs = KnowledgebaseService.get_by_tenant_ids(
