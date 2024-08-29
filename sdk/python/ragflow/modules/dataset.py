@@ -45,7 +45,6 @@ class DataSet(Base):
                          "parser_config": self.parser_config.to_json()
                          })
         res = res.json()
-        print(res)
         if res.get("retmsg") == "success": return True
         raise Exception(res["retmsg"])
 
@@ -53,6 +52,5 @@ class DataSet(Base):
         res = self.rm('/dataset/delete',
                       {"id": self.id})
         res = res.json()
-        print(res)
         if res.get("retmsg") == "success": return True
         raise Exception(res["retmsg"])

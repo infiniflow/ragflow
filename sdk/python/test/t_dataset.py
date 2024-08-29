@@ -61,11 +61,3 @@ class TestDataset(TestSdk):
         ds = rag.get_dataset(name="God")
         assert isinstance(ds, DataSet), f"Failed to get dataset, error: {ds}."
         assert ds.name == "God", "Name does not match"
-
-if __name__=="__main__":
-     rag = RAGFlow(API_KEY, HOST_ADDRESS)
-     ds = rag.create_dataset("Test")
-     ma=rag.get_dataset(name='Test')
-     ds.name="God"
-     ds.save()
-     ds.delete()
