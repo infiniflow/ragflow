@@ -127,7 +127,8 @@ def delete(tenant_id):
 @manager.route('/list', methods=['GET'])
 @token_required
 def list_datasets(tenant_id):
-    page_number = int(request.args.get("page"))
+    page_number = int(request.args.get("page", 1))
+
     items_per_page = int(request.args.get("page_size"))
     orderby = request.args.get("orderby")
     desc = bool(request.args.get("desc"))
