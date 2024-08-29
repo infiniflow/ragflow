@@ -134,8 +134,8 @@ const MarkdownContent = ({
       let replacedText = reactStringReplace(text, reg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
         return (
-          <Popover content={getPopoverContent(chunkIndex)}>
-            <InfoCircleOutlined key={i} className={styles.referenceIcon} />
+          <Popover content={getPopoverContent(chunkIndex)} key={i}>
+            <InfoCircleOutlined className={styles.referenceIcon} />
           </Popover>
         );
       });

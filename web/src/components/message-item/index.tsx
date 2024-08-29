@@ -30,6 +30,7 @@ interface IProps {
   nickname?: string;
   avatar?: string;
   clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
+  index: number;
 }
 
 const MessageItem = ({
@@ -38,6 +39,7 @@ const MessageItem = ({
   loading = false,
   avatar = '',
   clickDocumentButton,
+  index,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -112,13 +114,18 @@ const MessageItem = ({
           <Flex vertical gap={8} flex={1}>
             <Space>
               {isAssistant ? (
-                <AssistantGroupButton
-                  messageId={item.id}
-                  content={item.content}
-                  prompt={item.prompt}
-                ></AssistantGroupButton>
+                index !== 0 && (
+                  <AssistantGroupButton
+                    messageId={item.id}
+                    content={item.content}
+                    prompt={item.prompt}
+                  ></AssistantGroupButton>
+                )
               ) : (
-                <UserGroupButton></UserGroupButton>
+                <UserGroupButton
+                  content={item.content}
+                  messageId={item.id}
+                ></UserGroupButton>
               )}
 
               {/* <b>{isAssistant ? '' : nickname}</b> */}

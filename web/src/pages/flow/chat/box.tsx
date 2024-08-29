@@ -57,6 +57,7 @@ const FlowChatBox = () => {
                       message,
                     )}
                     clickDocumentButton={clickDocumentButton}
+                    index={i}
                   ></MessageItem>
                 );
               })}

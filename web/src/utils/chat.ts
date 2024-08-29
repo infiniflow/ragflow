@@ -7,7 +7,7 @@ export const isConversationIdExist = (conversationId: string) => {
   return conversationId !== EmptyConversationId && conversationId !== '';
 };
 
-export const buildMessageUuid = (message: Message | IMessage) => {
+export const buildMessageUuid = (message: Partial<Message | IMessage>) => {
   if ('id' in message && message.id) {
     return message.role === MessageType.User
       ? `${MessageType.User}_${message.id}`

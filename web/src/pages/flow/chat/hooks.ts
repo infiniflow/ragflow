@@ -5,10 +5,12 @@ import {
   useScrollToBottom,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
-import { IAnswer } from '@/interfaces/database/chat';
+import { IAnswer, Message } from '@/interfaces/database/chat';
 import { IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';
+import { buildMessageUuid } from '@/utils/chat';
 import { message } from 'antd';
+import trim from 'lodash/trim';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
@@ -27,19 +29,18 @@ export const useSelectCurrentMessages = () => {
   const ref = useScrollToBottom(currentMessages);
 
   const addNewestQuestion = useCallback(
-    (message: string, answer: string = '') => {
+    (message: Message, answer: string = '') => {
       setCurrentMessages((pre) => {
         return [
           ...pre,
           {
-            role: MessageType.User,
-            content: message,
-            id: uuid(),
+            ...message,
+            id: buildMessageUuid(message),
           },
           {
             role: MessageType.Assistant,
             content: answer,
-            id: uuid(),
+            id: buildMessageUuid({ ...message, role: MessageType.Assistant }),
           },
         ];
       });
@@ -52,10 +53,13 @@ export const useSelectCurrentMessages = () => {
       return [
         ...pre.slice(0, -1),
         {
-          id: uuid(),
           role: MessageType.Assistant,
           content: answer.answer,
           reference: answer.reference,
+          id: buildMessageUuid({
+            id: answer.id,
+            role: MessageType.Assistant,
+          }),
         },
       ];
     });
@@ -88,7 +92,7 @@ export const useSelectCurrentMessages = () => {
 };
 
 export const useSendMessage = (
-  addNewestQuestion: (message: string, answer?: string) => void,
+  addNewestQuestion: (message: Message, answer?: string) => void,
   removeLatestMessage: () => void,
   addNewestAnswer: (answer: IAnswer) => void,
 ) => {
@@ -99,12 +103,13 @@ export const useSendMessage = (
   const { send, answer, done } = useSendMessageWithSse(api.runCanvas);
 
   const sendMessage = useCallback(
-    async (message: string) => {
+    async (message: Message) => {
       const params: Record<string, unknown> = {
         id: flowId,
       };
-      if (message) {
-        params.message = message;
+      if (message.content) {
+        params.message = message.content;
+        params.message_id = message.id;
       }
       const res = await send(params);
 
@@ -112,7 +117,7 @@ export const useSendMessage = (
         antMessage.error(res?.data?.retmsg);
 
         // cancel loading
-        setValue(message);
+        setValue(message.content);
         removeLatestMessage();
       } else {
         refetch(); // pull the message list after sending the message successfully
@@ -122,7 +127,7 @@ export const useSendMessage = (
   );
 
   const handleSendMessage = useCallback(
-    async (message: string) => {
+    async (message: Message) => {
       sendMessage(message);
     },
     [sendMessage],
@@ -135,11 +140,17 @@ export const useSendMessage = (
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
+    const id = uuid();
     if (done) {
       setValue('');
-      handleSendMessage(value.trim());
+      handleSendMessage({ id, content: value.trim(), role: MessageType.User });
     }
-    addNewestQuestion(value);
+    addNewestQuestion({
+      content: value,
+      id,
+      role: MessageType.User,
+    });
   }, [addNewestQuestion, handleSendMessage, done, setValue, value]);
 
   return {
