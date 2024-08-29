@@ -106,7 +106,7 @@ ChatModel = {
     "Tencent Hunyuan": HunyuanChat,
     "XunFei Spark": SparkChat,
     "BaiduYiyan": BaiduYiyanChat,
-    "Anthropic": VoyageChat,
+    "Anthropic": AnthropicChat,
 }
 
 
