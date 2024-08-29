@@ -24,8 +24,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
-from api.utils.api_utils import get_json_result,token_required,get_data_error_result
-
+from api.utils.api_utils import get_json_result, token_required, get_data_error_result
 
 
 @manager.route('/save', methods=['POST'])
@@ -36,7 +35,7 @@ def save(tenant_id):
     if "id" not in req:
         if "tenant_id" in req or "embd_id" in req:
             return get_data_error_result(
-                retmsg="tenant_id or embedding_model must not be provided")
+                retmsg="Tenant_id or embedding_model must not be provided")
         if "name" not in req:
             return get_data_error_result(
                 retmsg="Name is not empty!")
@@ -144,21 +143,28 @@ def detail(tenant_id):
     req = request.args
     if "id" in req:
         id = req["id"]
-        if "name" in req:
-            name = req["name"]
-            if not KnowledgebaseService.query(id=id, name=name, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-                return get_json_result(data=None)
-        if not KnowledgebaseService.query(
-                created_by=tenant_id, id=req["id"]):
+        kb = KnowledgebaseService.query(created_by=tenant_id, id=req["id"])
+        if not kb:
             return get_json_result(
                 data=False, retmsg='You do not own the dataset',
                 retcode=RetCode.OPERATING_ERROR)
+        if "name" in req:
+            name = req["name"]
+            if kb[0].name != name:
+                return get_json_result(
+                    data=False, retmsg='You do not own the dataset',
+                    retcode=RetCode.OPERATING_ERROR)
         e, k = KnowledgebaseService.get_by_id(id)
         return get_json_result(data=k.to_dict())
     else:
         if "name" in req:
             name = req["name"]
             e, k = KnowledgebaseService.get_by_name(kb_name=name, tenant_id=tenant_id)
+            if not e:
+                return get_json_result(
+                    data=False, retmsg='You do not own the dataset',
+                    retcode=RetCode.OPERATING_ERROR)
             return get_json_result(data=k.to_dict())
         else:
-            return get_json_result(data=None)
+            return get_data_error_result(
+                retmsg="At least one of `id` or `name` must be provided.")

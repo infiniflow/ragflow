@@ -49,7 +49,7 @@ class TestDataset(TestSdk):
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         list_datasets = rag.list_datasets()
-        assert len(list_datasets)>0, "Do not exist any dataset"
+        assert len(list_datasets) > 0, "Do not exist any dataset"
         for ds in list_datasets:
             assert isinstance(ds, DataSet), "Existence type is not dataset."
 
@@ -59,5 +59,13 @@ class TestDataset(TestSdk):
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         ds = rag.get_dataset(name="God")
-        assert isinstance(ds, DataSet), "The dataset does not exist."
+        assert isinstance(ds, DataSet), f"Failed to get dataset, error: {ds}."
         assert ds.name == "God", "Name does not match"
+
+if __name__=="__main__":
+     rag = RAGFlow(API_KEY, HOST_ADDRESS)
+     ds = rag.create_dataset("Test")
+     ma=rag.get_dataset(name='Test')
+     ds.name="God"
+     ds.save()
+     ds.delete()

@@ -25,18 +25,18 @@ class DataSet(Base):
         self.parser_config = None
         for k in list(res_dict.keys()):
             if k == "embd_id":
-                res_dict["embedding_model"]=res_dict[k]
+                res_dict["embedding_model"] = res_dict[k]
             if k == "parser_id":
-                res_dict['parse_method']=res_dict[k]
+                res_dict['parse_method'] = res_dict[k]
             if k == "doc_num":
-                res_dict["document_count"]=res_dict[k]
+                res_dict["document_count"] = res_dict[k]
             if k == "chunk_num":
-                res_dict["chunk_count"]=res_dict[k]
+                res_dict["chunk_count"] = res_dict[k]
             if k not in self.__dict__:
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
 
-    def save(self) -> bool :
+    def save(self) -> bool:
         res = self.post('/dataset/save',
                         {"id": self.id, "name": self.name, "avatar": self.avatar, "tenant_id": self.tenant_id,
                          "description": self.description, "language": self.language, "embd_id": self.embedding_model,
@@ -45,12 +45,14 @@ class DataSet(Base):
                          "parser_config": self.parser_config.to_json()
                          })
         res = res.json()
+        print(res)
         if res.get("retmsg") == "success": return True
         raise Exception(res["retmsg"])
 
     def delete(self) -> bool:
         res = self.rm('/dataset/delete',
-                        {"id": self.id})
+                      {"id": self.id})
         res = res.json()
+        print(res)
         if res.get("retmsg") == "success": return True
         raise Exception(res["retmsg"])
