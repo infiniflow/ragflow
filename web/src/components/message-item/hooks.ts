@@ -34,7 +34,7 @@ export const useSendFeedback = (messageId: string) => {
 
 export const useRemoveMessage = (
   messageId: string,
-  removeMessageById: IRemoveMessageById['removeMessageById'],
+  removeMessageById?: IRemoveMessageById['removeMessageById'],
 ) => {
   const { deleteMessage, loading } = useDeleteMessage();
 
@@ -43,7 +43,7 @@ export const useRemoveMessage = (
     if (pureId) {
       const retcode = await deleteMessage(pureId);
       if (retcode === 0) {
-        removeMessageById(messageId);
+        removeMessageById?.(messageId);
       }
     }
   }, [deleteMessage, messageId, removeMessageById]);

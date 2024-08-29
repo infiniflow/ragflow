@@ -24,7 +24,7 @@ import styles from './index.less';
 
 const { Text } = Typography;
 
-interface IProps extends IRemoveMessageById, IRegenerateMessage {
+interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   item: IMessage;
   reference: IReference;
   loading?: boolean;
@@ -33,6 +33,7 @@ interface IProps extends IRemoveMessageById, IRegenerateMessage {
   avatar?: string;
   clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
   index: number;
+  showLikeButton?: boolean;
 }
 
 const MessageItem = ({
@@ -45,6 +46,7 @@ const MessageItem = ({
   index,
   removeMessageById,
   regenerateMessage,
+  showLikeButton = true,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -128,6 +130,7 @@ const MessageItem = ({
                     messageId={item.id}
                     content={item.content}
                     prompt={item.prompt}
+                    showLikeButton={showLikeButton}
                   ></AssistantGroupButton>
                 )
               ) : (
