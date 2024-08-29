@@ -128,7 +128,7 @@ def delete(tenant_id):
 @token_required
 def list_datasets(tenant_id):
     page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size"))
+    items_per_page = int(request.args.get("page_size", 1024))
     orderby = request.args.get("orderby")
     desc = bool(request.args.get("desc"))
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
