@@ -2400,7 +2400,7 @@
             ]
         },
         {
-            "name": "Lepton",
+            "name": "LeptonAI",
             "logo": "",
             "tags": "LLM",
             "status": "1",

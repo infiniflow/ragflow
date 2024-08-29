@@ -95,7 +95,7 @@ ChatModel = {
     "LM-Studio": LmStudioChat,
     "OpenAI-API-Compatible": OpenAI_APIChat,
     "cohere": CoHereChat,
-    "Lepton": LeptonAIChat,
+    "LeptonAI": LeptonAIChat,
     "TogetherAI": TogetherAIChat,
     "PerfXCloud": PerfXCloudChat,
     "Upstage":UpstageChat,

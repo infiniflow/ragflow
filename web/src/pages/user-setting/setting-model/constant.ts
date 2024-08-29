@@ -24,7 +24,7 @@ export const IconMap = {
   'LM-Studio': 'lm-studio',
   'OpenAI-API-Compatible': 'openai-api',
   cohere: 'cohere',
-  Lepton: 'lepton',
+  LeptonAI: 'lepton-ai',
   TogetherAI: 'together-ai',
   PerfXCloud: 'perfx-cloud',
   Upstage: 'upstage',
