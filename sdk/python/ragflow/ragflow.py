@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+from typing import List
+
 import requests
 
 from .modules.dataset import DataSet
@@ -25,30 +27,54 @@ class RAGFlow:
         """
         self.user_key = user_key
         self.api_url = f"{base_url}/api/{version}"
-        self.authorization_header = {"Authorization": "{} {}".format("Bearer",self.user_key)}
+        self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
     def post(self, path, param):
         res = requests.post(url=self.api_url + path, json=param, headers=self.authorization_header)
         return res
 
-    def get(self, path, params=''):
-        res = requests.get(self.api_url + path, params=params, headers=self.authorization_header)
+    def get(self, path, params=None):
+        res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header)
         return res
 
-    def create_dataset(self, name:str,avatar:str="",description:str="",language:str="English",permission:str="me",
-                       document_count:int=0,chunk_count:int=0,parser_method:str="naive",
-                       parser_config:DataSet.ParserConfig=None):
+    def delete(self, path, params):
+        res = requests.delete(url=self.api_url + path, params=params, headers=self.authorization_header)
+        return res
+
+    def create_dataset(self, name: str, avatar: str = "", description: str = "", language: str = "English",
+                       permission: str = "me",
+                       document_count: int = 0, chunk_count: int = 0, parse_method: str = "naive",
+                       parser_config: DataSet.ParserConfig = None) -> DataSet:
         if parser_config is None:
-            parser_config = DataSet.ParserConfig(self, {"chunk_token_count":128,"layout_recognize": True, "delimiter":"\n!?。；！？","task_page_size":12})
-        parser_config=parser_config.to_json()
-        res=self.post("/dataset/save",{"name":name,"avatar":avatar,"description":description,"language":language,"permission":permission,
-                               "doc_num": document_count,"chunk_num":chunk_count,"parser_id":parser_method,
-                               "parser_config":parser_config
-                               }
-                     )
+            parser_config = DataSet.ParserConfig(self, {"chunk_token_count": 128, "layout_recognize": True,
+                                                        "delimiter": "\n!?。；！？", "task_page_size": 12})
+        parser_config = parser_config.to_json()
+        res = self.post("/dataset/save",
+                        {"name": name, "avatar": avatar, "description": description, "language": language,
+                         "permission": permission,
+                         "doc_num": document_count, "chunk_num": chunk_count, "parser_id": parse_method,
+                         "parser_config": parser_config
+                         }
+                        )
         res = res.json()
-        if not res.get("retmsg"):
+        if res.get("retmsg") == "success":
             return DataSet(self, res["data"])
         raise Exception(res["retmsg"])
 
+    def list_datasets(self, page: int = 1, page_size: int = 150, orderby: str = "create_time", desc: bool = True) -> \
+            List[DataSet]:
+        res = self.get("/dataset/list", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
+        res = res.json()
+        result_list = []
+        if res.get("retmsg") == "success":
+            for data in res['data']:
+                result_list.append(DataSet(self, data))
+            return result_list
+        raise Exception(res["retmsg"])
 
+    def get_dataset(self, id: str = None, name: str = None) -> DataSet:
+        res = self.get("/dataset/detail", {"id": id, "name": name})
+        res = res.json()
+        if res.get("retmsg") == "success":
+            return DataSet(self, res['data'])
+        raise Exception(res["retmsg"])

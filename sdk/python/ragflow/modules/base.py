@@ -18,13 +18,17 @@ class Base(object):
                     pr[name] = value
         return pr
 
-
     def post(self, path, param):
-        res = self.rag.post(path,param)
+        res = self.rag.post(path, param)
         return res
 
-    def get(self, path, params=''):
-        res = self.rag.get(path,params)
+    def get(self, path, params):
+        res = self.rag.get(path, params)
         return res
 
+    def rm(self, path, params):
+        res = self.rag.delete(path, params)
+        return res
 
+    def __str__(self):
+        return str(self.to_json())

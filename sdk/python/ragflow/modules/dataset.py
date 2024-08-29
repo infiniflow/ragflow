@@ -21,18 +21,36 @@ class DataSet(Base):
         self.permission = "me"
         self.document_count = 0
         self.chunk_count = 0
-        self.parser_method = "naive"
+        self.parse_method = "naive"
         self.parser_config = None
+        for k in list(res_dict.keys()):
+            if k == "embd_id":
+                res_dict["embedding_model"] = res_dict[k]
+            if k == "parser_id":
+                res_dict['parse_method'] = res_dict[k]
+            if k == "doc_num":
+                res_dict["document_count"] = res_dict[k]
+            if k == "chunk_num":
+                res_dict["chunk_count"] = res_dict[k]
+            if k not in self.__dict__:
+                res_dict.pop(k)
         super().__init__(rag, res_dict)
 
-    def save(self):
+    def save(self) -> bool:
         res = self.post('/dataset/save',
                         {"id": self.id, "name": self.name, "avatar": self.avatar, "tenant_id": self.tenant_id,
                          "description": self.description, "language": self.language, "embd_id": self.embedding_model,
                          "permission": self.permission,
-                         "doc_num": self.document_count, "chunk_num": self.chunk_count, "parser_id": self.parser_method,
+                         "doc_num": self.document_count, "chunk_num": self.chunk_count, "parser_id": self.parse_method,
                          "parser_config": self.parser_config.to_json()
                          })
         res = res.json()
-        if not res.get("retmsg"): return True
+        if res.get("retmsg") == "success": return True
+        raise Exception(res["retmsg"])
+
+    def delete(self) -> bool:
+        res = self.rm('/dataset/delete',
+                      {"id": self.id})
+        res = res.json()
+        if res.get("retmsg") == "success": return True
         raise Exception(res["retmsg"])
