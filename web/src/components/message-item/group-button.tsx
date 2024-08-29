@@ -20,12 +20,14 @@ interface IProps {
   messageId: string;
   content: string;
   prompt?: string;
+  showLikeButton: boolean;
 }
 
 export const AssistantGroupButton = ({
   messageId,
   content,
   prompt,
+  showLikeButton,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
@@ -51,12 +53,16 @@ export const AssistantGroupButton = ({
             <SoundOutlined />
           </Tooltip>
         </Radio.Button>
-        <Radio.Button value="c" onClick={handleLike}>
-          <LikeOutlined />
-        </Radio.Button>
-        <Radio.Button value="d" onClick={showModal}>
-          <DislikeOutlined />
-        </Radio.Button>
+        {showLikeButton && (
+          <>
+            <Radio.Button value="c" onClick={handleLike}>
+              <LikeOutlined />
+            </Radio.Button>
+            <Radio.Button value="d" onClick={showModal}>
+              <DislikeOutlined />
+            </Radio.Button>
+          </>
+        )}
         {prompt && (
           <Radio.Button value="e" onClick={showPromptModal}>
             <SvgIcon name={`prompt`} width={16}></SvgIcon>
@@ -82,7 +88,7 @@ export const AssistantGroupButton = ({
   );
 };
 
-interface UserGroupButtonProps extends IRemoveMessageById {
+interface UserGroupButtonProps extends Partial<IRemoveMessageById> {
   messageId: string;
   content: string;
   regenerateMessage(): void;
@@ -116,11 +122,13 @@ export const UserGroupButton = ({
           <SyncOutlined spin={sendLoading} />
         </Tooltip>
       </Radio.Button>
-      <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
-        <Tooltip title={t('common.delete')}>
-          <DeleteOutlined spin={loading} />
-        </Tooltip>
-      </Radio.Button>
+      {removeMessageById && (
+        <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
+          <Tooltip title={t('common.delete')}>
+            <DeleteOutlined spin={loading} />
+          </Tooltip>
+        </Radio.Button>
+      )}
     </Radio.Group>
   );
 };
