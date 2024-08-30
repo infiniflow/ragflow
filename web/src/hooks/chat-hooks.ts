@@ -455,14 +455,11 @@ export const useCreateNextSharedConversation = () => {
   return { data, loading, createSharedConversation: mutateAsync };
 };
 
-export const useFetchNextSharedConversation = () => {
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: ['fetchSharedConversation'],
-    mutationFn: async (conversationId: string) => {
+export const useFetchNextSharedConversation = (conversationId: string) => {
+  const { data, isPending: loading } = useQuery({
+    queryKey: ['fetchSharedConversation'],
+    enabled: !!conversationId,
+    queryFn: async () => {
       const { data } = await chatService.getExternalConversation(
         null,
         conversationId,
@@ -476,7 +473,7 @@ export const useFetchNextSharedConversation = () => {
     },
   });
 
-  return { data, loading, fetchConversation: mutateAsync };
+  return { data, loading };
 };
 
 //#endregion
