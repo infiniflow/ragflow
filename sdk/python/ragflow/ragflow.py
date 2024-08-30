@@ -52,7 +52,7 @@ class RAGFlow:
         res = self.post("/dataset/save",
                         {"name": name, "avatar": avatar, "description": description, "language": language,
                          "permission": permission,
-                         "doc_num": document_count, "chunk_num": chunk_count, "parser_id": parse_method,
+                         "document_count": document_count, "chunk_count": chunk_count, "parse_method": parse_method,
                          "parser_config": parser_config
                          }
                         )
@@ -61,7 +61,7 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["retmsg"])
 
-    def list_datasets(self, page: int = 1, page_size: int = 150, orderby: str = "create_time", desc: bool = True) -> \
+    def list_datasets(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True) -> \
             List[DataSet]:
         res = self.get("/dataset/list", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
         res = res.json()
