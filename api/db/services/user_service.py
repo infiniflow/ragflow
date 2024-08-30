@@ -137,3 +137,24 @@ class UserTenantService(CommonService):
             kwargs["id"] = get_uuid()
         obj = cls.model(**kwargs).save(force_insert=True)
         return obj
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_tenant_id(cls, tenant_id):
+        fields = [
+            cls.model.user_id,
+            cls.model.tenant_id,
+            cls.model.role,
+            cls.model.status,
+            User.nickname,
+            User.email,
+            User.avatar,
+            User.is_authenticated,
+            User.is_active,
+            User.is_anonymous,
+            User.status,
+            User.is_superuser]
+        return list(cls.model.select(*fields)
+                    .join(User, on=((cls.model.user_id == User.id) & (cls.model.status == StatusEnum.VALID.value)))
+                    .where(cls.model.tenant_id == tenant_id)
+                    .dicts())
