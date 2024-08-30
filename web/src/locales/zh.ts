@@ -478,6 +478,7 @@ export default {
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
       modelName: '模型名称',
+      modelID: '模型ID',
       modelUid: '模型UID',
       modelType: '模型类型',
       addLlmBaseUrl: '基础 Url',
@@ -528,6 +529,15 @@ export default {
       FishAudioAKMessage: '请输入 API KEY',
       addFishAudioRefID: 'FishAudio Refrence ID',
       FishAudioRefIDMessage: '请输入引用模型的ID（留空表示使用默认模型）',
+      GoogleModelIDMessage: '请输入 model ID!',
+      addGoogleProjectID: 'Project ID',
+      GoogleProjectIDMessage: '请输入 Project ID',
+      addGoogleServiceAccountKey:
+        'Service Account Key(Leave blank if you use Application Default Credentials)',
+      GoogleServiceAccountKeyMessage:
+        '请输入 Google Cloud Service Account Key in base64 format',
+      addGoogleRegion: 'Google Cloud 区域',
+      GoogleRegionMessage: '请输入 Google Cloud 区域',
     },
     message: {
       registered: '注册成功',

@@ -39,6 +39,7 @@ export const IconMap = {
   'Tencent Cloud': 'tencent-cloud',
   Anthropic: 'anthropic',
   'Voyage AI': 'voyage',
+  'Google Cloud': 'google-cloud',
 };
 
 export const BedrockRegionList = [
