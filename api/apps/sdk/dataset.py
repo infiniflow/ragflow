@@ -48,28 +48,29 @@ def save(tenant_id):
         if KnowledgebaseService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
             return get_data_error_result(
                 retmsg="Duplicated knowledgebase name in creating dataset.")
-        req["tenant_id"] = tenant_id
-        req['created_by'] = tenant_id
-        req['embedding_model'] = req['embd_id'] = t.embd_id
-        if "chunk_count" in req:
-            req["chunk_num"] = req["chunk_count"]
-        if "document_count" in req:
-            req["doc_num"] = req["document_count"]
-        if "parse_method" in req:
-            req["parser_id"] = req["parse_method"]
+        req["tenant_id"] = req['created_by'] = tenant_id
+        req['embedding_model'] = t.embd_id
+        key_mapping = {
+            "chunk_num": "chunk_count",
+            "doc_num": "document_count",
+            "parser_id": "parse_method",
+            "embd_id": "embedding_model"
+        }
+        mapped_keys = {new_key: req[old_key] for new_key, old_key in key_mapping.items() if old_key in req}
+        req.update(mapped_keys)
         if not KnowledgebaseService.save(**req):
             return get_data_error_result(retmsg="Create dataset error.(Database error)")
-        if "chunk_num" in req:
-            req.pop('chunk_num')
-        if "doc_num" in req:
-            req.pop('doc_num')
-        if "parser_id" in req:
-            req.pop('parser_id')
-        return get_json_result(data=req)
+        renamed_data={}
+        e, k = KnowledgebaseService.get_by_id(req["id"])
+        for key, value in k.to_dict().items():
+            new_key = key_mapping.get(key, key)
+            renamed_data[new_key] = value
+        return get_json_result(data=renamed_data)
     else:
-        if "embd_id" in req or "chunk_num" in req or "doc_num" in req or "parser_id" in req:
-            return get_data_error_result(
-                retmsg="The input parameters are invalid.")
+        invalid_keys = {"embd_id", "chunk_num", "doc_num", "parser_id"}
+        if any(key in req for key in invalid_keys):
+            return get_data_error_result(retmsg="The input parameters are invalid.")
+
         if "tenant_id" in req:
             if req["tenant_id"] != tenant_id:
                 return get_data_error_result(
@@ -123,29 +124,28 @@ def save(tenant_id):
 @token_required
 def delete(tenant_id):
     req = request.args
-    if "id" in req:
-        kbs = KnowledgebaseService.query(
-            created_by=tenant_id, id=req["id"])
-        if not kbs:
-            return get_json_result(
-                data=False, retmsg='You do not own the dataset',
-                retcode=RetCode.OPERATING_ERROR)
-
-        for doc in DocumentService.query(kb_id=req["id"]):
-            if not DocumentService.remove_document(doc, kbs[0].tenant_id):
-                return get_data_error_result(
-                    retmsg="Remove document error.(Database error)")
-            f2d = File2DocumentService.get_by_document_id(doc.id)
-            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
-            File2DocumentService.delete_by_document_id(doc.id)
-
-        if not KnowledgebaseService.delete_by_id(req["id"]):
-            return get_data_error_result(
-                retmsg="Delete dataset error.(Database error)")
-        return get_json_result(data=True)
-    else:
+    if "id" not in req:
         return get_data_error_result(
             retmsg="id is required")
+    kbs = KnowledgebaseService.query(
+        created_by=tenant_id, id=req["id"])
+    if not kbs:
+        return get_json_result(
+            data=False, retmsg='You do not own the dataset',
+            retcode=RetCode.OPERATING_ERROR)
+
+    for doc in DocumentService.query(kb_id=req["id"]):
+        if not DocumentService.remove_document(doc, kbs[0].tenant_id):
+            return get_data_error_result(
+                retmsg="Remove document error.(Database error)")
+        f2d = File2DocumentService.get_by_document_id(doc.id)
+        FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+        File2DocumentService.delete_by_document_id(doc.id)
+
+    if not KnowledgebaseService.delete_by_id(req["id"]):
+        return get_data_error_result(
+            retmsg="Delete dataset error.(Database serror)")
+    return get_json_result(data=True)
 
 
 @manager.route('/list', methods=['GET'])
@@ -153,25 +153,24 @@ def delete(tenant_id):
 def list_datasets(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 1024))
-    orderby = request.args.get("orderby", "create_by")
+    orderby = request.args.get("orderby", "create_time")
     desc = bool(request.args.get("desc", True))
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
     kbs = KnowledgebaseService.get_by_tenant_ids(
         [m["tenant_id"] for m in tenants], tenant_id, page_number, items_per_page, orderby, desc)
     renamed_list = []
-    if kbs:
-        for kb in kbs:
-            key_mapping = {
-                "chunk_num": "chunk_count",
-                "doc_num": "document_count",
-                "parser_id": "parse_method",
-                "embd_id": "embedding_model"
-            }
-            renamed_data = {}
-            for key, value in kb.items():
-                new_key = key_mapping.get(key, key)
-                renamed_data[new_key] = value
-            renamed_list.append(renamed_data)
+    for kb in kbs:
+        key_mapping = {
+            "chunk_num": "chunk_count",
+            "doc_num": "document_count",
+            "parser_id": "parse_method",
+            "embd_id": "embedding_model"
+        }
+        renamed_data = {}
+        for key, value in kb.items():
+            new_key = key_mapping.get(key, key)
+            renamed_data[new_key] = value
+        renamed_list.append(renamed_data)
     return get_json_result(data=renamed_list)
 
 
