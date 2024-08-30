@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 from flask import request
 
 from api.db import StatusEnum, FileSource
@@ -33,7 +34,7 @@ def save(tenant_id):
     req = request.json
     e, t = TenantService.get_by_id(tenant_id)
     if "id" not in req:
-        if "tenant_id" in req or "embd_id" in req:
+        if "tenant_id" in req or "embedding_model" in req:
             return get_data_error_result(
                 retmsg="Tenant_id or embedding_model must not be provided")
         if "name" not in req:
@@ -49,20 +50,36 @@ def save(tenant_id):
                 retmsg="Duplicated knowledgebase name in creating dataset.")
         req["tenant_id"] = tenant_id
         req['created_by'] = tenant_id
-        req['embd_id'] = t.embd_id
+        req['embedding_model'] = req['embd_id'] = t.embd_id
+        if "chunk_count" in req:
+            req["chunk_num"] = req["chunk_count"]
+        if "document_count" in req:
+            req["doc_num"] = req["document_count"]
+        if "parse_method" in req:
+            req["parser_id"] = req["parse_method"]
         if not KnowledgebaseService.save(**req):
             return get_data_error_result(retmsg="Create dataset error.(Database error)")
+        if "chunk_num" in req:
+            req.pop('chunk_num')
+        if "doc_num" in req:
+            req.pop('doc_num')
+        if "parser_id" in req:
+            req.pop('parser_id')
         return get_json_result(data=req)
     else:
+        if "embd_id" in req or "chunk_num" in req or "doc_num" in req or "parser_id" in req:
+            return get_data_error_result(
+                retmsg="The input parameters are invalid.")
         if "tenant_id" in req:
             if req["tenant_id"] != tenant_id:
                 return get_data_error_result(
                     retmsg="Can't change tenant_id.")
 
-        if "embd_id" in req:
-            if req["embd_id"] != t.embd_id:
+        if "embedding_model" in req:
+            if req["embedding_model"] != t.embd_id:
                 return get_data_error_result(
                     retmsg="Can't change embedding_model.")
+            req.pop("embedding_model")
 
         if not KnowledgebaseService.query(
                 created_by=tenant_id, id=req["id"]):
@@ -72,20 +89,23 @@ def save(tenant_id):
 
         e, kb = KnowledgebaseService.get_by_id(req["id"])
 
-        if "chunk_num" in req:
-            if req["chunk_num"] != kb.chunk_num:
+        if "chunk_count" in req:
+            if req["chunk_count"] != kb.chunk_num:
                 return get_data_error_result(
                     retmsg="Can't change chunk_count.")
+            req.pop("chunk_count")
 
-        if "doc_num" in req:
-            if req['doc_num'] != kb.doc_num:
+        if "document_count" in req:
+            if req['document_count'] != kb.doc_num:
                 return get_data_error_result(
                     retmsg="Can't change document_count.")
+            req.pop("document_count")
 
-        if "parser_id" in req:
-            if kb.chunk_num > 0 and req['parser_id'] != kb.parser_id:
+        if "parse_method" in req:
+            if kb.chunk_num != 0 and req['parse_method'] != kb.parser_id:
                 return get_data_error_result(
-                    retmsg="if chunk count is not 0, parse method is not changable.")
+                    retmsg="If chunk count is not 0, parse method is not changable.")
+            req['parser_id'] = req.pop('parse_method')
         if "name" in req:
             if req["name"].lower() != kb.name.lower() \
                     and len(KnowledgebaseService.query(name=req["name"], tenant_id=tenant_id,
@@ -103,25 +123,29 @@ def save(tenant_id):
 @token_required
 def delete(tenant_id):
     req = request.args
-    kbs = KnowledgebaseService.query(
-        created_by=tenant_id, id=req["id"])
-    if not kbs:
-        return get_json_result(
-            data=False, retmsg='You do not own the dataset',
-            retcode=RetCode.OPERATING_ERROR)
+    if "id" in req:
+        kbs = KnowledgebaseService.query(
+            created_by=tenant_id, id=req["id"])
+        if not kbs:
+            return get_json_result(
+                data=False, retmsg='You do not own the dataset',
+                retcode=RetCode.OPERATING_ERROR)
 
-    for doc in DocumentService.query(kb_id=req["id"]):
-        if not DocumentService.remove_document(doc, kbs[0].tenant_id):
+        for doc in DocumentService.query(kb_id=req["id"]):
+            if not DocumentService.remove_document(doc, kbs[0].tenant_id):
+                return get_data_error_result(
+                    retmsg="Remove document error.(Database error)")
+            f2d = File2DocumentService.get_by_document_id(doc.id)
+            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+            File2DocumentService.delete_by_document_id(doc.id)
+
+        if not KnowledgebaseService.delete_by_id(req["id"]):
             return get_data_error_result(
-                retmsg="Remove document error.(Database error)")
-        f2d = File2DocumentService.get_by_document_id(doc.id)
-        FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
-        File2DocumentService.delete_by_document_id(doc.id)
-
-    if not KnowledgebaseService.delete_by_id(req["id"]):
+                retmsg="Delete dataset error.(Database error)")
+        return get_json_result(data=True)
+    else:
         return get_data_error_result(
-            retmsg="Delete dataset error.(Database error)")
-    return get_json_result(data=True)
+            retmsg="id is required")
 
 
 @manager.route('/list', methods=['GET'])
@@ -129,42 +153,69 @@ def delete(tenant_id):
 def list_datasets(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 1024))
-    orderby = request.args.get("orderby", "create_time")
+    orderby = request.args.get("orderby", "create_by")
     desc = bool(request.args.get("desc", True))
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
     kbs = KnowledgebaseService.get_by_tenant_ids(
         [m["tenant_id"] for m in tenants], tenant_id, page_number, items_per_page, orderby, desc)
-    return get_json_result(data=kbs)
+    renamed_list = []
+    if kbs:
+        for kb in kbs:
+            key_mapping = {
+                "chunk_num": "chunk_count",
+                "doc_num": "document_count",
+                "parser_id": "parse_method",
+                "embd_id": "embedding_model"
+            }
+            renamed_data = {}
+            for key, value in kb.items():
+                new_key = key_mapping.get(key, key)
+                renamed_data[new_key] = value
+            renamed_list.append(renamed_data)
+    return get_json_result(data=renamed_list)
 
 
 @manager.route('/detail', methods=['GET'])
 @token_required
 def detail(tenant_id):
     req = request.args
+    key_mapping = {
+        "chunk_num": "chunk_count",
+        "doc_num": "document_count",
+        "parser_id": "parse_method",
+        "embd_id": "embedding_model"
+    }
+    renamed_data = {}
     if "id" in req:
         id = req["id"]
         kb = KnowledgebaseService.query(created_by=tenant_id, id=req["id"])
         if not kb:
             return get_json_result(
-                data=False, retmsg='You do not own the dataset',
+                data=False, retmsg='You do not own the dataset.',
                 retcode=RetCode.OPERATING_ERROR)
         if "name" in req:
             name = req["name"]
             if kb[0].name != name:
                 return get_json_result(
-                    data=False, retmsg='You do not own the dataset',
+                    data=False, retmsg='You do not own the dataset.',
                     retcode=RetCode.OPERATING_ERROR)
         e, k = KnowledgebaseService.get_by_id(id)
-        return get_json_result(data=k.to_dict())
+        for key, value in k.to_dict().items():
+            new_key = key_mapping.get(key, key)
+            renamed_data[new_key] = value
+        return get_json_result(data=renamed_data)
     else:
         if "name" in req:
             name = req["name"]
             e, k = KnowledgebaseService.get_by_name(kb_name=name, tenant_id=tenant_id)
             if not e:
                 return get_json_result(
-                    data=False, retmsg='You do not own the dataset',
+                    data=False, retmsg='You do not own the dataset.',
                     retcode=RetCode.OPERATING_ERROR)
-            return get_json_result(data=k.to_dict())
+            for key, value in k.to_dict().items():
+                new_key = key_mapping.get(key, key)
+                renamed_data[new_key] = value
+            return get_json_result(data=renamed_data)
         else:
             return get_data_error_result(
                 retmsg="At least one of `id` or `name` must be provided.")
