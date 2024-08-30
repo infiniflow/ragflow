@@ -206,15 +206,20 @@ def build(row):
             docs.append(d)
             continue
 
-        output_buffer = BytesIO()
-        if isinstance(d["image"], bytes):
-            output_buffer = BytesIO(d["image"])
-        else:
-            d["image"].save(output_buffer, format='JPEG')
+        try:
+            output_buffer = BytesIO()
+            if isinstance(d["image"], bytes):
+                output_buffer = BytesIO(d["image"])
+            else:
+                d["image"].save(output_buffer, format='JPEG')
 
-        st = timer()
-        MINIO.put(row["kb_id"], d["_id"], output_buffer.getvalue())
-        el += timer() - st
+            st = timer()
+            MINIO.put(row["kb_id"], d["_id"], output_buffer.getvalue())
+            el += timer() - st
+        except Exception as e:
+            cron_logger.error(str(e))
+            traceback.print_exc()
+
         d["img_id"] = "{}-{}".format(row["kb_id"], d["_id"])
         del d["image"]
         docs.append(d)
