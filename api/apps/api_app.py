@@ -199,15 +199,18 @@ def completion():
             continue
         if m["role"] == "assistant" and not msg:
             continue
-        msg.append({"role": m["role"], "content": m["content"]})
+        msg.append(m)
+    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    message_id = msg[-1]["id"]
 
     def fillin_conv(ans):
-        nonlocal conv
+        nonlocal conv, message_id
         if not conv.reference:
             conv.reference.append(ans["reference"])
         else:
             conv.reference[-1] = ans["reference"]
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
+        ans["id"] = message_id
 
     def rename_field(ans):
         reference = ans['reference']
@@ -233,7 +236,7 @@ def completion():
 
             if not conv.reference:
                 conv.reference = []
-            conv.message.append({"role": "assistant", "content": ""})
+            conv.message.append({"role": "assistant", "content": "", "id": message_id})
             conv.reference.append({"chunks": [], "doc_aggs": []})
 
             final_ans = {"reference": [], "content": ""}
@@ -260,7 +263,7 @@ def completion():
                             yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans},
                                                        ensure_ascii=False) + "\n\n"
 
-                        canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
+                        canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
                         if final_ans.get("reference"):
                             canvas.reference.append(final_ans["reference"])
                         cvs.dsl = json.loads(str(canvas))
@@ -279,7 +282,7 @@ def completion():
                 return resp
 
             final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
-            canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
+            canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])
             cvs.dsl = json.loads(str(canvas))
@@ -300,7 +303,7 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        conv.message.append({"role": "assistant", "content": ""})
+        conv.message.append({"role": "assistant", "content": "", "id": message_id})
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def stream():
@@ -342,12 +345,22 @@ def completion():
 @manager.route('/conversation/<conversation_id>', methods=['GET'])
 # @login_required
 def get(conversation_id):
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, retmsg='Token is not valid!"', retcode=RetCode.AUTHENTICATION_ERROR)
+    
     try:
         e, conv = API4ConversationService.get_by_id(conversation_id)
         if not e:
             return get_data_error_result(retmsg="Conversation not found!")
 
         conv = conv.to_dict()
+        if token != APIToken.query(dialog_id=conv['dialog_id'])[0].token:
+            return get_json_result(data=False, retmsg='Token is not valid for this conversation_id!"',
+                                   retcode=RetCode.AUTHENTICATION_ERROR)
+            
         for referenct_i in conv['reference']:
             if referenct_i is None or len(referenct_i) == 0:
                 continue

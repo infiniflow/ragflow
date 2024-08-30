@@ -1,6 +1,9 @@
 import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
+import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
+
+import styles from './index.less';
 
 const HightLightMarkdown = ({
   children,
@@ -10,6 +13,8 @@ const HightLightMarkdown = ({
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeRaw]}
+      className={styles.text}
       components={
         {
           code(props: any) {

@@ -55,6 +55,7 @@ class LLMType(StrEnum):
     SPEECH2TEXT = 'speech2text'
     IMAGE2TEXT = 'image2text'
     RERANK = 'rerank'
+    TTS    = 'tts'
 
 
 class ChatStyle(StrEnum):

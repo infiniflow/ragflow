@@ -15,8 +15,10 @@
 #
 from copy import deepcopy
 from flask import request, Response
-from flask_login import login_required
+from flask_login import login_required,current_user
 from api.db.services.dialog_service import DialogService, ConversationService, chat
+from api.db.services.llm_service import LLMBundle, TenantService
+from api.db import LLMType
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
@@ -117,14 +119,13 @@ def completion():
             continue
         if m["role"] == "assistant" and not msg:
             continue
-        msg.append({"role": m["role"], "content": m["content"]})
-        if "doc_ids" in m:
-            msg[-1]["doc_ids"] = m["doc_ids"]
+        msg.append(m)
+    message_id = msg[-1].get("id")
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
             return get_data_error_result(retmsg="Conversation not found!")
-        conv.message.append(deepcopy(msg[-1]))
+        conv.message = deepcopy(req["messages"])
         e, dia = DialogService.get_by_id(conv.dialog_id)
         if not e:
             return get_data_error_result(retmsg="Dialog not found!")
@@ -133,15 +134,17 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        conv.message.append({"role": "assistant", "content": ""})
+        conv.message.append({"role": "assistant", "content": "", "id": message_id})
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def fillin_conv(ans):
-            nonlocal conv
+            nonlocal conv, message_id
             if not conv.reference:
                 conv.reference.append(ans["reference"])
             else: conv.reference[-1] = ans["reference"]
-            conv.message[-1] = {"role": "assistant", "content": ans["answer"]}
+            conv.message[-1] = {"role": "assistant", "content": ans["answer"],
+                                "id": message_id, "prompt": ans.get("prompt", "")}
+            ans["id"] = message_id
 
         def stream():
             nonlocal dia, msg, req, conv
@@ -175,3 +178,82 @@ def completion():
     except Exception as e:
         return server_error_response(e)
 
+
+@manager.route('/tts', methods=['POST'])
+@login_required
+def tts():
+    req = request.json
+    text = req["text"]
+    
+    tenants = TenantService.get_by_user_id(current_user.id)
+    if not tenants:
+        return get_data_error_result(retmsg="Tenant not found!")
+    
+    tts_id = tenants[0]["tts_id"]
+    if not tts_id:
+        return get_data_error_result(retmsg="No default TTS model is set")
+    
+    tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
+    def stream_audio():
+        try:
+            for chunk in tts_mdl(text):  
+                yield chunk  
+        except Exception as e:
+            yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
+                            "data": {"answer": "**ERROR**: "+str(e)}},
+                            ensure_ascii=False).encode('utf-8')
+
+    resp = Response(stream_audio(), mimetype="audio/mpeg")  
+    resp.headers.add_header("Cache-Control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    
+    return resp
+
+    
+@manager.route('/delete_msg', methods=['POST'])
+@login_required
+@validate_request("conversation_id", "message_id")
+def delete_msg():
+    req = request.json
+    e, conv = ConversationService.get_by_id(req["conversation_id"])
+    if not e:
+        return get_data_error_result(retmsg="Conversation not found!")
+
+    conv = conv.to_dict()
+    for i, msg in enumerate(conv["message"]):
+        if req["message_id"] != msg.get("id", ""):
+            continue
+        assert conv["message"][i+1]["id"] == req["message_id"]
+        conv["message"].pop(i)
+        conv["message"].pop(i)
+        conv["reference"].pop(max(0, i//2-1))
+        break
+
+    ConversationService.update_by_id(conv["id"], conv)
+    return get_json_result(data=conv)
+
+
+@manager.route('/thumbup', methods=['POST'])
+@login_required
+@validate_request("conversation_id", "message_id")
+def thumbup():
+    req = request.json
+    e, conv = ConversationService.get_by_id(req["conversation_id"])
+    if not e:
+        return get_data_error_result(retmsg="Conversation not found!")
+    up_down = req.get("set")
+    feedback = req.get("feedback", "")
+    conv = conv.to_dict()
+    for i, msg in enumerate(conv["message"]):
+        if req["message_id"] == msg.get("id", "") and msg.get("role", "") == "assistant":
+            if up_down:
+                msg["thumbup"] = True
+                if "feedback" in msg: del msg["feedback"]
+            else:
+                msg["thumbup"] = False
+                if feedback: msg["feedback"] = feedback
+            break
+
+    ConversationService.update_by_id(conv["id"], conv)
+    return get_json_result(data=conv)

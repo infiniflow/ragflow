@@ -8,7 +8,6 @@ import {
   useFetchConversationOnMount,
   useGetFileIcon,
   useGetSendButtonDisabled,
-  useSelectConversationLoading,
   useSendButtonDisabled,
   useSendMessage,
 } from '../hooks';
@@ -16,6 +15,7 @@ import { buildMessageItemReference } from '../utils';
 
 import MessageInput from '@/components/message-input';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { memo } from 'react';
 import styles from './index.less';
 
 const ChatContainer = () => {
@@ -26,24 +26,28 @@ const ChatContainer = () => {
     removeLatestMessage,
     addNewestAnswer,
     conversationId,
+    loading,
+    removeMessageById,
+    removeMessagesAfterCurrentMessage,
   } = useFetchConversationOnMount();
   const {
     handleInputChange,
     handlePressEnter,
     value,
     loading: sendLoading,
+    regenerateMessage,
   } = useSendMessage(
     conversation,
     addNewestConversation,
     removeLatestMessage,
     addNewestAnswer,
+    removeMessagesAfterCurrentMessage,
   );
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
   useGetFileIcon();
-  const loading = useSelectConversationLoading();
   const { data: userInfo } = useFetchUserInfo();
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
@@ -68,6 +72,10 @@ const ChatContainer = () => {
                     avatar={userInfo.avatar}
                     reference={buildMessageItemReference(conversation, message)}
                     clickDocumentButton={clickDocumentButton}
+                    index={i}
+                    removeMessageById={removeMessageById}
+                    regenerateMessage={regenerateMessage}
+                    sendLoading={sendLoading}
                   ></MessageItem>
                 );
               })}
@@ -104,4 +112,4 @@ const ChatContainer = () => {
   );
 };
 
-export default ChatContainer;
+export default memo(ChatContainer);

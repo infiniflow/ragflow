@@ -311,3 +311,19 @@ class BaiduYiyanRerank(Base):
         rank = np.array([d["relevance_score"] for d in res["results"]])
         indexs = [d["index"] for d in res["results"]]
         return rank[indexs], res["usage"]["total_tokens"]
+
+
+class VoyageRerank(Base):
+    def __init__(self, key, model_name, base_url=None):
+        import voyageai
+
+        self.client = voyageai.Client(api_key=key)
+        self.model_name = model_name
+
+    def similarity(self, query: str, texts: list):
+        res = self.client.rerank(
+            query=query, documents=texts, model=self.model_name, top_k=len(texts)
+        )
+        rank = np.array([r.relevance_score for r in res.results])
+        indexs = [r.index for r in res.results]
+        return rank[indexs], res.total_tokens

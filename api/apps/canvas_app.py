@@ -91,10 +91,11 @@ def run():
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
     final_ans = {"reference": [], "content": ""}
+    message_id = req.get("message_id", get_uuid())
     try:
         canvas = Canvas(cvs.dsl, current_user.id)
         if "message" in req:
-            canvas.messages.append({"role": "user", "content": req["message"]})
+            canvas.messages.append({"role": "user", "content": req["message"], "id": message_id})
             canvas.add_user_input(req["message"])
         answer = canvas.run(stream=stream)
         print(canvas)
@@ -115,7 +116,7 @@ def run():
                     ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
                     yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
 
-                canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
+                canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
                 if final_ans.get("reference"):
                     canvas.reference.append(final_ans["reference"])
                 cvs.dsl = json.loads(str(canvas))
@@ -134,7 +135,7 @@ def run():
         return resp
 
     final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
-    canvas.messages.append({"role": "assistant", "content": final_ans["content"]})
+    canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
     if final_ans.get("reference"):
         canvas.reference.append(final_ans["reference"])
     cvs.dsl = json.loads(str(canvas))

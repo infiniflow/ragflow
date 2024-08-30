@@ -449,6 +449,11 @@ class Tenant(DataBaseModel):
         null=False,
         help_text="default rerank model ID",
         index=True)
+    tts_id = CharField(
+        max_length=256,
+        null=True,
+        help_text="default tts model ID",
+        index=True)
     parser_ids = CharField(
         max_length=256,
         null=False,
@@ -783,6 +788,7 @@ class Task(DataBaseModel):
         null=True,
         help_text="process message",
         default="")
+    retry_count = IntegerField(default=0)
 
 
 class Dialog(DataBaseModel):
@@ -960,6 +966,13 @@ def migrate_db():
             pass
         try:
             migrate(
+                migrator.add_column("tenant","tts_id",
+                    CharField(max_length=256,null=True,help_text="default tts model ID",index=True))
+            )
+        except Exception as e:
+            pass
+        try:
+            migrate(
                 migrator.add_column('api_4_conversation', 'source',
                                     CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
             )
@@ -970,3 +983,10 @@ def migrate_db():
             DB.execute_sql('ALTER TABLE llm ADD PRIMARY KEY (llm_name,fid);')
         except Exception as e:
             pass
+        try:
+            migrate(
+                migrator.add_column('task', 'retry_count', IntegerField(default=0))
+            )
+        except Exception as e:
+            pass
+

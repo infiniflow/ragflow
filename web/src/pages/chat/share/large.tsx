@@ -58,6 +58,7 @@ const ChatContainer = () => {
                       sendLoading &&
                       conversation?.message.length - 1 === i
                     }
+                    index={i}
                   ></MessageItem>
                 );
               })}

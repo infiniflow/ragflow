@@ -2,7 +2,7 @@ import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
-import { IReference, Message } from '@/interfaces/database/chat';
+import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
@@ -11,23 +11,29 @@ import {
   useFetchDocumentInfosByIds,
   useFetchDocumentThumbnailsByIds,
 } from '@/hooks/document-hooks';
+import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
+import { IMessage } from '@/pages/chat/interface';
 import MarkdownContent from '@/pages/chat/markdown-content';
 import { getExtension, isImage } from '@/utils/document-util';
-import { Avatar, Button, Flex, List, Typography } from 'antd';
+import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
 import FileIcon from '../file-icon';
 import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
+import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 
 const { Text } = Typography;
 
-interface IProps {
-  item: Message;
+interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
+  item: IMessage;
   reference: IReference;
   loading?: boolean;
+  sendLoading?: boolean;
   nickname?: string;
   avatar?: string;
   clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
+  index: number;
+  showLikeButton?: boolean;
 }
 
 const MessageItem = ({
@@ -35,8 +41,12 @@ const MessageItem = ({
   reference,
   loading = false,
   avatar = '',
-  nickname = '',
+  sendLoading = false,
   clickDocumentButton,
+  index,
+  removeMessageById,
+  regenerateMessage,
+  showLikeButton = true,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -67,6 +77,10 @@ const MessageItem = ({
     },
     [showModal],
   );
+
+  const handleRegenerateMessage = useCallback(() => {
+    regenerateMessage(item);
+  }, [regenerateMessage, item]);
 
   useEffect(() => {
     const ids = item?.doc_ids ?? [];
@@ -109,7 +123,28 @@ const MessageItem = ({
             <AssistantIcon></AssistantIcon>
           )}
           <Flex vertical gap={8} flex={1}>
-            <b>{isAssistant ? '' : nickname}</b>
+            <Space>
+              {isAssistant ? (
+                index !== 0 && (
+                  <AssistantGroupButton
+                    messageId={item.id}
+                    content={item.content}
+                    prompt={item.prompt}
+                    showLikeButton={showLikeButton}
+                  ></AssistantGroupButton>
+                )
+              ) : (
+                <UserGroupButton
+                  content={item.content}
+                  messageId={item.id}
+                  removeMessageById={removeMessageById}
+                  regenerateMessage={handleRegenerateMessage}
+                  sendLoading={sendLoading}
+                ></UserGroupButton>
+              )}
+
+              {/* <b>{isAssistant ? '' : nickname}</b> */}
+            </Space>
             <div
               className={
                 isAssistant ? styles.messageText : styles.messageUserText

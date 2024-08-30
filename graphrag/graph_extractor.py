@@ -131,7 +131,7 @@ class GraphExtractor:
                 total_token_count += token_count
                 if callback: callback(msg=f"{doc_index+1}/{total}, elapsed: {timer() - st}s, used tokens: {total_token_count}")
             except Exception as e:
-                if callback: callback("Knowledge graph extraction error:{}".format(str(e)))
+                if callback: callback(msg="Knowledge graph extraction error:{}".format(str(e)))
                 logging.exception("error extracting graph")
                 self._on_error(
                     e,

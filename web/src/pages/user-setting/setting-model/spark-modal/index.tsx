@@ -82,9 +82,9 @@ const SparkModal = ({
         <Form.Item<FieldType>
           label={t('addSparkAPIPassword')}
           name="spark_api_password"
-          rules={[{ required: true, message: t('SparkPasswordMessage') }]}
+          rules={[{ required: true, message: t('SparkAPIPasswordMessage') }]}
         >
-          <Input placeholder={t('SparkSIDMessage')} />
+          <Input placeholder={t('SparkAPIPasswordMessage')} />
         </Form.Item>
       </Form>
     </Modal>

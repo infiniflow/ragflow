@@ -96,6 +96,7 @@ class TenantService(CommonService):
             cls.model.rerank_id,
             cls.model.asr_id,
             cls.model.img2txt_id,
+            cls.model.tts_id,
             cls.model.parser_ids,
             UserTenant.role]
         return list(cls.model.select(*fields)

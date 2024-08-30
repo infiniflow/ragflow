@@ -50,6 +50,7 @@
     "react18-json-view": "^0.2.8",
     "reactflow": "^11.11.2",
     "recharts": "^2.12.4",
+    "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "umi": "^4.0.90",
     "umi-request": "^1.4.0",

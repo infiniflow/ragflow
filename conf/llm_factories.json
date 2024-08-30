@@ -106,8 +106,8 @@
                 },
                 {
                     "llm_name": "text-embedding-v3",
-                    "tags": "TEXT EMBEDDING,2K",
-                    "max_tokens": 2048,
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8192,
                     "model_type": "embedding"
                 },
                 {
@@ -349,13 +349,19 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "Skylark2-pro-32k",
+                    "llm_name": "Doubao-pro-128k",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Doubao-pro-32k",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "Skylark2-pro-4k",
+                    "llm_name": "Doubao-pro-4k",
                     "tags": "LLM,CHAT,4k",
                     "max_tokens": 4096,
                     "model_type": "chat"
@@ -898,6 +904,18 @@
                     "llm_name": "llama3-8b-8192",
                     "tags": "LLM,CHAT,30k",
                     "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama-3.1-70b-versatile",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama-3.1-8b-instant",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
                     "model_type": "chat"
                 },
                 {
@@ -2382,7 +2400,7 @@
             ]
         },
         {
-            "name": "Lepton",
+            "name": "LeptonAI",
             "logo": "",
             "tags": "LLM",
             "status": "1",
@@ -3208,6 +3226,132 @@
             "tags": "LLM",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "Fish Audio",
+            "logo": "",
+            "tags": "TTS",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "Tencent Cloud",
+            "logo": "",
+            "tags": "SPEECH2TEXT",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "Anthropic",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "claude-3-5-sonnet-20240620",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-3-opus-20240229",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-3-sonnet-20240229",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-3-haiku-20240307",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-2.1",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-2.0",
+                    "tags": "LLM,CHAT,100k",
+                    "max_tokens": 102400,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "claude-instant-1.2",
+                    "tags": "LLM,CHAT,100k",
+                    "max_tokens": 102400,
+                    "model_type": "chat"
+                }
+            ]
+        },
+        {
+            "name": "Voyage AI",
+            "logo": "",
+            "tags": "TEXT EMBEDDING, TEXT RE-RANK",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "voyage-large-2-instruct",
+                    "tags": "TEXT EMBEDDING,16000",
+                    "max_tokens": 16000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-finance-2",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-multilingual-2",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-law-2",
+                    "tags": "TEXT EMBEDDING,16000",
+                    "max_tokens": 16000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-code-2",
+                    "tags": "TEXT EMBEDDING,16000",
+                    "max_tokens": 16000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-large-2",
+                    "tags": "TEXT EMBEDDING,16000",
+                    "max_tokens": 16000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-2",
+                    "tags": "TEXT EMBEDDING,4000",
+                    "max_tokens": 4000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "rerank-1",
+                    "tags": "RE-RANK, 8000",
+                    "max_tokens": 8000,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-lite-1",
+                    "tags": "RE-RANK, 4000",
+                    "max_tokens": 4000,
+                    "model_type": "rerank"
+                }
+            ]
         }
     ]
 }

@@ -57,6 +57,9 @@ const FlowChatBox = () => {
                       message,
                     )}
                     clickDocumentButton={clickDocumentButton}
+                    index={i}
+                    regenerateMessage={() => {}}
+                    showLikeButton={false}
                   ></MessageItem>
                 );
               })}
