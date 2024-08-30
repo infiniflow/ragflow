@@ -4,28 +4,18 @@ import {
   IDialog,
   IStats,
   IToken,
-  Message,
 } from '@/interfaces/database/chat';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
 import i18n from '@/locales/config';
-import { IClientConversation, IMessage } from '@/pages/chat/interface';
+import { IClientConversation } from '@/pages/chat/interface';
 import chatService from '@/services/chat-service';
-import { buildMessageUuid, isConversationIdExist } from '@/utils/chat';
+import { buildMessageListWithUuid, isConversationIdExist } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { set } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'umi';
-
-const buildMessageListWithUuid = (messages?: Message[]) => {
-  return (
-    messages?.map((x: Message | IMessage) => ({
-      ...x,
-      id: buildMessageUuid(x),
-    })) ?? []
-  );
-};
 
 //#region logic
 

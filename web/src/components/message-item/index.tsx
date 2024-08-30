@@ -79,7 +79,7 @@ const MessageItem = ({
   );
 
   const handleRegenerateMessage = useCallback(() => {
-    regenerateMessage(item);
+    regenerateMessage?.(item);
   }, [regenerateMessage, item]);
 
   useEffect(() => {
@@ -138,7 +138,9 @@ const MessageItem = ({
                   content={item.content}
                   messageId={item.id}
                   removeMessageById={removeMessageById}
-                  regenerateMessage={handleRegenerateMessage}
+                  regenerateMessage={
+                    regenerateMessage && handleRegenerateMessage
+                  }
                   sendLoading={sendLoading}
                 ></UserGroupButton>
               )}

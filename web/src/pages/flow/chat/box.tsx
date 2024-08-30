@@ -6,28 +6,23 @@ import { useClickDrawer, useGetFileIcon } from '@/pages/chat/hooks';
 import { buildMessageItemReference } from '@/pages/chat/utils';
 import { Button, Drawer, Flex, Input, Spin } from 'antd';
 
-import { useSelectCurrentMessages, useSendMessage } from './hooks';
+import { useSendNextMessage } from './hooks';
 
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
 const FlowChatBox = () => {
   const {
-    ref,
-    currentMessages,
-    reference,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    loading,
-  } = useSelectCurrentMessages();
-
-  const {
+    sendLoading,
     handleInputChange,
     handlePressEnter,
     value,
-    loading: sendLoading,
-  } = useSendMessage(addNewestQuestion, removeLatestMessage, addNewestAnswer);
+    loading,
+    ref,
+    derivedMessages,
+    reference,
+  } = useSendNextMessage();
+
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   useGetFileIcon();
@@ -40,26 +35,26 @@ const FlowChatBox = () => {
         <Flex flex={1} vertical className={styles.messageContainer}>
           <div>
             <Spin spinning={loading}>
-              {currentMessages?.map((message, i) => {
+              {derivedMessages?.map((message, i) => {
                 return (
                   <MessageItem
                     loading={
                       message.role === MessageType.Assistant &&
                       sendLoading &&
-                      currentMessages.length - 1 === i
+                      derivedMessages.length - 1 === i
                     }
                     key={message.id}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}
                     item={message}
                     reference={buildMessageItemReference(
-                      { message: currentMessages, reference },
+                      { message: derivedMessages, reference },
                       message,
                     )}
                     clickDocumentButton={clickDocumentButton}
                     index={i}
-                    regenerateMessage={() => {}}
                     showLikeButton={false}
+                    sendLoading={sendLoading}
                   ></MessageItem>
                 );
               })}

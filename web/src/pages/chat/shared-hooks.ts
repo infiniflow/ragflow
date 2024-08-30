@@ -3,7 +3,7 @@ import {
   useCreateNextSharedConversation,
   useFetchNextSharedConversation,
 } from '@/hooks/chat-hooks';
-import { useSendMessageWithSse } from '@/hooks/logic-hooks';
+import { useScrollToBottom, useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { IAnswer, Message } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { buildMessageUuid } from '@/utils/chat';
@@ -17,7 +17,7 @@ import {
 } from 'react';
 import { useSearchParams } from 'umi';
 import { v4 as uuid } from 'uuid';
-import { useHandleMessageInputChange, useScrollToBottom } from './hooks';
+import { useHandleMessageInputChange } from './hooks';
 import { IClientConversation, IMessage } from './interface';
 
 export const useCreateSharedConversationOnMount = () => {
