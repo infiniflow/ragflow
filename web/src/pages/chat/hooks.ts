@@ -21,6 +21,8 @@ import {
   useRegenerateMessage,
   useRemoveMessageById,
   useRemoveMessagesAfterCurrentMessage,
+  useScrollToBottom,
+  useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
 import {
@@ -40,7 +42,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { useSearchParams } from 'umi';
@@ -362,20 +363,71 @@ export const useSelectCurrentConversation = () => {
   };
 };
 
-export const useScrollToBottom = (currentConversation: IClientConversation) => {
-  const ref = useRef<HTMLDivElement>(null);
+// export const useScrollToBottom = (currentConversation: IClientConversation) => {
+//   const ref = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = useCallback(() => {
-    if (currentConversation.id) {
-      ref.current?.scrollIntoView({ behavior: 'instant' });
+//   const scrollToBottom = useCallback(() => {
+//     if (currentConversation.id) {
+//       ref.current?.scrollIntoView({ behavior: 'instant' });
+//     }
+//   }, [currentConversation]);
+
+//   useEffect(() => {
+//     scrollToBottom();
+//   }, [scrollToBottom]);
+
+//   return ref;
+// };
+
+export const useSelectNextMessages = () => {
+  const {
+    ref,
+    setDerivedMessages,
+    derivedMessages,
+    addNewestAnswer,
+    addNewestQuestion,
+    removeLatestMessage,
+    removeMessageById,
+    removeMessagesAfterCurrentMessage,
+  } = useSelectDerivedMessages();
+  const { data: conversation, loading } = useFetchNextConversation();
+  const { data: dialog } = useFetchNextDialog();
+  const { conversationId, dialogId } = useGetChatSearchParams();
+
+  const addPrologue = useCallback(() => {
+    if (dialogId !== '' && conversationId === '') {
+      const prologue = dialog.prompt_config?.prologue;
+
+      const nextMessage = {
+        role: MessageType.Assistant,
+        content: prologue,
+        id: uuid(),
+      } as IMessage;
+
+      setDerivedMessages([nextMessage]);
     }
-  }, [currentConversation]);
+  }, [conversationId, dialog, dialogId, setDerivedMessages]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [scrollToBottom]);
+    addPrologue();
+  }, [addPrologue]);
 
-  return ref;
+  useEffect(() => {
+    if (conversationId) {
+      setDerivedMessages(conversation.message);
+    }
+  }, [conversation.message, conversationId, setDerivedMessages]);
+
+  return {
+    ref,
+    derivedMessages,
+    loading,
+    addNewestAnswer,
+    addNewestQuestion,
+    removeLatestMessage,
+    removeMessageById,
+    removeMessagesAfterCurrentMessage,
+  };
 };
 
 export const useFetchConversationOnMount = () => {
@@ -541,6 +593,137 @@ export const useSendMessage = (
     setValue,
     regenerateMessage,
     loading: !done,
+  };
+};
+
+export const useSendNextMessage = () => {
+  const { setConversation } = useSetConversation();
+  const { conversationId } = useGetChatSearchParams();
+  const { handleInputChange, value, setValue } = useHandleMessageInputChange();
+  const { handleClickConversation } = useClickConversationCard();
+  const { send, answer, done, setDone } = useSendMessageWithSse();
+  const {
+    ref,
+    derivedMessages,
+    loading,
+    addNewestAnswer,
+    addNewestQuestion,
+    removeLatestMessage,
+    removeMessageById,
+    removeMessagesAfterCurrentMessage,
+  } = useSelectNextMessages();
+
+  const sendMessage = useCallback(
+    async ({
+      message,
+      currentConversationId,
+      messages,
+    }: {
+      message: Message;
+      currentConversationId?: string;
+      messages?: Message[];
+    }) => {
+      const res = await send({
+        conversation_id: currentConversationId ?? conversationId,
+        messages: [...(messages ?? derivedMessages ?? []), message],
+      });
+
+      if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
+        // cancel loading
+        setValue(message.content);
+        console.info('removeLatestMessage111');
+        removeLatestMessage();
+      } else {
+        if (currentConversationId) {
+          console.info('111');
+          // new conversation
+          handleClickConversation(currentConversationId);
+        } else {
+          console.info('222');
+          // fetchConversation(conversationId);
+        }
+      }
+    },
+    [
+      derivedMessages,
+      conversationId,
+      handleClickConversation,
+      removeLatestMessage,
+      setValue,
+      send,
+    ],
+  );
+
+  const handleSendMessage = useCallback(
+    async (message: Message) => {
+      if (conversationId !== '') {
+        sendMessage({ message });
+      } else {
+        const data = await setConversation(message.content);
+        if (data.retcode === 0) {
+          const id = data.data.id;
+          sendMessage({ message, currentConversationId: id });
+        }
+      }
+    },
+    [conversationId, setConversation, sendMessage],
+  );
+
+  const { regenerateMessage } = useRegenerateMessage({
+    removeMessagesAfterCurrentMessage,
+    sendMessage,
+    messages: derivedMessages,
+  });
+
+  useEffect(() => {
+    //  #1289
+    if (answer.answer && answer?.conversationId === conversationId) {
+      addNewestAnswer(answer);
+    }
+  }, [answer, addNewestAnswer, conversationId]);
+
+  useEffect(() => {
+    // #1289 switch to another conversion window when the last conversion answer doesn't finish.
+    if (conversationId) {
+      setDone(true);
+    }
+  }, [setDone, conversationId]);
+
+  const handlePressEnter = useCallback(
+    (documentIds: string[]) => {
+      if (trim(value) === '') return;
+      const id = uuid();
+
+      addNewestQuestion({
+        content: value,
+        doc_ids: documentIds,
+        id,
+        role: MessageType.User,
+      });
+      if (done) {
+        setValue('');
+        handleSendMessage({
+          id,
+          content: value.trim(),
+          role: MessageType.User,
+          doc_ids: documentIds,
+        });
+      }
+    },
+    [addNewestQuestion, handleSendMessage, done, setValue, value],
+  );
+
+  return {
+    handlePressEnter,
+    handleInputChange,
+    value,
+    setValue,
+    regenerateMessage,
+    sendLoading: !done,
+    loading,
+    ref,
+    derivedMessages,
+    removeMessageById,
   };
 };
 

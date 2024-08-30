@@ -23,3 +23,12 @@ export const getMessagePureId = (id?: string) => {
   }
   return id;
 };
+
+export const buildMessageListWithUuid = (messages?: Message[]) => {
+  return (
+    messages?.map((x: Message | IMessage) => ({
+      ...x,
+      id: buildMessageUuid(x),
+    })) ?? []
+  );
+};

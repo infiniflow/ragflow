@@ -91,7 +91,7 @@ export const AssistantGroupButton = ({
 interface UserGroupButtonProps extends Partial<IRemoveMessageById> {
   messageId: string;
   content: string;
-  regenerateMessage(): void;
+  regenerateMessage?: () => void;
   sendLoading: boolean;
 }
 
@@ -113,15 +113,17 @@ export const UserGroupButton = ({
       <Radio.Button value="a">
         <CopyToClipboard text={content}></CopyToClipboard>
       </Radio.Button>
-      <Radio.Button
-        value="b"
-        onClick={regenerateMessage}
-        disabled={sendLoading}
-      >
-        <Tooltip title={t('chat.regenerate')}>
-          <SyncOutlined spin={sendLoading} />
-        </Tooltip>
-      </Radio.Button>
+      {regenerateMessage && (
+        <Radio.Button
+          value="b"
+          onClick={regenerateMessage}
+          disabled={sendLoading}
+        >
+          <Tooltip title={t('chat.regenerate')}>
+            <SyncOutlined spin={sendLoading} />
+          </Tooltip>
+        </Radio.Button>
+      )}
       {removeMessageById && (
         <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
           <Tooltip title={t('common.delete')}>
