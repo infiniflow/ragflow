@@ -21,7 +21,7 @@ import ormsgpack
 from pydantic import BaseModel, conint
 from rag.utils import num_tokens_from_string
 import json
-
+import re
 
 class ServeReferenceAudio(BaseModel):
     audio: bytes
@@ -52,7 +52,9 @@ class Base(ABC):
 
     def transcription(self, audio):
         pass
-
+    
+    def normalize_text(text):
+        return re.sub(r'(\*\*|##\d+\$\$|#)', '', text)
 
 class FishAudioTTS(Base):
     def __init__(self, key, model_name, base_url="https://api.fish.audio/v1/tts"):
@@ -66,9 +68,10 @@ class FishAudioTTS(Base):
         self.ref_id = key.get("fish_audio_refid")
         self.base_url = base_url
 
-    def transcription(self, text):
+    def tts(self, text):
         from http import HTTPStatus
 
+        text = self.normalize_text(text)
         request = request = ServeTTSRequest(text=text, reference_id=self.ref_id)
 
         with httpx.Client() as client:
