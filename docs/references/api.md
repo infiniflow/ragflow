@@ -407,7 +407,7 @@ import requests
 
 def upload_file_to_kb(file_path, kb_name, token='ragflow-xxxxxxxxxxxxx', parser_id='naive'):
     """  
-    Uploads a file to a knowledge base via a specified API.  
+    Uploads a file to a knowledge base.  
 
     Args:  
     - file_path: Path to the file to be uploaded.  
