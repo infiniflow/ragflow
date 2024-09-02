@@ -298,6 +298,33 @@ export const useSubmitFishAudio = () => {
   };
 };
 
+export const useSubmitGoogle = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: GoogleAddingVisible,
+    hideModal: hideGoogleAddingModal,
+    showModal: showGoogleAddingModal,
+  } = useSetModalState();
+
+  const onGoogleAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideGoogleAddingModal();
+      }
+    },
+    [hideGoogleAddingModal, addLlm],
+  );
+
+  return {
+    GoogleAddingLoading: loading,
+    onGoogleAddingOk,
+    GoogleAddingVisible,
+    hideGoogleAddingModal,
+    showGoogleAddingModal,
+  };
+};
+
 export const useSubmitBedrock = () => {
   const { addLlm, loading } = useAddLlm();
   const {

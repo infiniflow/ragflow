@@ -3352,6 +3352,13 @@
                     "model_type": "rerank"
                 }
             ]
+        },
+        {
+            "name": "Google Cloud",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
         }
     ]
 }

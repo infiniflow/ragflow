@@ -461,6 +461,7 @@ export default {
       upgrade: '升級',
       addLlmTitle: '添加Llm',
       modelName: '模型名稱',
+      modelID: '模型ID',
       modelUid: '模型uid',
       modelType: '模型類型',
       addLlmBaseUrl: '基礎 Url',
@@ -511,6 +512,15 @@ export default {
       addFishAudioAKMessage: '請輸入 API KEY',
       addFishAudioRefID: 'FishAudio Refrence ID',
       addFishAudioRefIDMessage: '請輸入引用模型的ID（留空表示使用默認模型）',
+      GoogleModelIDMessage: '請輸入 model ID!',
+      addGoogleProjectID: 'Project ID',
+      GoogleProjectIDMessage: '請輸入 Project ID',
+      addGoogleServiceAccountKey:
+        'Service Account Key(Leave blank if you use Application Default Credentials)',
+      GoogleServiceAccountKeyMessage:
+        '請輸入 Google Cloud Service Account Key in base64 format',
+      addGoogleRegion: 'Google Cloud 區域',
+      GoogleRegionMessage: '請輸入 Google Cloud 區域',
     },
     message: {
       registered: '註冊成功',

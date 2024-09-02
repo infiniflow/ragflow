@@ -107,6 +107,7 @@ ChatModel = {
     "XunFei Spark": SparkChat,
     "BaiduYiyan": BaiduYiyanChat,
     "Anthropic": AnthropicChat,
+    "Google Cloud": GoogleChat,
 }
 
 
