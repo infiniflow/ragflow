@@ -15,6 +15,7 @@
 #
 from abc import ABC
 from Bio import Entrez
+import re
 import pandas as pd
 import xml.etree.ElementTree as ET
 from agent.settings import DEBUG
@@ -47,8 +48,9 @@ class PubMed(ComponentBase, ABC):
         try:
             Entrez.email = self._param.email
             pubmedids = Entrez.read(Entrez.esearch(db='pubmed', retmax=self._param.top_n, term=ans))['IdList']
-            pubmedcnt = ET.fromstring(Entrez.efetch(db='pubmed', id=",".join(pubmedids), retmode="xml").read().decode("utf-8")
-                                      .replace("<b>", "").replace("</b>", ""))
+            pubmedcnt = ET.fromstring(re.sub(r'<(/?)b>|<(/?)i>', '', Entrez.efetch(db='pubmed', id=",".join(pubmedids),
+                                                                                   retmode="xml").read().decode(
+                "utf-8")))
             pubmed_res = [{"content": 'Title:' + child.find("MedlineCitation").find("Article").find(
                 "ArticleTitle").text + '\nUrl:<a href=" https://pubmed.ncbi.nlm.nih.gov/' + child.find(
                 "MedlineCitation").find("PMID").text + '">' + '</a>\n' + 'Abstract:' + child.find(
