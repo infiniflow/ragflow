@@ -472,130 +472,6 @@ export const useHandleMessageInputChange = () => {
   };
 };
 
-export const useSendMessage = (
-  conversation: IClientConversation,
-  addNewestConversation: (message: Message, answer?: string) => void,
-  removeLatestMessage: () => void,
-  addNewestAnswer: (answer: IAnswer) => void,
-  removeMessagesAfterCurrentMessage: (messageId: string) => void,
-) => {
-  const { setConversation } = useSetConversation();
-  const { conversationId } = useGetChatSearchParams();
-  const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-
-  const { handleClickConversation } = useClickConversationCard();
-  const { send, answer, done, setDone } = useSendMessageWithSse();
-
-  const sendMessage = useCallback(
-    async ({
-      message,
-      currentConversationId,
-      messages,
-    }: {
-      message: Message;
-      currentConversationId?: string;
-      messages?: Message[];
-    }) => {
-      const res = await send({
-        conversation_id: currentConversationId ?? conversationId,
-        messages: [...(messages ?? conversation?.message ?? []), message],
-      });
-
-      if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
-        // cancel loading
-        setValue(message.content);
-        console.info('removeLatestMessage111');
-        removeLatestMessage();
-      } else {
-        if (currentConversationId) {
-          console.info('111');
-          // new conversation
-          handleClickConversation(currentConversationId);
-        } else {
-          console.info('222');
-          // fetchConversation(conversationId);
-        }
-      }
-    },
-    [
-      conversation?.message,
-      conversationId,
-      handleClickConversation,
-      removeLatestMessage,
-      setValue,
-      send,
-    ],
-  );
-
-  const handleSendMessage = useCallback(
-    async (message: Message) => {
-      if (conversationId !== '') {
-        sendMessage({ message });
-      } else {
-        const data = await setConversation(message.content);
-        if (data.retcode === 0) {
-          const id = data.data.id;
-          sendMessage({ message, currentConversationId: id });
-        }
-      }
-    },
-    [conversationId, setConversation, sendMessage],
-  );
-
-  const { regenerateMessage } = useRegenerateMessage({
-    removeMessagesAfterCurrentMessage,
-    sendMessage,
-    messages: conversation.message,
-  });
-
-  useEffect(() => {
-    //  #1289
-    if (answer.answer && answer?.conversationId === conversationId) {
-      addNewestAnswer(answer);
-    }
-  }, [answer, addNewestAnswer, conversationId]);
-
-  useEffect(() => {
-    // #1289 switch to another conversion window when the last conversion answer doesn't finish.
-    if (conversationId) {
-      setDone(true);
-    }
-  }, [setDone, conversationId]);
-
-  const handlePressEnter = useCallback(
-    (documentIds: string[]) => {
-      if (trim(value) === '') return;
-      const id = uuid();
-
-      addNewestConversation({
-        content: value,
-        doc_ids: documentIds,
-        id,
-        role: MessageType.User,
-      });
-      if (done) {
-        setValue('');
-        handleSendMessage({
-          id,
-          content: value.trim(),
-          role: MessageType.User,
-          doc_ids: documentIds,
-        });
-      }
-    },
-    [addNewestConversation, handleSendMessage, done, setValue, value],
-  );
-
-  return {
-    handlePressEnter,
-    handleInputChange,
-    value,
-    setValue,
-    regenerateMessage,
-    loading: !done,
-  };
-};
-
 export const useSendNextMessage = () => {
   const { setConversation } = useSetConversation();
   const { conversationId } = useGetChatSearchParams();
@@ -662,7 +538,11 @@ export const useSendNextMessage = () => {
         const data = await setConversation(message.content);
         if (data.retcode === 0) {
           const id = data.data.id;
-          sendMessage({ message, currentConversationId: id });
+          sendMessage({
+            message,
+            currentConversationId: id,
+            messages: data.data.message,
+          });
         }
       }
     },
@@ -677,10 +557,14 @@ export const useSendNextMessage = () => {
 
   useEffect(() => {
     //  #1289
-    if (answer.answer && answer?.conversationId === conversationId) {
+    if (
+      answer.answer &&
+      !done &&
+      (answer?.conversationId === conversationId || conversationId === '')
+    ) {
       addNewestAnswer(answer);
     }
-  }, [answer, addNewestAnswer, conversationId]);
+  }, [answer, addNewestAnswer, conversationId, done]);
 
   useEffect(() => {
     // #1289 switch to another conversion window when the last conversion answer doesn't finish.
