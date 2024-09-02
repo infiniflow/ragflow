@@ -412,7 +412,7 @@ def upload_file_to_kb(file_path, kb_name, token='ragflow-xxxxxxxxxxxxx', parser_
     Args:  
     - file_path: Path to the file to be uploaded.  
     - kb_name: Name of the target knowledge base.  
-    - parser_id: Parser ID to use for file parsing (default: 'naive').  
+    - parser_id: ID of the chosen file parser (defaults to 'naive').  
     - token: API token for authentication.  
     """
     url = 'http://127.0.0.1/v1/api/document/upload'  # Replace with your actual API URL  
