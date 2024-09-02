@@ -72,7 +72,7 @@ class FishAudioTTS(Base):
         from http import HTTPStatus
 
         text = self.normalize_text(text)
-        request = request = ServeTTSRequest(text=text, reference_id=self.ref_id)
+        request = ServeTTSRequest(text=text, reference_id=self.ref_id)
 
         with httpx.Client() as client:
             try:
