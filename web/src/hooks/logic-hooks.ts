@@ -264,9 +264,11 @@ export const useSendMessageWithSse = (
         }
         console.info('done?');
         setDone(true);
+        setAnswer({} as IAnswer);
         return { data: await res, response };
       } catch (e) {
         setDone(true);
+        setAnswer({} as IAnswer);
         console.warn(e);
       }
     },
