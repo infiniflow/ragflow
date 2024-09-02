@@ -53,8 +53,9 @@ class Base(ABC):
     def tts(self, audio):
         pass
     
-    def normalize_text(text):
+    def normalize_text(self, text):
         return re.sub(r'(\*\*|##\d+\$\$|#)', '', text)
+
 
 class FishAudioTTS(Base):
     def __init__(self, key, model_name, base_url="https://api.fish.audio/v1/tts"):
