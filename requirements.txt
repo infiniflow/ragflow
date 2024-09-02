@@ -85,6 +85,7 @@ tiktoken==0.6.0
 torch==2.3.0
 transformers==4.38.1
 umap==0.1.1
+vertexai==1.64.0
 volcengine==1.0.146
 voyageai==0.2.3
 webdriver_manager==4.0.1
