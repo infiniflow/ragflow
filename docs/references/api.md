@@ -410,7 +410,7 @@ def upload_file_to_kb(file_path, kb_name, token='ragflow-xxxxxxxxxxxxx', parser_
     Uploads a file to a knowledge base.  
 
     Args:  
-    - file_path: Path to the file to be uploaded.  
+    - file_path: Path to the file to upload.  
     - kb_name: Name of the target knowledge base.  
     - parser_id: ID of the chosen file parser (defaults to 'naive').  
     - token: API token for authentication.  
