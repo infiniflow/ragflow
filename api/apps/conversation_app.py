@@ -196,12 +196,12 @@ def tts():
     tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
     def stream_audio():
         try:
-            for chunk in tts_mdl(text):  
+            for chunk in tts_mdl.tts(text):  
                 yield chunk  
         except Exception as e:
-            yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
+            yield ("data:" + json.dumps({"retcode": 500, "retmsg": str(e),
                             "data": {"answer": "**ERROR**: "+str(e)}},
-                            ensure_ascii=False).encode('utf-8')
+                            ensure_ascii=False)).encode('utf-8')
 
     resp = Response(stream_audio(), mimetype="audio/mpeg")  
     resp.headers.add_header("Cache-Control", "no-cache")
