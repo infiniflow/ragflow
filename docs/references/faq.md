@@ -357,7 +357,7 @@ This exception occurs when starting up the RAGFlow server. Try the following:
 
 1. Right click the desired dialog to display the **Chat Configuration** window.
 2. Switch to the **Model Setting** tab and adjust the **Max Tokens** slider to get the desired length.
-3. Click **OK** to confirm your change. 
+3. Click **OK** to confirm your change.
 
 
 ### 2. What does Empty response mean? How to set it?
@@ -370,7 +370,7 @@ You limit what the system responds to what you specify in **Empty response** if 
 
 ### 4. How to run RAGFlow with a locally deployed LLM?
 
-You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.md) for more information. 
+You can use Ollama to deploy local LLM. See [here](../guides/deploy_local_llm.mdx) for more information.
 
 ### 5. How to link up ragflow and ollama servers?
 
