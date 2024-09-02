@@ -53,8 +53,10 @@ class PubMed(ComponentBase, ABC):
                 "utf-8")))
             pubmed_res = [{"content": 'Title:' + child.find("MedlineCitation").find("Article").find(
                 "ArticleTitle").text + '\nUrl:<a href=" https://pubmed.ncbi.nlm.nih.gov/' + child.find(
-                "MedlineCitation").find("PMID").text + '">' + '</a>\n' + 'Abstract:' + child.find(
-                "MedlineCitation").find("Article").find("Abstract").find("AbstractText").text} for child in
+                "MedlineCitation").find("PMID").text + '">' + '</a>\n' + 'Abstract:' + (
+                                          child.find("MedlineCitation").find("Article").find("Abstract").find(
+                                              "AbstractText").text if child.find("MedlineCitation").find(
+                                              "Article").find("Abstract") else "No abstract available")} for child in
                           pubmedcnt.findall("PubmedArticle")]
         except Exception as e:
             return PubMed.be_output("**ERROR**: " + str(e))
