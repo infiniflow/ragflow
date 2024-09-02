@@ -47,21 +47,13 @@ class PubMed(ComponentBase, ABC):
         try:
             Entrez.email = self._param.email
             pubmedids = Entrez.read(Entrez.esearch(db='pubmed', retmax=self._param.top_n, term=ans))['IdList']
-            pubmedcnt = ET.fromstring(
-                Entrez.efetch(db='pubmed', id=",".join(pubmedids), retmode="xml").read().decode("utf-8"))
-            pubmed_res = []
-            for child in pubmedcnt.findall("PubmedArticle"):
-                if child.find("MedlineCitation").find("Article").find("ArticleTitle").text:
-                    title_tmp = 'Title:' + child.find("MedlineCitation").find("Article").find("ArticleTitle").text
-                else:
-                    title_tmp = 'Title:' + "".join(
-                        [childtitle.text for childtitle in
-                         child.find("MedlineCitation").find("Article").find("ArticleTitle")])
-                url_tmp = '\nUrl:<a href=" https://pubmed.ncbi.nlm.nih.gov/' + child.find("MedlineCitation").find(
-                    "PMID").text + '">' + '</a>'
-                abstract_tmp = '\nAbstract:' + child.find("MedlineCitation").find("Article").find("Abstract").find(
-                    "AbstractText").text
-                pubmed_res.append({"content": title_tmp + url_tmp + abstract_tmp})
+            pubmedcnt = ET.fromstring(Entrez.efetch(db='pubmed', id=",".join(pubmedids), retmode="xml").read().decode("utf-8")
+                                      .replace("<b>", "").replace("</b>", ""))
+            pubmed_res = [{"content": 'Title:' + child.find("MedlineCitation").find("Article").find(
+                "ArticleTitle").text + '\nUrl:<a href=" https://pubmed.ncbi.nlm.nih.gov/' + child.find(
+                "MedlineCitation").find("PMID").text + '">' + '</a>\n' + 'Abstract:' + child.find(
+                "MedlineCitation").find("Article").find("Abstract").find("AbstractText").text} for child in
+                          pubmedcnt.findall("PubmedArticle")]
         except Exception as e:
             return PubMed.be_output("**ERROR**: " + str(e))
 
