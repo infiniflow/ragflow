@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   DislikeOutlined,
   LikeOutlined,
+  PauseCircleOutlined,
   SoundOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
@@ -13,7 +14,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import SvgIcon from '../svg-icon';
 import FeedbackModal from './feedback-modal';
-import { useRemoveMessage, useSendFeedback } from './hooks';
+import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
 import PromptModal from './prompt-modal';
 
 interface IProps {
@@ -37,6 +38,7 @@ export const AssistantGroupButton = ({
     showModal: showPromptModal,
   } = useSetModalState();
   const { t } = useTranslation();
+  const { handleRead, ref, isPlaying } = useSpeech(content);
 
   const handleLike = useCallback(() => {
     onFeedbackOk({ thumbup: true });
@@ -48,10 +50,11 @@ export const AssistantGroupButton = ({
         <Radio.Button value="a">
           <CopyToClipboard text={content}></CopyToClipboard>
         </Radio.Button>
-        <Radio.Button value="b">
+        <Radio.Button value="b" onClick={handleRead}>
           <Tooltip title={t('chat.read')}>
-            <SoundOutlined />
+            {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
           </Tooltip>
+          <audio src="" ref={ref}></audio>
         </Radio.Button>
         {showLikeButton && (
           <>
