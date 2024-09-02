@@ -296,7 +296,8 @@ def rename():
         e, file = FileService.get_by_id(req["file_id"])
         if not e:
             return get_data_error_result(retmsg="File not found!")
-        if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
+        if file.type != FileType.FOLDER.value \
+            and pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
                 file.name.lower()).suffix:
             return get_json_result(
                 data=False,
