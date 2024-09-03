@@ -427,6 +427,9 @@ The above is the content you need to summarize.`,
       uploadFailed: 'Upload failed',
       regenerate: 'Regenerate',
       read: 'Read content',
+      tts: 'Text to speech',
+      ttsTip:
+        'To play the voice using voice conversion, please select TTS (speech conversion model) in the settings first.',
     },
     setting: {
       profile: 'Profile',

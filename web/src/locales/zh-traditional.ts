@@ -397,6 +397,8 @@ export default {
       uploadFailed: '上傳失敗',
       regenerate: '重新生成',
       read: '朗讀內容',
+      tts: '文字轉語音',
+      ttsTip: '是否用語音轉換播放語音，請先在設定裡面選擇TTS（語音轉換模型）。',
     },
     setting: {
       profile: '概述',
