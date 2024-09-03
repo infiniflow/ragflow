@@ -104,7 +104,6 @@ def detail():
         for m in tenants:
             if KnowledgebaseService.query(
                     tenant_id=m["tenant_id"], id=kb_id):
-                temp = True
                 break
         else:
             return get_json_result(
