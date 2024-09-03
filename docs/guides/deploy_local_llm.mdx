@@ -7,47 +7,13 @@ slug: /deploy_local_llm
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-RAGFlow supports deploying models locally using Ollama or Xinference. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
+RAGFlow supports deploying models locally using Ollama, Xinference, IPEX-LLM, or jina. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
 
 RAGFlow seamlessly integrates with Ollama and Xinference, without the need for further environment configurations. You can use them to deploy two types of local models in RAGFlow: chat models and embedding models.
 
 :::tip NOTE
 This user guide does not intend to cover much of the installation or configuration details of Ollama or Xinference; its focus is on configurations inside RAGFlow. For the most current information, you may need to check out the official site of Ollama or Xinference.
 :::
-
-# Deploy a local model using jina 
-
-[Jina](https://github.com/jina-ai/jina) lets you build AI services and pipelines that communicate via gRPC, HTTP and WebSockets, then scale them up and deploy to production.
-
-To deploy a local model, e.g., **gpt2**, using Jina:
-
-### 1. Check firewall settings
-
-Ensure that your host machine's firewall allows inbound connections on port 12345.
-
-```bash
-sudo ufw allow 12345/tcp
-```
-
-### 2.install jina package
-
-```bash
-pip install jina
-```
-
-### 3. deployment local model
-
-Step 1: Navigate to the rag/svr directory.
-
-```bash
-cd rag/svr
-```
-
-Step 2: Use Python to run the jina_server.py script and pass in the model name or the local path of the model (the script only supports loading models downloaded from Huggingface)
-
-```bash
-python jina_server.py  --model_name gpt2
-```
 
 ## Deploy a local model using Ollama
 
@@ -347,3 +313,36 @@ To enable IPEX-LLM accelerated Ollama in RAGFlow, you must also complete the con
 2. [Complete basic Ollama settings](#5-complete-basic-ollama-settings)
 3. [Update System Model Settings](#6-update-system-model-settings)
 4. [Update Chat Configuration](#7-update-chat-configuration)
+
+## Deploy a local model using jina 
+
+To deploy a local model, e.g., **gpt2**, using jina:
+
+### 1. Check firewall settings
+
+Ensure that your host machine's firewall allows inbound connections on port 12345.
+
+```bash
+sudo ufw allow 12345/tcp
+```
+
+### 2. Install jina package
+
+```bash
+pip install jina
+```
+
+### 3. Deploy a local model
+
+Step 1: Navigate to the **rag/svr** directory.
+
+```bash
+cd rag/svr
+```
+
+Step 2: Run **jina_server.py**, specifying either the model's name or its local directory: 
+
+```bash
+python jina_server.py  --model_name gpt2
+```
+> The script only supports models downloaded from Hugging Face.
