@@ -52,7 +52,7 @@ export const useRemoveMessage = (
   return { onRemoveMessage, loading };
 };
 
-export const useSpeech = (content: string) => {
+export const useSpeech = (content: string, audioBinary?: string) => {
   const ref = useRef<HTMLAudioElement>(null);
   const { read } = useSpeechWithSse();
   const player = useRef<SpeechPlayer>();
@@ -93,6 +93,15 @@ export const useSpeech = (content: string) => {
       speech();
     }
   }, [setIsPlaying, speech, isPlaying, pause]);
+
+  // useEffect(() => {
+  //   if (audioBinary) {
+  //     const units = hexStringToUint8Array(audioBinary);
+  //     if (units) {
+  //       player.current?.feed(units);
+  //     }
+  //   }
+  // }, [audioBinary]);
 
   useEffect(() => {
     initialize();

@@ -433,6 +433,7 @@ export const useSelectDerivedMessages = () => {
             role: MessageType.Assistant,
           }),
           prompt: answer.prompt,
+          audio_binary: answer.audio_binary,
         },
       ];
     });
