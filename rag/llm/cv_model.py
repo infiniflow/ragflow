@@ -293,9 +293,12 @@ class Zhipu4V(Base):
     def describe(self, image, max_tokens=1024):
         b64 = self.image2base64(image)
 
+        prompt = self.prompt(b64)
+        prompt[0]["content"][1]["type"] = "text"
+        
         res = self.client.chat.completions.create(
             model=self.model_name,
-            messages=self.prompt(b64),
+            messages=prompt,
             max_tokens=max_tokens,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens

@@ -236,7 +236,7 @@ def add_llm():
             key=llm["api_key"], model_name=llm["llm_name"], base_url=llm["api_base"]
         )
         try:
-            for resp in mdl.transcription("Hello~ Ragflower!"):
+            for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(e)
