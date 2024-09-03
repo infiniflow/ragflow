@@ -61,6 +61,7 @@ class Base(ABC):
         if system:
             history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
 
+
         ans = ""
         tk_count = 0
         try:
