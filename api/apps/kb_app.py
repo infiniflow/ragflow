@@ -106,6 +106,7 @@ def detail():
             if KnowledgebaseService.query(
                     tenant_id=m["tenant_id"], id=kb_id):
                 temp = True
+                break
         if not temp:
             return get_json_result(
                 data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.',
