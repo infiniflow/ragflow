@@ -134,7 +134,7 @@ def list_convsersation():
 
 @manager.route('/completion', methods=['POST'])
 @login_required
-# @validate_request("conversation_id", "messages")
+@validate_request("conversation_id", "messages")
 def completion():
     req = request.json
     # req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
