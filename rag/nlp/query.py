@@ -83,7 +83,7 @@ class EsQueryer:
                      ), tks
 
         def need_fine_grained_tokenize(tk):
-            if len(tk) < 4:
+            if len(tk) < 3:
                 return False
             if re.match(r"[0-9a-z\.\+#_\*-]+$", tk):
                 return False
