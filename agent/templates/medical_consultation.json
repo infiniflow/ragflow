@@ -1,0 +1,450 @@
+{
+  "id": 7,
+  "title": "Medical consultation",
+  "description": "A chat robot for medical consultations, helping you with online disease consultations.",
+  "canvas_type": "chatbot",
+  "dsl": {
+    "answer": [],
+    "components": {
+      "Answer:FlatRavensPush": {
+        "downstream": [
+          "Retrieval:FastPlumsWish",
+          "Generate:BraveSnailsCheer"
+        ],
+        "obj": {
+          "component_name": "Answer",
+          "params": {
+            "message_history_window_size": 22,
+            "output": {
+              "content": "Hi! I'm your smart assistant. What can I do for you?"
+            },
+            "output_var_name": "output",
+            "post_answers": []
+          }
+        },
+        "upstream": [
+          "begin",
+          "Generate:WholePansReply"
+        ]
+      },
+      "Generate:BraveSnailsCheer": {
+        "downstream": [
+          "PubMed:TwentyFansShake"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "params": {
+            "cite": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "deepseek-chat",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Please translate questions about medical consultations into English",
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Answer:FlatRavensPush"
+        ]
+      },
+      "Generate:WholePansReply": {
+        "downstream": [
+          "Answer:FlatRavensPush"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "params": {
+            "cite": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "deepseek-chat",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [
+              {
+                "component_id": "PubMed:TwentyFansShake",
+                "id": "2c063fef-5379-44ae-91f6-06e914e5ad2e",
+                "key": "pub"
+              }
+            ],
+            "presence_penalty": 0.4,
+            "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n        {pub}\n  The above is the content you need to summarize.",
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "PubMed:TwentyFansShake",
+          "Retrieval:FastPlumsWish"
+        ]
+      },
+      "PubMed:TwentyFansShake": {
+        "downstream": [
+          "Generate:WholePansReply"
+        ],
+        "obj": {
+          "component_name": "PubMed",
+          "params": {
+            "email": "",
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "top_n": 10
+          }
+        },
+        "upstream": [
+          "Generate:BraveSnailsCheer"
+        ]
+      },
+      "Retrieval:FastPlumsWish": {
+        "downstream": [
+          "Generate:WholePansReply"
+        ],
+        "obj": {
+          "component_name": "Retrieval",
+          "params": {
+            "empty_response": "",
+            "kb_ids": [
+              "271345c669b411efa4e442010a8a0003"
+            ],
+            "keywords_similarity_weight": 0.3,
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "rerank_id": "",
+            "similarity_threshold": 0.2,
+            "top_k": 1024,
+            "top_n": 8
+          }
+        },
+        "upstream": [
+          "Answer:FlatRavensPush"
+        ]
+      },
+      "begin": {
+        "downstream": [
+          "Answer:FlatRavensPush"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "params": {
+            "message_history_window_size": 22,
+            "output": {
+              "content": "Hi! I'm your smart assistant. What can I do for you?"
+            },
+            "output_var_name": "output",
+            "prologue": "Hi! I'm your smart assistant. What can I do for you?"
+          }
+        },
+        "upstream": []
+      }
+    },
+    "embed_id": "",
+    "graph": {
+      "edges": [
+        {
+          "id": "reactflow__edge-begin-Answer:FlatRavensPushc",
+          "markerEnd": "logo",
+          "source": "begin",
+          "sourceHandle": null,
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:FlatRavensPush",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-PubMed:TwentyFansShakeb-Generate:WholePansReplyc",
+          "markerEnd": "logo",
+          "source": "PubMed:TwentyFansShake",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:WholePansReply",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Answer:FlatRavensPushd-Retrieval:FastPlumsWishc",
+          "markerEnd": "logo",
+          "source": "Answer:FlatRavensPush",
+          "sourceHandle": "d",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:FastPlumsWish",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Retrieval:FastPlumsWishb-Generate:WholePansReplyc",
+          "markerEnd": "logo",
+          "source": "Retrieval:FastPlumsWish",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:WholePansReply",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Generate:WholePansReplya-Answer:FlatRavensPusha",
+          "markerEnd": "logo",
+          "source": "Generate:WholePansReply",
+          "sourceHandle": "a",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:FlatRavensPush",
+          "targetHandle": "a",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Answer:FlatRavensPushb-Generate:BraveSnailsCheerc",
+          "markerEnd": "logo",
+          "source": "Answer:FlatRavensPush",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:BraveSnailsCheer",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Generate:BraveSnailsCheerb-PubMed:TwentyFansShakec",
+          "markerEnd": "logo",
+          "source": "Generate:BraveSnailsCheer",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "PubMed:TwentyFansShake",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        }
+      ],
+      "nodes": [
+        {
+          "data": {
+            "label": "Begin",
+            "name": "opening"
+          },
+          "dragging": false,
+          "height": 50,
+          "id": "begin",
+          "position": {
+            "x": -151.46462891969162,
+            "y": 197.0929542850979
+          },
+          "positionAbsolute": {
+            "x": -151.46462891969162,
+            "y": 197.0929542850979
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "beginNode",
+          "width": 50
+        },
+        {
+          "data": {
+            "form": {
+              "email": "",
+              "top_n": 10
+            },
+            "label": "PubMed",
+            "name": "Search PubMed"
+          },
+          "dragging": false,
+          "height": 50,
+          "id": "PubMed:TwentyFansShake",
+          "position": {
+            "x": 395.97973667080305,
+            "y": 380.741237838482
+          },
+          "positionAbsolute": {
+            "x": 395.97973667080305,
+            "y": 380.741237838482
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode",
+          "width": 50
+        },
+        {
+          "data": {
+            "form": {},
+            "label": "Answer",
+            "name": "Interface"
+          },
+          "dragging": false,
+          "height": 100,
+          "id": "Answer:FlatRavensPush",
+          "position": {
+            "x": -19.64819356073363,
+            "y": 167.83733728704686
+          },
+          "positionAbsolute": {
+            "x": -19.64819356073363,
+            "y": 167.83733728704686
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 100
+        },
+        {
+          "data": {
+            "form": {
+              "kb_ids": [
+                "271345c669b411efa4e442010a8a0003"
+              ],
+              "keywords_similarity_weight": 0.3,
+              "similarity_threshold": 0.2,
+              "top_n": 8
+            },
+            "label": "Retrieval",
+            "name": "Search KB"
+          },
+          "dragging": false,
+          "height": 100,
+          "id": "Retrieval:FastPlumsWish",
+          "position": {
+            "x": 383.5145854932148,
+            "y": 11.635206830291168
+          },
+          "positionAbsolute": {
+            "x": 383.5145854932148,
+            "y": 11.635206830291168
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 100
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [
+                {
+                  "component_id": "PubMed:TwentyFansShake",
+                  "id": "2c063fef-5379-44ae-91f6-06e914e5ad2e",
+                  "key": "pub"
+                }
+              ],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n        {pub}\n  The above is the content you need to summarize.",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "LLM"
+          },
+          "dragging": false,
+          "height": 150,
+          "id": "Generate:WholePansReply",
+          "position": {
+            "x": 623.1824621259018,
+            "y": 341.8103625524256
+          },
+          "positionAbsolute": {
+            "x": 623.1824621259018,
+            "y": 341.8103625524256
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 150
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Please translate questions about medical consultations into English",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "Translate to English"
+          },
+          "dragging": false,
+          "height": 150,
+          "id": "Generate:BraveSnailsCheer",
+          "position": {
+            "x": 228.6457524397984,
+            "y": 190.43278997793266
+          },
+          "positionAbsolute": {
+            "x": 228.6457524397984,
+            "y": 190.43278997793266
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 150
+        }
+      ]
+    },
+    "history": [],
+    "messages": [
+      {
+        "content": "Hi! I'm your smart assistant. What can I do for you?",
+        "id": "113e1e3269c411ef907f42010a8a0005",
+        "role": "assistant"
+      }
+    ],
+    "path": [
+      [
+        "begin"
+      ],
+      [
+        "Answer:FlatRavensPush"
+      ]
+    ],
+    "reference": []
+  },
+  "avatar": null
+}
