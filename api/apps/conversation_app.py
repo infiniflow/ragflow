@@ -196,8 +196,8 @@ def tts():
     tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
     def stream_audio():
         try:
-            for chunk in tts_mdl.tts(text):  
-                yield chunk  
+            for chunk in tts_mdl.tts(text):
+                yield chunk
         except Exception as e:
             yield ("data:" + json.dumps({"retcode": 500, "retmsg": str(e),
                             "data": {"answer": "**ERROR**: "+str(e)}},
