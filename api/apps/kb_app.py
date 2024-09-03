@@ -104,7 +104,7 @@ def detail():
         temp = False
         for m in tenants:
             if KnowledgebaseService.query(
-                    created_by=m["tenant.id"], id=kb_id):
+                    tenant_id=m["tenant_id"], id=kb_id):
                 temp = True
         if not temp:
             return get_json_result(
