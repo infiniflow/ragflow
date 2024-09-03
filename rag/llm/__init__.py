@@ -49,7 +49,7 @@ CvModel = {
     "ZHIPU-AI": Zhipu4V,
     "Moonshot": LocalCV,
     "Gemini": GeminiCV,
-    "OpenRouter": OpenRouterCV,
+    #"OpenRouter": OpenRouterCV,
     "LocalAI": LocalAICV,
     "NVIDIA": NvidiaCV,
     "LM-Studio": LmStudioCV
@@ -74,7 +74,7 @@ ChatModel = {
     "Gemini": GeminiChat,
     "Bedrock": BedrockChat,
     "Groq": GroqChat,
-    "OpenRouter": OpenRouterChat,
+    #"OpenRouter": OpenRouterChat,
     "StepFun": StepFunChat,
     "NVIDIA": NvidiaChat,
     "LM-Studio": LmStudioChat

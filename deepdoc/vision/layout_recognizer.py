@@ -48,7 +48,9 @@ class LayoutRecognizer(Recognizer):
                                           local_dir_use_symlinks=False)
             super().__init__(self.labels, domain, model_dir)
 
-        self.garbage_layouts = ["footer", "header", "reference"]
+       # self.garbage_layouts = ["footer", "header", "reference"]
+        self.garbage_layouts = ["footer"]
+
 
     def __call__(self, image_list, ocr_res, scale_factor=3,
                  thr=0.2, batch_size=16, drop=True):

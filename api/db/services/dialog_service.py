@@ -23,7 +23,7 @@ from api.db.db_models import Dialog, Conversation
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
-from api.settings import chat_logger, retrievaler
+from api.settings import chat_logger, retrievaler, debug_logger, access_logger
 from rag.app.resume import forbidden_select_fields4resume
 from rag.nlp import keyword_extraction
 from rag.nlp.search import index_name
@@ -93,6 +93,8 @@ def chat(dialog, messages, stream=True, **kwargs):
         if not llm:
             raise LookupError("LLM(%s) not found" % dialog.llm_id)
         max_tokens = 8192
+        #max_tokens = 48800
+
     else:
         max_tokens = llm[0].max_tokens
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)

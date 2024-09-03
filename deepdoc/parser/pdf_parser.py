@@ -248,7 +248,6 @@ class RAGFlowPdfParser:
                 b["R"] = ii
                 b["R_top"] = rows[ii]["top"]
                 b["R_bott"] = rows[ii]["bottom"]
-
             ii = Recognizer.find_overlapped_with_threashold(
                 b, headers, thr=0.3)
             if ii is not None:
@@ -285,24 +284,10 @@ class RAGFlowPdfParser:
               "page_number": pagenum} for b, t in bxs if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
             self.mean_height[-1] / 3
         )
-
-        # solve char content confusion
-        record_error_length, ct = 0, 0.001
-        for c in chars[0:128]:
-            ii = Recognizer.find_overlapped(c, bxs)
-            if ii is None:
-                continue
-            record_error_length += abs((bxs[ii]["bottom"] + bxs[ii]["top"] - c["bottom"] - c["top"]) / 2)
-            ct += 1
-
-        record_error_length = record_error_length / ct
-        for char in chars:
-            char["top"] -= record_error_length
-            char["bottom"] -= record_error_length
         
         # merge chars in the same rect
-        for c in Recognizer.sort_X_firstly(
-                chars, self.mean_width[pagenum - 1] // 4):
+        for c in Recognizer.sort_Y_firstly(
+                chars, self.mean_height[pagenum - 1] // 4):
             ii = Recognizer.find_overlapped(c, bxs)
             if ii is None:
                 self.lefted_chars.append(c)
@@ -361,10 +346,10 @@ class RAGFlowPdfParser:
         while i < len(bxs) - 1:
             b = bxs[i]
             b_ = bxs[i + 1]
-            if b.get("layoutno", "0") != b_.get("layoutno", "1") or b.get("layout_type", "") in ["table", "figure",
-                                                                                                 "equation"]:
-                i += 1
-                continue
+            #if b.get("layoutno", "0") != b_.get("layoutno", "1") or b.get("layout_type", "") in ["table", "figure",
+            #                                                                                     "equation"]:
+                #i += 1
+                #continue
             if abs(self._y_dis(b, b_)
                    ) < self.mean_height[bxs[i]["page_number"] - 1] / 3:
                 # merge
@@ -810,7 +795,7 @@ class RAGFlowPdfParser:
                     bxs,
                     "figure", poss),
                  [txt]))
-            positions.append(poss)
+            positions.append(poss)            
 
         for k, bxs in tables.items():
             if not bxs:
@@ -846,7 +831,7 @@ class RAGFlowPdfParser:
             (r"[0-9]+）", 10),
             (r"[\(（][0-9]+[）\)]", 11),
             (r"[零一二三四五六七八九十百]+是", 12),
-            (r"[⚫▇•➢✓]", 12)
+            (r"[⚫•➢✓]", 12)
         ]:
             if re.match(p, line):
                 return j
@@ -966,7 +951,7 @@ class RAGFlowPdfParser:
                 fnm, str) else pdfplumber.open(BytesIO(fnm))
             self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
                                 enumerate(self.pdf.pages[page_from:page_to])]
-            self.page_chars = [[{**c, 'top': max(0, c['top'] - 10), 'bottom': max(0, c['bottom'] - 10)} for c in page.chars if self._has_color(c)] for page in
+            self.page_chars = [[{**c, 'top': c['top'], 'bottom': c['bottom']} for c in page.dedupe_chars().chars if self._has_color(c)] for page in
                                self.pdf.pages[page_from:page_to]]
             self.total_page = len(self.pdf.pages)
         except Exception as e:

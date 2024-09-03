@@ -26,6 +26,13 @@ from rag.utils import num_tokens_from_string
 from groq import Groq
 import json
 import requests
+from api.settings import chat_logger, retrievaler, debug_logger, access_logger
+import logging
+from api.utils.file_utils import get_project_base_directory
+
+logging.basicConfig(filename=get_project_base_directory() + 'ollama_chat.txt', level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class Base(ABC):
     def __init__(self, key, model_name, base_url):
@@ -41,6 +48,7 @@ class Base(ABC):
                 messages=history,
                 **gen_conf)
             ans = response.choices[0].message.content.strip()
+            logger.info(f"OpenAI: Response - {ans}")
             if response.choices[0].finish_reason == "length":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
@@ -304,10 +312,13 @@ class OllamaChat(Base):
         try:
             options = {}
             if "temperature" in gen_conf: options["temperature"] = gen_conf["temperature"]
-            if "max_tokens" in gen_conf: options["num_predict"] = gen_conf["max_tokens"]
+            if "max_tokens" in gen_conf: options["num_predict"] = -1
             if "top_p" in gen_conf: options["top_k"] = gen_conf["top_p"]
             if "presence_penalty" in gen_conf: options["presence_penalty"] = gen_conf["presence_penalty"]
             if "frequency_penalty" in gen_conf: options["frequency_penalty"] = gen_conf["frequency_penalty"]
+            logger.info(f"OllamaChat: System - {system}")
+            logger.info(f"OllamaChat: History - {history}")
+            options["num_ctx"] = 128000
             response = self.client.chat(
                 model=self.model_name,
                 messages=history,
@@ -315,6 +326,8 @@ class OllamaChat(Base):
                 keep_alive=-1
             )
             ans = response["message"]["content"].strip()
+            logger.info(f"OllamaChat: Response - {ans}")
+
             return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
         except Exception as e:
             return "**ERROR**: " + str(e), 0
@@ -324,11 +337,15 @@ class OllamaChat(Base):
             history.insert(0, {"role": "system", "content": system})
         options = {}
         if "temperature" in gen_conf: options["temperature"] = gen_conf["temperature"]
-        if "max_tokens" in gen_conf: options["num_predict"] = gen_conf["max_tokens"]
+        if "max_tokens" in gen_conf: options["num_predict"] = -1
         if "top_p" in gen_conf: options["top_k"] = gen_conf["top_p"]
         if "presence_penalty" in gen_conf: options["presence_penalty"] = gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf: options["frequency_penalty"] = gen_conf["frequency_penalty"]
+        options["num_ctx"] = 128000
+
         ans = ""
+        logger.info(f"OllamaChat: System - {system}")
+        logger.info(f"OllamaChat: History - {history}")
         try:
             response = self.client.chat(
                 model=self.model_name,
@@ -341,6 +358,7 @@ class OllamaChat(Base):
                 if resp["done"]:
                     yield resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
                 ans += resp["message"]["content"]
+                logger.info(f"OllamaChat: Response - {ans}")
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -981,7 +999,6 @@ class NvidiaChat(Base):
 class LmStudioChat(Base):
     def __init__(self, key, model_name, base_url):
         from os.path import join
-
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
