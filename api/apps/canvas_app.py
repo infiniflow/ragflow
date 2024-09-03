@@ -18,6 +18,7 @@ from functools import partial
 from flask import request, Response
 from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
@@ -43,6 +44,10 @@ def canvas_list():
 @login_required
 def rm():
     for i in request.json["canvas_ids"]:
+        if not UserCanvasService.query(user_id=current_user.id,id=i):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
         UserCanvasService.delete_by_id(i)
     return get_json_result(data=True)
 
