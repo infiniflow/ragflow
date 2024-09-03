@@ -100,6 +100,16 @@ def update():
 def detail():
     kb_id = request.args["kb_id"]
     try:
+        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        temp = False
+        for m in tenants:
+            if KnowledgebaseService.query(
+                    created_by=m["tenant.id"], id=kb_id):
+                temp = True
+        if not temp:
+            return get_json_result(
+                data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
         kb = KnowledgebaseService.get_detail(kb_id)
         if not kb:
             return get_data_error_result(
