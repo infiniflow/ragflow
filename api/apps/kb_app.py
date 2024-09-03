@@ -101,7 +101,6 @@ def detail():
     kb_id = request.args["kb_id"]
     try:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        temp = False
         for m in tenants:
             if KnowledgebaseService.query(
                     tenant_id=m["tenant_id"], id=kb_id):
