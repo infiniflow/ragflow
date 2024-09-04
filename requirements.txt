@@ -39,7 +39,7 @@ Markdown==3.6
 markdown_to_json==2.1.1
 minio==7.2.4
 mistralai==0.4.2
-nltk==3.8.1
+nltk==3.9
 numpy==1.26.4
 ollama==0.2.1
 onnxruntime==1.17.3
