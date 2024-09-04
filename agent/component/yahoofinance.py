@@ -26,7 +26,7 @@ class YahooFinanceParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
-        self.info = False
+        self.info = True
         self.history = False
         self.count = False
         self.financials = False
