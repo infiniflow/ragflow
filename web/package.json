@@ -26,7 +26,7 @@
     "@tanstack/react-query-devtools": "^5.51.5",
     "ahooks": "^3.7.10",
     "antd": "^5.12.7",
-    "axios": "^1.6.3",
+    "axios": "^1.7.4",
     "classnames": "^2.5.1",
     "dayjs": "^1.11.10",
     "dompurify": "^3.1.6",
