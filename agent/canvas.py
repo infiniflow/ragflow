@@ -302,4 +302,4 @@ class Canvas(ABC):
         return
 
     def get_prologue(self):
-        return self.components["begin"]._param.prologue
+        return self.components["begin"]["obj"]._param.prologue
