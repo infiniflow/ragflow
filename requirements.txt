@@ -24,7 +24,7 @@ fasttext==0.9.3
 filelock==3.15.4
 FlagEmbedding==1.2.10
 Flask==3.0.3
-Flask_Cors==4.0.1
+Flask_Cors==5.0.0
 Flask_Login==0.6.3
 flask_session==0.8.0
 google_search_results==2.4.2
