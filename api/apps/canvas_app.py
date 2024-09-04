@@ -68,8 +68,11 @@ def save():
         if not UserCanvasService.save(**req):
             return get_data_error_result(retmsg="Fail to save canvas.")
     else:
+        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
-
     return get_json_result(data=req)
 
 
@@ -91,6 +94,10 @@ def run():
     e, cvs = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(retmsg="canvas not found.")
+    if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+        return get_json_result(
+            data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+            retcode=RetCode.OPERATING_ERROR)
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -157,6 +164,10 @@ def reset():
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
             return get_data_error_result(retmsg="canvas not found.")
+        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
         canvas.reset()
