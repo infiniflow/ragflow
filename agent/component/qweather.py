@@ -51,7 +51,7 @@ class QWeatherParam(ComponentParamBase):
                                ['zh', 'zh-hant', 'en', 'de', 'es', 'fr', 'it', 'ja', 'ko', 'ru', 'hi', 'th', 'ar', 'pt',
                                 'bn', 'ms', 'nl', 'el', 'la', 'sv', 'id', 'pl', 'tr', 'cs', 'et', 'vi', 'fil', 'fi',
                                 'he', 'is', 'nb'])
-        self.check_vaild_value(self.time_period, "Time period", ['now', '3d', '7d', '10d', '15d', '30d'])
+        self.check_valid_value(self.time_period, "Time period", ['now', '3d', '7d', '10d', '15d', '30d'])
 
 
 class QWeather(ComponentBase, ABC):
