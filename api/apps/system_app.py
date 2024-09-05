@@ -22,7 +22,7 @@ from api.utils.api_utils import get_json_result
 from api.versions import get_rag_version
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.es_conn import ELASTICSEARCH
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
@@ -47,7 +47,7 @@ def status():
 
     st = timer()
     try:
-        MINIO.health()
+        STORAGE_IMPL.health()
         res["minio"] = {"status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.)}
     except Exception as e:
         res["minio"] = {"status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}

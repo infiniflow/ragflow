@@ -48,7 +48,7 @@ from api.db import FileType, TaskStatus, ParserType, FileSource, LLMType
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.settings import RetCode, stat_logger
 from api.utils.api_utils import get_json_result
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 from api.utils.file_utils import filename_type, thumbnail, get_project_base_directory
 from api.utils.web_utils import html2pdf, is_valid_url
 
@@ -118,9 +118,9 @@ def web_crawl():
             raise RuntimeError("This type of file has not been supported yet!")
 
         location = filename
-        while MINIO.obj_exist(kb_id, location):
+        while STORAGE_IMPL.obj_exist(kb_id, location):
             location += "_"
-        MINIO.put(kb_id, location, blob)
+        STORAGE_IMPL.put(kb_id, location, blob)
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -307,7 +307,7 @@ def rm():
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
             File2DocumentService.delete_by_document_id(doc_id)
 
-            MINIO.rm(b, n)
+            STORAGE_IMPL.rm(b, n)
         except Exception as e:
             errors += str(e)
 
@@ -394,7 +394,7 @@ def get(doc_id):
             return get_data_error_result(retmsg="Document not found!")
 
         b, n = File2DocumentService.get_minio_address(doc_id=doc_id)
-        response = flask.make_response(MINIO.get(b, n))
+        response = flask.make_response(STORAGE_IMPL.get(b, n))
 
         ext = re.search(r"\.([^.]+)$", doc.name)
         if ext:
@@ -458,7 +458,7 @@ def change_parser():
 def get_image(image_id):
     try:
         bkt, nm = image_id.split("-")
-        response = flask.make_response(MINIO.get(bkt, nm))
+        response = flask.make_response(STORAGE_IMPL.get(bkt, nm))
         response.headers.set('Content-Type', 'image/JPEG')
         return response
     except Exception as e:
