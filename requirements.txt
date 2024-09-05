@@ -24,7 +24,7 @@ fasttext==0.9.3
 filelock==3.15.4
 FlagEmbedding==1.2.10
 Flask==3.0.3
-Flask_Cors==4.0.1
+Flask_Cors==5.0.0
 Flask_Login==0.6.3
 flask_session==0.8.0
 google_search_results==2.4.2
@@ -39,7 +39,7 @@ Markdown==3.6
 markdown_to_json==2.1.1
 minio==7.2.4
 mistralai==0.4.2
-nltk==3.8.1
+nltk==3.9
 numpy==1.26.4
 ollama==0.2.1
 onnxruntime==1.17.3
@@ -94,4 +94,5 @@ wikipedia==1.4.0
 word2number==1.1
 xgboost==2.1.0
 xpinyin==0.7.6
+yfinance==0.2.43
 zhipuai==2.0.1

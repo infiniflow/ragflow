@@ -18,6 +18,7 @@ from functools import partial
 from flask import request, Response
 from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
@@ -43,6 +44,10 @@ def canvas_list():
 @login_required
 def rm():
     for i in request.json["canvas_ids"]:
+        if not UserCanvasService.query(user_id=current_user.id,id=i):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
         UserCanvasService.delete_by_id(i)
     return get_json_result(data=True)
 
@@ -63,8 +68,11 @@ def save():
         if not UserCanvasService.save(**req):
             return get_data_error_result(retmsg="Fail to save canvas.")
     else:
+        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
-
     return get_json_result(data=req)
 
 
@@ -86,6 +94,10 @@ def run():
     e, cvs = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(retmsg="canvas not found.")
+    if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+        return get_json_result(
+            data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+            retcode=RetCode.OPERATING_ERROR)
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -152,6 +164,10 @@ def reset():
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
             return get_data_error_result(retmsg="canvas not found.")
+        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
         canvas.reset()

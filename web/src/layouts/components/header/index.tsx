@@ -29,6 +29,7 @@ const RagHeader = () => {
       { path: '/chat', name: t('chat'), icon: MessageOutlined },
       { path: '/flow', name: t('flow'), icon: GraphIcon },
       { path: '/file', name: t('fileManager'), icon: FileIcon },
+      { path: '/search', name: t('search'), icon: FileIcon },
     ],
     [t],
   );

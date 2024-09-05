@@ -35,7 +35,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, queue_tasks
-from api.db.services.user_service import TenantService
+from api.db.services.user_service import TenantService, UserTenantService
 from graphrag.mind_map_extractor import MindMapExtractor
 from rag.app import naive
 from rag.nlp import search
@@ -189,6 +189,15 @@ def list_docs():
     if not kb_id:
         return get_json_result(
             data=False, retmsg='Lack of "KB ID"', retcode=RetCode.ARGUMENT_ERROR)
+    tenants = UserTenantService.query(user_id=current_user.id)
+    for tenant in tenants:
+        if KnowledgebaseService.query(
+                tenant_id=tenant.tenant_id, id=kb_id):
+            break
+    else:
+        return get_json_result(
+            data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.',
+            retcode=RetCode.OPERATING_ERROR)
     keywords = request.args.get("keywords", "")
 
     page_number = int(request.args.get("page", 1))

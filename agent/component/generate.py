@@ -112,8 +112,7 @@ class Generate(ComponentBase):
 
         kwargs["input"] = input
         for n, v in kwargs.items():
-            # prompt = re.sub(r"\{%s\}"%n, re.escape(str(v)), prompt)
-            prompt = re.sub(r"\{%s\}" % n, str(v), prompt)
+            prompt = re.sub(r"\{%s\}" % n, re.escape(str(v)), prompt)
 
         downstreams = self._canvas.get_component(self._id)["downstream"]
         if kwargs.get("stream") and len(downstreams) == 1 and self._canvas.get_component(downstreams[0])[

@@ -70,6 +70,7 @@ export interface Message {
   doc_ids?: string[];
   prompt?: string;
   id?: string;
+  audio_binary?: string;
 }
 
 export interface IReference {
@@ -84,6 +85,7 @@ export interface IAnswer {
   conversationId?: string;
   prompt?: string;
   id?: string;
+  audio_binary?: string;
 }
 
 export interface Docagg {
