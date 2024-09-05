@@ -125,4 +125,5 @@ class CommunityReportsExtractor:
         report_sections = "\n\n".join(
             f"## {finding_summary(f)}\n\n{finding_explanation(f)}" for f in findings
         )
+     
         return f"# {title}\n\n{summary}\n\n{report_sections}"
