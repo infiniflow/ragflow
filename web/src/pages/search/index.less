@@ -1,10 +1,14 @@
 .searchSide {
-  overflow: auto;
-  height: 100vh;
+  height: calc(100vh - 72px);
   position: fixed !important;
   inset-inline-start: 0;
-  top: 0;
+  top: 72px;
   bottom: 0;
+
+  .modelForm {
+    display: flex;
+    padding: 24px;
+  }
 
   .checkGroup {
     width: 100%;
@@ -12,6 +16,8 @@
   }
   .list {
     width: 100%;
+    height: 100%;
+    overflow: auto;
   }
   .checkbox {
     width: 100%;
