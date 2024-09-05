@@ -69,7 +69,7 @@ export const useFetchKnowledgeBaseConfiguration = () => {
 export const useNextFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
 ): {
-  list: any[];
+  list: IKnowledge[];
   loading: boolean;
 } => {
   const { data, isFetching: loading } = useQuery({

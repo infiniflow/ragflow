@@ -59,6 +59,7 @@ export default {
       logout: '登出',
       fileManager: '文件管理',
       flow: 'Agent',
+      search: '搜尋',
     },
     knowledgeList: {
       welcome: '歡迎回來',

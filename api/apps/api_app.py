@@ -151,14 +151,17 @@ def set_conversation():
     req = request.json
     try:
         if objs[0].source == "agent":
-            e, c = UserCanvasService.get_by_id(objs[0].dialog_id)
+            e, cvs = UserCanvasService.get_by_id(objs[0].dialog_id)
             if not e:
                 return server_error_response("canvas not found.")
+            if not isinstance(cvs.dsl, str):
+                cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+            canvas = Canvas(cvs.dsl, objs[0].tenant_id)
             conv = {
                 "id": get_uuid(),
-                "dialog_id": c.id,
+                "dialog_id": cvs.id,
                 "user_id": request.args.get("user_id", ""),
-                "message": [{"role": "assistant", "content": "Hi there!"}],
+                "message": [{"role": "assistant", "content": canvas.get_prologue()}],
                 "source": "agent"
             }
             API4ConversationService.save(**conv)

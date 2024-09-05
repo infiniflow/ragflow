@@ -18,8 +18,9 @@ from functools import partial
 from flask import request, Response
 from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.settings import RetCode
 from api.utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request
+from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 
@@ -43,6 +44,10 @@ def canvas_list():
 @login_required
 def rm():
     for i in request.json["canvas_ids"]:
+        if not UserCanvasService.query(user_id=current_user.id,id=i):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
         UserCanvasService.delete_by_id(i)
     return get_json_result(data=True)
 
@@ -61,10 +66,13 @@ def save():
             return server_error_response(ValueError("Duplicated title."))
         req["id"] = get_uuid()
         if not UserCanvasService.save(**req):
-            return server_error_response("Fail to save canvas.")
+            return get_data_error_result(retmsg="Fail to save canvas.")
     else:
+        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
-
     return get_json_result(data=req)
 
 
@@ -73,7 +81,7 @@ def save():
 def get(canvas_id):
     e, c = UserCanvasService.get_by_id(canvas_id)
     if not e:
-        return server_error_response("canvas not found.")
+        return get_data_error_result(retmsg="canvas not found.")
     return get_json_result(data=c.to_dict())
 
 
@@ -85,7 +93,11 @@ def run():
     stream = req.get("stream", True)
     e, cvs = UserCanvasService.get_by_id(req["id"])
     if not e:
-        return server_error_response("canvas not found.")
+        return get_data_error_result(retmsg="canvas not found.")
+    if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+        return get_json_result(
+            data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+            retcode=RetCode.OPERATING_ERROR)
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -151,7 +163,11 @@ def reset():
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
-            return server_error_response("canvas not found.")
+            return get_data_error_result(retmsg="canvas not found.")
+        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+            return get_json_result(
+                data=False, retmsg=f'Only owner of canvas authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
         canvas.reset()
