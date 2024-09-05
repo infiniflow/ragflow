@@ -55,7 +55,7 @@ mpmath==1.3.0
 multidict==6.0.5
 multiprocess==0.70.16
 networkx==3.2.1
-nltk==3.8.1
+nltk==3.9
 numpy==1.26.4
 # nvidia-cublas-cu12==12.1.3.1
 # nvidia-cuda-cupti-cu12==12.1.105
