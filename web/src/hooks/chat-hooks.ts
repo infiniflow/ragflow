@@ -5,7 +5,10 @@ import {
   IStats,
   IToken,
 } from '@/interfaces/database/chat';
-import { IFeedbackRequestBody } from '@/interfaces/request/chat';
+import {
+  IAskRequestBody,
+  IFeedbackRequestBody,
+} from '@/interfaces/request/chat';
 import i18n from '@/locales/config';
 import { IClientConversation } from '@/pages/chat/interface';
 import chatService from '@/services/chat-service';
@@ -476,4 +479,24 @@ export const useFetchNextSharedConversation = (conversationId: string) => {
   return { data, loading };
 };
 
+//#endregion
+
+//#region search page
+
+export const useFetchMindMap = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['fetchMindMap'],
+    mutationFn: async (params: IAskRequestBody) => {
+      const { data } = await chatService.getMindMap(params);
+
+      return data;
+    },
+  });
+
+  return { data, loading, fetchMindMap: mutateAsync };
+};
 //#endregion

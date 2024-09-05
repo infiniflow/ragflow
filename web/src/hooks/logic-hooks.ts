@@ -243,6 +243,10 @@ export const useSendMessageWithSse = (
           const x = await reader?.read();
           if (x) {
             const { done, value } = x;
+            if (done) {
+              console.info('done');
+              break;
+            }
             try {
               const val = JSON.parse(value?.data || '');
               const d = val?.data;
@@ -255,10 +259,6 @@ export const useSendMessageWithSse = (
               }
             } catch (e) {
               console.warn(e);
-            }
-            if (done) {
-              console.info('done');
-              break;
             }
           }
         }

@@ -209,7 +209,7 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
     mutationFn: async (values: any) => {
       const { data } = await kbService.retrieval_test({
         ...values,
-        kb_id: knowledgeBaseId,
+        kb_id: values.kb_id ?? knowledgeBaseId,
         page,
         size: pageSize,
       });

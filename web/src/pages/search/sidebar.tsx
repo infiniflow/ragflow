@@ -1,19 +1,29 @@
 import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import type { CheckboxProps } from 'antd';
-import { Checkbox, Layout, List, Typography } from 'antd';
+import { Avatar, Checkbox, Layout, List, Space, Typography } from 'antd';
 import { CheckboxValueType } from 'antd/es/checkbox/Group';
-import { useCallback, useMemo, useState } from 'react';
+import {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+} from 'react';
 
+import { UserOutlined } from '@ant-design/icons';
 import { CheckboxChangeEvent } from 'antd/es/checkbox';
 import styles from './index.less';
 
 const { Sider } = Layout;
 
-const SearchSidebar = () => {
+interface IProps {
+  checkedList: string[];
+  setCheckedList: Dispatch<SetStateAction<string[]>>;
+}
+
+const SearchSidebar = ({ checkedList, setCheckedList }: IProps) => {
   const { list } = useNextFetchKnowledgeList();
   const ids = useMemo(() => list.map((x) => x.id), [list]);
-
-  const [checkedList, setCheckedList] = useState<string[]>(ids);
 
   const checkAll = list.length === checkedList.length;
 
@@ -31,8 +41,12 @@ const SearchSidebar = () => {
     [ids],
   );
 
+  useEffect(() => {
+    setCheckedList(ids);
+  }, [ids]);
+
   return (
-    <Sider className={styles.searchSide} theme={'light'} width={260}>
+    <Sider className={styles.searchSide} theme={'light'} width={240}>
       <Checkbox
         className={styles.modelForm}
         indeterminate={indeterminate}
@@ -53,12 +67,15 @@ const SearchSidebar = () => {
           renderItem={(item) => (
             <List.Item>
               <Checkbox value={item.id} className={styles.checkbox}>
-                <Typography.Text
-                  ellipsis={{ tooltip: item.name }}
-                  className={styles.knowledgeName}
-                >
-                  {item.name}
-                </Typography.Text>
+                <Space>
+                  <Avatar size={30} icon={<UserOutlined />} src={item.avatar} />
+                  <Typography.Text
+                    ellipsis={{ tooltip: item.name }}
+                    className={styles.knowledgeName}
+                  >
+                    {item.name}
+                  </Typography.Text>
+                </Space>
               </Checkbox>
             </List.Item>
           )}
