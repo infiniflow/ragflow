@@ -1,7 +1,7 @@
 {
   "id": 6,
   "title": "DB Assistant",
-  "description": "A more advanced agent that converts user queries into SQL statements, executes the queries, and assesses and returns the results. Besides preparing three knowledge bases, you must also configure the corresponding database.",
+  "description": "A more advanced agent that converts user queries into SQL statements, executes the queries, and assesses and returns the results. You must prepare three knowledge bases: 1: DDL for your database; 2: Examples of user queries converted to SQL statements; 3: A comprehensive description of your database, including but not limited to tables and records. And you are also required to configure the corresponding database.",
   "canvas_type": "chatbot",
   "dsl": {
             "answer": [],
