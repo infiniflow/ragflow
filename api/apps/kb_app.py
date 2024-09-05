@@ -100,10 +100,10 @@ def update():
 def detail():
     kb_id = request.args["kb_id"]
     try:
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        for m in tenants:
+        tenants = UserTenantService.query(user_id=current_user.id)
+        for tenant in tenants:
             if KnowledgebaseService.query(
-                    tenant_id=m["tenant_id"], id=kb_id):
+                    tenant_id=tenant.tenant_id, id=kb_id):
                 break
         else:
             return get_json_result(
