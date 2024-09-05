@@ -293,13 +293,20 @@ const UserSettingModel = () => {
       children: (
         <List
           grid={{
-            gutter: 24,
+            gutter: {
+              xs: 8,
+              sm: 10,
+              md: 12,
+              lg: 16,
+              xl: 20,
+              xxl: 24,
+            },
             xs: 1,
-            sm: 2,
-            md: 3,
-            lg: 4,
+            sm: 1,
+            md: 2,
+            lg: 3,
             xl: 4,
-            xxl: 10,
+            xxl: 8,
           }}
           dataSource={factoryList}
           renderItem={(item) => (
@@ -315,7 +322,11 @@ const UserSettingModel = () => {
                   </Flex>
                 </Flex>
                 <Divider className={styles.modelDivider}></Divider>
-                <Button type="link" onClick={() => handleAddModel(item.name)}>
+                <Button
+                  type="link"
+                  onClick={() => handleAddModel(item.name)}
+                  className={styles.addButton}
+                >
                   {t('addTheModel')}
                 </Button>
               </Card>
