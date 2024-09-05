@@ -1,7 +1,7 @@
 {
   "id": 2,
-  "title": "HR call-out assistant(Chinese)",
-  "description": "A HR call-out assistant. It will introduce the given job, answer the candidates' question about this job. And the most important thing is that it will try to obtain the contact information of the candidates. What you need to do is to link a knowledgebase which contains job description in 'Retrieval' component.",
+  "title": "HR recruitment pitch assistant (Chinese)",
+  "description": "A recruitment pitch assistant capable of pitching a candidate, presenting a job opportunity, addressing queries, and requesting the candidate's contact details. Let's begin by linking a knowledge base containing the job description in 'Retrieval'!",
   "canvas_type": "chatbot",
   "dsl": {
     "answer": [],
