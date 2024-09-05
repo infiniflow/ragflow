@@ -1,42 +1,13 @@
-import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
-import { Checkbox, Layout, List, Typography } from 'antd';
-import React, { useCallback } from 'react';
+import { Layout } from 'antd';
+import React from 'react';
+import SearchSidebar from './sidebar';
 
-import { CheckboxValueType } from 'antd/es/checkbox/Group';
-import styles from './index.less';
-
-const { Header, Content, Footer, Sider } = Layout;
+const { Header, Content, Footer } = Layout;
 
 const SearchPage = () => {
-  const { list } = useNextFetchKnowledgeList();
-
-  const handleChange = useCallback((checkedValue: CheckboxValueType[]) => {
-    console.log('🚀 ~ handleChange ~ args:', checkedValue);
-  }, []);
-
   return (
     <Layout hasSider>
-      <Sider className={styles.searchSide} theme={'light'}>
-        <Checkbox.Group className={styles.checkGroup} onChange={handleChange}>
-          <List
-            bordered
-            dataSource={list}
-            className={styles.list}
-            renderItem={(item) => (
-              <List.Item>
-                <Checkbox value={item.id} className={styles.checkbox}>
-                  <Typography.Text
-                    ellipsis={{ tooltip: item.name }}
-                    className={styles.knowledgeName}
-                  >
-                    {item.name}
-                  </Typography.Text>
-                </Checkbox>
-              </List.Item>
-            )}
-          />
-        </Checkbox.Group>
-      </Sider>
+      <SearchSidebar></SearchSidebar>
       <Layout style={{ marginInlineStart: 200 }}>
         <Header style={{ padding: 0 }} />
         <Content style={{ margin: '24px 16px 0', overflow: 'initial' }}>
