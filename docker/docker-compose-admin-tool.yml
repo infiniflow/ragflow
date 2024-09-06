@@ -1,3 +1,7 @@
+include:
+  - path: ./docker-compose.yml
+    env_file: ./.env
+
 services:
   kibana:
     image: kibana:${STACK_VERSION}
@@ -12,7 +16,7 @@ services:
       es01:
         condition: service_healthy
       kibana-user-init:
-        condition: service_completed_successfully 
+        condition: service_completed_successfully
 
     networks:
       - ragflow
