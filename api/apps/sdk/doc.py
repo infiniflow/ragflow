@@ -1,60 +1,36 @@
 import pathlib
 import re
 import datetime
-import json
-import traceback
 
-from botocore.docs.method import document_model_driven_method
 from flask import request
-from flask_login import login_required, current_user
-from elasticsearch_dsl import Q
-from pygments import highlight
-from sphinx.addnodes import document
 
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import search, rag_tokenizer, keyword_extraction
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService
-from api.db.services.user_service import UserTenantService
-from api.utils.api_utils import server_error_response, get_error_data_result, validate_request
+from api.utils.api_utils import server_error_response, get_error_data_result
 from api.db.services.document_service import DocumentService
-from api.settings import RetCode, retrievaler, kg_retrievaler
+from api.settings import RetCode, retrievaler, kg_retrievaler, docStoreConn
 from api.utils.api_utils import get_result
 import hashlib
-import re
-from api.utils.api_utils import get_result, token_required, get_error_data_result
+from api.utils.api_utils import token_required
 
 from api.db.db_models import Task, File
 
 from api.db.services.task_service import TaskService, queue_tasks
-from api.db.services.user_service import TenantService, UserTenantService
 
-from api.utils.api_utils import server_error_response, get_error_data_result, validate_request
 
-from api.utils.api_utils import get_result, get_result, get_error_data_result
 
-from functools import partial
 from io import BytesIO
 
-from elasticsearch_dsl import Q
-from flask import request, send_file
-from flask_login import login_required
+from flask import send_file
 
 from api.db import FileSource, TaskStatus, FileType
-from api.db.db_models import File
-from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.settings import RetCode, retrievaler
-from api.utils.api_utils import construct_json_result, construct_error_response
-from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture, audio, email
-from rag.nlp import search
-from rag.utils import rmSpace
-from rag.utils.es_conn import ELASTICSEARCH
+from api.utils.api_utils import construct_json_result
 from rag.utils.storage_factory import STORAGE_IMPL
 
 MAXIMUM_OF_UPLOADING_FILES = 256
@@ -142,8 +118,7 @@ def update_doc(tenant_id, dataset_id, document_id):
             tenant_id = DocumentService.get_tenant_id(req["id"])
             if not tenant_id:
                 return get_error_data_result(retmsg="Tenant not found!")
-            ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+            docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id))
 
     return get_result()
 
@@ -265,8 +240,7 @@ def parse(tenant_id,dataset_id):
         info["token_num"] = 0
         DocumentService.update_by_id(id, info)
         # if str(req["run"]) == TaskStatus.CANCEL.value:
-        ELASTICSEARCH.deleteByQuery(
-            Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+        docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id))
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
@@ -293,8 +267,7 @@ def stop_parsing(tenant_id,dataset_id):
         DocumentService.update_by_id(id, info)
         # if str(req["run"]) == TaskStatus.CANCEL.value:
         tenant_id = DocumentService.get_tenant_id(id)
-        ELASTICSEARCH.deleteByQuery(
-            Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+        docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id))
     return get_result()
 
 
@@ -402,7 +375,7 @@ def create(tenant_id,dataset_id,document_id):
     v, c = embd_mdl.encode([doc.name, req["content"]])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
-    ELASTICSEARCH.upsert([d], search.index_name(tenant_id))
+    docStoreConn.upsert([d], search.index_name(tenant_id))
 
     DocumentService.increment_chunk_num(
         doc.id, doc.kb_id, c, 1, 0)
@@ -445,8 +418,7 @@ def rm_chunk(tenant_id,dataset_id,document_id):
     for chunk_id in req.get("chunk_ids"):
         if chunk_id not in sres.ids:
             return get_error_data_result(f"Chunk {chunk_id} not found")
-    if not ELASTICSEARCH.deleteByQuery(
-            Q("ids", values=req["chunk_ids"]), search.index_name(tenant_id)):
+    if not docStoreConn.delete({"_id": req["chunk_ids"]}, search.index_name(tenant_id)):
         return get_error_data_result(retmsg="Index updating failure")
     deleted_chunk_ids = req["chunk_ids"]
     chunk_number = len(deleted_chunk_ids)
@@ -459,10 +431,8 @@ def rm_chunk(tenant_id,dataset_id,document_id):
 @token_required
 def set(tenant_id,dataset_id,document_id,chunk_id):
     try:
-        res = ELASTICSEARCH.get(
-        chunk_id, search.index_name(
-            tenant_id))
-    except Exception as e:
+        res = docStoreConn.get(chunk_id, search.index_name(tenant_id))
+    except Exception:
         return get_error_data_result(f"Can't find this chunk {chunk_id}")
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(retmsg=f"You don't own the dataset {dataset_id}.")
@@ -508,7 +478,7 @@ def set(tenant_id,dataset_id,document_id,chunk_id):
     v, c = embd_mdl.encode([doc.name, d["content_with_weight"]])
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
-    ELASTICSEARCH.upsert([d], search.index_name(tenant_id))
+    docStoreConn.upsert([d], search.index_name(tenant_id))
     return get_result()
 
 
@@ -580,6 +550,6 @@ def retrieval_test(tenant_id):
         return get_result(data=ranks)
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return get_result(retmsg=f'No chunk found! Check the chunk statu    s please!',
+            return get_result(retmsg='No chunk found! Check the chunk status please!',
                                    retcode=RetCode.DATA_ERROR)
         return server_error_response(e)
