@@ -76,7 +76,7 @@ class CommunityReportsExtractor:
                 text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
                 gen_conf = {"temperature": 0.3}
                 try:
-                    response = self._llm.chat(text, [], gen_conf)
+                    response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
                     token_count += num_tokens_from_string(text + response)
                     response = re.sub(r"^[^\{]*", "", response)
                     response = re.sub(r"[^\}]*$", "", response)
@@ -125,4 +125,5 @@ class CommunityReportsExtractor:
         report_sections = "\n\n".join(
             f"## {finding_summary(f)}\n\n{finding_explanation(f)}" for f in findings
         )
+     
         return f"# {title}\n\n{summary}\n\n{report_sections}"

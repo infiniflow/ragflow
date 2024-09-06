@@ -125,7 +125,7 @@ class EntityResolution:
                     }
                     text = perform_variable_replacements(self._resolution_prompt, variables=variables)
 
-                    response = self._llm.chat(text, [], gen_conf)
+                    response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
                     result = self._process_results(len(candidate_resolution_i[1]), response,
                                                    prompt_variables.get(self._record_delimiter_key,
                                                                         DEFAULT_RECORD_DELIMITER),

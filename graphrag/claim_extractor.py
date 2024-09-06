@@ -170,7 +170,7 @@ class ClaimExtractor:
                     }
         text = perform_variable_replacements(self._extraction_prompt, variables=variables)
         gen_conf = {"temperature": 0.5}
-        results = self._llm.chat(text, [], gen_conf)
+        results = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         claims = results.strip().removesuffix(completion_delimiter)
         history = [{"role": "system", "content": text}, {"role": "assistant", "content": results}]
 
