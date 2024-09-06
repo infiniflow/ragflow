@@ -1,10 +1,10 @@
 import HightLightMarkdown from '@/components/highlight-markdown';
 import { ImageWithPopover } from '@/components/image';
-import MessageItem from '@/components/message-item';
 import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import { Card, Flex, Input, Layout, List, Space } from 'antd';
 import { useState } from 'react';
+import MarkdownContent from '../chat/markdown-content';
 import { useSendQuestion } from './hooks';
 import SearchSidebar from './sidebar';
 
@@ -16,8 +16,7 @@ const { Search } = Input;
 const SearchPage = () => {
   const [checkedList, setCheckedList] = useState<string[]>([]);
   const list = useSelectTestingResult();
-  const { sendQuestion, message, sendingLoading } =
-    useSendQuestion(checkedList);
+  const { sendQuestion, answer, sendingLoading } = useSendQuestion(checkedList);
 
   return (
     <Layout className={styles.searchPage}>
@@ -33,19 +32,20 @@ const SearchPage = () => {
                 placeholder="input search text"
                 onSearch={sendQuestion}
                 size="large"
-              />
-              <MessageItem
-                item={message}
-                nickname="You"
-                reference={message.reference ?? ({} as IReference)}
                 loading={sendingLoading}
-                index={0}
-              ></MessageItem>
+                disabled={checkedList.length === 0}
+              />
+              <MarkdownContent
+                loading={sendingLoading}
+                content={answer.answer}
+                reference={answer.reference ?? ({} as IReference)}
+                clickDocumentButton={() => {}}
+              ></MarkdownContent>
               <List
                 dataSource={list.chunks}
                 renderItem={(item) => (
                   <List.Item>
-                    <Card>
+                    <Card className={styles.card}>
                       <Space>
                         <ImageWithPopover id={item.img_id}></ImageWithPopover>
                         <HightLightMarkdown>

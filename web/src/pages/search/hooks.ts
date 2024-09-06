@@ -1,26 +1,19 @@
-import { MessageType } from '@/constants/chat';
 import { useTestChunkRetrieval } from '@/hooks/knowledge-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
+import { IAnswer } from '@/interfaces/database/chat';
 import api from '@/utils/api';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IMessage } from '../chat/interface';
+import { isEmpty } from 'lodash';
+import { useCallback, useEffect, useState } from 'react';
 
 export const useSendQuestion = (kbIds: string[]) => {
   const { send, answer, done } = useSendMessageWithSse(api.ask);
   const { testChunk, loading } = useTestChunkRetrieval();
   const [sendingLoading, setSendingLoading] = useState(false);
-
-  const message: IMessage = useMemo(() => {
-    return {
-      id: '',
-      content: answer.answer,
-      role: MessageType.Assistant,
-      reference: answer.reference,
-    };
-  }, [answer]);
+  const [currentAnswer, setCurrentAnswer] = useState({} as IAnswer);
 
   const sendQuestion = useCallback(
     (question: string) => {
+      setCurrentAnswer({} as IAnswer);
       setSendingLoading(true);
       send({ kb_ids: kbIds, question });
       testChunk({ kb_id: kbIds, highlight: true, question });
@@ -29,10 +22,16 @@ export const useSendQuestion = (kbIds: string[]) => {
   );
 
   useEffect(() => {
+    if (!isEmpty(answer)) {
+      setCurrentAnswer(answer);
+    }
+  }, [answer]);
+
+  useEffect(() => {
     if (done) {
       setSendingLoading(false);
     }
   }, [done]);
 
-  return { sendQuestion, message, loading, sendingLoading };
+  return { sendQuestion, loading, sendingLoading, answer: currentAnswer };
 };
