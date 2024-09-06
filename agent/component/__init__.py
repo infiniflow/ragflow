@@ -25,7 +25,7 @@ from .exesql import ExeSQL, ExeSQLParam
 from .yahoofinance import YahooFinance, YahooFinanceParam
 from .wencai import WenCai, WenCaiParam
 from .jin10 import Jin10, Jin10Param
-from tushare import TuShare, TuShareParam
+from .tushare import TuShare, TuShareParam
 
 
 def component_class(class_name):
