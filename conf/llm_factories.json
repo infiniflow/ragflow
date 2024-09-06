@@ -105,16 +105,22 @@
                     "model_type": "embedding"
                 },
                 {
+                    "llm_name": "sambert-zhide-v1",
+                    "tags": "TTS",
+                    "max_tokens": 2048,
+                    "model_type": "tts"
+                },
+                {
+                    "llm_name": "sambert-zhiru-v1",
+                    "tags": "TTS",
+                    "max_tokens": 2048,
+                    "model_type": "tts"
+                },
+                {
                     "llm_name": "text-embedding-v3",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8192,
                     "model_type": "embedding"
-                },
-                {
-                    "llm_name": "paraformer-realtime-8k-v1",
-                    "tags": "SPEECH2TEXT",
-                    "max_tokens": 26214400,
-                    "model_type": "speech2text"
                 },
                 {
                     "llm_name": "qwen-vl-max",

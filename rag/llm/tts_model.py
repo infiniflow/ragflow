@@ -96,3 +96,60 @@ class FishAudioTTS(Base):
 
             except httpx.HTTPStatusError as e:
                 raise RuntimeError(f"**ERROR**: {e}")
+
+
+class QwenTTS(Base):
+    def __init__(self, key, model_name, base_url=""):
+        import dashscope
+        
+        self.model_name = model_name
+        dashscope.api_key = key
+
+    def tts(self, text):
+        from dashscope.api_entities.dashscope_response import SpeechSynthesisResponse
+        from dashscope.audio.tts import ResultCallback, SpeechSynthesizer, SpeechSynthesisResult
+        
+        class Callback(ResultCallback):
+            def __init__(self):
+                self._generator = self._create_generator()
+                next(self._generator)
+                
+            def _create_generator(self):
+                while True:
+                    result = yield
+                    yield result
+
+            def on_open(self):
+                pass
+
+            def on_complete(self):
+                pass
+
+            def on_error(self, response: SpeechSynthesisResponse):
+                self._generator.throw(Exception("Speech synthesizer failed"))
+
+            def on_close(self):
+                pass
+
+            def on_event(self, result: SpeechSynthesisResult):
+                print(result.get_audio_frame())
+                if result.get_audio_frame() is not None:
+                    self._generator.send(result.get_audio_frame())
+
+        callback = Callback()
+        SpeechSynthesizer.call(model=self.model_name,
+                                text=text,
+                                callback=callback,
+                                format="mp3")
+
+        text = self.normalize_text(text)
+        try:
+            for data in callback._generator:
+                if data:
+                    yield data
+                else:
+                    callback._generator.close()
+            yield num_tokens_from_string(text)
+            
+        except Exception as e:
+            raise RuntimeError(f"**ERROR**: {e}")
