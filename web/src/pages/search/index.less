@@ -1,0 +1,52 @@
+.searchPage {
+  // height: 100%;
+}
+
+.searchSide {
+  // height: calc(100vh - 72px);
+  position: relative;
+  // position: fixed !important;
+  // top: 72px;
+  // bottom: 0;
+  :global(.ant-layout-sider-children) {
+    height: auto;
+  }
+  inset-inline-start: 0;
+
+  .modelForm {
+    display: flex;
+    padding: 24px;
+  }
+
+  .checkGroup {
+    width: 100%;
+    height: 100%;
+  }
+  .list {
+    width: 100%;
+    // height: 100%;
+    height: calc(100vh - 152px);
+    overflow: auto;
+  }
+  .checkbox {
+    width: 100%;
+  }
+  .knowledgeName {
+    width: 130px;
+  }
+}
+
+.content {
+  height: 100%;
+  .main {
+    width: 60%;
+    // background-color: aqua;
+    overflow: auto;
+    padding: 10px;
+  }
+
+  .graph {
+    width: 40%;
+    background-color: bisque;
+  }
+}

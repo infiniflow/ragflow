@@ -7,6 +7,7 @@ import { useCallback, useState } from 'react';
 import CreateAgentModal from './create-agent-modal';
 import GraphAvatar from './graph-avatar';
 
+import DOMPurify from 'dompurify';
 import styles from './index.less';
 
 const { Title, Text, Paragraph } = Typography;
@@ -83,7 +84,11 @@ const AgentTemplateModal = ({ visible, hideModal, loading, onOk }: IProps) => {
                 </Flex>
                 <div className={styles.agentDescription}>
                   <Paragraph ellipsis={{ tooltip: x.description, rows: 5 }}>
-                    {x.description}
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: DOMPurify.sanitize(x.description),
+                      }}
+                    ></div>
                   </Paragraph>
                 </div>
                 {selectedId === x.id && (

@@ -71,7 +71,7 @@ class QWenSeq2txt(Base):
         ans = ""
         if result.status_code == HTTPStatus.OK:
             for sentence in result.get_sentence():
-                ans += str(sentence + '\n')
+                ans += sentence.text.decode('utf-8') + '\n'
             return ans, num_tokens_from_string(ans)
 
         return "**ERROR**: " + result.message, 0

@@ -131,6 +131,7 @@ const MessageItem = ({
                     content={item.content}
                     prompt={item.prompt}
                     showLikeButton={showLikeButton}
+                    audioBinary={item.audio_binary}
                   ></AssistantGroupButton>
                 )
               ) : (
