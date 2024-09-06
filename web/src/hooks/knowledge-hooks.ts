@@ -206,6 +206,7 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
     mutateAsync,
   } = useMutation({
     mutationKey: ['testChunk'], // This method is invalid
+    gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await kbService.retrieval_test({
         ...values,

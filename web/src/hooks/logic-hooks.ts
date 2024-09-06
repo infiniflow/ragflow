@@ -297,69 +297,6 @@ export const useSpeechWithSse = (url: string = api.tts) => {
   return { read };
 };
 
-export const useFetchAudioWithSse = (url: string = api.tts) => {
-  // const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
-  const [done, setDone] = useState(true);
-
-  const read = useCallback(
-    async (
-      body: any,
-    ): Promise<{ response: Response; data: ResponseType } | undefined> => {
-      try {
-        setDone(false);
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            [Authorization]: getAuthorization(),
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        });
-
-        const res = response.clone().json();
-
-        const reader = response?.body?.getReader();
-
-        while (true) {
-          const x = await reader?.read();
-          if (x) {
-            const { done, value } = x;
-            try {
-              // const val = JSON.parse(value || '');
-              const val = value;
-              // const d = val?.data;
-              // if (typeof d !== 'boolean') {
-              // console.info('data:', d);
-              // setAnswer({
-              //   ...d,
-              //   conversationId: body?.conversation_id,
-              // });
-              // }
-            } catch (e) {
-              console.warn(e);
-            }
-            if (done) {
-              console.info('done');
-              break;
-            }
-          }
-        }
-        console.info('done?');
-        setDone(true);
-        // setAnswer({} as IAnswer);
-        return { data: await res, response };
-      } catch (e) {
-        setDone(true);
-        // setAnswer({} as IAnswer);
-        console.warn(e);
-      }
-    },
-    [url],
-  );
-
-  return { read, done, setDone };
-};
-
 //#region chat hooks
 
 export const useScrollToBottom = (messages?: unknown) => {
