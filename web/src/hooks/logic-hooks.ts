@@ -10,7 +10,7 @@ import { IClientConversation, IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid, getMessagePureId } from '@/utils/chat';
-import { PaginationProps } from 'antd';
+import { PaginationProps, message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -280,8 +280,8 @@ export const useSendMessageWithSse = (
 
 export const useSpeechWithSse = (url: string = api.tts) => {
   const read = useCallback(
-    (body: any) => {
-      const response = fetch(url, {
+    async (body: any) => {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           [Authorization]: getAuthorization(),
@@ -289,6 +289,14 @@ export const useSpeechWithSse = (url: string = api.tts) => {
         },
         body: JSON.stringify(body),
       });
+      try {
+        const res = await response.clone().json();
+        if (res?.retcode !== 0) {
+          message.error(res?.retmsg);
+        }
+      } catch (error) {
+        console.warn('🚀 ~ error:', error);
+      }
       return response;
     },
     [url],
