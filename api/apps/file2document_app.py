@@ -13,9 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-from elasticsearch_dsl import Q
 
-from api.db.db_models import File2Document
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
@@ -28,8 +26,6 @@ from api.db import FileType
 from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
-from rag.nlp import search
-from rag.utils.es_conn import ELASTICSEARCH
 
 
 @manager.route('/convert', methods=['POST'])

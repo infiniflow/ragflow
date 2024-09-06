@@ -22,12 +22,11 @@ from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
-from api.settings import DATABASE_TYPE
+from api.settings import DATABASE_TYPE, docStoreConn
 from api.utils import current_timestamp, datetime_format
 from api.utils.api_utils import get_json_result, get_data_error_result, server_error_response, \
     generate_confirmation_token, request, validate_request
 from api.versions import get_rag_version
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
@@ -46,7 +45,7 @@ def status():
     res = {}
     st = timer()
     try:
-        res["es"] = ELASTICSEARCH.health()
+        res["es"] = docStoreConn.health()
         res["es"]["elapsed"] = "{:.1f}".format((timer() - st)*1000.)
     except Exception as e:
         res["es"] = {"status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}

@@ -254,7 +254,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
-   ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
+   ~/.local/bin/poetry install --sync --no-root --with=full # install RAGFlow dependent python modules
    ```
 
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:  
