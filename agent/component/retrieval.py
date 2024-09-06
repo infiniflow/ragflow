@@ -1,3 +1,11 @@
+'''
+Author: wingjson wingjson@outlook.com
+Date: 2024-09-06 08:24:57
+LastEditors: wingjson wingjson@outlook.com
+LastEditTime: 2024-09-06 08:26:06
+FilePath: \undefinede:\common\python\railchat\knowoffical\ragflow\agent\component\retrieval.py
+Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+'''
 #
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
@@ -54,8 +62,8 @@ class Retrieval(ComponentBase, ABC):
         for role, cnt in history[::-1][:self._param.message_history_window_size]:
             if role != "user":continue
             query.append(cnt)
-        query = "\n".join(query)
-
+        # query = "\n".join(query)
+        query = query[0]
         kbs = KnowledgebaseService.get_by_ids(self._param.kb_ids)
         if not kbs:
             raise ValueError("Can't find knowledgebases by {}".format(self._param.kb_ids))
