@@ -26,6 +26,7 @@ from .yahoofinance import YahooFinance, YahooFinanceParam
 from .wencai import WenCai, WenCaiParam
 from .jin10 import Jin10, Jin10Param
 from .tushare import TuShare, TuShareParam
+from .akshare import AkShare, AkShareParam
 
 
 def component_class(class_name):
