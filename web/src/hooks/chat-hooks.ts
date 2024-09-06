@@ -490,13 +490,32 @@ export const useFetchMindMap = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: ['fetchMindMap'],
+    gcTime: 0,
     mutationFn: async (params: IAskRequestBody) => {
       const { data } = await chatService.getMindMap(params);
 
-      return data;
+      return data?.data ?? [];
     },
   });
 
   return { data, loading, fetchMindMap: mutateAsync };
+};
+
+export const useFetchRelatedQuestions = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['fetchRelatedQuestions'],
+    gcTime: 0,
+    mutationFn: async (question: string): Promise<string[]> => {
+      const { data } = await chatService.getRelatedQuestions({ question });
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, fetchRelatedQuestions: mutateAsync };
 };
 //#endregion

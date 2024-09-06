@@ -25,6 +25,7 @@ const {
   tts,
   ask,
   mindmap,
+  getRelatedQuestions,
 } = api;
 
 const methods = {
@@ -114,6 +115,10 @@ const methods = {
   },
   getMindMap: {
     url: mindmap,
+    method: 'post',
+  },
+  getRelatedQuestions: {
+    url: getRelatedQuestions,
     method: 'post',
   },
 } as const;

@@ -16,7 +16,7 @@ import {
 } from '@antv/g6';
 import { TreeData } from '@antv/g6/lib/types';
 import isEmpty from 'lodash/isEmpty';
-import { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 
 const rootId = 'root';
 
@@ -294,9 +294,10 @@ register(
 interface IProps {
   data: TreeData;
   show: boolean;
+  style?: React.CSSProperties;
 }
 
-const IndentedTree = ({ data, show }: IProps) => {
+const IndentedTree = ({ data, show, style = {} }: IProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
 
@@ -388,6 +389,7 @@ const IndentedTree = ({ data, show }: IProps) => {
         width: '90vw',
         height: '80vh',
         display: show ? 'block' : 'none',
+        ...style,
       }}
     />
   );
