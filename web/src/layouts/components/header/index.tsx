@@ -9,7 +9,7 @@ import { useLocation } from 'umi';
 import Toolbar from '../right-toolbar';
 
 import { useFetchAppConf } from '@/hooks/logic-hooks';
-import { MessageOutlined, SearchOutlined } from '@ant-design/icons';
+import { SearchOutlined } from '@ant-design/icons';
 import styles from './index.less';
 
 const { Header } = Layout;
@@ -26,7 +26,7 @@ const RagHeader = () => {
   const tagsData = useMemo(
     () => [
       { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
-      { path: '/chat', name: t('chat'), icon: MessageOutlined },
+      // { path: '/chat', name: t('chat'), icon: MessageOutlined },
       { path: '/search', name: t('search'), icon: SearchOutlined },
       { path: '/flow', name: t('flow'), icon: GraphIcon },
       { path: '/file', name: t('fileManager'), icon: FileIcon },
