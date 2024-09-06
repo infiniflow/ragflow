@@ -1,66 +1,65 @@
-import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
-import { Checkbox, Layout, List, Typography } from 'antd';
-import React, { useCallback } from 'react';
+import HightLightMarkdown from '@/components/highlight-markdown';
+import { ImageWithPopover } from '@/components/image';
+import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
+import { IReference } from '@/interfaces/database/chat';
+import { Card, Flex, Input, Layout, List, Space } from 'antd';
+import { useState } from 'react';
+import MarkdownContent from '../chat/markdown-content';
+import { useSendQuestion } from './hooks';
+import SearchSidebar from './sidebar';
 
-import { CheckboxValueType } from 'antd/es/checkbox/Group';
 import styles from './index.less';
 
-const { Header, Content, Footer, Sider } = Layout;
+const { Content } = Layout;
+const { Search } = Input;
 
 const SearchPage = () => {
-  const { list } = useNextFetchKnowledgeList();
-
-  const handleChange = useCallback((checkedValue: CheckboxValueType[]) => {
-    console.log('🚀 ~ handleChange ~ args:', checkedValue);
-  }, []);
+  const [checkedList, setCheckedList] = useState<string[]>([]);
+  const list = useSelectTestingResult();
+  const { sendQuestion, answer, sendingLoading } = useSendQuestion(checkedList);
 
   return (
-    <Layout hasSider>
-      <Sider className={styles.searchSide} theme={'light'}>
-        <Checkbox.Group className={styles.checkGroup} onChange={handleChange}>
-          <List
-            bordered
-            dataSource={list}
-            className={styles.list}
-            renderItem={(item) => (
-              <List.Item>
-                <Checkbox value={item.id} className={styles.checkbox}>
-                  <Typography.Text
-                    ellipsis={{ tooltip: item.name }}
-                    className={styles.knowledgeName}
-                  >
-                    {item.name}
-                  </Typography.Text>
-                </Checkbox>
-              </List.Item>
-            )}
-          />
-        </Checkbox.Group>
-      </Sider>
-      <Layout style={{ marginInlineStart: 200 }}>
-        <Header style={{ padding: 0 }} />
-        <Content style={{ margin: '24px 16px 0', overflow: 'initial' }}>
-          <div
-            style={{
-              padding: 24,
-              textAlign: 'center',
-            }}
-          >
-            <p>long content</p>
-            {
-              // indicates very long content
-              Array.from({ length: 100 }, (_, index) => (
-                <React.Fragment key={index}>
-                  {index % 20 === 0 && index ? 'more' : '...'}
-                  <br />
-                </React.Fragment>
-              ))
-            }
-          </div>
+    <Layout className={styles.searchPage}>
+      <SearchSidebar
+        checkedList={checkedList}
+        setCheckedList={setCheckedList}
+      ></SearchSidebar>
+      <Layout>
+        <Content>
+          <Flex className={styles.content}>
+            <section className={styles.main}>
+              <Search
+                placeholder="input search text"
+                onSearch={sendQuestion}
+                size="large"
+                loading={sendingLoading}
+                disabled={checkedList.length === 0}
+              />
+              <MarkdownContent
+                loading={sendingLoading}
+                content={answer.answer}
+                reference={answer.reference ?? ({} as IReference)}
+                clickDocumentButton={() => {}}
+              ></MarkdownContent>
+              <List
+                dataSource={list.chunks}
+                renderItem={(item) => (
+                  <List.Item>
+                    <Card className={styles.card}>
+                      <Space>
+                        <ImageWithPopover id={item.img_id}></ImageWithPopover>
+                        <HightLightMarkdown>
+                          {item.highlight}
+                        </HightLightMarkdown>
+                      </Space>
+                    </Card>
+                  </List.Item>
+                )}
+              />
+            </section>
+            <section className={styles.graph}></section>
+          </Flex>
         </Content>
-        <Footer style={{ textAlign: 'center' }}>
-          Ant Design ©{new Date().getFullYear()} Created by Ant UED
-        </Footer>
       </Layout>
     </Layout>
   );

@@ -10,7 +10,7 @@ import { IClientConversation, IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid, getMessagePureId } from '@/utils/chat';
-import { PaginationProps } from 'antd';
+import { PaginationProps, message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -243,6 +243,10 @@ export const useSendMessageWithSse = (
           const x = await reader?.read();
           if (x) {
             const { done, value } = x;
+            if (done) {
+              console.info('done');
+              break;
+            }
             try {
               const val = JSON.parse(value?.data || '');
               const d = val?.data;
@@ -255,10 +259,6 @@ export const useSendMessageWithSse = (
               }
             } catch (e) {
               console.warn(e);
-            }
-            if (done) {
-              console.info('done');
-              break;
             }
           }
         }
@@ -280,8 +280,8 @@ export const useSendMessageWithSse = (
 
 export const useSpeechWithSse = (url: string = api.tts) => {
   const read = useCallback(
-    (body: any) => {
-      const response = fetch(url, {
+    async (body: any) => {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           [Authorization]: getAuthorization(),
@@ -289,75 +289,20 @@ export const useSpeechWithSse = (url: string = api.tts) => {
         },
         body: JSON.stringify(body),
       });
+      try {
+        const res = await response.clone().json();
+        if (res?.retcode !== 0) {
+          message.error(res?.retmsg);
+        }
+      } catch (error) {
+        console.warn('🚀 ~ error:', error);
+      }
       return response;
     },
     [url],
   );
 
   return { read };
-};
-
-export const useFetchAudioWithSse = (url: string = api.tts) => {
-  // const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
-  const [done, setDone] = useState(true);
-
-  const read = useCallback(
-    async (
-      body: any,
-    ): Promise<{ response: Response; data: ResponseType } | undefined> => {
-      try {
-        setDone(false);
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            [Authorization]: getAuthorization(),
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        });
-
-        const res = response.clone().json();
-
-        const reader = response?.body?.getReader();
-
-        while (true) {
-          const x = await reader?.read();
-          if (x) {
-            const { done, value } = x;
-            try {
-              // const val = JSON.parse(value || '');
-              const val = value;
-              // const d = val?.data;
-              // if (typeof d !== 'boolean') {
-              // console.info('data:', d);
-              // setAnswer({
-              //   ...d,
-              //   conversationId: body?.conversation_id,
-              // });
-              // }
-            } catch (e) {
-              console.warn(e);
-            }
-            if (done) {
-              console.info('done');
-              break;
-            }
-          }
-        }
-        console.info('done?');
-        setDone(true);
-        // setAnswer({} as IAnswer);
-        return { data: await res, response };
-      } catch (e) {
-        setDone(true);
-        // setAnswer({} as IAnswer);
-        console.warn(e);
-      }
-    },
-    [url],
-  );
-
-  return { read, done, setDone };
 };
 
 //#region chat hooks

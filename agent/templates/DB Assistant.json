@@ -1,7 +1,7 @@
 {
   "id": 6,
   "title": "DB Assistant",
-  "description": "Database query assistant. It converts questions into SQL statements and queries them in the database. You need to provide 3 kinds of knowledge base: 1. DDL data in the database. 2. Sample text questions converted to SQL statements. 3. A description of the database contents, including but not limited to: tables, records, and so on. You will also need to set up database configuration information: like IP Port ...",
+  "description": "A more advanced agent that converts user queries into SQL statements, executes the queries, and assesses and returns the results. You must prepare three knowledge bases: 1: DDL for your database; 2: Examples of user queries converted to SQL statements; 3: A comprehensive description of your database, including but not limited to tables and records. And you are also required to configure the corresponding database.",
   "canvas_type": "chatbot",
   "dsl": {
             "answer": [],

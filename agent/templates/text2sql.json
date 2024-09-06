@@ -1,7 +1,7 @@
 {
   "id": 5,
   "title": "Text To SQL",
-  "description": "An agent tool provides the ability to convert text questions into SQL statements, you will need to provide 3 kinds of knowledge bases. 1. DDL data for the database. 2. Examples of text questions converted into SQL statements. 3. A description of the database contents, including but not limited to: tables, records, etc...  ",
+  "description": "An agent that converts user queries into SQL statements. You must prepare three knowledge bases: 1: DDL for your database; 2: Examples of user queries converted to SQL statements; 3: A comprehensive description of your database, including but not limited to tables and records.",
   "canvas_type": "chatbot",
   "dsl": {
             "answer": [],
