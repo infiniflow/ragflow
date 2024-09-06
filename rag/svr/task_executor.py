@@ -31,14 +31,13 @@ from timeit import default_timer as timer
 
 import numpy as np
 import pandas as pd
-from elasticsearch_dsl import Q
 
 from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
 from api.db.services.file2document_service import File2DocumentService
-from api.settings import retrievaler
+from api.settings import retrievaler, docStoreConn
 from api.utils.file_utils import get_project_base_directory
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, knowledge_graph, email
@@ -47,7 +46,6 @@ from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as 
 from rag.settings import database_logger, SVR_QUEUE_NAME
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 from rag.utils import rmSpace, num_tokens_from_string
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.redis_conn import REDIS_CONN, Payload
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -226,9 +224,9 @@ def build(row):
 
 def init_kb(row):
     idxnm = search.index_name(row["tenant_id"])
-    if ELASTICSEARCH.indexExist(idxnm):
+    if docStoreConn.indexExist(idxnm):
         return
-    return ELASTICSEARCH.createIdx(idxnm, json.load(
+    return docStoreConn.createIdx(idxnm, json.load(
         open(os.path.join(get_project_base_directory(), "conf", "mapping.json"), "r")))
 
 
@@ -366,20 +364,18 @@ def main():
         es_r = ""
         es_bulk_size = 4
         for b in range(0, len(cks), es_bulk_size):
-            es_r = ELASTICSEARCH.bulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]))
+            es_r = docStoreConn.upsertBulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]))
             if b % 128 == 0:
                 callback(prog=0.8 + 0.1 * (b + 1) / len(cks), msg="")
 
         cron_logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
         if es_r:
             callback(-1, "Insert chunk error, detail info please check ragflow-logs/api/cron_logger.log. Please also check ES status!")
-            ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
+            docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]))
             cron_logger.error(str(es_r))
         else:
             if TaskService.do_cancel(r["id"]):
-                ELASTICSEARCH.deleteByQuery(
-                    Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
+                docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]))
                 continue
             callback(1., "Done!")
             DocumentService.increment_chunk_num(
