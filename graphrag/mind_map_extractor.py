@@ -180,7 +180,7 @@ class MindMapExtractor:
         }
         text = perform_variable_replacements(self._mind_map_prompt, variables=variables)
         gen_conf = {"temperature": 0.5}
-        response = self._llm.chat(text, [], gen_conf)
+        response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         response = re.sub(r"```[^\n]*", "", response)
         print(response)
         print("---------------------------------------------------\n", self._todict(markdown_to_json.dictify(response)))
