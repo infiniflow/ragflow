@@ -1,0 +1,8 @@
+{
+  "label": "Agentic RAG",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Agentic RAG-specific User Guides"
+  }
+}
