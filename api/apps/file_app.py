@@ -116,7 +116,7 @@ def upload():
                 "size": len(blob),
             }
             file = FileService.insert(file)
-            MINIO.put(last_folder.id, location, blob)
+            STORAGE_IMPL.put(last_folder.id, location, blob)
             file_res.append(file.to_json())
         return get_json_result(data=file_res)
     except Exception as e:
