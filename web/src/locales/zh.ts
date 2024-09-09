@@ -621,7 +621,7 @@ export default {
       operation: '操作',
       run: '运行',
       save: '保存',
-      title: '标题：',
+      title: 'ID：',
       beginDescription: '这是流程开始的地方',
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,

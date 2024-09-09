@@ -23,7 +23,6 @@ import {
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
 import { IConversation, IDialog, Message } from '@/interfaces/database/chat';
-import { IChunk } from '@/interfaces/database/knowledge';
 import { getFileExtension } from '@/utils';
 import { useMutationState } from '@tanstack/react-query';
 import { get } from 'lodash';
@@ -542,30 +541,6 @@ export const useRenameConversation = () => {
     conversationRenameVisible,
     hideConversationRenameModal,
     showConversationRenameModal: handleShowConversationRenameModal,
-  };
-};
-
-export const useClickDrawer = () => {
-  const { visible, showModal, hideModal } = useSetModalState();
-  const [selectedChunk, setSelectedChunk] = useState<IChunk>({} as IChunk);
-  const [documentId, setDocumentId] = useState<string>('');
-
-  const clickDocumentButton = useCallback(
-    (documentId: string, chunk: IChunk) => {
-      showModal();
-      setSelectedChunk(chunk);
-      setDocumentId(documentId);
-    },
-    [showModal],
-  );
-
-  return {
-    clickDocumentButton,
-    visible,
-    showModal,
-    hideModal,
-    selectedChunk,
-    documentId,
   };
 };
 
