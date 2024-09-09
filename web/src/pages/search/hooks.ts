@@ -3,7 +3,7 @@ import { useTestChunkRetrieval } from '@/hooks/knowledge-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { IAnswer } from '@/interfaces/database/chat';
 import api from '@/utils/api';
-import { isEmpty } from 'lodash';
+import { isEmpty, trim } from 'lodash';
 import { ChangeEventHandler, useCallback, useEffect, useState } from 'react';
 
 export const useSendQuestion = (kbIds: string[]) => {
@@ -19,18 +19,22 @@ export const useSendQuestion = (kbIds: string[]) => {
     loading: mindMapLoading,
   } = useFetchMindMap();
   const [searchStr, setSearchStr] = useState<string>('');
+  const [isFirstRender, setIsFirstRender] = useState(true);
 
   const sendQuestion = useCallback(
     (question: string) => {
+      const q = trim(question);
+      if (isEmpty(q)) return;
+      setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       setSendingLoading(true);
-      send({ kb_ids: kbIds, question });
-      testChunk({ kb_id: kbIds, highlight: true, question });
+      send({ kb_ids: kbIds, question: q });
+      testChunk({ kb_id: kbIds, highlight: true, question: q });
       fetchMindMap({
-        question,
+        question: q,
         kb_ids: kbIds,
       });
-      fetchRelatedQuestions(question);
+      fetchRelatedQuestions(q);
     },
     [send, testChunk, kbIds, fetchRelatedQuestions, fetchMindMap],
   );
@@ -65,14 +69,15 @@ export const useSendQuestion = (kbIds: string[]) => {
 
   return {
     sendQuestion,
+    handleSearchStrChange,
+    handleClickRelatedQuestion,
     loading,
     sendingLoading,
     answer: currentAnswer,
     relatedQuestions: relatedQuestions?.slice(0, 5) ?? [],
     mindMap,
     mindMapLoading,
-    handleClickRelatedQuestion,
     searchStr,
-    handleSearchStrChange,
+    isFirstRender,
   };
 };

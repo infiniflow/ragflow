@@ -49,18 +49,22 @@
   }
 }
 
+.firstRenderContent {
+  height: 100%;
+}
+
 .content {
   height: 100%;
   .main {
     width: 60%;
     // background-color: aqua;
     overflow: auto;
-    padding: 10px;
+    padding: 20px 10px 10px;
   }
 
   .graph {
     width: 40%;
-    padding-right: 10px;
+    padding: 20px 10px 10px;
   }
 }
 .answerWrapper {
@@ -71,4 +75,29 @@
   & > p {
     margin: 0;
   }
+}
+
+.input() {
+  :global(.ant-input-affix-wrapper) {
+    padding: 4px 8px;
+    border-start-start-radius: 30px !important;
+    border-end-start-radius: 30px !important;
+  }
+  input {
+    height: 40px;
+  }
+  button {
+    height: 50px !important;
+    border-start-end-radius: 30px !important;
+    border-end-end-radius: 30px !important;
+  }
+}
+
+.globalInput {
+  width: 600px;
+  .input();
+}
+.partialInput {
+  width: 100%;
+  .input();
 }

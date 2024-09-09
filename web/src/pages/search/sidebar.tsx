@@ -22,7 +22,7 @@ interface IProps {
 }
 
 const SearchSidebar = ({ checkedList, setCheckedList }: IProps) => {
-  const { list } = useNextFetchKnowledgeList();
+  const { list, loading } = useNextFetchKnowledgeList();
   const ids = useMemo(() => list.map((x) => x.id), [list]);
 
   const checkAll = list.length === checkedList.length;
@@ -67,6 +67,7 @@ const SearchSidebar = ({ checkedList, setCheckedList }: IProps) => {
           bordered
           dataSource={list}
           className={styles.list}
+          loading={loading}
           renderItem={(item) => (
             <List.Item>
               <Checkbox value={item.id} className={styles.checkbox}>
