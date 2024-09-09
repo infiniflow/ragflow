@@ -19,11 +19,14 @@ const SearchPage = () => {
   const list = useSelectTestingResult();
   const {
     sendQuestion,
+    handleClickRelatedQuestion,
+    handleSearchStrChange,
     answer,
     sendingLoading,
     relatedQuestions,
     mindMap,
     mindMapLoading,
+    searchStr,
   } = useSendQuestion(checkedList);
 
   return (
@@ -37,18 +40,24 @@ const SearchPage = () => {
           <Flex className={styles.content}>
             <section className={styles.main}>
               <Search
+                value={searchStr}
+                onChange={handleSearchStrChange}
                 placeholder="input search text"
                 onSearch={sendQuestion}
                 size="large"
                 loading={sendingLoading}
                 disabled={checkedList.length === 0}
               />
-              <MarkdownContent
-                loading={sendingLoading}
-                content={answer.answer}
-                reference={answer.reference ?? ({} as IReference)}
-                clickDocumentButton={() => {}}
-              ></MarkdownContent>
+              {answer.answer && (
+                <div className={styles.answerWrapper}>
+                  <MarkdownContent
+                    loading={sendingLoading}
+                    content={answer.answer}
+                    reference={answer.reference ?? ({} as IReference)}
+                    clickDocumentButton={() => {}}
+                  ></MarkdownContent>
+                </div>
+              )}
               <List
                 dataSource={list.chunks}
                 renderItem={(item) => (
@@ -68,7 +77,11 @@ const SearchPage = () => {
                 <Card>
                   <Flex wrap="wrap" gap={'10px 0'}>
                     {relatedQuestions?.map((x, idx) => (
-                      <Tag key={idx} className={styles.tag}>
+                      <Tag
+                        key={idx}
+                        className={styles.tag}
+                        onClick={handleClickRelatedQuestion(x)}
+                      >
                         {x}
                       </Tag>
                     ))}

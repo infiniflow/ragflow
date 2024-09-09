@@ -1,10 +1,17 @@
 .searchPage {
   .card {
     width: 100%;
+    :global(.ant-card-body) {
+      padding: 14px;
+    }
+    p {
+      margin: 0;
+    }
   }
   .tag {
     padding: 4px 8px;
     font-size: 14px;
+    cursor: pointer;
   }
 }
 
@@ -54,5 +61,14 @@
   .graph {
     width: 40%;
     padding-right: 10px;
+  }
+}
+.answerWrapper {
+  background-color: #e6f4ff;
+  padding: 14px;
+  margin-top: 16px;
+  border-radius: 8px;
+  & > p {
+    margin: 0;
   }
 }

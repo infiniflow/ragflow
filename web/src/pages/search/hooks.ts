@@ -4,7 +4,7 @@ import { useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { IAnswer } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { isEmpty } from 'lodash';
-import { useCallback, useEffect, useState } from 'react';
+import { ChangeEventHandler, useCallback, useEffect, useState } from 'react';
 
 export const useSendQuestion = (kbIds: string[]) => {
   const { send, answer, done } = useSendMessageWithSse(api.ask);
@@ -18,6 +18,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     data: mindMap,
     loading: mindMapLoading,
   } = useFetchMindMap();
+  const [searchStr, setSearchStr] = useState<string>('');
 
   const sendQuestion = useCallback(
     (question: string) => {
@@ -34,10 +35,26 @@ export const useSendQuestion = (kbIds: string[]) => {
     [send, testChunk, kbIds, fetchRelatedQuestions, fetchMindMap],
   );
 
+  const handleSearchStrChange: ChangeEventHandler<HTMLInputElement> =
+    useCallback((e) => {
+      setSearchStr(e.target.value);
+    }, []);
+
+  const handleClickRelatedQuestion = useCallback(
+    (question: string) => () => {
+      setSearchStr(question);
+      sendQuestion(question);
+    },
+    [sendQuestion],
+  );
+
   useEffect(() => {
     if (!isEmpty(answer)) {
       setCurrentAnswer(answer);
     }
+    return () => {
+      setCurrentAnswer({} as IAnswer);
+    };
   }, [answer]);
 
   useEffect(() => {
@@ -54,5 +71,8 @@ export const useSendQuestion = (kbIds: string[]) => {
     relatedQuestions: relatedQuestions?.slice(0, 5) ?? [],
     mindMap,
     mindMapLoading,
+    handleClickRelatedQuestion,
+    searchStr,
+    handleSearchStrChange,
   };
 };
