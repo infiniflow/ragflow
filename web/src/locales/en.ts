@@ -656,8 +656,8 @@ The above is the content you need to summarize.`,
       rewriteQuestionDescription: `A component that refines a user query if it fails to retrieve relevant information from the knowledge base. It repeats this process until the predefined looping upper limit is reached. Ensure its upstream is 'Relevant' and downstream is 'Retrieval'. `,
       messageDescription:
         "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Answer', the interface component.",
-      keywordDescription: `A component that retrieves top N search results from wikipedia.org. Ensure the TopN value is set properly before use.`,
-      wikipediaDescription: `This component is used to get search result from https://www.wikipedia.org/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.`,
+      keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
+      wikipediaDescription: `This component is used to get search result from wikipedia.org. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.`,
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
         {input}
   The above is the content you need to summarize.`,
