@@ -1,3 +1,4 @@
+akshare==1.14.72
 azure-storage-blob==12.22.0
 azure-identity==1.17.1
 azure-storage-file-datalake==12.16.0
