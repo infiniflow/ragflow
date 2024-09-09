@@ -76,7 +76,7 @@ class File2DocumentService(CommonService):
             f2d = cls.get_by_file_id(file_id)
         if f2d:
             file = File.get_by_id(f2d[0].file_id)
-            if file.source_type == FileSource.LOCAL:
+            if not file.source_type or file.source_type == FileSource.LOCAL:
                 return file.parent_id, file.location
             doc_id = f2d[0].document_id
 

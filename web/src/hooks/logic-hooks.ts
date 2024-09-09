@@ -217,6 +217,10 @@ export const useSendMessageWithSse = (
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
 
+  const resetAnswer = useCallback(() => {
+    setAnswer({} as IAnswer);
+  }, []);
+
   const send = useCallback(
     async (
       body: any,
@@ -251,7 +255,7 @@ export const useSendMessageWithSse = (
               const val = JSON.parse(value?.data || '');
               const d = val?.data;
               if (typeof d !== 'boolean') {
-                // console.info('data:', d);
+                console.info('data:', d);
                 setAnswer({
                   ...d,
                   conversationId: body?.conversation_id,
@@ -264,18 +268,16 @@ export const useSendMessageWithSse = (
         }
         console.info('done?');
         setDone(true);
-        setAnswer({} as IAnswer);
         return { data: await res, response };
       } catch (e) {
         setDone(true);
-        setAnswer({} as IAnswer);
         console.warn(e);
       }
     },
     [url],
   );
 
-  return { send, answer, done, setDone };
+  return { send, answer, done, setDone, resetAnswer };
 };
 
 export const useSpeechWithSse = (url: string = api.tts) => {

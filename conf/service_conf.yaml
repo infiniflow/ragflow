@@ -13,6 +13,22 @@ minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
   host: 'minio:9000'
+azure:
+  auth_type: 'sas'
+  container_url: 'container_url'
+  sas_token: 'sas_token'
+#azure:
+#  auth_type: 'spn'
+#  account_url: 'account_url'
+#  client_id: 'client_id'
+#  secret: 'secret'
+#  tenant_id: 'tenant_id'
+#  container_name: 'container_name'
+s3:
+  endpoint: 'endpoint'
+  access_key: 'access_key'
+  secret_key: 'secret_key'
+  region: 'region'
 es:
   hosts: 'http://es01:9200'
   username: 'elastic'

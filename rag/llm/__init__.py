@@ -137,5 +137,6 @@ Seq2txtModel = {
 }
 
 TTSModel = {
-    "Fish Audio": FishAudioTTS
+    "Fish Audio": FishAudioTTS,
+    "Tongyi-Qianwen": QwenTTS
 }

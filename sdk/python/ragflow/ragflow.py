@@ -17,7 +17,6 @@ from typing import List
 
 import requests
 
-
 from .modules.chat_assistant import Assistant
 from .modules.dataset import DataSet
 
@@ -88,7 +87,7 @@ class RAGFlow:
             datasets.append(dataset.to_json())
 
         if llm is None:
-            llm = Assistant.LLM(self, {"model_name": "deepseek-chat",
+            llm = Assistant.LLM(self, {"model_name": None,
                                        "temperature": 0.1,
                                        "top_p": 0.3,
                                        "presence_penalty": 0.4,

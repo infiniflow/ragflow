@@ -66,24 +66,15 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2024-09-09 Adds a medical consultant agent template.
 - 2024-08-22 Support text to SQL statements through RAG.
-  
 - 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.
-  
 - 2024-07-23 Supports audio file parsing.
-
-- 2024-07-21 Supports more LLMs (LocalAI, OpenRouter, StepFun, and Nvidia).
-
-- 2024-07-18 Adds more components (Wikipedia, PubMed, Baidu, and Duckduckgo) to the graph.
-
-- 2024-07-08 Supports workflow based on [Graph](./graph/README.md).
-- 2024-06-27 Supports Markdown and Docx in the Q&A parsing method. 
-- 2024-06-27 Supports extracting images from Docx files. 
-- 2024-06-27 Supports extracting tables from Markdown files.
+- 2024-07-08 Supports workflow based on [Graph](./agent/README.md).
+- 2024-06-27 Supports Markdown and Docx in the Q&A parsing method, extracting images from Docx files, extracting tables from Markdown files.
 - 2024-06-06 Supports [Self-RAG](https://huggingface.co/papers/2310.11511), which is enabled by default in dialog settings.
-- 2024-05-30 Integrates [BCE](https://github.com/netease-youdao/BCEmbedding) and [BGE](https://github.com/FlagOpen/FlagEmbedding) reranker models.
 - 2024-05-23 Supports [RAPTOR](https://arxiv.org/html/2401.18059v1) for better text retrieval.
-- 2024-05-15 Integrates OpenAI GPT-4o.
+
 
 ## 🌟 Key Features
 

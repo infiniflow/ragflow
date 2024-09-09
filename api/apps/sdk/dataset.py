@@ -60,7 +60,7 @@ def save(tenant_id):
         req.update(mapped_keys)
         if not KnowledgebaseService.save(**req):
             return get_data_error_result(retmsg="Create dataset error.(Database error)")
-        renamed_data={}
+        renamed_data = {}
         e, k = KnowledgebaseService.get_by_id(req["id"])
         for key, value in k.to_dict().items():
             new_key = key_mapping.get(key, key)
@@ -88,6 +88,9 @@ def save(tenant_id):
                 data=False, retmsg='You do not own the dataset.',
                 retcode=RetCode.OPERATING_ERROR)
 
+        if not req["id"]:
+            return get_data_error_result(
+                retmsg="id can not be empty.")
         e, kb = KnowledgebaseService.get_by_id(req["id"])
 
         if "chunk_count" in req:
@@ -108,6 +111,7 @@ def save(tenant_id):
                     retmsg="If chunk count is not 0, parse method is not changable.")
             req['parser_id'] = req.pop('parse_method')
         if "name" in req:
+            req["name"] = req["name"].strip()
             if req["name"].lower() != kb.name.lower() \
                     and len(KnowledgebaseService.query(name=req["name"], tenant_id=tenant_id,
                                                        status=StatusEnum.VALID.value)) > 0:

@@ -34,7 +34,7 @@ from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 @manager.route('/upload', methods=['POST'])
@@ -98,7 +98,7 @@ def upload():
             # file type
             filetype = filename_type(file_obj_names[file_len - 1])
             location = file_obj_names[file_len - 1]
-            while MINIO.obj_exist(last_folder.id, location):
+            while STORAGE_IMPL.obj_exist(last_folder.id, location):
                 location += "_"
             blob = file_obj.read()
             filename = duplicate_name(
@@ -116,7 +116,7 @@ def upload():
                 "size": len(blob),
             }
             file = FileService.insert(file)
-            MINIO.put(last_folder.id, location, blob)
+            STORAGE_IMPL.put(last_folder.id, location, blob)
             file_res.append(file.to_json())
         return get_json_result(data=file_res)
     except Exception as e:
@@ -260,7 +260,7 @@ def rm():
                     e, file = FileService.get_by_id(inner_file_id)
                     if not e:
                         return get_data_error_result(retmsg="File not found!")
-                    MINIO.rm(file.parent_id, file.location)
+                    STORAGE_IMPL.rm(file.parent_id, file.location)
                 FileService.delete_folder_by_pf_id(current_user.id, file_id)
             else:
                 if not FileService.delete(file):
@@ -333,7 +333,7 @@ def get(file_id):
         if not e:
             return get_data_error_result(retmsg="Document not found!")
         b, n = File2DocumentService.get_minio_address(file_id=file_id)
-        response = flask.make_response(MINIO.get(b, n))
+        response = flask.make_response(STORAGE_IMPL.get(b, n))
         ext = re.search(r"\.([^.]+)$", file.name)
         if ext:
             if file.type == FileType.VISUAL.value:

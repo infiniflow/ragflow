@@ -1,6 +1,17 @@
 .searchPage {
   .card {
     width: 100%;
+    :global(.ant-card-body) {
+      padding: 14px;
+    }
+    p {
+      margin: 0;
+    }
+  }
+  .tag {
+    padding: 4px 8px;
+    font-size: 14px;
+    cursor: pointer;
   }
 }
 
@@ -38,17 +49,55 @@
   }
 }
 
+.firstRenderContent {
+  height: 100%;
+}
+
 .content {
   height: 100%;
   .main {
     width: 60%;
     // background-color: aqua;
     overflow: auto;
-    padding: 10px;
+    padding: 20px 10px 10px;
   }
 
   .graph {
     width: 40%;
-    background-color: bisque;
+    padding: 20px 10px 10px;
   }
+}
+.answerWrapper {
+  background-color: #e6f4ff;
+  padding: 14px;
+  margin-top: 16px;
+  border-radius: 8px;
+  & > p {
+    margin: 0;
+  }
+}
+
+.input() {
+  :global(.ant-input-affix-wrapper) {
+    padding: 4px 8px;
+    border-start-start-radius: 30px !important;
+    border-end-start-radius: 30px !important;
+  }
+  input {
+    height: 40px;
+  }
+  button {
+    height: 50px !important;
+    border-start-end-radius: 30px !important;
+    border-end-end-radius: 30px !important;
+  }
+}
+
+.globalInput {
+  width: 600px;
+  .input();
+}
+.partialInput {
+  width: 100%;
+  .input();
 }
