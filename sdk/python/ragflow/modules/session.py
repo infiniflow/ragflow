@@ -7,7 +7,8 @@ class Session(Base):
     def __init__(self, rag, res_dict):
         self.id = None
         self.name = "New session"
-        self.messages = [{"role": "assistant", "content": "您好，我是您的助手小樱，长得可爱又善良，can I help you?"}]
+        self.messages = [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
+
         self.assistant_id = None
         super().__init__(rag, res_dict)
 
