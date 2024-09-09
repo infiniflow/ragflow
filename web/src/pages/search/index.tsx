@@ -19,12 +19,16 @@ import MarkdownContent from '../chat/markdown-content';
 import { useSendQuestion } from './hooks';
 import SearchSidebar from './sidebar';
 
+import PdfDrawer from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
 const { Content } = Layout;
 const { Search } = Input;
 
 const SearchPage = () => {
+  const { t } = useTranslation();
   const [checkedList, setCheckedList] = useState<string[]>([]);
   const list = useSelectTestingResult();
   const {
@@ -40,12 +44,14 @@ const SearchPage = () => {
     loading,
     isFirstRender,
   } = useSendQuestion(checkedList);
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   const InputSearch = (
     <Search
       value={searchStr}
       onChange={handleSearchStrChange}
-      placeholder="input search text"
+      placeholder={t('header.search')}
       allowClear
       enterButton
       onSearch={sendQuestion}
@@ -57,88 +63,96 @@ const SearchPage = () => {
   );
 
   return (
-    <Layout className={styles.searchPage}>
-      <SearchSidebar
-        checkedList={checkedList}
-        setCheckedList={setCheckedList}
-      ></SearchSidebar>
-      <Layout>
-        <Content>
-          {isFirstRender ? (
-            <Flex
-              justify="center"
-              align="center"
-              className={styles.firstRenderContent}
-            >
-              {InputSearch}
-            </Flex>
-          ) : (
-            <Flex className={styles.content}>
-              <section className={styles.main}>
+    <>
+      <Layout className={styles.searchPage}>
+        <SearchSidebar
+          checkedList={checkedList}
+          setCheckedList={setCheckedList}
+        ></SearchSidebar>
+        <Layout>
+          <Content>
+            {isFirstRender ? (
+              <Flex
+                justify="center"
+                align="center"
+                className={styles.firstRenderContent}
+              >
                 {InputSearch}
-                {answer.answer && (
-                  <div className={styles.answerWrapper}>
-                    <MarkdownContent
-                      loading={sendingLoading}
-                      content={answer.answer}
-                      reference={answer.reference ?? ({} as IReference)}
-                      clickDocumentButton={() => {}}
-                    ></MarkdownContent>
-                  </div>
-                )}
-                <Divider></Divider>
-                {list.chunks.length > 0 && (
-                  <List
-                    dataSource={list.chunks}
-                    loading={loading}
-                    renderItem={(item) => (
-                      <List.Item>
-                        <Card className={styles.card}>
-                          <Space>
-                            <ImageWithPopover
-                              id={item.img_id}
-                            ></ImageWithPopover>
-                            <HightLightMarkdown>
-                              {item.highlight}
-                            </HightLightMarkdown>
-                          </Space>
-                        </Card>
-                      </List.Item>
-                    )}
-                  />
-                )}
-                {relatedQuestions?.length > 0 && (
-                  <Card>
-                    <Flex wrap="wrap" gap={'10px 0'}>
-                      {relatedQuestions?.map((x, idx) => (
-                        <Tag
-                          key={idx}
-                          className={styles.tag}
-                          onClick={handleClickRelatedQuestion(x)}
-                        >
-                          {x}
-                        </Tag>
-                      ))}
-                    </Flex>
-                  </Card>
-                )}
-              </section>
-              <section className={styles.graph}>
-                {mindMapLoading ? (
-                  <Skeleton active />
-                ) : (
-                  <IndentedTree
-                    data={mindMap}
-                    show
-                    style={{ width: '100%', height: '100%' }}
-                  ></IndentedTree>
-                )}
-              </section>
-            </Flex>
-          )}
-        </Content>
+              </Flex>
+            ) : (
+              <Flex className={styles.content}>
+                <section className={styles.main}>
+                  {InputSearch}
+                  {answer.answer && (
+                    <div className={styles.answerWrapper}>
+                      <MarkdownContent
+                        loading={sendingLoading}
+                        content={answer.answer}
+                        reference={answer.reference ?? ({} as IReference)}
+                        clickDocumentButton={clickDocumentButton}
+                      ></MarkdownContent>
+                    </div>
+                  )}
+                  <Divider></Divider>
+                  {list.chunks.length > 0 && (
+                    <List
+                      dataSource={list.chunks}
+                      loading={loading}
+                      renderItem={(item) => (
+                        <List.Item>
+                          <Card className={styles.card}>
+                            <Space>
+                              <ImageWithPopover
+                                id={item.img_id}
+                              ></ImageWithPopover>
+                              <HightLightMarkdown>
+                                {item.highlight}
+                              </HightLightMarkdown>
+                            </Space>
+                          </Card>
+                        </List.Item>
+                      )}
+                    />
+                  )}
+                  {relatedQuestions?.length > 0 && (
+                    <Card>
+                      <Flex wrap="wrap" gap={'10px 0'}>
+                        {relatedQuestions?.map((x, idx) => (
+                          <Tag
+                            key={idx}
+                            className={styles.tag}
+                            onClick={handleClickRelatedQuestion(x)}
+                          >
+                            {x}
+                          </Tag>
+                        ))}
+                      </Flex>
+                    </Card>
+                  )}
+                </section>
+                <section className={styles.graph}>
+                  {mindMapLoading ? (
+                    <Skeleton active />
+                  ) : (
+                    <IndentedTree
+                      data={mindMap}
+                      show
+                      style={{ width: '100%', height: '100%' }}
+                    ></IndentedTree>
+                  )}
+                </section>
+              </Flex>
+            )}
+          </Content>
+        </Layout>
       </Layout>
-    </Layout>
+      <PdfDrawer
+        visible={visible}
+        hideModal={hideModal}
+        documentId={documentId}
+        chunk={selectedChunk}
+      ></PdfDrawer>
+    </>
   );
 };
 

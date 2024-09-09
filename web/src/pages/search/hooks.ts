@@ -46,10 +46,12 @@ export const useSendQuestion = (kbIds: string[]) => {
 
   const handleClickRelatedQuestion = useCallback(
     (question: string) => () => {
+      if (sendingLoading) return;
+
       setSearchStr(question);
       sendQuestion(question);
     },
-    [sendQuestion],
+    [sendQuestion, sendingLoading],
   );
 
   useEffect(() => {
