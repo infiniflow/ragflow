@@ -27,7 +27,7 @@ from api.db.services.document_service import DocumentService
 from api.utils import current_timestamp, get_uuid
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.settings import SVR_QUEUE_NAME
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -143,7 +143,7 @@ def queue_tasks(doc, bucket, name):
     tsks = []
 
     if doc["type"] == FileType.PDF.value:
-        file_bin = MINIO.get(bucket, name)
+        file_bin = STORAGE_IMPL.get(bucket, name)
         do_layout = doc["parser_config"].get("layout_recognize", True)
         pages = PdfParser.total_page_number(doc["name"], file_bin)
         page_size = doc["parser_config"].get("task_page_size", 12)
@@ -169,7 +169,7 @@ def queue_tasks(doc, bucket, name):
                 tsks.append(task)
 
     elif doc["parser_id"] == "table":
-        file_bin = MINIO.get(bucket, name)
+        file_bin = STORAGE_IMPL.get(bucket, name)
         rn = RAGFlowExcelParser.row_number(
             doc["name"], file_bin)
         for i in range(0, rn, 3000):

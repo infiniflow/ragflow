@@ -1,4 +1,8 @@
-anthropic===0.34.1   
+akshare==1.14.72
+azure-storage-blob==12.22.0
+azure-identity==1.17.1
+azure-storage-file-datalake==12.16.0
+anthropic===0.34.1
 arxiv==2.1.3
 Aspose.Slides==24.2.0
 BCEmbedding==0.1.3

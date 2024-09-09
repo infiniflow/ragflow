@@ -100,8 +100,8 @@ class Jin10(ComponentBase, ABC):
                 if self._param.symbols_datatype == "quotes":
                     for i in response['data']:
                         i['Selling Price'] = i['a']
-                        i['buying price'] = i['b']
-                        i['commodity code'] = i['c']
+                        i['Buying Price'] = i['b']
+                        i['Commodity Code'] = i['c']
                         i['Stock Exchange'] = i['e']
                         i['Highest Price'] = i['h']
                         i['Yesterday’s Closing Price'] = i['hc']

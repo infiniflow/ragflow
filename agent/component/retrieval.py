@@ -54,8 +54,8 @@ class Retrieval(ComponentBase, ABC):
         for role, cnt in history[::-1][:self._param.message_history_window_size]:
             if role != "user":continue
             query.append(cnt)
-        query = "\n".join(query)
-
+        # query = "\n".join(query)
+        query = query[0]
         kbs = KnowledgebaseService.get_by_ids(self._param.kb_ids)
         if not kbs:
             raise ValueError("Can't find knowledgebases by {}".format(self._param.kb_ids))

@@ -30,20 +30,23 @@ const SearchSidebar = ({ checkedList, setCheckedList }: IProps) => {
   const indeterminate =
     checkedList.length > 0 && checkedList.length < list.length;
 
-  const onChange = useCallback((list: CheckboxValueType[]) => {
-    setCheckedList(list as string[]);
-  }, []);
+  const onChange = useCallback(
+    (list: CheckboxValueType[]) => {
+      setCheckedList(list as string[]);
+    },
+    [setCheckedList],
+  );
 
   const onCheckAllChange: CheckboxProps['onChange'] = useCallback(
     (e: CheckboxChangeEvent) => {
       setCheckedList(e.target.checked ? ids : []);
     },
-    [ids],
+    [ids, setCheckedList],
   );
 
   useEffect(() => {
     setCheckedList(ids);
-  }, [ids]);
+  }, [ids, setCheckedList]);
 
   return (
     <Sider className={styles.searchSide} theme={'light'} width={240}>
@@ -53,7 +56,7 @@ const SearchSidebar = ({ checkedList, setCheckedList }: IProps) => {
         onChange={onCheckAllChange}
         checked={checkAll}
       >
-        Check all
+        All
       </Checkbox>
       <Checkbox.Group
         className={styles.checkGroup}

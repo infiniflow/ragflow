@@ -24,6 +24,8 @@ RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 SUBPROCESS_STD_LOG_NAME = "std.log"
 
 ES = get_base_config("es", {})
+AZURE = get_base_config("azure", {})
+S3 = get_base_config("s3", {})
 MINIO = decrypt_database_config(name="minio")
 try:
     REDIS = decrypt_database_config(name="redis")
@@ -43,6 +45,8 @@ LoggerFactory.LEVEL = 30
 
 es_logger = getLogger("es")
 minio_logger = getLogger("minio")
+s3_logger = getLogger("s3")
+azure_logger = getLogger("azure")
 cron_logger = getLogger("cron_logger")
 cron_logger.setLevel(20)
 chunk_logger = getLogger("chunk_logger")

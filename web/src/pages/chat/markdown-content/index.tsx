@@ -7,13 +7,14 @@ import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Button, Flex, Popover, Space } from 'antd';
 import DOMPurify from 'dompurify';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import remarkGfm from 'remark-gfm';
 import { visitParents } from 'unist-util-visit-parents';
 
+import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
 const reg = /(#{2}\d+\${2})/g;
@@ -25,11 +26,22 @@ const MarkdownContent = ({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
+  loading: boolean;
   reference: IReference;
   clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
 }) => {
+  const { t } = useTranslation();
+  const contentWithCursor = useMemo(() => {
+    let text = content;
+    if (text === '') {
+      text = t('chat.searching');
+    }
+    return loading ? text?.concat('~~2$$') : text;
+  }, [content, loading, t]);
+
   const fileThumbnails = useSelectFileThumbnails();
 
   const handleDocumentButtonClick = useCallback(
@@ -173,7 +185,7 @@ const MarkdownContent = ({
         } as any
       }
     >
-      {content}
+      {contentWithCursor}
     </Markdown>
   );
 };

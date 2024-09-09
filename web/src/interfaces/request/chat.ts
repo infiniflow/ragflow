@@ -5,6 +5,6 @@ export interface IFeedbackRequestBody {
 }
 
 export interface IAskRequestBody {
-  questionkb_ids: string;
+  question: string;
   kb_ids: string[];
 }
