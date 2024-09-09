@@ -111,6 +111,7 @@ def save(tenant_id):
                     retmsg="If chunk count is not 0, parse method is not changable.")
             req['parser_id'] = req.pop('parse_method')
         if "name" in req:
+            req["name"] = req["name"].strip()
             if req["name"].lower() != kb.name.lower() \
                     and len(KnowledgebaseService.query(name=req["name"], tenant_id=tenant_id,
                                                        status=StatusEnum.VALID.value)) > 0:

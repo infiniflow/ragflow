@@ -10,10 +10,10 @@ class TestAssistant(TestSdk):
         Test creating an assistant with success
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        kb = rag.get_dataset(name="God")
-        assistant = rag.create_assistant("God",knowledgebases=[kb])
+        kb = rag.create_dataset(name="test_create_assistant")
+        assistant = rag.create_assistant("test_create", knowledgebases=[kb])
         if isinstance(assistant, Assistant):
-            assert assistant.name == "God", "Name does not match."
+            assert assistant.name == "test_create", "Name does not match."
         else:
             assert False, f"Failed to create assistant, error: {assistant}"
 
@@ -22,11 +22,11 @@ class TestAssistant(TestSdk):
         Test updating an assistant with success.
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        kb = rag.get_dataset(name="God")
-        assistant = rag.create_assistant("ABC",knowledgebases=[kb])
+        kb = rag.create_dataset(name="test_update_assistant")
+        assistant = rag.create_assistant("test_update", knowledgebases=[kb])
         if isinstance(assistant, Assistant):
-            assert assistant.name == "ABC", "Name does not match."
-            assistant.name = 'DEF'
+            assert assistant.name == "test_update", "Name does not match."
+            assistant.name = 'new_assistant'
             res = assistant.save()
             assert res is True, f"Failed to update assistant, error: {res}"
         else:
@@ -37,10 +37,10 @@ class TestAssistant(TestSdk):
         Test deleting an assistant with success
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        kb = rag.get_dataset(name="God")
-        assistant = rag.create_assistant("MA",knowledgebases=[kb])
+        kb = rag.create_dataset(name="test_delete_assistant")
+        assistant = rag.create_assistant("test_delete", knowledgebases=[kb])
         if isinstance(assistant, Assistant):
-            assert assistant.name == "MA", "Name does not match."
+            assert assistant.name == "test_delete", "Name does not match."
             res = assistant.delete()
             assert res is True, f"Failed to delete assistant, error: {res}"
         else:
@@ -61,6 +61,8 @@ class TestAssistant(TestSdk):
         Test getting an assistant's detail with success
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        assistant = rag.get_assistant(name="God")
+        kb = rag.create_dataset(name="test_get_assistant")
+        rag.create_assistant("test_get_assistant", knowledgebases=[kb])
+        assistant = rag.get_assistant(name="test_get_assistant")
         assert isinstance(assistant, Assistant), f"Failed to get assistant, error: {assistant}."
-        assert assistant.name == "God", "Name does not match"
+        assert assistant.name == "test_get_assistant", "Name does not match"

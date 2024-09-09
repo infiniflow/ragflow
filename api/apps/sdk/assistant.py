@@ -16,9 +16,10 @@
 from flask import request
 
 from api.db import StatusEnum
+from api.db.db_models import TenantLLM
 from api.db.services.dialog_service import DialogService
-from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.llm_service import LLMService, TenantLLMService
 from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
@@ -40,8 +41,8 @@ def save(tenant_id):
                 return get_data_error_result(retmsg="knowledgebase needs id")
             if not KnowledgebaseService.query(id=kb["id"], tenant_id=tenant_id):
                 return get_data_error_result(retmsg="you do not own the knowledgebase")
-            if not DocumentService.query(kb_id=kb["id"]):
-                return get_data_error_result(retmsg="There is a invalid knowledgebase")
+            # if not DocumentService.query(kb_id=kb["id"]):
+            #  return get_data_error_result(retmsg="There is a invalid knowledgebase")
             kb_list.append(kb["id"])
     req["kb_ids"] = kb_list
     # llm
@@ -82,7 +83,11 @@ def save(tenant_id):
         req["top_n"] = req.get("top_n", 6)
         req["top_k"] = req.get("top_k", 1024)
         req["rerank_id"] = req.get("rerank_id", "")
-        req["llm_id"] = req.get("llm_id", tenant.llm_id)
+        if req.get("llm_id"):
+            if not TenantLLMService.query(llm_name=req["llm_id"]):
+                return get_data_error_result(retmsg="the model_name does not exist.")
+        else:
+            req["llm_id"] = tenant.llm_id
         if not req.get("name"):
             return get_data_error_result(retmsg="name is required.")
         if DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
@@ -152,6 +157,9 @@ def save(tenant_id):
             return get_data_error_result(retmsg="id can not be empty")
         e, res = DialogService.get_by_id(req["id"])
         res = res.to_json()
+        if "llm_id" in req:
+            if not TenantLLMService.query(llm_name=req["llm_id"]):
+                return get_data_error_result(retmsg="the model_name does not exist.")
         if "name" in req:
             if not req.get("name"):
                 return get_data_error_result(retmsg="name is not empty.")

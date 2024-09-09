@@ -6,14 +6,16 @@ from common import API_KEY, HOST_ADDRESS
 class TestChatSession:
     def test_create_session(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        assistant = rag.get_assistant(name="test_assistant")
+        kb = rag.create_dataset(name="test_create_session")
+        assistant = rag.create_assistant(name="test_create_session", knowledgebases=[kb])
         session = assistant.create_session()
         assert assistant is not None, "Failed to get the assistant."
         assert session is not None, "Failed to create a session."
 
     def test_create_chat_with_success(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        assistant = rag.get_assistant(name="test_assistant")
+        kb = rag.create_dataset(name="test_create_chat")
+        assistant = rag.create_assistant(name="test_create_chat", knowledgebases=[kb])
         session = assistant.create_session()
         assert session is not None, "Failed to create a session."
         prologue = assistant.get_prologue()

@@ -39,12 +39,12 @@ class Session(Base):
         if res.get("retmsg") == "success": return True
         raise Exception(res.get("retmsg"))
 
-
 class Message(Base):
     def __init__(self, rag, res_dict):
-        self.content = ""
+        self.content = "您好，我是您的助手小樱，长得可爱又善良，can I help you?"
         self.reference = []
-        self.role = None
+        self.role = "assistant"
+        self.prompt=None
         super().__init__(rag, res_dict)
 
 

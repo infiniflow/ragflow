@@ -59,7 +59,8 @@ class Assistant(Base):
         raise Exception(res["retmsg"])
 
     def create_session(self, name: str = "New session", messages: List[Message] = [
-        {"role": "assistant", "content": "您好，我是您的助手小樱，长得可爱又善良，can I help you?"}]) -> Session:
+        {"role": "assistant", "reference": [],
+         "content": "您好，我是您的助手小樱，长得可爱又善良，can I help you?"}]) -> Session:
         res = self.post("/session/save", {"name": name, "messages": messages, "assistant_id": self.id, })
         res = res.json()
         if res.get("retmsg") == "success":

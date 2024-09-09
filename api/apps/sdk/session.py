@@ -46,6 +46,12 @@ def set_conversation(tenant_id):
             return get_data_error_result(retmsg="Session does not exist")
         if not DialogService.query(id=conv[0].dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
             return get_data_error_result(retmsg="You do not own the session")
+        if req.get("dialog_id"):
+            dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
+            if not dia:
+                return get_data_error_result(retmsg="You do not own the assistant")
+        if "dialog_id" in req and not req.get("dialog_id"):
+            return get_data_error_result(retmsg="assistant_id can not be empty.")
         if "name" in req and not req.get("name"):
             return get_data_error_result(retmsg="name can not be empty.")
         if "message" in req and not req.get("message"):
@@ -63,7 +69,8 @@ def set_conversation(tenant_id):
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
         "name": req.get("name", "New session"),
-        "message": req.get("message", [{"role": "assistant", "content": dia[0].prompt_config["prologue"]}])
+        "message": req.get("message", [{"role": "assistant", "content": dia[0].prompt_config["prologue"]}]),
+        "reference": req.get("reference", [])
     }
     if not conv.get("name"):
         return get_data_error_result(retmsg="name can not be empty.")
@@ -92,14 +99,16 @@ def completion(tenant_id):
     msg = []
     question = {
         "content": req.get("question"),
-        "role": "user"
+        "role": "user",
+        "id": str(uuid4())
     }
     req["messages"].append(question)
     for m in req["messages"]:
         if m["role"] == "system": continue
         if m["role"] == "assistant" and not msg: continue
+        m["id"] = m.get("id", str(uuid4()))
         msg.append(m)
-    message_id = str(uuid4())
+    message_id = msg[-1].get("id")
     conv = ConversationService.query(id=req["id"])
     conv = conv[0]
     if not conv:
