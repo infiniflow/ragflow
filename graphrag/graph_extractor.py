@@ -163,7 +163,7 @@ class GraphExtractor:
         token_count = 0
         text = perform_variable_replacements(self._extraction_prompt, variables=variables)
         gen_conf = {"temperature": 0.3}
-        response = self._llm.chat(text, [], gen_conf)
+        response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         token_count = num_tokens_from_string(text + response)
 
         results = response or ""
