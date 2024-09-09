@@ -27,7 +27,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
 from api.utils.file_utils import filename_type, thumbnail
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class FileService(CommonService):
@@ -350,10 +350,10 @@ class FileService(CommonService):
                     raise RuntimeError("This type of file has not been supported yet!")
 
                 location = filename
-                while MINIO.obj_exist(kb.id, location):
+                while STORAGE_IMPL.obj_exist(kb.id, location):
                     location += "_"
                 blob = file.read()
-                MINIO.put(kb.id, location, blob)
+                STORAGE_IMPL.put(kb.id, location, blob)
                 doc = {
                     "id": get_uuid(),
                     "kb_id": kb.id,
