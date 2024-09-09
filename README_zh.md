@@ -51,16 +51,10 @@
 - 2024-08-22 支持用RAG技术实现从自然语言到SQL语句的转换。
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
 - 2024-07-23 支持解析音频文件。
-- 2024-07-21 支持更多的大模型供应商(LocalAI/OpenRouter/StepFun/Nvidia)。
-- 2024-07-18 在Graph中支持算子：Wikipedia、PubMed、Baidu和Duckduckgo。
-- 2024-07-08 支持 Agentic RAG: 基于 [Graph](./graph/README.md) 的工作流。
-- 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件。
-- 2024-06-27 支持提取出 Docx 文件中的图片。
-- 2024-06-27 支持提取出 Markdown 文件中的表格。
+- 2024-07-08 支持 Agentic RAG: 基于 [Graph](./agent/README.md) 的工作流。
+- 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件，支持提取出 Docx 文件中的图片和 Markdown 文件中的表格。
 - 2024-06-06 支持 [Self-RAG](https://huggingface.co/papers/2310.11511) ，在对话设置里面默认勾选。
-- 2024-05-30 集成 [BCE](https://github.com/netease-youdao/BCEmbedding) 和 [BGE](https://github.com/FlagOpen/FlagEmbedding) 重排序模型。
 - 2024-05-23 实现 [RAPTOR](https://arxiv.org/html/2401.18059v1) 提供更好的文本检索。
-- 2024-05-15 集成大模型 OpenAI GPT-4o。
 
 ## 🌟 主要功能
 
