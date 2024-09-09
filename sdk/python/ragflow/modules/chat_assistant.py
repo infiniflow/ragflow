@@ -1,9 +1,12 @@
+from typing import List
+
 from .base import Base
+from .session import Session, Message
 
 
 class Assistant(Base):
     def __init__(self, rag, res_dict):
-        self.id=""
+        self.id = ""
         self.name = "assistant"
         self.avatar = "path/to/avatar"
         self.knowledgebases = ["kb1"]
@@ -41,8 +44,8 @@ class Assistant(Base):
 
     def save(self) -> bool:
         res = self.post('/assistant/save',
-                        {"id": self.id, "name": self.name, "avatar": self.avatar, "knowledgebases":self.knowledgebases,
-                         "llm":self.llm.to_json(),"prompt":self.prompt.to_json()
+                        {"id": self.id, "name": self.name, "avatar": self.avatar, "knowledgebases": self.knowledgebases,
+                         "llm": self.llm.to_json(), "prompt": self.prompt.to_json()
                          })
         res = res.json()
         if res.get("retmsg") == "success": return True
@@ -54,3 +57,14 @@ class Assistant(Base):
         res = res.json()
         if res.get("retmsg") == "success": return True
         raise Exception(res["retmsg"])
+
+    def create_session(self, name: str = "New session", messages: List[Message] = [
+        {"role": "assistant", "content": "您好，我是您的助手小樱，长得可爱又善良，can I help you?"}]) -> Session:
+        res = self.post("/session/save", {"name": name, "messages": messages, "assistant_id": self.id, })
+        res = res.json()
+        if res.get("retmsg") == "success":
+            return Session(self.rag, res['data'])
+        raise Exception(res["retmsg"])
+
+    def get_prologue(self):
+        return self.prompt.opener
