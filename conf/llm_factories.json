@@ -3105,7 +3105,7 @@
                     "model_type": "rerank"
                 },
                 {
-                    "llm_name": "netease-youdao/bce-reranker-base-v1",
+                    "llm_name": "netease-youdao/bce-reranker-base_v1",
                     "tags": "RE-RANK, 512",
                     "max_tokens": 1024,
                     "model_type": "rerank"
