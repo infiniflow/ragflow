@@ -47,6 +47,7 @@
 
 ## 🔥 近期更新
 
+- 2024-09-09 在Agent中加入医疗问诊模板.
 - 2024-08-22 支持用RAG技术实现从自然语言到SQL语句的转换。
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
 - 2024-07-23 支持解析音频文件。

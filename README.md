@@ -66,6 +66,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2024-09-09 Adds a medical consultant agent template.
 - 2024-08-22 Support text to SQL statements through RAG.
   
 - 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.

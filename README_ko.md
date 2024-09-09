@@ -49,6 +49,8 @@
 
 ## 🔥 업데이트
 
+- 2024-09-09 Agent에 의료상담 템플릿을 추가하였습니다.
+  
 - 2024-08-22 RAG를 통해 SQL 문에 텍스트를 지원합니다.
   
 - 2024-08-02: [graphrag](https://github.com/microsoft/graphrag)와 마인드맵에서 영감을 받은 GraphRAG를 지원합니다.
