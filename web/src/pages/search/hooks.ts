@@ -46,10 +46,27 @@ export const useSendQuestion = (kbIds: string[]) => {
 
   const handleClickRelatedQuestion = useCallback(
     (question: string) => () => {
+      if (sendingLoading) return;
+
       setSearchStr(question);
       sendQuestion(question);
     },
-    [sendQuestion],
+    [sendQuestion, sendingLoading],
+  );
+
+  const handleTestChunk = useCallback(
+    (documentIds: string[]) => {
+      const q = trim(searchStr);
+      if (sendingLoading || isEmpty(q)) return;
+
+      testChunk({
+        kb_id: kbIds,
+        highlight: true,
+        question: q,
+        doc_ids: Array.isArray(documentIds) ? documentIds : [],
+      });
+    },
+    [sendingLoading, searchStr, kbIds, testChunk],
   );
 
   useEffect(() => {
@@ -71,6 +88,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     sendQuestion,
     handleSearchStrChange,
     handleClickRelatedQuestion,
+    handleTestChunk,
     loading,
     sendingLoading,
     answer: currentAnswer,
