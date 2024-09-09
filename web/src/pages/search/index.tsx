@@ -21,6 +21,8 @@ import SearchSidebar from './sidebar';
 
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import RetrievalDocuments from '@/components/retrieval-documents';
+import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
@@ -31,10 +33,12 @@ const SearchPage = () => {
   const { t } = useTranslation();
   const [checkedList, setCheckedList] = useState<string[]>([]);
   const list = useSelectTestingResult();
+  const appConf = useFetchAppConf();
   const {
     sendQuestion,
     handleClickRelatedQuestion,
     handleSearchStrChange,
+    handleTestChunk,
     answer,
     sendingLoading,
     relatedQuestions,
@@ -77,7 +81,13 @@ const SearchPage = () => {
                 align="center"
                 className={styles.firstRenderContent}
               >
-                {InputSearch}
+                <Flex vertical align="center" gap={'large'}>
+                  <Space size={30}>
+                    <img src="/logo.svg" alt="" className={styles.appIcon} />
+                    <span className={styles.appName}>{appConf.appName}</span>
+                  </Space>
+                  {InputSearch}
+                </Flex>
               </Flex>
             ) : (
               <Flex className={styles.content}>
@@ -93,6 +103,11 @@ const SearchPage = () => {
                       ></MarkdownContent>
                     </div>
                   )}
+                  <Divider></Divider>
+                  <RetrievalDocuments
+                    selectedDocumentIdsLength={0}
+                    onTesting={handleTestChunk}
+                  ></RetrievalDocuments>
                   <Divider></Divider>
                   {list.chunks.length > 0 && (
                     <List

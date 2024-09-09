@@ -54,6 +54,21 @@ export const useSendQuestion = (kbIds: string[]) => {
     [sendQuestion, sendingLoading],
   );
 
+  const handleTestChunk = useCallback(
+    (documentIds: string[]) => {
+      const q = trim(searchStr);
+      if (sendingLoading || isEmpty(q)) return;
+
+      testChunk({
+        kb_id: kbIds,
+        highlight: true,
+        question: q,
+        doc_ids: Array.isArray(documentIds) ? documentIds : [],
+      });
+    },
+    [sendingLoading, searchStr, kbIds, testChunk],
+  );
+
   useEffect(() => {
     if (!isEmpty(answer)) {
       setCurrentAnswer(answer);
@@ -73,6 +88,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     sendQuestion,
     handleSearchStrChange,
     handleClickRelatedQuestion,
+    handleTestChunk,
     loading,
     sendingLoading,
     answer: currentAnswer,
