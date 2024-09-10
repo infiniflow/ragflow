@@ -340,8 +340,8 @@ This exception occurs when starting up the RAGFlow server. Try the following:
 ![hint102](https://github.com/infiniflow/ragflow/assets/93570324/6633d892-b4f8-49b5-9a0a-37a0a8fba3d2)
 
 1. Ensure that the RAGFlow server can access the base URL.
-2. Do not forget to append **/v1/** to **http://IP:port**: 
-   **http://IP:port/v1/**
+2. Do not forget to append `/v1/` to `http://IP:port`:  
+   `http://IP:port/v1/`
 
 #### 4.16 `FileNotFoundError: [Errno 2] No such file or directory`
 
