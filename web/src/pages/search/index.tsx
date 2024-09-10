@@ -16,13 +16,12 @@ import {
 } from 'antd';
 import { useState } from 'react';
 import MarkdownContent from '../chat/markdown-content';
-import { useSendQuestion } from './hooks';
+import { useFetchBackgroundImage, useSendQuestion } from './hooks';
 import SearchSidebar from './sidebar';
 
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import RetrievalDocuments from '@/components/retrieval-documents';
-import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
@@ -33,7 +32,7 @@ const SearchPage = () => {
   const { t } = useTranslation();
   const [checkedList, setCheckedList] = useState<string[]>([]);
   const list = useSelectTestingResult();
-  const appConf = useFetchAppConf();
+  // const appConf = useFetchAppConf();
   const {
     sendQuestion,
     handleClickRelatedQuestion,
@@ -50,6 +49,7 @@ const SearchPage = () => {
   } = useSendQuestion(checkedList);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
+  const imgUrl = useFetchBackgroundImage();
 
   const InputSearch = (
     <Search
@@ -80,12 +80,13 @@ const SearchPage = () => {
                 justify="center"
                 align="center"
                 className={styles.firstRenderContent}
+                style={{ backgroundImage: `url(${imgUrl})` }}
               >
                 <Flex vertical align="center" gap={'large'}>
-                  <Space size={30}>
+                  {/* <Space size={30}>
                     <img src="/logo.svg" alt="" className={styles.appIcon} />
                     <span className={styles.appName}>{appConf.appName}</span>
-                  </Space>
+                  </Space> */}
                   {InputSearch}
                 </Flex>
               </Flex>
