@@ -245,10 +245,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
-        callback(0.1, "Start to parse.")
+        print("Start to parse. html")
         sections = HtmlParser()(filename, binary)
         sections = [(l, "") for l in sections if l]
-        callback(0.8, "Finish parsing.")
+        print("Finish parsing. html")
 
     elif re.search(r"\.json$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

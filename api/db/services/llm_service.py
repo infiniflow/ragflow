@@ -20,7 +20,10 @@ from api.db import LLMType
 from api.db.db_models import DB, UserTenant
 from api.db.db_models import LLMFactories, LLM, TenantLLM
 from api.db.services.common_service import CommonService
+import os
 
+deep_seek_api_key = os.getenv("DEEP_SEEK_API")
+openai_api_key = os.getenv("openai_api_key")
 
 class LLMFactoriesService(CommonService):
     model = LLMFactories
@@ -59,7 +62,6 @@ class TenantLLMService(CommonService):
 
     @classmethod
     def model_instance(cls, llm_type, llm_name=None, lang="Chinese"):
-        # Removed tenant_id logic and tenant checks
         if llm_type == LLMType.EMBEDDING.value:
             mdlnm = llm_name
         elif llm_type == LLMType.SPEECH2TEXT.value:
@@ -76,8 +78,6 @@ class TenantLLMService(CommonService):
             assert False, "LLM type error"
         print("mdlnm:-- ",mdlnm)
 
-        #model_config = cls.get_api_key(tenant_id, mdlnm)
-        #if model_config: model_config = model_config.to_dict()
         model_config=False
         if not model_config:
             print(model_config)
@@ -87,8 +87,7 @@ class TenantLLMService(CommonService):
                     model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": llm_name if llm_name else mdlnm, "api_base": ""}
             if not model_config:
                 if llm_name == "flag-embedding":
-                    model_config = {"llm_factory": "Tongyi-Qianwen", "api_key": "",
-                                "llm_name": llm_name, "api_base": ""}
+                    model_config = {"llm_factory": "Tongyi-Qianwen", "api_key": "", "llm_name": llm_name, "api_base": ""}
                 else:
                     if not mdlnm:
                         raise LookupError(f"Type of {llm_type} model is not set.")
@@ -113,21 +112,21 @@ class TenantLLMService(CommonService):
                 model_config["api_key"], model_config["llm_name"], lang,
                 base_url=model_config["api_base"]
             )
-
+        
+        llm_factory = "OpenAI"
         if llm_type == LLMType.CHAT.value:
-            print("chat mdl:-",llm_type)
-            # model_config = {
-            # "llm_factory": "Tongyi-Qianwen",
-            # "api_key": "sk-xxxxxxxxxxxxx", 
-            # "llm_name": "qwen-plus", 
-            # "api_base": ""  
-            # }
+            if llm_factory == "OpenAI":
+                api_key = openai_api_key
+            elif llm_factory == "DeepSeek":
+                api_key = deep_seek_api_key
+            else:
+                raise LookupError("Model({}) not authorized".format(mdlnm))
 
             model_config = {
-            "llm_factory": "OpenAI",
-            "api_key": "", 
-            "llm_name": "gpt-4o-mini", 
-            "api_base": ""  
+            "llm_factory": llm_factory,
+            "api_key": api_key, 
+            "llm_name": llm_name,
+            "api_base": ""
             }
             return ChatModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
 
