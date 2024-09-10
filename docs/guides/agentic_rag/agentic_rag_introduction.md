@@ -3,9 +3,9 @@ sidebar_position: 1
 slug: /agentic_rag_introduction
 ---
 
-# A brief introduction
+# Introduction to Agentic RAG
 
-Agents and RAG are complementary techniques, each enhancing the other’s capabilities in business applications. RAGFlow v0.8.0 introduces an agent mechanism, featuring a no-code workflow editor on the front end and a comprehensive graph-based task orchestration framework on the back end. Built on top of RAGFlow's existing RAG solutions, this mechanism aims to orchestrate search technologies such as query intent classification, conversation leading, and query rewriting to:
+Agents and RAG are complementary techniques, each enhancing the other’s capabilities in business applications. RAGFlow v0.8.0 introduces an Agentic RAG mechanism, featuring a no-code workflow editor on the front end and a comprehensive graph-based task orchestration framework on the back end. This mechanism is built on top of RAGFlow's existing RAG solutions and aims to orchestrate search technologies such as query intent classification, conversation leading, and query rewriting to:
 
 - Provide higher retrievals and,
 - Accommodate more complex scenarios.
