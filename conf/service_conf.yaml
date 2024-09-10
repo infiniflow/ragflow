@@ -9,6 +9,14 @@ mysql:
   port: 3306
   max_connections: 100
   stale_timeout: 30
+postgres:
+  name: 'rag_flow'
+  user: 'rag_flow'
+  password: 'infini_rag_flow'
+  host: 'postgres'
+  port: 5432
+  max_connections: 100
+  stale_timeout: 30
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'

@@ -18,18 +18,19 @@ import os
 import sys
 import typing
 import operator
+from enum import Enum
 from functools import wraps
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from flask_login import UserMixin
-from playhouse.migrate import MySQLMigrator, migrate
+from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from peewee import (
     BigIntegerField, BooleanField, CharField,
     CompositeKey, IntegerField, TextField, FloatField, DateTimeField,
     Field, Model, Metadata
 )
-from playhouse.pool import PooledMySQLDatabase
+from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 from api.db import SerializedType, ParserType
-from api.settings import DATABASE, stat_logger, SECRET_KEY
+from api.settings import DATABASE, stat_logger, SECRET_KEY, DATABASE_TYPE
 from api.utils.log_utils import getLogger
 from api import utils
 
@@ -58,8 +59,13 @@ AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {
     "write_access"}
 
 
+class TextFieldType(Enum):
+    MYSQL = 'LONGTEXT'
+    POSTGRES = 'TEXT'
+
+
 class LongTextField(TextField):
-    field_type = 'LONGTEXT'
+    field_type = TextFieldType[DATABASE_TYPE.upper()].value
 
 
 class JSONField(LongTextField):
@@ -266,15 +272,22 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook,
                                                   object_pairs_hook=object_pairs_hook, **kwargs)
 
+class PooledDatabase(Enum):
+    MYSQL = PooledMySQLDatabase
+    POSTGRES = PooledPostgresqlDatabase
+
+
+class DatabaseMigrator(Enum):
+    MYSQL = MySQLMigrator
+    POSTGRES = PostgresqlMigrator
 
 @singleton
 class BaseDataBase:
     def __init__(self):
         database_config = DATABASE.copy()
         db_name = database_config.pop("name")
-        self.database_connection = PooledMySQLDatabase(
-            db_name, **database_config)
-        stat_logger.info('init mysql database on cluster mode successfully')
+        self.database_connection = PooledDatabase[DATABASE_TYPE.upper()].value(db_name, **database_config)
+        stat_logger.info('init database on cluster mode successfully')
 
 
 class DatabaseLock:
@@ -917,7 +930,7 @@ class CanvasTemplate(DataBaseModel):
 
 def migrate_db():
     with DB.transaction():
-        migrator = MySQLMigrator(DB)
+        migrator = DatabaseMigrator[DATABASE_TYPE.upper()].value(DB)
         try:
             migrate(
                 migrator.add_column('file', 'source_type', CharField(max_length=128, null=False, default="",

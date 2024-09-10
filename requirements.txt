@@ -31,6 +31,7 @@ Flask==3.0.3
 Flask_Cors==5.0.0
 Flask_Login==0.6.3
 flask_session==0.8.0
+psycopg2==2.9.9
 google_search_results==2.4.2
 groq==0.9.0
 hanziconv==0.3.2
