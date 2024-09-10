@@ -82,6 +82,7 @@ def upload():
     return get_json_result(data=True)
 
 
+
 @manager.route('/web_crawl', methods=['POST'])
 @login_required
 @validate_request("kb_id", "name", "url")
@@ -317,6 +318,42 @@ def rm():
     return get_json_result(data=True)
 
 
+
+@manager.route('/run1', methods=['POST'])
+@validate_request("kb_id", "documents")
+def run1():
+    req = request.json
+    print("req")
+    print("req")
+    print(req)
+    print("req")
+    print("req")
+    tenant_id = req["tenant_id"]
+    try:
+        for doc in req["documents"]:
+            doc_id = doc["id"]
+            url = doc["url"]
+            if not tenant_id:
+                return get_data_error_result(retmsg="Tenant not found!")
+            print("tenent found")
+            ELASTICSEARCH.deleteByQuery(Q("match", doc_id=doc_id), idxnm=search.index_name(tenant_id))
+            print("Elastic search delete done")
+            doc = req
+            doc.pop("documents", None)
+            doc["doc_id"] = doc_id
+            doc["url"] = url
+            print("doc")
+            print(doc)
+            print("doc")
+            
+            from rag.svr.task_executor import main1
+            main1(doc)
+
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route('/run', methods=['POST'])
 @login_required
 @validate_request("doc_ids", "run")
@@ -341,6 +378,7 @@ def run():
                 TaskService.filter_delete([Task.doc_id == id])
                 e, doc = DocumentService.get_by_id(id)
                 doc = doc.to_dict()
+                print()
                 doc["tenant_id"] = tenant_id
                 bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
                 queue_tasks(doc, bucket, name)

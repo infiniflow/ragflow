@@ -58,31 +58,29 @@ class TenantLLMService(CommonService):
         return list(objs)
 
     @classmethod
-    @DB.connection_context()
-    def model_instance(cls, tenant_id, llm_type,
-                       llm_name=None, lang="Chinese"):
-        e, tenant = TenantService.get_by_id(tenant_id)
-        if not e:
-            raise LookupError("Tenant not found")
-
+    def model_instance(cls, llm_type, llm_name=None, lang="Chinese"):
+        # Removed tenant_id logic and tenant checks
         if llm_type == LLMType.EMBEDDING.value:
-            mdlnm = tenant.embd_id if not llm_name else llm_name
+            mdlnm = llm_name
         elif llm_type == LLMType.SPEECH2TEXT.value:
-            mdlnm = tenant.asr_id
+            mdlnm = llm_name
         elif llm_type == LLMType.IMAGE2TEXT.value:
-            mdlnm = tenant.img2txt_id if not llm_name else llm_name
+            mdlnm = llm_name
         elif llm_type == LLMType.CHAT.value:
-            mdlnm = tenant.llm_id if not llm_name else llm_name
+            mdlnm = llm_name
         elif llm_type == LLMType.RERANK:
-            mdlnm = tenant.rerank_id if not llm_name else llm_name
+            mdlnm = llm_name
         elif llm_type == LLMType.TTS:
-            mdlnm = tenant.tts_id if not llm_name else llm_name
+            mdlnm = llm_name
         else:
             assert False, "LLM type error"
+        print("mdlnm:-- ",mdlnm)
 
-        model_config = cls.get_api_key(tenant_id, mdlnm)
-        if model_config: model_config = model_config.to_dict()
+        #model_config = cls.get_api_key(tenant_id, mdlnm)
+        #if model_config: model_config = model_config.to_dict()
+        model_config=False
         if not model_config:
+            print(model_config)
             if llm_type in [LLMType.EMBEDDING, LLMType.RERANK]:
                 llm = LLMService.query(llm_name=llm_name if llm_name else mdlnm)
                 if llm and llm[0].fid in ["Youdao", "FastEmbed", "BAAI"]:
@@ -94,7 +92,7 @@ class TenantLLMService(CommonService):
                 else:
                     if not mdlnm:
                         raise LookupError(f"Type of {llm_type} model is not set.")
-                    raise LookupError("Model({}) not authorized".format(mdlnm))
+                    #raise LookupError("Model({}) not authorized".format(mdlnm))
 
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
@@ -117,10 +115,21 @@ class TenantLLMService(CommonService):
             )
 
         if llm_type == LLMType.CHAT.value:
-            if model_config["llm_factory"] not in ChatModel:
-                return
-            return ChatModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
+            print("chat mdl:-",llm_type)
+            # model_config = {
+            # "llm_factory": "Tongyi-Qianwen",
+            # "api_key": "sk-xxxxxxxxxxxxx", 
+            # "llm_name": "qwen-plus", 
+            # "api_base": ""  
+            # }
+
+            model_config = {
+            "llm_factory": "OpenAI",
+            "api_key": "", 
+            "llm_name": "gpt-4o-mini", 
+            "api_base": ""  
+            }
+            return ChatModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
 
         if llm_type == LLMType.SPEECH2TEXT:
             if model_config["llm_factory"] not in Seq2txtModel:
@@ -182,25 +191,19 @@ class TenantLLMService(CommonService):
 
 
 class LLMBundle(object):
-    def __init__(self, tenant_id, llm_type, llm_name=None, lang="Chinese"):
-        self.tenant_id = tenant_id
+    def __init__(self, llm_type, llm_name=None, lang="Chinese"):
         self.llm_type = llm_type
         self.llm_name = llm_name
-        self.mdl = TenantLLMService.model_instance(
-            tenant_id, llm_type, llm_name, lang=lang)
-        assert self.mdl, "Can't find mole for {}/{}/{}".format(
-            tenant_id, llm_type, llm_name)
+        print(self.llm_name)
+        self.mdl = TenantLLMService.model_instance(llm_type, llm_name, lang=lang)
+        assert self.mdl, "Can't find model for {}/{}".format(llm_type, llm_name)
         self.max_length = 512
         for lm in LLMService.query(llm_name=llm_name):
             self.max_length = lm.max_tokens
             break
-    
+
     def encode(self, texts: list, batch_size=32):
         emd, used_tokens = self.mdl.encode(texts, batch_size)
-        if not TenantLLMService.increase_usage(
-                self.tenant_id, self.llm_type, used_tokens):
-            database_logger.error(
-                "Can't update token usage for {}/EMBEDDING".format(self.tenant_id))
         return emd, used_tokens
 
     def encode_queries(self, query: str):
@@ -248,10 +251,6 @@ class LLMBundle(object):
     
     def chat(self, system, history, gen_conf):
         txt, used_tokens = self.mdl.chat(system, history, gen_conf)
-        if not TenantLLMService.increase_usage(
-                self.tenant_id, self.llm_type, used_tokens, self.llm_name):
-            database_logger.error(
-                "Can't update token usage for {}/CHAT".format(self.tenant_id))
         return txt
 
     def chat_streamly(self, system, history, gen_conf):

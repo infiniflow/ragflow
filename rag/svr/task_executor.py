@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import io
+import requests
 import datetime
 import json
 import logging
@@ -140,6 +142,89 @@ def collect():
 def get_minio_binary(bucket, name):
     return MINIO.get(bucket, name)
 
+def get_binary_from_url(url):
+    response = requests.get(url)
+    if response.status_code == 200:
+        binary_content = response.content
+        return binary_content
+    else:
+        print(f"Failed to retrieve content from URL. Status code: {response.status_code}")
+        return None
+
+
+def build1(row):
+
+    chunker = FACTORY[row["parser_id"].lower()]
+    print("chunker:--",chunker)
+    try:
+        st = timer()
+        url = row["url"]
+        binary = get_binary_from_url(url)
+        print("binary done")
+
+    except Exception as e:
+        return
+    
+    if len(binary) > DOC_MAXIMUM_SIZE:
+        print("File size exceeds( <= %dMb )" % (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
+        return []
+
+    try:
+        print("start chunking...")
+        cks = chunker.chunk(row["name"], binary=binary, lang=row["language"], callback=None,
+                            kb_id=row["kb_id"], parser_config=row["parser_config"], tenant_id=row["tenant_id"])
+        print("chunking done...")
+        
+        cron_logger.info("Chunking({}) /{}".format(timer() - st, row["name"]))
+    except Exception as e:
+        print(f"Internal server error while chunking: %s" % str(e).replace("'", ""))
+        cron_logger.error("Chunking {}: {}".format(row["name"], str(e)))
+        traceback.print_exc()
+        return
+
+    docs = []
+    doc = {
+        "doc_id": row["doc_id"],
+        "kb_id": [str(row["kb_id"])]
+    }
+    el = 0
+    print("start cks")
+    for ck in cks:
+        d = copy.deepcopy(doc)
+        d.update(ck)
+        md5 = hashlib.md5()
+        md5.update((ck["content_with_weight"] +
+                    str(d["doc_id"])).encode("utf-8"))
+        d["_id"] = md5.hexdigest()
+        d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
+        d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+        if not d.get("image"):
+            docs.append(d)
+            continue
+
+        try:
+            output_buffer = BytesIO()
+            if isinstance(d["image"], bytes):
+                output_buffer = BytesIO(d["image"])
+            else:
+                d["image"].save(output_buffer, format='JPEG')
+
+            st = timer()
+            MINIO.put(row["kb_id"], d["_id"], output_buffer.getvalue())
+            el += timer() - st
+        except Exception as e:
+            cron_logger.error(str(e))
+            traceback.print_exc()
+
+        d["img_id"] = "{}-{}".format(row["kb_id"], d["_id"])
+        del d["image"]
+        docs.append(d)
+    cron_logger.info("MINIO PUT({}):{}".format(row["name"], el))
+    print("done cks")
+    return docs
+
+
+
 
 def build(row):
     if row["size"] > DOC_MAXIMUM_SIZE:
@@ -182,8 +267,7 @@ def build(row):
     except Exception as e:
         callback(-1, f"Internal server error while chunking: %s" %
                      str(e).replace("'", ""))
-        cron_logger.error(
-            "Chunking {}/{}: {}".format(row["location"], row["name"], str(e)))
+        cron_logger.error("Chunking {}: {}".format( row["name"], str(e)))
         traceback.print_exc()
         return
 
@@ -236,6 +320,46 @@ def init_kb(row):
         open(os.path.join(get_project_base_directory(), "conf", "mapping.json"), "r")))
 
 
+def embedding1(docs, mdl, parser_config={}):
+    batch_size = 32
+    tts, cnts = [rmSpace(d["title_tks"]) for d in docs if d.get("title_tks")], [
+        re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", d["content_with_weight"]) for d in docs]
+    tk_count = 0
+    print("start embedding1 fun")
+    if len(tts) == len(cnts):
+        tts_ = np.array([])
+        for i in range(0, len(tts), batch_size):
+            vts, c = mdl.encode(tts[i: i + batch_size])
+            if len(tts_) == 0:
+                tts_ = vts
+            else:
+                tts_ = np.concatenate((tts_, vts), axis=0)
+            tk_count += c
+            print(0.6 + 0.1 * (i + 1) / len(tts))
+        tts = tts_
+
+    cnts_ = np.array([])
+    for i in range(0, len(cnts), batch_size):
+        vts, c = mdl.encode(cnts[i: i + batch_size])
+        if len(cnts_) == 0:
+            cnts_ = vts
+        else:
+            cnts_ = np.concatenate((cnts_, vts), axis=0)
+        tk_count += c
+        print(0.7 + 0.2 * (i + 1) / len(cnts))
+    cnts = cnts_
+
+    title_w = float(parser_config.get("filename_embd_weight", 0.1))
+    vects = (title_w * tts + (1 - title_w) *
+             cnts) if len(tts) == len(cnts) else cnts
+    print("len of vects:-", len(vects))
+
+    assert len(vects) == len(docs)
+    for i, d in enumerate(docs):
+        v = vects[i].tolist()
+        d["q_%d_vec" % len(v)] = v
+    return tk_count
+
 def embedding(docs, mdl, parser_config={}, callback=None):
     batch_size = 32
     tts, cnts = [rmSpace(d["title_tks"]) for d in docs if d.get("title_tks")], [
@@ -278,6 +402,7 @@ def embedding(docs, mdl, parser_config={}, callback=None):
 def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     vts, _ = embd_mdl.encode(["ok"])
     vctr_nm = "q_%d_vec"%len(vts[0])
+    print("vctr_nm:-- ", vctr_nm)
     chunks = []
     for d in retrievaler.chunk_list(row["doc_id"], row["tenant_id"], fields=["content_with_weight", vctr_nm]):
         chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
@@ -291,7 +416,9 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         row["parser_config"]["raptor"]["threshold"]
     )
     original_length = len(chunks)
+    print("original_length:- ",original_length)
     raptor(chunks, row["parser_config"]["raptor"]["random_seed"], callback)
+    print("raptor chunk done...")
     doc = {
         "doc_id": row["doc_id"],
         "kb_id": [str(row["kb_id"])],
@@ -316,6 +443,91 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     return res, tk_count
 
 
+def main1(r):
+    print("inside main1")
+    st = timer()
+    cks = build1(r)
+    print("len of chunks:--", len(cks))
+    cron_logger.info("Build chunks({}): {}".format(r["name"], timer() - st))
+    if cks is None:
+        return
+    if not cks:
+        print("No chunk! Done!")
+        return
+    # TODO: exception handler
+    ## set_progress(r["did"], -1, "ERROR: ")
+    try:
+        embd_mdl = LLMBundle(LLMType.EMBEDDING, llm_name=r["embd_id"], lang=r["language"])
+    except Exception as e:
+        cron_logger.error(str(e))
+    print(embd_mdl)
+
+    print("Finished slicing files(%d). Start to embedding the content." % len(cks))
+    st = timer()
+    try:
+        tk_count = embedding1(cks, embd_mdl, r["parser_config"])
+        print("tk_count:-",tk_count)
+    except Exception as e:
+        print("Embedding error:{}".format(str(e)))
+        cron_logger.error(str(e))
+        tk_count = 0
+    cron_logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
+    print("Finished embedding({:.2f})! Start to build index!".format(timer() - st))
+
+    init_kb(r)
+    chunk_count = len(set([c["_id"] for c in cks]))
+    st = timer()
+    es_r = ""
+    es_bulk_size = 4
+    without_raptor_len_chunk = len(cks)
+    for b in range(0, len(cks), es_bulk_size):
+        es_r = ELASTICSEARCH.bulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]))
+        if b % 128 == 0:
+            print(0.8 + 0.1 * (b + 1) / len(cks))
+
+    cron_logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
+    if es_r:
+        print(f"Insert chunk error, detail info please check ragflow-logs/api/cron_logger.log. Please also check ES status!")
+        ELASTICSEARCH.deleteByQuery(
+            Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
+        cron_logger.error(str(es_r))
+    print("chunk_count:--", chunk_count)
+    print("all done............")
+    import time
+    time.sleep(2)
+
+
+    #RAPTOR
+    if r.get("parser_config", {}).get("raptor", {}).get("use_raptor", False):
+        print("use_raptor is True.")
+        try:
+            chat_mdl = LLMBundle(LLMType.CHAT, llm_name=r["llm_id"], lang=r["language"])
+            print("chat_mdl:-- ",chat_mdl)
+            cks, tk_count = run_raptor(r, chat_mdl, embd_mdl, callback=None)
+        except Exception as e:
+            print(str(e))
+            cron_logger.error(str(e))
+
+    init_kb(r)
+    chunk_count = len(set([c["_id"] for c in cks]))
+    st = timer()
+    es_r = ""
+    es_bulk_size = 4
+    for b in range(without_raptor_len_chunk, len(cks), es_bulk_size):
+        es_r = ELASTICSEARCH.bulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]))
+        if b % 128 == 0:
+            print(0.8 + 0.1 * (b + 1) / len(cks))
+
+    cron_logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
+    if es_r:
+        print(f"Insert chunk error, detail info please check ragflow-logs/api/cron_logger.log. Please also check ES status!")
+        ELASTICSEARCH.deleteByQuery(
+            Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
+        cron_logger.error(str(es_r))
+    print("chunk_count:--", chunk_count)
+    print("all done............")
+            
+
 def main():
     rows = collect()
     if len(rows) == 0:
@@ -324,7 +536,7 @@ def main():
     for _, r in rows.iterrows():
         callback = partial(set_progress, r["id"], r["from_page"], r["to_page"])
         try:
-            embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING, llm_name=r["embd_id"], lang=r["language"])
+            embd_mdl = LLMBundle(LLMType.EMBEDDING, llm_name=r["embd_id"], lang=r["language"])
         except Exception as e:
             callback(-1, msg=str(e))
             cron_logger.error(str(e))
@@ -332,7 +544,7 @@ def main():
 
         if r.get("task_type", "") == "raptor":
             try:
-                chat_mdl = LLMBundle(r["tenant_id"], LLMType.CHAT, llm_name=r["llm_id"], lang=r["language"])
+                chat_mdl = LLMBundle(LLMType.CHAT, llm_name=r["llm_id"], lang=r["language"])
                 cks, tk_count = run_raptor(r, chat_mdl, embd_mdl, callback)
             except Exception as e:
                 callback(-1, msg=str(e))

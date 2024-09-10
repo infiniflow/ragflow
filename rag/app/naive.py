@@ -15,6 +15,7 @@ from io import BytesIO
 from docx import Document
 from timeit import default_timer as timer
 import re
+import logging
 from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, naive_merge_docx, tokenize_chunks_docx
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser, MarkdownParser, TxtParser
@@ -24,6 +25,11 @@ from PIL import Image
 from functools import reduce
 from markdown import markdown
 from docx.image.exceptions import UnrecognizedImageError
+
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 
 class Docx(DocxParser):
     def __init__(self):
@@ -116,7 +122,7 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         start = timer()
-        callback(msg="OCR is running...")
+        print("OCR is running...")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -124,16 +130,14 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished")
         cron_logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis finished.")
+        print("Layout analysis finished.")
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis finished.")
+        print("Table analysis finished.")
         self._text_merge()
-        callback(0.67, "Text merging finished")
         tbls = self._extract_table_figure(True, zoomin, True, True)
         #self._naive_vertical_merge()
         self._concat_downward()
@@ -172,6 +176,7 @@ class Markdown(MarkdownParser):
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
+    print("naive chunk...")
     """
         Supported file formats are docx, pdf, excel, txt.
         This method apply the naive ways to chunk files.
@@ -212,11 +217,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
+        print("start pdf to parse...")
+        print("layout_recognize", parser_config.get("layout_recognize"))
         pdf_parser = Pdf(
         ) if parser_config.get("layout_recognize", True) else PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         res = tokenize_table(tbls, doc, eng)
+        print(res)
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

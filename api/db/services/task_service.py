@@ -15,7 +15,6 @@
 #
 import os
 import random
-
 from api.db.db_utils import bulk_insert_into_db
 from deepdoc.parser import PdfParser
 from peewee import JOIN
@@ -29,7 +28,6 @@ from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.minio_conn import MINIO
 from rag.utils.redis_conn import REDIS_CONN
-
 
 class TaskService(CommonService):
     model = Task
@@ -133,6 +131,7 @@ class TaskService(CommonService):
                     cls.model.id == id).execute()
 
 
+
 def queue_tasks(doc, bucket, name):
     def new_task():
         nonlocal doc
@@ -142,6 +141,7 @@ def queue_tasks(doc, bucket, name):
         }
     tsks = []
 
+    print(doc)
     if doc["type"] == FileType.PDF.value:
         file_bin = MINIO.get(bucket, name)
         do_layout = doc["parser_config"].get("layout_recognize", True)

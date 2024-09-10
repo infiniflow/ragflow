@@ -16,7 +16,7 @@
 from abc import ABC
 import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
-import yfinance as yf
+#import yfinance as yf
 
 
 class YahooFinanceParam(ComponentParamBase):
@@ -50,41 +50,42 @@ class YahooFinance(ComponentBase, ABC):
     component_name = "YahooFinance"
 
     def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = "".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return YahooFinance.be_output("")
+        return
+        # ans = self.get_input()
+        # ans = "".join(ans["content"]) if "content" in ans else ""
+        # if not ans:
+        #     return YahooFinance.be_output("")
 
-        yohoo_res = []
-        try:
-            msft = yf.Ticker(ans)
-            if self._param.info:
-                yohoo_res.append({"content": "info:\n" + pd.Series(msft.info).to_markdown() + "\n"})
-            if self._param.history:
-                yohoo_res.append({"content": "history:\n" + msft.history().to_markdown() + "\n"})
-            if self._param.count:
-                yohoo_res.append({"content": "count:\n" + msft.get_shares_full().to_markdown() + "\n"})
-            if self._param.financials:
-                yohoo_res.append({"content": "calendar:\n" + pd.DataFrame(msft.calendar).to_markdown + "\n"})
-                yohoo_res.append({"content": "sec_filings:\n" + pd.DataFrame(msft.sec_filings).to_markdown() + "\n"})
-            if self._param.income_stmt:
-                yohoo_res.append({"content": "income statement:\n" + msft.income_stmt.to_markdown() + "\n"})
-                yohoo_res.append(
-                    {"content": "quarterly income statement:\n" + msft.quarterly_income_stmt.to_markdown() + "\n"})
-            if self._param.balance_sheet:
-                yohoo_res.append({"content": "balance sheet:\n" + msft.balance_sheet.to_markdown() + "\n"})
-                yohoo_res.append(
-                    {"content": "quarterly balance sheet:\n" + msft.quarterly_balance_sheet.to_markdown() + "\n"})
-            if self._param.cash_flow_statement:
-                yohoo_res.append({"content": "cash flow statement:\n" + msft.cashflow.to_markdown() + "\n"})
-                yohoo_res.append(
-                    {"content": "quarterly cash flow statement:\n" + msft.quarterly_cashflow.to_markdown() + "\n"})
-            if self._param.news:
-                yohoo_res.append({"content": "news:\n" + pd.DataFrame(msft.news).to_markdown() + "\n"})
-        except Exception as e:
-            print("**ERROR** " + str(e))
+        # yohoo_res = []
+        # try:
+        #     msft = yf.Ticker(ans)
+        #     if self._param.info:
+        #         yohoo_res.append({"content": "info:\n" + pd.Series(msft.info).to_markdown() + "\n"})
+        #     if self._param.history:
+        #         yohoo_res.append({"content": "history:\n" + msft.history().to_markdown() + "\n"})
+        #     if self._param.count:
+        #         yohoo_res.append({"content": "count:\n" + msft.get_shares_full().to_markdown() + "\n"})
+        #     if self._param.financials:
+        #         yohoo_res.append({"content": "calendar:\n" + pd.DataFrame(msft.calendar).to_markdown + "\n"})
+        #         yohoo_res.append({"content": "sec_filings:\n" + pd.DataFrame(msft.sec_filings).to_markdown() + "\n"})
+        #     if self._param.income_stmt:
+        #         yohoo_res.append({"content": "income statement:\n" + msft.income_stmt.to_markdown() + "\n"})
+        #         yohoo_res.append(
+        #             {"content": "quarterly income statement:\n" + msft.quarterly_income_stmt.to_markdown() + "\n"})
+        #     if self._param.balance_sheet:
+        #         yohoo_res.append({"content": "balance sheet:\n" + msft.balance_sheet.to_markdown() + "\n"})
+        #         yohoo_res.append(
+        #             {"content": "quarterly balance sheet:\n" + msft.quarterly_balance_sheet.to_markdown() + "\n"})
+        #     if self._param.cash_flow_statement:
+        #         yohoo_res.append({"content": "cash flow statement:\n" + msft.cashflow.to_markdown() + "\n"})
+        #         yohoo_res.append(
+        #             {"content": "quarterly cash flow statement:\n" + msft.quarterly_cashflow.to_markdown() + "\n"})
+        #     if self._param.news:
+        #         yohoo_res.append({"content": "news:\n" + pd.DataFrame(msft.news).to_markdown() + "\n"})
+        # except Exception as e:
+        #     print("**ERROR** " + str(e))
 
-        if not yohoo_res:
-            return YahooFinance.be_output("")
+        # if not yohoo_res:
+        #     return YahooFinance.be_output("")
 
-        return pd.DataFrame(yohoo_res)
+        # return pd.DataFrame(yohoo_res)
