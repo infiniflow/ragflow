@@ -3,7 +3,7 @@ import { useTestChunkRetrieval } from '@/hooks/knowledge-hooks';
 import { useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { IAnswer } from '@/interfaces/database/chat';
 import api from '@/utils/api';
-import { isEmpty, trim } from 'lodash';
+import { get, isEmpty, trim } from 'lodash';
 import { ChangeEventHandler, useCallback, useEffect, useState } from 'react';
 
 export const useSendQuestion = (kbIds: string[]) => {
@@ -98,4 +98,29 @@ export const useSendQuestion = (kbIds: string[]) => {
     searchStr,
     isFirstRender,
   };
+};
+
+export const useFetchBackgroundImage = () => {
+  const [imgUrl, setImgUrl] = useState<string>('');
+
+  const fetchImage = useCallback(async () => {
+    try {
+      const res = await fetch(
+        '/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-CN',
+      );
+      const ret = await res.json();
+      const url = get(ret, 'images.0.url');
+      if (url) {
+        setImgUrl(url);
+      }
+    } catch (error) {
+      console.log('🚀 ~ fetchImage ~ error:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchImage();
+  }, [fetchImage]);
+
+  return `https://cn.bing.com${imgUrl}`;
 };

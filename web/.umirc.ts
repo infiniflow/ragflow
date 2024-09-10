@@ -30,7 +30,14 @@ export default defineConfig({
   copy: ['src/conf.json'],
   proxy: {
     '/v1': {
-      target: 'http://localhost:9380/',
+      target: 'http://123.60.95.134:9380/',
+      changeOrigin: true,
+      ws: true,
+      logger: console,
+      // pathRewrite: { '^/v1': '/v1' },
+    },
+    '/HPImageArchive': {
+      target: 'https://cn.bing.com/',
       changeOrigin: true,
       ws: true,
       logger: console,
