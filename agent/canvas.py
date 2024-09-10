@@ -299,7 +299,7 @@ class Canvas(ABC):
                 pat = " => ".join([p.split(":")[0] for p in path[0:l]])
                 return pat + " => " + pat
 
-        return
+        return False
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
