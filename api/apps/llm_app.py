@@ -39,7 +39,8 @@ def factories():
                 mdl_types[m.fid] = set([])
             mdl_types[m.fid].add(m.model_type)
         for f in fac:
-            f["model_types"] = list(mdl_types.get(f["name"], []))
+            f["model_types"] = list(mdl_types.get(f["name"], [LLMType.CHAT, LLMType.EMBEDDING, LLMType.RERANK,
+                                                              LLMType.IMAGE2TEXT, LLMType.SPEECH2TEXT, LLMType.TTS]))
         return get_json_result(data=fac)
     except Exception as e:
         return server_error_response(e)
