@@ -30,8 +30,8 @@ class RAGFlow:
         self.api_url = f"{base_url}/api/{version}"
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
-    def post(self, path, param):
-        res = requests.post(url=self.api_url + path, json=param, headers=self.authorization_header)
+    def post(self, path, param, stream=False):
+        res = requests.post(url=self.api_url + path, json=param, headers=self.authorization_header, stream=stream)
         return res
 
     def get(self, path, params=None):

@@ -14,13 +14,13 @@
 #  limitations under the License.
 #
 import json
-from copy import deepcopy
 from uuid import uuid4
 
 from flask import request, Response
 
 from api.db import StatusEnum
 from api.db.services.dialog_service import DialogService, ConversationService, chat
+from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_data_error_result
 from api.utils.api_utils import get_json_result, token_required
@@ -31,12 +31,6 @@ from api.utils.api_utils import get_json_result, token_required
 def set_conversation(tenant_id):
     req = request.json
     conv_id = req.get("id")
-    if "messages" in req:
-        req["message"] = req.pop("messages")
-        if req["message"]:
-            for message in req["message"]:
-                if "reference" in message:
-                    req["reference"] = message.pop("reference")
     if "assistant_id" in req:
         req["dialog_id"] = req.pop("assistant_id")
     if "id" in req:
@@ -52,10 +46,12 @@ def set_conversation(tenant_id):
                 return get_data_error_result(retmsg="You do not own the assistant")
         if "dialog_id" in req and not req.get("dialog_id"):
             return get_data_error_result(retmsg="assistant_id can not be empty.")
+        if "message" in req:
+            return get_data_error_result(retmsg="message can not be change")
+        if "reference" in req:
+            return get_data_error_result(retmsg="reference can not be change")
         if "name" in req and not req.get("name"):
             return get_data_error_result(retmsg="name can not be empty.")
-        if "message" in req and not req.get("message"):
-            return get_data_error_result(retmsg="messages can not be empty")
         if not ConversationService.update_by_id(conv_id, req):
             return get_data_error_result(retmsg="Session updates error")
         return get_json_result(data=True)
@@ -69,22 +65,17 @@ def set_conversation(tenant_id):
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
         "name": req.get("name", "New session"),
-        "message": req.get("message", [{"role": "assistant", "content": dia[0].prompt_config["prologue"]}]),
-        "reference": req.get("reference", [])
+        "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
     }
     if not conv.get("name"):
         return get_data_error_result(retmsg="name can not be empty.")
-    if not conv.get("message"):
-        return get_data_error_result(retmsg="messages can not be empty")
     ConversationService.save(**conv)
     e, conv = ConversationService.get_by_id(conv["id"])
     if not e:
         return get_data_error_result(retmsg="Fail to new session!")
     conv = conv.to_dict()
-    conv["messages"] = conv.pop("message")
+    conv['messages'] = conv.pop("message")
     conv["assistant_id"] = conv.pop("dialog_id")
-    for message in conv["messages"]:
-        message["reference"] = conv.get("reference")
     del conv["reference"]
     return get_json_result(data=conv)
 
@@ -96,31 +87,28 @@ def completion(tenant_id):
     # req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
     #    {"role": "user", "content": "上海有吗？"}
     # ]}
+    if "id" not in req:
+        return get_data_error_result(retmsg="id is required")
+    conv = ConversationService.query(id=req["id"])
+    if not conv:
+        return get_data_error_result(retmsg="Session does not exist")
+    conv = conv[0]
+    if not DialogService.query(id=conv.dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
+        return get_data_error_result(retmsg="You do not own the session")
     msg = []
     question = {
         "content": req.get("question"),
         "role": "user",
         "id": str(uuid4())
     }
-    req["messages"].append(question)
-    for m in req["messages"]:
+    conv.message.append(question)
+    for m in conv.message:
         if m["role"] == "system": continue
         if m["role"] == "assistant" and not msg: continue
-        m["id"] = m.get("id", str(uuid4()))
         msg.append(m)
     message_id = msg[-1].get("id")
-    conv = ConversationService.query(id=req["id"])
-    conv = conv[0]
-    if not conv:
-        return get_data_error_result(retmsg="Session does not exist")
-    if not DialogService.query(id=conv.dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_data_error_result(retmsg="You do not own the session")
-    conv.message = deepcopy(req["messages"])
     e, dia = DialogService.get_by_id(conv.dialog_id)
-    if not e:
-        return get_data_error_result(retmsg="Dialog not found!")
     del req["id"]
-    del req["messages"]
 
     if not conv.reference:
         conv.reference = []
@@ -166,3 +154,92 @@ def completion(tenant_id):
             ConversationService.update_by_id(conv.id, conv.to_dict())
             break
         return get_json_result(data=answer)
+
+
+@manager.route('/get', methods=['GET'])
+@token_required
+def get(tenant_id):
+    req = request.args
+    if "id" not in req:
+        return get_data_error_result(retmsg="id is required")
+    conv_id = req["id"]
+    conv = ConversationService.query(id=conv_id)
+    if not conv:
+        return get_data_error_result(retmsg="Session does not exist")
+    if not DialogService.query(id=conv[0].dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
+        return get_data_error_result(retmsg="You do not own the session")
+    conv = conv[0].to_dict()
+    conv['messages'] = conv.pop("message")
+    conv["assistant_id"] = conv.pop("dialog_id")
+    messages = conv["messages"]
+    message_num = 0
+    chunk_num = 0
+    while message_num < len(messages):
+        if message_num != 0 and messages[message_num]["role"] != "user":
+            chunks = conv["reference"][chunk_num]["chunks"]
+            chunk_list = []
+            for chunk in chunks:
+                new_chunk = {
+                    "id": chunk["chunk_id"],
+                    # content
+                    "content": chunk["content_with_weight"],
+                    "document_id": chunk["doc_id"],
+                    "document_name": chunk["docnm_kwd"],
+                    "knowledgebase_id": chunk["kb_id"],
+                    "image_id": chunk["img_id"],
+                    "similarity": chunk["similarity"],
+                    "vector_similarity": chunk["vector_similarity"],
+                    "term_similarity": chunk["term_similarity"],
+                    "positions": chunk["positions"],
+                }
+                chunk_list.append(new_chunk)
+            chunk_num += 1
+            messages[message_num]["reference"] = chunk_list
+        message_num += 1
+    del conv["reference"]
+    return get_json_result(data=conv)
+
+
+@manager.route('/list', methods=["GET"])
+@token_required
+def list(tenant_id):
+    assistant_id = request.args["assistant_id"]
+    if not DialogService.query(tenant_id=tenant_id, id=assistant_id):
+        return get_json_result(
+            data=False, retmsg=f'Only owner of the assistant is authorized for this operation.',
+            retcode=RetCode.OPERATING_ERROR)
+    convs = ConversationService.query(
+        dialog_id=assistant_id,
+        order_by=ConversationService.model.create_time,
+        reverse=True)
+    convs = [d.to_dict() for d in convs]
+    for conv in convs:
+        conv['messages'] = conv.pop("message")
+        conv["assistant_id"] = conv.pop("dialog_id")
+        messages = conv["messages"]
+        message_num = 0
+        chunk_num = 0
+        while message_num < len(messages):
+            if message_num != 0 and messages[message_num]["role"] != "user":
+                chunks = conv["reference"][chunk_num]["chunks"]
+                chunk_list = []
+                for chunk in chunks:
+                    new_chunk = {
+                        "id": chunk["chunk_id"],
+                        # content
+                        "content": chunk["content_with_weight"],
+                        "document_id": chunk["doc_id"],
+                        "document_name": chunk["docnm_kwd"],
+                        "knowledgebase_id": chunk["kb_id"],
+                        "image_id": chunk["img_id"],
+                        "similarity": chunk["similarity"],
+                        "vector_similarity": chunk["vector_similarity"],
+                        "term_similarity": chunk["term_similarity"],
+                        "positions": chunk["positions"],
+                    }
+                    chunk_list.append(new_chunk)
+                chunk_num += 1
+                messages[message_num]["reference"] = chunk_list
+            message_num += 1
+        del conv["reference"]
+    return get_json_result(data=convs)

@@ -1,7 +1,7 @@
 from typing import List
 
 from .base import Base
-from .session import Session, Message
+from .session import Session
 
 
 class Assistant(Base):
@@ -58,13 +58,28 @@ class Assistant(Base):
         if res.get("retmsg") == "success": return True
         raise Exception(res["retmsg"])
 
-    def create_session(self, name: str = "New session", messages: List[Message] = [
-        {"role": "assistant", "reference": [],
-         "content": "您好，我是您的助手小樱，长得可爱又善良，can I help you?"}]) -> Session:
-        res = self.post("/session/save", {"name": name, "messages": messages, "assistant_id": self.id, })
+    def create_session(self, name: str = "New session") -> Session:
+        res = self.post("/session/save", {"name": name, "assistant_id": self.id})
         res = res.json()
         if res.get("retmsg") == "success":
             return Session(self.rag, res['data'])
+        raise Exception(res["retmsg"])
+
+    def list_session(self) -> List[Session]:
+        res = self.get('/session/list', {"assistant_id": self.id})
+        res = res.json()
+        if res.get("retmsg") == "success":
+            result_list = []
+            for data in res["data"]:
+                result_list.append(Session(self.rag, data))
+            return result_list
+        raise Exception(res["retmsg"])
+
+    def get_session(self, id) -> Session:
+        res = self.get("/session/get", {"id": id})
+        res = res.json()
+        if res.get("retmsg") == "success":
+            return Session(self.rag, res["data"])
         raise Exception(res["retmsg"])
 
     def get_prologue(self):
