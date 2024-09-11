@@ -58,7 +58,7 @@ def list_chunk():
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
-        sres = retrievaler.search(query, search.index_name(tenant_id))
+        sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
@@ -259,12 +259,25 @@ def retrieval_test():
     size = int(req.get("size", 30))
     question = req["question"]
     kb_id = req["kb_id"]
+    if isinstance(kb_id, str): kb_id = [kb_id]
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
+
     try:
-        e, kb = KnowledgebaseService.get_by_id(kb_id)
+        tenants = UserTenantService.query(user_id=current_user.id)
+        for kid in kb_id:
+            for tenant in tenants:
+                if KnowledgebaseService.query(
+                        tenant_id=tenant.tenant_id, id=kid):
+                    break
+            else:
+                return get_json_result(
+                    data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.',
+                    retcode=RetCode.OPERATING_ERROR)
+
+        e, kb = KnowledgebaseService.get_by_id(kb_id[0])
         if not e:
             return get_data_error_result(retmsg="Knowledgebase not found!")
 
@@ -281,9 +294,9 @@ def retrieval_test():
             question += keyword_extraction(chat_mdl, question)
 
         retr = retrievaler if kb.parser_id != ParserType.KG else kg_retrievaler
-        ranks = retr.retrieval(question, embd_mdl, kb.tenant_id, [kb_id], page, size,
+        ranks = retr.retrieval(question, embd_mdl, kb.tenant_id, kb_id, page, size,
                                similarity_threshold, vector_similarity_weight, top,
-                               doc_ids, rerank_mdl=rerank_mdl)
+                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"))
         for c in ranks["chunks"]:
             if "vector" in c:
                 del c["vector"]

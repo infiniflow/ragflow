@@ -79,9 +79,9 @@ class Dealer:
                     Q("bool", must_not=Q("range", available_int={"lt": 1})))
         return bqry
 
-    def search(self, req, idxnm, emb_mdl=None):
+    def search(self, req, idxnm, emb_mdl=None, highlight=False):
         qst = req.get("question", "")
-        bqry, keywords = self.qryr.question(qst)
+        bqry, keywords = self.qryr.question(qst, min_match="30%")
         bqry = self._add_filters(bqry, req)
         bqry.boost = 0.05
 
@@ -130,7 +130,7 @@ class Dealer:
                 qst, emb_mdl, req.get(
                     "similarity", 0.1), topk)
             s["knn"]["filter"] = bqry.to_dict()
-            if "highlight" in s:
+            if not highlight and "highlight" in s:
                 del s["highlight"]
             q_vec = s["knn"]["query_vector"]
         es_logger.info("【Q】: {}".format(json.dumps(s)))
@@ -356,7 +356,7 @@ class Dealer:
                                            rag_tokenizer.tokenize(inst).split(" "))
 
     def retrieval(self, question, embd_mdl, tenant_id, kb_ids, page, page_size, similarity_threshold=0.2,
-                  vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True, rerank_mdl=None):
+                  vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True, rerank_mdl=None, highlight=False):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
@@ -364,7 +364,7 @@ class Dealer:
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
                "available_int": 1}
-        sres = self.search(req, index_name(tenant_id), embd_mdl)
+        sres = self.search(req, index_name(tenant_id), embd_mdl, highlight)
 
         if rerank_mdl:
             sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
@@ -405,6 +405,8 @@ class Dealer:
                 "vector": self.trans2floats(sres.field[id].get("q_%d_vec" % dim, "\t".join(["0"] * dim))),
                 "positions": sres.field[id].get("position_int", "").split("\t")
             }
+            if highlight:
+                d["highlight"] = rmSpace(sres.highlight[id])
             if len(d["positions"]) % 5 == 0:
                 poss = []
                 for i in range(0, len(d["positions"]), 5):
