@@ -157,14 +157,14 @@ class Benchmark:
         return qrels
 
     def __call__(self, dataset, file_path, miracl_corpus=''):
-        if dataset == "ms_marco":
-            qrels = self.ms_marco_index(file_path, "benchmark_ms_marco")
-            run = self._get_retrieval(qrels, "benchmark_ms_marco")
-            print(evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
+        if dataset == "ms_marco_v1.1":
+            qrels = self.ms_marco_index(file_path, "benchmark_ms_marco_v1.1")
+            run = self._get_retrieval(qrels, "benchmark_ms_marco_v1.1")
+            print(dataset, evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
         if dataset == "trivia_qa":
             qrels = self.trivia_qa_index(file_path, "benchmark_trivia_qa")
             run = self._get_retrieval(qrels, "benchmark_trivia_qa")
-            print(evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
+            print(dataset, evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
         if dataset == "miracl":
             for lang in ['ar', 'bn', 'de', 'en', 'es', 'fa', 'fi', 'fr', 'hi', 'id', 'ja', 'ko', 'ru', 'sw', 'te', 'th',
                          'yo', 'zh']:
@@ -184,15 +184,15 @@ class Benchmark:
                                           os.path.join(miracl_corpus, 'miracl-corpus-v1.0-' + lang),
                                           "benchmark_miracl_" + lang)
                 run = self._get_retrieval(qrels, "benchmark_miracl_" + lang)
-                print(evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
+                print(dataset, evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
 
 
 if __name__ == '__main__':
     print('*****************RAGFlow Benchmark*****************')
     kb_id = input('Please kb_id:\n')
     ex = Benchmark(kb_id)
-    dataset = input('RAGFlow Benchmark Support: ms_marco , trivia_qa , miracl. Please input dataset choice:\n')
-    if dataset in ['ms_marco', 'trivia_qa']:
+    dataset = input('RAGFlow Benchmark Support: ms_marco_v1.1 , trivia_qa , miracl. Please input dataset choice:\n')
+    if dataset in ['ms_marco_v1.1', 'trivia_qa']:
         dataset_path = input('Please input ' + dataset + ' dataset path:\n')
         ex(dataset, dataset_path)
     elif dataset == 'miracl':
