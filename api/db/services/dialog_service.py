@@ -210,7 +210,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
         done_tm = timer()
         prompt += "\n### Elapsed\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms"%((retrieval_tm-st)*1000, (done_tm-st)*1000)
-        return {"answer": answer, "reference": refs, "prompt": re.sub(r"\n", "<br/>", prompt)}
+        return {"answer": answer, "reference": refs, "prompt": prompt}
 
     if stream:
         last_ans = ""
