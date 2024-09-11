@@ -16,7 +16,7 @@ import { buildMessageListWithUuid, isConversationIdExist } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
-import { set } from 'lodash';
+import { has, set } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'umi';
 
@@ -492,9 +492,16 @@ export const useFetchMindMap = () => {
     mutationKey: ['fetchMindMap'],
     gcTime: 0,
     mutationFn: async (params: IAskRequestBody) => {
-      const { data } = await chatService.getMindMap(params);
+      try {
+        const ret = await chatService.getMindMap(params);
+        return ret?.data?.data ?? [];
+      } catch (error) {
+        if (has(error, 'message')) {
+          message.error(error.message);
+        }
 
-      return data?.data ?? [];
+        return [];
+      }
     },
   });
 
