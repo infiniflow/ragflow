@@ -592,7 +592,6 @@ class SILICONFLOWEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=32):
-        texts = [t for t in texts]
         payload = {
             "model": self.model_name,
             "input": texts,
