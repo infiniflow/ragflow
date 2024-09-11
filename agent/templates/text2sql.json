@@ -69,7 +69,6 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
-                            "empty_response": "Nothing found in DB-Description!",
                             "kb_ids": [
                                 "0ab5de985ba911efad9942010a8a0006"
                             ],
@@ -89,7 +88,6 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
-                            "empty_response": "Nothing found in DDL!",
                             "kb_ids": [
                                 "b1a6a45e5ba811ef80dc42010a8a0006"
                             ],
@@ -109,7 +107,6 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
-                            "empty_response": "Nothing found in Q-SQL!"
                             "kb_ids": [
                                 "31257b925b9f11ef9f0142010a8a0004"
                             ],
@@ -289,7 +286,6 @@
                     {
                         "data": {
                             "form": {
-                                "empty_response": "Nothing found in Q-SQL!",
                                 "kb_ids": [
                                     "31257b925b9f11ef9f0142010a8a0004"
                                 ],
@@ -375,7 +371,6 @@
                     {
                         "data": {
                             "form": {
-                                "empty_response": "Nothing found in DB-Description!",
                                 "kb_ids": [
                                     "0ab5de985ba911efad9942010a8a0006"
                                 ],
@@ -406,7 +401,6 @@
                     {
                         "data": {
                             "form": {
-                                "empty_response": "Nothing found in DDL!",
                                 "kb_ids": [
                                     "b1a6a45e5ba811ef80dc42010a8a0006"
                                 ],

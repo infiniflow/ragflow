@@ -404,7 +404,7 @@ def report_status():
             REDIS_CONN.set_obj("TASKEXE", obj, 60*2)
         except Exception as e:
             print("[Exception]:", str(e))
-        time.sleep(30)
+        time.sleep(60)
 
 
 if __name__ == "__main__":

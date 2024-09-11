@@ -1,4 +1,3 @@
-akshare==1.14.72
 azure-storage-blob==12.22.0
 azure-identity==1.17.1
 azure-storage-file-datalake==12.16.0
@@ -70,7 +69,6 @@ python_dateutil==2.8.2
 python_pptx==0.6.23
 pywencai==0.12.2
 qianfan==0.4.6
-ranx==0.3.20
 readability_lxml==0.8.1
 redis==5.0.3
 Requests==2.32.2

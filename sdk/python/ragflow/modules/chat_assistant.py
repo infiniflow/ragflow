@@ -1,12 +1,9 @@
-from typing import List
-
 from .base import Base
-from .session import Session
 
 
 class Assistant(Base):
     def __init__(self, rag, res_dict):
-        self.id = ""
+        self.id=""
         self.name = "assistant"
         self.avatar = "path/to/avatar"
         self.knowledgebases = ["kb1"]
@@ -44,8 +41,8 @@ class Assistant(Base):
 
     def save(self) -> bool:
         res = self.post('/assistant/save',
-                        {"id": self.id, "name": self.name, "avatar": self.avatar, "knowledgebases": self.knowledgebases,
-                         "llm": self.llm.to_json(), "prompt": self.prompt.to_json()
+                        {"id": self.id, "name": self.name, "avatar": self.avatar, "knowledgebases":self.knowledgebases,
+                         "llm":self.llm.to_json(),"prompt":self.prompt.to_json()
                          })
         res = res.json()
         if res.get("retmsg") == "success": return True
@@ -57,30 +54,3 @@ class Assistant(Base):
         res = res.json()
         if res.get("retmsg") == "success": return True
         raise Exception(res["retmsg"])
-
-    def create_session(self, name: str = "New session") -> Session:
-        res = self.post("/session/save", {"name": name, "assistant_id": self.id})
-        res = res.json()
-        if res.get("retmsg") == "success":
-            return Session(self.rag, res['data'])
-        raise Exception(res["retmsg"])
-
-    def list_session(self) -> List[Session]:
-        res = self.get('/session/list', {"assistant_id": self.id})
-        res = res.json()
-        if res.get("retmsg") == "success":
-            result_list = []
-            for data in res["data"]:
-                result_list.append(Session(self.rag, data))
-            return result_list
-        raise Exception(res["retmsg"])
-
-    def get_session(self, id) -> Session:
-        res = self.get("/session/get", {"id": id})
-        res = res.json()
-        if res.get("retmsg") == "success":
-            return Session(self.rag, res["data"])
-        raise Exception(res["retmsg"])
-
-    def get_prologue(self):
-        return self.prompt.opener

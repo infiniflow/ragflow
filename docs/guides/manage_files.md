@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 3
 slug: /manage_files
 ---
 

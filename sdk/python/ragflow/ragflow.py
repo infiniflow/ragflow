@@ -17,9 +17,9 @@ from typing import List
 
 import requests
 
-from .modules.assistant import Assistant
+from .modules.chat_assistant import Assistant
 from .modules.dataset import DataSet
-
+from .modules.document import Document
 
 class RAGFlow:
     def __init__(self, user_key, base_url, version='v1'):
@@ -30,8 +30,8 @@ class RAGFlow:
         self.api_url = f"{base_url}/api/{version}"
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
-    def post(self, path, param, stream=False):
-        res = requests.post(url=self.api_url + path, json=param, headers=self.authorization_header, stream=stream)
+    def post(self, path, param):
+        res = requests.post(url=self.api_url + path, json=param, headers=self.authorization_header)
         return res
 
     def get(self, path, params=None):
@@ -87,7 +87,7 @@ class RAGFlow:
             datasets.append(dataset.to_json())
 
         if llm is None:
-            llm = Assistant.LLM(self, {"model_name": None,
+            llm = Assistant.LLM(self, {"model_name": "deepseek-chat",
                                        "temperature": 0.1,
                                        "top_p": 0.3,
                                        "presence_penalty": 0.4,
@@ -142,3 +142,34 @@ class RAGFlow:
                 result_list.append(Assistant(self, data))
             return result_list
         raise Exception(res["retmsg"])
+
+    def create_document(self, ds:DataSet, name: str, blob: bytes) -> bool:
+        url = f"/doc/dataset/{ds.id}/documents/upload"  # 数据集的上传 API 地址
+        files = {
+            'file': (name, blob)  # 使用表单上传文件
+        }
+        data = {
+            'kb_id': ds.id  # 目标知识库的 ID
+        }
+        headers = {
+            'Authorization': f"Bearer {ds.rag.user_key}"  # 认证头
+        }
+
+        # response = self.post(url, payload)
+        response = requests.post(self.api_url + url, data=data, files=files,
+                                 headers=headers)
+        #因为有二进制数据不能json序列化，所以不调用base的post方法
+
+        if response.status_code == 200 and response.json().get('retmsg') == 'success':
+            return True
+        else:
+            raise Exception(f"Upload failed: {response.json().get('retmsg')}")
+
+        return False
+    def get_document(self, id: str = None, name: str = None) -> Document:
+        res = self.get("/doc/infos", {"id": id, "name": name})
+        res = res.json()
+        if res.get("retmsg") == "success":
+            return Document(self, res['data'])
+        raise Exception(res["retmsg"])
+
