@@ -189,7 +189,7 @@ class Benchmark:
 
 if __name__ == '__main__':
     print('*****************RAGFlow Benchmark*****************')
-    kb_id = input('Please kb_id:\n')
+    kb_id = input('Please input kb_id:\n')
     ex = Benchmark(kb_id)
     dataset = input(
     'RAGFlow Benchmark Support:\n\tms_marco_v1.1:<https://huggingface.co/datasets/microsoft/ms_marco>\n\ttrivia_qa:<https://huggingface.co/datasets/mandarjoshi/trivia_qa>\n\tmiracl:<https://huggingface.co/datasets/miracl/miracl>\nPlease input dataset choice:\n')
