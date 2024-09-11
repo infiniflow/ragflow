@@ -36,7 +36,7 @@ export const buildMessageItemReference = (
   );
   const reference = message?.reference
     ? message?.reference
-    : conversation.reference[referenceIndex];
+    : (conversation?.reference ?? {})[referenceIndex];
 
   return reference;
 };

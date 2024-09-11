@@ -457,8 +457,8 @@ class VolcEngineChat(Base):
         model_name is for display only
         """
         base_url = base_url if base_url else 'https://ark.cn-beijing.volces.com/api/v3'
-        ark_api_key = eval(key).get('ark_api_key', '')
-        model_name = eval(key).get('ep_id', '')
+        ark_api_key = json.loads(key).get('ark_api_key', '')
+        model_name = json.loads(key).get('ep_id', '')
         super().__init__(ark_api_key, model_name, base_url)
 
 
@@ -602,9 +602,9 @@ class BedrockChat(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
-        self.bedrock_ak = eval(key).get('bedrock_ak', '')
-        self.bedrock_sk = eval(key).get('bedrock_sk', '')
-        self.bedrock_region = eval(key).get('bedrock_region', '')
+        self.bedrock_ak = json.loads(key).get('bedrock_ak', '')
+        self.bedrock_sk = json.loads(key).get('bedrock_sk', '')
+        self.bedrock_region = json.loads(key).get('bedrock_region', '')
         self.model_name = model_name
         self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
                                    aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
@@ -701,9 +701,13 @@ class GeminiChat(Base):
         self.model = GenerativeModel(model_name=self.model_name)
         self.model._client = _client
         
+        
     def chat(self,system,history,gen_conf):
+        from google.generativeai.types import content_types
+        
         if system:
-            history.insert(0, {"role": "user", "parts": system})
+            self.model._system_instruction = content_types.to_content(system)
+            
         if 'max_tokens' in gen_conf:
             gen_conf['max_output_tokens'] = gen_conf['max_tokens']
         for k in list(gen_conf.keys()):
@@ -725,8 +729,10 @@ class GeminiChat(Base):
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf):
+        from google.generativeai.types import content_types
+        
         if system:
-            history.insert(0, {"role": "user", "parts": system})
+            self.model._system_instruction = content_types.to_content(system)
         if 'max_tokens' in gen_conf:
             gen_conf['max_output_tokens'] = gen_conf['max_tokens']
         for k in list(gen_conf.keys()):
@@ -1132,7 +1138,7 @@ class SparkChat(Base):
 class BaiduYiyanChat(Base):
     def __init__(self, key, model_name, base_url=None):
         import qianfan
-        
+
         key = json.loads(key)
         ak = key.get("yiyan_ak","")
         sk = key.get("yiyan_sk","")
@@ -1149,7 +1155,7 @@ class BaiduYiyanChat(Base):
         if "max_tokens" in gen_conf:
             gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
         ans = ""
-        
+
         try:
             response = self.client.do(
                 model=self.model_name, 
@@ -1159,7 +1165,7 @@ class BaiduYiyanChat(Base):
             ).body
             ans = response['result']
             return ans, response["usage"]["total_tokens"]
-            
+
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
 
@@ -1173,7 +1179,7 @@ class BaiduYiyanChat(Base):
             gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
         ans = ""
         total_tokens = 0
-        
+
         try:
             response = self.client.do(
                 model=self.model_name, 
@@ -1193,3 +1199,218 @@ class BaiduYiyanChat(Base):
             return ans + "\n**ERROR**: " + str(e), 0
 
         yield total_tokens
+
+
+class AnthropicChat(Base):
+    def __init__(self, key, model_name, base_url=None):
+        import anthropic
+
+        self.client = anthropic.Anthropic(api_key=key)
+        self.model_name = model_name
+        self.system = ""
+
+    def chat(self, system, history, gen_conf):
+        if system:
+            self.system = system
+        if "max_tokens" not in gen_conf:
+            gen_conf["max_tokens"] = 4096
+
+        try:
+            response = self.client.messages.create(
+                model=self.model_name,
+                messages=history,
+                system=self.system,
+                stream=False,
+                **gen_conf,
+            ).json()
+            ans = response["content"][0]["text"]
+            if response["stop_reason"] == "max_tokens":
+                ans += (
+                    "...\nFor the content length reason, it stopped, continue?"
+                    if is_english([ans])
+                    else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                )
+            return (
+                ans,
+                response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
+            )
+        except Exception as e:
+            return ans + "\n**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf):
+        if system:
+            self.system = system
+        if "max_tokens" not in gen_conf:
+            gen_conf["max_tokens"] = 4096
+
+        ans = ""
+        total_tokens = 0
+        try:
+            response = self.client.messages.create(
+                model=self.model_name,
+                messages=history,
+                system=self.system,
+                stream=True,
+                **gen_conf,
+            )
+            for res in response.iter_lines():
+                res = res.decode("utf-8")
+                if "content_block_delta" in res and "data" in res:
+                    text = json.loads(res[6:])["delta"]["text"]
+                    ans += text
+                    total_tokens += num_tokens_from_string(text)
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield total_tokens
+
+
+class GoogleChat(Base):
+    def __init__(self, key, model_name, base_url=None):
+        from google.oauth2 import service_account
+        import base64
+
+        key = json.load(key)
+        access_token = json.loads(
+            base64.b64decode(key.get("google_service_account_key", ""))
+        )
+        project_id = key.get("google_project_id", "")
+        region = key.get("google_region", "")
+
+        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+        self.model_name = model_name
+        self.system = ""
+
+        if "claude" in self.model_name:
+            from anthropic import AnthropicVertex
+            from google.auth.transport.requests import Request
+
+            if access_token:
+                credits = service_account.Credentials.from_service_account_info(
+                    access_token, scopes=scopes
+                )
+                request = Request()
+                credits.refresh(request)
+                token = credits.token
+                self.client = AnthropicVertex(
+                    region=region, project_id=project_id, access_token=token
+                )
+            else:
+                self.client = AnthropicVertex(region=region, project_id=project_id)
+        else:
+            from google.cloud import aiplatform
+            import vertexai.generative_models as glm
+
+            if access_token:
+                credits = service_account.Credentials.from_service_account_info(
+                    access_token
+                )
+                aiplatform.init(
+                    credentials=credits, project=project_id, location=region
+                )
+            else:
+                aiplatform.init(project=project_id, location=region)
+            self.client = glm.GenerativeModel(model_name=self.model_name)
+
+    def chat(self, system, history, gen_conf):
+        if system:
+            self.system = system
+
+        if "claude" in self.model_name:
+            if "max_tokens" not in gen_conf:
+                gen_conf["max_tokens"] = 4096
+            try:
+                response = self.client.messages.create(
+                    model=self.model_name,
+                    messages=history,
+                    system=self.system,
+                    stream=False,
+                    **gen_conf,
+                ).json()
+                ans = response["content"][0]["text"]
+                if response["stop_reason"] == "max_tokens":
+                    ans += (
+                        "...\nFor the content length reason, it stopped, continue?"
+                        if is_english([ans])
+                        else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    )
+                return (
+                    ans,
+                    response["usage"]["input_tokens"]
+                    + response["usage"]["output_tokens"],
+                )
+            except Exception as e:
+                return ans + "\n**ERROR**: " + str(e), 0
+        else:
+            self.client._system_instruction = self.system
+            if "max_tokens" in gen_conf:
+                gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
+            for k in list(gen_conf.keys()):
+                if k not in ["temperature", "top_p", "max_output_tokens"]:
+                    del gen_conf[k]
+            for item in history:
+                if "role" in item and item["role"] == "assistant":
+                    item["role"] = "model"
+                if "content" in item:
+                    item["parts"] = item.pop("content")
+            try:
+                response = self.client.generate_content(
+                    history, generation_config=gen_conf
+                )
+                ans = response.text
+                return ans, response.usage_metadata.total_token_count
+            except Exception as e:
+                return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf):
+        if system:
+            self.system = system
+
+        if "claude" in self.model_name:
+            if "max_tokens" not in gen_conf:
+                gen_conf["max_tokens"] = 4096
+            ans = ""
+            total_tokens = 0
+            try:
+                response = self.client.messages.create(
+                    model=self.model_name,
+                    messages=history,
+                    system=self.system,
+                    stream=True,
+                    **gen_conf,
+                )
+                for res in response.iter_lines():
+                    res = res.decode("utf-8")
+                    if "content_block_delta" in res and "data" in res:
+                        text = json.loads(res[6:])["delta"]["text"]
+                        ans += text
+                        total_tokens += num_tokens_from_string(text)
+            except Exception as e:
+                yield ans + "\n**ERROR**: " + str(e)
+
+            yield total_tokens
+        else:
+            self.client._system_instruction = self.system
+            if "max_tokens" in gen_conf:
+                gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
+            for k in list(gen_conf.keys()):
+                if k not in ["temperature", "top_p", "max_output_tokens"]:
+                    del gen_conf[k]
+            for item in history:
+                if "role" in item and item["role"] == "assistant":
+                    item["role"] = "model"
+                if "content" in item:
+                    item["parts"] = item.pop("content")
+            ans = ""
+            try:
+                response = self.model.generate_content(
+                    history, generation_config=gen_conf, stream=True
+                )
+                for resp in response:
+                    ans += resp.text
+                    yield ans
+
+            except Exception as e:
+                yield ans + "\n**ERROR**: " + str(e)
+
+            yield response._chunks[-1].usage_metadata.total_token_count

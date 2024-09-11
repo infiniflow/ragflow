@@ -98,6 +98,7 @@ export interface ITestingChunk {
   term_similarity: number;
   vector: number[];
   vector_similarity: number;
+  highlight: string;
 }
 
 export interface ITestingDocument {

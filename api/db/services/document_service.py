@@ -34,7 +34,7 @@ from api.utils.file_utils import get_project_base_directory
 from graphrag.mind_map_extractor import MindMapExtractor
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.es_conn import ELASTICSEARCH
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search, rag_tokenizer
 
 from api.db import FileType, TaskStatus, ParserType, LLMType
@@ -473,7 +473,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             else:
                 d["image"].save(output_buffer, format='JPEG')
 
-            MINIO.put(kb.id, d["_id"], output_buffer.getvalue())
+            STORAGE_IMPL.put(kb.id, d["_id"], output_buffer.getvalue())
             d["img_id"] = "{}-{}".format(kb.id, d["_id"])
             del d["image"]
             docs.append(d)

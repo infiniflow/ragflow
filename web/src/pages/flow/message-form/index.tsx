@@ -74,7 +74,7 @@ const MessageForm = ({ onValuesChange, form }: IOperatorForm) => {
                 style={{ width: '80%' }}
                 icon={<PlusOutlined />}
               >
-                {t('addField')}
+                {t('addMessage')}
               </Button>
             </Form.Item>
           </>

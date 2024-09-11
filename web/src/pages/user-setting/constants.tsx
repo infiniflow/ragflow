@@ -25,4 +25,5 @@ export const LocalLlmFactories = [
   'OpenAI-API-Compatible',
   'TogetherAI',
   'Replicate',
+  'OpenRouter',
 ];

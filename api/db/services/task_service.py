@@ -27,7 +27,7 @@ from api.db.services.document_service import DocumentService
 from api.utils import current_timestamp, get_uuid
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.settings import SVR_QUEUE_NAME
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -42,6 +42,7 @@ class TaskService(CommonService):
             cls.model.doc_id,
             cls.model.from_page,
             cls.model.to_page,
+            cls.model.retry_count,
             Document.kb_id,
             Document.parser_id,
             Document.parser_config,
@@ -64,9 +65,20 @@ class TaskService(CommonService):
         docs = list(docs.dicts())
         if not docs: return []
 
-        cls.model.update(progress_msg=cls.model.progress_msg + "\n" + "Task has been received.",
-                         progress=random.random() / 10.).where(
+        msg = "\nTask has been received."
+        prog = random.random() / 10.
+        if docs[0]["retry_count"] >= 3:
+            msg = "\nERROR: Task is abandoned after 3 times attempts."
+            prog = -1
+
+        cls.model.update(progress_msg=cls.model.progress_msg + msg,
+                         progress=prog,
+                         retry_count=docs[0]["retry_count"]+1
+                         ).where(
             cls.model.id == docs[0]["id"]).execute()
+
+        if docs[0]["retry_count"] >= 3: return []
+
         return docs
 
     @classmethod
@@ -131,7 +143,7 @@ def queue_tasks(doc, bucket, name):
     tsks = []
 
     if doc["type"] == FileType.PDF.value:
-        file_bin = MINIO.get(bucket, name)
+        file_bin = STORAGE_IMPL.get(bucket, name)
         do_layout = doc["parser_config"].get("layout_recognize", True)
         pages = PdfParser.total_page_number(doc["name"], file_bin)
         page_size = doc["parser_config"].get("task_page_size", 12)
@@ -157,7 +169,7 @@ def queue_tasks(doc, bucket, name):
                 tsks.append(task)
 
     elif doc["parser_id"] == "table":
-        file_bin = MINIO.get(bucket, name)
+        file_bin = STORAGE_IMPL.get(bucket, name)
         rn = RAGFlowExcelParser.row_number(
             doc["name"], file_bin)
         for i in range(0, rn, 3000):

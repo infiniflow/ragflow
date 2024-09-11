@@ -70,9 +70,13 @@ const SystemInfo = () => {
                 key={key}
               >
                 {key === 'task_executor' ? (
-                  <TaskBarChat
-                    data={info.elapsed as TaskExecutorElapsed}
-                  ></TaskBarChat>
+                  info?.elapsed ? (
+                    <TaskBarChat
+                      data={info.elapsed as TaskExecutorElapsed}
+                    ></TaskBarChat>
+                  ) : (
+                    <Text className={styles.error}>{info.error}</Text>
+                  )
                 ) : (
                   Object.keys(info)
                     .filter((x) => x !== 'status')

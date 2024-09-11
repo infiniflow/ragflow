@@ -2,8 +2,11 @@ import { ResponseType } from '@/interfaces/database/base';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import i18n from '@/locales/config';
 import flowService from '@/services/flow-service';
+import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
+import { set } from 'lodash';
+import get from 'lodash/get';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 
@@ -54,7 +57,7 @@ export const useFetchFlowTemplates = (): ResponseType<IFlowTemplate[]> => {
         data.data.unshift({
           id: uuid(),
           title: 'Blank',
-          description: 'Create from nothing',
+          description: 'Create your agent from scratch',
           dsl: EmptyDsl,
         });
       }
@@ -100,6 +103,11 @@ export const useFetchFlow = (): {
     gcTime: 0,
     queryFn: async () => {
       const { data } = await flowService.getCanvas({}, id);
+
+      const messageList = buildMessageListWithUuid(
+        get(data, 'data.dsl.messages', []),
+      );
+      set(data, 'data.dsl.messages', messageList);
 
       return data?.data ?? {};
     },

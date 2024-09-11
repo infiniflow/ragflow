@@ -1,7 +1,7 @@
 {
   "id": 6,
   "title": "DB Assistant",
-  "description": "Database query assistant. It converts questions into SQL statements and queries them in the database. You need to provide 3 kinds of knowledge base: 1. DDL data in the database. 2. Sample text questions converted to SQL statements. 3. A description of the database contents, including but not limited to: tables, records, and so on. You will also need to set up database configuration information: like IP Port ...",
+  "description": "An advanced agent that converts user queries into SQL statements, executes the queries, and assesses and returns the results. You must prepare three knowledge bases: 1: DDL for your database; 2: Examples of user queries converted to SQL statements; 3: A comprehensive description of your database, including but not limited to tables and records. You are also required to configure the corresponding database.",
   "canvas_type": "chatbot",
   "dsl": {
             "answer": [],
@@ -63,7 +63,7 @@
                                 }
                             ],
                             "presence_penalty": 0.4,
-                            "prompt": "## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.\n\n## The contents of the SQL query error report and the original SQL statement are as follows:\n{exesql_input}\n\n## Answer only the modified SQL statement. Please do not give any explanation, just answer the code.",
+                            "prompt": "## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.\n\n## The contents of the SQL query error report and the original SQL statement are as follows:\n{exesql_input}\n\n## Answer only the modified SQL statement. Each SQL statement ends with semicolon and do not give any explanation, just answer the code.",
                             "temperature": 0.1,
                             "top_p": 0.3
                         }
@@ -102,7 +102,7 @@
                                 }
                             ],
                             "presence_penalty": 0.4,
-                            "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
+                            "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Each SQL code ends with semicolon and do not give any explanation -- just the code.",
                             "temperature": 0.1,
                             "top_p": 0.3
                         }
@@ -120,6 +120,7 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
+                            "empty_response": "Nothing found in DB-Description!",
                             "kb_ids": [
                                 "b510f8f45f6011ef904f0242ac160006"
                             ],
@@ -139,6 +140,7 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
+                            "empty_response": "Nothing found in DDL!",
                             "kb_ids": [
                                 "9870268e5f6011efb8570242ac160006"
                             ],
@@ -158,6 +160,7 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
+                            "empty_response": "Nothing found in Q->SQL!",
                             "kb_ids": [
                                 "dd401bcc5b9e11efae770242ac160006"
                             ],
@@ -408,6 +411,7 @@
                     {
                         "data": {
                             "form": {
+                                "empty_response": "Nothing found in Q->SQL!",
                                 "kb_ids": [
                                     "dd401bcc5b9e11efae770242ac160006"
                                 ],
@@ -493,6 +497,7 @@
                     {
                         "data": {
                             "form": {
+                                "empty_response": "Nothing found in DB-Description!",
                                 "kb_ids": [
                                     "b510f8f45f6011ef904f0242ac160006"
                                 ],
@@ -523,6 +528,7 @@
                     {
                         "data": {
                             "form": {
+                                "empty_response": "Nothing found in DDL!",
                                 "kb_ids": [
                                     "9870268e5f6011efb8570242ac160006"
                                 ],

@@ -72,3 +72,44 @@ export const toFixed = (value: unknown, fixed = 2) => {
   }
   return value;
 };
+
+export const stringToUint8Array = (str: string) => {
+  // const byteString = str.replace(/b'|'/g, '');
+  const byteString = str.slice(2, -1);
+
+  const uint8Array = new Uint8Array(byteString.length);
+  for (let i = 0; i < byteString.length; i++) {
+    uint8Array[i] = byteString.charCodeAt(i);
+  }
+
+  return uint8Array;
+};
+
+export const hexStringToUint8Array = (hex: string) => {
+  const arr = hex.match(/[\da-f]{2}/gi);
+  if (Array.isArray(arr)) {
+    return new Uint8Array(
+      arr.map(function (h) {
+        return parseInt(h, 16);
+      }),
+    );
+  }
+};
+
+export function hexToArrayBuffer(input: string) {
+  if (typeof input !== 'string') {
+    throw new TypeError('Expected input to be a string');
+  }
+
+  if (input.length % 2 !== 0) {
+    throw new RangeError('Expected string to be an even number of characters');
+  }
+
+  const view = new Uint8Array(input.length / 2);
+
+  for (let i = 0; i < input.length; i += 2) {
+    view[i / 2] = parseInt(input.substring(i, i + 2), 16);
+  }
+
+  return view.buffer;
+}

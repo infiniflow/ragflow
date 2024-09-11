@@ -788,6 +788,7 @@ class Task(DataBaseModel):
         null=True,
         help_text="process message",
         default="")
+    retry_count = IntegerField(default=0)
 
 
 class Dialog(DataBaseModel):
@@ -982,3 +983,10 @@ def migrate_db():
             DB.execute_sql('ALTER TABLE llm ADD PRIMARY KEY (llm_name,fid);')
         except Exception as e:
             pass
+        try:
+            migrate(
+                migrator.add_column('task', 'retry_count', IntegerField(default=0))
+            )
+        except Exception as e:
+            pass
+

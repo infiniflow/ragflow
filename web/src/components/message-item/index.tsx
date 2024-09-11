@@ -1,8 +1,8 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
-import { IReference, Message } from '@/interfaces/database/chat';
+import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
@@ -11,6 +11,8 @@ import {
   useFetchDocumentInfosByIds,
   useFetchDocumentThumbnailsByIds,
 } from '@/hooks/document-hooks';
+import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
+import { IMessage } from '@/pages/chat/interface';
 import MarkdownContent from '@/pages/chat/markdown-content';
 import { getExtension, isImage } from '@/utils/document-util';
 import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
@@ -22,13 +24,16 @@ import styles from './index.less';
 
 const { Text } = Typography;
 
-interface IProps {
-  item: Message;
+interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
+  item: IMessage;
   reference: IReference;
   loading?: boolean;
+  sendLoading?: boolean;
   nickname?: string;
   avatar?: string;
   clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
+  index: number;
+  showLikeButton?: boolean;
 }
 
 const MessageItem = ({
@@ -36,12 +41,15 @@ const MessageItem = ({
   reference,
   loading = false,
   avatar = '',
-  nickname = '',
+  sendLoading = false,
   clickDocumentButton,
+  index,
+  removeMessageById,
+  regenerateMessage,
+  showLikeButton = true,
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const { t } = useTranslate('chat');
   const fileThumbnails = useSelectFileThumbnails();
   const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
   const { data: documentThumbnails, setDocumentIds: setIds } =
@@ -53,14 +61,6 @@ const MessageItem = ({
     return reference?.doc_aggs ?? [];
   }, [reference?.doc_aggs]);
 
-  const content = useMemo(() => {
-    let text = item.content;
-    if (text === '') {
-      text = t('searching');
-    }
-    return loading ? text?.concat('~~2$$') : text;
-  }, [item.content, loading, t]);
-
   const handleUserDocumentClick = useCallback(
     (id: string) => () => {
       setClickedDocumentId(id);
@@ -68,6 +68,10 @@ const MessageItem = ({
     },
     [showModal],
   );
+
+  const handleRegenerateMessage = useCallback(() => {
+    regenerateMessage?.(item);
+  }, [regenerateMessage, item]);
 
   useEffect(() => {
     const ids = item?.doc_ids ?? [];
@@ -112,9 +116,25 @@ const MessageItem = ({
           <Flex vertical gap={8} flex={1}>
             <Space>
               {isAssistant ? (
-                <AssistantGroupButton></AssistantGroupButton>
+                index !== 0 && (
+                  <AssistantGroupButton
+                    messageId={item.id}
+                    content={item.content}
+                    prompt={item.prompt}
+                    showLikeButton={showLikeButton}
+                    audioBinary={item.audio_binary}
+                  ></AssistantGroupButton>
+                )
               ) : (
-                <UserGroupButton></UserGroupButton>
+                <UserGroupButton
+                  content={item.content}
+                  messageId={item.id}
+                  removeMessageById={removeMessageById}
+                  regenerateMessage={
+                    regenerateMessage && handleRegenerateMessage
+                  }
+                  sendLoading={sendLoading}
+                ></UserGroupButton>
               )}
 
               {/* <b>{isAssistant ? '' : nickname}</b> */}
@@ -125,7 +145,8 @@ const MessageItem = ({
               }
             >
               <MarkdownContent
-                content={content}
+                loading={loading}
+                content={item.content}
                 reference={reference}
                 clickDocumentButton={clickDocumentButton}
               ></MarkdownContent>

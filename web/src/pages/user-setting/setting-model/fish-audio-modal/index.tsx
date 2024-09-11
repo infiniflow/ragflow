@@ -81,14 +81,14 @@ const FishAudioModal = ({
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addFishAudioAK')}
-          name="FishAudio_ak"
+          name="fish_audio_ak"
           rules={[{ required: true, message: t('FishAudioAKMessage') }]}
         >
           <Input placeholder={t('FishAudioAKMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addFishAudioRefID')}
-          name="FishAudio_refid"
+          name="fish_audio_refid"
           rules={[{ required: false, message: t('FishAudioRefIDMessage') }]}
         >
           <Input placeholder={t('FishAudioRefIDMessage')} />

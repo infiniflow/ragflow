@@ -27,19 +27,23 @@ import {
 import { useCallback, useMemo } from 'react';
 import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
+import TencentCloudModal from './Tencent-modal';
 import ApiKeyModal from './api-key-modal';
 import BedrockModal from './bedrock-modal';
 import { IconMap } from './constant';
 import FishAudioModal from './fish-audio-modal';
+import GoogleModal from './google-modal';
 import {
   useHandleDeleteLlm,
   useSubmitApiKey,
   useSubmitBedrock,
   useSubmitFishAudio,
+  useSubmitGoogle,
   useSubmitHunyuan,
   useSubmitOllama,
   useSubmitSpark,
   useSubmitSystemModelSetting,
+  useSubmitTencentCloud,
   useSubmitVolcEngine,
   useSubmityiyan,
 } from './hooks';
@@ -101,7 +105,9 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
                 item.name === 'Tencent Hunyuan' ||
                 item.name === 'XunFei Spark' ||
                 item.name === 'BaiduYiyan' ||
-                item.name === 'Fish Audio'
+                item.name === 'Fish Audio' ||
+                item.name === 'Tencent Cloud' ||
+                item.name === 'Google Cloud'
                   ? t('addTheModel')
                   : 'API-Key'}
                 <SettingOutlined />
@@ -184,6 +190,22 @@ const UserSettingModel = () => {
   } = useSubmitHunyuan();
 
   const {
+    GoogleAddingVisible,
+    hideGoogleAddingModal,
+    showGoogleAddingModal,
+    onGoogleAddingOk,
+    GoogleAddingLoading,
+  } = useSubmitGoogle();
+
+  const {
+    TencentCloudAddingVisible,
+    hideTencentCloudAddingModal,
+    showTencentCloudAddingModal,
+    onTencentCloudAddingOk,
+    TencentCloudAddingLoading,
+  } = useSubmitTencentCloud();
+
+  const {
     SparkAddingVisible,
     hideSparkAddingModal,
     showSparkAddingModal,
@@ -223,14 +245,18 @@ const UserSettingModel = () => {
       'XunFei Spark': showSparkAddingModal,
       BaiduYiyan: showyiyanAddingModal,
       'Fish Audio': showFishAudioAddingModal,
+      'Tencent Cloud': showTencentCloudAddingModal,
+      'Google Cloud': showGoogleAddingModal,
     }),
     [
       showBedrockAddingModal,
       showVolcAddingModal,
       showHunyuanAddingModal,
+      showTencentCloudAddingModal,
       showSparkAddingModal,
       showyiyanAddingModal,
       showFishAudioAddingModal,
+      showGoogleAddingModal,
     ],
   );
 
@@ -267,11 +293,18 @@ const UserSettingModel = () => {
       children: (
         <List
           grid={{
-            gutter: 24,
+            gutter: {
+              xs: 8,
+              sm: 10,
+              md: 12,
+              lg: 16,
+              xl: 20,
+              xxl: 24,
+            },
             xs: 1,
-            sm: 2,
-            md: 3,
-            lg: 4,
+            sm: 1,
+            md: 2,
+            lg: 3,
             xl: 4,
             xxl: 8,
           }}
@@ -279,15 +312,21 @@ const UserSettingModel = () => {
           renderItem={(item) => (
             <List.Item>
               <Card className={styles.toBeAddedCard}>
-                <Flex vertical gap={'large'}>
+                <Flex vertical gap={'middle'}>
                   <LlmIcon name={item.name} />
                   <Flex vertical gap={'middle'}>
-                    <b>{item.name}</b>
-                    <Text>{item.tags}</Text>
+                    <b>
+                      <Text ellipsis={{ tooltip: item.name }}>{item.name}</Text>
+                    </b>
+                    <Text className={styles.modelTags}>{item.tags}</Text>
                   </Flex>
                 </Flex>
-                <Divider></Divider>
-                <Button type="link" onClick={() => handleAddModel(item.name)}>
+                <Divider className={styles.modelDivider}></Divider>
+                <Button
+                  type="link"
+                  onClick={() => handleAddModel(item.name)}
+                  className={styles.addButton}
+                >
                   {t('addTheModel')}
                 </Button>
               </Card>
@@ -349,6 +388,20 @@ const UserSettingModel = () => {
         loading={HunyuanAddingLoading}
         llmFactory={'Tencent Hunyuan'}
       ></HunyuanModal>
+      <GoogleModal
+        visible={GoogleAddingVisible}
+        hideModal={hideGoogleAddingModal}
+        onOk={onGoogleAddingOk}
+        loading={GoogleAddingLoading}
+        llmFactory={'Google Cloud'}
+      ></GoogleModal>
+      <TencentCloudModal
+        visible={TencentCloudAddingVisible}
+        hideModal={hideTencentCloudAddingModal}
+        onOk={onTencentCloudAddingOk}
+        loading={TencentCloudAddingLoading}
+        llmFactory={'Tencent TencentCloud'}
+      ></TencentCloudModal>
       <SparkModal
         visible={SparkAddingVisible}
         hideModal={hideSparkAddingModal}

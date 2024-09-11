@@ -207,13 +207,17 @@ export const useUploadFile = () => {
         formData.append('file', file);
         formData.append('path', pathList[index]);
       });
-      const { data } = await fileManagerService.uploadFile(formData);
-      if (data.retcode === 0) {
-        message.success(t('message.uploaded'));
-        setPaginationParams(1);
-        queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
+      try {
+        const { data } = await fileManagerService.uploadFile(formData);
+        if (data.retcode === 0) {
+          message.success(t('message.uploaded'));
+          setPaginationParams(1);
+          queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
+        }
+        return data.retcode;
+      } catch (error) {
+        console.log('🚀 ~ useUploadFile ~ error:', error);
       }
-      return data.retcode;
     },
   });
 

@@ -1,7 +1,7 @@
 {
   "id": 4,
   "title": "Interpreter",
-  "description": "An interpreter. Type the content you want to translate and the object language like: Hi there => Spanish. Hava a try!",
+  "description": "A simple interpreter that translates user input into a target language. Try 'Hi there => Spanish' to see the translation!",
   "canvas_type": "chatbot",
   "dsl": {
     "answer": [],

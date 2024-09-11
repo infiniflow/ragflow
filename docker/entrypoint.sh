@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# unset http proxy which maybe set by docker daemon
+export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+
 /usr/sbin/nginx
 
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
@@ -11,13 +14,13 @@ fi
 
 function task_exe(){
     while [ 1 -eq 1 ];do
-      $PY rag/svr/task_executor.py ;
+      $PY rag/svr/task_executor.py $1;
     done
 }
 
 for ((i=0;i<WS;i++))
 do
-  task_exe  &
+  task_exe  $i &
 done
 
 while [ 1 -eq 1 ];do

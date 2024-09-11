@@ -69,7 +69,7 @@ export const useFetchKnowledgeBaseConfiguration = () => {
 export const useNextFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
 ): {
-  list: any[];
+  list: IKnowledge[];
   loading: boolean;
 } => {
   const { data, isFetching: loading } = useQuery({
@@ -206,10 +206,11 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
     mutateAsync,
   } = useMutation({
     mutationKey: ['testChunk'], // This method is invalid
+    gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await kbService.retrieval_test({
         ...values,
-        kb_id: knowledgeBaseId,
+        kb_id: values.kb_id ?? knowledgeBaseId,
         page,
         size: pageSize,
       });

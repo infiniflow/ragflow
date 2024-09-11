@@ -45,7 +45,8 @@ EmbeddingModel = {
     "Upstage": UpstageEmbed,
     "SILICONFLOW": SILICONFLOWEmbed,
     "Replicate": ReplicateEmbed,
-    "BaiduYiyan": BaiduYiyanEmbed
+    "BaiduYiyan": BaiduYiyanEmbed,
+    "Voyage AI": VoyageEmbed
 }
 
 
@@ -104,7 +105,9 @@ ChatModel = {
     "Replicate": ReplicateChat,
     "Tencent Hunyuan": HunyuanChat,
     "XunFei Spark": SparkChat,
-    "BaiduYiyan": BaiduYiyanChat
+    "BaiduYiyan": BaiduYiyanChat,
+    "Anthropic": AnthropicChat,
+    "Google Cloud": GoogleChat,
 }
 
 
@@ -119,7 +122,8 @@ RerankModel = {
     "cohere": CoHereRerank,
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,
-    "BaiduYiyan": BaiduYiyanRerank
+    "BaiduYiyan": BaiduYiyanRerank,
+    "Voyage AI": VoyageRerank
 }
 
 
@@ -128,9 +132,11 @@ Seq2txtModel = {
     "Tongyi-Qianwen": QWenSeq2txt,
     "Ollama": OllamaSeq2txt,
     "Azure-OpenAI": AzureSeq2txt,
-    "Xinference": XinferenceSeq2txt
+    "Xinference": XinferenceSeq2txt,
+    "Tencent Cloud": TencentCloudSeq2txt
 }
 
 TTSModel = {
-    "Fish Audio": FishAudioTTS
+    "Fish Audio": FishAudioTTS,
+    "Tongyi-Qianwen": QwenTTS
 }

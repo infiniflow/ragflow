@@ -403,9 +403,9 @@ class BedrockEmbed(Base):
     def __init__(self, key, model_name,
                  **kwargs):
         import boto3
-        self.bedrock_ak = eval(key).get('bedrock_ak', '')
-        self.bedrock_sk = eval(key).get('bedrock_sk', '')
-        self.bedrock_region = eval(key).get('bedrock_region', '')
+        self.bedrock_ak = json.loads(key).get('bedrock_ak', '')
+        self.bedrock_sk = json.loads(key).get('bedrock_sk', '')
+        self.bedrock_region = json.loads(key).get('bedrock_region', '')
         self.model_name = model_name
         self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
                                    aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
@@ -577,11 +577,40 @@ class UpstageEmbed(OpenAIEmbed):
         super().__init__(key, model_name, base_url)
 
 
-class SILICONFLOWEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1"):
+class SILICONFLOWEmbed(Base):
+    def __init__(
+        self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"
+    ):
         if not base_url:
-            base_url = "https://api.siliconflow.cn/v1"
-        super().__init__(key, model_name, base_url)
+            base_url = "https://api.siliconflow.cn/v1/embeddings"
+        self.headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "authorization": f"Bearer {key}",
+        }
+        self.base_url = base_url
+        self.model_name = model_name
+
+    def encode(self, texts: list, batch_size=32):
+        payload = {
+            "model": self.model_name,
+            "input": texts,
+            "encoding_format": "float",
+        }
+        res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        return (
+            np.array([d["embedding"] for d in res["data"]]),
+            res["usage"]["total_tokens"],
+        )
+
+    def encode_queries(self, text):
+        payload = {
+            "model": self.model_name,
+            "input": text,
+            "encoding_format": "float",
+        }
+        res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        return np.array(res["data"][0]["embedding"]), res["usage"]["total_tokens"]
 
 
 class ReplicateEmbed(Base):
@@ -623,3 +652,24 @@ class BaiduYiyanEmbed(Base):
             np.array([r["embedding"] for r in res["data"]]),
             res["usage"]["total_tokens"],
         )
+
+
+class VoyageEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        import voyageai
+
+        self.client = voyageai.Client(api_key=key)
+        self.model_name = model_name
+
+    def encode(self, texts: list, batch_size=32):
+        res = self.client.embed(
+            texts=texts, model=self.model_name, input_type="document"
+        )
+        return np.array(res.embeddings), res.total_tokens
+
+    def encode_queries(self, text):
+        res = self.client.embed
+        res = self.client.embed(
+            texts=text, model=self.model_name, input_type="query"
+            )
+        return np.array(res.embeddings), res.total_tokens
