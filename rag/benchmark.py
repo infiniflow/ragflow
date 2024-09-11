@@ -196,7 +196,6 @@ if __name__ == '__main__':
     if dataset in ['ms_marco_v1.1', 'trivia_qa']:
         if dataset == "ms_marco_v1.1":
             print("Notice: Please provide the ms_marco_v1.1 dataset only. ms_marco_v2.1 is not supported!")
-
         dataset_path = input('Please input ' + dataset + ' dataset path:\n')
         ex(dataset, dataset_path)
     elif dataset == 'miracl':
