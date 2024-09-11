@@ -195,7 +195,8 @@ if __name__ == '__main__':
     'RAGFlow Benchmark Support:\n\tms_marco_v1.1:<https://huggingface.co/datasets/microsoft/ms_marco>\n\ttrivia_qa:<https://huggingface.co/datasets/mandarjoshi/trivia_qa>\n\tmiracl:<https://huggingface.co/datasets/miracl/miracl>\nPlease input dataset choice:\n')
     if dataset in ['ms_marco_v1.1', 'trivia_qa']:
         if dataset == "ms_marco_v1.1":
-            print("Notice: Please provide only ms_marco_v1.1 data. ms_marco_v2.1 not supported!")
+            print("Notice: Please provide the ms_marco_v1.1 dataset only. ms_marco_v2.1 is not supported!")
+
         dataset_path = input('Please input ' + dataset + ' dataset path:\n')
         ex(dataset, dataset_path)
     elif dataset == 'miracl':
