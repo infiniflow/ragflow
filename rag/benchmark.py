@@ -13,10 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-import argparse
+import os
 from collections import defaultdict
-from api.db import FileType, TaskStatus, ParserType, LLMType
+from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.settings import retrievaler
@@ -24,25 +23,27 @@ from api.utils import get_uuid
 from rag.nlp import tokenize, search
 from rag.utils.es_conn import ELASTICSEARCH
 from ranx import evaluate
+import pandas as pd
+from tqdm import tqdm
 
 
-class benchmark_ndcg10:
+class Benchmark:
     def __init__(self, kb_id):
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         self.similarity_threshold = kb.similarity_threshold
         self.vector_similarity_weight = kb.vector_similarity_weight
         self.embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id, lang=kb.language)
 
-    def _get_benchmarks(self, query, count=16):
+    def _get_benchmarks(self, query, dataset_idxnm, count=16):
         req = {"question": query, "size": count, "vector": True, "similarity": self.similarity_threshold}
-        sres = retrievaler.search(req, search.index_name("benchmark"), self.embd_mdl)
+        sres = retrievaler.search(req, search.index_name(dataset_idxnm), self.embd_mdl)
         return sres
 
-    def _get_retrieval(self, qrels):
+    def _get_retrieval(self, qrels, dataset_idxnm):
         run = defaultdict(dict)
         query_list = list(qrels.keys())
         for query in query_list:
-            sres = self._get_benchmarks(query)
+            sres = self._get_benchmarks(query, dataset_idxnm)
             sim, _, _ = retrievaler.rerank(sres, query, 1 - self.vector_similarity_weight,
                                            self.vector_similarity_weight)
             for index, id in enumerate(sres.ids):
@@ -61,34 +62,142 @@ class benchmark_ndcg10:
             d["q_%d_vec" % len(v)] = v
         return docs
 
-    def __call__(self, file_path):
+    def ms_marco_index(self, file_path, index_name):
         qrels = defaultdict(dict)
-
         docs = []
-        with open(file_path) as f:
-            for line in f:
-                query, text, rel = line.strip('\n').split()
+        filelist = os.listdir(file_path)
+        for dir in filelist:
+            data = pd.read_parquet(os.path.join(file_path, dir))
+            for i in tqdm(range(len(data)), colour="green", desc="Indexing:" + dir):
+
+                query = data.iloc[i]['query']
+                for rel, text in zip(data.iloc[i]['passages']['is_selected'], data.iloc[i]['passages']['passage_text']):
+                    d = {
+                        "id": get_uuid()
+                    }
+                    tokenize(d, text, "english")
+                    docs.append(d)
+                    qrels[query][d["id"]] = int(rel)
+                if len(docs) >= 32:
+                    docs = self.embedding(docs)
+                    ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+                    docs = []
+
+        docs = self.embedding(docs)
+        ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+        return qrels
+
+    def trivia_qa_index(self, file_path, index_name):
+        qrels = defaultdict(dict)
+        docs = []
+        filelist = os.listdir(file_path)
+        for dir in filelist:
+            data = pd.read_parquet(os.path.join(file_path, dir))
+            for i in tqdm(range(len(data)), colour="green", desc="Indexing:" + dir):
+                query = data.iloc[i]['question']
+                for rel, text in zip(data.iloc[i]["search_results"]['rank'],
+                                     data.iloc[i]["search_results"]['search_context']):
+                    d = {
+                        "id": get_uuid()
+                    }
+                    tokenize(d, text, "english")
+                    docs.append(d)
+                    qrels[query][d["id"]] = int(rel)
+                if len(docs) >= 32:
+                    docs = self.embedding(docs)
+                    ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+                    docs = []
+
+        docs = self.embedding(docs)
+        ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+        return qrels
+
+    def miracl_index(self, file_path, corpus_path, index_name):
+
+        corpus_total = {}
+        for corpus_file in os.listdir(corpus_path):
+            tmp_data = pd.read_json(os.path.join(corpus_path, corpus_file), lines=True)
+            for index, i in tmp_data.iterrows():
+                corpus_total[i['docid']] = i['text']
+
+        topics_total = {}
+        for topics_file in os.listdir(os.path.join(file_path, 'topics')):
+            if 'test' in topics_file:
+                continue
+            tmp_data = pd.read_csv(os.path.join(file_path, 'topics', topics_file), sep='\t', names=['qid', 'query'])
+            for index, i in tmp_data.iterrows():
+                topics_total[i['qid']] = i['query']
+
+        qrels = defaultdict(dict)
+        docs = []
+        for qrels_file in os.listdir(os.path.join(file_path, 'qrels')):
+            if 'test' in qrels_file:
+                continue
+
+            tmp_data = pd.read_csv(os.path.join(file_path, 'qrels', qrels_file), sep='\t',
+                                   names=['qid', 'Q0', 'docid', 'relevance'])
+            for i in tqdm(range(len(tmp_data)), colour="green", desc="Indexing:" + qrels_file):
+                query = topics_total[tmp_data.iloc[i]['qid']]
+                text = corpus_total[tmp_data.iloc[i]['docid']]
+                rel = tmp_data.iloc[i]['relevance']
                 d = {
                     "id": get_uuid()
                 }
-                tokenize(d, text)
+                tokenize(d, text, 'english')
                 docs.append(d)
+                qrels[query][d["id"]] = int(rel)
                 if len(docs) >= 32:
-                    ELASTICSEARCH.bulk(docs, search.index_name("benchmark"))
+                    docs = self.embedding(docs)
+                    ELASTICSEARCH.bulk(docs, search.index_name(index_name))
                     docs = []
-                qrels[query][d["id"]] = float(rel)
-            docs = self.embedding(docs)
-            ELASTICSEARCH.bulk(docs, search.index_name("benchmark"))
 
-        run = self._get_retrieval(qrels)
-        return evaluate(qrels, run, "ndcg@10")
+        docs = self.embedding(docs)
+        ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+
+        return qrels
+
+    def __call__(self, dataset, file_path, miracl_corpus=''):
+        if dataset == "ms_marco":
+            qrels = self.ms_marco_index(file_path, "benchmark_ms_marco")
+            run = self._get_retrieval(qrels, "benchmark_ms_marco")
+            print(evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
+        if dataset == "trivia_qa":
+            qrels = self.trivia_qa_index(file_path, "benchmark_trivia_qa")
+            run = self._get_retrieval(qrels, "benchmark_trivia_qa")
+            print(evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
+        if dataset == "miracl":
+            for lang in ['ar', 'bn', 'de', 'en', 'es', 'fa', 'fi', 'fr', 'hi', 'id', 'ja', 'ko', 'ru', 'sw', 'te', 'th',
+                         'yo', 'zh']:
+                if not os.path.isdir(os.path.join(file_path, 'miracl-v1.0-' + lang)):
+                    print('Directory: ' + os.path.join(file_path, 'miracl-v1.0-' + lang) + ' not found!')
+                    continue
+                if not os.path.isdir(os.path.join(file_path, 'miracl-v1.0-' + lang, 'qrels')):
+                    print('Directory: ' + os.path.join(file_path, 'miracl-v1.0-' + lang, 'qrels') + 'not found!')
+                    continue
+                if not os.path.isdir(os.path.join(file_path, 'miracl-v1.0-' + lang, 'topics')):
+                    print('Directory: ' + os.path.join(file_path, 'miracl-v1.0-' + lang, 'topics') + 'not found!')
+                    continue
+                if not os.path.isdir(os.path.join(miracl_corpus, 'miracl-corpus-v1.0-' + lang)):
+                    print('Directory: ' + os.path.join(miracl_corpus, 'miracl-corpus-v1.0-' + lang) + ' not found!')
+                    continue
+                qrels = self.miracl_index(os.path.join(file_path, 'miracl-v1.0-' + lang),
+                                          os.path.join(miracl_corpus, 'miracl-corpus-v1.0-' + lang),
+                                          "benchmark_miracl_" + lang)
+                run = self._get_retrieval(qrels, "benchmark_miracl_" + lang)
+                print(evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--filepath', default='', help="file path", action='store', required=True)
-    parser.add_argument('-k', '--kb_id', default='', help="kb_id", action='store', required=True)
-    args = parser.parse_args()
-
-    ex = benchmark_ndcg10(args.kb_id)
-    print(ex(args.filepath))
+    print('*****************RAGFlow Benchmark*****************')
+    kb_id = input('Please kb_id:\n')
+    ex = Benchmark(kb_id)
+    dataset = input('RAGFlow Benchmark Support: ms_marco , trivia_qa , miracl. Please input dataset choice:\n')
+    if dataset in ['ms_marco', 'trivia_qa']:
+        dataset_path = input('Please input ' + dataset + ' dataset path:\n')
+        ex(dataset, dataset_path)
+    elif dataset == 'miracl':
+        dataset_path = input('Please input ' + dataset + ' dataset path:\n')
+        corpus_path = input('Please input ' + dataset + '-corpus dataset path:\n')
+        ex(dataset, dataset_path, miracl_corpus=corpus_path)
+    else:
+        print("Dataset: ", dataset, "not supported!")
