@@ -36,5 +36,12 @@ export default defineConfig({
       logger: console,
       // pathRewrite: { '^/v1': '/v1' },
     },
+    '/HPImageArchive': {
+      target: 'https://cn.bing.com/',
+      changeOrigin: true,
+      ws: true,
+      logger: console,
+      // pathRewrite: { '^/v1': '/v1' },
+    },
   },
 });

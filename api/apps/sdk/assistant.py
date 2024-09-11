@@ -16,9 +16,10 @@
 from flask import request
 
 from api.db import StatusEnum
+from api.db.db_models import TenantLLM
 from api.db.services.dialog_service import DialogService
-from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.llm_service import LLMService, TenantLLMService
 from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
@@ -30,7 +31,6 @@ from api.utils.api_utils import get_json_result
 @token_required
 def save(tenant_id):
     req = request.json
-    id = req.get("id")
     # dataset
     if req.get("knowledgebases") == []:
         return get_data_error_result(retmsg="knowledgebases can not be empty list")
@@ -41,8 +41,8 @@ def save(tenant_id):
                 return get_data_error_result(retmsg="knowledgebase needs id")
             if not KnowledgebaseService.query(id=kb["id"], tenant_id=tenant_id):
                 return get_data_error_result(retmsg="you do not own the knowledgebase")
-            if not DocumentService.query(kb_id=kb["id"]):
-                return get_data_error_result(retmsg="There is a invalid knowledgebase")
+            # if not DocumentService.query(kb_id=kb["id"]):
+            #  return get_data_error_result(retmsg="There is a invalid knowledgebase")
             kb_list.append(kb["id"])
     req["kb_ids"] = kb_list
     # llm
@@ -72,10 +72,10 @@ def save(tenant_id):
                 req[key] = prompt.pop(key)
         req["prompt_config"] = req.pop("prompt")
     # create
-    if not id:
+    if "id" not in req:
         # dataset
         if not kb_list:
-            return get_data_error_result(retmsg="knowledgebase is required!")
+            return get_data_error_result(retmsg="knowledgebases are required!")
         # init
         req["id"] = get_uuid()
         req["description"] = req.get("description", "A helpful Assistant")
@@ -83,7 +83,11 @@ def save(tenant_id):
         req["top_n"] = req.get("top_n", 6)
         req["top_k"] = req.get("top_k", 1024)
         req["rerank_id"] = req.get("rerank_id", "")
-        req["llm_id"] = req.get("llm_id", tenant.llm_id)
+        if req.get("llm_id"):
+            if not TenantLLMService.query(llm_name=req["llm_id"]):
+                return get_data_error_result(retmsg="the model_name does not exist.")
+        else:
+            req["llm_id"] = tenant.llm_id
         if not req.get("name"):
             return get_data_error_result(retmsg="name is required.")
         if DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
@@ -149,14 +153,20 @@ def save(tenant_id):
         if not DialogService.query(tenant_id=tenant_id, id=req["id"], status=StatusEnum.VALID.value):
             return get_json_result(data=False, retmsg='You do not own the assistant', retcode=RetCode.OPERATING_ERROR)
         # prompt
+        if not req["id"]:
+            return get_data_error_result(retmsg="id can not be empty")
         e, res = DialogService.get_by_id(req["id"])
         res = res.to_json()
+        if "llm_id" in req:
+            if not TenantLLMService.query(llm_name=req["llm_id"]):
+                return get_data_error_result(retmsg="the model_name does not exist.")
         if "name" in req:
             if not req.get("name"):
                 return get_data_error_result(retmsg="name is not empty.")
             if req["name"].lower() != res["name"].lower() \
-                    and len(DialogService.query(name=req["name"], tenant_id=tenant_id,status=StatusEnum.VALID.value)) > 0:
-                return get_data_error_result(retmsg="Duplicated knowledgebase name in updating dataset.")
+                    and len(
+                DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
+                return get_data_error_result(retmsg="Duplicated assistant name in updating dataset.")
         if "prompt_config" in req:
             res["prompt_config"].update(req["prompt_config"])
             for p in res["prompt_config"]["parameters"]:
@@ -186,7 +196,7 @@ def delete(tenant_id):
     if "id" not in req:
         return get_data_error_result(retmsg="id is required")
     id = req['id']
-    if not DialogService.query(tenant_id=tenant_id, id=id,status=StatusEnum.VALID.value):
+    if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
         return get_json_result(data=False, retmsg='you do not own the assistant.', retcode=RetCode.OPERATING_ERROR)
 
     temp_dict = {"status": StatusEnum.INVALID.value}
@@ -200,21 +210,22 @@ def get(tenant_id):
     req = request.args
     if "id" in req:
         id = req["id"]
-        ass = DialogService.query(tenant_id=tenant_id, id=id,status=StatusEnum.VALID.value)
+        ass = DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value)
         if not ass:
             return get_json_result(data=False, retmsg='You do not own the assistant.', retcode=RetCode.OPERATING_ERROR)
         if "name" in req:
             name = req["name"]
             if ass[0].name != name:
                 return get_json_result(data=False, retmsg='name does not match id.', retcode=RetCode.OPERATING_ERROR)
-        res=ass[0].to_json()
+        res = ass[0].to_json()
     else:
         if "name" in req:
             name = req["name"]
-            ass = DialogService.query(name=name, tenant_id=tenant_id,status=StatusEnum.VALID.value)
+            ass = DialogService.query(name=name, tenant_id=tenant_id, status=StatusEnum.VALID.value)
             if not ass:
-                return get_json_result(data=False, retmsg='You do not own the dataset.',retcode=RetCode.OPERATING_ERROR)
-            res=ass[0].to_json()
+                return get_json_result(data=False, retmsg='You do not own the assistant.',
+                                       retcode=RetCode.OPERATING_ERROR)
+            res = ass[0].to_json()
         else:
             return get_data_error_result(retmsg="At least one of `id` or `name` must be provided.")
     renamed_dict = {}
@@ -258,7 +269,7 @@ def list_assistants(tenant_id):
         reverse=True,
         order_by=DialogService.model.create_time)
     assts = [d.to_dict() for d in assts]
-    list_assts=[]
+    list_assts = []
     renamed_dict = {}
     key_mapping = {"parameters": "variables",
                    "prologue": "opener",

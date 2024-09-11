@@ -171,3 +171,4 @@ vertexai==1.64.0
 yfinance==0.2.43
 pywencai==0.12.2
 akshare==1.14.72
+ranx==0.3.20

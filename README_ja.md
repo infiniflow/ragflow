@@ -48,19 +48,15 @@
 
 ## 🔥 最新情報
 
+- 2024-09-09 エージェントに医療相談テンプレートを追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 - 2024-08-02 [graphrag](https://github.com/microsoft/graphrag) からインスピレーションを得た GraphRAG とマインド マップをサポートします。
 - 2024-07-23 音声ファイルの解析をサポートしました。
-- 2024-07-21 より多くの LLM サプライヤー (LocalAI/OpenRouter/StepFun/Nvidia) をサポートします。
-- 2024-07-18 グラフにコンポーネント(Wikipedia/PubMed/Baidu/Duckduckgo)を追加しました。
-- 2024-07-08 [Graph](./graph/README.md) ベースのワークフローをサポート
-- 2024-06-27 Q&A解析方式はMarkdownファイルとDocxファイルをサポートしています。
-- 2024-06-27 Docxファイルからの画像の抽出をサポートします。
-- 2024-06-27 Markdownファイルからテーブルを抽出することをサポートします。
+- 2024-07-08 [Graph](./agent/README.md) ベースのワークフローをサポート
+- 2024-06-27 Q&A 解析メソッドで Markdown と Docx をサポートし、Docx ファイルから画像を抽出し、Markdown ファイルからテーブルを抽出します。
 - 2024-06-06 会話設定でデフォルトでチェックされている [Self-RAG](https://huggingface.co/papers/2310.11511) をサポートします。
-- 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding) 、[BGE](https://github.com/FlagOpen/FlagEmbedding) reranker を統合。
 - 2024-05-23 より良いテキスト検索のために [RAPTOR](https://arxiv.org/html/2401.18059v1) をサポート。
-- 2024-05-15 OpenAI GPT-4oを統合しました。
+
 
 ## 🌟 主な特徴
 
