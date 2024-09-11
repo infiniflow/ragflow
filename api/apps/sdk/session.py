@@ -171,31 +171,32 @@ def get(tenant_id):
     conv = conv[0].to_dict()
     conv['messages'] = conv.pop("message")
     conv["assistant_id"] = conv.pop("dialog_id")
-    messages = conv["messages"]
-    message_num = 0
-    chunk_num = 0
-    while message_num < len(messages):
-        if message_num != 0 and messages[message_num]["role"] != "user":
-            chunks = conv["reference"][chunk_num]["chunks"]
-            chunk_list = []
-            for chunk in chunks:
-                new_chunk = {
-                    "id": chunk["chunk_id"],
-                    # content
-                    "content": chunk["content_with_weight"],
-                    "document_id": chunk["doc_id"],
-                    "document_name": chunk["docnm_kwd"],
-                    "knowledgebase_id": chunk["kb_id"],
-                    "image_id": chunk["img_id"],
-                    "similarity": chunk["similarity"],
-                    "vector_similarity": chunk["vector_similarity"],
-                    "term_similarity": chunk["term_similarity"],
-                    "positions": chunk["positions"],
-                }
-                chunk_list.append(new_chunk)
-            chunk_num += 1
-            messages[message_num]["reference"] = chunk_list
-        message_num += 1
+    if conv["reference"]:
+        messages = conv["messages"]
+        message_num = 0
+        chunk_num = 0
+        while message_num < len(messages):
+            if message_num != 0 and messages[message_num]["role"] != "user":
+                chunk_list = []
+                if "chunks" in conv["reference"][chunk_num]:
+                    chunks = conv["reference"][chunk_num]["chunks"]
+                    for chunk in chunks:
+                        new_chunk = {
+                            "id": chunk["chunk_id"],
+                            "content": chunk["content_with_weight"],
+                            "document_id": chunk["doc_id"],
+                            "document_name": chunk["docnm_kwd"],
+                            "knowledgebase_id": chunk["kb_id"],
+                            "image_id": chunk["img_id"],
+                            "similarity": chunk["similarity"],
+                            "vector_similarity": chunk["vector_similarity"],
+                            "term_similarity": chunk["term_similarity"],
+                            "positions": chunk["positions"],
+                        }
+                        chunk_list.append(new_chunk)
+                chunk_num += 1
+                messages[message_num]["reference"] = chunk_list
+            message_num += 1
     del conv["reference"]
     return get_json_result(data=conv)
 
@@ -204,7 +205,7 @@ def get(tenant_id):
 @token_required
 def list(tenant_id):
     assistant_id = request.args["assistant_id"]
-    if not DialogService.query(tenant_id=tenant_id, id=assistant_id):
+    if not DialogService.query(tenant_id=tenant_id, id=assistant_id, status=StatusEnum.VALID.value):
         return get_json_result(
             data=False, retmsg=f'Only owner of the assistant is authorized for this operation.',
             retcode=RetCode.OPERATING_ERROR)
@@ -216,30 +217,47 @@ def list(tenant_id):
     for conv in convs:
         conv['messages'] = conv.pop("message")
         conv["assistant_id"] = conv.pop("dialog_id")
-        messages = conv["messages"]
-        message_num = 0
-        chunk_num = 0
-        while message_num < len(messages):
-            if message_num != 0 and messages[message_num]["role"] != "user":
-                chunks = conv["reference"][chunk_num]["chunks"]
-                chunk_list = []
-                for chunk in chunks:
-                    new_chunk = {
-                        "id": chunk["chunk_id"],
-                        # content
-                        "content": chunk["content_with_weight"],
-                        "document_id": chunk["doc_id"],
-                        "document_name": chunk["docnm_kwd"],
-                        "knowledgebase_id": chunk["kb_id"],
-                        "image_id": chunk["img_id"],
-                        "similarity": chunk["similarity"],
-                        "vector_similarity": chunk["vector_similarity"],
-                        "term_similarity": chunk["term_similarity"],
-                        "positions": chunk["positions"],
-                    }
-                    chunk_list.append(new_chunk)
-                chunk_num += 1
-                messages[message_num]["reference"] = chunk_list
-            message_num += 1
+        if conv["reference"]:
+            messages = conv["messages"]
+            message_num = 0
+            chunk_num = 0
+            while message_num < len(messages):
+                if message_num != 0 and messages[message_num]["role"] != "user":
+                    chunk_list = []
+                    if "chunks" in conv["reference"][chunk_num]:
+                        chunks = conv["reference"][chunk_num]["chunks"]
+                        for chunk in chunks:
+                            new_chunk = {
+                                "id": chunk["chunk_id"],
+                                "content": chunk["content_with_weight"],
+                                "document_id": chunk["doc_id"],
+                                "document_name": chunk["docnm_kwd"],
+                                "knowledgebase_id": chunk["kb_id"],
+                                "image_id": chunk["img_id"],
+                                "similarity": chunk["similarity"],
+                                "vector_similarity": chunk["vector_similarity"],
+                                "term_similarity": chunk["term_similarity"],
+                                "positions": chunk["positions"],
+                            }
+                            chunk_list.append(new_chunk)
+                    chunk_num += 1
+                    messages[message_num]["reference"] = chunk_list
+                message_num += 1
         del conv["reference"]
     return get_json_result(data=convs)
+
+
+@manager.route('/delete', methods=["DELETE"])
+@token_required
+def delete(tenant_id):
+    id = request.args.get("id")
+    if not id:
+        return get_data_error_result(retmsg="`id` is required in deleting operation")
+    conv = ConversationService.query(id=id)
+    if not conv:
+        return get_data_error_result(retmsg="Session doesn't exist")
+    conv = conv[0]
+    if not DialogService.query(id=conv.dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
+        return get_data_error_result(retmsg="You don't own the session")
+    ConversationService.delete_by_id(id)
+    return get_json_result(data=True)

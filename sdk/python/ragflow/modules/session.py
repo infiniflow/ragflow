@@ -56,6 +56,12 @@ class Session(Base):
         if res.get("retmsg") == "success": return True
         raise Exception(res.get("retmsg"))
 
+    def delete(self):
+        res = self.rm("/session/delete", {"id": self.id})
+        res = res.json()
+        if res.get("retmsg") == "success": return True
+        raise Exception(res.get("retmsg"))
+
 
 class Message(Base):
     def __init__(self, rag, res_dict):

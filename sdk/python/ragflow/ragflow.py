@@ -17,7 +17,7 @@ from typing import List
 
 import requests
 
-from .modules.chat_assistant import Assistant
+from .modules.assistant import Assistant
 from .modules.dataset import DataSet
 
 
