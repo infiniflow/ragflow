@@ -29,7 +29,19 @@ import requests
 def factories():
     try:
         fac = LLMFactoriesService.get_all()
-        return get_json_result(data=[f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]])
+        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]]
+        llms = LLMService.get_all()
+        mdl_types = {}
+        for m in llms:
+            if m.status != StatusEnum.VALID.value:
+                continue
+            if m.fid not in mdl_types:
+                mdl_types[m.fid] = set([])
+            mdl_types[m.fid].add(m.model_type)
+        for f in fac:
+            f["model_types"] = list(mdl_types.get(f["name"], [LLMType.CHAT, LLMType.EMBEDDING, LLMType.RERANK,
+                                                              LLMType.IMAGE2TEXT, LLMType.SPEECH2TEXT, LLMType.TTS]))
+        return get_json_result(data=fac)
     except Exception as e:
         return server_error_response(e)
 
@@ -43,7 +55,7 @@ def set_api_key():
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
     msg = ""
-    for llm in LLMService.query(fid=factory):
+    for llm in LLMService.query(fid=factory)[:3]:
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
             mdl = EmbeddingModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
@@ -150,6 +162,14 @@ def add_llm():
         llm_name = req["llm_name"]
         api_key = '{' + f'"fish_audio_ak": "{req.get("fish_audio_ak", "")}", ' \
                 f'"fish_audio_refid": "{req.get("fish_audio_refid", "59cb5986671546eaa6ca8ae6f29f6d22")}"' + '}'
+    elif factory == "Google Cloud":
+        llm_name = req["llm_name"]
+        api_key = (
+            "{" + f'"google_project_id": "{req.get("google_project_id", "")}", '
+            f'"google_region": "{req.get("google_region", "")}", '
+            f'"google_service_account_key": "{req.get("google_service_account_key", "")}"'
+            + "}"
+        )
     else:
         llm_name = req["llm_name"]
         api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
@@ -228,7 +248,7 @@ def add_llm():
             key=llm["api_key"], model_name=llm["llm_name"], base_url=llm["api_base"]
         )
         try:
-            for resp in mdl.transcription("Hello~ Ragflower!"):
+            for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(e)

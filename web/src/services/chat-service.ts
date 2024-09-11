@@ -23,6 +23,9 @@ const {
   deleteMessage,
   thumbup,
   tts,
+  ask,
+  mindmap,
+  getRelatedQuestions,
 } = api;
 
 const methods = {
@@ -104,6 +107,18 @@ const methods = {
   },
   tts: {
     url: tts,
+    method: 'post',
+  },
+  ask: {
+    url: ask,
+    method: 'post',
+  },
+  getMindMap: {
+    url: mindmap,
+    method: 'post',
+  },
+  getRelatedQuestions: {
+    url: getRelatedQuestions,
     method: 'post',
   },
 } as const;

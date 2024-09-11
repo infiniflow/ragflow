@@ -32,11 +32,13 @@ import ApiKeyModal from './api-key-modal';
 import BedrockModal from './bedrock-modal';
 import { IconMap } from './constant';
 import FishAudioModal from './fish-audio-modal';
+import GoogleModal from './google-modal';
 import {
   useHandleDeleteLlm,
   useSubmitApiKey,
   useSubmitBedrock,
   useSubmitFishAudio,
+  useSubmitGoogle,
   useSubmitHunyuan,
   useSubmitOllama,
   useSubmitSpark,
@@ -104,7 +106,8 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
                 item.name === 'XunFei Spark' ||
                 item.name === 'BaiduYiyan' ||
                 item.name === 'Fish Audio' ||
-                item.name === 'Tencent Cloud'
+                item.name === 'Tencent Cloud' ||
+                item.name === 'Google Cloud'
                   ? t('addTheModel')
                   : 'API-Key'}
                 <SettingOutlined />
@@ -187,6 +190,14 @@ const UserSettingModel = () => {
   } = useSubmitHunyuan();
 
   const {
+    GoogleAddingVisible,
+    hideGoogleAddingModal,
+    showGoogleAddingModal,
+    onGoogleAddingOk,
+    GoogleAddingLoading,
+  } = useSubmitGoogle();
+
+  const {
     TencentCloudAddingVisible,
     hideTencentCloudAddingModal,
     showTencentCloudAddingModal,
@@ -235,6 +246,7 @@ const UserSettingModel = () => {
       BaiduYiyan: showyiyanAddingModal,
       'Fish Audio': showFishAudioAddingModal,
       'Tencent Cloud': showTencentCloudAddingModal,
+      'Google Cloud': showGoogleAddingModal,
     }),
     [
       showBedrockAddingModal,
@@ -244,6 +256,7 @@ const UserSettingModel = () => {
       showSparkAddingModal,
       showyiyanAddingModal,
       showFishAudioAddingModal,
+      showGoogleAddingModal,
     ],
   );
 
@@ -280,13 +293,20 @@ const UserSettingModel = () => {
       children: (
         <List
           grid={{
-            gutter: 24,
+            gutter: {
+              xs: 8,
+              sm: 10,
+              md: 12,
+              lg: 16,
+              xl: 20,
+              xxl: 24,
+            },
             xs: 1,
-            sm: 2,
-            md: 3,
-            lg: 4,
+            sm: 1,
+            md: 2,
+            lg: 3,
             xl: 4,
-            xxl: 10,
+            xxl: 8,
           }}
           dataSource={factoryList}
           renderItem={(item) => (
@@ -302,7 +322,11 @@ const UserSettingModel = () => {
                   </Flex>
                 </Flex>
                 <Divider className={styles.modelDivider}></Divider>
-                <Button type="link" onClick={() => handleAddModel(item.name)}>
+                <Button
+                  type="link"
+                  onClick={() => handleAddModel(item.name)}
+                  className={styles.addButton}
+                >
                   {t('addTheModel')}
                 </Button>
               </Card>
@@ -364,6 +388,13 @@ const UserSettingModel = () => {
         loading={HunyuanAddingLoading}
         llmFactory={'Tencent Hunyuan'}
       ></HunyuanModal>
+      <GoogleModal
+        visible={GoogleAddingVisible}
+        hideModal={hideGoogleAddingModal}
+        onOk={onGoogleAddingOk}
+        loading={GoogleAddingLoading}
+        llmFactory={'Google Cloud'}
+      ></GoogleModal>
       <TencentCloudModal
         visible={TencentCloudAddingVisible}
         hideModal={hideTencentCloudAddingModal}

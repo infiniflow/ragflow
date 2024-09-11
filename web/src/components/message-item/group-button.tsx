@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   DislikeOutlined,
   LikeOutlined,
+  PauseCircleOutlined,
   SoundOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
@@ -13,7 +14,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import SvgIcon from '../svg-icon';
 import FeedbackModal from './feedback-modal';
-import { useRemoveMessage, useSendFeedback } from './hooks';
+import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
 import PromptModal from './prompt-modal';
 
 interface IProps {
@@ -21,12 +22,14 @@ interface IProps {
   content: string;
   prompt?: string;
   showLikeButton: boolean;
+  audioBinary?: string;
 }
 
 export const AssistantGroupButton = ({
   messageId,
   content,
   prompt,
+  audioBinary,
   showLikeButton,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
@@ -37,6 +40,7 @@ export const AssistantGroupButton = ({
     showModal: showPromptModal,
   } = useSetModalState();
   const { t } = useTranslation();
+  const { handleRead, ref, isPlaying } = useSpeech(content, audioBinary);
 
   const handleLike = useCallback(() => {
     onFeedbackOk({ thumbup: true });
@@ -48,10 +52,11 @@ export const AssistantGroupButton = ({
         <Radio.Button value="a">
           <CopyToClipboard text={content}></CopyToClipboard>
         </Radio.Button>
-        <Radio.Button value="b">
+        <Radio.Button value="b" onClick={handleRead}>
           <Tooltip title={t('chat.read')}>
-            <SoundOutlined />
+            {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
           </Tooltip>
+          <audio src="" ref={ref}></audio>
         </Radio.Button>
         {showLikeButton && (
           <>
@@ -91,7 +96,7 @@ export const AssistantGroupButton = ({
 interface UserGroupButtonProps extends Partial<IRemoveMessageById> {
   messageId: string;
   content: string;
-  regenerateMessage(): void;
+  regenerateMessage?: () => void;
   sendLoading: boolean;
 }
 
@@ -113,15 +118,17 @@ export const UserGroupButton = ({
       <Radio.Button value="a">
         <CopyToClipboard text={content}></CopyToClipboard>
       </Radio.Button>
-      <Radio.Button
-        value="b"
-        onClick={regenerateMessage}
-        disabled={sendLoading}
-      >
-        <Tooltip title={t('chat.regenerate')}>
-          <SyncOutlined spin={sendLoading} />
-        </Tooltip>
-      </Radio.Button>
+      {regenerateMessage && (
+        <Radio.Button
+          value="b"
+          onClick={regenerateMessage}
+          disabled={sendLoading}
+        >
+          <Tooltip title={t('chat.regenerate')}>
+            <SyncOutlined spin={sendLoading} />
+          </Tooltip>
+        </Radio.Button>
+      )}
       {removeMessageById && (
         <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
           <Tooltip title={t('common.delete')}>

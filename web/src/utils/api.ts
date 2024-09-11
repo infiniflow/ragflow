@@ -66,6 +66,9 @@ export default {
   deleteMessage: `${api_host}/conversation/delete_msg`,
   thumbup: `${api_host}/conversation/thumbup`,
   tts: `${api_host}/conversation/tts`,
+  ask: `${api_host}/conversation/ask`,
+  mindmap: `${api_host}/conversation/mindmap`,
+  getRelatedQuestions: `${api_host}/conversation/related_questions`,
   // chat for external
   createToken: `${api_host}/api/new_token`,
   listToken: `${api_host}/api/token_list`,

@@ -1,15 +1,16 @@
 import { Authorization } from '@/constants/authorization';
+import { MessageType } from '@/constants/chat';
 import { LanguageTranslationMap } from '@/constants/common';
 import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
 import { IAnswer, Message } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { IClientConversation } from '@/pages/chat/interface';
+import { IClientConversation, IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { getMessagePureId } from '@/utils/chat';
-import { PaginationProps } from 'antd';
+import { buildMessageUuid, getMessagePureId } from '@/utils/chat';
+import { PaginationProps, message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -216,6 +217,10 @@ export const useSendMessageWithSse = (
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
 
+  const resetAnswer = useCallback(() => {
+    setAnswer({} as IAnswer);
+  }, []);
+
   const send = useCallback(
     async (
       body: any,
@@ -242,11 +247,15 @@ export const useSendMessageWithSse = (
           const x = await reader?.read();
           if (x) {
             const { done, value } = x;
+            if (done) {
+              console.info('done');
+              break;
+            }
             try {
               const val = JSON.parse(value?.data || '');
               const d = val?.data;
               if (typeof d !== 'boolean') {
-                // console.info('data:', d);
+                console.info('data:', d);
                 setAnswer({
                   ...d,
                   conversationId: body?.conversation_id,
@@ -254,10 +263,6 @@ export const useSendMessageWithSse = (
               }
             } catch (e) {
               console.warn(e);
-            }
-            if (done) {
-              console.info('done');
-              break;
             }
           }
         }
@@ -272,7 +277,34 @@ export const useSendMessageWithSse = (
     [url],
   );
 
-  return { send, answer, done, setDone };
+  return { send, answer, done, setDone, resetAnswer };
+};
+
+export const useSpeechWithSse = (url: string = api.tts) => {
+  const read = useCallback(
+    async (body: any) => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          [Authorization]: getAuthorization(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      try {
+        const res = await response.clone().json();
+        if (res?.retcode !== 0) {
+          message.error(res?.retmsg);
+        }
+      } catch (error) {
+        console.warn('🚀 ~ error:', error);
+      }
+      return response;
+    },
+    [url],
+  );
+
+  return { read };
 };
 
 //#region chat hooks
@@ -306,6 +338,109 @@ export const useHandleMessageInputChange = () => {
     handleInputChange,
     value,
     setValue,
+  };
+};
+
+export const useSelectDerivedMessages = () => {
+  const [derivedMessages, setDerivedMessages] = useState<IMessage[]>([]);
+
+  const ref = useScrollToBottom(derivedMessages);
+
+  const addNewestQuestion = useCallback(
+    (message: Message, answer: string = '') => {
+      setDerivedMessages((pre) => {
+        return [
+          ...pre,
+          {
+            ...message,
+            id: buildMessageUuid(message),
+          },
+          {
+            role: MessageType.Assistant,
+            content: answer,
+            id: buildMessageUuid({ ...message, role: MessageType.Assistant }),
+          },
+        ];
+      });
+    },
+    [],
+  );
+
+  // Add the streaming message to the last item in the message list
+  const addNewestAnswer = useCallback((answer: IAnswer) => {
+    setDerivedMessages((pre) => {
+      return [
+        ...(pre?.slice(0, -1) ?? []),
+        {
+          role: MessageType.Assistant,
+          content: answer.answer,
+          reference: answer.reference,
+          id: buildMessageUuid({
+            id: answer.id,
+            role: MessageType.Assistant,
+          }),
+          prompt: answer.prompt,
+          audio_binary: answer.audio_binary,
+        },
+      ];
+    });
+  }, []);
+
+  const removeLatestMessage = useCallback(() => {
+    setDerivedMessages((pre) => {
+      const nextMessages = pre?.slice(0, -2) ?? [];
+      return nextMessages;
+    });
+  }, []);
+
+  const removeMessageById = useCallback(
+    (messageId: string) => {
+      setDerivedMessages((pre) => {
+        const nextMessages =
+          pre?.filter(
+            (x) => getMessagePureId(x.id) !== getMessagePureId(messageId),
+          ) ?? [];
+        return nextMessages;
+      });
+    },
+    [setDerivedMessages],
+  );
+
+  const removeMessagesAfterCurrentMessage = useCallback(
+    (messageId: string) => {
+      setDerivedMessages((pre) => {
+        const index = pre.findIndex((x) => x.id === messageId);
+        if (index !== -1) {
+          let nextMessages = pre.slice(0, index + 2) ?? [];
+          const latestMessage = nextMessages.at(-1);
+          nextMessages = latestMessage
+            ? [
+                ...nextMessages.slice(0, -1),
+                {
+                  ...latestMessage,
+                  content: '',
+                  reference: undefined,
+                  prompt: undefined,
+                },
+              ]
+            : nextMessages;
+          return nextMessages;
+        }
+        return pre;
+      });
+    },
+    [setDerivedMessages],
+  );
+
+  return {
+    ref,
+    derivedMessages,
+    setDerivedMessages,
+    addNewestQuestion,
+    addNewestAnswer,
+    removeLatestMessage,
+    removeMessageById,
+    removeMessagesAfterCurrentMessage,
   };
 };
 
@@ -375,7 +510,7 @@ export const useRemoveMessagesAfterCurrentMessage = (
 };
 
 export interface IRegenerateMessage {
-  regenerateMessage(message: Message): void;
+  regenerateMessage?: (message: Message) => void;
 }
 
 export const useRegenerateMessage = ({
@@ -384,7 +519,12 @@ export const useRegenerateMessage = ({
   messages,
 }: {
   removeMessagesAfterCurrentMessage(messageId: string): void;
-  sendMessage({ message }: { message: Message; messages?: Message[] }): void;
+  sendMessage({
+    message,
+  }: {
+    message: Message;
+    messages?: Message[];
+  }): void | Promise<any>;
   messages: Message[];
 }) => {
   const regenerateMessage = useCallback(

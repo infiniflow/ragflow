@@ -18,7 +18,7 @@ main
 ### Actual behavior
 
 The restricted_loads function at [api/utils/__init__.py#L215](https://github.com/infiniflow/ragflow/blob/main/api/utils/__init__.py#L215) is still vulnerable leading via code execution.
-The main reson is that numpy module has a numpy.f2py.diagnose.run_command function directly execute commands, but the restricted_loads function allows users import functions in module numpy.
+The main reason is that numpy module has a numpy.f2py.diagnose.run_command function directly execute commands, but the restricted_loads function allows users import functions in module numpy.
 
 
 ### Steps to reproduce

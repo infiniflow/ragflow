@@ -1,4 +1,8 @@
-anthropic===0.34.1   
+akshare==1.14.72
+azure-storage-blob==12.22.0
+azure-identity==1.17.1
+azure-storage-file-datalake==12.16.0
+anthropic===0.34.1
 arxiv==2.1.3
 Aspose.Slides==24.2.0
 BCEmbedding==0.1.3
@@ -24,7 +28,7 @@ fasttext==0.9.3
 filelock==3.15.4
 FlagEmbedding==1.2.10
 Flask==3.0.3
-Flask_Cors==4.0.1
+Flask_Cors==5.0.0
 Flask_Login==0.6.3
 flask_session==0.8.0
 google_search_results==2.4.2
@@ -39,7 +43,7 @@ Markdown==3.6
 markdown_to_json==2.1.1
 minio==7.2.4
 mistralai==0.4.2
-nltk==3.8.1
+nltk==3.9
 numpy==1.26.4
 ollama==0.2.1
 onnxruntime==1.17.3
@@ -64,7 +68,9 @@ pytest==8.2.2
 python-dotenv==1.0.1
 python_dateutil==2.8.2
 python_pptx==0.6.23
+pywencai==0.12.2
 qianfan==0.4.6
+ranx==0.3.20
 readability_lxml==0.8.1
 redis==5.0.3
 Requests==2.32.2
@@ -85,6 +91,7 @@ tiktoken==0.6.0
 torch==2.3.0
 transformers==4.38.1
 umap==0.1.1
+vertexai==1.64.0
 volcengine==1.0.146
 voyageai==0.2.3
 webdriver_manager==4.0.1
@@ -93,4 +100,5 @@ wikipedia==1.4.0
 word2number==1.1
 xgboost==2.1.0
 xpinyin==0.7.6
+yfinance==0.2.43
 zhipuai==2.0.1

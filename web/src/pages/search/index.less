@@ -1,0 +1,140 @@
+.searchPage {
+  .card {
+    width: 100%;
+    :global(.ant-card-body) {
+      padding: 14px;
+    }
+    p {
+      margin: 0;
+    }
+  }
+  .tag {
+    padding: 4px 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+}
+
+.searchSide {
+  // height: calc(100vh - 72px);
+  position: relative;
+  // position: fixed !important;
+  // top: 72px;
+  // bottom: 0;
+  :global(.ant-layout-sider-children) {
+    height: auto;
+  }
+  inset-inline-start: 0;
+
+  .modelForm {
+    display: flex;
+    padding: 24px;
+  }
+
+  .checkGroup {
+    width: 100%;
+    height: 100%;
+  }
+  .list {
+    width: 100%;
+    // height: 100%;
+    height: calc(100vh - 152px);
+    overflow: auto;
+  }
+  .checkbox {
+    width: 100%;
+  }
+  .knowledgeName {
+    width: 130px;
+  }
+}
+
+.firstRenderContent {
+  height: 100%;
+  background-position: center;
+  background-size: cover;
+}
+
+.content {
+  height: 100%;
+  .main {
+    width: 60%;
+    // background-color: aqua;
+    overflow: auto;
+    padding: 20px 10px 10px;
+  }
+
+  .graph {
+    width: 40%;
+    padding: 20px 10px 10px;
+  }
+}
+.answerWrapper {
+  background-color: #e6f4ff;
+  padding: 14px;
+  margin-top: 16px;
+  border-radius: 8px;
+  & > p {
+    margin: 0;
+  }
+}
+
+.input() {
+  :global(.ant-input-affix-wrapper) {
+    padding: 4px 12px;
+    border-start-start-radius: 30px !important;
+    border-end-start-radius: 30px !important;
+  }
+  :global(.ant-input-group-addon) {
+    background-color: transparent;
+  }
+  input {
+    height: 40px;
+  }
+  button {
+    height: 50px !important;
+    border-start-end-radius: 30px !important;
+    border-end-end-radius: 30px !important;
+  }
+}
+
+.globalInput {
+  width: 600px;
+  .input();
+}
+.partialInput {
+  width: 100%;
+  .input();
+}
+
+.appIcon {
+  display: inline-block;
+  vertical-align: middle;
+  width: 60px;
+}
+
+.appName {
+  vertical-align: middle;
+  font-family: Inter;
+  font-size: 40px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 20px;
+
+  background: linear-gradient(to right, #095fab 10%, #25abe8 50%, #55c8dd 60%);
+  background-size: auto auto;
+  background-clip: border-box;
+  background-size: 200% auto;
+  color: #fff;
+  background-clip: text;
+  text-fill-color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: textclip 1.5s linear infinite;
+}
+
+@keyframes textclip {
+  to {
+    background-position: 200% center;
+  }
+}

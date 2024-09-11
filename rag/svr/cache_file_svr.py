@@ -20,7 +20,7 @@ import traceback
 from api.db.db_models import close_connection
 from api.db.services.task_service import TaskService
 from rag.settings import cron_logger
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -42,7 +42,7 @@ def main():
                 try:
                     key = "{}/{}".format(kb_id, loc)
                     if REDIS_CONN.exist(key):continue
-                    file_bin = MINIO.get(kb_id, loc)
+                    file_bin = STORAGE_IMPL.get(kb_id, loc)
                     REDIS_CONN.transaction(key, file_bin, 12 * 60)
                     cron_logger.info("CACHE: {}".format(loc))
                 except Exception as e:

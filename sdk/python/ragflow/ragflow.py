@@ -17,6 +17,7 @@ from typing import List
 
 import requests
 
+from .modules.assistant import Assistant
 from .modules.dataset import DataSet
 
 
@@ -29,8 +30,8 @@ class RAGFlow:
         self.api_url = f"{base_url}/api/{version}"
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
-    def post(self, path, param):
-        res = requests.post(url=self.api_url + path, json=param, headers=self.authorization_header)
+    def post(self, path, param, stream=False):
+        res = requests.post(url=self.api_url + path, json=param, headers=self.authorization_header, stream=stream)
         return res
 
     def get(self, path, params=None):
@@ -77,4 +78,67 @@ class RAGFlow:
         res = res.json()
         if res.get("retmsg") == "success":
             return DataSet(self, res['data'])
+        raise Exception(res["retmsg"])
+
+    def create_assistant(self, name: str = "assistant", avatar: str = "path", knowledgebases: List[DataSet] = [],
+                         llm: Assistant.LLM = None, prompt: Assistant.Prompt = None) -> Assistant:
+        datasets = []
+        for dataset in knowledgebases:
+            datasets.append(dataset.to_json())
+
+        if llm is None:
+            llm = Assistant.LLM(self, {"model_name": None,
+                                       "temperature": 0.1,
+                                       "top_p": 0.3,
+                                       "presence_penalty": 0.4,
+                                       "frequency_penalty": 0.7,
+                                       "max_tokens": 512, })
+        if prompt is None:
+            prompt = Assistant.Prompt(self, {"similarity_threshold": 0.2,
+                                             "keywords_similarity_weight": 0.7,
+                                             "top_n": 8,
+                                             "variables": [{
+                                                 "key": "knowledge",
+                                                 "optional": True
+                                             }], "rerank_model": "",
+                                             "empty_response": None,
+                                             "opener": None,
+                                             "show_quote": True,
+                                             "prompt": None})
+            if prompt.opener is None:
+                prompt.opener = "Hi! I'm your assistant, what can I do for you?"
+            if prompt.prompt is None:
+                prompt.prompt = (
+                    "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. "
+                    "Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, "
+                    "your answer must include the sentence 'The answer you are looking for is not found in the knowledge base!' "
+                    "Answers need to consider chat history.\nHere is the knowledge base:\n{knowledge}\nThe above is the knowledge base."
+                )
+
+        temp_dict = {"name": name,
+                     "avatar": avatar,
+                     "knowledgebases": datasets,
+                     "llm": llm.to_json(),
+                     "prompt": prompt.to_json()}
+        res = self.post("/assistant/save", temp_dict)
+        res = res.json()
+        if res.get("retmsg") == "success":
+            return Assistant(self, res["data"])
+        raise Exception(res["retmsg"])
+
+    def get_assistant(self, id: str = None, name: str = None) -> Assistant:
+        res = self.get("/assistant/get", {"id": id, "name": name})
+        res = res.json()
+        if res.get("retmsg") == "success":
+            return Assistant(self, res['data'])
+        raise Exception(res["retmsg"])
+
+    def list_assistants(self) -> List[Assistant]:
+        res = self.get("/assistant/list")
+        res = res.json()
+        result_list = []
+        if res.get("retmsg") == "success":
+            for data in res['data']:
+                result_list.append(Assistant(self, data))
+            return result_list
         raise Exception(res["retmsg"])

@@ -49,31 +49,22 @@
 
 ## 🔥 업데이트
 
+- 2024-09-09 Agent에 의료상담 템플릿을 추가하였습니다.
+  
 - 2024-08-22 RAG를 통해 SQL 문에 텍스트를 지원합니다.
   
 - 2024-08-02: [graphrag](https://github.com/microsoft/graphrag)와 마인드맵에서 영감을 받은 GraphRAG를 지원합니다.
 
 - 2024-07-23: 오디오 파일 분석을 지원합니다.
 
-- 2024-07-21: 더 많은 LLMs(LocalAI, OpenRouter, StepFun, Nvidia)를 지원합니다.
+- 2024-07-08: [Graph](./agent/README.md)를 기반으로 한 워크플로우를 지원합니다.
 
-- 2024-07-18: 그래프에 더 많은 구성요소(Wikipedia, PubMed, Baidu, Duckduckgo)를 추가합니다.
-
-- 2024-07-08: [Graph](./graph/README.md)를 기반으로 한 워크플로우를 지원합니다.
-
-- 2024-06-27: Q&A 분석 방법에서 Markdown과 Docx를 지원합니다.
-
-- 2024-06-27: Docx 파일에서 이미지 추출을 지원합니다.
-
-- 2024-06-27: Markdown 파일에서 표 추출을 지원합니다.
+- 2024-06-27 Q&A 구문 분석 방식에서 Markdown 및 Docx를 지원하고, Docx 파일에서 이미지 추출, Markdown 파일에서 테이블 추출을 지원합니다.
 
 - 2024-06-06: 대화 설정에서 기본으로 [Self-RAG](https://huggingface.co/papers/2310.11511)를 지원합니다.
 
-- 2024-05-30: [BCE](https://github.com/netease-youdao/BCEmbedding) 및 [BGE](https://github.com/FlagOpen/FlagEmbedding) reranker 모델을 통합합니다.
-
 - 2024-05-23: 더 나은 텍스트 검색을 위해 [RAPTOR](https://arxiv.org/html/2401.18059v1)를 지원합니다.
 
-- 2024-05-15: OpenAI GPT-4o를 통합합니다.
 
 
 ## 🌟 주요 기능
@@ -178,7 +169,7 @@
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
-   > 만약 확인 단계를 건너뛰고 바로 RAGFlow에 로그인하면, RAGFlow가 완전히 초기화되지 않았기 때문에 브라우저에서 `network anomaly` 오류가 발생할 수 있습니다.
+   > 만약 확인 단계를 건너뛰고 바로 RAGFlow에 로그인하면, RAGFlow가 완전히 초기화되지 않았기 때문에 브라우저에서 `network abnormal` 오류가 발생할 수 있습니다.
 
 5. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.

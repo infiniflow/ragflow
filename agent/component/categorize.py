@@ -82,6 +82,6 @@ class Categorize(Generate, ABC):
             if ans.lower().find(c.lower()) >= 0:
                 return Categorize.be_output(self._param.category_description[c]["to"])
 
-        return Categorize.be_output(self._param.category_description.items()[-1][1]["to"])
+        return Categorize.be_output(list(self._param.category_description.items())[-1][1]["to"])
 
 

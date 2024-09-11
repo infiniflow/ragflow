@@ -1,33 +1,29 @@
 import MessageItem from '@/components/message-item';
-import DocumentPreviewer from '@/components/pdf-previewer';
 import { MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useClickDrawer, useGetFileIcon } from '@/pages/chat/hooks';
+import { useGetFileIcon } from '@/pages/chat/hooks';
 import { buildMessageItemReference } from '@/pages/chat/utils';
-import { Button, Drawer, Flex, Input, Spin } from 'antd';
+import { Button, Flex, Input, Spin } from 'antd';
 
-import { useSelectCurrentMessages, useSendMessage } from './hooks';
+import { useSendNextMessage } from './hooks';
 
+import PdfDrawer from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
 const FlowChatBox = () => {
   const {
-    ref,
-    currentMessages,
-    reference,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    loading,
-  } = useSelectCurrentMessages();
-
-  const {
+    sendLoading,
     handleInputChange,
     handlePressEnter,
     value,
-    loading: sendLoading,
-  } = useSendMessage(addNewestQuestion, removeLatestMessage, addNewestAnswer);
+    loading,
+    ref,
+    derivedMessages,
+    reference,
+  } = useSendNextMessage();
+
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   useGetFileIcon();
@@ -40,26 +36,26 @@ const FlowChatBox = () => {
         <Flex flex={1} vertical className={styles.messageContainer}>
           <div>
             <Spin spinning={loading}>
-              {currentMessages?.map((message, i) => {
+              {derivedMessages?.map((message, i) => {
                 return (
                   <MessageItem
                     loading={
                       message.role === MessageType.Assistant &&
                       sendLoading &&
-                      currentMessages.length - 1 === i
+                      derivedMessages.length - 1 === i
                     }
                     key={message.id}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}
                     item={message}
                     reference={buildMessageItemReference(
-                      { message: currentMessages, reference },
+                      { message: derivedMessages, reference },
                       message,
                     )}
                     clickDocumentButton={clickDocumentButton}
                     index={i}
-                    regenerateMessage={() => {}}
                     showLikeButton={false}
+                    sendLoading={sendLoading}
                   ></MessageItem>
                 );
               })}
@@ -84,19 +80,12 @@ const FlowChatBox = () => {
           onChange={handleInputChange}
         />
       </Flex>
-      <Drawer
-        title="Document Previewer"
-        onClose={hideModal}
-        open={visible}
-        width={'50vw'}
-        mask={false}
-      >
-        <DocumentPreviewer
-          documentId={documentId}
-          chunk={selectedChunk}
-          visible={visible}
-        ></DocumentPreviewer>
-      </Drawer>
+      <PdfDrawer
+        visible={visible}
+        hideModal={hideModal}
+        documentId={documentId}
+        chunk={selectedChunk}
+      ></PdfDrawer>
     </>
   );
 };

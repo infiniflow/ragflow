@@ -1,9 +1,10 @@
 import { useDeleteMessage, useFeedback } from '@/hooks/chat-hooks';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { IRemoveMessageById } from '@/hooks/logic-hooks';
+import { IRemoveMessageById, useSpeechWithSse } from '@/hooks/logic-hooks';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
 import { getMessagePureId } from '@/utils/chat';
-import { useCallback } from 'react';
+import { SpeechPlayer } from 'openai-speech-stream-player';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const useSendFeedback = (messageId: string) => {
   const { visible, hideModal, showModal } = useSetModalState();
@@ -49,4 +50,62 @@ export const useRemoveMessage = (
   }, [deleteMessage, messageId, removeMessageById]);
 
   return { onRemoveMessage, loading };
+};
+
+export const useSpeech = (content: string, audioBinary?: string) => {
+  const ref = useRef<HTMLAudioElement>(null);
+  const { read } = useSpeechWithSse();
+  const player = useRef<SpeechPlayer>();
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+
+  const initialize = useCallback(async () => {
+    player.current = new SpeechPlayer({
+      audio: ref.current!,
+      onPlaying: () => {
+        setIsPlaying(true);
+      },
+      onPause: () => {
+        setIsPlaying(false);
+      },
+      onChunkEnd: () => {},
+      mimeType: 'audio/mpeg',
+    });
+    await player.current.init();
+  }, []);
+
+  const pause = useCallback(() => {
+    player.current?.pause();
+  }, []);
+
+  const speech = useCallback(async () => {
+    const response = await read({ text: content });
+    if (response) {
+      player?.current?.feedWithResponse(response);
+    }
+  }, [read, content]);
+
+  const handleRead = useCallback(async () => {
+    if (isPlaying) {
+      setIsPlaying(false);
+      pause();
+    } else {
+      setIsPlaying(true);
+      speech();
+    }
+  }, [setIsPlaying, speech, isPlaying, pause]);
+
+  // useEffect(() => {
+  //   if (audioBinary) {
+  //     const units = hexStringToUint8Array(audioBinary);
+  //     if (units) {
+  //       player.current?.feed(units);
+  //     }
+  //   }
+  // }, [audioBinary]);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  return { ref, handleRead, isPlaying };
 };

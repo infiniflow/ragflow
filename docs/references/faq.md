@@ -340,8 +340,8 @@ This exception occurs when starting up the RAGFlow server. Try the following:
 ![hint102](https://github.com/infiniflow/ragflow/assets/93570324/6633d892-b4f8-49b5-9a0a-37a0a8fba3d2)
 
 1. Ensure that the RAGFlow server can access the base URL.
-2. Do not forget to append **/v1/** to **http://IP:port**: 
-   **http://IP:port/v1/**
+2. Do not forget to append `/v1/` to `http://IP:port`:  
+   `http://IP:port/v1/`
 
 #### 4.16 `FileNotFoundError: [Errno 2] No such file or directory`
 
@@ -357,7 +357,7 @@ This exception occurs when starting up the RAGFlow server. Try the following:
 
 1. Right click the desired dialog to display the **Chat Configuration** window.
 2. Switch to the **Model Setting** tab and adjust the **Max Tokens** slider to get the desired length.
-3. Click **OK** to confirm your change. 
+3. Click **OK** to confirm your change.
 
 
 ### 2. What does Empty response mean? How to set it?
@@ -370,7 +370,7 @@ You limit what the system responds to what you specify in **Empty response** if 
 
 ### 4. How to run RAGFlow with a locally deployed LLM?
 
-You can use Ollama to deploy local LLM. See [here](https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.md) for more information. 
+You can use Ollama to deploy local LLM. See [here](../guides/deploy_local_llm.mdx) for more information.
 
 ### 5. How to link up ragflow and ollama servers?
 

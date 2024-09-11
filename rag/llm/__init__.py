@@ -107,6 +107,7 @@ ChatModel = {
     "XunFei Spark": SparkChat,
     "BaiduYiyan": BaiduYiyanChat,
     "Anthropic": AnthropicChat,
+    "Google Cloud": GoogleChat,
 }
 
 
@@ -136,5 +137,6 @@ Seq2txtModel = {
 }
 
 TTSModel = {
-    "Fish Audio": FishAudioTTS
+    "Fish Audio": FishAudioTTS,
+    "Tongyi-Qianwen": QwenTTS
 }

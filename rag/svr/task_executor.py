@@ -29,7 +29,7 @@ from functools import partial
 from api.db.services.file2document_service import File2DocumentService
 from api.settings import retrievaler
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 from api.db.db_models import close_connection
 from rag.settings import database_logger, SVR_QUEUE_NAME
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
@@ -138,7 +138,7 @@ def collect():
 
 
 def get_minio_binary(bucket, name):
-    return MINIO.get(bucket, name)
+    return STORAGE_IMPL.get(bucket, name)
 
 
 def build(row):
@@ -206,15 +206,20 @@ def build(row):
             docs.append(d)
             continue
 
-        output_buffer = BytesIO()
-        if isinstance(d["image"], bytes):
-            output_buffer = BytesIO(d["image"])
-        else:
-            d["image"].save(output_buffer, format='JPEG')
+        try:
+            output_buffer = BytesIO()
+            if isinstance(d["image"], bytes):
+                output_buffer = BytesIO(d["image"])
+            else:
+                d["image"].save(output_buffer, format='JPEG')
 
-        st = timer()
-        MINIO.put(row["kb_id"], d["_id"], output_buffer.getvalue())
-        el += timer() - st
+            st = timer()
+            STORAGE_IMPL.put(row["kb_id"], d["_id"], output_buffer.getvalue())
+            el += timer() - st
+        except Exception as e:
+            cron_logger.error(str(e))
+            traceback.print_exc()
+
         d["img_id"] = "{}-{}".format(row["kb_id"], d["_id"])
         del d["image"]
         docs.append(d)
@@ -399,7 +404,7 @@ def report_status():
             REDIS_CONN.set_obj("TASKEXE", obj, 60*2)
         except Exception as e:
             print("[Exception]:", str(e))
-        time.sleep(60)
+        time.sleep(30)
 
 
 if __name__ == "__main__":

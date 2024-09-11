@@ -39,7 +39,7 @@ from itsdangerous import URLSafeTimedSerializer
 
 from api.utils.file_utils import filename_type, thumbnail
 from rag.nlp import keyword_extraction
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from agent.canvas import Canvas
@@ -151,14 +151,17 @@ def set_conversation():
     req = request.json
     try:
         if objs[0].source == "agent":
-            e, c = UserCanvasService.get_by_id(objs[0].dialog_id)
+            e, cvs = UserCanvasService.get_by_id(objs[0].dialog_id)
             if not e:
                 return server_error_response("canvas not found.")
+            if not isinstance(cvs.dsl, str):
+                cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+            canvas = Canvas(cvs.dsl, objs[0].tenant_id)
             conv = {
                 "id": get_uuid(),
-                "dialog_id": c.id,
+                "dialog_id": cvs.id,
                 "user_id": request.args.get("user_id", ""),
-                "message": [{"role": "assistant", "content": "Hi there!"}],
+                "message": [{"role": "assistant", "content": canvas.get_prologue()}],
                 "source": "agent"
             }
             API4ConversationService.save(**conv)
@@ -424,10 +427,10 @@ def upload():
                 retmsg="This type of file has not been supported yet!")
 
         location = filename
-        while MINIO.obj_exist(kb_id, location):
+        while STORAGE_IMPL.obj_exist(kb_id, location):
             location += "_"
         blob = request.files['file'].read()
-        MINIO.put(kb_id, location, blob)
+        STORAGE_IMPL.put(kb_id, location, blob)
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -647,7 +650,7 @@ def document_rm():
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
             File2DocumentService.delete_by_document_id(doc_id)
 
-            MINIO.rm(b, n)
+            STORAGE_IMPL.rm(b, n)
         except Exception as e:
             errors += str(e)
 
@@ -720,7 +723,7 @@ def completion_faq():
             if ans["reference"]["chunks"][chunk_idx]["img_id"]:
                 try:
                     bkt, nm = ans["reference"]["chunks"][chunk_idx]["img_id"].split("-")
-                    response = MINIO.get(bkt, nm)
+                    response = STORAGE_IMPL.get(bkt, nm)
                     data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
                     data.append(data_type_picture)
                     break

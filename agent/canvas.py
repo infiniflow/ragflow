@@ -300,3 +300,6 @@ class Canvas(ABC):
                 return pat + " => " + pat
 
         return False
+
+    def get_prologue(self):
+        return self.components["begin"]["obj"]._param.prologue

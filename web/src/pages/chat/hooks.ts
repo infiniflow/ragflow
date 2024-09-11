@@ -19,19 +19,11 @@ import {
 } from '@/hooks/common-hooks';
 import {
   useRegenerateMessage,
-  useRemoveMessageById,
-  useRemoveMessagesAfterCurrentMessage,
+  useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
-import {
-  IAnswer,
-  IConversation,
-  IDialog,
-  Message,
-} from '@/interfaces/database/chat';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IConversation, IDialog, Message } from '@/interfaces/database/chat';
 import { getFileExtension } from '@/utils';
-import { buildMessageUuid } from '@/utils/chat';
 import { useMutationState } from '@tanstack/react-query';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
@@ -40,7 +32,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { useSearchParams } from 'umi';
@@ -250,77 +241,36 @@ export const useSetConversation = () => {
   return { setConversation };
 };
 
-export const useSelectCurrentConversation = () => {
-  const [currentConversation, setCurrentConversation] =
-    useState<IClientConversation>({} as IClientConversation);
+// export const useScrollToBottom = (currentConversation: IClientConversation) => {
+//   const ref = useRef<HTMLDivElement>(null);
+
+//   const scrollToBottom = useCallback(() => {
+//     if (currentConversation.id) {
+//       ref.current?.scrollIntoView({ behavior: 'instant' });
+//     }
+//   }, [currentConversation]);
+
+//   useEffect(() => {
+//     scrollToBottom();
+//   }, [scrollToBottom]);
+
+//   return ref;
+// };
+
+export const useSelectNextMessages = () => {
+  const {
+    ref,
+    setDerivedMessages,
+    derivedMessages,
+    addNewestAnswer,
+    addNewestQuestion,
+    removeLatestMessage,
+    removeMessageById,
+    removeMessagesAfterCurrentMessage,
+  } = useSelectDerivedMessages();
   const { data: conversation, loading } = useFetchNextConversation();
   const { data: dialog } = useFetchNextDialog();
   const { conversationId, dialogId } = useGetChatSearchParams();
-  const { removeMessageById } = useRemoveMessageById(setCurrentConversation);
-  const { removeMessagesAfterCurrentMessage } =
-    useRemoveMessagesAfterCurrentMessage(setCurrentConversation);
-
-  // Show the entered message in the conversation immediately after sending the message
-  const addNewestConversation = useCallback(
-    (message: Message, answer: string = '') => {
-      setCurrentConversation((pre) => {
-        return {
-          ...pre,
-          message: [
-            ...pre.message,
-            {
-              ...message,
-              id: buildMessageUuid(message),
-            } as IMessage,
-            {
-              role: MessageType.Assistant,
-              content: answer,
-              id: buildMessageUuid({ ...message, role: MessageType.Assistant }),
-              reference: {},
-            } as IMessage,
-          ],
-        };
-      });
-    },
-    [],
-  );
-
-  // Add the streaming message to the last item in the message list
-  const addNewestAnswer = useCallback((answer: IAnswer) => {
-    setCurrentConversation((pre) => {
-      const latestMessage = pre.message?.at(-1);
-
-      if (latestMessage) {
-        return {
-          ...pre,
-          message: [
-            ...pre.message.slice(0, -1),
-            {
-              ...latestMessage,
-              content: answer.answer,
-              reference: answer.reference,
-              id: buildMessageUuid({
-                id: answer.id,
-                role: MessageType.Assistant,
-              }),
-              prompt: answer.prompt,
-            } as IMessage,
-          ],
-        };
-      }
-      return pre;
-    });
-  }, []);
-
-  const removeLatestMessage = useCallback(() => {
-    setCurrentConversation((pre) => {
-      const nextMessages = pre.message?.slice(0, -2) ?? [];
-      return {
-        ...pre,
-        message: nextMessages,
-      };
-    });
-  }, []);
 
   const addPrologue = useCallback(() => {
     if (dialogId !== '' && conversationId === '') {
@@ -332,14 +282,9 @@ export const useSelectCurrentConversation = () => {
         id: uuid(),
       } as IMessage;
 
-      setCurrentConversation({
-        id: '',
-        dialog_id: dialogId,
-        reference: [],
-        message: [nextMessage],
-      } as any);
+      setDerivedMessages([nextMessage]);
     }
-  }, [conversationId, dialog, dialogId]);
+  }, [conversationId, dialog, dialogId, setDerivedMessages]);
 
   useEffect(() => {
     addPrologue();
@@ -347,58 +292,17 @@ export const useSelectCurrentConversation = () => {
 
   useEffect(() => {
     if (conversationId) {
-      setCurrentConversation(conversation);
+      setDerivedMessages(conversation.message);
     }
-  }, [conversation, conversationId]);
+  }, [conversation.message, conversationId, setDerivedMessages]);
 
   return {
-    currentConversation,
-    addNewestConversation,
-    removeLatestMessage,
-    addNewestAnswer,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-    loading,
-  };
-};
-
-export const useScrollToBottom = (currentConversation: IClientConversation) => {
-  const ref = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = useCallback(() => {
-    if (currentConversation.id) {
-      ref.current?.scrollIntoView({ behavior: 'instant' });
-    }
-  }, [currentConversation]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [scrollToBottom]);
-
-  return ref;
-};
-
-export const useFetchConversationOnMount = () => {
-  const { conversationId } = useGetChatSearchParams();
-  const {
-    currentConversation,
-    addNewestConversation,
-    removeLatestMessage,
-    addNewestAnswer,
-    loading,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-  } = useSelectCurrentConversation();
-  const ref = useScrollToBottom(currentConversation);
-
-  return {
-    currentConversation,
-    addNewestConversation,
     ref,
-    removeLatestMessage,
-    addNewestAnswer,
-    conversationId,
+    derivedMessages,
     loading,
+    addNewestAnswer,
+    addNewestQuestion,
+    removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
   };
@@ -420,19 +324,22 @@ export const useHandleMessageInputChange = () => {
   };
 };
 
-export const useSendMessage = (
-  conversation: IClientConversation,
-  addNewestConversation: (message: Message, answer?: string) => void,
-  removeLatestMessage: () => void,
-  addNewestAnswer: (answer: IAnswer) => void,
-  removeMessagesAfterCurrentMessage: (messageId: string) => void,
-) => {
+export const useSendNextMessage = () => {
   const { setConversation } = useSetConversation();
   const { conversationId } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-
   const { handleClickConversation } = useClickConversationCard();
-  const { send, answer, done, setDone } = useSendMessageWithSse();
+  const { send, answer, done, setDone, resetAnswer } = useSendMessageWithSse();
+  const {
+    ref,
+    derivedMessages,
+    loading,
+    addNewestAnswer,
+    addNewestQuestion,
+    removeLatestMessage,
+    removeMessageById,
+    removeMessagesAfterCurrentMessage,
+  } = useSelectNextMessages();
 
   const sendMessage = useCallback(
     async ({
@@ -446,7 +353,7 @@ export const useSendMessage = (
     }) => {
       const res = await send({
         conversation_id: currentConversationId ?? conversationId,
-        messages: [...(messages ?? conversation?.message ?? []), message],
+        messages: [...(messages ?? derivedMessages ?? []), message],
       });
 
       if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
@@ -466,7 +373,7 @@ export const useSendMessage = (
       }
     },
     [
-      conversation?.message,
+      derivedMessages,
       conversationId,
       handleClickConversation,
       removeLatestMessage,
@@ -483,7 +390,11 @@ export const useSendMessage = (
         const data = await setConversation(message.content);
         if (data.retcode === 0) {
           const id = data.data.id;
-          sendMessage({ message, currentConversationId: id });
+          sendMessage({
+            message,
+            currentConversationId: id,
+            messages: data.data.message,
+          });
         }
       }
     },
@@ -493,29 +404,36 @@ export const useSendMessage = (
   const { regenerateMessage } = useRegenerateMessage({
     removeMessagesAfterCurrentMessage,
     sendMessage,
-    messages: conversation.message,
+    messages: derivedMessages,
   });
 
   useEffect(() => {
     //  #1289
-    if (answer.answer && answer?.conversationId === conversationId) {
+    console.log('🚀 ~ useEffect ~ answer:', answer, done);
+    if (
+      answer.answer &&
+      (answer?.conversationId === conversationId ||
+        (!done && conversationId === ''))
+    ) {
       addNewestAnswer(answer);
     }
-  }, [answer, addNewestAnswer, conversationId]);
+  }, [answer, addNewestAnswer, conversationId, done]);
 
   useEffect(() => {
     // #1289 switch to another conversion window when the last conversion answer doesn't finish.
     if (conversationId) {
       setDone(true);
+    } else {
+      resetAnswer();
     }
-  }, [setDone, conversationId]);
+  }, [setDone, conversationId, resetAnswer]);
 
   const handlePressEnter = useCallback(
     (documentIds: string[]) => {
       if (trim(value) === '') return;
       const id = uuid();
 
-      addNewestConversation({
+      addNewestQuestion({
         content: value,
         doc_ids: documentIds,
         id,
@@ -531,7 +449,7 @@ export const useSendMessage = (
         });
       }
     },
-    [addNewestConversation, handleSendMessage, done, setValue, value],
+    [addNewestQuestion, handleSendMessage, done, setValue, value],
   );
 
   return {
@@ -540,7 +458,11 @@ export const useSendMessage = (
     value,
     setValue,
     regenerateMessage,
-    loading: !done,
+    sendLoading: !done,
+    loading,
+    ref,
+    derivedMessages,
+    removeMessageById,
   };
 };
 
@@ -619,30 +541,6 @@ export const useRenameConversation = () => {
     conversationRenameVisible,
     hideConversationRenameModal,
     showConversationRenameModal: handleShowConversationRenameModal,
-  };
-};
-
-export const useClickDrawer = () => {
-  const { visible, showModal, hideModal } = useSetModalState();
-  const [selectedChunk, setSelectedChunk] = useState<IChunk>({} as IChunk);
-  const [documentId, setDocumentId] = useState<string>('');
-
-  const clickDocumentButton = useCallback(
-    (documentId: string, chunk: IChunk) => {
-      showModal();
-      setSelectedChunk(chunk);
-      setDocumentId(documentId);
-    },
-    [showModal],
-  );
-
-  return {
-    clickDocumentButton,
-    visible,
-    showModal,
-    hideModal,
-    selectedChunk,
-    documentId,
   };
 };
 

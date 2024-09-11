@@ -1,13 +1,13 @@
 import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/message-item';
 import { MessageType, SharedFrom } from '@/constants/chat';
+import { useFetchNextSharedConversation } from '@/hooks/chat-hooks';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
 import { forwardRef } from 'react';
 import {
   useCreateSharedConversationOnMount,
   useGetSharedChatSearchParams,
-  useSelectCurrentSharedConversation,
   useSendSharedMessage,
 } from '../shared-hooks';
 import { buildMessageItemReference } from '../utils';
@@ -15,28 +15,17 @@ import styles from './index.less';
 
 const ChatContainer = () => {
   const { conversationId } = useCreateSharedConversationOnMount();
-  const {
-    currentConversation: conversation,
-    addNewestConversation,
-    removeLatestMessage,
-    ref,
-    loading,
-    setCurrentConversation,
-    addNewestAnswer,
-  } = useSelectCurrentSharedConversation(conversationId);
+  const { data } = useFetchNextSharedConversation(conversationId);
 
   const {
     handlePressEnter,
     handleInputChange,
     value,
-    loading: sendLoading,
-  } = useSendSharedMessage(
-    conversation,
-    addNewestConversation,
-    removeLatestMessage,
-    setCurrentConversation,
-    addNewestAnswer,
-  );
+    sendLoading,
+    loading,
+    ref,
+    derivedMessages,
+  } = useSendSharedMessage(conversationId);
   const sendDisabled = useSendButtonDisabled(value);
   const { from } = useGetSharedChatSearchParams();
 
@@ -46,17 +35,23 @@ const ChatContainer = () => {
         <Flex flex={1} vertical className={styles.messageContainer}>
           <div>
             <Spin spinning={loading}>
-              {conversation?.message?.map((message, i) => {
+              {derivedMessages?.map((message, i) => {
                 return (
                   <MessageItem
                     key={message.id}
                     item={message}
                     nickname="You"
-                    reference={buildMessageItemReference(conversation, message)}
+                    reference={buildMessageItemReference(
+                      {
+                        message: derivedMessages,
+                        reference: data?.data?.reference,
+                      },
+                      message,
+                    )}
                     loading={
                       message.role === MessageType.Assistant &&
                       sendLoading &&
-                      conversation?.message.length - 1 === i
+                      derivedMessages?.length - 1 === i
                     }
                     index={i}
                   ></MessageItem>

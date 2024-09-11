@@ -76,9 +76,11 @@ const ChatOverviewModal = ({
           <Card title={t('backendServiceApi')}>
             <Flex gap={8} vertical>
               {t('serviceApiEndpoint')}
-              <Paragraph copyable className={styles.linkText}>
-                {location.origin}
-                /v1/api/
+              <Paragraph
+                copyable={{ text: `${location.origin}/v1/api/` }}
+                className={styles.linkText}
+              >
+                {location.origin}/v1/api/
               </Paragraph>
             </Flex>
             <Space size={'middle'}>

@@ -19,7 +19,8 @@ from flask_login import login_required, current_user
 from api.db.services.dialog_service import DialogService
 from api.db import StatusEnum
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.user_service import TenantService
+from api.db.services.user_service import TenantService, UserTenantService
+from api.settings import RetCode
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
@@ -164,9 +165,19 @@ def list_dialogs():
 @validate_request("dialog_ids")
 def rm():
     req = request.json
+    dialog_list=[]
+    tenants = UserTenantService.query(user_id=current_user.id)
     try:
-        DialogService.update_many_by_id(
-            [{"id": id, "status": StatusEnum.INVALID.value} for id in req["dialog_ids"]])
+        for id in req["dialog_ids"]:
+            for tenant in tenants:
+                if DialogService.query(tenant_id=tenant.tenant_id, id=id):
+                    break
+            else:
+                return get_json_result(
+                    data=False, retmsg=f'Only owner of dialog authorized for this operation.',
+                    retcode=RetCode.OPERATING_ERROR)
+            dialog_list.append({"id": id,"status":StatusEnum.INVALID.value})
+        DialogService.update_many_by_id(dialog_list)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

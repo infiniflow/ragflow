@@ -1,6 +1,6 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
@@ -50,7 +50,6 @@ const MessageItem = ({
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const { t } = useTranslate('chat');
   const fileThumbnails = useSelectFileThumbnails();
   const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
   const { data: documentThumbnails, setDocumentIds: setIds } =
@@ -62,14 +61,6 @@ const MessageItem = ({
     return reference?.doc_aggs ?? [];
   }, [reference?.doc_aggs]);
 
-  const content = useMemo(() => {
-    let text = item.content;
-    if (text === '') {
-      text = t('searching');
-    }
-    return loading ? text?.concat('~~2$$') : text;
-  }, [item.content, loading, t]);
-
   const handleUserDocumentClick = useCallback(
     (id: string) => () => {
       setClickedDocumentId(id);
@@ -79,7 +70,7 @@ const MessageItem = ({
   );
 
   const handleRegenerateMessage = useCallback(() => {
-    regenerateMessage(item);
+    regenerateMessage?.(item);
   }, [regenerateMessage, item]);
 
   useEffect(() => {
@@ -131,6 +122,7 @@ const MessageItem = ({
                     content={item.content}
                     prompt={item.prompt}
                     showLikeButton={showLikeButton}
+                    audioBinary={item.audio_binary}
                   ></AssistantGroupButton>
                 )
               ) : (
@@ -138,7 +130,9 @@ const MessageItem = ({
                   content={item.content}
                   messageId={item.id}
                   removeMessageById={removeMessageById}
-                  regenerateMessage={handleRegenerateMessage}
+                  regenerateMessage={
+                    regenerateMessage && handleRegenerateMessage
+                  }
                   sendLoading={sendLoading}
                 ></UserGroupButton>
               )}
@@ -151,7 +145,8 @@ const MessageItem = ({
               }
             >
               <MarkdownContent
-                content={content}
+                loading={loading}
+                content={item.content}
                 reference={reference}
                 clickDocumentButton={clickDocumentButton}
               ></MarkdownContent>

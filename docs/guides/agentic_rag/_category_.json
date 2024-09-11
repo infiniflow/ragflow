@@ -1,0 +1,8 @@
+{
+  "label": "Agentic RAG",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "RAGFlow v0.8.0 introduces an Agentic RAG mechanism, featuring a no-code workflow editor on the front end and a comprehensive graph-based task orchestration framework on the back end."
+  }
+}

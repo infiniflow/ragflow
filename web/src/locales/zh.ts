@@ -59,6 +59,7 @@ export default {
       logout: '登出',
       fileManager: '文件管理',
       flow: 'Agent',
+      search: '搜索',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -414,6 +415,8 @@ export default {
       uploadFailed: '上传失败',
       regenerate: '重新生成',
       read: '朗读内容',
+      tts: '文本转语音',
+      ttsTip: '是否用语音转换播放语音，请先在设置里面选择TTS（语音转换模型）。',
     },
     setting: {
       profile: '概要',
@@ -478,6 +481,7 @@ export default {
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
       modelName: '模型名称',
+      modelID: '模型ID',
       modelUid: '模型UID',
       modelType: '模型类型',
       addLlmBaseUrl: '基础 Url',
@@ -528,6 +532,15 @@ export default {
       FishAudioAKMessage: '请输入 API KEY',
       addFishAudioRefID: 'FishAudio Refrence ID',
       FishAudioRefIDMessage: '请输入引用模型的ID（留空表示使用默认模型）',
+      GoogleModelIDMessage: '请输入 model ID!',
+      addGoogleProjectID: 'Project ID',
+      GoogleProjectIDMessage: '请输入 Project ID',
+      addGoogleServiceAccountKey:
+        'Service Account Key(Leave blank if you use Application Default Credentials)',
+      GoogleServiceAccountKeyMessage:
+        '请输入 Google Cloud Service Account Key in base64 format',
+      addGoogleRegion: 'Google Cloud 区域',
+      GoogleRegionMessage: '请输入 Google Cloud 区域',
     },
     message: {
       registered: '注册成功',
@@ -596,6 +609,7 @@ export default {
       messagePlaceholder: '消息',
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
+      addMessage: '新增消息',
       loop: '循环上限',
       loopTip:
         'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化agent',
@@ -607,7 +621,7 @@ export default {
       operation: '操作',
       run: '运行',
       save: '保存',
-      title: '标题：',
+      title: 'ID：',
       beginDescription: '这是流程开始的地方',
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,

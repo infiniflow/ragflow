@@ -83,7 +83,7 @@ class EsQueryer:
                      ), tks
 
         def need_fine_grained_tokenize(tk):
-            if len(tk) < 4:
+            if len(tk) < 3:
                 return False
             if re.match(r"[0-9a-z\.\+#_\*-]+$", tk):
                 return False
@@ -106,10 +106,9 @@ class EsQueryer:
                         m) for m in sm]
                 sm = [EsQueryer.subSpecialChar(m) for m in sm if len(m) > 1]
                 sm = [m for m in sm if len(m) > 1]
-                if len(sm) < 2:
-                    sm = []
 
                 keywords.append(re.sub(r"[ \\\"']+", "", tk))
+                keywords.extend(sm)
                 if len(keywords) >= 12: break
 
                 tk_syns = self.syn.lookup(tk)

@@ -105,16 +105,22 @@
                     "model_type": "embedding"
                 },
                 {
+                    "llm_name": "sambert-zhide-v1",
+                    "tags": "TTS",
+                    "max_tokens": 2048,
+                    "model_type": "tts"
+                },
+                {
+                    "llm_name": "sambert-zhiru-v1",
+                    "tags": "TTS",
+                    "max_tokens": 2048,
+                    "model_type": "tts"
+                },
+                {
                     "llm_name": "text-embedding-v3",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8192,
                     "model_type": "embedding"
-                },
-                {
-                    "llm_name": "paraformer-realtime-8k-v1",
-                    "tags": "SPEECH2TEXT",
-                    "max_tokens": 26214400,
-                    "model_type": "speech2text"
                 },
                 {
                     "llm_name": "qwen-vl-max",
@@ -595,73 +601,73 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "azure-gpt-4o-mini",
+                    "llm_name": "gpt-4o-mini",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
                     "model_type": "image2text"
                 },
                 {
-                    "llm_name": "azure-gpt-4o",
+                    "llm_name": "gpt-4o",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
                     "model_type": "chat,image2text"
                 },
                 {
-                    "llm_name": "azure-gpt-35-turbo",
+                    "llm_name": "gpt-35-turbo",
                     "tags": "LLM,CHAT,4K",
                     "max_tokens": 4096,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "azure-gpt-35-turbo-16k",
+                    "llm_name": "gpt-35-turbo-16k",
                     "tags": "LLM,CHAT,16k",
                     "max_tokens": 16385,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "azure-text-embedding-ada-002",
+                    "llm_name": "text-embedding-ada-002",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
                     "model_type": "embedding"
                 },
                 {
-                    "llm_name": "azure-text-embedding-3-small",
+                    "llm_name": "text-embedding-3-small",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
                     "model_type": "embedding"
                 },
                 {
-                    "llm_name": "azure-text-embedding-3-large",
+                    "llm_name": "text-embedding-3-large",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
                     "model_type": "embedding"
                 },
                 {
-                    "llm_name": "azure-whisper-1",
+                    "llm_name": "whisper-1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
                     "model_type": "speech2text"
                 },
                 {
-                    "llm_name": "azure-gpt-4",
+                    "llm_name": "gpt-4",
                     "tags": "LLM,CHAT,8K",
                     "max_tokens": 8191,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "azure-gpt-4-turbo",
+                    "llm_name": "gpt-4-turbo",
                     "tags": "LLM,CHAT,8K",
                     "max_tokens": 8191,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "azure-gpt-4-32k",
+                    "llm_name": "gpt-4-32k",
                     "tags": "LLM,CHAT,32K",
                     "max_tokens": 32768,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "azure-gpt-4-vision-preview",
+                    "llm_name": "gpt-4-vision-preview",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
                     "max_tokens": 765,
                     "model_type": "image2text"
@@ -931,1034 +937,7 @@
             "logo": "",
             "tags": "LLM,IMAGE2TEXT",
             "status": "1",
-            "llm": [
-                {
-                    "llm_name": "nousresearch/hermes-2-theta-llama-3-8b",
-                    "tags": "LLM CHAT 16K",
-                    "max_tokens": 16384,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "alpindale/magnum-72b",
-                    "tags": "LLM CHAT 16K",
-                    "max_tokens": 16384,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/gemma-2-9b-it",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/gemma-2-9b-it:free",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "sao10k/l3-stheno-8b",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openrouter/flavor-of-the-week",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "ai21/jamba-instruct",
-                    "tags": "LLM CHAT 250K",
-                    "max_tokens": 256000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nvidia/nemotron-4-340b-instruct",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-3.5-sonnet",
-                    "tags": "LLM IMAGE2TEXT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "anthropic/claude-3.5-sonnet:beta",
-                    "tags": "LLM IMAGE2TEXT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "sao10k/l3-euryale-70b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "microsoft/phi-3-medium-4k-instruct",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "cognitivecomputations/dolphin-mixtral-8x22b",
-                    "tags": "LLM CHAT 64K",
-                    "max_tokens": 65536,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "qwen/qwen-2-72b-instruct",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openchat/openchat-8b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-7b-instruct",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-7b-instruct-v0.3",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/hermes-2-pro-llama-3-8b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "microsoft/phi-3-mini-128k-instruct",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "microsoft/phi-3-mini-128k-instruct:free",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "microsoft/phi-3-medium-128k-instruct",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "microsoft/phi-3-medium-128k-instruct:free",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "neversleep/llama-3-lumimaid-70b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/gemini-flash-1.5",
-                    "tags": "LLM IMAGE2TEXT 2734K",
-                    "max_tokens": 2800000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "perplexity/llama-3-sonar-small-32k-chat",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "perplexity/llama-3-sonar-small-32k-online",
-                    "tags": "LLM CHAT 28K",
-                    "max_tokens": 28000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "perplexity/llama-3-sonar-large-32k-chat",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "perplexity/llama-3-sonar-large-32k-online",
-                    "tags": "LLM CHAT 28K",
-                    "max_tokens": 28000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "deepseek/deepseek-chat",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "deepseek/deepseek-coder",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4o",
-                    "tags": "LLM IMAGE2TEXT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "openai/gpt-4o-2024-05-13",
-                    "tags": "LLM IMAGE2TEXT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3-8b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3-70b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-guard-2-8b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "liuhaotian/llava-yi-34b",
-                    "tags": "LLM IMAGE2TEXT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "allenai/olmo-7b-instruct",
-                    "tags": "LLM CHAT 2K",
-                    "max_tokens": 2048,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "qwen/qwen-110b-chat",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "qwen/qwen-72b-chat",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "qwen/qwen-32b-chat",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "qwen/qwen-14b-chat",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "qwen/qwen-7b-chat",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "qwen/qwen-4b-chat",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3-8b-instruct:free",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "neversleep/llama-3-lumimaid-8b",
-                    "tags": "LLM CHAT 24K",
-                    "max_tokens": 24576,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "neversleep/llama-3-lumimaid-8b:extended",
-                    "tags": "LLM CHAT 24K",
-                    "max_tokens": 24576,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "snowflake/snowflake-arctic-instruct",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "fireworks/firellava-13b",
-                    "tags": "LLM IMAGE2TEXT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "lynn/soliloquy-l3",
-                    "tags": "LLM CHAT 24K",
-                    "max_tokens": 24576,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "sao10k/fimbulvetr-11b-v2",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3-8b-instruct:extended",
-                    "tags": "LLM CHAT 16K",
-                    "max_tokens": 16384,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3-8b-instruct:nitro",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3-70b-instruct:nitro",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3-8b-instruct",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3-70b-instruct",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mixtral-8x22b-instruct",
-                    "tags": "LLM CHAT 64K",
-                    "max_tokens": 65536,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "microsoft/wizardlm-2-8x22b",
-                    "tags": "LLM CHAT 64K",
-                    "max_tokens": 65536,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "microsoft/wizardlm-2-7b",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "undi95/toppy-m-7b:nitro",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mixtral-8x22b",
-                    "tags": "LLM CHAT 64K",
-                    "max_tokens": 65536,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4-turbo",
-                    "tags": "LLM IMAGE2TEXT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "google/gemini-pro-1.5",
-                    "tags": "LLM IMAGE2TEXT 2734K",
-                    "max_tokens": 2800000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "cohere/command-r-plus",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "databricks/dbrx-instruct",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "sophosympatheia/midnight-rose-70b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "cohere/command",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "cohere/command-r",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-3-haiku",
-                    "tags": "LLM IMAGE2TEXT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "anthropic/claude-3-haiku:beta",
-                    "tags": "LLM IMAGE2TEXT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "google/gemma-7b-it:nitro",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mixtral-8x7b-instruct:nitro",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-7b-instruct:nitro",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-2-70b-chat:nitro",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "gryphe/mythomax-l2-13b:nitro",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-3-opus",
-                    "tags": "LLM IMAGE2TEXT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "anthropic/claude-3-sonnet",
-                    "tags": "LLM IMAGE2TEXT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "anthropic/claude-3-opus:beta",
-                    "tags": "LLM IMAGE2TEXT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "anthropic/claude-3-sonnet:beta",
-                    "tags": "LLM IMAGE2TEXT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "mistralai/mistral-large",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/gemma-7b-it",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/gemma-7b-it:free",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/nous-hermes-2-mistral-7b-dpo",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/codellama-70b-instruct",
-                    "tags": "LLM CHAT 2K",
-                    "max_tokens": 2048,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "recursal/eagle-7b",
-                    "tags": "LLM CHAT 9K",
-                    "max_tokens": 10000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-3.5-turbo-0613",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4095,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4-turbo-preview",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "undi95/remm-slerp-l2-13b:extended",
-                    "tags": "LLM CHAT 6K",
-                    "max_tokens": 6144,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/nous-hermes-2-mixtral-8x7b-dpo",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/nous-hermes-2-mixtral-8x7b-sft",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-tiny",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-small",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-medium",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "austism/chronos-hermes-13b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "neversleep/noromaid-mixtral-8x7b-instruct",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/nous-hermes-yi-34b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-7b-instruct-v0.2",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "cognitivecomputations/dolphin-mixtral-8x7b",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/gemini-pro",
-                    "tags": "LLM CHAT 89K",
-                    "max_tokens": 91728,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/gemini-pro-vision",
-                    "tags": "LLM IMAGE2TEXT 44K",
-                    "max_tokens": 45875,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "mistralai/mixtral-8x7b",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mixtral-8x7b-instruct",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "rwkv/rwkv-5-world-3b",
-                    "tags": "LLM CHAT 9K",
-                    "max_tokens": 10000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "recursal/rwkv-5-3b-ai-town",
-                    "tags": "LLM CHAT 9K",
-                    "max_tokens": 10000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "togethercomputer/stripedhyena-nous-7b",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "togethercomputer/stripedhyena-hessian-7b",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "koboldai/psyfighter-13b-2",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "gryphe/mythomist-7b",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openrouter/cinematika-7b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/nous-capybara-7b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/nous-capybara-7b:free",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openchat/openchat-7b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openchat/openchat-7b:free",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "neversleep/noromaid-20b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "gryphe/mythomist-7b:free",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "intel/neural-chat-7b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-2",
-                    "tags": "LLM CHAT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-2.1",
-                    "tags": "LLM CHAT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-instant-1.1",
-                    "tags": "LLM CHAT 98K",
-                    "max_tokens": 100000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-2:beta",
-                    "tags": "LLM CHAT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-2.1:beta",
-                    "tags": "LLM CHAT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "teknium/openhermes-2.5-mistral-7b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/nous-capybara-34b",
-                    "tags": "LLM CHAT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4-vision-preview",
-                    "tags": "LLM IMAGE2TEXT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "lizpreciatior/lzlv-70b-fp16-hf",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "undi95/toppy-m-7b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "alpindale/goliath-120b",
-                    "tags": "LLM CHAT 6K",
-                    "max_tokens": 6144,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "undi95/toppy-m-7b:free",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openrouter/auto",
-                    "tags": "LLM CHAT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-3.5-turbo-1106",
-                    "tags": "LLM CHAT 16K",
-                    "max_tokens": 16385,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4-1106-preview",
-                    "tags": "LLM CHAT 125K",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "huggingfaceh4/zephyr-7b-beta:free",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/palm-2-chat-bison-32k",
-                    "tags": "LLM CHAT 89K",
-                    "max_tokens": 91750,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/palm-2-codechat-bison-32k",
-                    "tags": "LLM CHAT 89K",
-                    "max_tokens": 91750,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "teknium/openhermes-2-mistral-7b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "open-orca/mistral-7b-openorca",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "gryphe/mythomax-l2-13b:extended",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "xwin-lm/xwin-lm-70b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-3.5-turbo-instruct",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4095,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-7b-instruct-v0.1",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistralai/mistral-7b-instruct:free",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "pygmalionai/mythalion-13b",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-3.5-turbo-16k",
-                    "tags": "LLM CHAT 16K",
-                    "max_tokens": 16385,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4-32k",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32767,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4-32k-0314",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32767,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/codellama-34b-instruct",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "phind/phind-codellama-34b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/nous-hermes-llama2-13b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mancer/weaver",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-2.0",
-                    "tags": "LLM CHAT 98K",
-                    "max_tokens": 100000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-instant-1",
-                    "tags": "LLM CHAT 98K",
-                    "max_tokens": 100000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-1",
-                    "tags": "LLM CHAT 98K",
-                    "max_tokens": 100000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-1.2",
-                    "tags": "LLM CHAT 98K",
-                    "max_tokens": 100000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-instant-1.0",
-                    "tags": "LLM CHAT 98K",
-                    "max_tokens": 100000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-2.0:beta",
-                    "tags": "LLM CHAT 98K",
-                    "max_tokens": 100000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic/claude-instant-1:beta",
-                    "tags": "LLM CHAT 98K",
-                    "max_tokens": 100000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "undi95/remm-slerp-l2-13b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/palm-2-chat-bison",
-                    "tags": "LLM CHAT 25K",
-                    "max_tokens": 25804,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/palm-2-codechat-bison",
-                    "tags": "LLM CHAT 19K",
-                    "max_tokens": 20070,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "gryphe/mythomax-l2-13b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-2-13b-chat",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-2-70b-chat",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-3.5-turbo",
-                    "tags": "LLM CHAT 16K",
-                    "max_tokens": 16385,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-3.5-turbo-0125",
-                    "tags": "LLM CHAT 16K",
-                    "max_tokens": 16385,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-3.5-turbo-0301",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4095,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8191,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openai/gpt-4-0314",
-                    "tags": "LLM CHAT 8K",
-                    "max_tokens": 8191,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "01-ai/yi-large",
-                    "tags": "LLM CHAT 32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "01-ai/yi-34b-200k",
-                    "tags": "LLM CHAT 195K",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "01-ai/yi-34b-chat",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "01-ai/yi-34b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "01-ai/yi-6b",
-                    "tags": "LLM CHAT 4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                }
-            ]
+            "llm": []
         },
         {
             "name": "StepFun",
@@ -3099,7 +2078,7 @@
                     "model_type": "rerank"
                 },
                 {
-                    "llm_name": "netease-youdao/bce-reranker-base-v1",
+                    "llm_name": "netease-youdao/bce-reranker-base_v1",
                     "tags": "RE-RANK, 512",
                     "max_tokens": 1024,
                     "model_type": "rerank"
@@ -3352,6 +2331,13 @@
                     "model_type": "rerank"
                 }
             ]
+        },
+        {
+            "name": "Google Cloud",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
         }
     ]
 }

@@ -3,3 +3,8 @@ export interface IFeedbackRequestBody {
   thumbup?: boolean;
   feedback?: string;
 }
+
+export interface IAskRequestBody {
+  question: string;
+  kb_ids: string[];
+}

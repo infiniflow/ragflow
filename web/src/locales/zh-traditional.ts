@@ -59,6 +59,7 @@ export default {
       logout: '登出',
       fileManager: '文件管理',
       flow: 'Agent',
+      search: '搜尋',
     },
     knowledgeList: {
       welcome: '歡迎回來',
@@ -397,6 +398,8 @@ export default {
       uploadFailed: '上傳失敗',
       regenerate: '重新生成',
       read: '朗讀內容',
+      tts: '文字轉語音',
+      ttsTip: '是否用語音轉換播放語音，請先在設定裡面選擇TTS（語音轉換模型）。',
     },
     setting: {
       profile: '概述',
@@ -461,6 +464,7 @@ export default {
       upgrade: '升級',
       addLlmTitle: '添加Llm',
       modelName: '模型名稱',
+      modelID: '模型ID',
       modelUid: '模型uid',
       modelType: '模型類型',
       addLlmBaseUrl: '基礎 Url',
@@ -511,6 +515,15 @@ export default {
       addFishAudioAKMessage: '請輸入 API KEY',
       addFishAudioRefID: 'FishAudio Refrence ID',
       addFishAudioRefIDMessage: '請輸入引用模型的ID（留空表示使用默認模型）',
+      GoogleModelIDMessage: '請輸入 model ID!',
+      addGoogleProjectID: 'Project ID',
+      GoogleProjectIDMessage: '請輸入 Project ID',
+      addGoogleServiceAccountKey:
+        'Service Account Key(Leave blank if you use Application Default Credentials)',
+      GoogleServiceAccountKeyMessage:
+        '請輸入 Google Cloud Service Account Key in base64 format',
+      addGoogleRegion: 'Google Cloud 區域',
+      GoogleRegionMessage: '請輸入 Google Cloud 區域',
     },
     message: {
       registered: '註冊成功',
@@ -577,6 +590,7 @@ export default {
       messagePlaceholder: '訊息',
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
+      addMessage: '新增訊息',
       loop: '循環上限',
       loopTip:
         'loop為目前元件循環次數上限，當循環次數超過loop的值時，表示元件無法完成目前任務，請重新最佳化agent',
@@ -588,7 +602,7 @@ export default {
       operation: '操作',
       run: '運行',
       save: '儲存',
-      title: '標題：',
+      title: 'ID：',
 
       beginDescription: '這是流程開始的地方',
       answerDescription: `該組件用作機器人與人類之間的介面。它接收使用者的輸入並顯示機器人的計算結果。`,
