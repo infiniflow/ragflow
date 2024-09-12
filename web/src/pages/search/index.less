@@ -27,6 +27,7 @@
 
 .searchSide {
   position: relative;
+
   :global(.ant-layout-sider-children) {
     height: auto;
   }
@@ -42,9 +43,12 @@
     height: 100%;
   }
   .list {
+    padding-top: 10px;
     width: 100%;
-    height: calc(100vh - 152px);
+    // height: 100%;
+    height: calc(100vh - 76px);
     overflow: auto;
+    background-color: transparent;
     &::-webkit-scrollbar-track {
       background: transparent;
     }
@@ -53,7 +57,10 @@
     width: 100%;
   }
   .knowledgeName {
-    width: 130px;
+    width: 116px;
+  }
+  .embeddingId {
+    width: 170px;
   }
 }
 
