@@ -93,7 +93,7 @@ torch==2.3.0
 transformers==4.38.1
 umap==0.1.1
 vertexai==1.64.0
-volcengine==1.0.98
+volcengine==1.0.146
 voyageai==0.2.3
 webdriver_manager==4.0.1
 Werkzeug==3.0.3
@@ -101,5 +101,5 @@ wikipedia==1.4.0
 word2number==1.1
 xgboost==2.1.0
 xpinyin==0.7.6
-yfinance==0.2.43
+yfinance==0.1.96
 zhipuai==2.0.1
