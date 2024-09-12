@@ -12,6 +12,7 @@ import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
 import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
+import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 
 import { variableEnabledFieldMap } from '@/constants/chat';
@@ -59,6 +60,7 @@ export enum Operator {
   QWeather = 'QWeather',
   ExeSQL = 'ExeSQL',
   Switch = 'Switch',
+  WenCai = 'WenCai',
 }
 
 export const operatorIconMap = {
@@ -85,6 +87,7 @@ export const operatorIconMap = {
   [Operator.QWeather]: QWeatherIcon,
   [Operator.ExeSQL]: ExeSqlIcon,
   [Operator.Switch]: SwitchIcon,
+  [Operator.WenCai]: WenCaiIcon,
 };
 
 export const operatorMap: Record<
@@ -194,6 +197,7 @@ export const operatorMap: Record<
   [Operator.QWeather]: { backgroundColor: '#a4bbf3' },
   [Operator.ExeSQL]: { backgroundColor: '#b9efe8' },
   [Operator.Switch]: { backgroundColor: '#dbaff6' },
+  [Operator.WenCai]: { backgroundColor: '#faac5b' },
 };
 
 export const componentMenuList = [
@@ -262,6 +266,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.ExeSQL,
+  },
+  {
+    name: Operator.WenCai,
   },
 ];
 
@@ -402,6 +409,8 @@ export const initialExeSqlValues = {
 
 export const initialSwitchValues = { conditions: [] };
 
+export const initialWenCaiValues = { top_n: 20, query_type: 'stock' };
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -472,6 +481,7 @@ export const RestrictedUpstreamMap = {
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
+  [Operator.WenCai]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -498,6 +508,7 @@ export const NodeMap = {
   [Operator.QWeather]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'categorizeNode',
+  [Operator.WenCai]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -2652,3 +2663,17 @@ export const SwitchOperatorOptions = [
 ];
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
+
+export const WenCaiQueryTypeOptions = [
+  'stock',
+  'zhishu',
+  'fund',
+  'hkstock',
+  'usstock',
+  'threeboard',
+  'conbond',
+  'insurance',
+  'futures',
+  'lccp',
+  'foreign_exchange',
+];

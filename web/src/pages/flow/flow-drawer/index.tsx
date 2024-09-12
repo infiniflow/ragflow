@@ -28,6 +28,7 @@ import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
 import SwitchForm from '../switch-form';
+import WenCaiForm from '../wencai-form';
 import WikipediaForm from '../wikipedia-form';
 
 import styles from './index.less';
@@ -60,6 +61,7 @@ const FormMap = {
   [Operator.QWeather]: QWeatherForm,
   [Operator.ExeSQL]: ExeSQLForm,
   [Operator.Switch]: SwitchForm,
+  [Operator.WenCai]: WenCaiForm,
 };
 
 const EmptyContent = () => <div>empty</div>;
