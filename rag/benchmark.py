@@ -174,7 +174,7 @@ class Benchmark:
         with open(os.path.join(file_path, dataset + 'result.md'), 'w', encoding='utf-8') as f:
             f.write('## Score For Every Query\n')
             for keep_result_i in keep_result:
-                f.write('### query: ' + keep_result_i['query'] + ' ndcg@10:' + keep_result_i['ndcg@10'] + '\n')
+                f.write('### query: ' + keep_result_i['query'] + ' ndcg@10:' + str(keep_result_i['ndcg@10']) + '\n')
                 scores = [[i[0], i[1]] for i in keep_result_i['run'].items()]
                 scores = sorted(scores, key=lambda kk: kk[1])
                 for score in scores[:10]:
