@@ -20,7 +20,6 @@ class Base(object):
 
     def post(self, path, param, stream=False):
         res = self.rag.post(path, param, stream=stream)
-
         return res
 
     def get(self, path, params):
