@@ -14,19 +14,22 @@
 #  limitations under the License.
 #
 import json
+import re
 from copy import deepcopy
 
-from db.services.user_service import UserTenantService
+from api.db.services.user_service import UserTenantService
 from flask import request, Response
 from flask_login import login_required, current_user
 
 from api.db import LLMType
-from api.db.services.dialog_service import DialogService, ConversationService, chat
-from api.db.services.llm_service import LLMBundle, TenantService
-from api.settings import RetCode
+from api.db.services.dialog_service import DialogService, ConversationService, chat, ask
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.llm_service import LLMBundle, TenantService, TenantLLMService
+from api.settings import RetCode, retrievaler
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from graphrag.mind_map_extractor import MindMapExtractor
 
 
 @manager.route('/set', methods=['POST'])
@@ -286,3 +289,86 @@ def thumbup():
 
     ConversationService.update_by_id(conv["id"], conv)
     return get_json_result(data=conv)
+
+
+@manager.route('/ask', methods=['POST'])
+@login_required
+@validate_request("question", "kb_ids")
+def ask_about():
+    req = request.json
+    uid = current_user.id
+    def stream():
+        nonlocal req, uid
+        try:
+            for ans in ask(req["question"], req["kb_ids"], uid):
+                yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
+        except Exception as e:
+            yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
+                                        "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
+                                       ensure_ascii=False) + "\n\n"
+        yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp
+
+
+@manager.route('/mindmap', methods=['POST'])
+@login_required
+@validate_request("question", "kb_ids")
+def mindmap():
+    req = request.json
+    kb_ids = req["kb_ids"]
+    e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
+    if not e:
+        return get_data_error_result(retmsg="Knowledgebase not found!")
+
+    embd_mdl = TenantLLMService.model_instance(
+        kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
+    ranks = retrievaler.retrieval(req["question"], embd_mdl, kb.tenant_id, kb_ids, 1, 12,
+                           0.3, 0.3, aggs=False)
+    mindmap = MindMapExtractor(chat_mdl)
+    mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output
+    return get_json_result(data=mind_map)
+
+
+@manager.route('/related_questions', methods=['POST'])
+@login_required
+@validate_request("question")
+def related_questions():
+    req = request.json
+    question = req["question"]
+    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
+    prompt = """
+Objective: To generate search terms related to the user's search keywords, helping users find more valuable information.
+Instructions:
+ - Based on the keywords provided by the user, generate 5-10 related search terms.
+ - Each search term should be directly or indirectly related to the keyword, guiding the user to find more valuable information.
+ - Use common, general terms as much as possible, avoiding obscure words or technical jargon.
+ - Keep the term length between 2-4 words, concise and clear.
+ - DO NOT translate, use the language of the original keywords.
+
+### Example:
+Keywords: Chinese football
+Related search terms:
+1. Current status of Chinese football
+2. Reform of Chinese football
+3. Youth training of Chinese football
+4. Chinese football in the Asian Cup
+5. Chinese football in the World Cup
+
+Reason:
+ - When searching, users often only use one or two keywords, making it difficult to fully express their information needs.
+ - Generating related search terms can help users dig deeper into relevant information and improve search efficiency. 
+ - At the same time, related terms can also help search engines better understand user needs and return more accurate search results.
+ 
+"""
+    ans = chat_mdl.chat(prompt, [{"role": "user", "content": f"""
+Keywords: {question}
+Related search terms:
+    """}], {"temperature": 0.9})
+    return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])

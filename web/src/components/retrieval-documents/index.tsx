@@ -3,19 +3,22 @@ import { Collapse, Flex, Space } from 'antd';
 import SelectFiles from './select-files';
 
 import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
 interface IProps {
-  selectedDocumentIdsLength?: number;
   onTesting(documentIds: string[]): void;
+  setSelectedDocumentIds(documentIds: string[]): void;
+  selectedDocumentIds: string[];
 }
 
-const RetrievalDocuments = ({ onTesting }: IProps) => {
+const RetrievalDocuments = ({
+  onTesting,
+  selectedDocumentIds,
+  setSelectedDocumentIds,
+}: IProps) => {
   const { t } = useTranslation();
   const { documents } = useSelectTestingResult();
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
 
   return (
     <Collapse

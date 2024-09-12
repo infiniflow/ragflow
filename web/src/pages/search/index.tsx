@@ -1,7 +1,11 @@
 import HightLightMarkdown from '@/components/highlight-markdown';
 import { ImageWithPopover } from '@/components/image';
 import IndentedTree from '@/components/indented-tree/indented-tree';
+import PdfDrawer from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import RetrievalDocuments from '@/components/retrieval-documents';
 import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
+import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import {
   Card,
@@ -10,20 +14,18 @@ import {
   Input,
   Layout,
   List,
+  Pagination,
+  PaginationProps,
   Skeleton,
   Space,
   Tag,
 } from 'antd';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import MarkdownContent from '../chat/markdown-content';
-import { useSendQuestion } from './hooks';
+import { useFetchBackgroundImage, useSendQuestion } from './hooks';
 import SearchSidebar from './sidebar';
 
-import PdfDrawer from '@/components/pdf-drawer';
-import { useClickDrawer } from '@/components/pdf-drawer/hooks';
-import RetrievalDocuments from '@/components/retrieval-documents';
-import { useFetchAppConf } from '@/hooks/logic-hooks';
-import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
 const { Content } = Layout;
@@ -32,13 +34,14 @@ const { Search } = Input;
 const SearchPage = () => {
   const { t } = useTranslation();
   const [checkedList, setCheckedList] = useState<string[]>([]);
-  const list = useSelectTestingResult();
-  const appConf = useFetchAppConf();
+  const { chunks, total } = useSelectTestingResult();
+  // const appConf = useFetchAppConf();
   const {
     sendQuestion,
     handleClickRelatedQuestion,
     handleSearchStrChange,
     handleTestChunk,
+    setSelectedDocumentIds,
     answer,
     sendingLoading,
     relatedQuestions,
@@ -47,9 +50,17 @@ const SearchPage = () => {
     searchStr,
     loading,
     isFirstRender,
+    selectedDocumentIds,
   } = useSendQuestion(checkedList);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
+  const imgUrl = useFetchBackgroundImage();
+  const { pagination } = useGetPaginationWithRouter();
+
+  const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
+    pagination.onChange?.(pageNumber, pageSize);
+    handleTestChunk(selectedDocumentIds, pageNumber, pageSize);
+  };
 
   const InputSearch = (
     <Search
@@ -80,12 +91,13 @@ const SearchPage = () => {
                 justify="center"
                 align="center"
                 className={styles.firstRenderContent}
+                style={{ backgroundImage: `url(${imgUrl})` }}
               >
                 <Flex vertical align="center" gap={'large'}>
-                  <Space size={30}>
+                  {/* <Space size={30}>
                     <img src="/logo.svg" alt="" className={styles.appIcon} />
                     <span className={styles.appName}>{appConf.appName}</span>
-                  </Space>
+                  </Space> */}
                   {InputSearch}
                 </Flex>
               </Flex>
@@ -105,14 +117,16 @@ const SearchPage = () => {
                   )}
                   <Divider></Divider>
                   <RetrievalDocuments
-                    selectedDocumentIdsLength={0}
+                    selectedDocumentIds={selectedDocumentIds}
+                    setSelectedDocumentIds={setSelectedDocumentIds}
                     onTesting={handleTestChunk}
                   ></RetrievalDocuments>
                   <Divider></Divider>
-                  {list.chunks.length > 0 && (
+                  {chunks.length > 0 && (
                     <List
-                      dataSource={list.chunks}
+                      dataSource={chunks}
                       loading={loading}
+                      className={styles.chunks}
                       renderItem={(item) => (
                         <List.Item>
                           <Card className={styles.card}>
@@ -144,6 +158,12 @@ const SearchPage = () => {
                       </Flex>
                     </Card>
                   )}
+                  <Divider></Divider>
+                  <Pagination
+                    {...pagination}
+                    total={total}
+                    onChange={onChange}
+                  />
                 </section>
                 <section className={styles.graph}>
                   {mindMapLoading ? (

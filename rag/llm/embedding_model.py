@@ -577,11 +577,40 @@ class UpstageEmbed(OpenAIEmbed):
         super().__init__(key, model_name, base_url)
 
 
-class SILICONFLOWEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1"):
+class SILICONFLOWEmbed(Base):
+    def __init__(
+        self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"
+    ):
         if not base_url:
-            base_url = "https://api.siliconflow.cn/v1"
-        super().__init__(key, model_name, base_url)
+            base_url = "https://api.siliconflow.cn/v1/embeddings"
+        self.headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "authorization": f"Bearer {key}",
+        }
+        self.base_url = base_url
+        self.model_name = model_name
+
+    def encode(self, texts: list, batch_size=32):
+        payload = {
+            "model": self.model_name,
+            "input": texts,
+            "encoding_format": "float",
+        }
+        res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        return (
+            np.array([d["embedding"] for d in res["data"]]),
+            res["usage"]["total_tokens"],
+        )
+
+    def encode_queries(self, text):
+        payload = {
+            "model": self.model_name,
+            "input": text,
+            "encoding_format": "float",
+        }
+        res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        return np.array(res["data"][0]["embedding"]), res["usage"]["total_tokens"]
 
 
 class ReplicateEmbed(Base):

@@ -51,7 +51,6 @@
 
 .firstRenderContent {
   height: 100%;
-  background-image: url(https://www.bing.com/th?id=OHR.IguazuRainbow_ZH-CN6524347982_1920x1080.webp&qlt=50);
   background-position: center;
   background-size: cover;
 }
@@ -63,6 +62,10 @@
     // background-color: aqua;
     overflow: auto;
     padding: 20px 10px 10px;
+    .chunks {
+      // overflow: auto;
+      // height: 60vh;
+    }
   }
 
   .graph {
@@ -101,6 +104,9 @@
 
 .globalInput {
   width: 600px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   .input();
 }
 .partialInput {
@@ -122,7 +128,7 @@
   font-weight: 600;
   line-height: 20px;
 
-  background: linear-gradient(to right, #095fab 10%, #25abe8 50%, #57d75b 60%);
+  background: linear-gradient(to right, #095fab 10%, #25abe8 50%, #55c8dd 60%);
   background-size: auto auto;
   background-clip: border-box;
   background-size: 200% auto;
