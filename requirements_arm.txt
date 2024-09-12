@@ -168,7 +168,7 @@ deepl==1.18.0
 psycopg2-binary==2.9.9
 tabulate==0.9.0
 vertexai==1.64.0
-yfinance==0.2.43
+yfinance==0.1.96
 pywencai==0.12.2
 akshare==1.14.72
 ranx==0.3.20
