@@ -144,21 +144,19 @@ class RAGFlow:
         raise Exception(res["retmsg"])
 
     def create_document(self, ds:DataSet, name: str, blob: bytes) -> bool:
-        url = f"/doc/dataset/{ds.id}/documents/upload"  # 数据集的上传 API 地址
+        url = f"/doc/dataset/{ds.id}/documents/upload"
         files = {
-            'file': (name, blob)  # 使用表单上传文件
+            'file': (name, blob)
         }
         data = {
-            'kb_id': ds.id  # 目标知识库的 ID
+            'kb_id': ds.id
         }
         headers = {
-            'Authorization': f"Bearer {ds.rag.user_key}"  # 认证头
+            'Authorization': f"Bearer {ds.rag.user_key}"
         }
 
-        # response = self.post(url, payload)
         response = requests.post(self.api_url + url, data=data, files=files,
                                  headers=headers)
-        #因为有二进制数据不能json序列化，所以不调用base的post方法
 
         if response.status_code == 200 and response.json().get('retmsg') == 'success':
             return True

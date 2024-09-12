@@ -1,13 +1,6 @@
-from time import sleep, time
 
-import requests
-
-from api.settings import RetCode
 from .base import Base
-from datetime import datetime
-from time import sleep
-from typing import Tuple, Iterator
-import requests
+
 
 
 class Document(Base):
@@ -67,104 +60,16 @@ class Document(Base):
 
         :return: The downloaded document content in bytes.
         """
-        # 拼接API请求的URL，使用文档ID和数据集ID
-        res=self.get(f"/doc/{self.kb_id}/documents/{self.id}",{"headers":self.rag.authorization_header,"id": self.id,"name": self.name,"stream":True})
-        # api_url = f"{self.rag.api_url}/{self.kb_id}/documents/{self.id}"
-        #
-        # # 发送GET请求以下载文档
-        # response = requests.get(api_url, headers=self.rag.authorization_header, stream=True)
+        # Construct the URL for the API request using the document ID and knowledge base ID
+        res = self.get(f"/doc/{self.kb_id}/documents/{self.id}",
+                       {"headers": self.rag.authorization_header, "id": self.id, "name": self.name, "stream": True})
 
-        # 检查响应状态码并确保请求成功
+        # Check the response status code to ensure the request was successful
         if res.status_code == 200:
-            # 将文档内容以字节形式返回
+            # Return the document content as bytes
             return res.content
         else:
-            # 处理错误并抛出异常
+            # Handle the error and raise an exception
             raise Exception(
-                f"Failed to download document. Server responded with: {res.status_code}, {res.text}")
-
-    def async_parse(self) -> None:
-        """
-        Start asynchronous document parsing by sending a request to the server.
-        """
-        # API路径：启动文档解析
-        url = f"/{self.kb_id}/documents/{self.id}/status"
-
-        # 发送POST请求以启动文档解析
-        res = self.rag.post(url)
-
-        # 检查返回结果
-        res_data = res.json()
-        if res_data.get("code") != RetCode.SUCCESS:
-            raise Exception(
-                f"Failed to start parsing document '{self.id}'. Server responded with: {res_data['message']}")
-
-        print(f"Document '{self.id}' parsing started successfully.")
-
-    def join(self, interval=15, timeout=3600) -> iter:
-        """
-        Wait for the document parsing process to complete, checking the status at regular intervals.
-
-        :param interval: Time interval in seconds to check the parsing status.
-        :param timeout: Maximum time in seconds to wait for the parsing to complete.
-        :return: An iterator that yields the progress percentage and message at each check.
-        """
-        # API路径：获取文档解析状态
-        url = f"/{self.kb_id}/documents/{self.id}/status"
-
-        start_time = time()
-
-        while time() - start_time < timeout:
-            # 发送GET请求获取文档的解析状态
-            res = self.rag.get(url)
-            res_data = res.json()
-
-            if res_data["code"] != RetCode.SUCCESS:
-                raise Exception(f"Failed to retrieve document status: {res_data['message']}")
-
-            progress = res_data["data"]["progress"]
-            status = res_data["data"]["status"]
-
-            # 返回当前进度和状态消息
-            yield progress, f"Status: {status}, Progress: {progress}%"
-
-            # 如果解析已完成，则退出循环
-            if status != "RUNNING":
-                break
-
-            # 等待下一个状态检查
-            sleep(interval)
-
-        if time() - start_time >= timeout:
-            raise TimeoutError(f"Timeout reached while waiting for document '{self.id}' parsing to complete.")
-
-    def parse(self, interval=15, timeout=3600) -> iter:
-        """
-        Start document parsing and wait for it to complete.
-
-        :param interval: Time interval in seconds to check the parsing status.
-        :param timeout: Maximum time in seconds to wait for the parsing to complete.
-        :return: An iterator that yields the progress percentage and message at each check.
-        """
-        # 启动异步解析
-        self.async_parse()
-
-        # 等待解析完成
-        yield from self.join(interval=interval, timeout=timeout)
-
-    def cancel(self) -> None:
-        """
-        Cancel the parsing of the document.
-        """
-        # API路径：取消文档解析
-        url = f"/{self.kb_id}/documents/{self.id}/status"
-
-        # 发送DELETE请求以取消文档解析
-        res = self.rag.delete(url)
-
-        res_data = res.json()
-        if res_data.get("code") != RetCode.SUCCESS:
-            raise Exception(
-                f"Failed to cancel parsing document '{self.id}'. Server responded with: {res_data['message']}")
-
-        print(f"Document '{self.id}' parsing cancelled successfully.")
+                f"Failed to download document. Server responded with: {res.status_code}, {res.text}"
+            )

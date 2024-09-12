@@ -1,34 +1,17 @@
 from io import BytesIO
 
 from flask import request,send_file
-from flask_login import login_required, current_user
-
-from api.db.services.document_service import DocumentService
-from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.settings import RetCode, stat_logger
 from api.utils.api_utils import get_json_result, construct_json_result, server_error_response
 from api.utils.api_utils import get_json_result, token_required, get_data_error_result
-from rag.utils.storage_factory import STORAGE_IMPL
-from api.contants import NAME_LENGTH_LIMIT
 from api.db import FileType, ParserType, FileSource, TaskStatus
-from api.db import StatusEnum
 from api.db.db_models import File
-from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.settings import RetCode
-from api.utils import get_uuid
 from api.utils.api_utils import construct_json_result, construct_error_response
-from api.utils.api_utils import construct_result, validate_request
-from api.utils.file_utils import filename_type, thumbnail
-from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture, audio, email
-from rag.nlp import search
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -38,19 +21,14 @@ def upload(dataset_id, tenant_id):
     if 'file' not in request.files:
         return get_json_result(
             data=False, retmsg='No file part!', retcode=RetCode.ARGUMENT_ERROR)
-
     file_objs = request.files.getlist('file')
     for file_obj in file_objs:
         if file_obj.filename == '':
             return get_json_result(
                 data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
-
-    # 根据 dataset_id 获取相关数据集
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         raise LookupError(f"Can't find the knowledgebase with ID {dataset_id}!")
-
-    # 上传文件到该数据集
     err, _ = FileService.upload_document(kb, file_objs, tenant_id)
     if err:
         return get_json_result(
@@ -60,7 +38,7 @@ def upload(dataset_id, tenant_id):
 
 @manager.route('/infos', methods=['GET'])
 @token_required
-def docinfos():
+def docinfos(tenant_id):
     req = request.args
     if "id" in req:
         doc_id = req["id"]
@@ -75,7 +53,7 @@ def docinfos():
 
 @manager.route('/save', methods=['POST'])
 @token_required
-def save_doc():
+def save_doc(tenant_id):
     req = request.json  # Expecting JSON input
     if "id" in req:
         doc_id = req["id"]

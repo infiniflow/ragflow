@@ -51,33 +51,32 @@ class TestDocument(TestSdk):
         else:
             assert False, f"Failed to get document, error: {doc}"
 
-
     def test_download_document_with_success(self):
         """
         Test downloading a document with success.
         """
-        # 初始化 RAGFlow 实例
+        # Initialize RAGFlow instance
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
 
-        # 获取文档
+        # Retrieve a document
         doc = rag.get_document(name="TestDocument.txt")
 
-        # 判断获取的文档是否为 Document 类型
+        # Check if the retrieved document is of type Document
         if isinstance(doc, Document):
-            # 下载文档内容并保存到文件
+            # Download the document content and save it to a file
             try:
                 with open("ragflow.txt", "wb+") as file:
                     file.write(doc.download())
-                # 打印文档对象供调试
+                    # Print the document object for debugging
                 print(doc)
 
-                # 断言下载成功
+                # Assert that the download was successful
                 assert True, "Document downloaded successfully."
             except Exception as e:
-                # 如果发生错误则抛出异常
+                # If an error occurs, raise an assertion error
                 assert False, f"Failed to download document, error: {str(e)}"
         else:
-            # 如果获取文档失败，则断言失败
+            # If the document retrieval fails, assert failure
             assert False, f"Failed to get document, error: {doc}"
 
     def test_list_all_documents_in_dataset_with_success(self):
@@ -127,8 +126,9 @@ class TestDocument(TestSdk):
         blob1 = b"Sample document content for ingestion test333."
         name2 = "Test Document444.txt"
         blob2 = b"Sample document content for ingestion test444."
-        path='document 111.txt'
-        rag.create_document(ds, name=path, blob=open(path, "rb").read())
+        name3='test.txt'
+        path='test_data/test.txt'
+        rag.create_document(ds, name=name3, blob=open(path, "rb").read())
         rag.create_document(ds, name=name1, blob=blob1)
         rag.create_document(ds, name=name2, blob=blob2)
         for d in ds.list_docs(keywords="document", offset=0, limit=12):
@@ -138,40 +138,7 @@ class TestDocument(TestSdk):
         remaining_docs = ds.list_docs(keywords="rag", offset=0, limit=12)
         assert len(remaining_docs) == 0, "Documents were not properly deleted."
 
-    def test_parse_document_with_success(self):
-        """
-        Test parse a document with success.
-        """
-        rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        doc = rag.get_document(name="TestDocument.txt")
-        # Start parsing the document (synchronous parsing)
-        for progress, msg in doc.parse(interval=15, timeout=30):
-            print(f"Progress: {progress}, Message: {msg}")
-            # Assert that progress is within the correct range
-            assert 0 <= progress <= 100, f"Unexpected progress value: {progress}"
-            # Check that a message is returned
-            assert msg is not None, "Message during parse should not be None"
 
-        # Ensure that the document parsing is completed
-        assert progress == 100, "Document parsing did not complete to 100%."
-
-        # Start async parsing (asynchronous parsing)
-        doc.async_parse()
-
-        # Wait for parsing to finish using the join method
-        for progress, msg in doc.join(interval=15, timeout=30):
-            print(f"Async Progress: {progress}, Message: {msg}")
-            assert 0 <= progress <= 100, f"Unexpected async progress value: {progress}"
-            assert msg is not None, "Message during async parse should not be None"
-
-        # Ensure async parsing is complete
-        assert progress == 100, "Asynchronous document parsing did not complete to 100%."
-
-        # Step 6: Cancel the parsing (if applicable)
-        cancel_result = doc.cancel()
-
-        # Ensure cancellation was successful
-        assert cancel_result is True, "Document parsing cancellation failed."
 
 
 
