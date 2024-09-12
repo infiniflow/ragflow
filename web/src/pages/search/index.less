@@ -57,15 +57,22 @@
 
 .content {
   height: 100%;
-  .main {
-    width: 60%;
-    // background-color: aqua;
+  .hide {
+    display: none;
+  }
+
+  .mainMixin() {
     overflow: auto;
     padding: 20px 10px 10px;
-    .chunks {
-      // overflow: auto;
-      // height: 60vh;
-    }
+  }
+
+  .largeMain {
+    width: 100%;
+    .mainMixin();
+  }
+  .main {
+    width: 60%;
+    .mainMixin();
   }
 
   .graph {
@@ -111,6 +118,9 @@
 }
 .partialInput {
   width: 100%;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   .input();
 }
 

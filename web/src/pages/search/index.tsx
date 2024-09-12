@@ -20,7 +20,7 @@ import {
   Space,
   Tag,
 } from 'antd';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MarkdownContent from '../chat/markdown-content';
 import { useFetchBackgroundImage, useSendQuestion } from './hooks';
@@ -35,7 +35,6 @@ const SearchPage = () => {
   const { t } = useTranslation();
   const [checkedList, setCheckedList] = useState<string[]>([]);
   const { chunks, total } = useSelectTestingResult();
-  // const appConf = useFetchAppConf();
   const {
     sendQuestion,
     handleClickRelatedQuestion,
@@ -61,6 +60,14 @@ const SearchPage = () => {
     pagination.onChange?.(pageNumber, pageSize);
     handleTestChunk(selectedDocumentIds, pageNumber, pageSize);
   };
+
+  const isMindMapEmpty = useMemo(() => {
+    return (
+      !mindMapLoading &&
+      ((Array.isArray(mindMap?.children) && mindMap.children.length === 0) ||
+        !Array.isArray(mindMap?.children))
+    );
+  }, [mindMap, mindMapLoading]);
 
   const InputSearch = (
     <Search
@@ -103,7 +110,9 @@ const SearchPage = () => {
               </Flex>
             ) : (
               <Flex className={styles.content}>
-                <section className={styles.main}>
+                <section
+                  className={isMindMapEmpty ? styles.largeMain : styles.main}
+                >
                   {InputSearch}
                   {answer.answer && (
                     <div className={styles.answerWrapper}>
@@ -165,7 +174,9 @@ const SearchPage = () => {
                     onChange={onChange}
                   />
                 </section>
-                <section className={styles.graph}>
+                <section
+                  className={isMindMapEmpty ? styles.hide : styles.graph}
+                >
                   {mindMapLoading ? (
                     <Skeleton active />
                   ) : (

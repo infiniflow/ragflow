@@ -17,6 +17,7 @@ import {
 import { TreeData } from '@antv/g6/lib/types';
 import isEmpty from 'lodash/isEmpty';
 import React, { useCallback, useEffect, useRef } from 'react';
+import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
 
 const rootId = 'root';
 
@@ -297,6 +298,17 @@ interface IProps {
   style?: React.CSSProperties;
 }
 
+function fallbackRender({ error }: FallbackProps) {
+  // Call resetErrorBoundary() to reset the error boundary and retry the render.
+
+  return (
+    <div role="alert">
+      <p>Something went wrong:</p>
+      <pre style={{ color: 'red' }}>{error.message}</pre>
+    </div>
+  );
+}
+
 const IndentedTree = ({ data, show, style = {} }: IProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
@@ -382,16 +394,18 @@ const IndentedTree = ({ data, show, style = {} }: IProps) => {
   }, [render, data]);
 
   return (
-    <div
-      id="tree"
-      ref={containerRef}
-      style={{
-        width: '90vw',
-        height: '80vh',
-        display: show ? 'block' : 'none',
-        ...style,
-      }}
-    />
+    <ErrorBoundary fallbackRender={fallbackRender}>
+      <div
+        id="tree"
+        ref={containerRef}
+        style={{
+          width: '90vw',
+          height: '80vh',
+          display: show ? 'block' : 'none',
+          ...style,
+        }}
+      />
+    </ErrorBoundary>
   );
 };
 
