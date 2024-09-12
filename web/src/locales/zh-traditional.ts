@@ -400,6 +400,7 @@ export default {
       read: '朗讀內容',
       tts: '文字轉語音',
       ttsTip: '是否用語音轉換播放語音，請先在設定裡面選擇TTS（語音轉換模型）。',
+      relatedQuestion: '相關問題',
     },
     setting: {
       profile: '概述',
@@ -832,7 +833,7 @@ export default {
       wenCai: '問財',
       queryType: '查詢類型',
       wenCaiDescription:
-        '該組件可用於獲取廣泛的金融領域的信息，包括但不限於股票、基金等...',
+        '該組件可用於獲取廣泛的金融領域的o息，包括但不限於股票、基金等...',
       wenCaiQueryTypeOptions: {
         stock: '股票',
         zhishu: '指數',

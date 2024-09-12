@@ -19,6 +19,7 @@ import {
   List,
   Pagination,
   PaginationProps,
+  Popover,
   Skeleton,
   Space,
   Tag,
@@ -150,9 +151,21 @@ const SearchPage = () => {
                               <ImageWithPopover
                                 id={item.img_id}
                               ></ImageWithPopover>
-                              <HightLightMarkdown>
-                                {item.highlight}
-                              </HightLightMarkdown>
+                              <Popover
+                                content={
+                                  <div className={styles.popupMarkdown}>
+                                    <HightLightMarkdown>
+                                      {item.content_with_weight}
+                                    </HightLightMarkdown>
+                                  </div>
+                                }
+                              >
+                                <div>
+                                  <HightLightMarkdown>
+                                    {item.highlight}
+                                  </HightLightMarkdown>
+                                </div>
+                              </Popover>
                             </Space>
                           </Card>
                         </List.Item>
@@ -160,7 +173,7 @@ const SearchPage = () => {
                     />
                   )}
                   {relatedQuestions?.length > 0 && (
-                    <Card>
+                    <Card title={t('chat.relatedQuestion')}>
                       <Flex wrap="wrap" gap={'10px 0'}>
                         {relatedQuestions?.map((x, idx) => (
                           <Tag
