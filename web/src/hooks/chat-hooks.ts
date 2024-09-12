@@ -494,7 +494,7 @@ export const useFetchMindMap = () => {
     mutationFn: async (params: IAskRequestBody) => {
       try {
         const ret = await chatService.getMindMap(params);
-        return ret?.data?.data ?? [];
+        return ret?.data?.data ?? {};
       } catch (error) {
         if (has(error, 'message')) {
           message.error(error.message);
