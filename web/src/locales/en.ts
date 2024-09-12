@@ -892,6 +892,9 @@ The above is the content you need to summarize.`,
         lccp: 'Financing',
         foreign_exchange: 'Foreign currency',
       },
+      akShare: 'AkShare',
+      akShareDescription:
+        'This component can be used to obtain news information for the corresponding stock from the Eastmoney website.',
     },
     footer: {
       profile: 'All rights reserved @ React',

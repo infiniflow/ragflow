@@ -24,7 +24,7 @@ const WenCaiForm = ({ onValuesChange, form }: IOperatorForm) => {
       form={form}
       onValuesChange={onValuesChange}
     >
-      <TopNItem initialValue={10} max={99}></TopNItem>
+      <TopNItem initialValue={20} max={99}></TopNItem>
       <Form.Item label={t('queryType')} name={'query_type'}>
         <Select options={wenCaiQueryTypeOptions}></Select>
       </Form.Item>

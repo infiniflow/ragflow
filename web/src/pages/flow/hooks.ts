@@ -31,6 +31,7 @@ import {
   Operator,
   RestrictedUpstreamMap,
   SwitchElseTo,
+  initialAkShareValues,
   initialArXivValues,
   initialBaiduFanyiValues,
   initialBaiduValues,
@@ -115,6 +116,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.ExeSQL]: initialExeSqlValues,
       [Operator.Switch]: initialSwitchValues,
       [Operator.WenCai]: initialWenCaiValues,
+      [Operator.AkShare]: initialAkShareValues,
     };
   }, [llmId]);
 
