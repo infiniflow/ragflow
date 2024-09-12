@@ -65,7 +65,7 @@ class YahooFinance(ComponentBase, ABC):
             if self._param.count:
                 yohoo_res.append({"content": "count:\n" + msft.get_shares_full().to_markdown() + "\n"})
             if self._param.financials:
-                yohoo_res.append({"content": "calendar:\n" + pd.DataFrame(msft.calendar).to_markdown + "\n"})
+                yohoo_res.append({"content": "calendar:\n" + pd.DataFrame(msft.calendar).to_markdown() + "\n"})
                 yohoo_res.append({"content": "sec_filings:\n" + pd.DataFrame(msft.sec_filings).to_markdown() + "\n"})
             if self._param.income_stmt:
                 yohoo_res.append({"content": "income statement:\n" + msft.income_stmt.to_markdown() + "\n"})
