@@ -829,6 +829,23 @@ export default {
       operator: '操作符',
       value: '值',
       useTemplate: '使用該模板',
+      wenCai: '問財',
+      queryType: '查詢類型',
+      wenCaiDescription:
+        '該組件可用於獲取廣泛的金融領域的信息，包括但不限於股票、基金等...',
+      wenCaiQueryTypeOptions: {
+        stock: '股票',
+        zhishu: '指數',
+        fund: '基金',
+        hkstock: '港股',
+        usstock: '美股',
+        threeboard: '新三板',
+        conbond: '可轉債',
+        insurance: '保險',
+        futures: '期貨',
+        lccp: '理財',
+        foreign_exchange: '股票',
+      },
     },
     footer: {
       profile: '“保留所有權利 @ react”',

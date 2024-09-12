@@ -52,6 +52,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialWenCaiValues,
   initialWikipediaValues,
 } from './constant';
 import { ICategorizeForm, IRelevantForm, ISwitchForm } from './interface';
@@ -113,6 +114,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.QWeather]: initialQWeatherValues,
       [Operator.ExeSQL]: initialExeSqlValues,
       [Operator.Switch]: initialSwitchValues,
+      [Operator.WenCai]: initialWenCaiValues,
     };
   }, [llmId]);
 
