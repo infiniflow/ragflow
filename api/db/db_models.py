@@ -830,6 +830,7 @@ class Dialog(DataBaseModel):
     do_refer = CharField(
         max_length=1,
         null=False,
+        default="1",
         help_text="it needs to insert reference index into answer or not")
     
     rerank_id = CharField(
