@@ -864,6 +864,8 @@ export default {
         lccp: '理财',
         foreign_exchange: '股票',
       },
+      akShare: 'AkShare',
+      akShareDescription: '该组件可用于从东方财富网站获取相应股票的新闻信息。',
     },
     footer: {
       profile: 'All rights reserved @ React',

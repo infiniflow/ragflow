@@ -1,3 +1,4 @@
+import { ReactComponent as AkShareIcon } from '@/assets/svg/akshare.svg';
 import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
 import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
@@ -61,6 +62,7 @@ export enum Operator {
   ExeSQL = 'ExeSQL',
   Switch = 'Switch',
   WenCai = 'WenCai',
+  AkShare = 'AkShare',
 }
 
 export const operatorIconMap = {
@@ -88,6 +90,7 @@ export const operatorIconMap = {
   [Operator.ExeSQL]: ExeSqlIcon,
   [Operator.Switch]: SwitchIcon,
   [Operator.WenCai]: WenCaiIcon,
+  [Operator.AkShare]: AkShareIcon,
 };
 
 export const operatorMap: Record<
@@ -198,6 +201,7 @@ export const operatorMap: Record<
   [Operator.ExeSQL]: { backgroundColor: '#b9efe8' },
   [Operator.Switch]: { backgroundColor: '#dbaff6' },
   [Operator.WenCai]: { backgroundColor: '#faac5b' },
+  [Operator.AkShare]: { backgroundColor: '#8085f5' },
 };
 
 export const componentMenuList = [
@@ -269,6 +273,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.WenCai,
+  },
+  {
+    name: Operator.AkShare,
   },
 ];
 
@@ -411,6 +418,8 @@ export const initialSwitchValues = { conditions: [] };
 
 export const initialWenCaiValues = { top_n: 20, query_type: 'stock' };
 
+export const initialAkShareValues = { top_n: 10 };
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -482,6 +491,7 @@ export const RestrictedUpstreamMap = {
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
+  [Operator.AkShare]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -509,6 +519,7 @@ export const NodeMap = {
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'categorizeNode',
   [Operator.WenCai]: 'ragNode',
+  [Operator.AkShare]: 'ragNode',
 };
 
 export const LanguageOptions = [

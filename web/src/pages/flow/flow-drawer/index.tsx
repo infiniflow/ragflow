@@ -3,6 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
+import AkShareForm from '../akshare-form';
 import AnswerForm from '../answer-form';
 import ArXivForm from '../arxiv-form';
 import BaiduFanyiForm from '../baidu-fanyi-form';
@@ -62,6 +63,7 @@ const FormMap = {
   [Operator.ExeSQL]: ExeSQLForm,
   [Operator.Switch]: SwitchForm,
   [Operator.WenCai]: WenCaiForm,
+  [Operator.AkShare]: AkShareForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

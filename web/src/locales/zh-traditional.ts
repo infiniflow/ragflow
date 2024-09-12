@@ -846,6 +846,8 @@ export default {
         lccp: '理財',
         foreign_exchange: '股票',
       },
+      akShare: 'AkShare',
+      akShareDescription: '此組件可用於從東方財富網取得對應股票的新聞資訊。',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
