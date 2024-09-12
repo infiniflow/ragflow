@@ -87,7 +87,7 @@ class RAGFlow:
             datasets.append(dataset.to_json())
 
         if llm is None:
-            llm = Assistant.LLM(self, {"model_name": "None",
+            llm = Assistant.LLM(self, {"model_name": None,
                                        "temperature": 0.1,
                                        "top_p": 0.3,
                                        "presence_penalty": 0.4,
