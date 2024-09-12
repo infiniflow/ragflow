@@ -431,6 +431,7 @@ The above is the content you need to summarize.`,
       tts: 'Text to speech',
       ttsTip:
         'To play the voice using voice conversion, please select TTS (speech conversion model) in the settings first.',
+      relatedQuestion: 'Related question',
     },
     setting: {
       profile: 'Profile',
