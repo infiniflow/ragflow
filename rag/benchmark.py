@@ -178,7 +178,7 @@ class Benchmark:
                 scores = [[i[0], i[1]] for i in keep_result_i['run'].items()]
                 scores = sorted(scores, key=lambda kk: kk[1])
                 for score in scores[:10]:
-                    f.write('- text: ' + texts[score[0]] + '\t qrel: ' + str(score[1]) + '\n')
+                    f.write('- text: ' + str(texts[score[0]]) + '\t qrel: ' + str(score[1]) + '\n')
         print(os.path.join(file_path, dataset + '_result.md'), 'Saved!')
 
     def __call__(self, dataset, file_path, miracl_corpus=''):
