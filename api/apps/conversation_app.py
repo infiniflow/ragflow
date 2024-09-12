@@ -15,8 +15,8 @@
 #
 import json
 import re
+import traceback
 from copy import deepcopy
-
 from api.db.services.user_service import UserTenantService
 from flask import request, Response
 from flask_login import login_required, current_user
@@ -333,6 +333,8 @@ def mindmap():
                            0.3, 0.3, aggs=False)
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output
+    if "error" in mind_map:
+        return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
 
 

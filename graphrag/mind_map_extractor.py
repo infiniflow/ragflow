@@ -107,7 +107,7 @@ class MindMapExtractor:
                 res.append(_.result())
 
             if not res:
-                return MindMapResult(output={"root":{}})
+                return MindMapResult(output={"id": "root", "children": []})
 
             merge_json = reduce(self._merge, res)
             if len(merge_json.keys()) > 1:
