@@ -19,7 +19,8 @@ class Base(object):
         return pr
 
     def post(self, path, param, stream=False):
-        res = self.rag.post(path, param,stream=stream)
+        res = self.rag.post(path, param, stream=stream)
+
         return res
 
     def get(self, path, params):
