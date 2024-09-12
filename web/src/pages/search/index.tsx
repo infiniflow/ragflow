@@ -4,7 +4,10 @@ import IndentedTree from '@/components/indented-tree/indented-tree';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import RetrievalDocuments from '@/components/retrieval-documents';
-import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
+import {
+  useNextFetchKnowledgeList,
+  useSelectTestingResult,
+} from '@/hooks/knowledge-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import {
@@ -35,6 +38,11 @@ const SearchPage = () => {
   const { t } = useTranslation();
   const [checkedList, setCheckedList] = useState<string[]>([]);
   const { chunks, total } = useSelectTestingResult();
+  const { list: knowledgeList } = useNextFetchKnowledgeList();
+  const checkedWithoutEmbeddingIdList = useMemo(() => {
+    return checkedList.filter((x) => knowledgeList.some((y) => y.id === x));
+  }, [checkedList, knowledgeList]);
+
   const {
     sendQuestion,
     handleClickRelatedQuestion,
@@ -50,7 +58,7 @@ const SearchPage = () => {
     loading,
     isFirstRender,
     selectedDocumentIds,
-  } = useSendQuestion(checkedList);
+  } = useSendQuestion(checkedWithoutEmbeddingIdList);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   const imgUrl = useFetchBackgroundImage();
@@ -79,7 +87,7 @@ const SearchPage = () => {
       onSearch={sendQuestion}
       size="large"
       loading={sendingLoading}
-      disabled={checkedList.length === 0}
+      disabled={checkedWithoutEmbeddingIdList.length === 0}
       className={isFirstRender ? styles.globalInput : styles.partialInput}
     />
   );
@@ -92,7 +100,7 @@ const SearchPage = () => {
       >
         <SearchSidebar
           isFirstRender={isFirstRender}
-          checkedList={checkedList}
+          checkedList={checkedWithoutEmbeddingIdList}
           setCheckedList={setCheckedList}
         ></SearchSidebar>
         <Layout className={isFirstRender ? styles.mainLayout : ''}>

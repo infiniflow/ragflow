@@ -21,6 +21,7 @@ export interface IKnowledge {
   update_date: string;
   update_time: number;
   vector_similarity_weight: number;
+  embd_id: string;
 }
 
 export interface Parserconfig {
