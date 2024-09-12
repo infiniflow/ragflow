@@ -1,7 +1,10 @@
 import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { UserOutlined } from '@ant-design/icons';
 import type { CheckboxProps } from 'antd';
 import { Avatar, Checkbox, Layout, List, Space, Typography } from 'antd';
+import { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { CheckboxValueType } from 'antd/es/checkbox/Group';
+import classNames from 'classnames';
 import {
   Dispatch,
   SetStateAction,
@@ -10,18 +13,21 @@ import {
   useMemo,
 } from 'react';
 
-import { UserOutlined } from '@ant-design/icons';
-import { CheckboxChangeEvent } from 'antd/es/checkbox';
 import styles from './index.less';
 
 const { Sider } = Layout;
 
 interface IProps {
+  isFirstRender: boolean;
   checkedList: string[];
   setCheckedList: Dispatch<SetStateAction<string[]>>;
 }
 
-const SearchSidebar = ({ checkedList, setCheckedList }: IProps) => {
+const SearchSidebar = ({
+  isFirstRender,
+  checkedList,
+  setCheckedList,
+}: IProps) => {
   const { list, loading } = useNextFetchKnowledgeList();
   const ids = useMemo(() => list.map((x) => x.id), [list]);
 
@@ -49,7 +55,13 @@ const SearchSidebar = ({ checkedList, setCheckedList }: IProps) => {
   }, [ids, setCheckedList]);
 
   return (
-    <Sider className={styles.searchSide} theme={'light'} width={240}>
+    <Sider
+      className={classNames(styles.searchSide, {
+        [styles.transparentSearchSide]: isFirstRender,
+      })}
+      theme={'light'}
+      width={240}
+    >
       <Checkbox
         className={styles.modelForm}
         indeterminate={indeterminate}

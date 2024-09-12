@@ -86,25 +86,24 @@ const SearchPage = () => {
 
   return (
     <>
-      <Layout className={styles.searchPage}>
+      <Layout
+        className={styles.searchPage}
+        style={{ backgroundImage: `url(${imgUrl})` }}
+      >
         <SearchSidebar
+          isFirstRender={isFirstRender}
           checkedList={checkedList}
           setCheckedList={setCheckedList}
         ></SearchSidebar>
-        <Layout>
+        <Layout className={isFirstRender ? styles.mainLayout : ''}>
           <Content>
             {isFirstRender ? (
               <Flex
                 justify="center"
                 align="center"
                 className={styles.firstRenderContent}
-                style={{ backgroundImage: `url(${imgUrl})` }}
               >
                 <Flex vertical align="center" gap={'large'}>
-                  {/* <Space size={30}>
-                    <img src="/logo.svg" alt="" className={styles.appIcon} />
-                    <span className={styles.appName}>{appConf.appName}</span>
-                  </Space> */}
                   {InputSearch}
                 </Flex>
               </Flex>
