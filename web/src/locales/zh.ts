@@ -418,6 +418,7 @@ export default {
       tts: '文本转语音',
       ttsTip: '是否用语音转换播放语音，请先在设置里面选择TTS（语音转换模型）。',
       relatedQuestion: '相关问题',
+      answerTitle: '智能回答',
     },
     setting: {
       profile: '概要',

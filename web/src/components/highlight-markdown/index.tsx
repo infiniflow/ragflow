@@ -8,16 +8,14 @@ import styles from './index.less';
 
 const HightLightMarkdown = ({
   children,
-  className,
 }: {
   children: string | null | undefined;
-  className?: string;
 }) => {
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeRaw]}
-      className={classNames(styles.text, className)}
+      className={classNames(styles.text)}
       components={
         {
           code(props: any) {
