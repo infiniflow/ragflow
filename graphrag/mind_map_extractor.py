@@ -66,7 +66,7 @@ class MindMapExtractor:
             obj = [obj]
         if isinstance(obj, list):
             for i in obj: keyset.add(i)
-            return [{"id": re.sub(r"\*+", "", i), "children": []} for i in obj]
+            return [{"id": re.sub(r"\*+", "", i), "children": []} for i in obj if re.sub(r"\*+", "", i)]
         arr = []
         for k, v in obj.items():
             k = self._key(k)
