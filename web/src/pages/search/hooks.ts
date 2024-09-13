@@ -25,24 +25,39 @@ export const useSendQuestion = (kbIds: string[]) => {
   const [isFirstRender, setIsFirstRender] = useState(true);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
 
-  const { pagination } = useGetPaginationWithRouter();
+  const { pagination, setPagination } = useGetPaginationWithRouter();
 
   const sendQuestion = useCallback(
     (question: string) => {
       const q = trim(question);
       if (isEmpty(q)) return;
+      setPagination({ page: 1 });
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       setSendingLoading(true);
       send({ kb_ids: kbIds, question: q });
-      testChunk({ kb_id: kbIds, highlight: true, question: q });
+      testChunk({
+        kb_id: kbIds,
+        highlight: true,
+        question: q,
+        page: 1,
+        size: pagination.pageSize,
+      });
       fetchMindMap({
         question: q,
         kb_ids: kbIds,
       });
       fetchRelatedQuestions(q);
     },
-    [send, testChunk, kbIds, fetchRelatedQuestions, fetchMindMap],
+    [
+      send,
+      testChunk,
+      kbIds,
+      fetchRelatedQuestions,
+      fetchMindMap,
+      setPagination,
+      pagination.pageSize,
+    ],
   );
 
   const handleSearchStrChange: ChangeEventHandler<HTMLInputElement> =
