@@ -51,9 +51,9 @@ Please review the flowing description of the RAG-specific components before you 
 
 | Component      | Description                                                  |
 | -------------- | ------------------------------------------------------------ |
-| **Retrieval**  | A component that retrieves information from a specified knowledge base and returns 'Empty response' if no information is found. Ensure the correct knowledge base is selected. |
+| **Retrieval**  | A component that retrieves information from specified knowledge bases and returns 'Empty response' if no information is found. Ensure the correct knowledge bases are selected. |
 | **Generate**   | A component that prompts the LLM to generate responses. You must ensure the prompt is set correctly. |
-| **Answer**     | A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses. |
+| **Answer**     | A component that serves as the interface between human and the bot, receiving user inputs and displaying the agent's responses. |
 | **Categorize** | A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component. |
 | **Message**    | A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is **Answer**, the interface component. |
 | **Relevant**   | A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result. |
