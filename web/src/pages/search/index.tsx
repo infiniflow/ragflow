@@ -25,13 +25,14 @@ import {
   Spin,
   Tag,
 } from 'antd';
+import DOMPurify from 'dompurify';
+import { isEmpty } from 'lodash';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MarkdownContent from '../chat/markdown-content';
 import { useFetchBackgroundImage, useSendQuestion } from './hooks';
-import SearchSidebar from './sidebar';
-
 import styles from './index.less';
+import SearchSidebar from './sidebar';
 
 const { Content } = Layout;
 const { Search } = Input;
@@ -123,16 +124,28 @@ const SearchPage = () => {
                   className={isMindMapEmpty ? styles.largeMain : styles.main}
                 >
                   {InputSearch}
-                  {answer.answer && (
-                    <div className={styles.answerWrapper}>
-                      <MarkdownContent
-                        loading={sendingLoading}
-                        content={answer.answer}
-                        reference={answer.reference ?? ({} as IReference)}
-                        clickDocumentButton={clickDocumentButton}
-                      ></MarkdownContent>
-                    </div>
-                  )}
+                  <Card
+                    title={
+                      <Flex gap={10}>
+                        <img src="/logo.svg" alt="" width={20} />
+                        {t('chat.answerTitle')}
+                      </Flex>
+                    }
+                    className={styles.answerWrapper}
+                  >
+                    {isEmpty(answer) && sendingLoading ? (
+                      <Skeleton active />
+                    ) : (
+                      answer.answer && (
+                        <MarkdownContent
+                          loading={sendingLoading}
+                          content={answer.answer}
+                          reference={answer.reference ?? ({} as IReference)}
+                          clickDocumentButton={clickDocumentButton}
+                        ></MarkdownContent>
+                      )
+                    )}
+                  </Card>
                   <Divider></Divider>
                   <RetrievalDocuments
                     selectedDocumentIds={selectedDocumentIds}
@@ -166,11 +179,14 @@ const SearchPage = () => {
                                     </div>
                                   }
                                 >
-                                  <div>
-                                    <HightLightMarkdown>
-                                      {item.highlight}
-                                    </HightLightMarkdown>
-                                  </div>
+                                  <div
+                                    dangerouslySetInnerHTML={{
+                                      __html: DOMPurify.sanitize(
+                                        item.highlight,
+                                      ),
+                                    }}
+                                    className={styles.highlightContent}
+                                  ></div>
                                 </Popover>
                               </Space>
                             </Card>

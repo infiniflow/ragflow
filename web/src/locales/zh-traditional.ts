@@ -401,6 +401,7 @@ export default {
       tts: '文字轉語音',
       ttsTip: '是否用語音轉換播放語音，請先在設定裡面選擇TTS（語音轉換模型）。',
       relatedQuestion: '相關問題',
+      answerTitle: '智慧回答',
     },
     setting: {
       profile: '概述',

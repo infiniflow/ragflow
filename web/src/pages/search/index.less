@@ -93,13 +93,23 @@
     width: 40%;
     padding: 20px 10px 10px;
   }
+
+  .highlightContent {
+    .multipleLineEllipsis(2);
+    em {
+      color: red;
+      font-style: normal;
+    }
+  }
 }
 .answerWrapper {
-  background-color: #e6f4ff;
-  padding: 14px;
   margin-top: 16px;
-  border-radius: 8px;
-  & > p {
+  background: rgb(232 242 251 / 70%);
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08);
+  :global(.ant-card-head) {
+    background-color: #e6f4ff;
+  }
+  & p {
     margin: 0;
   }
 }
