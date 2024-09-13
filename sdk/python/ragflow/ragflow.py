@@ -142,3 +142,15 @@ class RAGFlow:
                 result_list.append(Assistant(self, data))
             return result_list
         raise Exception(res["retmsg"])
+
+    def get_all_datasets(
+            self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True
+    ) -> List[DataSet]:
+        res = self.get("/datasets", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
+        res = res.json()
+        result_list = []
+        if res.get("retmsg") == "success":
+            for data in res['data']:
+                result_list.append(DataSet(self, data))
+            return result_list
+        raise Exception(res["retmsg"])
