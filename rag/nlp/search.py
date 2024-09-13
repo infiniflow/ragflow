@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from rag.settings import es_logger
 from rag.utils import rmSpace
-from rag.nlp import rag_tokenizer, query
+from rag.nlp import rag_tokenizer, query, is_english
 import numpy as np
 
 
@@ -164,7 +164,7 @@ class Dealer:
             ids=self.es.getDocIds(res),
             query_vector=q_vec,
             aggregation=aggs,
-            highlight=self.getHighlight(res),
+            highlight=self.getHighlight(res, keywords, "content_with_weight"),
             field=self.getFields(res, src),
             keywords=list(kwds)
         )
@@ -175,26 +175,28 @@ class Dealer:
         bkts = res["aggregations"]["aggs_" + g]["buckets"]
         return [(b["key"], b["doc_count"]) for b in bkts]
 
-    def getHighlight(self, res):
-        def rmspace(line):
-            eng = set(list("qwertyuioplkjhgfdsazxcvbnm"))
-            r = []
-            for t in line.split(" "):
-                if not t:
-                    continue
-                if len(r) > 0 and len(
-                        t) > 0 and r[-1][-1] in eng and t[0] in eng:
-                    r.append(" ")
-                r.append(t)
-            r = "".join(r)
-            return r
-
+    def getHighlight(self, res, keywords, fieldnm):
         ans = {}
         for d in res["hits"]["hits"]:
             hlts = d.get("highlight")
             if not hlts:
                 continue
-            ans[d["_id"]] = "".join([a for a in list(hlts.items())[0][1]])
+            txt = "...".join([a for a in list(hlts.items())[0][1]])
+            if not is_english(txt.split(" ")):
+                ans[d["_id"]] = txt
+                continue
+
+            txt = d["_source"][fieldnm]
+            txt = re.sub(r"[\r\n]", " ", txt, flags=re.IGNORECASE|re.MULTILINE)
+            txts = []
+            for w in keywords:
+                txt = re.sub(r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])"%re.escape(w), r"\1<em>\2</em>\3", txt, flags=re.IGNORECASE|re.MULTILINE)
+
+            for t in re.split(r"[.?!;\n]", txt):
+                if not re.search(r"<em>[^<>]+</em>", t, flags=re.IGNORECASE|re.MULTILINE): continue
+                txts.append(t)
+            ans[d["_id"]] = "...".join(txts) if txts else "...".join([a for a in list(hlts.items())[0][1]])
+
         return ans
 
     def getFields(self, sres, flds):
