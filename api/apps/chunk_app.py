@@ -261,7 +261,7 @@ def retrieval_test():
     kb_id = req["kb_id"]
     if isinstance(kb_id, str): kb_id = [kb_id]
     doc_ids = req.get("doc_ids", [])
-    similarity_threshold = float(req.get("similarity_threshold", 0.2))
+    similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
 
