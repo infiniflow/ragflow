@@ -177,7 +177,7 @@ const SearchPage = () => {
                                     <div
                                       dangerouslySetInnerHTML={{
                                         __html: DOMPurify.sanitize(
-                                          item.highlight,
+                                          `${item.highlight}...`,
                                         ),
                                       }}
                                       className={styles.highlightContent}
