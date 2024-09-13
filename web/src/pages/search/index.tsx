@@ -22,6 +22,7 @@ import {
   Popover,
   Skeleton,
   Space,
+  Spin,
   Tag,
 } from 'antd';
 import { useMemo, useState } from 'react';
@@ -139,44 +140,45 @@ const SearchPage = () => {
                     onTesting={handleTestChunk}
                   ></RetrievalDocuments>
                   <Divider></Divider>
-                  {chunks.length > 0 && (
-                    <List
-                      dataSource={chunks}
-                      loading={loading}
-                      className={styles.chunks}
-                      renderItem={(item) => (
-                        <List.Item>
-                          <Card
-                            className={styles.card}
-                            onClick={() =>
-                              clickDocumentButton(item.doc_id, item as any)
-                            }
-                          >
-                            <Space>
-                              <ImageWithPopover
-                                id={item.img_id}
-                              ></ImageWithPopover>
-                              <Popover
-                                content={
-                                  <div className={styles.popupMarkdown}>
+                  <Spin spinning={loading}>
+                    {chunks.length > 0 && (
+                      <List
+                        dataSource={chunks}
+                        className={styles.chunks}
+                        renderItem={(item) => (
+                          <List.Item>
+                            <Card
+                              className={styles.card}
+                              onClick={() =>
+                                clickDocumentButton(item.doc_id, item as any)
+                              }
+                            >
+                              <Space>
+                                <ImageWithPopover
+                                  id={item.img_id}
+                                ></ImageWithPopover>
+                                <Popover
+                                  content={
+                                    <div className={styles.popupMarkdown}>
+                                      <HightLightMarkdown>
+                                        {item.content_with_weight}
+                                      </HightLightMarkdown>
+                                    </div>
+                                  }
+                                >
+                                  <div>
                                     <HightLightMarkdown>
-                                      {item.content_with_weight}
+                                      {item.highlight}
                                     </HightLightMarkdown>
                                   </div>
-                                }
-                              >
-                                <div>
-                                  <HightLightMarkdown>
-                                    {item.highlight}
-                                  </HightLightMarkdown>
-                                </div>
-                              </Popover>
-                            </Space>
-                          </Card>
-                        </List.Item>
-                      )}
-                    />
-                  )}
+                                </Popover>
+                              </Space>
+                            </Card>
+                          </List.Item>
+                        )}
+                      />
+                    )}
+                  </Spin>
                   {relatedQuestions?.length > 0 && (
                     <Card title={t('chat.relatedQuestion')}>
                       <Flex wrap="wrap" gap={'10px 0'}>
