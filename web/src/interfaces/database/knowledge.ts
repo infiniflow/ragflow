@@ -100,6 +100,7 @@ export interface ITestingChunk {
   vector: number[];
   vector_similarity: number;
   highlight: string;
+  positions: number[][];
 }
 
 export interface ITestingDocument {

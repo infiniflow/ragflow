@@ -146,7 +146,12 @@ const SearchPage = () => {
                       className={styles.chunks}
                       renderItem={(item) => (
                         <List.Item>
-                          <Card className={styles.card}>
+                          <Card
+                            className={styles.card}
+                            onClick={() =>
+                              clickDocumentButton(item.doc_id, item as any)
+                            }
+                          >
                             <Space>
                               <ImageWithPopover
                                 id={item.img_id}
