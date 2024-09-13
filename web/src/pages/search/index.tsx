@@ -1,3 +1,4 @@
+import FileIcon from '@/components/file-icon';
 import HightLightMarkdown from '@/components/highlight-markdown';
 import { ImageWithPopover } from '@/components/image';
 import IndentedTree from '@/components/indented-tree/indented-tree';
@@ -56,7 +57,6 @@ const SearchPage = () => {
     sendingLoading,
     relatedQuestions,
     mindMap,
-    mindMapLoading,
     searchStr,
     loading,
     isFirstRender,
@@ -74,11 +74,10 @@ const SearchPage = () => {
 
   const isMindMapEmpty = useMemo(() => {
     return (
-      !mindMapLoading &&
-      ((Array.isArray(mindMap?.children) && mindMap.children.length === 0) ||
-        !Array.isArray(mindMap?.children))
+      (Array.isArray(mindMap?.children) && mindMap.children.length === 0) ||
+      !Array.isArray(mindMap?.children)
     );
-  }, [mindMap, mindMapLoading]);
+  }, [mindMap]);
 
   const InputSearch = (
     <Search
@@ -160,34 +159,46 @@ const SearchPage = () => {
                         className={styles.chunks}
                         renderItem={(item) => (
                           <List.Item>
-                            <Card
-                              className={styles.card}
-                              onClick={() =>
-                                clickDocumentButton(item.doc_id, item as any)
-                              }
-                            >
+                            <Card className={styles.card}>
                               <Space>
                                 <ImageWithPopover
                                   id={item.img_id}
                                 ></ImageWithPopover>
-                                <Popover
-                                  content={
-                                    <div className={styles.popupMarkdown}>
-                                      <HightLightMarkdown>
-                                        {item.content_with_weight}
-                                      </HightLightMarkdown>
-                                    </div>
-                                  }
-                                >
-                                  <div
-                                    dangerouslySetInnerHTML={{
-                                      __html: DOMPurify.sanitize(
-                                        item.highlight,
-                                      ),
-                                    }}
-                                    className={styles.highlightContent}
-                                  ></div>
-                                </Popover>
+                                <Flex vertical gap={10}>
+                                  <Popover
+                                    content={
+                                      <div className={styles.popupMarkdown}>
+                                        <HightLightMarkdown>
+                                          {item.content_with_weight}
+                                        </HightLightMarkdown>
+                                      </div>
+                                    }
+                                  >
+                                    <div
+                                      dangerouslySetInnerHTML={{
+                                        __html: DOMPurify.sanitize(
+                                          item.highlight,
+                                        ),
+                                      }}
+                                      className={styles.highlightContent}
+                                    ></div>
+                                  </Popover>
+                                  <Space
+                                    className={styles.documentReference}
+                                    onClick={() =>
+                                      clickDocumentButton(
+                                        item.doc_id,
+                                        item as any,
+                                      )
+                                    }
+                                  >
+                                    <FileIcon
+                                      id={item.img_id}
+                                      name={item.docnm_kwd}
+                                    ></FileIcon>
+                                    {item.docnm_kwd}
+                                  </Space>
+                                </Flex>
                               </Space>
                             </Card>
                           </List.Item>
@@ -220,15 +231,11 @@ const SearchPage = () => {
                 <section
                   className={isMindMapEmpty ? styles.hide : styles.graph}
                 >
-                  {mindMapLoading ? (
-                    <Skeleton active />
-                  ) : (
-                    <IndentedTree
-                      data={mindMap}
-                      show
-                      style={{ width: '100%', height: '100%' }}
-                    ></IndentedTree>
-                  )}
+                  <IndentedTree
+                    data={mindMap}
+                    show
+                    style={{ width: '100%', height: '100%' }}
+                  ></IndentedTree>
                 </section>
               </Flex>
             )}

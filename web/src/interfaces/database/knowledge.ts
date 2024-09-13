@@ -101,6 +101,7 @@ export interface ITestingChunk {
   vector_similarity: number;
   highlight: string;
   positions: number[][];
+  docnm_kwd: string;
 }
 
 export interface ITestingDocument {
