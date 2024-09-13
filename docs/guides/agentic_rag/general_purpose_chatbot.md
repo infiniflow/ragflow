@@ -3,9 +3,9 @@ sidebar_position: 2
 slug: /general_purpose_chatbot
 ---
 
-# Create and configure a chatbot agent
+# Create and configure a general-purpose chatbot agent
 
-Chatbot is one of the most common AI scenarios. However, effectively understanding user queries and responding appropriately remains a challenge. RAGFlow's native chatbot agent is our attempt to tackle this longstanding issue.  
+Chatbot is one of the most common AI scenarios. However, effectively understanding user queries and responding appropriately remains a challenge. RAGFlow's general-purpose chatbot agent is our attempt to tackle this longstanding issue.  
 
 This chatbot closely resembles the chatbot introduced in [Start an AI chat](../start_chat.md), but with a key difference - it introduces a reflective mechanism that allows it to improve the retrieval from the target knowledge bases by rewriting the user's query.
 
@@ -40,24 +40,24 @@ Here’s a breakdown of each component and its role and requirements in the chat
   - Function: Sets the opening greeting for the user.
   - Purpose: Establishes a welcoming atmosphere and prepares the user for interaction.
 
-- **Answer**:
+- **Answer**
   - Function: Serves as the interface between human and the bot.
   - Role: Acts as the downstream component of **Begin**.  
   - Note: Though named "Answer", it does not engage with the LLM.
 
-- **Retrieval**:
+- **Retrieval**
   - Function: Retrieves information from specified knowledge base(s).
   - Requirement: Must have `knowledgebases` set up to function.
 
-- **Relevant**:  
+- **Relevant**
   - Function: Assesses the relevance of the retrieved information from the **Retrieval** component to the user query.
   - Process:  
     - If relevant, it directs the data to the **Generate** component for final response generation.
     - Otherwise, it triggers the **Rewrite** component to refine the user query and redo the retrival process.
 
-- **Generate**: Prompts the LLM to generate responses.  
-  - This is where you control the way in which the LLM responses.  
-  - Ensure you review the prompts and make changes where you see necessary.
+- **Generate**
+  - Function: Prompts the LLM to generate responses based on the retrieved information.  
+  - Note: The prompt settings allow you to control the way in which the LLM generates responses. Be sure to review the prompts and make necessary changes.
 
 - **Rewrite**:  
   - Function: Refines a user query when no relevant information from the knowledge base is retrieved.  
@@ -68,25 +68,35 @@ Here’s a breakdown of each component and its role and requirements in the chat
 1. Click **Begin** to set an opening greeting:  
    ![opener](https://github.com/user-attachments/assets/4416bc16-2a84-4f24-a19b-6dc8b1de0908)
 
-2. Choose 
+2. Click **Retrieval** to select the right knowledge base(s) and make any necessary adjustments:  
+   ![setting_knowledge_bases](https://github.com/user-attachments/assets/5f694820-5651-45bc-afd6-cf580ca0228d)
 
-![loop_time](https://github.com/user-attachments/assets/09a4ce34-7aac-496f-aa59-d8aa33bf0b1f)
-![choose_model](https://github.com/user-attachments/assets/2bac1d6c-c4f1-42ac-997b-102858c3f550)
+3. Click **Generate** to configure the LLM's summarization behavior:  
+   3.1. Confirm the model.  
+   3.2. Review the prompt settings. If there are variables, ensure they match the correct component IDs:  
+   ![prompt_settings](https://github.com/user-attachments/assets/19e94ea7-7f62-4b73-b526-32fcfa62f1e9)
 
+4. Click **Relevant** to review or change its settings:  
+   *You may retain the current settings, but feel free to experiment with changes to understand how the agent operates.*
+   ![relevant_settings](https://github.com/user-attachments/assets/f582cc1c-0dd5-499c-813a-294dbfb941dd)
 
+5. Click **Rewrite** to select a different model for query rewriting or update the maximum loop times for query rewriting:  
+   ![choose_model](https://github.com/user-attachments/assets/2bac1d6c-c4f1-42ac-997b-102858c3f550)
+   ![loop_time](https://github.com/user-attachments/assets/09a4ce34-7aac-496f-aa59-d8aa33bf0b1f)
 
+:::danger NOTE
+Increasing the maximum loop times may significantly extend the time required to receive the final response.
+:::
 
+1. Update your workflow where you see necessary.
 
+2. Click to **Save** to apply your changes.  
+   *Your agent appears as one of the agent cards on the **Agent** page.*
 
-10. Updates your workflow where you see necessary.
+## Test your chatbot agent
 
-11. Click **Save** to save all your changes.
+1. Find your chatbot agent on the **Agent** page:  
+   ![find_chatbot](https://github.com/user-attachments/assets/6e6382c6-9a86-4190-9fdd-e363b7f64ba9)
 
-11. General speaking, now you can do the following:
-   - Drag and drop a desired component to your workflow,
-   - Select the knowledge base to use,
-   - Update settings of specific components,
-   - Update LLM settings
-   - Sets the input and output for a specific component, and more.
-12. Click **Save** to apply changes to your agent and **Run** to test it.
-
+2. Experiment with your questions to verify if this chatbot functions as intended:  
+   ![test_chatbot](https://github.com/user-attachments/assets/c074d3bd-4c39-4b05-a68b-1fd361f256b3)
