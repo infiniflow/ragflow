@@ -19,6 +19,7 @@ import requests
 
 from .modules.assistant import Assistant
 from .modules.dataset import DataSet
+from .modules.document import Document
 
 
 class RAGFlow:
@@ -65,6 +66,19 @@ class RAGFlow:
     def list_datasets(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True) -> \
             List[DataSet]:
         res = self.get("/dataset/list", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
+        res = res.json()
+        result_list = []
+        if res.get("retmsg") == "success":
+            for data in res['data']:
+                result_list.append(DataSet(self, data))
+            return result_list
+        raise Exception(res["retmsg"])
+
+    def get_all_datasets(
+            self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True
+    ) -> List[DataSet]:
+        res = self.get("/datasets",
+                       {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
         res = res.json()
         result_list = []
         if res.get("retmsg") == "success":
@@ -143,14 +157,31 @@ class RAGFlow:
             return result_list
         raise Exception(res["retmsg"])
 
-    def get_all_datasets(
-            self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True
-    ) -> List[DataSet]:
-        res = self.get("/datasets", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
+    def create_document(self, ds: DataSet, name: str, blob: bytes) -> bool:
+        url = f"/doc/dataset/{ds.id}/documents/upload"
+        files = {
+            'file': (name, blob)
+        }
+        data = {
+            'kb_id': ds.id
+        }
+        headers = {
+            'Authorization': f"Bearer {ds.rag.user_key}"
+        }
+
+        response = requests.post(self.api_url + url, data=data, files=files,
+                                 headers=headers)
+
+        if response.status_code == 200 and response.json().get('retmsg') == 'success':
+            return True
+        else:
+            raise Exception(f"Upload failed: {response.json().get('retmsg')}")
+
+        return False
+
+    def get_document(self, id: str = None, name: str = None) -> Document:
+        res = self.get("/doc/infos", {"id": id, "name": name})
         res = res.json()
-        result_list = []
         if res.get("retmsg") == "success":
-            for data in res['data']:
-                result_list.append(DataSet(self, data))
-            return result_list
+            return Document(self, res['data'])
         raise Exception(res["retmsg"])

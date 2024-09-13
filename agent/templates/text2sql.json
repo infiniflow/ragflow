@@ -109,7 +109,7 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
-                            "empty_response": "Nothing found in Q-SQL!"
+                            "empty_response": "Nothing found in Q-SQL!",
                             "kb_ids": [
                                 "31257b925b9f11ef9f0142010a8a0004"
                             ],

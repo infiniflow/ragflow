@@ -100,6 +100,6 @@ wikipedia==1.4.0
 word2number==1.1
 xgboost==2.1.0
 xpinyin==0.7.6
-yfinance==0.2.43
+yfinance==0.1.96
 zhipuai==2.0.1
 apiflask==2.2.1

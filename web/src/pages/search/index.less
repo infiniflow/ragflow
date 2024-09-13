@@ -1,4 +1,6 @@
 .searchPage {
+  background-position: center;
+  background-size: cover;
   .card {
     width: 100%;
     :global(.ant-card-body) {
@@ -13,14 +15,19 @@
     font-size: 14px;
     cursor: pointer;
   }
+
+  .mainLayout {
+    background: transparent;
+  }
+}
+
+.transparentSearchSide {
+  background-color: rgb(251 251 251 / 88%) !important;
 }
 
 .searchSide {
-  // height: calc(100vh - 72px);
   position: relative;
-  // position: fixed !important;
-  // top: 72px;
-  // bottom: 0;
+
   :global(.ant-layout-sider-children) {
     height: auto;
   }
@@ -36,45 +43,75 @@
     height: 100%;
   }
   .list {
+    padding-top: 10px;
     width: 100%;
     // height: 100%;
-    height: calc(100vh - 152px);
+    height: calc(100vh - 76px);
     overflow: auto;
+    background-color: transparent;
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
   }
   .checkbox {
     width: 100%;
   }
   .knowledgeName {
-    width: 130px;
+    width: 116px;
+  }
+  .embeddingId {
+    width: 170px;
   }
 }
 
 .firstRenderContent {
   height: 100%;
-  background-position: center;
-  background-size: cover;
 }
 
 .content {
   height: 100%;
-  .main {
-    width: 60%;
-    // background-color: aqua;
+  .hide {
+    display: none;
+  }
+
+  .mainMixin() {
     overflow: auto;
     padding: 20px 10px 10px;
+  }
+
+  .largeMain {
+    width: 100%;
+    .mainMixin();
+  }
+  .main {
+    width: 60%;
+    .mainMixin();
   }
 
   .graph {
     width: 40%;
     padding: 20px 10px 10px;
   }
+
+  .highlightContent {
+    .multipleLineEllipsis(2);
+    em {
+      color: red;
+      font-style: normal;
+    }
+  }
+  .documentReference {
+    cursor: pointer;
+  }
 }
 .answerWrapper {
-  background-color: #e6f4ff;
-  padding: 14px;
   margin-top: 16px;
-  border-radius: 8px;
-  & > p {
+  background: rgb(232 242 251 / 70%);
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08);
+  :global(.ant-card-head) {
+    background-color: #e6f4ff;
+  }
+  & p {
     margin: 0;
   }
 }
@@ -100,10 +137,16 @@
 
 .globalInput {
   width: 600px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   .input();
 }
 .partialInput {
   width: 100%;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   .input();
 }
 
@@ -137,4 +180,10 @@
   to {
     background-position: 200% center;
   }
+}
+
+.popupMarkdown {
+  width: 60vw;
+  max-height: 40vh;
+  overflow: auto;
 }

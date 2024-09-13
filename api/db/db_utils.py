@@ -17,6 +17,8 @@ import operator
 from functools import reduce
 from typing import Dict, Type, Union
 
+from playhouse.pool import PooledMySQLDatabase
+
 from api.utils import current_timestamp, timestamp_to_date
 
 from api.db.db_models import DB, DataBaseModel
@@ -49,7 +51,10 @@ def bulk_insert_into_db(model, data_source, replace_on_conflict=False):
         with DB.atomic():
             query = model.insert_many(data_source[i:i + batch_size])
             if replace_on_conflict:
-                query = query.on_conflict(preserve=preserve)
+                if isinstance(DB, PooledMySQLDatabase):
+                    query = query.on_conflict(preserve=preserve)
+                else:
+                    query = query.on_conflict(conflict_target="id", preserve=preserve)
             query.execute()
 
 

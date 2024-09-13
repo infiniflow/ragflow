@@ -1,90 +1,160 @@
 import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
-import type { CheckboxProps } from 'antd';
-import { Avatar, Checkbox, Layout, List, Space, Typography } from 'antd';
-import { CheckboxValueType } from 'antd/es/checkbox/Group';
+import { UserOutlined } from '@ant-design/icons';
+import type { TreeDataNode, TreeProps } from 'antd';
+import { Avatar, Layout, Space, Spin, Tree, Typography } from 'antd';
+import classNames from 'classnames';
 import {
   Dispatch,
   SetStateAction,
   useCallback,
   useEffect,
   useMemo,
+  useState,
 } from 'react';
 
-import { UserOutlined } from '@ant-design/icons';
-import { CheckboxChangeEvent } from 'antd/es/checkbox';
 import styles from './index.less';
 
 const { Sider } = Layout;
 
 interface IProps {
+  isFirstRender: boolean;
   checkedList: string[];
   setCheckedList: Dispatch<SetStateAction<string[]>>;
 }
 
-const SearchSidebar = ({ checkedList, setCheckedList }: IProps) => {
+const SearchSidebar = ({
+  isFirstRender,
+  checkedList,
+  setCheckedList,
+}: IProps) => {
   const { list, loading } = useNextFetchKnowledgeList();
-  const ids = useMemo(() => list.map((x) => x.id), [list]);
 
-  const checkAll = list.length === checkedList.length;
+  const groupedList = useMemo(() => {
+    return list.reduce((pre: TreeDataNode[], cur) => {
+      const parentItem = pre.find((x) => x.key === cur.embd_id);
+      const childItem: TreeDataNode = {
+        title: cur.name,
+        key: cur.id,
+        isLeaf: true,
+      };
+      if (parentItem) {
+        parentItem.children?.push(childItem);
+      } else {
+        pre.push({
+          title: cur.embd_id,
+          key: cur.embd_id,
+          isLeaf: false,
+          children: [childItem],
+        });
+      }
 
-  const indeterminate =
-    checkedList.length > 0 && checkedList.length < list.length;
+      return pre;
+    }, []);
+  }, [list]);
 
-  const onChange = useCallback(
-    (list: CheckboxValueType[]) => {
-      setCheckedList(list as string[]);
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+  const [autoExpandParent, setAutoExpandParent] = useState<boolean>(true);
+
+  const onExpand: TreeProps['onExpand'] = (expandedKeysValue) => {
+    // if not set autoExpandParent to false, if children expanded, parent can not collapse.
+    // or, you can remove all expanded children keys.
+    setExpandedKeys(expandedKeysValue);
+    setAutoExpandParent(false);
+  };
+
+  const onCheck: TreeProps['onCheck'] = (checkedKeysValue, info) => {
+    console.log('onCheck', checkedKeysValue, info);
+    const currentCheckedKeysValue = checkedKeysValue as string[];
+
+    let nextSelectedKeysValue: string[] = [];
+    const { isLeaf, checked, key, children } = info.node;
+    if (isLeaf) {
+      const item = list.find((x) => x.id === key);
+      if (!checked) {
+        const embeddingIds = currentCheckedKeysValue
+          .filter((x) => list.some((y) => y.id === x))
+          .map((x) => list.find((y) => y.id === x)?.embd_id);
+
+        if (embeddingIds.some((x) => x !== item?.embd_id)) {
+          nextSelectedKeysValue = [key as string];
+        } else {
+          nextSelectedKeysValue = currentCheckedKeysValue;
+        }
+      } else {
+        nextSelectedKeysValue = currentCheckedKeysValue;
+      }
+    } else {
+      if (!checked) {
+        nextSelectedKeysValue = [
+          key as string,
+          ...(children?.map((x) => x.key as string) ?? []),
+        ];
+      } else {
+        nextSelectedKeysValue = [];
+      }
+    }
+
+    setCheckedList(nextSelectedKeysValue);
+  };
+
+  const onSelect: TreeProps['onSelect'] = (selectedKeysValue, info) => {
+    console.log('onSelect', info);
+
+    setSelectedKeys(selectedKeysValue);
+  };
+
+  const renderTitle = useCallback(
+    (node: TreeDataNode) => {
+      const item = list.find((x) => x.id === node.key);
+      return (
+        <Space>
+          {node.isLeaf && (
+            <Avatar size={24} icon={<UserOutlined />} src={item?.avatar} />
+          )}
+          <Typography.Text
+            ellipsis={{ tooltip: node.title as string }}
+            className={node.isLeaf ? styles.knowledgeName : styles.embeddingId}
+          >
+            {node.title as string}
+          </Typography.Text>
+        </Space>
+      );
     },
-    [setCheckedList],
-  );
-
-  const onCheckAllChange: CheckboxProps['onChange'] = useCallback(
-    (e: CheckboxChangeEvent) => {
-      setCheckedList(e.target.checked ? ids : []);
-    },
-    [ids, setCheckedList],
+    [list],
   );
 
   useEffect(() => {
-    setCheckedList(ids);
-  }, [ids, setCheckedList]);
+    const firstGroup = groupedList[0]?.children?.map((x) => x.key as string);
+    if (firstGroup) {
+      setCheckedList(firstGroup);
+    }
+    setExpandedKeys(groupedList.map((x) => x.key));
+  }, [groupedList, setExpandedKeys, setCheckedList]);
 
   return (
-    <Sider className={styles.searchSide} theme={'light'} width={240}>
-      <Checkbox
-        className={styles.modelForm}
-        indeterminate={indeterminate}
-        onChange={onCheckAllChange}
-        checked={checkAll}
-      >
-        All
-      </Checkbox>
-      <Checkbox.Group
-        className={styles.checkGroup}
-        onChange={onChange}
-        value={checkedList}
-      >
-        <List
-          bordered
-          dataSource={list}
+    <Sider
+      className={classNames(styles.searchSide, {
+        [styles.transparentSearchSide]: isFirstRender,
+      })}
+      theme={'light'}
+      width={240}
+    >
+      <Spin spinning={loading}>
+        <Tree
           className={styles.list}
-          loading={loading}
-          renderItem={(item) => (
-            <List.Item>
-              <Checkbox value={item.id} className={styles.checkbox}>
-                <Space>
-                  <Avatar size={30} icon={<UserOutlined />} src={item.avatar} />
-                  <Typography.Text
-                    ellipsis={{ tooltip: item.name }}
-                    className={styles.knowledgeName}
-                  >
-                    {item.name}
-                  </Typography.Text>
-                </Space>
-              </Checkbox>
-            </List.Item>
-          )}
+          checkable
+          onExpand={onExpand}
+          expandedKeys={expandedKeys}
+          autoExpandParent={autoExpandParent}
+          onCheck={onCheck}
+          checkedKeys={checkedList}
+          onSelect={onSelect}
+          selectedKeys={selectedKeys}
+          treeData={groupedList}
+          titleRender={renderTitle}
         />
-      </Checkbox.Group>
+      </Spin>
     </Sider>
   );
 };

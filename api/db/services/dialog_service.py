@@ -210,7 +210,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
         done_tm = timer()
         prompt += "\n### Elapsed\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms"%((retrieval_tm-st)*1000, (done_tm-st)*1000)
-        return {"answer": answer, "reference": refs, "prompt": re.sub(r"\n", "<br/>", prompt)}
+        return {"answer": answer, "reference": refs, "prompt": prompt}
 
     if stream:
         last_ans = ""
@@ -218,7 +218,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
             answer = ans
             delta_ans = ans[len(last_ans):]
-            if num_tokens_from_string(delta_ans) < 12:
+            if num_tokens_from_string(delta_ans) < 16:
                 continue
             last_ans = answer
             yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
@@ -404,7 +404,6 @@ def rewrite(tenant_id, llm_id, question):
 
 
 def tts(tts_mdl, text):
-    return
     if not tts_mdl or not text: return
     bin = b""
     for chunk in tts_mdl.tts(text):
