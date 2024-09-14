@@ -200,7 +200,7 @@ export default {
       We assume manual has hierarchical section structure. We use the lowest section titles as pivots to slice documents.
       So, the figures and tables in the same section will not be sliced apart, and chunk size might be large.
       </p>`,
-      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>.</p>
+      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
       <p>This method apply the naive ways to chunk files: </p>
       <p>
       <li>Successive text will be sliced into pieces using vision detection model.</li>
