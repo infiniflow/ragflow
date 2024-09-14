@@ -22,10 +22,10 @@ from api.utils.api_utils import server_error_response
 @manager.post('')
 @manager.input(dataset_service.CreateDatasetReq, location='json')
 @manager.auth_required(auth)
-def create_dataset(data):
+def create_dataset(json_data):
     try:
         tenant_id = auth.current_user.id
-        return dataset_service.create_dataset(tenant_id, data)
+        return dataset_service.create_dataset(tenant_id, json_data)
     except Exception as e:
         return server_error_response(e)
 
@@ -33,10 +33,10 @@ def create_dataset(data):
 @manager.put('')
 @manager.input(dataset_service.UpdateDatasetReq, location='json')
 @manager.auth_required(auth)
-def update_dataset(data):
+def update_dataset(json_data):
     try:
         tenant_id = auth.current_user.id
-        return dataset_service.update_dataset(tenant_id, data)
+        return dataset_service.update_dataset(tenant_id, json_data)
     except Exception as e:
         return server_error_response(e)
 
@@ -84,6 +84,6 @@ def get_all_datasets(query_data):
 def delete_dataset(kb_id):
     try:
         tenant_id = auth.current_user.id
-        dataset_service.delete_dataset(tenant_id, kb_id)
+        return dataset_service.delete_dataset(tenant_id, kb_id)
     except Exception as e:
         return server_error_response(e)

@@ -14,9 +14,9 @@
 #  limitations under the License.
 #
 
-from apiflask import Schema, fields
+from apiflask import Schema, fields, validators
 
-from api.db import StatusEnum, FileSource
+from api.db import StatusEnum, FileSource, ParserType
 from api.db.db_models import File
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
@@ -35,6 +35,7 @@ class QueryDatasetReq(Schema):
     orderby = fields.String(load_default='create_time')
     desc = fields.Boolean(load_default=True)
 
+
 class SearchDatasetReq(Schema):
     name = fields.String(required=True)
 
@@ -45,10 +46,14 @@ class CreateDatasetReq(Schema):
 
 class UpdateDatasetReq(Schema):
     kb_id = fields.String(required=True)
-    name = fields.String()
-    description = fields.String()
-    permission = fields.String()
-    parser_id = fields.String()
+    name = fields.String(validate=validators.Length(min=1, max=128))
+    description = fields.String(allow_none=True)
+    permission = fields.String(validate=validators.OneOf(['me', 'team']))
+    embd_id = fields.String(validate=validators.Length(min=1, max=128))
+    language = fields.String(validate=validators.OneOf(['Chinese', 'English']))
+    parser_id = fields.String(validate=validators.OneOf([parser_type.value for parser_type in ParserType]))
+    parser_config = fields.Dict()
+    avatar = fields.String()
 
 
 def get_all_datasets(user_id, offset, count, orderby, desc):
