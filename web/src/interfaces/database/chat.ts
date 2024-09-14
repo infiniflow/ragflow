@@ -6,6 +6,7 @@ export interface PromptConfig {
   parameters: Parameter[];
   prologue: string;
   system: string;
+  tts?: boolean;
 }
 
 export interface Parameter {
