@@ -30,7 +30,7 @@ from werkzeug.wrappers.request import Request
 from api.db import StatusEnum
 from api.db.db_models import close_connection, APIToken
 from api.db.services import UserService
-from api.settings import API_VERSION, access_logger
+from api.settings import API_VERSION, access_logger, RAG_FLOW_SERVICE_NAME
 from api.settings import SECRET_KEY, stat_logger
 from api.utils import CustomJSONEncoder, commands
 from api.utils.api_utils import server_error_response
@@ -43,8 +43,8 @@ for h in access_logger.handlers:
 
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
-app = APIFlask(__name__)
-auth = HTTPTokenAuth()
+app = APIFlask(__name__, title=RAG_FLOW_SERVICE_NAME, version=API_VERSION, docs_path=f'/{API_VERSION}/docs')
+http_token_auth = HTTPTokenAuth()
 
 
 class AuthUser:
@@ -56,7 +56,7 @@ class AuthUser:
         return self.token
 
 
-@auth.verify_token
+@http_token_auth.verify_token
 def verify_token(token: str) -> Union[AuthUser, None]:
     try:
         objs = APIToken.query(token=token)
@@ -109,8 +109,12 @@ def register_page(page_path):
     sys.modules[module_name] = page
     spec.loader.exec_module(page)
     page_name = getattr(page, 'page_name', page_name)
-    url_prefix = f'/api/{API_VERSION}/{page_name}' if "/sdk/" in path or "/apis/" in path \
-        else f'/{API_VERSION}/{page_name}'
+    if "/sdk/" in path or "/apis/" in path:
+        url_prefix = f'/api/{API_VERSION}/{page_name}'
+    # elif "/apis/" in path:
+    #     url_prefix = f'/{API_VERSION}/api/{page_name}'
+    else:
+        url_prefix = f'/{API_VERSION}/{page_name}'
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
     return url_prefix

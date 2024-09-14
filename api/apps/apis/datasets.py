@@ -14,17 +14,17 @@
 #  limitations under the License.
 #
 
-from api.apps import auth
+from api.apps import http_token_auth
 from api.apps.services import dataset_service
-from api.utils.api_utils import server_error_response
+from api.utils.api_utils import server_error_response, http_basic_auth_required
 
 
 @manager.post('')
 @manager.input(dataset_service.CreateDatasetReq, location='json')
-@manager.auth_required(auth)
+@manager.auth_required(http_token_auth)
 def create_dataset(json_data):
     try:
-        tenant_id = auth.current_user.id
+        tenant_id = http_token_auth.current_user.id
         return dataset_service.create_dataset(tenant_id, json_data)
     except Exception as e:
         return server_error_response(e)
@@ -32,20 +32,20 @@ def create_dataset(json_data):
 
 @manager.put('')
 @manager.input(dataset_service.UpdateDatasetReq, location='json')
-@manager.auth_required(auth)
+@manager.auth_required(http_token_auth)
 def update_dataset(json_data):
     try:
-        tenant_id = auth.current_user.id
+        tenant_id = http_token_auth.current_user.id
         return dataset_service.update_dataset(tenant_id, json_data)
     except Exception as e:
         return server_error_response(e)
 
 
 @manager.get('/<string:kb_id>')
-@manager.auth_required(auth)
+@manager.auth_required(http_token_auth)
 def get_dataset_by_id(kb_id):
     try:
-        tenant_id = auth.current_user.id
+        tenant_id = http_token_auth.current_user.id
         return dataset_service.get_dataset_by_id(tenant_id, kb_id)
     except Exception as e:
         return server_error_response(e)
@@ -53,10 +53,10 @@ def get_dataset_by_id(kb_id):
 
 @manager.get('/search')
 @manager.input(dataset_service.SearchDatasetReq, location='query')
-@manager.auth_required(auth)
+@manager.auth_required(http_token_auth)
 def get_dataset_by_name(query_data):
     try:
-        tenant_id = auth.current_user.id
+        tenant_id = http_token_auth.current_user.id
         return dataset_service.get_dataset_by_name(tenant_id, query_data["name"])
     except Exception as e:
         return server_error_response(e)
@@ -64,10 +64,11 @@ def get_dataset_by_name(query_data):
 
 @manager.get('')
 @manager.input(dataset_service.QueryDatasetReq, location='query')
-@manager.auth_required(auth)
+@http_basic_auth_required
+@manager.auth_required(http_token_auth)
 def get_all_datasets(query_data):
     try:
-        tenant_id = auth.current_user.id
+        tenant_id = http_token_auth.current_user.id
         return dataset_service.get_all_datasets(
             tenant_id,
             query_data['page'],
@@ -80,10 +81,10 @@ def get_all_datasets(query_data):
 
 
 @manager.delete('/<string:kb_id>')
-@manager.auth_required(auth)
+@manager.auth_required(http_token_auth)
 def delete_dataset(kb_id):
     try:
-        tenant_id = auth.current_user.id
+        tenant_id = http_token_auth.current_user.id
         return dataset_service.delete_dataset(tenant_id, kb_id)
     except Exception as e:
         return server_error_response(e)

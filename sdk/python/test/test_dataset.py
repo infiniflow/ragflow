@@ -22,12 +22,12 @@ class TestDataset(TestSdk):
         Delete all the datasets.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        listed_data = ragflow.list_datasets()
-        listed_data = listed_data['data']
+        # listed_data = ragflow.list_datasets()
+        # listed_data = listed_data['data']
 
-        listed_names = {d['name'] for d in listed_data}
-        for name in listed_names:
-            print(f'--dataset-- {name}')
+        # listed_names = {d['name'] for d in listed_data}
+        # for name in listed_names:
+        #     print(f'--dataset-- {name}')
             # ragflow.delete_dataset(name)
 
     # -----------------------create_dataset---------------------------------
