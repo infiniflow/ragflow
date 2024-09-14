@@ -429,7 +429,7 @@ export const useSendNextMessage = () => {
     if (
       answer.answer &&
       (answer?.conversationId === conversationId ||
-        (!done && conversationId === ''))
+        ((!done || (done && answer.audio_binary)) && conversationId === ''))
     ) {
       addNewestAnswer(answer);
     }
