@@ -43,10 +43,13 @@ for h in access_logger.handlers:
 
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
+# Integrate APIFlask: Flask class -> APIFlask class.
 app = APIFlask(__name__, title=RAG_FLOW_SERVICE_NAME, version=API_VERSION, docs_path=f'/{API_VERSION}/docs')
+# Integrate APIFlask: Use apiflask.HTTPTokenAuth for the HTTP Bearer or API Keys authentication.
 http_token_auth = HTTPTokenAuth()
 
 
+# Current logged-in user class
 class AuthUser:
     def __init__(self, tenant_id, token):
         self.id = tenant_id
@@ -56,6 +59,7 @@ class AuthUser:
         return self.token
 
 
+# Verify if the token is valid
 @http_token_auth.verify_token
 def verify_token(token: str) -> Union[AuthUser, None]:
     try:
@@ -105,6 +109,7 @@ def register_page(page_path):
     spec = spec_from_file_location(module_name, page_path)
     page = module_from_spec(spec)
     page.app = app
+    # Integrate APIFlask: Blueprint class -> APIBlueprint class
     page.manager = APIBlueprint(page_name, module_name)
     sys.modules[module_name] = page
     spec.loader.exec_module(page)

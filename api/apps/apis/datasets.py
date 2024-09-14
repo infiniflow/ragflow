@@ -23,6 +23,7 @@ from api.utils.api_utils import server_error_response, http_basic_auth_required
 @manager.input(dataset_service.CreateDatasetReq, location='json')
 @manager.auth_required(http_token_auth)
 def create_dataset(json_data):
+    """Creates a new Dataset(Knowledgebase)."""
     try:
         tenant_id = http_token_auth.current_user.id
         return dataset_service.create_dataset(tenant_id, json_data)
@@ -34,6 +35,7 @@ def create_dataset(json_data):
 @manager.input(dataset_service.UpdateDatasetReq, location='json')
 @manager.auth_required(http_token_auth)
 def update_dataset(json_data):
+    """Updates a Dataset(Knowledgebase)."""
     try:
         tenant_id = http_token_auth.current_user.id
         return dataset_service.update_dataset(tenant_id, json_data)
@@ -44,6 +46,7 @@ def update_dataset(json_data):
 @manager.get('/<string:kb_id>')
 @manager.auth_required(http_token_auth)
 def get_dataset_by_id(kb_id):
+    """Query Dataset(Knowledgebase) by Dataset(Knowledgebase) ID."""
     try:
         tenant_id = http_token_auth.current_user.id
         return dataset_service.get_dataset_by_id(tenant_id, kb_id)
@@ -55,6 +58,7 @@ def get_dataset_by_id(kb_id):
 @manager.input(dataset_service.SearchDatasetReq, location='query')
 @manager.auth_required(http_token_auth)
 def get_dataset_by_name(query_data):
+    """Query Dataset(Knowledgebase) by Dataset(Knowledgebase) Name."""
     try:
         tenant_id = http_token_auth.current_user.id
         return dataset_service.get_dataset_by_name(tenant_id, query_data["name"])
@@ -67,6 +71,7 @@ def get_dataset_by_name(query_data):
 @http_basic_auth_required
 @manager.auth_required(http_token_auth)
 def get_all_datasets(query_data):
+    """Query all Datasets(Knowledgebase)"""
     try:
         tenant_id = http_token_auth.current_user.id
         return dataset_service.get_all_datasets(
@@ -83,6 +88,7 @@ def get_all_datasets(query_data):
 @manager.delete('/<string:kb_id>')
 @manager.auth_required(http_token_auth)
 def delete_dataset(kb_id):
+    """Deletes a Dataset(Knowledgebase)."""
     try:
         tenant_id = http_token_auth.current_user.id
         return dataset_service.delete_dataset(tenant_id, kb_id)

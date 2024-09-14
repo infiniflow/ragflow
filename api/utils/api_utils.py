@@ -296,7 +296,7 @@ def http_basic_auth_required(func):
     @wraps(func)
     def decorated_view(*args, **kwargs):
         if 'Authorization' in flask_request.headers:
-            # 如果请求中包含 token，则跳过用户名密码验证
+            # If the request header contains a token, skip username and password verification
             return func(*args, **kwargs)
         if flask_request.method in EXEMPT_METHODS or current_app.config.get("LOGIN_DISABLED"):
             pass
