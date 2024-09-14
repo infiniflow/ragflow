@@ -7,3 +7,4 @@ from .modules.dataset import DataSet
 from .modules.assistant import Assistant
 from .modules.session import Session
 from .modules.document import Document
+from .modules.chunk import Chunk

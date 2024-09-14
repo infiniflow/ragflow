@@ -138,7 +138,7 @@ const SearchSidebar = ({
         [styles.transparentSearchSide]: isFirstRender,
       })}
       theme={'light'}
-      width={240}
+      width={'20%'}
     >
       <Spin spinning={loading}>
         <Tree

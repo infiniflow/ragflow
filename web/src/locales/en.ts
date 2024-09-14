@@ -200,7 +200,7 @@ export default {
       We assume manual has hierarchical section structure. We use the lowest section titles as pivots to slice documents.
       So, the figures and tables in the same section will not be sliced apart, and chunk size might be large.
       </p>`,
-      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>.</p>
+      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
       <p>This method apply the naive ways to chunk files: </p>
       <p>
       <li>Successive text will be sliced into pieces using vision detection model.</li>
@@ -362,9 +362,9 @@ The above is the content you need to summarize.`,
       The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks.
       All the variables in 'System' should be curly bracketed.`,
       add: 'Add',
-      key: 'key',
+      key: 'Key',
       optional: 'Optional',
-      operation: 'operation',
+      operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
       modelMessage: 'Please select!',
@@ -642,7 +642,7 @@ The above is the content you need to summarize.`,
         'Loop is the upper limit of the number of loops of the current component, when the number of loops exceeds the value of loop, it means that the component can not complete the current task, please re-optimize agent',
       yes: 'Yes',
       no: 'No',
-      key: 'key',
+      key: 'Key',
       componentId: 'Component ID',
       add: 'Add',
       operation: 'operation',

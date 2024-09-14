@@ -1,10 +1,10 @@
 import FileIcon from '@/components/file-icon';
 import HightLightMarkdown from '@/components/highlight-markdown';
 import { ImageWithPopover } from '@/components/image';
-import IndentedTree from '@/components/indented-tree/indented-tree';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import RetrievalDocuments from '@/components/retrieval-documents';
+import SvgIcon from '@/components/svg-icon';
 import {
   useNextFetchKnowledgeList,
   useSelectTestingResult,
@@ -15,6 +15,7 @@ import {
   Card,
   Divider,
   Flex,
+  FloatButton,
   Input,
   Layout,
   List,
@@ -25,14 +26,16 @@ import {
   Space,
   Spin,
   Tag,
+  Tooltip,
 } from 'antd';
 import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MarkdownContent from '../chat/markdown-content';
-import { useFetchBackgroundImage, useSendQuestion } from './hooks';
+import { useSendQuestion, useShowMindMapDrawer } from './hooks';
 import styles from './index.less';
+import MindMapDrawer from './mindmap-drawer';
 import SearchSidebar from './sidebar';
 
 const { Content } = Layout;
@@ -56,28 +59,27 @@ const SearchPage = () => {
     answer,
     sendingLoading,
     relatedQuestions,
-    mindMap,
     searchStr,
     loading,
     isFirstRender,
     selectedDocumentIds,
+    isSearchStrEmpty,
   } = useSendQuestion(checkedWithoutEmbeddingIdList);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
-  const imgUrl = useFetchBackgroundImage();
   const { pagination } = useGetPaginationWithRouter();
+  const {
+    mindMapVisible,
+    hideMindMapModal,
+    showMindMapModal,
+    mindMapLoading,
+    mindMap,
+  } = useShowMindMapDrawer(checkedWithoutEmbeddingIdList, searchStr);
 
   const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
     pagination.onChange?.(pageNumber, pageSize);
     handleTestChunk(selectedDocumentIds, pageNumber, pageSize);
   };
-
-  const isMindMapEmpty = useMemo(() => {
-    return (
-      (Array.isArray(mindMap?.children) && mindMap.children.length === 0) ||
-      !Array.isArray(mindMap?.children)
-    );
-  }, [mindMap]);
 
   const InputSearch = (
     <Search
@@ -96,10 +98,7 @@ const SearchPage = () => {
 
   return (
     <>
-      <Layout
-        className={styles.searchPage}
-        style={{ backgroundImage: `url(${imgUrl})` }}
-      >
+      <Layout className={styles.searchPage}>
         <SearchSidebar
           isFirstRender={isFirstRender}
           checkedList={checkedWithoutEmbeddingIdList}
@@ -108,20 +107,14 @@ const SearchPage = () => {
         <Layout className={isFirstRender ? styles.mainLayout : ''}>
           <Content>
             {isFirstRender ? (
-              <Flex
-                justify="center"
-                align="center"
-                className={styles.firstRenderContent}
-              >
+              <Flex justify="center" className={styles.firstRenderContent}>
                 <Flex vertical align="center" gap={'large'}>
                   {InputSearch}
                 </Flex>
               </Flex>
             ) : (
               <Flex className={styles.content}>
-                <section
-                  className={isMindMapEmpty ? styles.largeMain : styles.main}
-                >
+                <section className={styles.main}>
                   {InputSearch}
                   <Card
                     title={
@@ -226,28 +219,43 @@ const SearchPage = () => {
                     {...pagination}
                     total={total}
                     onChange={onChange}
+                    className={styles.pagination}
                   />
-                </section>
-                <section
-                  className={isMindMapEmpty ? styles.hide : styles.graph}
-                >
-                  <IndentedTree
-                    data={mindMap}
-                    show
-                    style={{ width: '100%', height: '100%' }}
-                  ></IndentedTree>
                 </section>
               </Flex>
             )}
           </Content>
         </Layout>
       </Layout>
-      <PdfDrawer
-        visible={visible}
-        hideModal={hideModal}
-        documentId={documentId}
-        chunk={selectedChunk}
-      ></PdfDrawer>
+      {!isFirstRender &&
+        !isSearchStrEmpty &&
+        !isEmpty(checkedWithoutEmbeddingIdList) && (
+          <Tooltip title={t('chunk.mind')} zIndex={1}>
+            <FloatButton
+              className={styles.mindMapFloatButton}
+              onClick={showMindMapModal}
+              icon={
+                <SvgIcon name="paper-clip" width={24} height={30}></SvgIcon>
+              }
+            />
+          </Tooltip>
+        )}
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfDrawer>
+      )}
+      {mindMapVisible && (
+        <MindMapDrawer
+          visible={mindMapVisible}
+          hideModal={hideMindMapModal}
+          data={mindMap}
+          loading={mindMapLoading}
+        ></MindMapDrawer>
+      )}
     </>
   );
 };

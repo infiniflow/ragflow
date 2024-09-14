@@ -16,17 +16,19 @@
     cursor: pointer;
   }
 
-  .mainLayout {
-    background: transparent;
-  }
+  // .mainLayout {
+  //   background: transparent;
+  // }
 }
 
-.transparentSearchSide {
-  background-color: rgb(251 251 251 / 88%) !important;
-}
+// .transparentSearchSide {
+//   background-color: rgb(251 251 251 / 88%) !important;
+// }
 
 .searchSide {
   position: relative;
+  max-width: 400px !important;
+  min-width: auto !important;
 
   :global(.ant-layout-sider-children) {
     height: auto;
@@ -45,19 +47,19 @@
   .list {
     padding-top: 10px;
     width: 100%;
-    // height: 100%;
     height: calc(100vh - 76px);
     overflow: auto;
-    background-color: transparent;
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
+    // background-color: transparent;
+    // &::-webkit-scrollbar-track {
+    //   background: transparent;
+    // }
   }
   .checkbox {
     width: 100%;
   }
   .knowledgeName {
     width: 116px;
+    max-width: 270px;
   }
   .embeddingId {
     width: 170px;
@@ -70,27 +72,17 @@
 
 .content {
   height: 100%;
+  overflow: auto;
+  width: 100%;
+  padding: 20px 16% 10px;
   .hide {
     display: none;
   }
 
-  .mainMixin() {
-    overflow: auto;
-    padding: 20px 10px 10px;
-  }
-
-  .largeMain {
-    width: 100%;
-    .mainMixin();
-  }
   .main {
-    width: 60%;
-    .mainMixin();
-  }
-
-  .graph {
-    width: 40%;
-    padding: 20px 10px 10px;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 1200px;
   }
 
   .highlightContent {
@@ -102,6 +94,9 @@
   }
   .documentReference {
     cursor: pointer;
+  }
+  .pagination {
+    padding-bottom: 16px;
   }
 }
 .answerWrapper {
@@ -122,9 +117,9 @@
     border-start-start-radius: 30px !important;
     border-end-start-radius: 30px !important;
   }
-  :global(.ant-input-group-addon) {
-    background-color: transparent;
-  }
+  // :global(.ant-input-group-addon) {
+  //   background-color: transparent;
+  // }
   input {
     height: 40px;
   }
@@ -138,7 +133,7 @@
 .globalInput {
   width: 600px;
   position: sticky;
-  top: 0;
+  top: 30%;
   z-index: 1;
   .input();
 }
@@ -186,4 +181,13 @@
   width: 60vw;
   max-height: 40vh;
   overflow: auto;
+}
+
+.mindMapFloatButton {
+  top: 20%;
+  width: 60px;
+  height: 60px;
+  :global(.ant-float-btn-content, .ant-float-btn-icon) {
+    width: auto !important;
+  }
 }
