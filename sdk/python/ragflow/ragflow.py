@@ -171,3 +171,50 @@ class RAGFlow:
             return Document(self, res['data'])
         raise Exception(res["retmsg"])
 
+    def async_parse_documents(self, doc_ids):
+        """
+        Asynchronously start parsing multiple documents without waiting for completion.
+
+        :param doc_ids: A list containing multiple document IDs.
+        """
+        try:
+            if not doc_ids or not isinstance(doc_ids, list):
+                raise ValueError("doc_ids must be a non-empty list of document IDs")
+
+            data = {"doc_ids": doc_ids, "run": 1}
+
+            res = self.post(f'/doc/run', data)
+
+            if res.status_code != 200:
+                raise Exception(f"Failed to start async parsing for documents: {res.text}")
+
+            print(f"Async parsing started successfully for documents: {doc_ids}")
+
+        except Exception as e:
+            print(f"Error occurred during async parsing for documents: {str(e)}")
+            raise
+
+    def async_cancel_parse_documents(self, doc_ids):
+        """
+        Cancel the asynchronous parsing of multiple documents.
+
+        :param doc_ids: A list containing multiple document IDs.
+        """
+        try:
+            if not doc_ids or not isinstance(doc_ids, list):
+                raise ValueError("doc_ids must be a non-empty list of document IDs")
+            data = {"doc_ids": doc_ids, "run": 2}
+
+
+            res = self.post(f'/doc/run', data)
+
+            if res.status_code != 200:
+                raise Exception(f"Failed to cancel async parsing for documents: {res.text}")
+
+            print(f"Async parsing canceled successfully for documents: {doc_ids}")
+
+        except Exception as e:
+            print(f"Error occurred during canceling parsing for documents: {str(e)}")
+            raise
+
+
