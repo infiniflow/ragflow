@@ -634,6 +634,7 @@ export default {
       messageDescription:
         '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
+      switchDescription: `该组件用于根据前面组件的输出评估条件，并相应地引导执行流程。通过定义各种情况并指定操作，或在不满足条件时采取默认操作，实现复杂的分支逻辑。`,
       wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
