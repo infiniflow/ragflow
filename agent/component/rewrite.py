@@ -54,7 +54,7 @@ class RewriteQuestion(Generate, ABC):
             setattr(self, "_loop", 0)
         if self._loop >= self._param.loop:
             self._loop = 0
-            raise Exception("Maximum loop time exceeds. Can't find relevant information.")
+            raise Exception("Sorry! Nothing relevant found.")
         self._loop += 1
         q = "Question: "
         for r, c in self._canvas.history[::-1]:
