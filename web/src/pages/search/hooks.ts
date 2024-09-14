@@ -1,4 +1,5 @@
 import { useFetchMindMap, useFetchRelatedQuestions } from '@/hooks/chat-hooks';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { useTestChunkRetrieval } from '@/hooks/knowledge-hooks';
 import {
   useGetPaginationWithRouter,
@@ -7,7 +8,13 @@ import {
 import { IAnswer } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { get, isEmpty, trim } from 'lodash';
-import { ChangeEventHandler, useCallback, useEffect, useState } from 'react';
+import {
+  ChangeEventHandler,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 export const useSendQuestion = (kbIds: string[]) => {
   const { send, answer, done } = useSendMessageWithSse(api.ask);
@@ -16,11 +23,6 @@ export const useSendQuestion = (kbIds: string[]) => {
   const [currentAnswer, setCurrentAnswer] = useState({} as IAnswer);
   const { fetchRelatedQuestions, data: relatedQuestions } =
     useFetchRelatedQuestions();
-  const {
-    fetchMindMap,
-    data: mindMap,
-    loading: mindMapLoading,
-  } = useFetchMindMap();
   const [searchStr, setSearchStr] = useState<string>('');
   const [isFirstRender, setIsFirstRender] = useState(true);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
@@ -43,10 +45,7 @@ export const useSendQuestion = (kbIds: string[]) => {
         page: 1,
         size: pagination.pageSize,
       });
-      fetchMindMap({
-        question: q,
-        kb_ids: kbIds,
-      });
+
       fetchRelatedQuestions(q);
     },
     [
@@ -54,7 +53,6 @@ export const useSendQuestion = (kbIds: string[]) => {
       testChunk,
       kbIds,
       fetchRelatedQuestions,
-      fetchMindMap,
       setPagination,
       pagination.pageSize,
     ],
@@ -117,11 +115,10 @@ export const useSendQuestion = (kbIds: string[]) => {
     sendingLoading,
     answer: currentAnswer,
     relatedQuestions: relatedQuestions?.slice(0, 5) ?? [],
-    mindMap,
-    mindMapLoading,
     searchStr,
     isFirstRender,
     selectedDocumentIds,
+    isSearchStrEmpty: isEmpty(trim(searchStr)),
   };
 };
 
@@ -190,4 +187,52 @@ export const useTestRetrieval = (
     selectedDocumentIds,
     setSelectedDocumentIds,
   };
+};
+
+export const useShowMindMapDrawer = (kbIds: string[], question: string) => {
+  const { visible, showModal, hideModal } = useSetModalState();
+
+  const {
+    fetchMindMap,
+    data: mindMap,
+    loading: mindMapLoading,
+  } = useFetchMindMap();
+
+  const handleShowModal = useCallback(() => {
+    fetchMindMap({ question: trim(question), kb_ids: kbIds });
+    showModal();
+  }, [fetchMindMap, showModal, question, kbIds]);
+
+  return {
+    mindMap,
+    mindMapVisible: visible,
+    mindMapLoading,
+    showMindMapModal: handleShowModal,
+    hideMindMapModal: hideModal,
+  };
+};
+
+export const usePendingMindMap = () => {
+  const [count, setCount] = useState<number>(0);
+  const ref = useRef<NodeJS.Timeout>();
+
+  const setCountInterval = useCallback(() => {
+    ref.current = setInterval(() => {
+      setCount((pre) => {
+        if (pre > 40) {
+          clearInterval(ref?.current);
+        }
+        return pre + 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => {
+    setCountInterval();
+    return () => {
+      clearInterval(ref?.current);
+    };
+  }, [setCountInterval]);
+
+  return Number(((count / 43) * 100).toFixed(0));
 };
