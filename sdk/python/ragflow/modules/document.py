@@ -9,15 +9,15 @@ class Document(Base):
         self.id = ""
         self.name = ""
         self.thumbnail = None
-        self.kb_id = None
+        self.knowledgebase_id = None
         self.parser_method = ""
         self.parser_config = {"pages": [[1, 1000000]]}
         self.source_type = "local"
         self.type = ""
         self.created_by = ""
         self.size = 0
-        self.token_num = 0
-        self.chunk_num = 0
+        self.token_count = 0
+        self.chunk_count = 0
         self.progress = 0.0
         self.progress_msg = ""
         self.process_begin_at = None
@@ -34,10 +34,10 @@ class Document(Base):
         Save the document details to the server.
         """
         res = self.post('/doc/save',
-                        {"id": self.id, "name": self.name, "thumbnail": self.thumbnail, "kb_id": self.kb_id,
+                        {"id": self.id, "name": self.name, "thumbnail": self.thumbnail, "kb_id": self.knowledgebase_id,
                          "parser_id": self.parser_method, "parser_config": self.parser_config.to_json(),
                          "source_type": self.source_type, "type": self.type, "created_by": self.created_by,
-                         "size": self.size, "token_num": self.token_num, "chunk_num": self.chunk_num,
+                         "size": self.size, "token_num": self.token_count, "chunk_num": self.chunk_count,
                          "progress": self.progress, "progress_msg": self.progress_msg,
                          "process_begin_at": self.process_begin_at, "process_duation": self.process_duration
                          })
@@ -177,8 +177,12 @@ class Document(Base):
         if res.status_code == 200:
             res_data = res.json()
             if res_data.get("retmsg") == "success":
-                chunks = res_data["data"]["chunks"]
-                self.chunks = chunks  # Store the chunks in the document instance
+                chunks=[]
+                for chunk_data in res_data["data"].get("chunks", []):
+                    chunk=Chunk(self.rag,chunk_data)
+                    chunks.append(chunk)
+                # chunks = res_data["data"]["chunks"]
+                # self.chunks = chunks  # Store the chunks in the document instance
                 return chunks
             else:
                 raise Exception(f"Error fetching chunks: {res_data.get('retmsg')}")
@@ -188,9 +192,9 @@ class Document(Base):
     def add_chunk(self, content: str):
         res = self.post('/doc/chunk/create', {"doc_id": self.id, "content_with_weight":content})
 
-        # 假设返回的 response 包含 chunk 的信息
         if res.status_code == 200:
-            chunk_data = res.json()
-            return Chunk(self.rag,chunk_data)  # 假设有一个 Chunk 类来处理 chunk 对象
+            res_data = res.json().get("data")
+            chunk_data = res_data.get("chunk")
+            return Chunk(self.rag,chunk_data)
         else:
             raise Exception(f"Failed to add chunk: {res.status_code} {res.text}")
