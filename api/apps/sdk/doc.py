@@ -508,10 +508,11 @@ def create(tenant_id):
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route('/chunk/rm', methods=['POST'])
 @token_required
 @validate_request("chunk_ids", "doc_id")
-def rm():
+def rm_chunk():
     req = request.json
     try:
         if not ELASTICSEARCH.deleteByQuery(
