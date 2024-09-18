@@ -13,15 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import List, Union
+from typing import List
 
 import requests
 
 from .modules.assistant import Assistant
+from .modules.chunk import Chunk
 from .modules.dataset import DataSet
 from .modules.document import Document
-from .modules.chunk import Chunk
-
 
 
 class RAGFlow:
@@ -78,20 +77,32 @@ class RAGFlow:
 
     def get_all_datasets(
             self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True
-    ) -> List[DataSet]:
+    ) -> List:
         res = self.get("/datasets",
                        {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
         res = res.json()
         if res.get("retmsg") == "success":
-            return res['data']
+            return res
         raise Exception(res["retmsg"])
 
-    def get_dataset_by_name(self, name: str) -> List[DataSet]:
+    def get_dataset_by_name(self, name: str) -> List:
         res = self.get("/datasets/search",
                        {"name": name})
         res = res.json()
         if res.get("retmsg") == "success":
-            return res['data']
+            return res
+        raise Exception(res["retmsg"])
+
+    def create_dataset_new(self, name: str) -> dict:
+        res = self.post(
+            "/datasets",
+            {
+                "name": name,
+            }
+        )
+        res = res.json()
+        if res.get("retmsg") == "success":
+            return res
         raise Exception(res["retmsg"])
 
     def change_document_parser(self, doc_id: str, parser_id: str, parser_config: dict):
@@ -105,25 +116,22 @@ class RAGFlow:
         )
         res = res.json()
         if res.get("retmsg") == "success":
-            return res['data']
+            return res
         raise Exception(res["retmsg"])
 
-    def upload_documents_2_dataset(self, kb_id: str, files: Union[dict, List[bytes]]):
-        files_data = {}
-        if isinstance(files, dict):
-            files_data = files
-        elif isinstance(files, list):
-            for idx, file in enumerate(files):
-                files_data[f'file_{idx}'] = file
-        else:
-            files_data['file'] = files
-        data = {
-            'kb_id': kb_id,
-        }
-        res = requests.post(url=self.api_url + "/documents/upload", data=data, files=files_data)
+    def upload_documents_2_dataset(self, kb_id: str, file_paths: list[str]):
+        files = []
+        for file_path in file_paths:
+            with open(file_path, 'rb') as file:
+                file_data = file.read()
+                files.append(('file', (file_path, file_data, 'application/octet-stream')))
+
+        data = {'kb_id': kb_id, }
+        res = requests.post(url=self.api_url + "/documents/upload", headers=self.authorization_header, data=data,
+                            files=files)
         res = res.json()
         if res.get("retmsg") == "success":
-            return res['data']
+            return res
         raise Exception(res["retmsg"])
 
     def documents_run_parsing(self, doc_ids: list):
@@ -131,7 +139,7 @@ class RAGFlow:
                         {"doc_ids": doc_ids})
         res = res.json()
         if res.get("retmsg") == "success":
-            return res['data']
+            return res
         raise Exception(res["retmsg"])
 
     def get_all_documents(
@@ -141,7 +149,7 @@ class RAGFlow:
                        {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
         res = res.json()
         if res.get("retmsg") == "success":
-            return res['data']
+            return res
         raise Exception(res["retmsg"])
 
     def get_dataset(self, id: str = None, name: str = None) -> DataSet:
@@ -344,4 +352,3 @@ class RAGFlow:
         except Exception as e:
             print(f"An error occurred during retrieval: {e}")
             raise
-

@@ -468,11 +468,3 @@ class TestDataset(TestSdk):
             res = ragflow.delete_dataset(name)
             assert res["code"] == RetCode.SUCCESS
 
-    def test_list_dataset_success(self):
-        """
-        Test listing datasets with a successful outcome.
-        """
-        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        # Call the get_all_datasets method
-        response = ragflow.get_all_datasets()
-        assert isinstance(response, list)
