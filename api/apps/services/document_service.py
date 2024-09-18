@@ -51,13 +51,13 @@ class ChangeDocumentParserReq(Schema):
 
 
 class RunParsingReq(Schema):
-    doc_ids = fields.List(required=True)
-    run = fields.Integer(default=1)
+    doc_ids = fields.List(fields.String(), required=True)
+    run = fields.Integer(load_default=1)
 
 
 class UploadDocumentsReq(Schema):
     kb_id = fields.String(required=True)
-    file = fields.File(required=True)
+    file = fields.List(fields.File(), required=True)
 
 
 def get_all_documents(query_data, tenant_id):
