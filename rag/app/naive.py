@@ -76,7 +76,7 @@ class Docx(DocxParser):
                         if last_image:
                             image_list.insert(0, last_image)
                             last_image = None
-                        lines.append((self.__clean(p.text), image_list, p.style.name))
+                        lines.append((self.__clean(p.text), image_list, p.style.name if p.style else ""))
                 else:
                     if current_image := self.get_picture(self.doc, p):
                         if lines:
