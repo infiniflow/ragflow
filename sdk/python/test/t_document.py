@@ -268,6 +268,7 @@ class TestDocument(TestSdk):
         chunk.delete()
         doc = rag.get_document(name='story.txt')
         assert doc.chunk_count == chunk_count_before-1, "Chunk was not deleted"
+       
     def test_update_chunk_content(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name='story.txt')
