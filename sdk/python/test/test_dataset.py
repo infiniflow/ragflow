@@ -22,12 +22,13 @@ class TestDataset(TestSdk):
         Delete all the datasets.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        listed_data = ragflow.list_dataset()
-        listed_data = listed_data['data']
+        # listed_data = ragflow.list_datasets()
+        # listed_data = listed_data['data']
 
-        listed_names = {d['name'] for d in listed_data}
-        for name in listed_names:
-            ragflow.delete_dataset(name)
+        # listed_names = {d['name'] for d in listed_data}
+        # for name in listed_names:
+        #     print(f'--dataset-- {name}')
+            # ragflow.delete_dataset(name)
 
     # -----------------------create_dataset---------------------------------
     def test_create_dataset_with_success(self):
@@ -146,7 +147,7 @@ class TestDataset(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         # Call the list_datasets method
-        response = ragflow.list_dataset()
+        response = ragflow.list_datasets()
         assert response['code'] == RetCode.SUCCESS
 
     def test_list_dataset_with_checking_size_and_name(self):
@@ -163,7 +164,7 @@ class TestDataset(TestSdk):
             dataset_name = response['data']['dataset_name']
             real_name_to_create.add(dataset_name)
 
-        response = ragflow.list_dataset(0, 3)
+        response = ragflow.list_datasets(0, 3)
         listed_data = response['data']
 
         listed_names = {d['name'] for d in listed_data}
@@ -185,7 +186,7 @@ class TestDataset(TestSdk):
             dataset_name = response['data']['dataset_name']
             real_name_to_create.add(dataset_name)
 
-        response = ragflow.list_dataset(0, 0)
+        response = ragflow.list_datasets(0, 0)
         listed_data = response['data']
 
         listed_names = {d['name'] for d in listed_data}
@@ -208,7 +209,7 @@ class TestDataset(TestSdk):
             dataset_name = response['data']['dataset_name']
             real_name_to_create.add(dataset_name)
 
-        res = ragflow.list_dataset(0, 100)
+        res = ragflow.list_datasets(0, 100)
         listed_data = res['data']
 
         listed_names = {d['name'] for d in listed_data}
@@ -221,7 +222,7 @@ class TestDataset(TestSdk):
         Test listing one dataset and verify the size of the dataset.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        response = ragflow.list_dataset(0, 1)
+        response = ragflow.list_datasets(0, 1)
         datasets = response['data']
         assert len(datasets) == 1 and response['code'] == RetCode.SUCCESS
 
@@ -230,7 +231,7 @@ class TestDataset(TestSdk):
         Test listing datasets with IndexError.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        response = ragflow.list_dataset(-1, -1)
+        response = ragflow.list_datasets(-1, -1)
         assert "IndexError" in response['message'] and response['code'] == RetCode.EXCEPTION_ERROR
 
     def test_list_dataset_for_empty_datasets(self):
@@ -238,7 +239,7 @@ class TestDataset(TestSdk):
         Test listing datasets when the datasets are empty.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        response = ragflow.list_dataset()
+        response = ragflow.list_datasets()
         datasets = response['data']
         assert len(datasets) == 0 and response['code'] == RetCode.SUCCESS
 
@@ -263,7 +264,8 @@ class TestDataset(TestSdk):
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
         res = ragflow.delete_dataset("weird_dataset")
-        assert res['code'] == RetCode.OPERATING_ERROR and res['message'] == 'The dataset cannot be found for your current account.'
+        assert res['code'] == RetCode.OPERATING_ERROR and res[
+            'message'] == 'The dataset cannot be found for your current account.'
 
     def test_delete_dataset_with_creating_100_datasets_and_deleting_100_datasets(self):
         """
@@ -346,7 +348,7 @@ class TestDataset(TestSdk):
         assert (res['code'] == RetCode.OPERATING_ERROR
                 and res['message'] == 'The dataset cannot be found for your current account.')
 
-# ---------------------------------get_dataset-----------------------------------------
+    # ---------------------------------get_dataset-----------------------------------------
 
     def test_get_dataset_with_success(self):
         """
@@ -366,7 +368,7 @@ class TestDataset(TestSdk):
         res = ragflow.get_dataset("weird_dataset")
         assert res['code'] == RetCode.DATA_ERROR and res['message'] == "Can't find this dataset!"
 
-# ---------------------------------update a dataset-----------------------------------
+    # ---------------------------------update a dataset-----------------------------------
 
     def test_update_dataset_without_existing_dataset(self):
         """
@@ -435,7 +437,7 @@ class TestDataset(TestSdk):
         assert (res['code'] == RetCode.DATA_ERROR
                 and res['message'] == 'Please input at least one parameter that you want to update!')
 
-# ---------------------------------mix the different methods--------------------------
+    # ---------------------------------mix the different methods--------------------------
 
     def test_create_and_delete_dataset_together(self):
         """
@@ -466,3 +468,11 @@ class TestDataset(TestSdk):
             res = ragflow.delete_dataset(name)
             assert res["code"] == RetCode.SUCCESS
 
+    def test_list_dataset_success(self):
+        """
+        Test listing datasets with a successful outcome.
+        """
+        ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
+        # Call the get_all_datasets method
+        response = ragflow.get_all_datasets()
+        assert isinstance(response, list)

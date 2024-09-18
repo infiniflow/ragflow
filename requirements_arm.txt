@@ -173,3 +173,4 @@ yfinance==0.1.96
 pywencai==0.12.2
 akshare==1.14.72
 ranx==0.3.20
+apiflask==2.2.1

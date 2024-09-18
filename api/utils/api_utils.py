@@ -27,8 +27,10 @@ from uuid import uuid1
 import requests
 from flask import (
     Response, jsonify, send_file, make_response,
-    request as flask_request,
+    request as flask_request, current_app,
 )
+from flask_login import current_user
+from flask_login.config import EXEMPT_METHODS
 from werkzeug.http import HTTP_STATUS_CODES
 
 from api.db.db_models import APIToken
@@ -288,3 +290,21 @@ def token_required(func):
         return func(*args, **kwargs)
 
     return decorated_function
+
+
+def http_basic_auth_required(func):
+    @wraps(func)
+    def decorated_view(*args, **kwargs):
+        if 'Authorization' in flask_request.headers:
+            # If the request header contains a token, skip username and password verification
+            return func(*args, **kwargs)
+        if flask_request.method in EXEMPT_METHODS or current_app.config.get("LOGIN_DISABLED"):
+            pass
+        elif not current_user.is_authenticated:
+            return current_app.login_manager.unauthorized()
+
+        if callable(getattr(current_app, "ensure_sync", None)):
+            return current_app.ensure_sync(func)(*args, **kwargs)
+        return func(*args, **kwargs)
+
+    return decorated_view
