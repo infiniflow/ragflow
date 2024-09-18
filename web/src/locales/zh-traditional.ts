@@ -616,6 +616,7 @@ export default {
       messageDescription:
         '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
       keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
+      switchDescription: `該組件用於根據前面組件的輸出評估條件，並相應地引導執行流程。通過定義各種情況並指定操作，或在不滿足條件時採取默認操作，實現複雜的分支邏輯。`,
       wikipediaDescription: `此元件用於從 https://www.wikipedia.org/ 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。`,
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}

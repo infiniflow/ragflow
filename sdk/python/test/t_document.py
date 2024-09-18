@@ -41,6 +41,7 @@ class TestDocument(TestSdk):
     def test_update_document_with_success(self):
         """
         Test updating a document with success.
+        Update name or parser_method are supported
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name="TestDocument.txt")
@@ -60,7 +61,7 @@ class TestDocument(TestSdk):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
 
         # Retrieve a document
-        doc = rag.get_document(name="TestDocument.txt")
+        doc = rag.get_document(name="manual.txt")
 
         # Check if the retrieved document is of type Document
         if isinstance(doc, Document):
@@ -147,14 +148,16 @@ class TestDocument(TestSdk):
         ds = rag.create_dataset(name="God4")
 
         # Define the document name and path
-        name3 = 'ai.pdf'
-        path = 'test_data/ai.pdf'
+        name3 = 'westworld.pdf'
+        path = 'test_data/westworld.pdf'
+
 
         # Create a document in the dataset using the file path
         rag.create_document(ds, name=name3, blob=open(path, "rb").read())
 
         # Retrieve the document by name
-        doc = rag.get_document(name="ai.pdf")
+        doc = rag.get_document(name="westworld.pdf")
+
 
         # Initiate asynchronous parsing
         doc.async_parse()
@@ -185,9 +188,9 @@ class TestDocument(TestSdk):
 
         # Prepare a list of file names and paths
         documents = [
-            {'name': 'ai1.pdf', 'path': 'test_data/ai1.pdf'},
-            {'name': 'ai2.pdf', 'path': 'test_data/ai2.pdf'},
-            {'name': 'ai3.pdf', 'path': 'test_data/ai3.pdf'}
+            {'name': 'test1.txt', 'path': 'test_data/test1.txt'},
+            {'name': 'test2.txt', 'path': 'test_data/test2.txt'},
+            {'name': 'test3.txt', 'path': 'test_data/test3.txt'}
         ]
 
         # Create documents in bulk
@@ -248,6 +251,7 @@ class TestDocument(TestSdk):
             print(c)
             assert c is not None, "Chunk is None"
             assert "rag" in c['content_with_weight'].lower(), f"Keyword 'rag' not found in chunk content: {c.content}"
+
     def test_add_chunk_to_chunk_list(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name='story.txt')
@@ -258,12 +262,44 @@ class TestDocument(TestSdk):
     def test_delete_chunk_of_chunk_list(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name='story.txt')
-
         chunk = doc.add_chunk(content="assss")
         assert chunk is not None, "Chunk is None"
         assert isinstance(chunk, Chunk), "Chunk was not added to chunk list"
-        chunk_num_before=doc.chunk_num
+        doc = rag.get_document(name='story.txt')
+        chunk_count_before=doc.chunk_count
         chunk.delete()
-        assert doc.chunk_num == chunk_num_before-1, "Chunk was not deleted"
-
-
+        doc = rag.get_document(name='story.txt')
+        assert doc.chunk_count == chunk_count_before-1, "Chunk was not deleted"
+       
+    def test_update_chunk_content(self):
+        rag = RAGFlow(API_KEY, HOST_ADDRESS)
+        doc = rag.get_document(name='story.txt')
+        chunk = doc.add_chunk(content="assssd")
+        assert chunk is not None, "Chunk is None"
+        assert isinstance(chunk, Chunk), "Chunk was not added to chunk list"
+        chunk.content = "ragflow123"
+        res=chunk.save()
+        assert res is True, f"Failed to update chunk, error: {res}"
+        
+    def test_retrieval_chunks(self):
+        rag = RAGFlow(API_KEY, HOST_ADDRESS)
+        ds = rag.create_dataset(name="God8")
+        name = 'ragflow_test.txt'
+        path = 'test_data/ragflow_test.txt'
+        rag.create_document(ds, name=name, blob=open(path, "rb").read())
+        doc = rag.get_document(name=name)
+        doc.async_parse()
+        # Wait for parsing to complete and get progress updates using join
+        for progress, msg in doc.join(interval=5, timeout=30):
+            print(progress, msg)
+            assert 0 <= progress <= 100, f"Invalid progress: {progress}"
+            assert msg, "Message should not be empty"
+        for c in rag.retrieval(question="What's ragflow?",
+                               datasets=[ds.id], documents=[doc],
+                               offset=0, limit=6, similarity_threshold=0.1,
+                               vector_similarity_weight=0.3,
+                               top_k=1024
+                               ):
+            print(c)
+            assert c is not None, "Chunk is None"
+            assert "ragflow" in c.content.lower(), f"Keyword 'rag' not found in chunk content: {c.content}"

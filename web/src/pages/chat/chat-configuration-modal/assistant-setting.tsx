@@ -1,14 +1,17 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { Form, Input, Select, Switch, Upload } from 'antd';
+import { Form, Input, message, Select, Switch, Upload } from 'antd';
 import classNames from 'classnames';
 import { ISegmentedContentProps } from '../interface';
 
 import KnowledgeBaseItem from '@/components/knowledge-base-item';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+import { useCallback } from 'react';
 import styles from './index.less';
 
-const AssistantSetting = ({ show }: ISegmentedContentProps) => {
+const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
   const { t } = useTranslate('chat');
+  const { data } = useFetchTenantInfo();
 
   const normFile = (e: any) => {
     if (Array.isArray(e)) {
@@ -16,6 +19,17 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
     }
     return e?.fileList;
   };
+
+  const handleTtsChange = useCallback(
+    (checked: boolean) => {
+      if (checked && !data.tts_id) {
+        message.error(`Please set TTS model firstly. 
+        Setting >> Model Providers >> System model settings`);
+        form.setFieldValue(['prompt_config', 'tts'], false);
+      }
+    },
+    [data, form],
+  );
 
   const uploadButtion = (
     <button style={{ border: 0, background: 'none' }} type="button">
@@ -106,7 +120,7 @@ const AssistantSetting = ({ show }: ISegmentedContentProps) => {
         tooltip={t('ttsTip')}
         initialValue={false}
       >
-        <Switch />
+        <Switch onChange={handleTtsChange} />
       </Form.Item>
       <KnowledgeBaseItem></KnowledgeBaseItem>
     </section>

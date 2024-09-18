@@ -329,7 +329,7 @@ The above is the content you need to summarize.`,
       chat: 'Chat',
       newChat: 'New chat',
       send: 'Send',
-      sendPlaceholder: 'Message Resume Assistant...',
+      sendPlaceholder: 'Message the Assistant...',
       chatConfiguration: 'Chat Configuration',
       chatConfigurationDescription:
         ' Here, dress up a dedicated assistant for your special knowledge bases! 💕',
@@ -659,6 +659,7 @@ The above is the content you need to summarize.`,
       messageDescription:
         "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Answer', the interface component.",
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
+      switchDescription: `A component that evaluates conditions based on the output of previous components and directs the flow of execution accordingly. It allows for complex branching logic by defining cases and specifying actions for each case or default action if no conditions are met.`,
       wikipediaDescription: `This component is used to get search result from wikipedia.org. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.`,
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
         {input}
