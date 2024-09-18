@@ -1,56 +1,90 @@
-FROM ubuntu:22.04
+# base stage
+FROM ubuntu:24.04 AS base
 USER root
 
 WORKDIR /ragflow
 
-RUN apt-get update && apt-get install -y wget curl build-essential libopenmpi-dev
+RUN rm -f /etc/apt/apt.conf.d/docker-clean \
+    && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
-    bash ~/miniconda.sh -b -p /root/miniconda3 && \
-    rm ~/miniconda.sh && ln -s /root/miniconda3/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    echo ". /root/miniconda3/etc/profile.d/conda.sh" >> ~/.bashrc && \
-    echo "conda activate base" >> ~/.bashrc
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt update && apt-get --no-install-recommends install -y ca-certificates
 
-ENV PATH /root/miniconda3/bin:$PATH
+# if you located in China, you can use tsinghua mirror to speed up apt
+RUN  sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources
 
-RUN conda create -y --name py11 python=3.11
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt update && apt install -y curl libpython3-dev nginx openmpi-bin openmpi-common libopenmpi-dev libglib2.0-0 libglx-mesa0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -sSL https://install.python-poetry.org | python3 -
 
-ENV CONDA_DEFAULT_ENV py11
-ENV CONDA_PREFIX /root/miniconda3/envs/py11
-ENV PATH $CONDA_PREFIX/bin:$PATH
+ENV PYTHONDONTWRITEBYTECODE=1 LD_LIBRARY_PATH=usr/lib/x86_64-linux-gnu/openmpi/lib:$LD_LIBRARY_PATH
 
-RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
-RUN apt-get install -y nodejs
+# Configure Poetry
+ENV POETRY_NO_INTERACTION=1
+ENV POETRY_VIRTUALENVS_IN_PROJECT=true
+ENV POETRY_VIRTUALENVS_CREATE=true
+ENV POETRY_REQUESTS_TIMEOUT=15
 
-RUN apt-get install -y nginx
+# builder stage
+FROM base AS builder
+USER root
 
-ADD ./web ./web
-ADD ./api ./api
-ADD ./conf ./conf
-ADD ./deepdoc ./deepdoc
-ADD ./rag ./rag
-ADD ./requirements.txt ./requirements.txt
-ADD ./agent ./agent
-ADD ./graphrag ./graphrag
+WORKDIR /ragflow
 
-RUN apt install openmpi-bin openmpi-common libopenmpi-dev
-ENV LD_LIBRARY_PATH /usr/lib/x86_64-linux-gnu/openmpi/lib:$LD_LIBRARY_PATH
-RUN rm /root/miniconda3/envs/py11/compiler_compat/ld
-RUN cd ./web && npm i --force && npm run build
-RUN conda run -n py11 pip install -i https://mirrors.aliyun.com/pypi/simple/ -r ./requirements.txt
-
-RUN apt-get update && \
-    apt-get install -y libglib2.0-0 libgl1-mesa-glx && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt update && apt install -y nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 
-RUN conda run -n py11 pip install -i https://mirrors.aliyun.com/pypi/simple/ ollama
-RUN conda run -n py11 python -m nltk.downloader punkt
-RUN conda run -n py11 python -m nltk.downloader wordnet
+# if you located in China, you can use taobao registry to speed up npm and yarn
+RUN npm config set registry https://registry.npmmirror.com/
 
-ENV PYTHONPATH=/ragflow/
-ENV HF_ENDPOINT=https://hf-mirror.com
+# https://yarnpkg.com/getting-started/install
+COPY web web
+RUN cd web && npm install -g corepack && corepack enable && yarn install && yarn run build
 
-ADD docker/entrypoint.sh ./entrypoint.sh
+# install dependencies from poetry.lock file
+COPY pyproject.toml poetry.toml poetry.lock ./
+RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
+    /root/.local/bin/poetry install --sync --no-cache --no-root
+
+# production stage
+FROM base AS production
+USER root
+
+WORKDIR /ragflow
+
+# Install python packages' dependencies
+# cv2 requires libGL.so.1
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt update && apt install -y --no-install-recommends nginx libgl1 vim less && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY web web
+COPY api api
+COPY conf conf
+COPY deepdoc deepdoc
+COPY rag rag
+COPY agent agent
+COPY graphrag graphrag
+
+# Copy compiled web pages
+COPY --from=builder /ragflow/web/dist /ragflow/web/dist
+
+# Copy Python environment and packages
+ENV VIRTUAL_ENV=/ragflow/.venv
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+# Download nltk data
+RUN python3 -m nltk.downloader wordnet punkt punkt_tab
+
+# Copy models downloaded via download_deps.sh
+COPY det.onnx layout.laws.onnx layout.manual.onnx layout.onnx layout.paper.onnx ocr.res rec.onnx tsr.onnx updown_concat_xgb.model /ragflow/rag/res/deepdoc/
+
+ENV PYTHONPATH=/ragflow/ HF_ENDPOINT=https://hf-mirror.com
+
+COPY docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
 ENTRYPOINT ["./entrypoint.sh"]

@@ -15,6 +15,7 @@ services:
       - ${SVR_HTTP_PORT}:9380
       - 80:80
       - 443:443
+      - 5678:5678
     volumes:
       - ./service_conf.yaml:/ragflow/conf/service_conf.yaml
       - ./ragflow-logs:/ragflow/logs
