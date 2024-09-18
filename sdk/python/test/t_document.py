@@ -249,6 +249,7 @@ class TestDocument(TestSdk):
             print(c)
             assert c is not None, "Chunk is None"
             assert "rag" in c['content_with_weight'].lower(), f"Keyword 'rag' not found in chunk content: {c.content}"
+
     def test_add_chunk_to_chunk_list(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name='story.txt')
