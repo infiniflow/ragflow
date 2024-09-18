@@ -27,7 +27,7 @@ from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db.services.document_service import DocumentService
@@ -141,8 +141,7 @@ def set():
             return get_data_error_result(retmsg="Tenant not found!")
 
         embd_id = DocumentService.get_embd_id(req["doc_id"])
-        embd_mdl = TenantLLMService.model_instance(
-            tenant_id, LLMType.EMBEDDING.value, embd_id)
+        embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_id)
 
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
@@ -235,8 +234,7 @@ def create():
             return get_data_error_result(retmsg="Tenant not found!")
 
         embd_id = DocumentService.get_embd_id(req["doc_id"])
-        embd_mdl = TenantLLMService.model_instance(
-            tenant_id, LLMType.EMBEDDING.value, embd_id)
+        embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)
 
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1]
@@ -281,16 +279,14 @@ def retrieval_test():
         if not e:
             return get_data_error_result(retmsg="Knowledgebase not found!")
 
-        embd_mdl = TenantLLMService.model_instance(
-            kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
         rerank_mdl = None
         if req.get("rerank_id"):
-            rerank_mdl = TenantLLMService.model_instance(
-                kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
 
         if req.get("keyword", False):
-            chat_mdl = TenantLLMService.model_instance(kb.tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
         retr = retrievaler if kb.parser_id != ParserType.KG else kg_retrievaler
