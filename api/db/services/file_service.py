@@ -357,7 +357,7 @@ class FileService(CommonService):
                 doc = {
                     "id": get_uuid(),
                     "kb_id": kb.id,
-                    "parser_id": kb.parser_id,
+                    "parser_id": self.get_parser(filetype, filename, kb.parser_id),
                     "parser_config": kb.parser_config,
                     "created_by": user_id,
                     "type": filetype,
@@ -366,7 +366,6 @@ class FileService(CommonService):
                     "size": len(blob),
                     "thumbnail": thumbnail(filename, blob)
                 }
-                self.set_constant_parser(doc, filename)
                 DocumentService.insert(doc)
 
                 FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
@@ -377,12 +376,13 @@ class FileService(CommonService):
         return err, files
 
     @staticmethod
-    def set_constant_parser(doc, filename):
-        if doc["type"] == FileType.VISUAL:
-            doc["parser_id"] = ParserType.PICTURE.value
-        if doc["type"] == FileType.AURAL:
-            doc["parser_id"] = ParserType.AUDIO.value
+    def get_parser(doc_type, filename, default):
+        if doc_type == FileType.VISUAL:
+            return ParserType.PICTURE.value
+        if doc_type == FileType.AURAL:
+            return ParserType.AUDIO.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):
-            doc["parser_id"] = ParserType.PRESENTATION.value
+            return ParserType.PRESENTATION.value
         if re.search(r"\.(eml)$", filename):
-            doc["parser_id"] = ParserType.EMAIL.value
+            return ParserType.EMAIL.value
+        return default
