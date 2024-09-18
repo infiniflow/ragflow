@@ -95,7 +95,12 @@ export const useSetNextDialog = () => {
     mutationFn: async (params: IDialog) => {
       const { data } = await chatService.setDialog(params);
       if (data.retcode === 0) {
-        queryClient.invalidateQueries({ queryKey: ['fetchDialogList'] });
+        queryClient.invalidateQueries({
+          queryKey: ['fetchDialogList'],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ['fetchDialog'],
+        });
         message.success(
           i18n.t(`message.${params.dialog_id ? 'modified' : 'created'}`),
         );
@@ -110,7 +115,11 @@ export const useSetNextDialog = () => {
 export const useFetchNextDialog = () => {
   const { dialogId } = useGetChatSearchParams();
 
-  const { data, isFetching: loading } = useQuery<IDialog>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IDialog>({
     queryKey: ['fetchDialog', dialogId],
     gcTime: 0,
     initialData: {} as IDialog,
@@ -123,7 +132,7 @@ export const useFetchNextDialog = () => {
     },
   });
 
-  return { data, loading };
+  return { data, loading, refetch };
 };
 
 export const useFetchManualDialog = () => {

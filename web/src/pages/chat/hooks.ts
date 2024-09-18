@@ -32,6 +32,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useSearchParams } from 'umi';
@@ -340,6 +341,17 @@ export const useSendNextMessage = () => {
     removeMessageById,
     removeMessagesAfterCurrentMessage,
   } = useSelectNextMessages();
+  const { data: dialog } = useFetchNextDialog();
+  const currentConversationIdRef = useRef<string>('');
+
+  const redirectToNewConversation = useCallback(
+    (isPlaying: boolean) => {
+      if (!conversationId && dialog?.prompt_config?.tts && !isPlaying) {
+        handleClickConversation(currentConversationIdRef.current);
+      }
+    },
+    [dialog, handleClickConversation, conversationId],
+  );
 
   const sendMessage = useCallback(
     async ({
@@ -365,7 +377,9 @@ export const useSendNextMessage = () => {
         if (currentConversationId) {
           console.info('111');
           // new conversation
-          handleClickConversation(currentConversationId);
+          if (!dialog?.prompt_config?.tts) {
+            handleClickConversation(currentConversationId);
+          }
         } else {
           console.info('222');
           // fetchConversation(conversationId);
@@ -373,6 +387,7 @@ export const useSendNextMessage = () => {
       }
     },
     [
+      dialog,
       derivedMessages,
       conversationId,
       handleClickConversation,
@@ -390,6 +405,7 @@ export const useSendNextMessage = () => {
         const data = await setConversation(message.content);
         if (data.retcode === 0) {
           const id = data.data.id;
+          currentConversationIdRef.current = id;
           sendMessage({
             message,
             currentConversationId: id,
@@ -413,7 +429,7 @@ export const useSendNextMessage = () => {
     if (
       answer.answer &&
       (answer?.conversationId === conversationId ||
-        (!done && conversationId === ''))
+        ((!done || (done && answer.audio_binary)) && conversationId === ''))
     ) {
       addNewestAnswer(answer);
     }
@@ -463,6 +479,7 @@ export const useSendNextMessage = () => {
     ref,
     derivedMessages,
     removeMessageById,
+    redirectToNewConversation,
   };
 };
 

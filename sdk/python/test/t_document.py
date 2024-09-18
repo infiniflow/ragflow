@@ -151,11 +151,13 @@ class TestDocument(TestSdk):
         name3 = 'westworld.pdf'
         path = 'test_data/westworld.pdf'
 
+
         # Create a document in the dataset using the file path
         rag.create_document(ds, name=name3, blob=open(path, "rb").read())
 
         # Retrieve the document by name
         doc = rag.get_document(name="westworld.pdf")
+
 
         # Initiate asynchronous parsing
         doc.async_parse()

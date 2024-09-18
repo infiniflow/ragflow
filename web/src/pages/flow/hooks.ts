@@ -31,6 +31,7 @@ import {
   Operator,
   RestrictedUpstreamMap,
   SwitchElseTo,
+  initialAkShareValues,
   initialArXivValues,
   initialBaiduFanyiValues,
   initialBaiduValues,
@@ -52,6 +53,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialWenCaiValues,
   initialWikipediaValues,
 } from './constant';
 import { ICategorizeForm, IRelevantForm, ISwitchForm } from './interface';
@@ -113,6 +115,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.QWeather]: initialQWeatherValues,
       [Operator.ExeSQL]: initialExeSqlValues,
       [Operator.Switch]: initialSwitchValues,
+      [Operator.WenCai]: initialWenCaiValues,
+      [Operator.AkShare]: initialAkShareValues,
     };
   }, [llmId]);
 

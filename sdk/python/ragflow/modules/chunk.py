@@ -47,3 +47,4 @@ class Chunk(Base):
         if res.get("retmsg") == "success":
             return True
         raise Exception(res["retmsg"])
+

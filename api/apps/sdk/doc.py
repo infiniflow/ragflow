@@ -259,7 +259,7 @@ def rename():
                 req["doc_id"], {"name": req["name"]}):
             return get_data_error_result(
                 retmsg="Database error (Document rename)!")
-
+          
         informs = File2DocumentService.get_by_document_id(req["doc_id"])
         if informs:
             e, file = FileService.get_by_id(informs[0].file_id)
@@ -463,6 +463,7 @@ def list_chunk(tenant_id):
             query["available_int"] = int(req["available_int"])
         sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
+
         origin_chunks=[]
         for id in sres.ids:
             d = {
@@ -483,6 +484,7 @@ def list_chunk(tenant_id):
                     poss.append([float(d["positions"][i]), float(d["positions"][i + 1]), float(d["positions"][i + 2]),
                                  float(d["positions"][i + 3]), float(d["positions"][i + 4])])
                 d["positions"] = poss
+                
             origin_chunks.append(d)
             ##rename keys
             for chunk in origin_chunks:
@@ -512,6 +514,7 @@ def create(tenant_id):
     req = request.json
     md5 = hashlib.md5()
     md5.update((req["content_with_weight"] + req["doc_id"]).encode("utf-8"))
+
     chunk_id = md5.hexdigest()
     d = {"id": chunk_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
          "content_with_weight": req["content_with_weight"]}

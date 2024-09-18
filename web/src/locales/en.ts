@@ -200,7 +200,7 @@ export default {
       We assume manual has hierarchical section structure. We use the lowest section titles as pivots to slice documents.
       So, the figures and tables in the same section will not be sliced apart, and chunk size might be large.
       </p>`,
-      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>.</p>
+      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
       <p>This method apply the naive ways to chunk files: </p>
       <p>
       <li>Successive text will be sliced into pieces using vision detection model.</li>
@@ -329,7 +329,7 @@ The above is the content you need to summarize.`,
       chat: 'Chat',
       newChat: 'New chat',
       send: 'Send',
-      sendPlaceholder: 'Message Resume Assistant...',
+      sendPlaceholder: 'Message the Assistant...',
       chatConfiguration: 'Chat Configuration',
       chatConfigurationDescription:
         ' Here, dress up a dedicated assistant for your special knowledge bases! 💕',
@@ -362,9 +362,9 @@ The above is the content you need to summarize.`,
       The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks.
       All the variables in 'System' should be curly bracketed.`,
       add: 'Add',
-      key: 'key',
+      key: 'Key',
       optional: 'Optional',
-      operation: 'operation',
+      operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
       modelMessage: 'Please select!',
@@ -431,6 +431,8 @@ The above is the content you need to summarize.`,
       tts: 'Text to speech',
       ttsTip:
         'To play the voice using voice conversion, please select TTS (speech conversion model) in the settings first.',
+      relatedQuestion: 'Related question',
+      answerTitle: 'R',
     },
     setting: {
       profile: 'Profile',
@@ -640,7 +642,7 @@ The above is the content you need to summarize.`,
         'Loop is the upper limit of the number of loops of the current component, when the number of loops exceeds the value of loop, it means that the component can not complete the current task, please re-optimize agent',
       yes: 'Yes',
       no: 'No',
-      key: 'key',
+      key: 'Key',
       componentId: 'Component ID',
       add: 'Add',
       operation: 'operation',
@@ -657,6 +659,7 @@ The above is the content you need to summarize.`,
       messageDescription:
         "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Answer', the interface component.",
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
+      switchDescription: `A component that evaluates conditions based on the output of previous components and directs the flow of execution accordingly. It allows for complex branching logic by defining cases and specifying actions for each case or default action if no conditions are met.`,
       wikipediaDescription: `This component is used to get search result from wikipedia.org. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.`,
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
         {input}
@@ -875,6 +878,26 @@ The above is the content you need to summarize.`,
       operator: 'Operator',
       value: 'Value',
       useTemplate: 'Use this template',
+      wenCai: 'WenCai',
+      queryType: 'Query type',
+      wenCaiDescription:
+        'The component can be used to obtain information on a wide range of financial areas, including but not limited to stocks, funds, etc...',
+      wenCaiQueryTypeOptions: {
+        stock: 'stock',
+        zhishu: 'index',
+        fund: 'fund',
+        hkstock: 'Hong Kong shares',
+        usstock: 'US stock market',
+        threeboard: 'New OTC Market',
+        conbond: 'Convertible Bond',
+        insurance: 'insurance',
+        futures: 'futures',
+        lccp: 'Financing',
+        foreign_exchange: 'Foreign currency',
+      },
+      akShare: 'AkShare',
+      akShareDescription:
+        'This component can be used to obtain news information for the corresponding stock from the Eastmoney website.',
     },
     footer: {
       profile: 'All rights reserved @ React',

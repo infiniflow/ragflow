@@ -15,7 +15,7 @@
 #
 import re
 from typing import Optional
-import  threading
+import threading
 import requests
 from huggingface_hub import snapshot_download
 from openai.lib.azure import AzureOpenAI
@@ -155,6 +155,7 @@ class QWenEmbed(Base):
 
     def encode(self, texts: list, batch_size=10):
         import dashscope
+        batch_size = min(batch_size, 4)
         try:
             res = []
             token_count = 0

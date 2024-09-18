@@ -18,18 +18,19 @@ import os
 import sys
 import typing
 import operator
+from enum import Enum
 from functools import wraps
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from flask_login import UserMixin
-from playhouse.migrate import MySQLMigrator, migrate
+from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from peewee import (
     BigIntegerField, BooleanField, CharField,
     CompositeKey, IntegerField, TextField, FloatField, DateTimeField,
     Field, Model, Metadata
 )
-from playhouse.pool import PooledMySQLDatabase
+from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 from api.db import SerializedType, ParserType
-from api.settings import DATABASE, stat_logger, SECRET_KEY
+from api.settings import DATABASE, stat_logger, SECRET_KEY, DATABASE_TYPE
 from api.utils.log_utils import getLogger
 from api import utils
 
@@ -58,8 +59,13 @@ AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {
     "write_access"}
 
 
+class TextFieldType(Enum):
+    MYSQL = 'LONGTEXT'
+    POSTGRES = 'TEXT'
+
+
 class LongTextField(TextField):
-    field_type = 'LONGTEXT'
+    field_type = TextFieldType[DATABASE_TYPE.upper()].value
 
 
 class JSONField(LongTextField):
@@ -266,18 +272,69 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook,
                                                   object_pairs_hook=object_pairs_hook, **kwargs)
 
+class PooledDatabase(Enum):
+    MYSQL = PooledMySQLDatabase
+    POSTGRES = PooledPostgresqlDatabase
+
+
+class DatabaseMigrator(Enum):
+    MYSQL = MySQLMigrator
+    POSTGRES = PostgresqlMigrator
+
 
 @singleton
 class BaseDataBase:
     def __init__(self):
         database_config = DATABASE.copy()
         db_name = database_config.pop("name")
-        self.database_connection = PooledMySQLDatabase(
-            db_name, **database_config)
-        stat_logger.info('init mysql database on cluster mode successfully')
+        self.database_connection = PooledDatabase[DATABASE_TYPE.upper()].value(db_name, **database_config)
+        stat_logger.info('init database on cluster mode successfully')
 
+class PostgresDatabaseLock:
+    def __init__(self, lock_name, timeout=10, db=None):
+        self.lock_name = lock_name
+        self.timeout = int(timeout)
+        self.db = db if db else DB
 
-class DatabaseLock:
+    def lock(self):
+        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", self.timeout)
+        ret = cursor.fetchone()
+        if ret[0] == 0:
+            raise Exception(f'acquire postgres lock {self.lock_name} timeout')
+        elif ret[0] == 1:
+            return True
+        else:
+            raise Exception(f'failed to acquire lock {self.lock_name}')
+
+    def unlock(self):
+        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", self.timeout)
+        ret = cursor.fetchone()
+        if ret[0] == 0:
+            raise Exception(
+                f'postgres lock {self.lock_name} was not established by this thread')
+        elif ret[0] == 1:
+            return True
+        else:
+            raise Exception(f'postgres lock {self.lock_name} does not exist')
+
+    def __enter__(self):
+        if isinstance(self.db, PostgresDatabaseLock):
+            self.lock()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if isinstance(self.db, PostgresDatabaseLock):
+            self.unlock()
+
+    def __call__(self, func):
+        @wraps(func)
+        def magic(*args, **kwargs):
+            with self:
+                return func(*args, **kwargs)
+
+        return magic
+
+class MysqlDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
         self.timeout = int(timeout)
@@ -325,8 +382,13 @@ class DatabaseLock:
         return magic
 
 
+class DatabaseLock(Enum):
+    MYSQL = MysqlDatabaseLock
+    POSTGRES = PostgresDatabaseLock
+
+
 DB = BaseDataBase().database_connection
-DB.lock = DatabaseLock
+DB.lock = DatabaseLock[DATABASE_TYPE.upper()].value
 
 
 def close_connection():
@@ -830,6 +892,7 @@ class Dialog(DataBaseModel):
     do_refer = CharField(
         max_length=1,
         null=False,
+        default="1",
         help_text="it needs to insert reference index into answer or not")
     
     rerank_id = CharField(
@@ -917,7 +980,7 @@ class CanvasTemplate(DataBaseModel):
 
 def migrate_db():
     with DB.transaction():
-        migrator = MySQLMigrator(DB)
+        migrator = DatabaseMigrator[DATABASE_TYPE.upper()].value(DB)
         try:
             migrate(
                 migrator.add_column('file', 'source_type', CharField(max_length=128, null=False, default="",

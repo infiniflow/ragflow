@@ -181,8 +181,6 @@ class Document(Base):
                 for chunk_data in res_data["data"].get("chunks", []):
                     chunk=Chunk(self.rag,chunk_data)
                     chunks.append(chunk)
-                # chunks = res_data["data"]["chunks"]
-                # self.chunks = chunks  # Store the chunks in the document instance
                 return chunks
             else:
                 raise Exception(f"Error fetching chunks: {res_data.get('retmsg')}")
@@ -191,7 +189,6 @@ class Document(Base):
 
     def add_chunk(self, content: str):
         res = self.post('/doc/chunk/create', {"doc_id": self.id, "content_with_weight":content})
-
         if res.status_code == 200:
             res_data = res.json().get("data")
             chunk_data = res_data.get("chunk")

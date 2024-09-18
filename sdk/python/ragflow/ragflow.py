@@ -207,7 +207,6 @@ class RAGFlow:
             if not doc_ids or not isinstance(doc_ids, list):
                 raise ValueError("doc_ids must be a non-empty list of document IDs")
             data = {"doc_ids": doc_ids, "run": 2}
-
             res = self.post(f'/doc/run', data)
 
             if res.status_code != 200:
@@ -276,3 +275,4 @@ class RAGFlow:
         except Exception as e:
             print(f"An error occurred during retrieval: {e}")
             raise
+
