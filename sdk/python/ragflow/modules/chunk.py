@@ -22,7 +22,7 @@ class Chunk(Base):
         Delete the chunk in the document.
         """
         res = self.post('/doc/chunk/rm',
-                        {"doc_id": self.document_id, 'chunk_ids': [self.id]})
+                        {"document_id": self.document_id, 'chunk_ids': [self.id]})
         res = res.json()
         if res.get("retmsg") == "success":
             return True
@@ -34,13 +34,13 @@ class Chunk(Base):
         """
         res = self.post('/doc/chunk/set',
                         {"chunk_id": self.id,
-                         "kb_id": self.knowledgebase_id,
+                         "knowledgebase_id": self.knowledgebase_id,
                          "name": self.document_name,
-                         "content_with_weight": self.content,
-                         "important_kwd": self.important_keywords,
+                         "content": self.content,
+                         "important_keywords": self.important_keywords,
                          "create_time": self.create_time,
                          "create_timestamp_flt": self.create_timestamp_float,
-                         "doc_id": self.document_id,
+                         "document_id": self.document_id,
                          "status": self.status,
                          })
         res = res.json()

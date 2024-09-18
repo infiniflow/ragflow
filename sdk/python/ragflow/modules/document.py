@@ -34,10 +34,10 @@ class Document(Base):
         Save the document details to the server.
         """
         res = self.post('/doc/save',
-                        {"id": self.id, "name": self.name, "thumbnail": self.thumbnail, "kb_id": self.knowledgebase_id,
-                         "parser_id": self.parser_method, "parser_config": self.parser_config.to_json(),
+                        {"id": self.id, "name": self.name, "thumbnail": self.thumbnail, "knowledgebase_id": self.knowledgebase_id,
+                         "parser_method": self.parser_method, "parser_config": self.parser_config.to_json(),
                          "source_type": self.source_type, "type": self.type, "created_by": self.created_by,
-                         "size": self.size, "token_num": self.token_count, "chunk_num": self.chunk_count,
+                         "size": self.size, "token_count": self.token_count, "chunk_count": self.chunk_count,
                          "progress": self.progress, "progress_msg": self.progress_msg,
                          "process_begin_at": self.process_begin_at, "process_duation": self.process_duration
                          })
@@ -51,7 +51,7 @@ class Document(Base):
         Delete the document from the server.
         """
         res = self.rm('/doc/delete',
-                      {"doc_id": self.id})
+                      {"document_id": self.id})
         res = res.json()
         if res.get("retmsg") == "success":
             return True
@@ -83,7 +83,7 @@ class Document(Base):
         """
         try:
             # Construct request data including document ID and run status (assuming 1 means to run)
-            data = {"doc_ids": [self.id], "run": 1}
+            data = {"document_ids": [self.id], "run": 1}
 
             # Send a POST request to the specified parsing status endpoint to start parsing
             res = self.post(f'/doc/run', data)
@@ -112,7 +112,7 @@ class Document(Base):
         start_time = time.time()
         while time.time() - start_time < timeout:
             # Check the parsing status
-            res = self.get(f'/doc/{self.id}/status', {"doc_ids": [self.id]})
+            res = self.get(f'/doc/{self.id}/status', {"document_ids": [self.id]})
             res_data = res.json()
             data = res_data.get("data", [])
 
@@ -133,7 +133,7 @@ class Document(Base):
         """
         try:
             # Construct request data, including document ID and action to cancel (assuming 2 means cancel)
-            data = {"doc_ids": [self.id], "run": 2}
+            data = {"document_ids": [self.id], "run": 2}
 
             # Send a POST request to the specified parsing status endpoint to cancel parsing
             res = self.post(f'/doc/run', data)
@@ -162,7 +162,7 @@ class Document(Base):
             list: A list of chunks returned from the API.
         """
         data = {
-            "doc_id": self.id,
+            "document_id": self.id,
             "page": page,
             "size": size,
             "keywords": keywords,
@@ -188,7 +188,7 @@ class Document(Base):
             raise Exception(f"API request failed with status code {res.status_code}")
 
     def add_chunk(self, content: str):
-        res = self.post('/doc/chunk/create', {"doc_id": self.id, "content_with_weight":content})
+        res = self.post('/doc/chunk/create', {"document_id": self.id, "content":content})
         if res.status_code == 200:
             res_data = res.json().get("data")
             chunk_data = res_data.get("chunk")

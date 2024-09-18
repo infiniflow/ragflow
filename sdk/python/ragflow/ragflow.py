@@ -150,14 +150,11 @@ class RAGFlow:
         files = {
             'file': (name, blob)
         }
-        data = {
-            'kb_id': ds.id
-        }
         headers = {
             'Authorization': f"Bearer {ds.rag.user_key}"
         }
 
-        response = requests.post(self.api_url + url, data=data, files=files,
+        response = requests.post(self.api_url + url, files=files,
                                  headers=headers)
 
         if response.status_code == 200 and response.json().get('retmsg') == 'success':
@@ -184,7 +181,7 @@ class RAGFlow:
             if not doc_ids or not isinstance(doc_ids, list):
                 raise ValueError("doc_ids must be a non-empty list of document IDs")
 
-            data = {"doc_ids": doc_ids, "run": 1}
+            data = {"document_ids": doc_ids, "run": 1}
 
             res = self.post(f'/doc/run', data)
 
@@ -206,7 +203,7 @@ class RAGFlow:
         try:
             if not doc_ids or not isinstance(doc_ids, list):
                 raise ValueError("doc_ids must be a non-empty list of document IDs")
-            data = {"doc_ids": doc_ids, "run": 2}
+            data = {"document_ids": doc_ids, "run": 2}
             res = self.post(f'/doc/run', data)
 
             if res.status_code != 200:
@@ -252,7 +249,7 @@ class RAGFlow:
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight,
                 "top_k": top_k,
-                "kb_id": datasets,
+                "knowledgebase_id": datasets,
             }
 
             # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)

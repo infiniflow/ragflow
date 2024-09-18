@@ -255,14 +255,14 @@ class TestDocument(TestSdk):
     def test_add_chunk_to_chunk_list(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name='story.txt')
-        chunk = doc.add_chunk(content="assss")
+        chunk = doc.add_chunk(content="assssdd")
         assert chunk is not None, "Chunk is None"
         assert isinstance(chunk, Chunk), "Chunk was not added to chunk list"
 
     def test_delete_chunk_of_chunk_list(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name='story.txt')
-        chunk = doc.add_chunk(content="assss")
+        chunk = doc.add_chunk(content="assssdd")
         assert chunk is not None, "Chunk is None"
         assert isinstance(chunk, Chunk), "Chunk was not added to chunk list"
         doc = rag.get_document(name='story.txt')
@@ -274,7 +274,7 @@ class TestDocument(TestSdk):
     def test_update_chunk_content(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name='story.txt')
-        chunk = doc.add_chunk(content="assssd")
+        chunk = doc.add_chunk(content="assssddd")
         assert chunk is not None, "Chunk is None"
         assert isinstance(chunk, Chunk), "Chunk was not added to chunk list"
         chunk.content = "ragflow123"
