@@ -190,7 +190,7 @@ class LLMBundle(object):
             tenant_id, llm_type, llm_name, lang=lang)
         assert self.mdl, "Can't find mole for {}/{}/{}".format(
             tenant_id, llm_type, llm_name)
-        self.max_length = 512
+        self.max_length = 8192
         for lm in LLMService.query(llm_name=llm_name):
             self.max_length = lm.max_tokens
             break

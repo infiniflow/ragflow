@@ -14,7 +14,9 @@
 #  limitations under the License.
 #
 from datetime import datetime
+
 import peewee
+
 from api.db.db_models import DB, API4Conversation, APIToken, Dialog
 from api.db.services.common_service import CommonService
 from api.utils import current_timestamp, datetime_format
@@ -41,7 +43,7 @@ class API4ConversationService(CommonService):
     @DB.connection_context()
     def append_message(cls, id, conversation):
         cls.update_by_id(id, conversation)
-        return cls.model.update(round=cls.model.round + 1).where(cls.model.id==id).execute()
+        return cls.model.update(round=cls.model.round + 1).where(cls.model.id == id).execute()
 
     @classmethod
     @DB.connection_context()
@@ -61,7 +63,7 @@ class API4ConversationService(CommonService):
                 cls.model.round).alias("round"),
             peewee.fn.SUM(
                 cls.model.thumb_up).alias("thumb_up")
-        ).join(Dialog, on=(cls.model.dialog_id == Dialog.id & Dialog.tenant_id == tenant_id)).where(
+        ).join(Dialog, on=((cls.model.dialog_id == Dialog.id) & (Dialog.tenant_id == tenant_id))).where(
             cls.model.create_date >= from_date,
             cls.model.create_date <= to_date,
             cls.model.source == source

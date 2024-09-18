@@ -164,7 +164,8 @@ RANDOM_INSTANCE_ID = get_base_config(
 PROXY = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("proxy")
 PROXY_PROTOCOL = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("protocol")
 
-DATABASE = decrypt_database_config(name="mysql")
+DATABASE_TYPE = os.getenv("DB_TYPE", 'mysql')
+DATABASE = decrypt_database_config(name=DATABASE_TYPE)
 
 # Switch
 # upload

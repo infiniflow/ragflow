@@ -1,5 +1,6 @@
 import { api_host } from '@/utils/api';
 import { Popover } from 'antd';
+import classNames from 'classnames';
 
 import styles from './index.less';
 
@@ -14,7 +15,7 @@ const Image = ({ id, className, ...props }: IImage) => {
       {...props}
       src={`${api_host}/document/image/${id}`}
       alt=""
-      className={className}
+      className={classNames(styles.primitiveImg, className)}
     />
   );
 };

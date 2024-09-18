@@ -3,6 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
+import AkShareForm from '../akshare-form';
 import AnswerForm from '../answer-form';
 import ArXivForm from '../arxiv-form';
 import BaiduFanyiForm from '../baidu-fanyi-form';
@@ -28,6 +29,7 @@ import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
 import SwitchForm from '../switch-form';
+import WenCaiForm from '../wencai-form';
 import WikipediaForm from '../wikipedia-form';
 
 import styles from './index.less';
@@ -60,6 +62,8 @@ const FormMap = {
   [Operator.QWeather]: QWeatherForm,
   [Operator.ExeSQL]: ExeSQLForm,
   [Operator.Switch]: SwitchForm,
+  [Operator.WenCai]: WenCaiForm,
+  [Operator.AkShare]: AkShareForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

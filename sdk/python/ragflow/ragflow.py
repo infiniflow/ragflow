@@ -19,7 +19,7 @@ import requests
 
 from .modules.assistant import Assistant
 from .modules.dataset import DataSet
-
+from .modules.document import Document
 
 class RAGFlow:
     def __init__(self, user_key, base_url, version='v1'):
@@ -142,3 +142,79 @@ class RAGFlow:
                 result_list.append(Assistant(self, data))
             return result_list
         raise Exception(res["retmsg"])
+
+    def create_document(self, ds:DataSet, name: str, blob: bytes) -> bool:
+        url = f"/doc/dataset/{ds.id}/documents/upload"
+        files = {
+            'file': (name, blob)
+        }
+        data = {
+            'kb_id': ds.id
+        }
+        headers = {
+            'Authorization': f"Bearer {ds.rag.user_key}"
+        }
+
+        response = requests.post(self.api_url + url, data=data, files=files,
+                                 headers=headers)
+
+        if response.status_code == 200 and response.json().get('retmsg') == 'success':
+            return True
+        else:
+            raise Exception(f"Upload failed: {response.json().get('retmsg')}")
+
+        return False
+    def get_document(self, id: str = None, name: str = None) -> Document:
+        res = self.get("/doc/infos", {"id": id, "name": name})
+        res = res.json()
+        if res.get("retmsg") == "success":
+            return Document(self, res['data'])
+        raise Exception(res["retmsg"])
+
+    def async_parse_documents(self, doc_ids):
+        """
+        Asynchronously start parsing multiple documents without waiting for completion.
+
+        :param doc_ids: A list containing multiple document IDs.
+        """
+        try:
+            if not doc_ids or not isinstance(doc_ids, list):
+                raise ValueError("doc_ids must be a non-empty list of document IDs")
+
+            data = {"doc_ids": doc_ids, "run": 1}
+
+            res = self.post(f'/doc/run', data)
+
+            if res.status_code != 200:
+                raise Exception(f"Failed to start async parsing for documents: {res.text}")
+
+            print(f"Async parsing started successfully for documents: {doc_ids}")
+
+        except Exception as e:
+            print(f"Error occurred during async parsing for documents: {str(e)}")
+            raise
+
+    def async_cancel_parse_documents(self, doc_ids):
+        """
+        Cancel the asynchronous parsing of multiple documents.
+
+        :param doc_ids: A list containing multiple document IDs.
+        """
+        try:
+            if not doc_ids or not isinstance(doc_ids, list):
+                raise ValueError("doc_ids must be a non-empty list of document IDs")
+            data = {"doc_ids": doc_ids, "run": 2}
+
+
+            res = self.post(f'/doc/run', data)
+
+            if res.status_code != 200:
+                raise Exception(f"Failed to cancel async parsing for documents: {res.text}")
+
+            print(f"Async parsing canceled successfully for documents: {doc_ids}")
+
+        except Exception as e:
+            print(f"Error occurred during canceling parsing for documents: {str(e)}")
+            raise
+
+

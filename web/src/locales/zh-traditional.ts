@@ -191,7 +191,7 @@ export default {
         我們假設手冊具有分層部分結構。我們使用最低的部分標題作為對文檔進行切片的樞軸。
         因此，同一部分中的圖和表不會被分割，並且塊大小可能會很大。
         </p>`,
-      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>。</p>
+      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML、HTML</b>。</p>
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
@@ -400,6 +400,8 @@ export default {
       read: '朗讀內容',
       tts: '文字轉語音',
       ttsTip: '是否用語音轉換播放語音，請先在設定裡面選擇TTS（語音轉換模型）。',
+      relatedQuestion: '相關問題',
+      answerTitle: '智慧回答',
     },
     setting: {
       profile: '概述',
@@ -614,6 +616,7 @@ export default {
       messageDescription:
         '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
       keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
+      switchDescription: `該組件用於根據前面組件的輸出評估條件，並相應地引導執行流程。通過定義各種情況並指定操作，或在不滿足條件時採取默認操作，實現複雜的分支邏輯。`,
       wikipediaDescription: `此元件用於從 https://www.wikipedia.org/ 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。`,
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}
@@ -829,6 +832,25 @@ export default {
       operator: '操作符',
       value: '值',
       useTemplate: '使用該模板',
+      wenCai: '問財',
+      queryType: '查詢類型',
+      wenCaiDescription:
+        '該組件可用於獲取廣泛的金融領域的o息，包括但不限於股票、基金等...',
+      wenCaiQueryTypeOptions: {
+        stock: '股票',
+        zhishu: '指數',
+        fund: '基金',
+        hkstock: '港股',
+        usstock: '美股',
+        threeboard: '新三板',
+        conbond: '可轉債',
+        insurance: '保險',
+        futures: '期貨',
+        lccp: '理財',
+        foreign_exchange: '股票',
+      },
+      akShare: 'AkShare',
+      akShareDescription: '此組件可用於從東方財富網取得對應股票的新聞資訊。',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

@@ -1,3 +1,4 @@
+import classNames from 'classnames';
 import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeRaw from 'rehype-raw';
@@ -14,7 +15,7 @@ const HightLightMarkdown = ({
     <Markdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeRaw]}
-      className={styles.text}
+      className={classNames(styles.text)}
       components={
         {
           code(props: any) {
