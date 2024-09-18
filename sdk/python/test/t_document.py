@@ -276,6 +276,7 @@ class TestDocument(TestSdk):
         chunk.content = "ragflow123"
         res=chunk.save()
         assert res is True, f"Failed to update chunk, error: {res}"
+        
     def test_retrieval_chunks(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         ds = rag.create_dataset(name="God8")
