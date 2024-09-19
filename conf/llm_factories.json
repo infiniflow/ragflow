@@ -111,12 +111,6 @@
                     "model_type": "embedding"
                 },
                 {
-                    "llm_name": "sambert-zhiqi-v1",
-                    "tags": "TTS",
-                    "max_tokens": 2048,
-                    "model_type": "tts"
-                },
-                {
                     "llm_name": "sambert-zhide-v1",
                     "tags": "TTS",
                     "max_tokens": 2048,
@@ -2209,14 +2203,7 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "llm": [
-                {
-                    "llm_name": "xiaoyan",
-                    "tags": "TTS",
-                    "max_tokens": 1024,
-                    "model_type": "tts"
-                }
-            ]
+            "llm": []
         },
         {
             "name": "BaiduYiyan",
