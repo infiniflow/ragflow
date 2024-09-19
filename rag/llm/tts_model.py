@@ -177,7 +177,7 @@ class OpenAITTS(Base):
             "input": text
         }
 
-        response = requests.post(f"{self.base_url}/audiO/speech", headers=self.headers, json=payload, stream=True)
+        response = requests.post(f"{self.base_url}/audio/speech", headers=self.headers, json=payload, stream=True)
 
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")
