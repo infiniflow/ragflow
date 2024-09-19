@@ -38,8 +38,6 @@ class Chunk(Base):
                          "name": self.document_name,
                          "content": self.content,
                          "important_keywords": self.important_keywords,
-                         "create_time": self.create_time,
-                         "create_timestamp": self.create_timestamp,
                          "document_id": self.document_id,
                          "status": self.status,
                          })
