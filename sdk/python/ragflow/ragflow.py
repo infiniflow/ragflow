@@ -20,6 +20,8 @@ import requests
 from .modules.assistant import Assistant
 from .modules.dataset import DataSet
 from .modules.document import Document
+from .modules.chunk import Chunk
+
 
 class RAGFlow:
     def __init__(self, user_key, base_url, version='v1'):
@@ -143,19 +145,16 @@ class RAGFlow:
             return result_list
         raise Exception(res["retmsg"])
 
-    def create_document(self, ds:DataSet, name: str, blob: bytes) -> bool:
+    def create_document(self, ds: DataSet, name: str, blob: bytes) -> bool:
         url = f"/doc/dataset/{ds.id}/documents/upload"
         files = {
             'file': (name, blob)
-        }
-        data = {
-            'kb_id': ds.id
         }
         headers = {
             'Authorization': f"Bearer {ds.rag.user_key}"
         }
 
-        response = requests.post(self.api_url + url, data=data, files=files,
+        response = requests.post(self.api_url + url, files=files,
                                  headers=headers)
 
         if response.status_code == 200 and response.json().get('retmsg') == 'success':
@@ -164,6 +163,7 @@ class RAGFlow:
             raise Exception(f"Upload failed: {response.json().get('retmsg')}")
 
         return False
+
     def get_document(self, id: str = None, name: str = None) -> Document:
         res = self.get("/doc/infos", {"id": id, "name": name})
         res = res.json()
@@ -181,7 +181,7 @@ class RAGFlow:
             if not doc_ids or not isinstance(doc_ids, list):
                 raise ValueError("doc_ids must be a non-empty list of document IDs")
 
-            data = {"doc_ids": doc_ids, "run": 1}
+            data = {"document_ids": doc_ids, "run": 1}
 
             res = self.post(f'/doc/run', data)
 
@@ -203,9 +203,7 @@ class RAGFlow:
         try:
             if not doc_ids or not isinstance(doc_ids, list):
                 raise ValueError("doc_ids must be a non-empty list of document IDs")
-            data = {"doc_ids": doc_ids, "run": 2}
-
-
+            data = {"document_ids": doc_ids, "run": 2}
             res = self.post(f'/doc/run', data)
 
             if res.status_code != 200:
@@ -217,4 +215,61 @@ class RAGFlow:
             print(f"Error occurred during canceling parsing for documents: {str(e)}")
             raise
 
+    def retrieval(self,
+                  question,
+                  datasets=None,
+                  documents=None,
+                  offset=0,
+                  limit=6,
+                  similarity_threshold=0.1,
+                  vector_similarity_weight=0.3,
+                  top_k=1024):
+        """
+        Perform document retrieval based on the given parameters.
+
+        :param question: The query question.
+        :param datasets: A list of datasets (optional, as documents may be provided directly).
+        :param documents: A list of documents (if specific documents are provided).
+        :param offset: Offset for the retrieval results.
+        :param limit: Maximum number of retrieval results.
+        :param similarity_threshold: Similarity threshold.
+        :param vector_similarity_weight: Weight of vector similarity.
+        :param top_k: Number of top most similar documents to consider (for pre-filtering or ranking).
+
+        Note: This is a hypothetical implementation and may need adjustments based on the actual backend service API.
+        """
+        try:
+            data = {
+                "question": question,
+                "datasets": datasets if datasets is not None else [],
+                "documents": [doc.id if hasattr(doc, 'id') else doc for doc in
+                              documents] if documents is not None else [],
+                "offset": offset,
+                "limit": limit,
+                "similarity_threshold": similarity_threshold,
+                "vector_similarity_weight": vector_similarity_weight,
+                "top_k": top_k,
+                "knowledgebase_id": datasets,
+            }
+
+            # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
+            res = self.post(f'/doc/retrieval_test', data)
+
+            # Check the response status code
+            if res.status_code == 200:
+                res_data = res.json()
+                if res_data.get("retmsg") == "success":
+                    chunks = []
+                    for chunk_data in res_data["data"].get("chunks", []):
+                        chunk = Chunk(self, chunk_data)
+                        chunks.append(chunk)
+                    return chunks
+                else:
+                    raise Exception(f"Error fetching chunks: {res_data.get('retmsg')}")
+            else:
+                raise Exception(f"API request failed with status code {res.status_code}")
+
+        except Exception as e:
+            print(f"An error occurred during retrieval: {e}")
+            raise
 
