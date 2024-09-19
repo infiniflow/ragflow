@@ -499,6 +499,7 @@ def list_chunk(tenant_id):
                     "content_with_weight": "content",
                     "doc_id": "document_id",
                     "important_kwd": "important_keywords",
+                    "img_id":"image_id",
                 }
                 renamed_chunk = {}
                 for key, value in chunk.items():
@@ -560,12 +561,16 @@ def create(tenant_id):
             "content_with_weight": "content",
             "doc_id": "document_id",
             "important_kwd": "important_keywords",
-            "kb_id":"knowledge_base_id",
+            "kb_id":"dataset_id",
+            "create_timestamp_flt":"create_timestamp",
+            "create_time": "create_time",
+            "document_keyword":"document",
         }
         renamed_chunk = {}
         for key, value in d.items():
-            new_key = key_mapping.get(key, key)
-            renamed_chunk[new_key] = value
+            if key in key_mapping:
+                new_key = key_mapping.get(key, key)
+                renamed_chunk[new_key] = value
 
         return get_json_result(data={"chunk": renamed_chunk})
         # return get_json_result(data={"chunk_id": chunk_id})
