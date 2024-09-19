@@ -93,24 +93,27 @@ def set_api_key():
     if msg:
         return get_data_error_result(retmsg=msg)
 
-    llm = {
+    llm_config = {
         "api_key": req["api_key"],
         "api_base": req.get("base_url", "")
     }
     for n in ["model_type", "llm_name"]:
         if n in req:
-            llm[n] = req[n]
+            llm_config[n] = req[n]
 
-    if not TenantLLMService.filter_update(
-            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory], llm):
-        for llm in LLMService.query(fid=factory):
+    for llm in LLMService.query(fid=factory):
+        if not TenantLLMService.filter_update(
+                [TenantLLM.tenant_id == current_user.id,
+                 TenantLLM.llm_factory == factory,
+                 TenantLLM.llm_name == llm.llm_name],
+                llm_config):
             TenantLLMService.save(
                 tenant_id=current_user.id,
                 llm_factory=factory,
                 llm_name=llm.llm_name,
                 model_type=llm.model_type,
-                api_key=req["api_key"],
-                api_base=req.get("base_url", "")
+                api_key=llm_config["api_key"],
+                api_base=llm_config["api_base"]
             )
 
     return get_json_result(data=True)
