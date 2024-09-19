@@ -561,6 +561,7 @@ def create(tenant_id):
             "doc_id": "document_id",
             "important_kwd": "important_keywords",
             "kb_id":"knowledge_base_id",
+            "create_timestamp_flt":"create_timestamp",
         }
         renamed_chunk = {}
         for key, value in d.items():
