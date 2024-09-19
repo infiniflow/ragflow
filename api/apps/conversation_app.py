@@ -228,8 +228,9 @@ def tts():
 
     def stream_audio():
         try:
-            for chunk in tts_mdl.tts(text):
-                yield chunk
+            for txt in re.split(r"[，。/《》？；：！\n\r:;]+", text):
+                for chunk in tts_mdl.tts(txt):
+                    yield chunk
         except Exception as e:
             yield ("data:" + json.dumps({"retcode": 500, "retmsg": str(e),
                                          "data": {"answer": "**ERROR**: " + str(e)}},
