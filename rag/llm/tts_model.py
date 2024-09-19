@@ -160,10 +160,10 @@ class QwenTTS(Base):
 
 
 class OpenAITTS(Base):
-    def __init__(self, key, model_name="tts-1", base_url=""):
+    def __init__(self, key, model_name="tts-1", base_url="https://api.openai.com/v1"):
         self.api_key = key
         self.model_name = model_name
-        self.base_url = "https://api.openai.com/v1/audio"
+        self.base_url = base_url
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -177,10 +177,10 @@ class OpenAITTS(Base):
             "input": text
         }
 
-        response = requests.post(f"{self.base_url}/speech", headers=self.headers, json=payload, stream=True)
+        response = requests.post(f"{self.base_url}/audiO/speech", headers=self.headers, json=payload, stream=True)
 
         if response.status_code != 200:
-            raise Exception(f"请求失败: {response.status_code}, {response.text}")
+            raise Exception(f"Error: {response.status_code}, {response.text}")
         for chunk in response.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
