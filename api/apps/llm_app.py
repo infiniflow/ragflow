@@ -128,7 +128,7 @@ def add_llm():
         # Assemble ark_api_key endpoint_id into api_key
         llm_name = req["llm_name"]
         api_key = '{' + f'"ark_api_key": "{req.get("ark_api_key", "")}", ' \
-                        f'"ep_id": "{req.get("endpoint_id", "")}", ' + '}'
+                        f'"ep_id": "{req.get("endpoint_id", "")}" ' + '}'
     elif factory == "Tencent Hunyuan":
         api_key = '{' + f'"hunyuan_sid": "{req.get("hunyuan_sid", "")}", ' \
                         f'"hunyuan_sk": "{req.get("hunyuan_sk", "")}"' + '}'
