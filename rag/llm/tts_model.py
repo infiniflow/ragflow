@@ -180,7 +180,7 @@ class OpenAITTS(Base):
         response = requests.post(f"{self.base_url}/audiO/speech", headers=self.headers, json=payload, stream=True)
 
         if response.status_code != 200:
-            raise Exception(f"Error: {response.status_code}, {response.text}")
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
         for chunk in response.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
