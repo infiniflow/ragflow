@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import requests
 from typing import Annotated, Literal
 from abc import ABC
 import httpx
@@ -23,6 +24,8 @@ from rag.utils import num_tokens_from_string
 import json
 import re
 import time
+
+
 class ServeReferenceAudio(BaseModel):
     audio: bytes
     text: str
@@ -52,7 +55,7 @@ class Base(ABC):
 
     def tts(self, audio):
         pass
-    
+
     def normalize_text(self, text):
         return re.sub(r'(\*\*|##\d+\$\$|#)', '', text)
 
@@ -78,13 +81,13 @@ class FishAudioTTS(Base):
         with httpx.Client() as client:
             try:
                 with client.stream(
-                    method="POST",
-                    url=self.base_url,
-                    content=ormsgpack.packb(
-                        request, option=ormsgpack.OPT_SERIALIZE_PYDANTIC
-                    ),
-                    headers=self.headers,
-                    timeout=None,
+                        method="POST",
+                        url=self.base_url,
+                        content=ormsgpack.packb(
+                            request, option=ormsgpack.OPT_SERIALIZE_PYDANTIC
+                        ),
+                        headers=self.headers,
+                        timeout=None,
                 ) as response:
                     if response.status_code == HTTPStatus.OK:
                         for chunk in response.iter_bytes():
@@ -101,7 +104,7 @@ class FishAudioTTS(Base):
 class QwenTTS(Base):
     def __init__(self, key, model_name, base_url=""):
         import dashscope
-        
+
         self.model_name = model_name
         dashscope.api_key = key
 
@@ -109,11 +112,11 @@ class QwenTTS(Base):
         from dashscope.api_entities.dashscope_response import SpeechSynthesisResponse
         from dashscope.audio.tts import ResultCallback, SpeechSynthesizer, SpeechSynthesisResult
         from collections import deque
-        
+
         class Callback(ResultCallback):
             def __init__(self) -> None:
                 self.dque = deque()
-                   
+
             def _run(self):
                 while True:
                     if not self.dque:
@@ -144,13 +147,40 @@ class QwenTTS(Base):
         text = self.normalize_text(text)
         callback = Callback()
         SpeechSynthesizer.call(model=self.model_name,
-                                text=text,
-                                callback=callback,
-                                format="mp3")
+                               text=text,
+                               callback=callback,
+                               format="mp3")
         try:
             for data in callback._run():
                 yield data
             yield num_tokens_from_string(text)
-            
+
         except Exception as e:
             raise RuntimeError(f"**ERROR**: {e}")
+
+
+class OpenAITTS(Base):
+    def __init__(self, key, model_name="tts-1", base_url="https://api.openai.com/v1"):
+        self.api_key = key
+        self.model_name = model_name
+        self.base_url = base_url
+        self.headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+    def tts(self, text, voice="alloy"):
+        text = self.normalize_text(text)
+        payload = {
+            "model": self.model_name,
+            "voice": voice,
+            "input": text
+        }
+
+        response = requests.post(f"{self.base_url}/audio/speech", headers=self.headers, json=payload, stream=True)
+
+        if response.status_code != 200:
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
+        for chunk in response.iter_content(chunk_size=1024):
+            if chunk:
+                yield chunk
