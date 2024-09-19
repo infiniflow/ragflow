@@ -332,7 +332,7 @@ def get(file_id):
         e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(retmsg="Document not found!")
-        b, n = File2DocumentService.get_minio_address(file_id=file_id)
+        b, n = File2DocumentService.get_storage_address(file_id=file_id)
         response = flask.make_response(STORAGE_IMPL.get(b, n))
         ext = re.search(r"\.([^.]+)$", file.name)
         if ext:
