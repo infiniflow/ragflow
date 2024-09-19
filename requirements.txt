@@ -102,3 +102,5 @@ xgboost==2.1.0
 xpinyin==0.7.6
 yfinance==0.1.96
 zhipuai==2.0.1
+python-docx==1.1.2
+google-ai-generativelanguage==0.6.9
