@@ -48,14 +48,15 @@ class CreateDatasetReq(Schema):
 
 class UpdateDatasetReq(Schema):
     kb_id = fields.String(required=True)
-    name = fields.String(validate=validators.Length(min=1, max=128))
+    name = fields.String(validate=validators.Length(min=1, max=128), allow_none=True,)
     description = fields.String(allow_none=True)
-    permission = fields.String(load_default="me", validate=validators.OneOf(['me', 'team']))
-    embd_id = fields.String(validate=validators.Length(min=1, max=128))
-    language = fields.String(validate=validators.OneOf(['Chinese', 'English']))
-    parser_id = fields.String(validate=validators.OneOf([parser_type.value for parser_type in ParserType]))
-    parser_config = fields.Dict()
-    avatar = fields.String()
+    permission = fields.String(load_default="me", validate=validators.OneOf(['me', 'team']), allow_none=True)
+    embd_id = fields.String(validate=validators.Length(min=1, max=128), allow_none=True)
+    language = fields.String(validate=validators.OneOf(['Chinese', 'English']), allow_none=True)
+    parser_id = fields.String(validate=validators.OneOf([parser_type.value for parser_type in ParserType]),
+                              allow_none=True)
+    parser_config = fields.Dict(allow_none=True)
+    avatar = fields.String(allow_none=True)
 
 
 class RetrievalReq(Schema):
@@ -67,7 +68,7 @@ class RetrievalReq(Schema):
     similarity_threshold = fields.Float(load_default=0.0)
     vector_similarity_weight = fields.Float(load_default=0.3)
     top_k = fields.Integer(load_default=1024)
-    rerank_id = fields.String()
+    rerank_id = fields.String(allow_none=True)
     keyword = fields.Boolean(load_default=False)
     highlight = fields.Boolean(load_default=False)
 
@@ -126,7 +127,6 @@ def create_dataset(tenant_id, data):
 
 
 def update_dataset(tenant_id, data):
-    kb_name = data["name"].strip()
     kb_id = data["kb_id"].strip()
     if not KnowledgebaseService.query(
             created_by=tenant_id, id=kb_id):
@@ -138,11 +138,12 @@ def update_dataset(tenant_id, data):
     if not e:
         return get_data_error_result(
             retmsg="Can't find this knowledgebase!")
-
-    if kb_name.lower() != kb.name.lower() and len(
-            KnowledgebaseService.query(name=kb_name, tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 1:
-        return get_data_error_result(
-            retmsg="Duplicated knowledgebase name.")
+    if data["name"]:
+        kb_name = data["name"].strip()
+        if kb_name.lower() != kb.name.lower() and len(
+                KnowledgebaseService.query(name=kb_name, tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 1:
+            return get_data_error_result(
+                retmsg="Duplicated knowledgebase name.")
 
     del data["kb_id"]
     if not KnowledgebaseService.update_by_id(kb.id, data):
