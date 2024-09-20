@@ -24,8 +24,8 @@ export type TaskExecutorElapsed = Record<string, number[]>;
 
 export interface ISystemStatus {
   es: Es;
-  minio: Minio;
-  mysql: Minio;
+  storage: Storage;
+  database: Database;
   redis: Redis;
   task_executor: {
     error?: string;
@@ -41,7 +41,13 @@ interface Redis {
   pending: number;
 }
 
-export interface Minio {
+export interface Storage {
+  status: string;
+  elapsed: number;
+  error: string;
+}
+
+export interface Database {
   status: string;
   elapsed: number;
   error: string;
