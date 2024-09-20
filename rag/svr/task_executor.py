@@ -137,7 +137,7 @@ def collect():
     return tasks
 
 
-def get_minio_binary(bucket, name):
+def get_storage_binary(bucket, name):
     return STORAGE_IMPL.get(bucket, name)
 
 
@@ -155,8 +155,8 @@ def build(row):
     chunker = FACTORY[row["parser_id"].lower()]
     try:
         st = timer()
-        bucket, name = File2DocumentService.get_minio_address(doc_id=row["doc_id"])
-        binary = get_minio_binary(bucket, name)
+        bucket, name = File2DocumentService.get_storage_address(doc_id=row["doc_id"])
+        binary = get_storage_binary(bucket, name)
         cron_logger.info(
             "From minio({}) {}/{}".format(timer() - st, row["location"], row["name"]))
     except TimeoutError as e:

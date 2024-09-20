@@ -297,7 +297,7 @@ def rm():
             if not tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
 
-            b, n = File2DocumentService.get_minio_address(doc_id=doc_id)
+            b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
 
             if not DocumentService.remove_document(doc, tenant_id):
                 return get_data_error_result(
@@ -342,7 +342,7 @@ def run():
                 e, doc = DocumentService.get_by_id(id)
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id
-                bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
+                bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
                 queue_tasks(doc, bucket, name)
 
         return get_json_result(data=True)
@@ -393,7 +393,7 @@ def get(doc_id):
         if not e:
             return get_data_error_result(retmsg="Document not found!")
 
-        b, n = File2DocumentService.get_minio_address(doc_id=doc_id)
+        b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         response = flask.make_response(STORAGE_IMPL.get(b, n))
 
         ext = re.search(r"\.([^.]+)$", doc.name)

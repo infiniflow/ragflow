@@ -69,7 +69,7 @@ class File2DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_minio_address(cls, doc_id=None, file_id=None):
+    def get_storage_address(cls, doc_id=None, file_id=None):
         if doc_id:
             f2d = cls.get_by_document_id(doc_id)
         else:

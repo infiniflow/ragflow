@@ -18,11 +18,12 @@ import json
 from flask_login import login_required
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.settings import DATABASE_TYPE
 from api.utils.api_utils import get_json_result
 from api.versions import get_rag_version
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.es_conn import ELASTICSEARCH
-from rag.utils.storage_factory import STORAGE_IMPL
+from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
@@ -48,16 +49,16 @@ def status():
     st = timer()
     try:
         STORAGE_IMPL.health()
-        res["minio"] = {"status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.)}
+        res["storage"] = {"storage": STORAGE_IMPL_TYPE.lower(), "status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.)}
     except Exception as e:
-        res["minio"] = {"status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}
+        res["storage"] = {"storage": STORAGE_IMPL_TYPE.lower(), "status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}
 
     st = timer()
     try:
         KnowledgebaseService.get_by_id("x")
-        res["mysql"] = {"status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.)}
+        res["database"] = {"database": DATABASE_TYPE.lower(), "status": "green", "elapsed": "{:.1f}".format((timer() - st)*1000.)}
     except Exception as e:
-        res["mysql"] = {"status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}
+        res["database"] = {"database": DATABASE_TYPE.lower(), "status": "red", "elapsed": "{:.1f}".format((timer() - st)*1000.), "error": str(e)}
 
     st = timer()
     try:
