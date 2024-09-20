@@ -104,7 +104,7 @@ def change_document_parser(json_data):
     if not e:
         return get_data_error_result(retmsg="Document not found!")
     if doc.parser_id.lower() == json_data["parser_id"].lower():
-        if "parser_config" in json_data:
+        if json_data["parser_config"]:
             if json_data["parser_config"] == doc.parser_config:
                 return get_json_result(data=True)
         else:
@@ -119,7 +119,7 @@ def change_document_parser(json_data):
                                       "run": TaskStatus.UNSTART.value})
     if not e:
         return get_data_error_result(retmsg="Document not found!")
-    if "parser_config" in json_data:
+    if json_data["parser_config"]:
         DocumentService.update_parser_config(doc.id, json_data["parser_config"])
     if doc.token_num > 0:
         e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1,

@@ -11,5 +11,5 @@ class TestDatasets(TestSdk):
         Test listing datasets with a successful outcome.
         """
         ragflow = RAGFlow(API_KEY, HOST_ADDRESS)
-        res = ragflow.get_all_datasets()
+        res = ragflow.dataset.list()
         assert res["retmsg"] == "success"
