@@ -44,7 +44,8 @@ for h in access_logger.handlers:
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
 # Integrate APIFlask: Flask class -> APIFlask class.
-app = APIFlask(__name__, title=RAG_FLOW_SERVICE_NAME, version=API_VERSION, docs_path=f'/{API_VERSION}/docs')
+app = APIFlask(__name__, title=RAG_FLOW_SERVICE_NAME, version=API_VERSION, docs_path=f'/{API_VERSION}/docs',
+               spec_path=f'/{API_VERSION}/openapi.json')
 # Integrate APIFlask: Use apiflask.HTTPTokenAuth for the HTTP Bearer or API Keys authentication.
 http_token_auth = HTTPTokenAuth()
 

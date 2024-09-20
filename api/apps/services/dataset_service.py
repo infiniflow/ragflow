@@ -16,17 +16,19 @@
 
 from apiflask import Schema, fields, validators
 
-from api.db import StatusEnum, FileSource, ParserType
+from api.db import StatusEnum, FileSource, ParserType, LLMType
 from api.db.db_models import File
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.user_service import TenantService
-from api.settings import RetCode
+from api.db.services.llm_service import TenantLLMService
+from api.db.services.user_service import TenantService, UserTenantService
+from api.settings import RetCode, retrievaler, kg_retrievaler
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, get_data_error_result
+from rag.nlp import keyword_extraction
 
 
 class QueryDatasetReq(Schema):
@@ -48,12 +50,26 @@ class UpdateDatasetReq(Schema):
     kb_id = fields.String(required=True)
     name = fields.String(validate=validators.Length(min=1, max=128))
     description = fields.String(allow_none=True)
-    permission = fields.String(validate=validators.OneOf(['me', 'team']))
+    permission = fields.String(load_default="me", validate=validators.OneOf(['me', 'team']))
     embd_id = fields.String(validate=validators.Length(min=1, max=128))
     language = fields.String(validate=validators.OneOf(['Chinese', 'English']))
     parser_id = fields.String(validate=validators.OneOf([parser_type.value for parser_type in ParserType]))
     parser_config = fields.Dict()
     avatar = fields.String()
+
+
+class RetrievalReq(Schema):
+    kb_id = fields.String(required=True)
+    question = fields.String(required=True)
+    page = fields.Integer(load_default=1)
+    page_size = fields.Integer(load_default=30)
+    doc_ids = fields.List(fields.String())
+    similarity_threshold = fields.Float(load_default=0.0)
+    vector_similarity_weight = fields.Float(load_default=0.3)
+    top_k = fields.Integer(load_default=1024)
+    rerank_id = fields.String()
+    keyword = fields.Boolean(load_default=False)
+    highlight = fields.Boolean(load_default=False)
 
 
 def get_all_datasets(user_id, offset, count, orderby, desc):
@@ -159,3 +175,51 @@ def delete_dataset(tenant_id, kb_id):
         return get_data_error_result(
             retmsg="Database error (Knowledgebase removal)!")
     return get_json_result(data=True)
+
+
+def retrieval_in_dataset(tenant_id, json_data):
+    page = json_data["page"]
+    size = json_data["size"]
+    question = json_data["question"]
+    kb_id = json_data["kb_id"]
+    if isinstance(kb_id, str): kb_id = [kb_id]
+    doc_ids = json_data["doc_ids"]
+    similarity_threshold = json_data["similarity_threshold"]
+    vector_similarity_weight = json_data["vector_similarity_weight"]
+    top = json_data["top_k"]
+
+    tenants = UserTenantService.query(user_id=tenant_id)
+    for kid in kb_id:
+        for tenant in tenants:
+            if KnowledgebaseService.query(
+                    tenant_id=tenant.tenant_id, id=kid):
+                break
+        else:
+            return get_json_result(
+                data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.',
+                retcode=RetCode.OPERATING_ERROR)
+
+    e, kb = KnowledgebaseService.get_by_id(kb_id[0])
+    if not e:
+        return get_data_error_result(retmsg="Knowledgebase not found!")
+
+    embd_mdl = TenantLLMService.model_instance(
+        kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+
+    rerank_mdl = None
+    if json_data["rerank_id"]:
+        rerank_mdl = TenantLLMService.model_instance(
+            kb.tenant_id, LLMType.RERANK.value, llm_name=json_data["rerank_id"])
+
+    if json_data["keyword"]:
+        chat_mdl = TenantLLMService.model_instance(kb.tenant_id, LLMType.CHAT)
+        question += keyword_extraction(chat_mdl, question)
+
+    retr = retrievaler if kb.parser_id != ParserType.KG else kg_retrievaler
+    ranks = retr.retrieval(
+        question, embd_mdl, kb.tenant_id, kb_id, page, size, similarity_threshold, vector_similarity_weight, top,
+        doc_ids, rerank_mdl=rerank_mdl, highlight=json_data["highlight"])
+    for c in ranks["chunks"]:
+        if "vector" in c:
+            del c["vector"]
+    return get_json_result(data=ranks)
