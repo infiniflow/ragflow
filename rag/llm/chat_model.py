@@ -103,7 +103,6 @@ class XinferenceChat(Base):
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
-        key = "xxx"
         super().__init__(key, model_name, base_url)
 
 
