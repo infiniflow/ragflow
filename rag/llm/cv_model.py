@@ -449,6 +449,8 @@ class LocalAICV(GptV4):
 
 class XinferenceCV(Base):
     def __init__(self, key, model_name="", lang="Chinese", base_url=""):
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
         self.client = OpenAI(api_key="xxx", base_url=base_url)
         self.model_name = model_name
         self.lang = lang
