@@ -1,6 +1,5 @@
 import SvgIcon from '@/components/svg-icon';
 import { useFetchSystemStatus } from '@/hooks/user-setting-hooks';
-import { ISystemStatus, Storage } from '@/interfaces/database/userSetting';
 import {
   ISystemStatus,
   TaskExecutorElapsed,
