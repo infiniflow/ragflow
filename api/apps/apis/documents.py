@@ -22,7 +22,7 @@ from api.utils.api_utils import server_error_response
 @manager.input(document_service.ChangeDocumentParserReq, location='json')
 @manager.auth_required(http_token_auth)
 def change_document_parser(json_data):
-    """Change document file parser."""
+    """Change document file parsing method."""
     try:
         return document_service.change_document_parser(json_data)
     except Exception as e:

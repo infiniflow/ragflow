@@ -16,7 +16,8 @@
 
 from api.apps import http_token_auth
 from api.apps.services import dataset_service
-from api.utils.api_utils import server_error_response, http_basic_auth_required
+from api.settings import RetCode
+from api.utils.api_utils import server_error_response, http_basic_auth_required, get_json_result
 
 
 @manager.post('')
@@ -58,7 +59,7 @@ def get_dataset_by_id(kb_id):
 @manager.input(dataset_service.SearchDatasetReq, location='query')
 @manager.auth_required(http_token_auth)
 def get_dataset_by_name(query_data):
-    """Query Dataset(Knowledgebase) by Dataset(Knowledgebase) Name."""
+    """Query Dataset(Knowledgebase) by Name."""
     try:
         tenant_id = http_token_auth.current_user.id
         return dataset_service.get_dataset_by_name(tenant_id, query_data["name"])
@@ -93,4 +94,19 @@ def delete_dataset(kb_id):
         tenant_id = http_token_auth.current_user.id
         return dataset_service.delete_dataset(tenant_id, kb_id)
     except Exception as e:
+        return server_error_response(e)
+
+
+@manager.post('/retrieval')
+@manager.input(dataset_service.RetrievalReq, location='json')
+@manager.auth_required(http_token_auth)
+def retrieval_in_dataset(json_data):
+    """Run document retrieval in one or more Datasets(Knowledgebase)."""
+    try:
+        tenant_id = http_token_auth.current_user.id
+        return dataset_service.retrieval_in_dataset(tenant_id, json_data)
+    except Exception as e:
+        if str(e).find("not_found") > 0:
+            return get_json_result(data=False, retmsg=f'No chunk found! Check the chunk status please!',
+                                   retcode=RetCode.DATA_ERROR)
         return server_error_response(e)
