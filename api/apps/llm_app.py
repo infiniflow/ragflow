@@ -319,7 +319,7 @@ def list_app():
         llm_set = set([m["llm_name"] for m in llms])
         for o in objs:
             if not o.api_key:continue
-            if o.llm_name in llm_set:continue
+            if o.llm_name in llm_set and o.llm_factory not in self_deploied:continue
             llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})
 
         res = {}
