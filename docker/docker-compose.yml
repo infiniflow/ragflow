@@ -24,7 +24,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     environment:
       - TZ=${TIMEZONE}
-      - HF_ENDPOINT=https://huggingface.co
+      - HF_ENDPOINT=${HF_ENDPOINT}
       - MACOS=${MACOS}
     networks:
       - ragflow

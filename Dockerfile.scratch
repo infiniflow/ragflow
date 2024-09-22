@@ -67,6 +67,7 @@ COPY deepdoc deepdoc
 COPY rag rag
 COPY agent agent
 COPY graphrag graphrag
+COPY pyproject.toml poetry.toml poetry.lock ./
 
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
@@ -74,7 +75,7 @@ COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 # Copy Python environment and packages
 ENV VIRTUAL_ENV=/ragflow/.venv
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+ENV PATH="${VIRTUAL_ENV}/bin:/root/.local/bin:${PATH}"
 
 # Download nltk data
 RUN python3 -m nltk.downloader wordnet punkt punkt_tab
@@ -82,7 +83,7 @@ RUN python3 -m nltk.downloader wordnet punkt punkt_tab
 # Copy models downloaded via download_deps.sh
 COPY det.onnx layout.laws.onnx layout.manual.onnx layout.onnx layout.paper.onnx ocr.res rec.onnx tsr.onnx updown_concat_xgb.model /ragflow/rag/res/deepdoc/
 
-ENV PYTHONPATH=/ragflow/ HF_ENDPOINT=https://hf-mirror.com
+ENV PYTHONPATH=/ragflow/
 
 COPY docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
