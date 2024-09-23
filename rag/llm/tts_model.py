@@ -185,3 +185,113 @@ class OpenAITTS(Base):
         for chunk in response.iter_content():
             if chunk:
                 yield chunk
+
+
+import json
+import websocket
+import datetime
+import hashlib
+import base64
+import hmac
+import queue
+from urllib.parse import urlencode
+import ssl
+from wsgiref.handlers import format_date_time
+from time import mktime
+from datetime import datetime
+import _thread as thread
+
+
+class SparkTTS:
+    STATUS_FIRST_FRAME = 0
+    STATUS_CONTINUE_FRAME = 1
+    STATUS_LAST_FRAME = 2
+
+    def __init__(self, APPID,APISecret,APIKey, model_name, base_url=""):
+        self.APPID = APPID
+        self.APISecret = APISecret
+        self.APIKey = APIKey
+        self.model_name=model_name
+        self.CommonArgs = {"app_id": self.APPID}
+        self.audio_queue = queue.Queue()
+
+    # 用来存储音频数据
+
+    # 生成url
+    def create_url(self):
+        url = 'wss://tts-api.xfyun.cn/v2/tts'
+        now = datetime.now()
+        date = format_date_time(mktime(now.timetuple()))
+        signature_origin = "host: " + "ws-api.xfyun.cn" + "\n"
+        signature_origin += "date: " + date + "\n"
+        signature_origin += "GET " + "/v2/tts " + "HTTP/1.1"
+        signature_sha = hmac.new(self.APISecret.encode('utf-8'), signature_origin.encode('utf-8'),
+                                 digestmod=hashlib.sha256).digest()
+        signature_sha = base64.b64encode(signature_sha).decode(encoding='utf-8')
+        authorization_origin = "api_key=\"%s\", algorithm=\"%s\", headers=\"%s\", signature=\"%s\"" % (
+            self.APIKey, "hmac-sha256", "host date request-line", signature_sha)
+        authorization = base64.b64encode(authorization_origin.encode('utf-8')).decode(encoding='utf-8')
+        v = {
+            "authorization": authorization,
+            "date": date,
+            "host": "ws-api.xfyun.cn"
+        }
+        url = url + '?' + urlencode(v)
+        return url
+
+    def tts(self, text):
+        BusinessArgs = {"aue": "lame","sfl":1,"auf": "audio/L16;rate=16000", "vcn": self.model_name, "tte": "utf8"}
+        Data = {"status": 2, "text": base64.b64encode(text.encode('utf-8')).decode('utf-8')}
+        CommonArgs = {"app_id": self.APPID}
+        audio_queue=self.audio_queue
+
+        class Callback:
+            def __init__(self):
+                self.audio_queue = audio_queue
+            def on_message(self, ws,message):
+                try:
+                    message = json.loads(message)
+                    code = message["code"]
+                    sid = message["sid"]
+                    audio = message["data"]["audio"]
+                    audio = base64.b64decode(audio)
+                    status = message["data"]["status"]
+                    print(audio)
+                    if code != 0:
+                        errMsg = message["message"]
+                        raise Exception(f"sid:{sid} call error:{errMsg} code:{code}")
+                    else:
+                        self.audio_queue.put(audio)
+
+                    if status == 2:
+                        ws.close()
+
+                except Exception as e:
+                    pass
+
+            def on_error(self,ws,error):
+                pass
+
+            def on_close(self,ws, close_status_code, close_msg):
+                self.audio_queue.put(None)  # 放入 None 作为结束标志
+
+            def on_open(self,ws):
+                def run(*args):
+                    d = {"common": CommonArgs,
+                         "business": BusinessArgs,
+                         "data": Data}
+                    ws.send(json.dumps(d))
+
+                thread.start_new_thread(run, ())
+
+        wsUrl = self.create_url()
+        websocket.enableTrace(False)
+        a=Callback()
+        ws=websocket.WebSocketApp(wsUrl,on_open=a.on_open,on_error=a.on_error,on_close=a.on_close,on_message=a.on_message)
+        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
+
+        while True:
+            audio_chunk = self.audio_queue.get()
+            if audio_chunk is None:
+                break
+            yield audio_chunk
