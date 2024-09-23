@@ -150,6 +150,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K chunks will be fed into rerank models.`,
       delimiter: `Delimiter`,
+      html4excel: 'Excel to HTML',
+      html4excelTip: `Excel will be parsed into HTML table or not. If it's FALSE, every row in Excel will be formed as a chunk.`,
     },
     knowledgeConfiguration: {
       titleDescription:
