@@ -160,6 +160,14 @@ const PromptEngine = (
       <Divider></Divider>
       <SimilaritySlider isTooltipShown></SimilaritySlider>
       <TopNItem></TopNItem>
+      <Form.Item
+        label={t('multiTurn')}
+        tooltip={t('multiTurnTip')}
+        name={['prompt_config', 'refine_multiturn']}
+        initialValue={true}
+      >
+        <Switch></Switch>
+      </Form.Item>
       <Rerank></Rerank>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
