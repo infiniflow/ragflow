@@ -42,8 +42,8 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🛠️ [Build from source](#-build-from-source)
-- 🛠️ [Launch service from source](#-launch-service-from-source)
+- 🛠️ [Build RAGFlow image](#-build-ragflow-image)
+- 🛠️ [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
 - 🏄 [Community](#-community)
@@ -150,15 +150,12 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    ```
 
 3. Build the pre-built Docker images and start up the server:
-
    > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.11.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
    $ docker compose up -d
    ```
-   
 
    > The core image is about 9 GB in size and may take a while to load.
 
@@ -207,26 +204,23 @@ You must ensure that changes to the [.env](./docker/.env) file are in line with 
 
 To update the default HTTP serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80` to `<YOUR_SERVING_PORT>:80`.
 
-> Updates to all system configurations require a system reboot to take effect:
->
+Updates to the above configurations require a reboot of all containers to take effect:
+
 > ```bash
-> $ docker-compose up -d
+> $ docker-compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🛠️ Build from source
+## 🛠️ Build RAGFlow image
 
 To build the Docker images from source:
 
 ```bash
 $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow/
-$ docker build -t infiniflow/ragflow:dev .
-$ cd ragflow/docker
-$ chmod +x ./entrypoint.sh
-$ docker compose up -d
+$ docker build -f Dockerfile.scratch -t infiniflow/ragflow:dev .
 ```
 
-## 🛠️ Launch service from source
+## 🛠️ Launch service from source for development
 
 To launch the service from source:
 
@@ -237,88 +231,81 @@ To launch the service from source:
    $ cd ragflow/
    ```
 
-2. Create a virtual environment, ensuring that Anaconda or Miniconda is installed:
+2. Install all python dependencies in a newly created virtual environment named `.venv`:
 
    ```bash
-   $ conda create -n ragflow python=3.11.0
-   $ conda activate ragflow
-   $ pip install -r requirements.txt
-   ```
-   
-   ```bash
-   # If your CUDA version is higher than 12.0, run the following additional commands:
-   $ pip uninstall -y onnxruntime-gpu
-   $ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+   $ curl -sSL https://install.python-poetry.org | python3 -
+   $ $HOME/.local/bin/poetry install --sync --no-root
    ```
 
 3. Copy the entry script and configure environment variables:
-
-   ```bash
-   # Get the Python path:
-   $ which python
-   # Get the ragflow project path:
-   $ pwd
-   ```
    
    ```bash
-   $ cp docker/entrypoint.sh .
-   $ vi entrypoint.sh
-   ```
-
-   ```bash
    # Adjust configurations according to your actual situation (the following two export commands are newly added):
-   # - Assign the result of `which python` to `PY`.
-   # - Assign the result of `pwd` to `PYTHONPATH`.
    # - Comment out `LD_LIBRARY_PATH`, if it is configured.
    # - Optional: Add Hugging Face mirror.
-   PY=${PY}
-   export PYTHONPATH=${PYTHONPATH}
+   source ~/.venv/bin/activate
+   export PYTHONPATH=$(pwd)
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
 4. Launch the third-party services (MinIO, Elasticsearch, Redis, and MySQL):
 
    ```bash
-   $ cd docker
-   $ docker compose -f docker-compose-base.yml up -d 
+   $ docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-5. Check the configuration files, ensuring that:
+5. Adjust configurations
+   Add the following line to `/etc/hosts` to resolve all hosts in `docker/service_conf.yaml` to `127.0.0.1`:
 
-   - The settings in **docker/.env** match those in **conf/service_conf.yaml**. 
-   - The IP addresses and ports for related services in **service_conf.yaml** match the local machine IP and ports exposed by the container.
+   ```
+   127.0.0.1       es01 mysql minio redis
+   ```
+
+   Apply following patch to change services ports in `docker/service_conf.yaml` according to `docker/.env`:
+   ```
+diff --git a/docker/service_conf.yaml b/docker/service_conf.yaml
+index a92cfb2..b2238b4 100644
+--- a/docker/service_conf.yaml
++++ b/docker/service_conf.yaml
+@@ -6,7 +6,7 @@ mysql:
+   user: 'root'
+   password: 'infini_rag_flow'
+   host: 'mysql'
+-  port: 3306
++  port: 5455
+   max_connections: 100
+   stale_timeout: 30
+ minio:
+@@ -14,7 +14,7 @@ minio:
+   password: 'infini_rag_flow'
+   host: 'minio:9000'
+ es:
+-  hosts: 'http://es01:9200'
++  hosts: 'http://es01:1200'
+   username: 'elastic'
+   password: 'infini_rag_flow'
+ redis:
+   ```
 
 6. Launch the RAGFlow backend service:
+   Comment out the `nginx` line in `docker/entrypoint.sh` and run the script:
 
    ```bash
-   $ chmod +x ./entrypoint.sh
-   $ bash ./entrypoint.sh
+   $ bash docker/entrypoint.sh
    ```
 
 7. Launch the frontend service:
 
    ```bash
    $ cd web
-   $ npm install --registry=https://registry.npmmirror.com --force
+   $ npm install --force
    $ vim .umirc.ts
    # Update proxy.target to http://127.0.0.1:9380
    $ npm run dev 
    ```
 
-8. Deploy the frontend service:
-
-   ```bash
-   $ cd web
-   $ npm install --registry=https://registry.npmmirror.com --force
-   $ umi build
-   $ mkdir -p /ragflow/web
-   $ cp -r dist /ragflow/web
-   $ apt install nginx -y
-   $ cp ../docker/nginx/proxy.conf /etc/nginx
-   $ cp ../docker/nginx/nginx.conf /etc/nginx
-   $ cp ../docker/nginx/ragflow.conf /etc/nginx/conf.d
-   $ systemctl start nginx
-   ```
+8. In your web browser, enter `http://127.0.0.1/`.
 
 ## 📚 Documentation
 
