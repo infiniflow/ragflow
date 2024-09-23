@@ -421,6 +421,9 @@ export default {
       ttsTip: '是否用语音转换播放语音，请先在设置里面选择TTS（语音转换模型）。',
       relatedQuestion: '相关问题',
       answerTitle: '智能回答',
+      multiTurn: '多轮对话优化',
+      multiTurnTip:
+        '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
     },
     setting: {
       profile: '概要',
