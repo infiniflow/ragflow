@@ -36,12 +36,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt update && apt install -y nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 
-# if you located in China, you can use taobao registry to speed up npm and yarn
-RUN npm config set registry https://registry.npmmirror.com/
-
-# https://yarnpkg.com/getting-started/install
 COPY web web
-RUN cd web && npm install -g corepack && corepack enable && yarn install && yarn run build
+RUN cd web && npm i --force && npm run build
 
 # install dependencies from poetry.lock file
 COPY pyproject.toml poetry.toml poetry.lock ./
