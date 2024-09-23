@@ -146,6 +146,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
       delimiter: `分段標識符`,
+      html4excel: '表格轉HTML',
+      html4excelTip: `Excel 是否會被解析為 HTML 表格。如果為 FALSE，Excel 中的每一行都會形成一個區塊。`,
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
