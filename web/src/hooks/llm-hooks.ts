@@ -71,7 +71,7 @@ export const useSelectLlmOptionsByModelType = () => {
             )
             .map((x) => ({
               label: x.llm_name,
-              value: x.llm_name,
+              value: `${x.llm_name}@${x.fid}`,
               disabled: !x.available,
             })),
         };
