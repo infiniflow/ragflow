@@ -478,7 +478,7 @@ def upload():
                 e, doc = DocumentService.get_by_id(doc["id"])
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id
-                bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
+                bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
                 queue_tasks(doc, bucket, name)
             except Exception as e:
                 return server_error_response(e)
@@ -640,7 +640,7 @@ def document_rm():
             if not tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
 
-            b, n = File2DocumentService.get_minio_address(doc_id=doc_id)
+            b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
 
             if not DocumentService.remove_document(doc, tenant_id):
                 return get_data_error_result(

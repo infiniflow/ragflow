@@ -77,6 +77,12 @@
                     "tags": "LLM,CHAT,IMAGE2TEXT",
                     "max_tokens": 765,
                     "model_type": "image2text"
+                },
+                {
+                    "llm_name": "tts-1",
+                    "tags": "TTS",
+                    "max_tokens": 2048,
+                    "model_type": "tts"
                 }
             ]
         },

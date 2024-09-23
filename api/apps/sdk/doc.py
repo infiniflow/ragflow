@@ -286,7 +286,7 @@ def download_document(document_id,tenant_id):
                                          code=RetCode.ARGUMENT_ERROR)
 
         # The process of downloading
-        doc_id, doc_location = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
+        doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
         file_stream = STORAGE_IMPL.get(doc_id, doc_location)
         if not file_stream:
             return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
@@ -373,7 +373,7 @@ def rm(tenant_id):
             if not tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
 
-            b, n = File2DocumentService.get_minio_address(doc_id=doc_id)
+            b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
 
             if not DocumentService.remove_document(doc, tenant_id):
                 return get_data_error_result(
@@ -438,7 +438,7 @@ def run(tenant_id):
                 e, doc = DocumentService.get_by_id(id)
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id
-                bucket, name = File2DocumentService.get_minio_address(doc_id=doc["id"])
+                bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
                 queue_tasks(doc, bucket, name)
 
         return get_json_result(data=True)
@@ -499,6 +499,7 @@ def list_chunk(tenant_id):
                     "content_with_weight": "content",
                     "doc_id": "document_id",
                     "important_kwd": "important_keywords",
+                    "img_id":"image_id",
                 }
                 renamed_chunk = {}
                 for key, value in chunk.items():
@@ -560,12 +561,16 @@ def create(tenant_id):
             "content_with_weight": "content",
             "doc_id": "document_id",
             "important_kwd": "important_keywords",
-            "kb_id":"knowledge_base_id",
+            "kb_id":"dataset_id",
+            "create_timestamp_flt":"create_timestamp",
+            "create_time": "create_time",
+            "document_keyword":"document",
         }
         renamed_chunk = {}
         for key, value in d.items():
-            new_key = key_mapping.get(key, key)
-            renamed_chunk[new_key] = value
+            if key in key_mapping:
+                new_key = key_mapping.get(key, key)
+                renamed_chunk[new_key] = value
 
         return get_json_result(data={"chunk": renamed_chunk})
         # return get_json_result(data={"chunk_id": chunk_id})

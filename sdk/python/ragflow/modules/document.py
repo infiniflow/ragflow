@@ -36,10 +36,6 @@ class Document(Base):
         res = self.post('/doc/save',
                         {"id": self.id, "name": self.name, "thumbnail": self.thumbnail, "knowledgebase_id": self.knowledgebase_id,
                          "parser_method": self.parser_method, "parser_config": self.parser_config.to_json(),
-                         "source_type": self.source_type, "type": self.type, "created_by": self.created_by,
-                         "size": self.size, "token_count": self.token_count, "chunk_count": self.chunk_count,
-                         "progress": self.progress, "progress_msg": self.progress_msg,
-                         "process_begin_at": self.process_begin_at, "process_duation": self.process_duration
                          })
         res = res.json()
         if res.get("retmsg") == "success":

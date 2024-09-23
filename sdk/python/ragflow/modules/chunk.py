@@ -7,7 +7,7 @@ class Chunk(Base):
         self.content = ""
         self.important_keywords = []
         self.create_time = ""
-        self.create_timestamp_float = 0.0
+        self.create_timestamp = 0.0
         self.knowledgebase_id = None
         self.document_name = ""
         self.document_id = ""
@@ -38,8 +38,6 @@ class Chunk(Base):
                          "name": self.document_name,
                          "content": self.content,
                          "important_keywords": self.important_keywords,
-                         "create_time": self.create_time,
-                         "create_timestamp_flt": self.create_timestamp_float,
                          "document_id": self.document_id,
                          "status": self.status,
                          })

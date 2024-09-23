@@ -103,7 +103,6 @@ class XinferenceChat(Base):
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
-        key = "xxx"
         super().__init__(key, model_name, base_url)
 
 
@@ -458,7 +457,7 @@ class VolcEngineChat(Base):
         """
         base_url = base_url if base_url else 'https://ark.cn-beijing.volces.com/api/v3'
         ark_api_key = json.loads(key).get('ark_api_key', '')
-        model_name = json.loads(key).get('ep_id', '')
+        model_name = json.loads(key).get('ep_id', '') + json.loads(key).get('endpoint_id', '')
         super().__init__(ark_api_key, model_name, base_url)
 
 
@@ -689,6 +688,7 @@ class BedrockChat(Base):
             yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
 
         yield num_tokens_from_string(ans)
+
 
 class GeminiChat(Base):
 

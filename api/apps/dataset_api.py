@@ -420,7 +420,7 @@ def delete_document(document_id, dataset_id):  # string
                         f" reason!", code=RetCode.AUTHENTICATION_ERROR)
 
         # get the doc's id and location
-        real_dataset_id, location = File2DocumentService.get_minio_address(doc_id=document_id)
+        real_dataset_id, location = File2DocumentService.get_storage_address(doc_id=document_id)
 
         if real_dataset_id != dataset_id:
             return construct_json_result(message=f"The document {document_id} is not in the dataset: {dataset_id}, "
@@ -595,7 +595,7 @@ def download_document(dataset_id, document_id):
                                          code=RetCode.ARGUMENT_ERROR)
 
         # The process of downloading
-        doc_id, doc_location = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
+        doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
         file_stream = STORAGE_IMPL.get(doc_id, doc_location)
         if not file_stream:
             return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
@@ -736,7 +736,7 @@ def parsing_document_internal(id):
         doc_attributes = doc_attributes.to_dict()
         doc_id = doc_attributes["id"]
 
-        bucket, doc_name = File2DocumentService.get_minio_address(doc_id=doc_id)
+        bucket, doc_name = File2DocumentService.get_storage_address(doc_id=doc_id)
         binary = STORAGE_IMPL.get(bucket, doc_name)
         parser_name = doc_attributes["parser_id"]
         if binary:
