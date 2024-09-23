@@ -8,7 +8,7 @@
     "lint": "umi lint --eslint-only",
     "prepare": "cd .. && husky web/.husky",
     "setup": "umi setup",
-    "start": "npm run dev",
+    "start": "yarn dev",
     "test": "jest --no-cache --coverage"
   },
   "lint-staged": {
