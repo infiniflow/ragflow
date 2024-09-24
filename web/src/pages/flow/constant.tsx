@@ -524,6 +524,7 @@ export const RestrictedUpstreamMap = {
   [Operator.WenCai]: [Operator.Begin],
   [Operator.AkShare]: [Operator.Begin],
   [Operator.YahooFinance]: [Operator.Begin],
+  [Operator.Jin10]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -553,6 +554,7 @@ export const NodeMap = {
   [Operator.WenCai]: 'ragNode',
   [Operator.AkShare]: 'ragNode',
   [Operator.YahooFinance]: 'ragNode',
+  [Operator.Jin10]: 'ragNode',
 };
 
 export const LanguageOptions = [
