@@ -18,6 +18,7 @@ import json
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
+from api.settings import LIGHTEN
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
@@ -319,13 +320,14 @@ def my_llms():
 @login_required
 def list_app():
     self_deploied = ["Youdao","FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
+    weighted = ["Youdao","FastEmbed", "BAAI"] if LIGHTEN else []
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
         llms = LLMService.get_all()
         llms = [m.to_dict()
-                for m in llms if m.status == StatusEnum.VALID.value]
+                for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted]
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deploied
 
