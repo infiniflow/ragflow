@@ -45,6 +45,7 @@ import {
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
+  initialJin10Values,
   initialKeywordExtractValues,
   initialMessageValues,
   initialPubMedValues,
@@ -119,6 +120,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.WenCai]: initialWenCaiValues,
       [Operator.AkShare]: initialAkShareValues,
       [Operator.YahooFinance]: initialYahooFinanceValues,
+      [Operator.Jin10]: initialJin10Values,
     };
   }, [llmId]);
 

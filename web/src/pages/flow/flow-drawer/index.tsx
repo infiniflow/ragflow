@@ -32,6 +32,7 @@ import SwitchForm from '../switch-form';
 import WenCaiForm from '../wencai-form';
 import WikipediaForm from '../wikipedia-form';
 
+import Jin10Form from '../jin10-form';
 import YahooFinanceForm from '../yahoo-finance-form';
 import styles from './index.less';
 
@@ -66,6 +67,7 @@ const FormMap = {
   [Operator.WenCai]: WenCaiForm,
   [Operator.AkShare]: AkShareForm,
   [Operator.YahooFinance]: YahooFinanceForm,
+  [Operator.Jin10]: Jin10Form,
 };
 
 const EmptyContent = () => <div>empty</div>;
