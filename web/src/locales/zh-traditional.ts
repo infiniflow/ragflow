@@ -862,6 +862,12 @@ export default {
       },
       akShare: 'AkShare',
       akShareDescription: '此組件可用於從東方財富網取得對應股票的新聞資訊。',
+      yahooFinance: '雅虎財經',
+      info: '訊息',
+      history: '歷史',
+      financials: '財務',
+      balanceSheet: '資產負債表',
+      cashFlowStatement: '現金流量表',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

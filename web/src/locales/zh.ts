@@ -880,6 +880,12 @@ export default {
       },
       akShare: 'AkShare',
       akShareDescription: '该组件可用于从东方财富网站获取相应股票的新闻信息。',
+      yahooFinance: '雅虎财经',
+      info: '信息',
+      history: '历史',
+      financials: '财务',
+      balanceSheet: '资产负债表',
+      cashFlowStatement: '现金流量表',
     },
     footer: {
       profile: 'All rights reserved @ React',

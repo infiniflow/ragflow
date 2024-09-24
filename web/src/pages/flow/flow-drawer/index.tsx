@@ -32,6 +32,7 @@ import SwitchForm from '../switch-form';
 import WenCaiForm from '../wencai-form';
 import WikipediaForm from '../wikipedia-form';
 
+import YahooFinanceForm from '../yahoo-finance-form';
 import styles from './index.less';
 
 interface IProps {
@@ -64,6 +65,7 @@ const FormMap = {
   [Operator.Switch]: SwitchForm,
   [Operator.WenCai]: WenCaiForm,
   [Operator.AkShare]: AkShareForm,
+  [Operator.YahooFinance]: YahooFinanceForm,
 };
 
 const EmptyContent = () => <div>empty</div>;
