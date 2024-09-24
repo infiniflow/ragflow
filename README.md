@@ -262,31 +262,7 @@ To launch the service from source:
    127.0.0.1       es01 mysql minio redis
    ```
 
-   Apply following patch to change services ports in `docker/service_conf.yaml` according to `docker/.env`:
-   ```
-diff --git a/docker/service_conf.yaml b/docker/service_conf.yaml
-index a92cfb2..b2238b4 100644
---- a/docker/service_conf.yaml
-+++ b/docker/service_conf.yaml
-@@ -6,7 +6,7 @@ mysql:
-   user: 'root'
-   password: 'infini_rag_flow'
-   host: 'mysql'
--  port: 3306
-+  port: 5455
-   max_connections: 100
-   stale_timeout: 30
- minio:
-@@ -14,7 +14,7 @@ minio:
-   password: 'infini_rag_flow'
-   host: 'minio:9000'
- es:
--  hosts: 'http://es01:9200'
-+  hosts: 'http://es01:1200'
-   username: 'elastic'
-   password: 'infini_rag_flow'
- redis:
-   ```
+   Edit `docker/service_conf.yaml` to change mysql port to `5455` and es port to `1200` according to `docker/.env`.
 
 6. Launch the RAGFlow backend service:
    Comment out the `nginx` line in `docker/entrypoint.sh` and run the script:
