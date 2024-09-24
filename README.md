@@ -262,7 +262,7 @@ To launch the service from source:
    127.0.0.1       es01 mysql minio redis
    ```
 
-   Edit `docker/service_conf.yaml` to change mysql port to `5455` and es port to `1200` according to `docker/.env`.
+   Edit `docker/service_conf.yaml` to change mysql port to `5455` and es port to `1200`, as specified in `docker/.env`.
 
 6. Launch the RAGFlow backend service:
    Comment out the `nginx` line in `docker/entrypoint.sh` and run the script:
