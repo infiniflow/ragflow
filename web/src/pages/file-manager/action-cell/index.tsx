@@ -17,7 +17,6 @@ import {
 } from '@ant-design/icons';
 import { Button, Space, Tooltip } from 'antd';
 import { useHandleDeleteFile } from '../hooks';
-import styles from './index.less';
 
 interface IProps {
   record: IFile;
@@ -74,11 +73,7 @@ const ActionCell = ({
     <Space size={0}>
       {isKnowledgeBase || (
         <Tooltip title={t('addToKnowledge')}>
-          <Button
-            type="text"
-            className={styles.iconButton}
-            onClick={onShowConnectToKnowledgeModal}
-          >
+          <Button type="text" onClick={onShowConnectToKnowledgeModal}>
             <LinkOutlined size={20} />
           </Button>
         </Tooltip>
@@ -86,12 +81,7 @@ const ActionCell = ({
 
       {isKnowledgeBase || (
         <Tooltip title={t('rename', { keyPrefix: 'common' })}>
-          <Button
-            type="text"
-            disabled={beingUsed}
-            onClick={onShowRenameModal}
-            className={styles.iconButton}
-          >
+          <Button type="text" disabled={beingUsed} onClick={onShowRenameModal}>
             <EditOutlined size={20} />
           </Button>
         </Tooltip>
@@ -102,7 +92,6 @@ const ActionCell = ({
             type="text"
             disabled={beingUsed}
             onClick={onShowMoveFileModal}
-            className={styles.iconButton}
           >
             <SvgIcon name={`move`} width={16}></SvgIcon>
           </Button>
@@ -110,24 +99,14 @@ const ActionCell = ({
       )}
       {isKnowledgeBase || (
         <Tooltip title={t('delete', { keyPrefix: 'common' })}>
-          <Button
-            type="text"
-            disabled={beingUsed}
-            onClick={handleRemoveFile}
-            className={styles.iconButton}
-          >
+          <Button type="text" disabled={beingUsed} onClick={handleRemoveFile}>
             <DeleteOutlined size={20} />
           </Button>
         </Tooltip>
       )}
       {record.type !== 'folder' && (
         <Tooltip title={t('download', { keyPrefix: 'common' })}>
-          <Button
-            type="text"
-            disabled={beingUsed}
-            onClick={onDownloadDocument}
-            className={styles.iconButton}
-          >
+          <Button type="text" disabled={beingUsed} onClick={onDownloadDocument}>
             <DownloadOutlined size={20} />
           </Button>
         </Tooltip>
@@ -139,7 +118,7 @@ const ActionCell = ({
           color="black"
         >
           <Tooltip title={t('preview')}>
-            <Button type="text" className={styles.iconButton}>
+            <Button type="text">
               <EyeOutlined size={20} />
             </Button>
           </Tooltip>

@@ -435,7 +435,7 @@ The above is the content you need to summarize.`,
         'To play the voice using voice conversion, please select TTS (speech conversion model) in the settings first.',
       relatedQuestion: 'Related question',
       answerTitle: 'R',
-      multiTurn: 'Multi-trun optimization',
+      multiTurn: 'Multi-turn optimization',
       multiTurnTip:
         'In multi-round conversations, the query to the knowledge base is optimized. The large model will be called to consume additional tokens.',
     },
