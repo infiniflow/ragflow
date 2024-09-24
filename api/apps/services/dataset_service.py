@@ -64,7 +64,7 @@ class RetrievalReq(Schema):
     question = fields.String(required=True)
     page = fields.Integer(load_default=1)
     page_size = fields.Integer(load_default=30)
-    doc_ids = fields.List(fields.String())
+    doc_ids = fields.List(fields.String(), allow_none=True)
     similarity_threshold = fields.Float(load_default=0.0)
     vector_similarity_weight = fields.Float(load_default=0.3)
     top_k = fields.Integer(load_default=1024)
@@ -180,7 +180,7 @@ def delete_dataset(tenant_id, kb_id):
 
 def retrieval_in_dataset(tenant_id, json_data):
     page = json_data["page"]
-    size = json_data["size"]
+    size = json_data["page_size"]
     question = json_data["question"]
     kb_id = json_data["kb_id"]
     if isinstance(kb_id, str): kb_id = [kb_id]
