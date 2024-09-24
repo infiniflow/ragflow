@@ -78,6 +78,7 @@ def message_fit_in(msg, max_length=4000):
 
 
 def llm_id2llm_type(llm_id):
+    llm_id = llm_id.split("@")[0]
     fnm = os.path.join(get_project_base_directory(), "conf")
     llm_factories = json.load(open(os.path.join(fnm, "llm_factories.json"), "r"))
     for llm_factory in llm_factories["factory_llm_infos"]:
@@ -89,9 +90,15 @@ def llm_id2llm_type(llm_id):
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     st = timer()
-    llm = LLMService.query(llm_name=dialog.llm_id)
+    tmp = dialog.llm_id.split("@")
+    fid = None
+    llm_id = tmp[0]
+    if len(tmp)>1: fid = tmp[1]
+
+    llm = LLMService.query(llm_name=llm_id) if not fid else LLMService.query(llm_name=llm_id, fid=fid)
     if not llm:
-        llm = TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=dialog.llm_id)
+        llm = TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=llm_id) if not fid else \
+            TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=llm_id, llm_factory=fid)
         if not llm:
             raise LookupError("LLM(%s) not found" % dialog.llm_id)
         max_tokens = 8192
@@ -142,6 +149,11 @@ def chat(dialog, messages, stream=True, **kwargs):
             prompt_config["system"] = prompt_config["system"].replace(
                 "{%s}" % p["key"], " ")
 
+    if len(questions) > 1 and prompt_config.get("refine_multiturn"):
+        questions = [full_question(dialog.tenant_id, dialog.llm_id, messages)]
+    else:
+        questions = questions[-1:]
+
     rerank_mdl = None
     if dialog.rerank_id:
         rerank_mdl = LLMBundle(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
@@ -168,7 +180,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": empty_res, "reference": kbinfos, "audio_binary": tts(tts_mdl, empty_res)}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
-    kwargs["knowledge"] = "\n------\n".join(knowledges)
+    kwargs["knowledge"] = "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
@@ -209,7 +221,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
         done_tm = timer()
-        prompt += "\n### Elapsed\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms"%((retrieval_tm-st)*1000, (done_tm-st)*1000)
+        prompt += "\n\n### Elapsed\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms"%((retrieval_tm-st)*1000, (done_tm-st)*1000)
         return {"answer": answer, "reference": refs, "prompt": prompt}
 
     if stream:
@@ -401,6 +413,58 @@ def rewrite(tenant_id, llm_id, question):
     """
     ans = chat_mdl.chat(prompt, [{"role": "user", "content": question}], {"temperature": 0.8})
     return ans
+
+
+def full_question(tenant_id, llm_id, messages):
+    if llm_id2llm_type(llm_id) == "image2text":
+        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+    else:
+        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+    conv = []
+    for m in messages:
+        if m["role"] not in ["user", "assistant"]: continue
+        conv.append("{}: {}".format(m["role"].upper(), m["content"]))
+    conv = "\n".join(conv)
+    prompt = f"""
+Role: A helpful assistant
+Task: Generate a full user question that would follow the conversation.
+Requirements & Restrictions:
+  - Text generated MUST be in the same language of the original user's question.
+  - If the user's latest question is completely, don't do anything, just return the original question.
+  - DON'T generate anything except a refined question.
+
+######################
+-Examples-
+######################
+
+# Example 1
+## Conversation
+USER: What is the name of Donald Trump's father?
+ASSISTANT:  Fred Trump.
+USER: And his mother?
+###############
+Output: What's the name of Donald Trump's mother?
+
+------------
+# Example 2
+## Conversation
+USER: What is the name of Donald Trump's father?
+ASSISTANT:  Fred Trump.
+USER: And his mother?
+ASSISTANT:  Mary Trump.
+User: What's her full name?
+###############
+Output: What's the full name of Donald Trump's mother Mary Trump?
+
+######################
+
+# Real Data
+## Conversation
+{conv}
+###############
+    """
+    ans = chat_mdl.chat(prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
+    return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
 
 def tts(tts_mdl, text):

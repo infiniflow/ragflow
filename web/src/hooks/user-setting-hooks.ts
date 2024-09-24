@@ -20,7 +20,7 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
       if (data.retcode === 0) {
         i18n.changeLanguage(
           LanguageTranslationMap[
-            data.language as keyof typeof LanguageTranslationMap
+            data.data.language as keyof typeof LanguageTranslationMap
           ],
         );
       }

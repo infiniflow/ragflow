@@ -299,7 +299,7 @@ class RAGFlowPdfParser:
                 self.lefted_chars.append(c)
                 continue
             if c["text"] == " " and bxs[ii]["text"]:
-                if re.match(r"[0-9a-zA-Z,.?;:!%%]", bxs[ii]["text"][-1]):
+                if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", bxs[ii]["text"][-1]):
                     bxs[ii]["text"] += " "
             else:
                 bxs[ii]["text"] += c["text"]

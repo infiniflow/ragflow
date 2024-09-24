@@ -4,7 +4,7 @@ azure-identity==1.17.1
 azure-storage-file-datalake==12.16.0
 anthropic===0.34.1
 arxiv==2.1.3
-Aspose.Slides==24.2.0
+Aspose.Slides==24.8.0
 BCEmbedding==0.1.3
 Bio==1.7.1
 boto3==1.34.140
@@ -43,7 +43,7 @@ Markdown==3.6
 markdown_to_json==2.1.1
 minio==7.2.4
 mistralai==0.4.2
-nltk==3.9
+nltk==3.9.1
 numpy==1.26.4
 ollama==0.2.1
 onnxruntime==1.17.3
@@ -57,7 +57,6 @@ pandas==2.2.2
 pdfplumber==0.10.4
 peewee==3.17.1
 Pillow==10.3.0
-pipreqs==0.5.0
 protobuf==5.27.2
 psycopg2-binary==2.9.9
 pyclipper==1.3.0.post5
@@ -95,6 +94,8 @@ vertexai==1.64.0
 volcengine==1.0.146
 voyageai==0.2.3
 webdriver_manager==4.0.1
+websocket==0.2.1
+websocket-client==1.8.0
 Werkzeug==3.0.3
 wikipedia==1.4.0
 word2number==1.1

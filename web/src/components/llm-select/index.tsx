@@ -1,3 +1,5 @@
+import { LlmModelType } from '@/constants/knowledge';
+import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import { Popover, Select } from 'antd';
 import LlmSettingItems from '../llm-setting-items';
 
@@ -8,6 +10,11 @@ interface IProps {
 }
 
 const LLMSelect = ({ id, value, onChange }: IProps) => {
+  const modelOptions = useComposeLlmOptionsByModelTypes([
+    LlmModelType.Chat,
+    LlmModelType.Image2text,
+  ]);
+
   const content = (
     <div style={{ width: 400 }}>
       <LlmSettingItems
@@ -25,6 +32,7 @@ const LLMSelect = ({ id, value, onChange }: IProps) => {
       destroyTooltipOnHide
     >
       <Select
+        options={modelOptions}
         style={{ width: '100%' }}
         dropdownStyle={{ display: 'none' }}
         id={id}

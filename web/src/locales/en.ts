@@ -150,6 +150,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K chunks will be fed into rerank models.`,
       delimiter: `Delimiter`,
+      html4excel: 'Excel to HTML',
+      html4excelTip: `Excel will be parsed into HTML table or not. If it's FALSE, every row in Excel will be formed as a chunk.`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -200,7 +202,7 @@ export default {
       We assume manual has hierarchical section structure. We use the lowest section titles as pivots to slice documents.
       So, the figures and tables in the same section will not be sliced apart, and chunk size might be large.
       </p>`,
-      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>.</p>
+      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
       <p>This method apply the naive ways to chunk files: </p>
       <p>
       <li>Successive text will be sliced into pieces using vision detection model.</li>
@@ -329,7 +331,7 @@ The above is the content you need to summarize.`,
       chat: 'Chat',
       newChat: 'New chat',
       send: 'Send',
-      sendPlaceholder: 'Message Resume Assistant...',
+      sendPlaceholder: 'Message the Assistant...',
       chatConfiguration: 'Chat Configuration',
       chatConfigurationDescription:
         ' Here, dress up a dedicated assistant for your special knowledge bases! 💕',
@@ -362,9 +364,9 @@ The above is the content you need to summarize.`,
       The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks.
       All the variables in 'System' should be curly bracketed.`,
       add: 'Add',
-      key: 'key',
+      key: 'Key',
       optional: 'Optional',
-      operation: 'operation',
+      operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
       modelMessage: 'Please select!',
@@ -433,6 +435,9 @@ The above is the content you need to summarize.`,
         'To play the voice using voice conversion, please select TTS (speech conversion model) in the settings first.',
       relatedQuestion: 'Related question',
       answerTitle: 'R',
+      multiTurn: 'Multi-trun optimization',
+      multiTurnTip:
+        'In multi-round conversations, the query to the knowledge base is optimized. The large model will be called to consume additional tokens.',
     },
     setting: {
       profile: 'Profile',
@@ -546,6 +551,12 @@ The above is the content you need to summarize.`,
       SparkModelNameMessage: 'Please select Spark model',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'please input your APIPassword',
+      addSparkAPPID: 'Spark APPID',
+      SparkAPPIDMessage: 'please input your APPID',
+      addSparkAPISecret: 'Spark APISecret',
+      SparkAPISecretMessage: 'please input your APISecret',
+      addSparkAPIKey: 'Spark APIKey',
+      SparkAPIKeyMessage: 'please input your APIKey',
       yiyanModelNameMessage: 'Please input model name',
       addyiyanAK: 'yiyan API KEY',
       yiyanAKMessage: 'Please input your API KEY',
@@ -642,7 +653,7 @@ The above is the content you need to summarize.`,
         'Loop is the upper limit of the number of loops of the current component, when the number of loops exceeds the value of loop, it means that the component can not complete the current task, please re-optimize agent',
       yes: 'Yes',
       no: 'No',
-      key: 'key',
+      key: 'Key',
       componentId: 'Component ID',
       add: 'Add',
       operation: 'operation',
@@ -659,6 +670,7 @@ The above is the content you need to summarize.`,
       messageDescription:
         "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Answer', the interface component.",
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
+      switchDescription: `A component that evaluates conditions based on the output of previous components and directs the flow of execution accordingly. It allows for complex branching logic by defining cases and specifying actions for each case or default action if no conditions are met.`,
       wikipediaDescription: `This component is used to get search result from wikipedia.org. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.`,
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
         {input}

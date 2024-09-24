@@ -77,7 +77,7 @@ def convert():
                     doc = DocumentService.insert({
                         "id": get_uuid(),
                         "kb_id": kb.id,
-                        "parser_id": kb.parser_id,
+                        "parser_id": FileService.get_parser(file.type, file.name, kb.parser_id),
                         "parser_config": kb.parser_config,
                         "created_by": current_user.id,
                         "type": file.type,

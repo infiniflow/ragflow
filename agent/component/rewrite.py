@@ -54,7 +54,7 @@ class RewriteQuestion(Generate, ABC):
             setattr(self, "_loop", 0)
         if self._loop >= self._param.loop:
             self._loop = 0
-            raise Exception("Maximum loop time exceeds. Can't find relevant information.")
+            raise Exception("Sorry! Nothing relevant found.")
         self._loop += 1
         q = "Question: "
         for r, c in self._canvas.history[::-1]:
@@ -65,6 +65,8 @@ class RewriteQuestion(Generate, ABC):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": q}],
                             self._param.gen_conf())
+        self._canvas.history.pop()
+        self._canvas.history.append(("user", ans))
 
         print(ans, ":::::::::::::::::::::::::::::::::")
         return RewriteQuestion.be_output(ans)

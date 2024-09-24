@@ -65,7 +65,7 @@ class DataSet(Base):
         """
         # Construct the request payload for listing documents
         payload = {
-            "kb_id": self.id,
+            "knowledgebase_id": self.id,
             "keywords": keywords,
             "offset": offset,
             "limit": limit

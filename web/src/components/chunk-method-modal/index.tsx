@@ -24,6 +24,7 @@ import { useFetchParserListOnMount } from './hooks';
 import { useTranslate } from '@/hooks/common-hooks';
 import Delimiter from '../delimiter';
 import EntityTypesItem from '../entity-types-item';
+import ExcelToHtml from '../excel-to-html';
 import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
@@ -103,6 +104,9 @@ const ChunkMethodModal: React.FC<IProps> = ({
   );
 
   const showEntityTypes = selectedTag === 'knowledge_graph';
+
+  const showExcelToHtml =
+    selectedTag === 'naive' && documentExtension === 'xlsx';
 
   const afterClose = () => {
     form.resetFields();
@@ -279,6 +283,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
             <Delimiter></Delimiter>
           </>
         )}
+        {showExcelToHtml && <ExcelToHtml></ExcelToHtml>}
         {showRaptorParseConfiguration(selectedTag) && (
           <ParseConfiguration></ParseConfiguration>
         )}

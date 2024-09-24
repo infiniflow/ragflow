@@ -155,6 +155,7 @@ class QWenEmbed(Base):
 
     def encode(self, texts: list, batch_size=10):
         import dashscope
+        batch_size = min(batch_size, 4)
         try:
             res = []
             token_count = 0
@@ -267,6 +268,8 @@ class FastEmbed(Base):
 
 class XinferenceEmbed(Base):
     def __init__(self, key, model_name="", base_url=""):
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
         self.client = OpenAI(api_key="xxx", base_url=base_url)
         self.model_name = model_name
 

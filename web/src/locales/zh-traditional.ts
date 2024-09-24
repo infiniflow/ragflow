@@ -146,6 +146,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
       delimiter: `分段標識符`,
+      html4excel: '表格轉HTML',
+      html4excelTip: `Excel 是否會被解析為 HTML 表格。如果為 FALSE，Excel 中的每一行都會形成一個區塊。`,
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
@@ -191,7 +193,7 @@ export default {
         我們假設手冊具有分層部分結構。我們使用最低的部分標題作為對文檔進行切片的樞軸。
         因此，同一部分中的圖和表不會被分割，並且塊大小可能會很大。
         </p>`,
-      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>。</p>
+      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML、HTML</b>。</p>
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
@@ -402,6 +404,9 @@ export default {
       ttsTip: '是否用語音轉換播放語音，請先在設定裡面選擇TTS（語音轉換模型）。',
       relatedQuestion: '相關問題',
       answerTitle: '智慧回答',
+      multiTurn: '多輪對話優化',
+      multiTurnTip:
+        '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
     },
     setting: {
       profile: '概述',
@@ -507,6 +512,12 @@ export default {
       SparkModelNameMessage: '請選擇星火模型!',
       addSparkAPIPassword: '星火 APIPassword',
       SparkAPIPasswordMessage: '請輸入 APIPassword',
+      addSparkAPPID: '星火 APPID',
+      SparkAPPIDMessage: '請輸入 APPID',
+      addSparkAPISecret: '星火 APISecret',
+      SparkAPISecretMessage: '請輸入 APISecret',
+      addSparkAPIKey: '星火 APIKey',
+      SparkAPIKeyMessage: '請輸入 APIKey',
       yiyanModelNameMessage: '輸入模型名稱',
       addyiyanAK: '一言 API KEY',
       yiyanAKMessage: '請輸入 API KEY',
@@ -616,6 +627,7 @@ export default {
       messageDescription:
         '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
       keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
+      switchDescription: `該組件用於根據前面組件的輸出評估條件，並相應地引導執行流程。通過定義各種情況並指定操作，或在不滿足條件時採取默認操作，實現複雜的分支邏輯。`,
       wikipediaDescription: `此元件用於從 https://www.wikipedia.org/ 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。`,
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}

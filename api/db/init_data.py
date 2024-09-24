@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
 import json
 import os
 import time
@@ -30,11 +31,14 @@ from api.db.services.user_service import TenantService, UserTenantService
 from api.settings import CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, LLM_FACTORY, API_KEY, LLM_BASE_URL
 from api.utils.file_utils import get_project_base_directory
 
+def encode_to_base64(input_string):
+    base64_encoded = base64.b64encode(input_string.encode('utf-8'))
+    return base64_encoded.decode('utf-8')
 
 def init_superuser():
     user_info = {
         "id": uuid.uuid1().hex,
-        "password": "admin",
+        "password": encode_to_base64("admin"),
         "nickname": "admin",
         "is_superuser": True,
         "email": "admin@ragflow.io",

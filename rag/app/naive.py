@@ -76,7 +76,7 @@ class Docx(DocxParser):
                         if last_image:
                             image_list.insert(0, last_image)
                             last_image = None
-                        lines.append((self.__clean(p.text), image_list, p.style.name))
+                        lines.append((self.__clean(p.text), image_list, p.style.name if p.style else ""))
                 else:
                     if current_image := self.get_picture(self.doc, p):
                         if lines:
@@ -221,7 +221,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
-        sections = [(l, "") for l in excel_parser.html(binary) if l]
+        if parser_config.get("html4excel"):
+            sections = [(l, "") for l in excel_parser.html(binary, 12) if l]
+        else:
+            sections = [(l, "") for l in excel_parser(binary) if l]
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

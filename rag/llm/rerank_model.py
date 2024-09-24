@@ -140,6 +140,8 @@ class YoudaoRerank(DefaultRerank):
 
 class XInferenceRerank(Base):
     def __init__(self, key="xxxxxxx", model_name="", base_url=""):
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
         self.model_name = model_name
         self.base_url = base_url
         self.headers = {
