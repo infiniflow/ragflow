@@ -9,6 +9,7 @@ import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
 import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
+import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
@@ -65,6 +66,7 @@ export enum Operator {
   WenCai = 'WenCai',
   AkShare = 'AkShare',
   YahooFinance = 'YahooFinance',
+  Jin10 = 'Jin10',
 }
 
 export const operatorIconMap = {
@@ -94,6 +96,7 @@ export const operatorIconMap = {
   [Operator.WenCai]: WenCaiIcon,
   [Operator.AkShare]: AkShareIcon,
   [Operator.YahooFinance]: YahooFinanceIcon,
+  [Operator.Jin10]: Jin10Icon,
 };
 
 export const operatorMap: Record<
@@ -206,6 +209,7 @@ export const operatorMap: Record<
   [Operator.WenCai]: { backgroundColor: '#faac5b' },
   [Operator.AkShare]: { backgroundColor: '#8085f5' },
   [Operator.YahooFinance]: { backgroundColor: '#b474ff' },
+  [Operator.Jin10]: { backgroundColor: '#a0b9f8' },
 };
 
 export const componentMenuList = [
@@ -283,6 +287,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.YahooFinance,
+  },
+  {
+    name: Operator.Jin10,
   },
 ];
 
@@ -434,6 +441,14 @@ export const initialYahooFinanceValues = {
   balance_sheet: false,
   cash_flow_statement: false,
   news: true,
+};
+
+export const initialJin10Values = {
+  type: 'flash',
+  secret_key: 'xxx',
+  flash_type: '1',
+  contain: '',
+  filter: '',
 };
 
 export const CategorizeAnchorPointPositions = [
@@ -2706,3 +2721,12 @@ export const WenCaiQueryTypeOptions = [
   'lccp',
   'foreign_exchange',
 ];
+
+export const Jin10TypeOptions = ['flash', 'calendar', 'symbols', 'news'];
+export const Jin10FlashTypeOptions = new Array(5)
+  .fill(1)
+  .map((x, idx) => (idx + 1).toString());
+export const Jin10CalendarTypeOptions = ['cj', 'qh', 'hk', 'us'];
+export const Jin10CalendarDatashapeOptions = ['data', 'event', 'holiday'];
+export const Jin10SymbolsTypeOptions = ['GOODS', 'FOREX', 'FUTURE', 'CRYPTO'];
+export const Jin10SymbolsDatatypeOptions = ['symbols', 'quotes'];
