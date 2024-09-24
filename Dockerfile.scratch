@@ -33,7 +33,7 @@ USER root
 WORKDIR /ragflow
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt update && apt install -y nodejs npm && \
+    apt update && apt install -y nodejs npm cargo && \
     rm -rf /var/lib/apt/lists/*
 
 COPY web web
@@ -42,7 +42,7 @@ RUN cd web && npm i --force && npm run build
 # install dependencies from poetry.lock file
 COPY pyproject.toml poetry.toml poetry.lock ./
 RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
-    /root/.local/bin/poetry install --sync --no-cache --no-root
+    /root/.local/bin/poetry install --sync --no-root
 
 # production stage
 FROM base AS production
