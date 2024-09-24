@@ -25,10 +25,10 @@ from abc import ABC
 from ollama import Client
 import dashscope
 from openai import OpenAI
-from FlagEmbedding import FlagModel
-import torch
 import numpy as np
 import asyncio
+
+from api.settings import LIGHTEN
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai 
@@ -60,8 +60,10 @@ class DefaultEmbedding(Base):
         ^_-
 
         """
-        if not DefaultEmbedding._model:
+        if not LIGHTEN and not DefaultEmbedding._model:
             with DefaultEmbedding._model_lock:
+                from FlagEmbedding import FlagModel
+                import torch
                 if not DefaultEmbedding._model:
                     try:
                         DefaultEmbedding._model = FlagModel(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
