@@ -161,7 +161,10 @@ def add_llm():
 
     elif factory =="XunFei Spark":
         llm_name = req["llm_name"]
-        api_key = req.get("spark_api_password","xxxxxxxxxxxxxxx")
+        if req["model_type"] == "chat":
+            api_key = req.get("spark_api_password", "xxxxxxxxxxxxxxx")
+        elif req["model_type"] == "tts":
+            api_key = apikey_json(["spark_app_id", "spark_api_secret","spark_api_key"])
 
     elif factory == "BaiduYiyan":
         llm_name = req["llm_name"]
