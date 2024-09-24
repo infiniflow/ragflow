@@ -16,7 +16,7 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 ### 2. Which languages does RAGFlow support?
 
-English, simplified Chinese, traditional Chinese for now. 
+English, simplified Chinese, traditional Chinese for now.
 
 ### 3. Which embedding models can be deployed locally?
 
@@ -45,19 +45,19 @@ RAGFlow has a number of built-in models for document structure parsing, which ac
 
 ### 1. Which architectures or devices does RAGFlow support?
 
-Currently, we only support x86 CPU and Nvidia GPU. 
+Currently, we only support x86 CPU and Nvidia GPU.
 
 ### 2. Do you offer an API for integration with third-party applications?
 
-The corresponding APIs are now available. See the [RAGFlow API Reference](./api.md) for more information. 
+The corresponding APIs are now available. See the [RAGFlow API Reference](./api.md) for more information.
 
 ### 3. Do you support stream output?
 
-No, this feature is still in development. Contributions are welcome. 
+This feature is supported.
 
 ### 4. Is it possible to share dialogue through URL?
 
-Yes, this feature is now available.
+No, this feature is not supported.
 
 ### 5. Do you support multiple rounds of dialogues, i.e., referencing previous dialogues as context for the current dialogue?
 
