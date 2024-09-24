@@ -65,6 +65,8 @@ class RewriteQuestion(Generate, ABC):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": q}],
                             self._param.gen_conf())
+        self._canvas.history.pop()
+        self._canvas.history.append(("user", ans))
 
         print(ans, ":::::::::::::::::::::::::::::::::")
         return RewriteQuestion.be_output(ans)
