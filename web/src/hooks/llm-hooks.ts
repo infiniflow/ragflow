@@ -278,3 +278,26 @@ export const useDeleteLlm = () => {
 
   return { data, loading, deleteLlm: mutateAsync };
 };
+
+export const useDeleteFactory = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteFactory'],
+    mutationFn: async (params: IDeleteLlmRequestBody) => {
+      const { data } = await userService.deleteFactory(params);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+        message.success(t('message.deleted'));
+      }
+      return data.retcode;
+    },
+  });
+
+  return { data, loading, deleteFactory: mutateAsync };
+};
