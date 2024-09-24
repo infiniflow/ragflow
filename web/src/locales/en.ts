@@ -909,6 +909,12 @@ The above is the content you need to summarize.`,
       akShare: 'AkShare',
       akShareDescription:
         'This component can be used to obtain news information for the corresponding stock from the Eastmoney website.',
+      yahooFinance: 'YahooFinance',
+      info: 'Info',
+      history: 'History',
+      financials: 'Financials',
+      balanceSheet: 'Balance sheet',
+      cashFlowStatement: 'Cash flow statement',
     },
     footer: {
       profile: 'All rights reserved @ React',
