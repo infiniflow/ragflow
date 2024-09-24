@@ -287,7 +287,7 @@ def delete_llm():
 @manager.route('/delete_factory', methods=['POST'])
 @login_required
 @validate_request("llm_factory")
-def delete_llm():
+def delete_factory():
     req = request.json
     TenantLLMService.filter_delete(
             [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"]])
