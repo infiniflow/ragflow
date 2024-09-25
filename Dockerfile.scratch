@@ -33,7 +33,7 @@ USER root
 WORKDIR /ragflow
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt update && apt install -y nodejs npm && \
+    apt update && apt install -y nodejs npm cargo && \
     rm -rf /var/lib/apt/lists/*
 
 COPY web web
@@ -41,8 +41,7 @@ RUN cd web && npm i --force && npm run build
 
 # install dependencies from poetry.lock file
 COPY pyproject.toml poetry.toml poetry.lock ./
-RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
-    /root/.local/bin/poetry lock
+RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked
 
 RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
     /root/.local/bin/poetry install --sync --no-cache --no-root
@@ -79,6 +78,8 @@ ENV PATH="${VIRTUAL_ENV}/bin:/root/.local/bin:${PATH}"
 # Download nltk data
 RUN python3 -m nltk.downloader wordnet punkt punkt_tab
 
+# Copy models downloaded via download_deps.sh
+COPY det.onnx layout.laws.onnx layout.manual.onnx layout.onnx layout.paper.onnx ocr.res rec.onnx tsr.onnx updown_concat_xgb.model /ragflow/rag/res/deepdoc/
 
 ENV PYTHONPATH=/ragflow/
 
