@@ -194,79 +194,6 @@
 > $ docker-compose up -d
 > ```
 
-## 🛠️ ソースからビルドする
-
-ソースからDockerイメージをビルドするには:
-
-```bash
-$ git clone https://github.com/infiniflow/ragflow.git
-$ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.11.0 .
-$ cd ragflow/docker
-$ chmod +x ./entrypoint.sh
-$ docker compose up -d
-```
-
-## 🛠️ ソースコードからサービスを起動する方法
-
-ソースコードからサービスを起動する場合は、以下の手順に従ってください:
-
-1. リポジトリをクローンします
-```bash
-$ git clone https://github.com/infiniflow/ragflow.git
-$ cd ragflow/
-```
-
-2. 仮想環境を作成します（AnacondaまたはMinicondaがインストールされていることを確認してください）
-```bash
-$ conda create -n ragflow python=3.11.0
-$ conda activate ragflow
-$ pip install -r requirements.txt
-```
-CUDAのバージョンが12.0以上の場合、以下の追加コマンドを実行してください：
-```bash
-$ pip uninstall -y onnxruntime-gpu
-$ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
-```
-
-3. エントリースクリプトをコピーし、環境変数を設定します
-```bash
-$ cp docker/entrypoint.sh .
-$ vi entrypoint.sh
-```
-以下のコマンドで Python のパスとragflowプロジェクトのパスを取得します：
-```bash
-$ which python
-$ pwd
-```
-
-`which python` の出力を `PY` の値として、`pwd` の出力を `PYTHONPATH` の値として設定します。
-
-`LD_LIBRARY_PATH` が既に設定されている場合は、コメントアウトできます。
-
-```bash
-# 実際の状況に応じて設定を調整してください。以下の二つの export は新たに追加された設定です
-PY=${PY}
-export PYTHONPATH=${PYTHONPATH}
-# オプション：Hugging Face ミラーを追加
-export HF_ENDPOINT=https://hf-mirror.com
-```
-
-4. 基本サービスを起動します
-```bash
-$ cd docker
-$ docker compose -f docker-compose-base.yml up -d 
-```
-
-5. 設定ファイルを確認します
-**docker/.env** 内の設定が**conf/service_conf.yaml**内の設定と一致していることを確認してください。**service_conf.yaml**内の関連サービスのIPアドレスとポートは、ローカルマシンのIPアドレスとコンテナが公開するポートに変更する必要があります。
-
-6. サービスを起動します
-```bash
-$ chmod +x ./entrypoint.sh
-$ bash ./entrypoint.sh
-```
-
 ## 📚 ドキュメンテーション
 
 - [Quickstart](https://ragflow.io/docs/dev/)
@@ -286,4 +213,4 @@ $ bash ./entrypoint.sh
 
 ## 🙌 コントリビュート
 
-RAGFlow はオープンソースのコラボレーションによって発展してきました。この精神に基づき、私たちはコミュニティからの多様なコントリビュートを受け入れています。 参加を希望される方は、まず [コントリビューションガイド](./docs/references/CONTRIBUTING.md)をご覧ください。
+RAGFlow はオープンソースのコラボレーションによって発展してきました。この精神に基づき、私たちはコミュニティからの多様なコントリビュートを受け入れています。 参加を希望される方は、まず [コントリビューションガイド](./docs/develop/CONTRIBUTING.md)をご覧ください。

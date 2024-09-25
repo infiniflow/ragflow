@@ -5,11 +5,10 @@ slug: /contribution_guidelines
 
 # Contribution guidelines
 
-Thanks for wanting to contribute to RAGFlow. This document offers guidlines and major considerations for submitting your contributions. 
+This document offers guidlines and major considerations for submitting your contributions to RAGFlow.
 
 - To report a bug, file a [GitHub issue](https://github.com/infiniflow/ragflow/issues/new/choose) with us.
 - For further questions, you can explore existing discussions or initiate a new one in [Discussions](https://github.com/orgs/infiniflow/discussions).
-
 
 ## What you can contribute
 
@@ -27,7 +26,7 @@ The list below mentions some contributions you can make, but it is not a complet
 ### General workflow
 
 1. Fork our GitHub repository.
-2. Clone your fork to your local machine: 
+2. Clone your fork to your local machine:
 `git clone git@github.com:<yourname>/ragflow.git`
 3. Create a local branch: 
 `git checkout -b my-branch`
@@ -39,14 +38,16 @@ The list below mentions some contributions you can make, but it is not a complet
 
 ### Before filing a PR
 
-- Consider splitting a large PR into multiple smaller, standalone PRs to keep a traceable development history. 
+- Consider splitting a large PR into multiple smaller, standalone PRs to keep a traceable development history.
 - Ensure that your PR addresses just one issue, or keep any unrelated changes small.
 - Add test cases when contributing new features. They demonstrate that your code functions correctly and protect against potential issues from future changes.
-### Describing your PR 
+
+### Describing your PR
 
 - Ensure that your PR title is concise and clear, providing all the required information.
-- Refer to a corresponding GitHub issue in your PR description if applicable. 
+- Refer to a corresponding GitHub issue in your PR description if applicable.
 - Include sufficient design details for *breaking changes* or *API changes* in your description.
 
 ### Reviewing & merging a PR
-- Ensure that your PR passes all Continuous Integration (CI) tests before merging it.
+
+Ensure that your PR passes all Continuous Integration (CI) tests before merging it.
