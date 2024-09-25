@@ -64,7 +64,7 @@ class RagTokenizer:
         self.stemmer = PorterStemmer()
         self.lemmatizer = WordNetLemmatizer()
 
-        self.SPLIT_CHAR = r"([ ,\.<>/?;'\[\]\\`!@#$%^&*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-z\.-]+|[0-9,\.-]+)"
+        self.SPLIT_CHAR = r"([ ,\.<>/?;:'\[\]\\`!@#$%^&*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-z\.-]+|[0-9,\.-]+)"
         try:
             self.trie_ = datrie.Trie.load(self.DIR_ + ".txt.trie")
             return

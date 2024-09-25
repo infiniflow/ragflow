@@ -14,14 +14,14 @@
 #  limitations under the License.
 #
 import re
-import  threading
+import threading
 import requests
-import torch
-from FlagEmbedding import FlagReranker
 from huggingface_hub import snapshot_download
 import os
 from abc import ABC
 import numpy as np
+
+from api.settings import LIGHTEN
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import json
@@ -53,7 +53,9 @@ class DefaultRerank(Base):
         ^_-
 
         """
-        if not DefaultRerank._model:
+        if not LIGHTEN and not DefaultRerank._model:
+            import torch
+            from FlagEmbedding import FlagReranker
             with DefaultRerank._model_lock:
                 if not DefaultRerank._model:
                     try:

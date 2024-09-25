@@ -8,5 +8,5 @@ export interface IAddLlmRequestBody {
 
 export interface IDeleteLlmRequestBody {
   llm_factory: string; // Ollama
-  llm_name: string;
+  llm_name?: string;
 }

@@ -45,6 +45,7 @@ import {
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
+  initialJin10Values,
   initialKeywordExtractValues,
   initialMessageValues,
   initialPubMedValues,
@@ -55,6 +56,7 @@ import {
   initialSwitchValues,
   initialWenCaiValues,
   initialWikipediaValues,
+  initialYahooFinanceValues,
 } from './constant';
 import { ICategorizeForm, IRelevantForm, ISwitchForm } from './interface';
 import useGraphStore, { RFState } from './store';
@@ -117,6 +119,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.Switch]: initialSwitchValues,
       [Operator.WenCai]: initialWenCaiValues,
       [Operator.AkShare]: initialAkShareValues,
+      [Operator.YahooFinance]: initialYahooFinanceValues,
+      [Operator.Jin10]: initialJin10Values,
     };
   }, [llmId]);
 
