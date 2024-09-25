@@ -4,7 +4,9 @@ import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { ISystemStatus, IUserInfo } from '@/interfaces/database/user-setting';
 import userService from '@/services/user-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { message } from 'antd';
+import { Modal, message } from 'antd';
+import DOMPurify from 'dompurify';
+import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -32,6 +34,7 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
 };
 
 export const useFetchTenantInfo = (): ResponseGetType<ITenantInfo> => {
+  const { t } = useTranslation();
   const { data, isFetching: loading } = useQuery({
     queryKey: ['tenantInfo'],
     initialData: {},
@@ -42,6 +45,18 @@ export const useFetchTenantInfo = (): ResponseGetType<ITenantInfo> => {
         // llm_id is chat_id
         // asr_id is speech2txt
         const { data } = res;
+        if (isEmpty(data.embd_id) || isEmpty(data.llm_id)) {
+          Modal.warning({
+            title: t('common.warn'),
+            content: (
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(t('setting.modelProvidersWarn')),
+                }}
+              ></div>
+            ),
+          });
+        }
         data.chat_id = data.llm_id;
         data.speech2text_id = data.asr_id;
 

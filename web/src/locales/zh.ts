@@ -27,6 +27,7 @@ export default {
       close: '关闭',
       preview: '预览',
       move: '移动',
+      warn: '提醒',
     },
     login: {
       login: '登录',
@@ -554,6 +555,8 @@ export default {
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
+      modelProvidersWarn:
+        '请首先在 <b>设置 > 模型提供商</b> 中添加嵌入模型和 LLM。',
     },
     message: {
       registered: '注册成功',
@@ -876,7 +879,7 @@ export default {
         insurance: '保险',
         futures: '期货',
         lccp: '理财',
-        foreign_exchange: '股票',
+        foreign_exchange: '外汇',
       },
       akShare: 'AkShare',
       akShareDescription: '该组件可用于从东方财富网站获取相应股票的新闻信息。',

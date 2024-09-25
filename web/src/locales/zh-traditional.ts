@@ -27,6 +27,7 @@ export default {
       close: '關閉',
       preview: '預覽',
       move: '移動',
+      warn: '提醒',
     },
     login: {
       login: '登入',
@@ -537,6 +538,8 @@ export default {
         '請輸入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 區域',
       GoogleRegionMessage: '請輸入 Google Cloud 區域',
+      modelProvidersWarn:
+        '請先在 <b>「設定」>「模型提供者」</b> 中新增嵌入模型和LLM。',
     },
     message: {
       registered: '註冊成功',
@@ -858,7 +861,7 @@ export default {
         insurance: '保險',
         futures: '期貨',
         lccp: '理財',
-        foreign_exchange: '股票',
+        foreign_exchange: '外匯',
       },
       akShare: 'AkShare',
       akShareDescription: '此組件可用於從東方財富網取得對應股票的新聞資訊。',
