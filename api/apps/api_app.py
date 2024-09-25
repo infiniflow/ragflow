@@ -143,7 +143,7 @@ def stats():
 
 @manager.route('/new_conversation', methods=['GET'])
 def set_conversation():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -185,7 +185,7 @@ def set_conversation():
 @manager.route('/completion', methods=['POST'])
 @validate_request("conversation_id", "messages")
 def completion():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -348,7 +348,7 @@ def completion():
 @manager.route('/conversation/<conversation_id>', methods=['GET'])
 # @login_required
 def get(conversation_id):
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -379,7 +379,7 @@ def get(conversation_id):
 @manager.route('/document/upload', methods=['POST'])
 @validate_request("kb_name")
 def upload():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -489,7 +489,7 @@ def upload():
 @manager.route('/document/upload_and_parse', methods=['POST'])
 @validate_request("conversation_id")
 def upload_parse():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -512,7 +512,7 @@ def upload_parse():
 @manager.route('/list_chunks', methods=['POST'])
 # @login_required
 def list_chunks():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -551,7 +551,7 @@ def list_chunks():
 @manager.route('/list_kb_docs', methods=['POST'])
 # @login_required
 def list_kb_docs():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -590,7 +590,7 @@ def list_kb_docs():
 @manager.route('/document/infos', methods=['POST'])
 @validate_request("doc_ids")
 def docinfos():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -604,7 +604,7 @@ def docinfos():
 @manager.route('/document', methods=['DELETE'])
 # @login_required
 def document_rm():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
@@ -740,7 +740,7 @@ def completion_faq():
 @manager.route('/retrieval', methods=['POST'])
 @validate_request("kb_id", "question")
 def retrieval():
-    token = request.headers.get('Authorization').split()[1]
+    token = request.headers.get('Authorization').strip()
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
