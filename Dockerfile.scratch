@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN  sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt update && apt install -y curl libpython3-dev nginx openmpi-bin openmpi-common libopenmpi-dev libglib2.0-0 libglx-mesa0 \
+    apt update && apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 \
     && rm -rf /var/lib/apt/lists/* \
     && curl -sSL https://install.python-poetry.org | python3 -
 
@@ -33,7 +33,7 @@ USER root
 WORKDIR /ragflow
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt update && apt install -y nodejs npm cargo && \
+    apt update && apt install -y nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 
 COPY web web
@@ -42,7 +42,10 @@ RUN cd web && npm i --force && npm run build
 # install dependencies from poetry.lock file
 COPY pyproject.toml poetry.toml poetry.lock ./
 RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
-    /root/.local/bin/poetry install --sync --no-root
+    /root/.local/bin/poetry lock
+
+RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
+    /root/.local/bin/poetry install --sync --no-cache --no-root
 
 # production stage
 FROM base AS production
@@ -76,8 +79,6 @@ ENV PATH="${VIRTUAL_ENV}/bin:/root/.local/bin:${PATH}"
 # Download nltk data
 RUN python3 -m nltk.downloader wordnet punkt punkt_tab
 
-# Copy models downloaded via download_deps.sh
-COPY det.onnx layout.laws.onnx layout.manual.onnx layout.onnx layout.paper.onnx ocr.res rec.onnx tsr.onnx updown_concat_xgb.model /ragflow/rag/res/deepdoc/
 
 ENV PYTHONPATH=/ragflow/
 

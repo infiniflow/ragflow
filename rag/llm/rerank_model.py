@@ -109,8 +109,8 @@ class YoudaoRerank(DefaultRerank):
     _model_lock = threading.Lock()
 
     def __init__(self, key=None, model_name="maidalun1020/bce-reranker-base_v1", **kwargs):
-        from BCEmbedding import RerankerModel
-        if not YoudaoRerank._model:
+        if not LIGHTEN and not YoudaoRerank._model:
+            from BCEmbedding import RerankerModel
             with YoudaoRerank._model_lock:
                 if not YoudaoRerank._model:
                     try:

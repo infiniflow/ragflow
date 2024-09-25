@@ -245,8 +245,8 @@ class FastEmbed(Base):
             threads: Optional[int] = None,
             **kwargs,
     ):
-        from fastembed import TextEmbedding
-        if not FastEmbed._model:
+        if not LIGHTEN and not FastEmbed._model:
+            from fastembed import TextEmbedding
             self._model = TextEmbedding(model_name, cache_dir, threads, **kwargs)
 
     def encode(self, texts: list, batch_size=32):
@@ -291,8 +291,8 @@ class YoudaoEmbed(Base):
     _client = None
 
     def __init__(self, key=None, model_name="maidalun1020/bce-embedding-base_v1", **kwargs):
-        from BCEmbedding import EmbeddingModel as qanthing
-        if not YoudaoEmbed._client:
+        if not LIGHTEN and not YoudaoEmbed._client:
+            from BCEmbedding import EmbeddingModel as qanthing
             try:
                 print("LOADING BCE...")
                 YoudaoEmbed._client = qanthing(model_name_or_path=os.path.join(
