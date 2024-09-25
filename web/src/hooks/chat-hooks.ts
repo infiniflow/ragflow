@@ -12,7 +12,11 @@ import {
 import i18n from '@/locales/config';
 import { IClientConversation } from '@/pages/chat/interface';
 import chatService from '@/services/chat-service';
-import { buildMessageListWithUuid, isConversationIdExist } from '@/utils/chat';
+import {
+  buildMessageListWithUuid,
+  getConversationId,
+  isConversationIdExist,
+} from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
@@ -51,6 +55,7 @@ export const useGetChatSearchParams = () => {
     dialogId: currentQueryParameters.get(ChatSearchParams.DialogId) || '',
     conversationId:
       currentQueryParameters.get(ChatSearchParams.ConversationId) || '',
+    isNew: currentQueryParameters.get(ChatSearchParams.isNew) || '',
   };
 };
 
@@ -202,7 +207,7 @@ export const useFetchNextConversationList = () => {
 };
 
 export const useFetchNextConversation = () => {
-  const { conversationId } = useGetChatSearchParams();
+  const { isNew, conversationId } = useGetChatSearchParams();
   const {
     data,
     isFetching: loading,
@@ -214,17 +219,9 @@ export const useFetchNextConversation = () => {
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      if (isConversationIdExist(conversationId)) {
+      if (isNew !== 'true' && isConversationIdExist(conversationId)) {
         const { data } = await chatService.getConversation({ conversationId });
-        // if (data.retcode === 0 && needToBeSaved) {
-        //   yield put({
-        //     type: 'kFModel/fetch_document_thumbnails',
-        //     payload: {
-        //       doc_ids: getDocumentIdsFromConversionReference(data.data),
-        //     },
-        //   });
-        //   yield put({ type: 'setCurrentConversation', payload: data.data });
-        // }
+
         const conversation = data?.data ?? {};
 
         const messageList = buildMessageListWithUuid(conversation?.message);
@@ -265,7 +262,12 @@ export const useUpdateNextConversation = () => {
   } = useMutation({
     mutationKey: ['updateConversation'],
     mutationFn: async (params: Record<string, any>) => {
-      const { data } = await chatService.setConversation(params);
+      const { data } = await chatService.setConversation({
+        ...params,
+        conversation_id: params.conversation_id
+          ? params.conversation_id
+          : getConversationId(),
+      });
       if (data.retcode === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
       }

@@ -19,6 +19,7 @@ export enum SharedFrom {
 export enum ChatSearchParams {
   DialogId = 'dialogId',
   ConversationId = 'conversationId',
+  isNew = 'isNew',
 }
 
 export const EmptyConversationId = 'empty';
