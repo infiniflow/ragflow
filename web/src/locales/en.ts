@@ -27,6 +27,7 @@ export default {
       close: 'Close',
       preview: 'Preview',
       move: 'Move',
+      warn: '提醒',
     },
     login: {
       login: 'Sign in',
@@ -578,6 +579,8 @@ The above is the content you need to summarize.`,
         'Please input Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud Region',
       GoogleRegionMessage: 'Please input Google Cloud Region',
+      modelProvidersWarn:
+        'Please add both embedding model and LLM in <b>Settings > Model</b> providers firstly.',
     },
     message: {
       registered: 'Registered!',
