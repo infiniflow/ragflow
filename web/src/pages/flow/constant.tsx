@@ -3,6 +3,7 @@ import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
 import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
+import { ReactComponent as ConcentratorIcon } from '@/assets/svg/concentrator.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
 import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
@@ -67,6 +68,7 @@ export enum Operator {
   AkShare = 'AkShare',
   YahooFinance = 'YahooFinance',
   Jin10 = 'Jin10',
+  Concentrator = 'Concentrator',
 }
 
 export const operatorIconMap = {
@@ -97,6 +99,7 @@ export const operatorIconMap = {
   [Operator.AkShare]: AkShareIcon,
   [Operator.YahooFinance]: YahooFinanceIcon,
   [Operator.Jin10]: Jin10Icon,
+  [Operator.Concentrator]: ConcentratorIcon,
 };
 
 export const operatorMap: Record<
@@ -210,6 +213,14 @@ export const operatorMap: Record<
   [Operator.AkShare]: { backgroundColor: '#8085f5' },
   [Operator.YahooFinance]: { backgroundColor: '#b474ff' },
   [Operator.Jin10]: { backgroundColor: '#a0b9f8' },
+  [Operator.Concentrator]: {
+    backgroundColor: '#32d2a3',
+    color: 'white',
+    width: 70,
+    height: 70,
+    fontSize: 10,
+    iconFontSize: 16,
+  },
 };
 
 export const componentMenuList = [
@@ -239,6 +250,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Switch,
+  },
+  {
+    name: Operator.Concentrator,
   },
   {
     name: Operator.DuckDuckGo,
@@ -451,6 +465,8 @@ export const initialJin10Values = {
   filter: '',
 };
 
+export const initialConcentratorValues = {};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -525,6 +541,7 @@ export const RestrictedUpstreamMap = {
   [Operator.AkShare]: [Operator.Begin],
   [Operator.YahooFinance]: [Operator.Begin],
   [Operator.Jin10]: [Operator.Begin],
+  [Operator.Concentrator]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -551,6 +568,7 @@ export const NodeMap = {
   [Operator.QWeather]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'categorizeNode',
+  [Operator.Concentrator]: 'logicNode',
   [Operator.WenCai]: 'ragNode',
   [Operator.AkShare]: 'ragNode',
   [Operator.YahooFinance]: 'ragNode',
