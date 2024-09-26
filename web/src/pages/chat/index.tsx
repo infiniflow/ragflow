@@ -143,9 +143,12 @@ const Chat = () => {
     handleClickDialog(dialogId);
   };
 
-  const handleConversationCardClick = (dialogId: string) => () => {
-    handleClickConversation(dialogId);
-  };
+  const handleConversationCardClick = useCallback(
+    (conversationId: string) => () => {
+      handleClickConversation(conversationId);
+    },
+    [handleClickConversation],
+  );
 
   const handleCreateTemporaryConversation = useCallback(() => {
     addTemporaryConversation();

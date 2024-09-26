@@ -55,7 +55,7 @@ export const useClickConversationCard = () => {
       newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
       setSearchParams(newQueryParameters);
     },
-    [newQueryParameters, setSearchParams],
+    [setSearchParams],
   );
 
   return { handleClickConversation };
@@ -228,6 +228,7 @@ export const useSelectDerivedConversationList = () => {
   const { dialogId } = useGetChatSearchParams();
   const prologue = currentDialog?.prompt_config?.prologue ?? '';
   const { setNewConversationRouteParams } = useSetNewConversationRouteParams();
+  const { handleClickConversation } = useClickConversationCard();
 
   const addTemporaryConversation = useCallback(() => {
     const conversationId = getConversationId();
@@ -255,9 +256,21 @@ export const useSelectDerivedConversationList = () => {
     });
   }, [conversationList, dialogId, prologue, t, setNewConversationRouteParams]);
 
+  // When you first enter the page, select the top conversation card
+  const checkTopConversationCard = useCallback(
+    (conversationList: IConversation[]) => {
+      const firstConversation = conversationList.at(0);
+      if (firstConversation) {
+        handleClickConversation(firstConversation.id);
+      }
+    },
+    [handleClickConversation],
+  );
+
   useEffect(() => {
     setList([...conversationList]);
-  }, [conversationList]);
+    checkTopConversationCard(conversationList);
+  }, [conversationList, checkTopConversationCard]);
 
   // useEffect(() => {
   //   addTemporaryConversation();
