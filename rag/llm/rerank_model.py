@@ -224,8 +224,8 @@ class NvidiaRerank(Base):
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
         rank = np.zeros(len(texts), dtype=float)
-        for d in res["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        for d in res["rankings"]:
+            rank[d["index"]] = d["logit"]
         return rank, token_count
 
 
@@ -264,8 +264,8 @@ class CoHereRerank(Base):
             return_documents=False,
         )
         rank = np.zeros(len(texts), dtype=float)
-        for d in res["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        for d in res.results:
+            rank[d.index] = d.relevance_score
         return rank, token_count
 
 
@@ -348,6 +348,6 @@ class VoyageRerank(Base):
             query=query, documents=texts, model=self.model_name, top_k=len(texts)
         )
         rank = np.zeros(len(texts), dtype=float)
-        for d in res["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        for r in res.results:
+            rank[r.index] = r.relevance_score
         return rank, res.total_tokens
