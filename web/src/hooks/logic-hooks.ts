@@ -213,6 +213,7 @@ export const useFetchAppConf = () => {
 
 export const useSendMessageWithSse = (
   url: string = api.completeConversation,
+  controller?: AbortController,
 ) => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
@@ -234,6 +235,7 @@ export const useSendMessageWithSse = (
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(body),
+          signal: controller?.signal,
         });
 
         const res = response.clone().json();

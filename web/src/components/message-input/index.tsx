@@ -117,7 +117,7 @@ const MessageInput = ({
     file,
   }) => {
     let nextConversationId: string = conversationId;
-    if (createConversationBeforeUploadDocument && !conversationId) {
+    if (createConversationBeforeUploadDocument) {
       const creatingRet = await createConversationBeforeUploadDocument(
         file.name,
       );

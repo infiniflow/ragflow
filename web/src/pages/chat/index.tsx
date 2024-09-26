@@ -25,7 +25,6 @@ import { useCallback } from 'react';
 import ChatConfigurationModal from './chat-configuration-modal';
 import ChatContainer from './chat-container';
 import {
-  useClickConversationCard,
   useDeleteConversation,
   useDeleteDialog,
   useEditDialog,
@@ -36,6 +35,7 @@ import {
 
 import ChatOverviewModal from '@/components/api-service/chat-overview-modal';
 import {
+  useClickConversationCard,
   useClickDialogCard,
   useFetchNextDialogList,
   useGetChatSearchParams,
@@ -139,13 +139,16 @@ const Chat = () => {
       showConversationRenameModal(conversationId);
     };
 
-  const handleDialogCardClick = (dialogId: string) => () => {
-    handleClickDialog(dialogId);
-  };
+  const handleDialogCardClick = useCallback(
+    (dialogId: string) => () => {
+      handleClickDialog(dialogId);
+    },
+    [handleClickDialog],
+  );
 
   const handleConversationCardClick = useCallback(
-    (conversationId: string) => () => {
-      handleClickConversation(conversationId);
+    (conversationId: string, isNew: boolean) => () => {
+      handleClickConversation(conversationId, isNew ? 'true' : '');
     },
     [handleClickConversation],
   );
@@ -315,7 +318,7 @@ const Chat = () => {
                 <Card
                   key={x.id}
                   hoverable
-                  onClick={handleConversationCardClick(x.id)}
+                  onClick={handleConversationCardClick(x.id, x.is_new)}
                   onMouseEnter={handleConversationCardEnter(x.id)}
                   onMouseLeave={handleConversationItemLeave}
                   className={classNames(styles.chatTitleCard, {

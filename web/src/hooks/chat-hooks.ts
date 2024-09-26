@@ -48,6 +48,25 @@ export const useClickDialogCard = () => {
   return { handleClickDialog };
 };
 
+export const useClickConversationCard = () => {
+  const [currentQueryParameters, setSearchParams] = useSearchParams();
+  const newQueryParameters: URLSearchParams = useMemo(
+    () => new URLSearchParams(currentQueryParameters.toString()),
+    [currentQueryParameters],
+  );
+
+  const handleClickConversation = useCallback(
+    (conversationId: string, isNew: string) => {
+      newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
+      newQueryParameters.set(ChatSearchParams.isNew, isNew);
+      setSearchParams(newQueryParameters);
+    },
+    [setSearchParams, newQueryParameters],
+  );
+
+  return { handleClickConversation };
+};
+
 export const useGetChatSearchParams = () => {
   const [currentQueryParameters] = useSearchParams();
 
@@ -186,6 +205,7 @@ export const useRemoveNextDialog = () => {
 
 export const useFetchNextConversationList = () => {
   const { dialogId } = useGetChatSearchParams();
+  const { handleClickConversation } = useClickConversationCard();
   const {
     data,
     isFetching: loading,
@@ -198,7 +218,9 @@ export const useFetchNextConversationList = () => {
     enabled: !!dialogId,
     queryFn: async () => {
       const { data } = await chatService.listConversation({ dialogId });
-
+      if (data.retcode === 0 && data.data.length > 0) {
+        handleClickConversation(data.data[0].id, '');
+      }
       return data?.data;
     },
   });
@@ -219,6 +241,8 @@ export const useFetchNextConversation = () => {
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {
+      console.log('🚀 ~ queryFn: ~ useFetchNextConversation:');
+
       if (isNew !== 'true' && isConversationIdExist(conversationId)) {
         const { data } = await chatService.getConversation({ conversationId });
 
