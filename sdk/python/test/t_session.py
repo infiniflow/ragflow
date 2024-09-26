@@ -19,7 +19,7 @@ class TestSession:
         question = "What is AI"
         for ans in session.chat(question, stream=True):
             pass
-        assert ans.content!="\n**ERROR**", "Please check this error."
+        assert not ans.content.startswith("**ERROR**"), "Please check this error."
 
     def test_delete_session_with_success(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
