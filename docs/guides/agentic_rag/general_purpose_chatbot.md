@@ -26,7 +26,7 @@ To create a general-purpose chatbot agent using our template:
 3. On the **agent template** page, hover over the card on **General-purpose chatbot** and click **Use this template**.  
    *You are now directed to the **no-code workflow editor** page.*
 
-   ![workflow_editor](https://github.com/user-attachments/assets/9fc6891c-7784-43b8-ab4a-3b08a9e551c4)
+   ![workflow_editor](https://github.com/user-attachments/assets/52e7dc62-4bf5-4fbb-ab73-4a6e252065f0)
 
 :::tip NOTE
 RAGFlow's no-code editor spares you the trouble of coding, making agent development effortless.
@@ -40,10 +40,9 @@ Here’s a breakdown of each component and its role and requirements in the chat
   - Function: Sets the opening greeting for the user.
   - Purpose: Establishes a welcoming atmosphere and prepares the user for interaction.
 
-- **Answer**
+- **Interact**
   - Function: Serves as the interface between human and the bot.
   - Role: Acts as the downstream component of **Begin**.  
-  - Note: Though named "Answer", it does not engage with the LLM.
 
 - **Retrieval**
   - Function: Retrieves information from specified knowledge base(s).
@@ -78,7 +77,7 @@ Here’s a breakdown of each component and its role and requirements in the chat
 
 4. Click **Relevant** to review or change its settings:  
    *You may retain the current settings, but feel free to experiment with changes to understand how the agent operates.*
-   ![relevant_settings](https://github.com/user-attachments/assets/f582cc1c-0dd5-499c-813a-294dbfb941dd)
+   ![relevant_settings](https://github.com/user-attachments/assets/9ff7fdd8-7a69-4ee2-bfba-c7fb8029150f)
 
 5. Click **Rewrite** to select a different model for query rewriting or update the maximum loop times for query rewriting:  
    ![choose_model](https://github.com/user-attachments/assets/2bac1d6c-c4f1-42ac-997b-102858c3f550)

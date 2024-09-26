@@ -126,4 +126,4 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 ### Access the RAGFlow service
 
-In your web browser, enter `http://127.0.0.1:9222/`, ensuring the port number matches that shown in the screenshot above.
+In your web browser, enter `http://127.0.0.1:<PORT>/`, ensuring the port number matches that shown in the screenshot above.
