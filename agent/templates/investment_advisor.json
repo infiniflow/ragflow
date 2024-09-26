@@ -44,7 +44,7 @@
                             }
                         ],
                         "presence_penalty": 0.4,
-                        "prompt": "Role: You are a professional financial counseling assistant.\n\nTasks\nStep 1: Organize and output the content provided by Man Finance in the form of a table based on the user's questions.\nStep 2: Organize and output the news information provided by AkShare, making sure that each news item has a corresponding URL link.\n\nNotice:\n- All data provided by WenCai needs to be collated and output, you cannot replace the output data with ellipses!\n- Output no more than 5 news items from AkShare.\n\nContent provided by Wencai: \n{wencai_input}\n\nContent provided by AkShare: \n{ak_input}",
+                        "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{wencai_input}\n\n################\nContent provided by AkShare: \n{ak_input}",
                         "temperature": 0.1,
                         "top_p": 0.3
                     }
@@ -369,7 +369,7 @@
                             ],
                             "presencePenaltyEnabled": true,
                             "presence_penalty": 0.4,
-                            "prompt": "Role: You are a professional financial counseling assistant.\n\nTasks\nStep 1: Organize and output the content provided by Man Finance in the form of a table based on the user's questions.\nStep 2: Organize and output the news information provided by AkShare, making sure that each news item has a corresponding URL link.\n\nNotice:\n- All data provided by WenCai needs to be collated and output, you cannot replace the output data with ellipses!\n- Output no more than 5 news items from AkShare.\n\nContent provided by Wencai: \n{wencai_input}\n\nContent provided by AkShare: \n{ak_input}",
+                            "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{wencai_input}\n\n################\nContent provided by AkShare: \n{ak_input}",
                             "temperature": 0.1,
                             "temperatureEnabled": true,
                             "topPEnabled": true,
