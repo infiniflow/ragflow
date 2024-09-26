@@ -26,7 +26,7 @@ class ConcentratorParam(ComponentParamBase):
         super().__init__()
 
     def check(self):
-        super().check()
+        return True
 
 
 class Concentrator(ComponentBase, ABC):
