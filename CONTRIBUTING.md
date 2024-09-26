@@ -1,8 +1,3 @@
----
-sidebar_position: 0
-slug: /contribution_guidelines
----
-
 # Contribution guidelines
 
 This document offers guidlines and major considerations for submitting your contributions to RAGFlow.

@@ -186,7 +186,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
    > See [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) for more information.
 
-   _The show is now on!_
+   _The show is on!_
 
 ## 🔧 Configurations
 
@@ -227,4 +227,4 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🙌 Contributing
 
-RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](./docs/develop/CONTRIBUTING.md) first.
+RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](./CONTRIBUTING.md) first.

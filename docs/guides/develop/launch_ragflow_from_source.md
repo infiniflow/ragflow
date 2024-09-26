@@ -5,7 +5,7 @@ slug: /launch_ragflow_from_source
 
 # Launch the RAGFlow Service from Source 
 
-A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be equipped to debug using the source code.
+A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
 
 ## Target Audience
 
@@ -26,14 +26,14 @@ If you have not installed Docker on your local machine (Windows, Mac, or Linux),
 
 To launch the RAGFlow service from source code:
 
-### 1. Clone the RAGFlow Repository
+### Clone the RAGFlow Repository
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 ```
 
-### 2. Install Python dependencies
+### Install Python dependencies
 
 1. Install Poetry:
    
@@ -47,14 +47,14 @@ cd ragflow/
    export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
    ```
 
-3. Install all Python dependencies:
+3. Install Python dependencies:
 
    ```bash
    ~/.local/bin/poetry install --sync --no-root
    ```
-   *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment*
+   *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
-### 3. Launch Third-party Services
+### Launch Third-party Services
 
 The following command launches the 'base' services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
 
@@ -62,9 +62,9 @@ The following command launches the 'base' services (MinIO, Elasticsearch, Redis,
 docker compose -f docker/docker-compose-base.yml up -d
 ```
 
-### 4. Update `host` and `port` Settings for Third-party Services
+### Update `host` and `port` Settings for Third-party Services
 
-1. Add the following line to `/etc/hosts` to resolve all hosts in **docker/service_conf.yaml** to `127.0.0.1`:
+1. Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:
 
    ```
    127.0.0.1       es01 mysql minio redis
@@ -72,9 +72,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 2. In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
-3. Replace **conf/service_conf.yaml** with the contents of **docker/service_conf.yaml**.
-
-### 5. Launch the RAGFlow Backend Service
+### Launch the RAGFlow Backend Service
 
 1. Comment out the `nginx` line in **docker/entrypoint.sh**.
 
@@ -82,14 +80,14 @@ docker compose -f docker/docker-compose-base.yml up -d
    # /usr/sbin/nginx
    ```
 
-2. Activate Python virtual env
+2. Activate the Python virtual environment:
 
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    ```
 
-3.  [Optional] If you are inside GFW
+3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
  
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
@@ -101,34 +99,31 @@ docker compose -f docker/docker-compose-base.yml up -d
    bash docker/entrypoint.sh
    ```
 
-### 6. Launch the frontend service
+### Launch the RAGFlow frontend service
 
-1. Navigate to the web directory:
+1. Navigate to the `web` directory and install the frontend dependencies:
 
    ```bash
    cd web
-   ```
-
-2. Install frontend dependencies:
-
-   ```bash
    npm install --force
    ```
 
-3. Update the proxy configuration in **.umirc.ts**:
+2. Update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
 
    ```bash
    vim .umirc.ts
    ```
 
-   Update proxy.target to http://127.0.0.1:9380
-
-4. Start up the frontend service:
+3. Start up the RAGFlow frontend service:
 
    ```bash
    npm run dev 
-   ```
+   ```  
 
-### 7. Access the RAGFlow service
+   *The following message appears, showing the IP address and port number of your frontend service:*  
 
-In your web browser, enter `http://127.0.0.1/`.
+   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+### Access the RAGFlow service
+
+In your web browser, enter `http://127.0.0.1:9222/`, ensuring the port number matches that shown in the screenshot above.

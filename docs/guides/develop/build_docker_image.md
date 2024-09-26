@@ -5,7 +5,7 @@ slug: /build_docker_image
 
 # Build a RAGFlow Docker Image
 
-A guide explaining how to build a RAGFlow Docker image from its source code. By following this guide, you'll be equipped to create a local Docker image that can be used for development, debugging, or testing purposes.
+A guide explaining how to build a RAGFlow Docker image from its source code. By following this guide, you'll be able to create a local Docker image that can be used for development, debugging, or testing purposes.
 
 ## Target Audience
 
@@ -27,24 +27,17 @@ If you have not installed Docker on your local machine (Windows, Mac, or Linux),
 
 To build a RAGFlow Docker image from source code:
 
-### 1. Git Clone the Repository
+### Git Clone the Repository
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 ```
 
-### 2. Change Directory to the RAGFlow Folder
+### Build the Docker Image
 
-After cloning the repository, navigate to the `ragflow` directory where the Dockerfile and other necessary files are located.
+Navigate to the `ragflow` directory where the Dockerfile and other necessary files are located. Now you can build the Docker image using the provided Dockerfile. The command below specifies which Dockerfile to use and tages the image with a name for reference purpose.
 
 ```bash
 cd ragflow/
-```
-
-### 3. Build the Docker Image
-
-Now you can build the Docker image using the provided Dockerfile. The command below specifies which Dockerfile to use and tages the image with a name for reference purpose.
-
-```bash
 docker build -f Dockerfile.scratch -t infiniflow/ragflow:dev .
 ```
