@@ -1414,3 +1414,4 @@ class GoogleChat(Base):
                 yield ans + "\n**ERROR**: " + str(e)
 
             yield response._chunks[-1].usage_metadata.total_token_count
+            
