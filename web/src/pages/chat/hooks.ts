@@ -324,6 +324,10 @@ export const useSelectNextMessages = () => {
     ) {
       setDerivedMessages(conversation.message);
     }
+
+    if (!conversationId) {
+      setDerivedMessages([]);
+    }
   }, [conversation.message, conversationId, setDerivedMessages, isNew]);
 
   return {
@@ -613,7 +617,7 @@ export const useRenameConversation = () => {
 export const useGetSendButtonDisabled = () => {
   const { dialogId, conversationId } = useGetChatSearchParams();
 
-  return dialogId === '' && conversationId === '';
+  return dialogId === '' || conversationId === '';
 };
 
 export const useSendButtonDisabled = (value: string) => {

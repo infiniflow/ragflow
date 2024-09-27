@@ -251,6 +251,7 @@ export const useSendMessageWithSse = (
             const { done, value } = x;
             if (done) {
               console.info('done');
+              setAnswer({} as IAnswer);
               break;
             }
             try {
@@ -270,9 +271,12 @@ export const useSendMessageWithSse = (
         }
         console.info('done?');
         setDone(true);
+        setAnswer({} as IAnswer);
         return { data: await res, response };
       } catch (e) {
         setDone(true);
+        setAnswer({} as IAnswer);
+
         console.warn(e);
       }
     },

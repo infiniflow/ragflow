@@ -234,8 +234,14 @@ const MessageInput = ({
               >
                 <Button
                   type={'text'}
+                  disabled={disabled}
                   icon={
-                    <SvgIcon name="paper-clip" width={18} height={22}></SvgIcon>
+                    <SvgIcon
+                      name="paper-clip"
+                      width={18}
+                      height={22}
+                      disabled={disabled}
+                    ></SvgIcon>
                   }
                 ></Button>
               </Upload>

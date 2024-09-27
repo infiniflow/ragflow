@@ -580,7 +580,7 @@ The above is the content you need to summarize.`,
       addGoogleRegion: 'Google Cloud Region',
       GoogleRegionMessage: 'Please input Google Cloud Region',
       modelProvidersWarn:
-        'Please add both embedding model and LLM in <b>Settings > Model</b> providers firstly.',
+        'Please add both embedding model and LLM in <b>Settings > Model providers</b>  firstly.',
     },
     message: {
       registered: 'Registered!',

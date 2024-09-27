@@ -22,12 +22,12 @@ import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { has, set } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
-import { useSearchParams } from 'umi';
+import { history, useSearchParams } from 'umi';
 
 //#region logic
 
 export const useClickDialogCard = () => {
-  const [, setSearchParams] = useSearchParams();
+  const [_, setSearchParams] = useSearchParams();
 
   const newQueryParameters: URLSearchParams = useMemo(() => {
     return new URLSearchParams();
@@ -84,6 +84,7 @@ export const useGetChatSearchParams = () => {
 
 export const useFetchNextDialogList = () => {
   const { handleClickDialog } = useClickDialogCard();
+  const { dialogId } = useGetChatSearchParams();
 
   const {
     data,
@@ -94,11 +95,20 @@ export const useFetchNextDialogList = () => {
     initialData: [],
     gcTime: 0,
     refetchOnWindowFocus: false,
-    queryFn: async () => {
+    refetchOnMount: false,
+    queryFn: async (...params) => {
+      console.log('🚀 ~ queryFn: ~ params:', params);
       const { data } = await chatService.listDialog();
 
-      if (data.retcode === 0 && data.data.length > 0) {
-        handleClickDialog(data.data[0].id);
+      if (data.retcode === 0) {
+        const list: IDialog[] = data.data;
+        if (list.length > 0) {
+          if (list.every((x) => x.id !== dialogId)) {
+            handleClickDialog(data.data[0].id);
+          }
+        } else {
+          history.push('/chat');
+        }
       }
 
       return data?.data ?? [];
@@ -110,6 +120,7 @@ export const useFetchNextDialogList = () => {
 
 export const useSetNextDialog = () => {
   const queryClient = useQueryClient();
+
   const {
     data,
     isPending: loading,
@@ -120,8 +131,10 @@ export const useSetNextDialog = () => {
       const { data } = await chatService.setDialog(params);
       if (data.retcode === 0) {
         queryClient.invalidateQueries({
+          exact: false,
           queryKey: ['fetchDialogList'],
         });
+
         queryClient.invalidateQueries({
           queryKey: ['fetchDialog'],
         });
@@ -190,6 +203,7 @@ export const useRemoveNextDialog = () => {
       const { data } = await chatService.removeDialog({ dialogIds });
       if (data.retcode === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchDialogList'] });
+
         message.success(i18n.t('message.deleted'));
       }
       return data.retcode;
