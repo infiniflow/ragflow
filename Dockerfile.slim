@@ -2,6 +2,8 @@
 FROM ubuntu:24.04 AS base
 USER root
 
+ENV LIGHTEN=1
+
 WORKDIR /ragflow
 
 RUN rm -f /etc/apt/apt.conf.d/docker-clean \
@@ -43,7 +45,11 @@ RUN cd web && npm i --force && npm run build
 COPY pyproject.toml poetry.toml poetry.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
-    /root/.local/bin/poetry install --sync --no-cache --no-root
+    if [ "$LIGHTEN" -eq 0 ]; then \
+        /root/.local/bin/poetry install --sync --no-cache --no-root --with=full; \
+    else \
+        /root/.local/bin/poetry install --sync --no-cache --no-root; \
+    fi
 
 # production stage
 FROM base AS production
@@ -76,9 +82,6 @@ ENV PATH="${VIRTUAL_ENV}/bin:/root/.local/bin:${PATH}"
 
 # Download nltk data
 RUN python3 -m nltk.downloader wordnet punkt punkt_tab
-
-# Copy models downloaded via download_deps.sh
-# COPY det.onnx layout.laws.onnx layout.manual.onnx layout.onnx layout.paper.onnx ocr.res rec.onnx tsr.onnx updown_concat_xgb.model /ragflow/rag/res/deepdoc/
 
 ENV PYTHONPATH=/ragflow/
 

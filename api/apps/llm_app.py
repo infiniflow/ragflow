@@ -155,6 +155,10 @@ def add_llm():
     elif factory == "LocalAI":
         llm_name = req["llm_name"]+"___LocalAI"
         api_key = "xxxxxxxxxxxxxxx"
+        
+    elif factory == "HuggingFace":
+        llm_name = req["llm_name"]+"___HuggingFace"
+        api_key = "xxxxxxxxxxxxxxx"
 
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"]+"___OpenAI-API"
