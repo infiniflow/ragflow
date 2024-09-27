@@ -488,7 +488,7 @@ class RAGFlowPdfParser:
                         i += 1
                         continue
 
-                    if not down["text"].strip():
+                    if not down["text"].strip() or not up["text"].strip():
                         i += 1
                         continue
 

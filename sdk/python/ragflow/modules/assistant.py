@@ -76,7 +76,7 @@ class Assistant(Base):
         raise Exception(res["retmsg"])
 
     def get_session(self, id) -> Session:
-        res = self.get("/session/get", {"id": id})
+        res = self.get("/session/get", {"id": id,"assistant_id":self.id})
         res = res.json()
         if res.get("retmsg") == "success":
             return Session(self.rag, res["data"])

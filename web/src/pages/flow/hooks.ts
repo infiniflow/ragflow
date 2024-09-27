@@ -38,6 +38,7 @@ import {
   initialBeginValues,
   initialBingValues,
   initialCategorizeValues,
+  initialConcentratorValues,
   initialDeepLValues,
   initialDuckValues,
   initialExeSqlValues,
@@ -121,6 +122,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.AkShare]: initialAkShareValues,
       [Operator.YahooFinance]: initialYahooFinanceValues,
       [Operator.Jin10]: initialJin10Values,
+      [Operator.Concentrator]: initialConcentratorValues,
     };
   }, [llmId]);
 

@@ -42,8 +42,6 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🛠️ [Build RAGFlow image](#-build-ragflow-image)
-- 🛠️ [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
 - 🏄 [Community](#-community)
@@ -188,7 +186,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
    > See [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) for more information.
 
-   _The show is now on!_
+   _The show is on!_
 
 ## 🔧 Configurations
 
@@ -210,79 +208,6 @@ Updates to the above configurations require a reboot of all containers to take e
 > $ docker-compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🛠️ Build RAGFlow image
-
-To build the Docker images from source:
-
-```bash
-$ git clone https://github.com/infiniflow/ragflow.git
-$ cd ragflow/
-$ docker build -f Dockerfile.scratch -t infiniflow/ragflow:dev .
-```
-
-## 🛠️ Launch service from source for development
-
-To launch the service from source:
-
-1. Clone the repository: 
-
-   ```bash
-   $ git clone https://github.com/infiniflow/ragflow.git
-   $ cd ragflow/
-   ```
-
-2. Install all python dependencies in a newly created virtual environment named `.venv`:
-
-   ```bash
-   $ curl -sSL https://install.python-poetry.org | python3 -
-   $ $HOME/.local/bin/poetry install --sync --no-root
-   ```
-
-3. Copy the entry script and configure environment variables:
-   
-   ```bash
-   # Adjust configurations according to your actual situation (the following two export commands are newly added):
-   # - Comment out `LD_LIBRARY_PATH`, if it is configured.
-   # - Optional: Add Hugging Face mirror.
-   source ~/.venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   export HF_ENDPOINT=https://hf-mirror.com
-   ```
-
-4. Launch the third-party services (MinIO, Elasticsearch, Redis, and MySQL):
-
-   ```bash
-   $ docker compose -f docker/docker-compose-base.yml up -d
-   ```
-
-5. Adjust configurations
-   Add the following line to `/etc/hosts` to resolve all hosts in `docker/service_conf.yaml` to `127.0.0.1`:
-
-   ```
-   127.0.0.1       es01 mysql minio redis
-   ```
-
-   Edit `docker/service_conf.yaml` to change mysql port to `5455` and es port to `1200`, as specified in `docker/.env`.
-
-6. Launch the RAGFlow backend service:
-   Comment out the `nginx` line in `docker/entrypoint.sh` and run the script:
-
-   ```bash
-   $ bash docker/entrypoint.sh
-   ```
-
-7. Launch the frontend service:
-
-   ```bash
-   $ cd web
-   $ npm install --force
-   $ vim .umirc.ts
-   # Update proxy.target to http://127.0.0.1:9380
-   $ npm run dev 
-   ```
-
-8. In your web browser, enter `http://127.0.0.1/`.
-
 ## 📚 Documentation
 
 - [Quickstart](https://ragflow.io/docs/dev/)
@@ -302,4 +227,4 @@ See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
 
 ## 🙌 Contributing
 
-RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](./docs/references/CONTRIBUTING.md) first.
+RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](./CONTRIBUTING.md) first.

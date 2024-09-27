@@ -53,9 +53,9 @@ Please review the flowing description of the RAG-specific components before you 
 | -------------- | ------------------------------------------------------------ |
 | **Retrieval**  | A component that retrieves information from specified knowledge bases and returns 'Empty response' if no information is found. Ensure the correct knowledge bases are selected. |
 | **Generate**   | A component that prompts the LLM to generate responses. You must ensure the prompt is set correctly. |
-| **Answer**     | A component that serves as the interface between human and the bot, receiving user inputs and displaying the agent's responses. |
+| **Interact**   | A component that serves as the interface between human and the bot, receiving user inputs and displaying the agent's responses. |
 | **Categorize** | A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component. |
-| **Message**    | A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is **Answer**, the interface component. |
+| **Message**    | A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is **Interact**, the interface component. |
 | **Relevant**   | A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result. |
 | **Rewrite**    | A component that refines a user query if it fails to retrieve relevant information from the knowledge base. It repeats this process until the predefined looping upper limit is reached. Ensure its upstream is **Relevant** and downstream is **Retrieval**. |
 | **Keyword**    | A component that retrieves top N search results from wikipedia.org. Ensure the TopN value is set properly before use. |
@@ -63,8 +63,8 @@ Please review the flowing description of the RAG-specific components before you 
 :::caution NOTE
 
 - Ensure **Rewrite**'s upstream component is **Relevant** and downstream component is **Retrieval**.
-- Ensure the downstream component of **Message** is **Answer**.
-- The downstream component of **Begin** is always **Answer**.
+- Ensure the downstream component of **Message** is **Interact**.
+- The downstream component of **Begin** is always **Interact**.
 
 :::
 
