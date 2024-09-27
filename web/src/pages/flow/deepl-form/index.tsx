@@ -1,3 +1,4 @@
+import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Select } from 'antd';
 import { DeepLSourceLangOptions, DeepLTargetLangOptions } from '../constant';
@@ -17,6 +18,7 @@ const DeepLForm = ({ onValuesChange, form }: IOperatorForm) => {
       form={form}
       onValuesChange={onValuesChange}
     >
+      <TopNItem initialValue={5}></TopNItem>
       <Form.Item label={t('authKey')} name={'auth_key'}>
         <Select options={options}></Select>
       </Form.Item>
