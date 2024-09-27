@@ -30,7 +30,7 @@ S3 = get_base_config("s3", {})
 MINIO = decrypt_database_config(name="minio")
 try:
     REDIS = decrypt_database_config(name="redis")
-except Exception:
+except Exception as e:
     REDIS = {}
     pass
 DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
