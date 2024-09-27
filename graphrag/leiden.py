@@ -134,14 +134,6 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
     return results_by_level
 
 
-def add_community_info2graph(graph: nx.Graph, commu_info: dict[str, dict[str, dict]]):
-    for lev, cluster_info in commu_info.items():
-        for cid, nodes in cluster_info.items():
-            for n in nodes["nodes"]:
-                if "community" not in graph.nodes[n]: graph.nodes[n]["community"] = {}
-                graph.nodes[n]["community"].update({lev: cid})
-
-
 def add_community_info2graph(graph: nx.Graph, nodes: List[str], community_title):
     for n in nodes:
         if "communities" not in graph.nodes[n]:
