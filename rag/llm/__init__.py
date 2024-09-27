@@ -68,7 +68,7 @@ CvModel = {
     "OpenAI-API-Compatible": OpenAI_APICV,
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
-    "Tencent Hunyuan": HunyuanCV,
+    "Tencent Hunyuan": HunyuanCV
 }
 
 
@@ -124,7 +124,7 @@ RerankModel = {
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,
     "BaiduYiyan": BaiduYiyanRerank,
-    "Voyage AI": VoyageRerank,
+    "Voyage AI": VoyageRerank
 }
 
 

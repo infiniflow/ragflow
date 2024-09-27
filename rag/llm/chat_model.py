@@ -689,6 +689,7 @@ class BedrockChat(Base):
 
         yield num_tokens_from_string(ans)
 
+
 class GeminiChat(Base):
 
     def __init__(self, key, model_name,base_url=None):
