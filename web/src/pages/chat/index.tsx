@@ -21,7 +21,7 @@ import {
 } from 'antd';
 import { MenuItemProps } from 'antd/lib/menu/MenuItem';
 import classNames from 'classnames';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import ChatConfigurationModal from './chat-configuration-modal';
 import ChatContainer from './chat-container';
 import {
@@ -89,6 +89,7 @@ const Chat = () => {
     showModal: showOverviewModal,
   } = useSetModalState();
   const { currentRecord, setRecord } = useSetSelectedRecord<IDialog>();
+  const [controller, setController] = useState(new AbortController());
 
   const handleAppCardEnter = (id: string) => () => {
     handleItemEnter(id);
@@ -149,6 +150,10 @@ const Chat = () => {
   const handleConversationCardClick = useCallback(
     (conversationId: string, isNew: boolean) => () => {
       handleClickConversation(conversationId, isNew ? 'true' : '');
+      setController((pre) => {
+        pre.abort();
+        return new AbortController();
+      });
     },
     [handleClickConversation],
   );
@@ -353,7 +358,7 @@ const Chat = () => {
         </Flex>
       </Flex>
       <Divider type={'vertical'} className={styles.divider}></Divider>
-      <ChatContainer></ChatContainer>
+      <ChatContainer controller={controller}></ChatContainer>
       {dialogEditVisible && (
         <ChatConfigurationModal
           visible={dialogEditVisible}

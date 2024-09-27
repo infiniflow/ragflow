@@ -103,7 +103,11 @@ export const useSpeech = (content: string, audioBinary?: string) => {
     if (audioBinary) {
       const units = hexStringToUint8Array(audioBinary);
       if (units) {
-        player.current?.feed(units);
+        try {
+          player.current?.feed(units);
+        } catch (error) {
+          console.warn(error);
+        }
       }
     }
   }, [audioBinary]);

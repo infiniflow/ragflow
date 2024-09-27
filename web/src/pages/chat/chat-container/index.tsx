@@ -22,7 +22,11 @@ import { memo } from 'react';
 import { ConversationContext } from '../context';
 import styles from './index.less';
 
-const ChatContainer = () => {
+interface IProps {
+  controller: AbortController;
+}
+
+const ChatContainer = ({ controller }: IProps) => {
   const { conversationId } = useGetChatSearchParams();
   const { data: conversation } = useFetchNextConversation();
 
@@ -37,7 +41,7 @@ const ChatContainer = () => {
     regenerateMessage,
     removeMessageById,
     redirectToNewConversation,
-  } = useSendNextMessage();
+  } = useSendNextMessage(controller);
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();

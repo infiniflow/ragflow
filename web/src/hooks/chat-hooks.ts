@@ -241,8 +241,6 @@ export const useFetchNextConversation = () => {
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      console.log('🚀 ~ queryFn: ~ useFetchNextConversation:');
-
       if (isNew !== 'true' && isConversationIdExist(conversationId)) {
         const { data } = await chatService.getConversation({ conversationId });
 

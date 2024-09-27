@@ -34,7 +34,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { useSearchParams } from 'umi';
@@ -323,7 +322,6 @@ export const useSelectNextMessages = () => {
       isNew !== 'true' &&
       conversation.message?.length > 0
     ) {
-      console.log('🚀 ~ useEffect ~ isNew:', conversation.message);
       setDerivedMessages(conversation.message);
     }
   }, [conversation.message, conversationId, setDerivedMessages, isNew]);
@@ -356,8 +354,7 @@ export const useHandleMessageInputChange = () => {
   };
 };
 
-export const useSendNextMessage = () => {
-  const controller = useRef(new AbortController());
+export const useSendNextMessage = (controller: AbortController) => {
   const { setConversation } = useSetConversation();
   const { conversationId, isNew } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -365,7 +362,6 @@ export const useSendNextMessage = () => {
 
   const { send, answer, done, setDone, resetAnswer } = useSendMessageWithSse(
     api.completeConversation,
-    controller.current,
   );
   const {
     ref,
@@ -401,10 +397,13 @@ export const useSendNextMessage = () => {
       currentConversationId?: string;
       messages?: Message[];
     }) => {
-      const res = await send({
-        conversation_id: currentConversationId ?? conversationId,
-        messages: [...(messages ?? derivedMessages ?? []), message],
-      });
+      const res = await send(
+        {
+          conversation_id: currentConversationId ?? conversationId,
+          messages: [...(messages ?? derivedMessages ?? []), message],
+        },
+        controller,
+      );
 
       if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
         // cancel loading
@@ -424,7 +423,14 @@ export const useSendNextMessage = () => {
         }
       }
     },
-    [derivedMessages, conversationId, removeLatestMessage, setValue, send],
+    [
+      derivedMessages,
+      conversationId,
+      removeLatestMessage,
+      setValue,
+      send,
+      controller,
+    ],
   );
 
   const handleSendMessage = useCallback(

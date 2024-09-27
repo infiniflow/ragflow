@@ -213,7 +213,6 @@ export const useFetchAppConf = () => {
 
 export const useSendMessageWithSse = (
   url: string = api.completeConversation,
-  controller?: AbortController,
 ) => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
@@ -225,6 +224,7 @@ export const useSendMessageWithSse = (
   const send = useCallback(
     async (
       body: any,
+      controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
       try {
         setDone(false);
