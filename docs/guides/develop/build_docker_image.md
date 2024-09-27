@@ -31,13 +31,22 @@ To build a RAGFlow Docker image from source code:
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
+cd ragflow
 ```
 
 ### Build the Docker Image
 
 Navigate to the `ragflow` directory where the Dockerfile and other necessary files are located. Now you can build the Docker image using the provided Dockerfile. The command below specifies which Dockerfile to use and tages the image with a name for reference purpose.
 
+#### Build image `ragflow:dev-slim`
+```bash
+docker build -f Dockerfile.dev-slim -t infiniflow/ragflow:dev-slim .
+```
+This image's size is about 1GB. It relies external LLM services since it doesn't contain embedding models. 
+
+#### Build image `ragflow:dev`
 ```bash
 cd ragflow/
-docker build -f Dockerfile.scratch -t infiniflow/ragflow:dev .
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
+This image's size is about 11GB. It contains embedding models, and can inference via local CPU/GPU or external LLM services.
