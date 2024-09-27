@@ -1,5 +1,5 @@
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, InputNumber, Select } from 'antd';
+import { Form, Select } from 'antd';
 import { DeepLSourceLangOptions, DeepLTargetLangOptions } from '../constant';
 import { useBuildSortOptions } from '../form-hooks';
 import { IOperatorForm } from '../interface';
@@ -17,9 +17,6 @@ const DeepLForm = ({ onValuesChange, form }: IOperatorForm) => {
       form={form}
       onValuesChange={onValuesChange}
     >
-      <Form.Item label={t('text')} name={'text'}>
-        <InputNumber></InputNumber>
-      </Form.Item>
       <Form.Item label={t('authKey')} name={'auth_key'}>
         <Select options={options}></Select>
       </Form.Item>
