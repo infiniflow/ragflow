@@ -2344,6 +2344,13 @@
             "tags": "LLM",
             "status": "1",
             "llm": []
-        }
+        },
+        {
+      "name": "HuggingFace",
+      "logo": "",
+      "tags": "LLM, TEXT GENERATION, TEXT EMBEDDING",
+      "status": "1",
+      "llm": []
+    }
     ]
 }

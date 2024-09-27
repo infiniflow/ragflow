@@ -327,3 +327,34 @@ class VoyageRerank(Base):
         rank = np.array([r.relevance_score for r in res.results])
         indexs = [r.index for r in res.results]
         return rank[indexs], res.total_tokens
+class HuggingFaceRerank(Base):
+    _model = None
+    _model_lock = threading.Lock()
+
+    def __init__(self, key=None, model_name="your-huggingface-model", **kwargs):
+        if not HuggingFaceRerank._model:
+            with HuggingFaceRerank._model_lock:
+                if not HuggingFaceRerank._model:
+                    try:
+                        print("LOADING HuggingFace Model...")
+                        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+                        HuggingFaceRerank._model = AutoModelForSequenceClassification.from_pretrained(model_name)
+                        HuggingFaceRerank._tokenizer = AutoTokenizer.from_pretrained(model_name)
+                    except Exception as e:
+                        print(f"Error loading model: {e}")
+                        HuggingFaceRerank._model = None
+
+        self._model = HuggingFaceRerank._model
+        self._tokenizer = HuggingFaceRerank._tokenizer
+
+    def similarity(self, query: str, texts: list):
+        if not self._model or not self._tokenizer:
+            raise RuntimeError("Model is not initialized")
+
+        inputs = self._tokenizer([query] * len(texts), texts, padding=True, truncation=True, return_tensors="pt")
+        with torch.no_grad():
+            outputs = self._model(**inputs)
+            scores = outputs.logits.softmax(dim=-1).numpy()[:, 1]  # Assuming binary classification
+        token_count = num_tokens_from_string(query) + sum(num_tokens_from_string(t) for t in texts)
+        return scores, token_count

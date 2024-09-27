@@ -19,6 +19,7 @@ import threading
 import requests
 from huggingface_hub import snapshot_download
 from openai.lib.azure import AzureOpenAI
+from transformers import pipeline
 from zhipuai import ZhipuAI
 import os
 from abc import ABC
@@ -674,3 +675,22 @@ class VoyageEmbed(Base):
             texts=text, model=self.model_name, input_type="query"
             )
         return np.array(res.embeddings), res.total_tokens
+class HuggingFaceEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        if not model_name:
+            raise ValueError("Model name cannot be None")
+        self.key = key
+        self.model_name = model_name
+        self.client = pipeline("feature-extraction", model=model_name, tokenizer=model_name)
+
+    def encode(self, texts: list, batch_size=32):
+        embeddings = []
+        for text in texts:
+            embedding = self.client(text)
+            embeddings.append(embedding[0][0])
+        return np.array(embeddings), sum([num_tokens_from_string(text) for text in texts])
+
+    def encode_queries(self, text):
+        embedding = self.client(text)
+        return np.array(embedding[0][0]), num_tokens_from_string(text)
+

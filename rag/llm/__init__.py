@@ -18,7 +18,7 @@ from .chat_model import *
 from .cv_model import *
 from .rerank_model import *
 from .sequence2txt_model import *
-from .tts_model import * 
+from .tts_model import *
 
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
@@ -46,7 +46,8 @@ EmbeddingModel = {
     "SILICONFLOW": SILICONFLOWEmbed,
     "Replicate": ReplicateEmbed,
     "BaiduYiyan": BaiduYiyanEmbed,
-    "Voyage AI": VoyageEmbed
+    "Voyage AI": VoyageEmbed,
+    "HuggingFace":HuggingFaceEmbed,
 }
 
 
@@ -67,7 +68,8 @@ CvModel = {
     "OpenAI-API-Compatible": OpenAI_APICV,
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
-    "Tencent Hunyuan": HunyuanCV
+    "Tencent Hunyuan": HunyuanCV,
+    "HuggingFace":HuggingFaceCV,
 }
 
 
@@ -108,6 +110,7 @@ ChatModel = {
     "BaiduYiyan": BaiduYiyanChat,
     "Anthropic": AnthropicChat,
     "Google Cloud": GoogleChat,
+    "HuggingFace": HuggingFaceChat,
 }
 
 
@@ -123,7 +126,8 @@ RerankModel = {
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,
     "BaiduYiyan": BaiduYiyanRerank,
-    "Voyage AI": VoyageRerank
+    "Voyage AI": VoyageRerank,
+    "HuggingFace":HuggingFaceRerank
 }
 
 

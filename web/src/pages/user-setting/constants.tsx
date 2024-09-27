@@ -26,4 +26,5 @@ export const LocalLlmFactories = [
   'TogetherAI',
   'Replicate',
   'OpenRouter',
+  'HuggingFace',
 ];
