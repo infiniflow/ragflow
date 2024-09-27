@@ -63,6 +63,7 @@ export interface IConversation {
   name: string;
   update_date: string;
   update_time: number;
+  is_new: true;
 }
 
 export interface Message {
