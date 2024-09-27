@@ -20,7 +20,6 @@ from abc import ABC
 from openai import OpenAI
 import openai
 from ollama import Client
-from volcengine.maas.v2 import MaasService
 from rag.nlp import is_english
 from rag.utils import num_tokens_from_string
 from groq import Groq
@@ -28,6 +27,7 @@ import os
 import json
 import requests
 import asyncio
+
 
 class Base(ABC):
     def __init__(self, key, model_name, base_url):
