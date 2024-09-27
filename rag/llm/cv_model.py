@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 from openai.lib.azure import AzureOpenAI
-from transformers import pipeline
 from zhipuai import ZhipuAI
 import io
 from abc import ABC
