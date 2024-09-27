@@ -674,6 +674,8 @@ class VoyageEmbed(Base):
             texts=text, model=self.model_name, input_type="query"
             )
         return np.array(res.embeddings), res.total_tokens
+
+
 class HuggingFaceEmbed(Base):
     def __init__(self, key, model_name, base_url=None):
         if not model_name:
