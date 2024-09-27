@@ -721,32 +721,3 @@ class HunyuanCV(Base):
                 ],
             }
         ]
-class HuggingFaceCV(Base):
-    def __init__(self, key, model_name="nlpconnect/vit-gpt2-image-captioning", lang="Chinese"):
-        self.key = key
-        self.model_name = model_name
-        self.lang = lang
-        self.client = pipeline("image-captioning", model=self.model_name)
-
-    def image2base64(self, image):
-        with open(image, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
-
-    def describe(self, image_path, max_tokens=1024):
-        b64 = self.image2base64(image_path)
-        caption = self.client(Image.open(image_path))
-        description = caption[0]['caption']
-
-        return description.strip(), len(description.split())
-
-    def prompt(self, b64):
-        return [
-            {
-                "role": "user",
-                "content": (
-                    "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
-                    if self.lang.lower() == "chinese"
-                    else "Please describe the content of this picture, like where, when, who, what happened. If it has number data, please extract them out."
-                ) + f' <img src="data:image/jpeg;base64,{b64}"/>',
-            }
-        ]

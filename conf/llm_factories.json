@@ -2348,7 +2348,7 @@
         {
       "name": "HuggingFace",
       "logo": "",
-      "tags": "LLM, TEXT GENERATION, TEXT EMBEDDING",
+      "tags": "TEXT EMBEDDING",
       "status": "1",
       "llm": []
     }

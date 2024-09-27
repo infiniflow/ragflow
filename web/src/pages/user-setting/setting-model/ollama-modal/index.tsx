@@ -84,10 +84,16 @@ const OllamaModal = ({
           rules={[{ required: true, message: t('modelTypeMessage') }]}
         >
           <Select placeholder={t('modelTypeMessage')}>
-            <Option value="chat">chat</Option>
-            <Option value="embedding">embedding</Option>
-            <Option value="rerank">rerank</Option>
-            <Option value="image2text">image2text</Option>
+            {llmFactory === 'HuggingFace' ? (
+              <Option value="embedding">embedding</Option>
+            ) : (
+              <>
+                <Option value="chat">chat</Option>
+                <Option value="embedding">embedding</Option>
+                <Option value="rerank">rerank</Option>
+                <Option value="image2text">image2text</Option>
+              </>
+            )}
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
