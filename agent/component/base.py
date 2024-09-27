@@ -444,7 +444,7 @@ class ComponentBase(ABC):
 
         if DEBUG: print(self.component_name, reversed_cpnts[::-1])
         for u in reversed_cpnts[::-1]:
-            if self.get_component_name(u) in ["switch"]: continue
+            if self.get_component_name(u) in ["switch", "concentrator"]: continue
             if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
                 o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
                 if o is not None:
@@ -472,7 +472,7 @@ class ComponentBase(ABC):
             if "content" in df:
                 df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
             return df
-        return pd.DataFrame()
+        return pd.DataFrame(self._canvas.get_history(3)[-1:])
 
     def get_stream_input(self):
         reversed_cpnts = []
