@@ -16,6 +16,7 @@
 
 import argparse
 import json
+
 from graphrag import leiden
 from graphrag.community_reports_extractor import CommunityReportsExtractor
 from graphrag.entity_resolution import EntityResolution
@@ -24,8 +25,22 @@ from graphrag.leiden import add_community_info2graph
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-t', '--tenant_id', default=False, help="Tenant ID", action='store', required=True)
-    parser.add_argument('-d', '--doc_id', default=False, help="Document ID", action='store', required=True)
+    parser.add_argument(
+        "-t",
+        "--tenant_id",
+        default=False,
+        help="Tenant ID",
+        action="store",
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--doc_id",
+        default=False,
+        help="Document ID",
+        action="store",
+        required=True,
+    )
     args = parser.parse_args()
 
     from api.db import LLMType
@@ -33,8 +48,15 @@ if __name__ == "__main__":
     from api.settings import retrievaler
 
     ex = GraphExtractor(LLMBundle(args.tenant_id, LLMType.CHAT))
-    docs = [d["content_with_weight"] for d in
-            retrievaler.chunk_list(args.doc_id, args.tenant_id, max_count=6, fields=["content_with_weight"])]
+    docs = [
+        d["content_with_weight"]
+        for d in retrievaler.chunk_list(
+            args.doc_id,
+            args.tenant_id,
+            max_count=6,
+            fields=["content_with_weight"],
+        )
+    ]
     graph = ex(docs)
 
     er = EntityResolution(LLMBundle(args.tenant_id, LLMType.CHAT))
@@ -48,5 +70,8 @@ if __name__ == "__main__":
 
     cr = CommunityReportsExtractor(LLMBundle(args.tenant_id, LLMType.CHAT))
     cr = cr(graph.output)
-    print("------------------ COMMUNITY REPORT ----------------------\n", cr.output)
+    print(
+        "------------------ COMMUNITY REPORT ----------------------\n",
+        cr.output,
+    )
     print(json.dumps(cr.structured_output, ensure_ascii=False, indent=2))

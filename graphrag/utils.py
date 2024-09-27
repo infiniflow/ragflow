@@ -13,9 +13,7 @@ from typing import Any
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
 
-def perform_variable_replacements(
-    input: str, history: list[dict]=[], variables: dict | None ={}
-) -> str:
+def perform_variable_replacements(input: str, history: list[dict] = [], variables: dict | None = {}) -> str:
     """Perform variable replacements on the input string and in a chat log."""
     result = input
 
@@ -46,9 +44,7 @@ def clean_str(input: Any) -> str:
     return re.sub(r"[\"\x00-\x1f\x7f-\x9f]", "", result)
 
 
-def dict_has_keys_with_types(
-    data: dict, expected_fields: list[tuple[str, type]]
-) -> bool:
+def dict_has_keys_with_types(data: dict, expected_fields: list[tuple[str, type]]) -> bool:
     """Return True if the given dictionary has the given keys with the given types."""
     for field, field_type in expected_fields:
         if field not in data:
@@ -58,4 +54,3 @@ def dict_has_keys_with_types(
         if not isinstance(value, field_type):
             return False
     return True
-

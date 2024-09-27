@@ -5,20 +5,11 @@ Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
 """
 
-import argparse
-import html
 import json
-import logging
-import numbers
-import re
-import traceback
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
 from rag.llm.chat_model import Base as CompletionLLM
-import networkx as nx
-
 from rag.utils import num_tokens_from_string
 
 SUMMARIZE_PROMPT = """
@@ -101,9 +92,7 @@ class SummarizeExtractor:
             description=result or "",
         )
 
-    def _summarize_descriptions(
-        self, items: str | tuple[str, str], descriptions: list[str]
-    ) -> str:
+    def _summarize_descriptions(self, items: str | tuple[str, str], descriptions: list[str]) -> str:
         """Summarize descriptions into a single description."""
         sorted_items = sorted(items) if isinstance(items, list) else items
 
@@ -112,9 +101,7 @@ class SummarizeExtractor:
             descriptions = [descriptions]
 
             # Iterate over descriptions, adding all until the max input tokens is reached
-        usable_tokens = self._max_input_tokens - num_tokens_from_string(
-            self._summarization_prompt
-        )
+        usable_tokens = self._max_input_tokens - num_tokens_from_string(self._summarization_prompt)
         descriptions_collected = []
         result = ""
 
@@ -123,13 +110,9 @@ class SummarizeExtractor:
             descriptions_collected.append(description)
 
             # If buffer is full, or all descriptions have been added, summarize
-            if (usable_tokens < 0 and len(descriptions_collected) > 1) or (
-                i == len(descriptions) - 1
-            ):
+            if (usable_tokens < 0 and len(descriptions_collected) > 1) or (i == len(descriptions) - 1):
                 # Calculate result (final or partial)
-                result = await self._summarize_descriptions_with_llm(
-                    sorted_items, descriptions_collected
-                )
+                result = await self._summarize_descriptions_with_llm(sorted_items, descriptions_collected)
 
                 # If we go for another loop, reset values to new
                 if i != len(descriptions) - 1:
@@ -142,13 +125,11 @@ class SummarizeExtractor:
 
         return result
 
-    def _summarize_descriptions_with_llm(
-        self, items: str | tuple[str, str] | list[str], descriptions: list[str]
-    ):
+    def _summarize_descriptions_with_llm(self, items: str | tuple[str, str] | list[str], descriptions: list[str]):
         """Summarize descriptions using the LLM."""
         variables = {
-                        self._entity_name_key: json.dumps(items),
-                        self._input_descriptions_key: json.dumps(sorted(descriptions)),
-                    }
+            self._entity_name_key: json.dumps(items),
+            self._input_descriptions_key: json.dumps(sorted(descriptions)),
+        }
         text = perform_variable_replacements(self._summarization_prompt, variables=variables)
         return self._llm.chat("", [{"role": "user", "content": text}])

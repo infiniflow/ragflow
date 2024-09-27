@@ -10,14 +10,24 @@ import numbers
 import re
 import traceback
 from dataclasses import dataclass
-from typing import Any, Mapping, Callable
-import tiktoken
-from graphrag.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
-from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, clean_str
-from rag.llm.chat_model import Base as CompletionLLM
-import networkx as nx
-from rag.utils import num_tokens_from_string
 from timeit import default_timer as timer
+from typing import Any, Callable, Mapping
+
+import networkx as nx
+import tiktoken
+
+from graphrag.graph_prompt import (
+    CONTINUE_PROMPT,
+    GRAPH_EXTRACTION_PROMPT,
+    LOOP_PROMPT,
+)
+from graphrag.utils import (
+    ErrorHandlerFn,
+    clean_str,
+    perform_variable_replacements,
+)
+from rag.llm.chat_model import Base as CompletionLLM
+from rag.utils import num_tokens_from_string
 
 DEFAULT_TUPLE_DELIMITER = "<|>"
 DEFAULT_RECORD_DELIMITER = "##"
@@ -73,16 +83,10 @@ class GraphExtractor:
         self._input_text_key = input_text_key or "input_text"
         self._tuple_delimiter_key = tuple_delimiter_key or "tuple_delimiter"
         self._record_delimiter_key = record_delimiter_key or "record_delimiter"
-        self._completion_delimiter_key = (
-            completion_delimiter_key or "completion_delimiter"
-        )
+        self._completion_delimiter_key = completion_delimiter_key or "completion_delimiter"
         self._entity_types_key = entity_types_key or "entity_types"
         self._extraction_prompt = prompt or GRAPH_EXTRACTION_PROMPT
-        self._max_gleanings = (
-            max_gleanings
-            if max_gleanings is not None
-            else ENTITY_EXTRACTION_MAX_GLEANINGS
-        )
+        self._max_gleanings = max_gleanings if max_gleanings is not None else ENTITY_EXTRACTION_MAX_GLEANINGS
         self._on_error = on_error or (lambda _e, _s, _d: None)
         self.prompt_token_count = num_tokens_from_string(self._extraction_prompt)
 
@@ -90,12 +94,16 @@ class GraphExtractor:
         encoding = tiktoken.get_encoding(encoding_model or "cl100k_base")
         yes = encoding.encode("YES")
         no = encoding.encode("NO")
-        self._loop_args = {"logit_bias": {yes[0]: 100, no[0]: 100}, "max_tokens": 1}
+        self._loop_args = {
+            "logit_bias": {yes[0]: 100, no[0]: 100},
+            "max_tokens": 1,
+        }
 
     def __call__(
-        self, texts: list[str],
-            prompt_variables: dict[str, Any] | None = None,
-            callback: Callable | None = None
+        self,
+        texts: list[str],
+        prompt_variables: dict[str, Any] | None = None,
+        callback: Callable | None = None,
     ) -> GraphExtractionResult:
         """Call method definition."""
         if prompt_variables is None:
@@ -106,17 +114,11 @@ class GraphExtractor:
         # Wire defaults into the prompt variables
         prompt_variables = {
             **prompt_variables,
-            self._tuple_delimiter_key: prompt_variables.get(self._tuple_delimiter_key)
-            or DEFAULT_TUPLE_DELIMITER,
-            self._record_delimiter_key: prompt_variables.get(self._record_delimiter_key)
-            or DEFAULT_RECORD_DELIMITER,
-            self._completion_delimiter_key: prompt_variables.get(
-                self._completion_delimiter_key
-            )
+            self._tuple_delimiter_key: prompt_variables.get(self._tuple_delimiter_key) or DEFAULT_TUPLE_DELIMITER,
+            self._record_delimiter_key: prompt_variables.get(self._record_delimiter_key) or DEFAULT_RECORD_DELIMITER,
+            self._completion_delimiter_key: prompt_variables.get(self._completion_delimiter_key)
             or DEFAULT_COMPLETION_DELIMITER,
-            self._entity_types_key: ",".join(
-                prompt_variables.get(self._entity_types_key) or DEFAULT_ENTITY_TYPES
-            ),
+            self._entity_types_key: ",".join(prompt_variables.get(self._entity_types_key) or DEFAULT_ENTITY_TYPES),
         }
 
         st = timer()
@@ -129,9 +131,11 @@ class GraphExtractor:
                 source_doc_map[doc_index] = text
                 all_records[doc_index] = result
                 total_token_count += token_count
-                if callback: callback(msg=f"{doc_index+1}/{total}, elapsed: {timer() - st}s, used tokens: {total_token_count}")
+                if callback:
+                    callback(msg=f"{doc_index+1}/{total}, elapsed: {timer() - st}s, used tokens: {total_token_count}")
             except Exception as e:
-                if callback: callback(msg="Knowledge graph extraction error:{}".format(str(e)))
+                if callback:
+                    callback(msg="Knowledge graph extraction error:{}".format(str(e)))
                 logging.exception("error extracting graph")
                 self._on_error(
                     e,
@@ -153,28 +157,29 @@ class GraphExtractor:
             source_docs=source_doc_map,
         )
 
-    def _process_document(
-        self, text: str, prompt_variables: dict[str, str]
-    ) -> str:
+    def _process_document(self, text: str, prompt_variables: dict[str, str]) -> (str, int):
         variables = {
             **prompt_variables,
             self._input_text_key: text,
         }
-        token_count = 0
         text = perform_variable_replacements(self._extraction_prompt, variables=variables)
         gen_conf = {"temperature": 0.3}
         response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         token_count = num_tokens_from_string(text + response)
 
         results = response or ""
-        history = [{"role": "system", "content": text}, {"role": "assistant", "content": response}]
+        history = [
+            {"role": "system", "content": text},
+            {"role": "assistant", "content": response},
+        ]
 
         # Repeat to ensure we maximize entity count
         for i in range(self._max_gleanings):
             text = perform_variable_replacements(CONTINUE_PROMPT, history=history, variables=variables)
             history.append({"role": "user", "content": text})
             response = self._llm.chat("", history, gen_conf)
-            if response.find("**ERROR**") >=0: raise Exception(response)
+            if response.find("**ERROR**") >= 0:
+                raise Exception(response)
             results += response or ""
 
             # if this is the final glean, don't bother updating the continuation flag
@@ -221,53 +226,48 @@ class GraphExtractor:
                         node = graph.nodes[entity_name]
                         if self._join_descriptions:
                             node["description"] = "\n".join(
-                                list({
-                                    *_unpack_descriptions(node),
-                                    entity_description,
-                                })
+                                list(
+                                    {
+                                        *_unpack_descriptions(node),
+                                        entity_description,
+                                    }
+                                )
                             )
                         else:
                             if len(entity_description) > len(node["description"]):
                                 node["description"] = entity_description
                         node["source_id"] = ", ".join(
-                            list({
-                                *_unpack_source_ids(node),
-                                str(source_doc_id),
-                            })
+                            list(
+                                {
+                                    *_unpack_source_ids(node),
+                                    str(source_doc_id),
+                                }
+                            )
                         )
-                        node["entity_type"] = (
-                            entity_type if entity_type != "" else node["entity_type"]
-                        )
+                        node["entity_type"] = entity_type if entity_type != "" else node["entity_type"]
                     else:
                         graph.add_node(
                             entity_name,
                             entity_type=entity_type,
                             description=entity_description,
                             source_id=str(source_doc_id),
-                            weight=1
+                            weight=1,
                         )
 
-                if (
-                    record_attributes[0] == '"relationship"'
-                    and len(record_attributes) >= 5
-                ):
+                if record_attributes[0] == '"relationship"' and len(record_attributes) >= 5:
                     # add this record as edge
                     source = clean_str(record_attributes[1].upper())
                     target = clean_str(record_attributes[2].upper())
                     edge_description = clean_str(record_attributes[3])
                     edge_source_id = clean_str(str(source_doc_id))
-                    weight = (
-                        float(record_attributes[-1])
-                        if isinstance(record_attributes[-1], numbers.Number)
-                        else 1.0
-                    )
+                    weight = float(record_attributes[-1]) if isinstance(record_attributes[-1], numbers.Number) else 1.0
                     if source not in graph.nodes():
                         graph.add_node(
                             source,
                             entity_type="",
                             description="",
                             source_id=edge_source_id,
-                            weight=1
+                            weight=1,
                         )
                     if target not in graph.nodes():
                         graph.add_node(
@@ -275,7 +275,7 @@ class GraphExtractor:
                             entity_type="",
                             description="",
                             source_id=edge_source_id,
-                            weight=1
+                            weight=1,
                         )
                     if graph.has_edge(source, target):
                         edge_data = graph.get_edge_data(source, target)
@@ -283,16 +283,20 @@ class GraphExtractor:
                             weight += edge_data["weight"]
                             if self._join_descriptions:
                                 edge_description = "\n".join(
-                                    list({
-                                        *_unpack_descriptions(edge_data),
-                                        edge_description,
-                                    })
+                                    list(
+                                        {
+                                            *_unpack_descriptions(edge_data),
+                                            edge_description,
+                                        }
+                                    )
                                 )
                             edge_source_id = ", ".join(
-                                list({
-                                    *_unpack_source_ids(edge_data),
-                                    str(source_doc_id),
-                                })
+                                list(
+                                    {
+                                        *_unpack_source_ids(edge_data),
+                                        str(source_doc_id),
+                                    }
+                                )
                             )
                     graph.add_edge(
                         source,
@@ -315,6 +319,3 @@ def _unpack_descriptions(data: Mapping) -> list[str]:
 def _unpack_source_ids(data: Mapping) -> list[str]:
     value = data.get("source_id", None)
     return [] if value is None else value.split(", ")
-
-
-

@@ -127,3 +127,29 @@ priority = "primary"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 120
+lint.select = [
+    "F", # https://beta.ruff.rs/docs/rules/#pyflakes-f
+#    "E", "W", # https://beta.ruff.rs/docs/rules/#pycodestyle-e-w
+    "I",  # https://beta.ruff.rs/docs/rules/#isort-i
+    # "N", # https://beta.ruff.rs/docs/rules/#pep8-naming-n
+#    "UP",  # https://beta.ruff.rs/docs/rules/#pyupgrade-up
+#    "S",  # https://beta.ruff.rs/docs/rules/#flake8-bandit-s
+#    "B",  # https://beta.ruff.rs/docs/rules/#flake8-bugbear-b
+#    "A",  # https://beta.ruff.rs/docs/rules/#flake8-builtins-a
+#    "C4",  # https://beta.ruff.rs/docs/rules/#flake8-comprehensions-c4
+#    "ICN",  # https://beta.ruff.rs/docs/rules/#flake8-import-conventions-icn
+#    "G",  # https://beta.ruff.rs/docs/rules/#flake8-logging-format-g
+#    "PIE",  # https://beta.ruff.rs/docs/rules/#flake8-pie-pie
+#    "T20",  # https://beta.ruff.rs/docs/rules/#flake8-print-t20
+#    "RET",  # https://beta.ruff.rs/docs/rules/#flake8-return-ret
+#    "SIM",  # https://beta.ruff.rs/docs/rules/#flake8-simplify-sim
+#    "TID",  # https://beta.ruff.rs/docs/rules/#flake8-tidy-imports-tid
+#    "PTH",  # https://beta.ruff.rs/docs/rules/#flake8-use-pathlib-pth
+#    "PD",  # https://beta.ruff.rs/docs/rules/#pandas-vet-pd
+    # "PL",  # https://beta.ruff.rs/docs/rules/#pylint-pl
+#    "NPY",  # https://beta.ruff.rs/docs/rules/#numpy-specific-rules-npy
+#    "RUF100",  # https://beta.ruff.rs/docs/configuration/#automatic-noqa-management
+]

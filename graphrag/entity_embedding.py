@@ -5,10 +5,12 @@ Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
 """
 
+from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 import networkx as nx
+import numpy as np
+
 from graphrag.leiden import stable_largest_connected_component
 
 

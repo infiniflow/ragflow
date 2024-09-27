@@ -15,9 +15,13 @@ from typing import Any
 
 import tiktoken
 
-from graphrag.claim_prompt import CLAIM_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
-from rag.llm.chat_model import Base as CompletionLLM
+from graphrag.claim_prompt import (
+    CLAIM_EXTRACTION_PROMPT,
+    CONTINUE_PROMPT,
+    LOOP_PROMPT,
+)
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
+from rag.llm.chat_model import Base as CompletionLLM
 
 DEFAULT_TUPLE_DELIMITER = "<|>"
 DEFAULT_RECORD_DELIMITER = "##"
@@ -72,29 +76,22 @@ class ClaimExtractor:
         self._input_entity_spec_key = input_entity_spec_key or "entity_specs"
         self._tuple_delimiter_key = tuple_delimiter_key or "tuple_delimiter"
         self._record_delimiter_key = record_delimiter_key or "record_delimiter"
-        self._completion_delimiter_key = (
-            completion_delimiter_key or "completion_delimiter"
-        )
-        self._input_claim_description_key = (
-            input_claim_description_key or "claim_description"
-        )
-        self._input_resolved_entities_key = (
-            input_resolved_entities_key or "resolved_entities"
-        )
-        self._max_gleanings = (
-            max_gleanings if max_gleanings is not None else CLAIM_MAX_GLEANINGS
-        )
+        self._completion_delimiter_key = completion_delimiter_key or "completion_delimiter"
+        self._input_claim_description_key = input_claim_description_key or "claim_description"
+        self._input_resolved_entities_key = input_resolved_entities_key or "resolved_entities"
+        self._max_gleanings = max_gleanings if max_gleanings is not None else CLAIM_MAX_GLEANINGS
         self._on_error = on_error or (lambda _e, _s, _d: None)
 
         # Construct the looping arguments
         encoding = tiktoken.get_encoding(encoding_model or "cl100k_base")
         yes = encoding.encode("YES")
         no = encoding.encode("NO")
-        self._loop_args = {"logit_bias": {yes[0]: 100, no[0]: 100}, "max_tokens": 1}
+        self._loop_args = {
+            "logit_bias": {yes[0]: 100, no[0]: 100},
+            "max_tokens": 1,
+        }
 
-    def __call__(
-        self, inputs: dict[str, Any], prompt_variables: dict | None = None
-    ) -> ClaimExtractorResult:
+    def __call__(self, inputs: dict[str, Any], prompt_variables: dict | None = None) -> ClaimExtractorResult:
         """Call method definition."""
         if prompt_variables is None:
             prompt_variables = {}
@@ -107,13 +104,9 @@ class ClaimExtractor:
         prompt_args = {
             self._input_entity_spec_key: entity_spec,
             self._input_claim_description_key: claim_description,
-            self._tuple_delimiter_key: prompt_variables.get(self._tuple_delimiter_key)
-            or DEFAULT_TUPLE_DELIMITER,
-            self._record_delimiter_key: prompt_variables.get(self._record_delimiter_key)
-            or DEFAULT_RECORD_DELIMITER,
-            self._completion_delimiter_key: prompt_variables.get(
-                self._completion_delimiter_key
-            )
+            self._tuple_delimiter_key: prompt_variables.get(self._tuple_delimiter_key) or DEFAULT_TUPLE_DELIMITER,
+            self._record_delimiter_key: prompt_variables.get(self._record_delimiter_key) or DEFAULT_RECORD_DELIMITER,
+            self._completion_delimiter_key: prompt_variables.get(self._completion_delimiter_key)
             or DEFAULT_COMPLETION_DELIMITER,
         }
 
@@ -122,9 +115,7 @@ class ClaimExtractor:
             document_id = f"d{doc_index}"
             try:
                 claims = self._process_document(prompt_args, text, doc_index)
-                all_claims += [
-                    self._clean_claim(c, document_id, resolved_entities) for c in claims
-                ]
+                all_claims += [self._clean_claim(c, document_id, resolved_entities) for c in claims]
                 source_doc_map[document_id] = text
             except Exception as e:
                 log.exception("error extracting claim")
@@ -140,9 +131,7 @@ class ClaimExtractor:
             source_docs=source_doc_map,
         )
 
-    def _clean_claim(
-        self, claim: dict, document_id: str, resolved_entities: dict
-    ) -> dict:
+    def _clean_claim(self, claim: dict, document_id: str, resolved_entities: dict) -> dict:
         # clean the parsed claims to remove any claims with status = False
         obj = claim.get("object_id", claim.get("object"))
         subject = claim.get("subject_id", claim.get("subject"))
@@ -155,33 +144,28 @@ class ClaimExtractor:
         claim["doc_id"] = document_id
         return claim
 
-    def _process_document(
-        self, prompt_args: dict, doc, doc_index: int
-    ) -> list[dict]:
-        record_delimiter = prompt_args.get(
-            self._record_delimiter_key, DEFAULT_RECORD_DELIMITER
-        )
-        completion_delimiter = prompt_args.get(
-            self._completion_delimiter_key, DEFAULT_COMPLETION_DELIMITER
-        )
+    def _process_document(self, prompt_args: dict, doc, doc_index: int) -> list[dict]:
+        record_delimiter = prompt_args.get(self._record_delimiter_key, DEFAULT_RECORD_DELIMITER)
+        completion_delimiter = prompt_args.get(self._completion_delimiter_key, DEFAULT_COMPLETION_DELIMITER)
         variables = {
-                        self._input_text_key: doc,
-                        **prompt_args,
-                    }
+            self._input_text_key: doc,
+            **prompt_args,
+        }
         text = perform_variable_replacements(self._extraction_prompt, variables=variables)
         gen_conf = {"temperature": 0.5}
         results = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         claims = results.strip().removesuffix(completion_delimiter)
-        history = [{"role": "system", "content": text}, {"role": "assistant", "content": results}]
+        history = [
+            {"role": "system", "content": text},
+            {"role": "assistant", "content": results},
+        ]
 
         # Repeat to ensure we maximize entity count
         for i in range(self._max_gleanings):
             text = perform_variable_replacements(CONTINUE_PROMPT, history=history, variables=variables)
             history.append({"role": "user", "content": text})
             extension = self._llm.chat("", history, gen_conf)
-            claims += record_delimiter + extension.strip().removesuffix(
-                completion_delimiter
-            )
+            claims += record_delimiter + extension.strip().removesuffix(completion_delimiter)
 
             # If this isn't the last loop, check to see if we should continue
             if i >= self._max_gleanings - 1:
@@ -198,27 +182,17 @@ class ClaimExtractor:
             r["doc_id"] = f"{doc_index}"
         return result
 
-    def _parse_claim_tuples(
-        self, claims: str, prompt_variables: dict
-    ) -> list[dict[str, Any]]:
+    def _parse_claim_tuples(self, claims: str, prompt_variables: dict) -> list[dict[str, Any]]:
         """Parse claim tuples."""
-        record_delimiter = prompt_variables.get(
-            self._record_delimiter_key, DEFAULT_RECORD_DELIMITER
-        )
-        completion_delimiter = prompt_variables.get(
-            self._completion_delimiter_key, DEFAULT_COMPLETION_DELIMITER
-        )
-        tuple_delimiter = prompt_variables.get(
-            self._tuple_delimiter_key, DEFAULT_TUPLE_DELIMITER
-        )
+        record_delimiter = prompt_variables.get(self._record_delimiter_key, DEFAULT_RECORD_DELIMITER)
+        completion_delimiter = prompt_variables.get(self._completion_delimiter_key, DEFAULT_COMPLETION_DELIMITER)
+        tuple_delimiter = prompt_variables.get(self._tuple_delimiter_key, DEFAULT_TUPLE_DELIMITER)
 
         def pull_field(index: int, fields: list[str]) -> str | None:
             return fields[index].strip() if len(fields) > index else None
 
         result: list[dict[str, Any]] = []
-        claims_values = (
-            claims.strip().removesuffix(completion_delimiter).split(record_delimiter)
-        )
+        claims_values = claims.strip().removesuffix(completion_delimiter).split(record_delimiter)
         for claim in claims_values:
             claim = claim.strip().removeprefix("(").removesuffix(")")
             claim = re.sub(r".*Output:", "", claim)
@@ -239,7 +213,14 @@ class ClaimExtractor:
                 "source_text": pull_field(7, claim_fields),
                 "doc_id": pull_field(8, claim_fields),
             }
-            if any([not o["subject_id"], not o["object_id"], o["subject_id"].lower() == "none", o["object_id"] == "none"]):
+            if any(
+                [
+                    not o["subject_id"],
+                    not o["object_id"],
+                    o["subject_id"].lower() == "none",
+                    o["object_id"] == "none",
+                ]
+            ):
                 continue
             result.append(o)
         return result
@@ -247,8 +228,22 @@ class ClaimExtractor:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-t', '--tenant_id', default=False, help="Tenant ID", action='store', required=True)
-    parser.add_argument('-d', '--doc_id', default=False, help="Document ID", action='store', required=True)
+    parser.add_argument(
+        "-t",
+        "--tenant_id",
+        default=False,
+        help="Tenant ID",
+        action="store",
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--doc_id",
+        default=False,
+        help="Document ID",
+        action="store",
+        required=True,
+    )
     args = parser.parse_args()
 
     from api.db import LLMType
@@ -256,11 +251,19 @@ if __name__ == "__main__":
     from api.settings import retrievaler
 
     ex = ClaimExtractor(LLMBundle(args.tenant_id, LLMType.CHAT))
-    docs = [d["content_with_weight"] for d in retrievaler.chunk_list(args.doc_id, args.tenant_id, max_count=12, fields=["content_with_weight"])]
+    docs = [
+        d["content_with_weight"]
+        for d in retrievaler.chunk_list(
+            args.doc_id,
+            args.tenant_id,
+            max_count=12,
+            fields=["content_with_weight"],
+        )
+    ]
     info = {
         "input_text": docs,
         "entity_specs": "organization, person",
-        "claim_description": ""
+        "claim_description": "",
     }
     claim = ex(info)
     print(json.dumps(claim.output, ensure_ascii=False, indent=2))

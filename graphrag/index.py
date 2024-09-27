@@ -13,17 +13,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
 import json
+from concurrent.futures import ThreadPoolExecutor
 from functools import reduce
 from typing import List
+
 import networkx as nx
+
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
 from graphrag.community_reports_extractor import CommunityReportsExtractor
 from graphrag.entity_resolution import EntityResolution
-from graphrag.graph_extractor import GraphExtractor, DEFAULT_ENTITY_TYPES
+from graphrag.graph_extractor import DEFAULT_ENTITY_TYPES, GraphExtractor
 from graphrag.mind_map_extractor import MindMapExtractor
 from rag.nlp import rag_tokenizer
 from rag.utils import num_tokens_from_string
@@ -42,7 +44,7 @@ def graph_merge(g1, g2):
 
     for source, target, attr in g1.edges(data=True):
         if g.has_edge(source, target):
-            g[source][target].update({"weight": attr["weight"]+1})
+            g[source][target].update({"weight": attr["weight"] + 1})
             continue
         g.add_edge(source, target, **attr)
 
@@ -51,38 +53,62 @@ def graph_merge(g1, g2):
     return g
 
 
-def build_knowledge_graph_chunks(tenant_id: str, chunks: List[str], callback, entity_types=DEFAULT_ENTITY_TYPES):
+def build_knowledge_graph_chunks(
+    tenant_id: str,
+    chunks: List[str],
+    callback,
+    entity_types=DEFAULT_ENTITY_TYPES,
+):
     _, tenant = TenantService.get_by_id(tenant_id)
     llm_bdl = LLMBundle(tenant_id, LLMType.CHAT, tenant.llm_id)
     ext = GraphExtractor(llm_bdl)
     left_token_count = llm_bdl.max_length - ext.prompt_token_count - 1024
     left_token_count = max(llm_bdl.max_length * 0.6, left_token_count)
 
-    assert left_token_count > 0, f"The LLM context length({llm_bdl.max_length}) is smaller than prompt({ext.prompt_token_count})"
+    assert (
+        left_token_count > 0
+    ), f"The LLM context length({llm_bdl.max_length}) is smaller than prompt({ext.prompt_token_count})"
 
-    BATCH_SIZE=4
+    BATCH_SIZE = 4
     texts, graphs = [], []
     cnt = 0
     threads = []
     exe = ThreadPoolExecutor(max_workers=50)
     for i in range(len(chunks)):
         tkn_cnt = num_tokens_from_string(chunks[i])
-        if cnt+tkn_cnt >= left_token_count and texts:
+        if cnt + tkn_cnt >= left_token_count and texts:
             for b in range(0, len(texts), BATCH_SIZE):
-                threads.append(exe.submit(ext, ["\n".join(texts[b:b+BATCH_SIZE])], {"entity_types": entity_types}, callback))
+                threads.append(
+                    exe.submit(
+                        ext,
+                        ["\n".join(texts[b : b + BATCH_SIZE])],
+                        {"entity_types": entity_types},
+                        callback,
+                    )
+                )
             texts = []
             cnt = 0
         texts.append(chunks[i])
         cnt += tkn_cnt
     if texts:
         for b in range(0, len(texts), BATCH_SIZE):
-            threads.append(exe.submit(ext, ["\n".join(texts[b:b+BATCH_SIZE])], {"entity_types": entity_types}, callback))
+            threads.append(
+                exe.submit(
+                    ext,
+                    ["\n".join(texts[b : b + BATCH_SIZE])],
+                    {"entity_types": entity_types},
+                    callback,
+                )
+            )
 
     callback(0.5, "Extracting entities.")
     graphs = []
     for i, _ in enumerate(threads):
         graphs.append(_.result().output)
-        callback(0.5 + 0.1*i/len(threads), f"Entities extraction progress ... {i+1}/{len(threads)}")
+        callback(
+            0.5 + 0.1 * i / len(threads),
+            f"Entities extraction progress ... {i+1}/{len(threads)}",
+        )
 
     graph = reduce(graph_merge, graphs) if graphs else nx.Graph()
     er = EntityResolution(llm_bdl)
@@ -102,7 +128,7 @@ def build_knowledge_graph_chunks(tenant_id: str, chunks: List[str], callback, en
             "content_ltks": rag_tokenizer.tokenize(attr["description"]),
             "knowledge_graph_kwd": "entity",
             "rank_int": attr["rank"],
-            "weight_int": attr["weight"]
+            "weight_int": attr["weight"],
         }
         chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
         chunks.append(chunk)
@@ -118,7 +144,7 @@ def build_knowledge_graph_chunks(tenant_id: str, chunks: List[str], callback, en
             "knowledge_graph_kwd": "community_report",
             "weight_flt": community["weight"],
             "entities_kwd": community["entities"],
-            "important_kwd": community["entities"]
+            "important_kwd": community["entities"],
         }
         chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
         chunks.append(chunk)
@@ -126,25 +152,22 @@ def build_knowledge_graph_chunks(tenant_id: str, chunks: List[str], callback, en
     chunks.append(
         {
             "content_with_weight": json.dumps(nx.node_link_data(graph), ensure_ascii=False, indent=2),
-            "knowledge_graph_kwd": "graph"
-        })
+            "knowledge_graph_kwd": "graph",
+        }
+    )
 
     callback(0.75, "Extracting mind graph.")
     mindmap = MindMapExtractor(llm_bdl)
     mg = mindmap(_chunks).output
-    if not len(mg.keys()): return chunks
+    if not len(mg.keys()):
+        return chunks
 
     print(json.dumps(mg, ensure_ascii=False, indent=2))
     chunks.append(
         {
             "content_with_weight": json.dumps(mg, ensure_ascii=False, indent=2),
-            "knowledge_graph_kwd": "mind_map"
-        })
+            "knowledge_graph_kwd": "mind_map",
+        }
+    )
 
     return chunks
-
-
-
-
-
-

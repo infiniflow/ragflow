@@ -17,39 +17,39 @@
 import collections
 import logging
 import re
-import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import reduce
 from typing import Any
+
+import markdown_to_json
 
 from graphrag.mind_map_prompt import MIND_MAP_EXTRACTION_PROMPT
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
 from rag.llm.chat_model import Base as CompletionLLM
-import markdown_to_json
-from functools import reduce
 from rag.utils import num_tokens_from_string
 
 
 @dataclass
 class MindMapResult:
     """Unipartite Mind Graph result class definition."""
+
     output: dict
 
 
 class MindMapExtractor:
-
     _llm: CompletionLLM
     _input_text_key: str
     _mind_map_prompt: str
     _on_error: ErrorHandlerFn
 
     def __init__(
-            self,
-            llm_invoker: CompletionLLM,
-            prompt: str | None = None,
-            input_text_key: str | None = None,
-            on_error: ErrorHandlerFn | None = None,
+        self,
+        llm_invoker: CompletionLLM,
+        prompt: str | None = None,
+        input_text_key: str | None = None,
+        on_error: ErrorHandlerFn | None = None,
     ):
         """Init method definition."""
         # TODO: streamline construction
@@ -65,21 +65,22 @@ class MindMapExtractor:
         if isinstance(obj, str):
             obj = [obj]
         if isinstance(obj, list):
-            for i in obj: keyset.add(i)
+            for i in obj:
+                keyset.add(i)
             return [{"id": re.sub(r"\*+", "", i), "children": []} for i in obj if re.sub(r"\*+", "", i)]
         arr = []
         for k, v in obj.items():
             k = self._key(k)
-            if not k or k in keyset: continue
+            if not k or k in keyset:
+                continue
             keyset.add(k)
-            arr.append({
-                "id": k,
-                "children": self._be_children(v, keyset)
-            })
+            arr.append({"id": k, "children": self._be_children(v, keyset)})
         return arr
 
     def __call__(
-            self, sections: list[str], prompt_variables: dict[str, Any] | None = None
+        self,
+        sections: list[str],
+        prompt_variables: dict[str, Any] | None = None,
     ) -> MindMapResult:
         """Call method definition."""
         if prompt_variables is None:
@@ -88,14 +89,20 @@ class MindMapExtractor:
         try:
             exe = ThreadPoolExecutor(max_workers=12)
             threads = []
-            token_count = max(self._llm.max_length * 0.8, self._llm.max_length-512)
+            token_count = max(self._llm.max_length * 0.8, self._llm.max_length - 512)
             texts = []
             res = []
             cnt = 0
             for i in range(len(sections)):
                 section_cnt = num_tokens_from_string(sections[i])
                 if cnt + section_cnt >= token_count and texts:
-                    threads.append(exe.submit(self._process_document, "".join(texts), prompt_variables))
+                    threads.append(
+                        exe.submit(
+                            self._process_document,
+                            "".join(texts),
+                            prompt_variables,
+                        )
+                    )
                     texts = []
                     cnt = 0
                 texts.append(sections[i])
@@ -112,20 +119,33 @@ class MindMapExtractor:
             merge_json = reduce(self._merge, res)
             if len(merge_json.keys()) > 1:
                 keyset = set(
-                    [re.sub(r"\*+", "", k) for k, v in merge_json.items() if isinstance(v, dict) and re.sub(r"\*+", "", k)])
-                merge_json = {"id": "root",
-                          "children": [{"id": self._key(k), "children": self._be_children(v, keyset)} for k, v in
-                                       merge_json.items() if isinstance(v, dict) and self._key(k)]}
+                    [
+                        re.sub(r"\*+", "", k)
+                        for k, v in merge_json.items()
+                        if isinstance(v, dict) and re.sub(r"\*+", "", k)
+                    ]
+                )
+                merge_json = {
+                    "id": "root",
+                    "children": [
+                        {
+                            "id": self._key(k),
+                            "children": self._be_children(v, keyset),
+                        }
+                        for k, v in merge_json.items()
+                        if isinstance(v, dict) and self._key(k)
+                    ],
+                }
             else:
                 k = self._key(list(merge_json.keys())[0])
-                merge_json = {"id": k, "children": self._be_children(list(merge_json.items())[0][1], set([k]))}
+                merge_json = {
+                    "id": k,
+                    "children": self._be_children(list(merge_json.items())[0][1], set([k])),
+                }
 
         except Exception as e:
             logging.exception("error mind graph")
-            self._on_error(
-                e,
-                traceback.format_exc(), None
-            )
+            self._on_error(e, traceback.format_exc(), None)
             merge_json = {"error": str(e)}
 
         return MindMapResult(output=merge_json)
@@ -158,7 +178,7 @@ class MindMapExtractor:
                 continue
         return data
 
-    def _todict(self, layer:collections.OrderedDict):
+    def _todict(self, layer: collections.OrderedDict):
         to_ret = layer
         if isinstance(layer, collections.OrderedDict):
             to_ret = dict(layer)
@@ -171,9 +191,7 @@ class MindMapExtractor:
 
         return self._list_to_kv(to_ret)
 
-    def _process_document(
-            self, text: str, prompt_variables: dict[str, str]
-    ) -> str:
+    def _process_document(self, text: str, prompt_variables: dict[str, str]) -> str:
         variables = {
             **prompt_variables,
             self._input_text_key: text,
@@ -183,5 +201,8 @@ class MindMapExtractor:
         response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         response = re.sub(r"```[^\n]*", "", response)
         print(response)
-        print("---------------------------------------------------\n", self._todict(markdown_to_json.dictify(response)))
+        print(
+            "---------------------------------------------------\n",
+            self._todict(markdown_to_json.dictify(response)),
+        )
         return self._todict(markdown_to_json.dictify(response))

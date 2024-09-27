@@ -5,13 +5,13 @@ Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
 """
 
-import logging
-from typing import Any, cast, List
 import html
-from graspologic.partition import hierarchical_leiden
-from graspologic.utils import largest_connected_component
+import logging
+from typing import Any, List, cast
 
 import networkx as nx
+from graspologic.partition import hierarchical_leiden
+from graspologic.utils import largest_connected_component
 from networkx import is_empty
 
 log = logging.getLogger(__name__)
@@ -73,20 +73,19 @@ def stable_largest_connected_component(graph: nx.Graph) -> nx.Graph:
 
 
 def _compute_leiden_communities(
-        graph: nx.Graph | nx.DiGraph,
-        max_cluster_size: int,
-        use_lcc: bool,
-        seed=0xDEADBEEF,
+    graph: nx.Graph | nx.DiGraph,
+    max_cluster_size: int,
+    use_lcc: bool,
+    seed=0xDEADBEEF,
 ) -> dict[int, dict[str, int]]:
     """Return Leiden root communities."""
     results: dict[int, dict[str, int]] = {}
-    if is_empty(graph): return results
+    if is_empty(graph):
+        return results
     if use_lcc:
         graph = stable_largest_connected_component(graph)
 
-    community_mapping = hierarchical_leiden(
-        graph, max_cluster_size=max_cluster_size, random_seed=seed
-    )
+    community_mapping = hierarchical_leiden(graph, max_cluster_size=max_cluster_size, random_seed=seed)
     for partition in community_mapping:
         results[partition.level] = results.get(partition.level, {})
         results[partition.level][partition.node] = partition.cluster
@@ -100,9 +99,12 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
     use_lcc = args.get("use_lcc", True)
     if args.get("verbose", False):
         log.info(
-            "Running leiden with max_cluster_size=%s, lcc=%s", max_cluster_size, use_lcc
+            "Running leiden with max_cluster_size=%s, lcc=%s",
+            max_cluster_size,
+            use_lcc,
         )
-    if not graph.nodes(): return {}
+    if not graph.nodes():
+        return {}
 
     node_id_to_community_map = _compute_leiden_communities(
         graph=graph,
@@ -125,11 +127,15 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
             if community_id not in result:
                 result[community_id] = {"weight": 0, "nodes": []}
             result[community_id]["nodes"].append(node_id)
-            result[community_id]["weight"] += graph.nodes[node_id].get("rank", 0) * graph.nodes[node_id].get("weight", 1)
+            result[community_id]["weight"] += graph.nodes[node_id].get("rank", 0) * graph.nodes[node_id].get(
+                "weight", 1
+            )
         weights = [comm["weight"] for _, comm in result.items()]
-        if not weights:continue
+        if not weights:
+            continue
         max_weight = max(weights)
-        for _, comm in result.items(): comm["weight"] /= max_weight
+        for _, comm in result.items():
+            comm["weight"] /= max_weight
 
     return results_by_level
 

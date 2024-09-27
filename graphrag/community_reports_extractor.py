@@ -10,16 +10,22 @@ import logging
 import re
 import traceback
 from dataclasses import dataclass
-from typing import Any, List, Callable
+from timeit import default_timer as timer
+from typing import Callable, List
+
 import networkx as nx
 import pandas as pd
+
 from graphrag import leiden
 from graphrag.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from graphrag.leiden import add_community_info2graph
+from graphrag.utils import (
+    ErrorHandlerFn,
+    dict_has_keys_with_types,
+    perform_variable_replacements,
+)
 from rag.llm.chat_model import Base as CompletionLLM
-from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, dict_has_keys_with_types
 from rag.utils import num_tokens_from_string
-from timeit import default_timer as timer
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +63,7 @@ class CommunityReportsExtractor:
     def __call__(self, graph: nx.Graph, callback: Callable | None = None):
         communities: dict[str, dict[str, List]] = leiden.run(graph, {})
         total = sum([len(comm.items()) for _, comm in communities.items()])
-        relations_df = pd.DataFrame([{"source":s, "target": t, **attr} for s, t, attr in graph.edges(data=True)])
+        relations_df = pd.DataFrame([{"source": s, "target": t, **attr} for s, t, attr in graph.edges(data=True)])
         res_str = []
         res_dict = []
         over, token_count = 0, 0
@@ -67,11 +73,13 @@ class CommunityReportsExtractor:
                 weight = ents["weight"]
                 ents = ents["nodes"]
                 ent_df = pd.DataFrame([{"entity": n, **graph.nodes[n]} for n in ents])
-                rela_df = relations_df[(relations_df["source"].isin(ents)) | (relations_df["target"].isin(ents))].reset_index(drop=True)
+                rela_df = relations_df[
+                    (relations_df["source"].isin(ents)) | (relations_df["target"].isin(ents))
+                ].reset_index(drop=True)
 
                 prompt_variables = {
                     "entity_df": ent_df.to_csv(index_label="id"),
-                    "relation_df": rela_df.to_csv(index_label="id")
+                    "relation_df": rela_df.to_csv(index_label="id"),
                 }
                 text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
                 gen_conf = {"temperature": 0.3}
@@ -82,13 +90,17 @@ class CommunityReportsExtractor:
                     response = re.sub(r"[^\}]*$", "", response)
                     print(response)
                     response = json.loads(response)
-                    if not dict_has_keys_with_types(response, [
-                                ("title", str),
-                                ("summary", str),
-                                ("findings", list),
-                                ("rating", float),
-                                ("rating_explanation", str),
-                            ]): continue
+                    if not dict_has_keys_with_types(
+                        response,
+                        [
+                            ("title", str),
+                            ("summary", str),
+                            ("findings", list),
+                            ("rating", float),
+                            ("rating_explanation", str),
+                        ],
+                    ):
+                        continue
                     response["weight"] = weight
                     response["entities"] = ents
                 except Exception as e:
@@ -100,7 +112,8 @@ class CommunityReportsExtractor:
                 res_str.append(self._get_text_output(response))
                 res_dict.append(response)
                 over += 1
-                if callback: callback(msg=f"Communities: {over}/{total}, elapsed: {timer() - st}s, used tokens: {token_count}")
+                if callback:
+                    callback(msg=f"Communities: {over}/{total}, elapsed: {timer() - st}s, used tokens: {token_count}")
 
         return CommunityReportsResult(
             structured_output=res_dict,
@@ -122,8 +135,6 @@ class CommunityReportsExtractor:
                 return ""
             return finding.get("explanation")
 
-        report_sections = "\n\n".join(
-            f"## {finding_summary(f)}\n\n{finding_explanation(f)}" for f in findings
-        )
-     
+        report_sections = "\n\n".join(f"## {finding_summary(f)}\n\n{finding_explanation(f)}" for f in findings)
+
         return f"# {title}\n\n{summary}\n\n{report_sections}"
