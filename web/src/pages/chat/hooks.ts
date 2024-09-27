@@ -245,10 +245,6 @@ export const useSelectDerivedConversationList = () => {
     setList([...conversationList]);
   }, [conversationList]);
 
-  // useEffect(() => {
-  //   addTemporaryConversation();
-  // }, [addTemporaryConversation]);
-
   return { list, addTemporaryConversation, loading };
 };
 
@@ -362,9 +358,8 @@ export const useSendNextMessage = (controller: AbortController) => {
   const { setConversation } = useSetConversation();
   const { conversationId, isNew } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  // const { handleClickConversation } = useClickConversationCard();
 
-  const { send, answer, done, setDone, resetAnswer } = useSendMessageWithSse(
+  const { send, answer, done } = useSendMessageWithSse(
     api.completeConversation,
   );
   const {
@@ -377,19 +372,8 @@ export const useSendNextMessage = (controller: AbortController) => {
     removeMessageById,
     removeMessagesAfterCurrentMessage,
   } = useSelectNextMessages();
-  const { data: dialog } = useFetchNextDialog();
-  // const currentConversationIdRef = useRef<string>('');
   const { setConversationIsNew, getConversationIsNew } =
     useSetChatRouteParams();
-
-  const redirectToNewConversation = useCallback(
-    (isPlaying: boolean) => {
-      if (!conversationId && dialog?.prompt_config?.tts && !isPlaying) {
-        // handleClickConversation(currentConversationIdRef.current);
-      }
-    },
-    [dialog, conversationId],
-  );
 
   const sendMessage = useCallback(
     async ({
@@ -414,17 +398,6 @@ export const useSendNextMessage = (controller: AbortController) => {
         setValue(message.content);
         console.info('removeLatestMessage111');
         removeLatestMessage();
-      } else {
-        if (currentConversationId) {
-          console.info('111');
-          // new conversation
-          // if (!dialog?.prompt_config?.tts) {
-          //   handleClickConversation(currentConversationId);
-          // }
-        } else {
-          console.info('222');
-          // fetchConversation(conversationId);
-        }
       }
     },
     [
@@ -477,27 +450,10 @@ export const useSendNextMessage = (controller: AbortController) => {
 
   useEffect(() => {
     //  #1289
-    // console.log('🚀 ~ useEffect ~ answer:', answer, done);
     if (answer.answer && conversationId && isNew !== 'true') {
       addNewestAnswer(answer);
     }
-    // if (
-    //   answer.answer &&
-    //   (answer?.conversationId === conversationId ||
-    //     ((!done || (done && answer.audio_binary)) && conversationId === ''))
-    // ) {
-    //   addNewestAnswer(answer);
-    // }
   }, [answer, addNewestAnswer, conversationId, isNew]);
-
-  useEffect(() => {
-    // #1289 switch to another conversion window when the last conversion answer doesn't finish.
-    // if (isNew !== 'true') {
-    //   setDone(true);
-    // } else {
-    //   resetAnswer();
-    // }
-  }, [setDone, isNew, resetAnswer]);
 
   const handlePressEnter = useCallback(
     (documentIds: string[]) => {
@@ -534,7 +490,6 @@ export const useSendNextMessage = (controller: AbortController) => {
     ref,
     derivedMessages,
     removeMessageById,
-    redirectToNewConversation,
   };
 };
 

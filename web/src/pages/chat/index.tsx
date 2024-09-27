@@ -17,6 +17,7 @@ import {
   Space,
   Spin,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { MenuItemProps } from 'antd/lib/menu/MenuItem';
@@ -162,19 +163,6 @@ const Chat = () => {
     addTemporaryConversation();
   }, [addTemporaryConversation]);
 
-  const items: MenuProps['items'] = [
-    {
-      key: '1',
-      onClick: handleCreateTemporaryConversation,
-      label: (
-        <Space>
-          <PlusOutlined />
-          {t('newChat')}
-        </Space>
-      ),
-    },
-  ];
-
   const buildAppItems = (dialog: IDialog) => {
     const dialogId = dialog.id;
 
@@ -308,10 +296,9 @@ const Chat = () => {
               <b>{t('chat')}</b>
               <Tag>{conversationList.length}</Tag>
             </Space>
-            <Dropdown menu={{ items }}>
-              {/* <FormOutlined /> */}
-              <PlusOutlined />
-            </Dropdown>
+            <Tooltip title={t('newChat')}>
+              <PlusOutlined onClick={handleCreateTemporaryConversation} />
+            </Tooltip>
           </Flex>
           <Divider></Divider>
           <Flex vertical gap={10} className={styles.chatTitleContent}>
