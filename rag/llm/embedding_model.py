@@ -19,7 +19,6 @@ import threading
 import requests
 from huggingface_hub import snapshot_download
 from openai.lib.azure import AzureOpenAI
-from transformers import pipeline
 from zhipuai import ZhipuAI
 import os
 from abc import ABC
