@@ -40,7 +40,7 @@ Navigate to the `ragflow` directory where the Dockerfile and other necessary fil
 
 #### Build image `ragflow:dev-slim`
 ```bash
-docker build -f Dockerfile.dev-slim -t infiniflow/ragflow:dev-slim .
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 This image's size is about 1GB. It relies external LLM services since it doesn't contain embedding models. 
 
