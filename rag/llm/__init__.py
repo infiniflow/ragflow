@@ -69,7 +69,6 @@ CvModel = {
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
     "Tencent Hunyuan": HunyuanCV,
-    "HuggingFace":HuggingFaceCV,
 }
 
 
@@ -110,7 +109,6 @@ ChatModel = {
     "BaiduYiyan": BaiduYiyanChat,
     "Anthropic": AnthropicChat,
     "Google Cloud": GoogleChat,
-    "HuggingFace": HuggingFaceChat,
 }
 
 
@@ -127,7 +125,6 @@ RerankModel = {
     "SILICONFLOW": SILICONFLOWRerank,
     "BaiduYiyan": BaiduYiyanRerank,
     "Voyage AI": VoyageRerank,
-    "HuggingFace":HuggingFaceRerank
 }
 
 
