@@ -95,7 +95,6 @@ export const useFetchNextDialogList = () => {
     initialData: [],
     gcTime: 0,
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
     queryFn: async (...params) => {
       console.log('🚀 ~ queryFn: ~ params:', params);
       const { data } = await chatService.listDialog();
