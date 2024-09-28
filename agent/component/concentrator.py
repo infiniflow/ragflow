@@ -33,9 +33,4 @@ class Concentrator(ComponentBase, ABC):
     component_name = "Concentrator"
 
     def _run(self, history, **kwargs):
-        input = self.get_input()
-        ans = " - ".join(input["content"]) if "content" in input else ""
-        if not ans:
-            return Concentrator.be_output("")
-
-        return Concentrator.be_output(input)
+        return Concentrator.be_output("")
