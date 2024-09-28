@@ -52,12 +52,11 @@ cron_logger = getLogger("cron_logger")
 chunk_logger = getLogger("chunk_logger")
 database_logger = getLogger("database")
 
+formatter = logging.Formatter("%(asctime)-15s %(levelname)-8s (%(process)d) %(message)s")
 for logger in [es_logger, minio_logger, s3_logger, azure_logger, cron_logger, chunk_logger, database_logger]:
-    logger.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)-15s %(levelname)-8s (%(process)d) %(message)s",
-    )
-
+    logger.setLevel(logging.INFO)
+    for handler in logger.handlers:
+        handler.setFormatter(fmt=formatter)
 
 SVR_QUEUE_NAME = "rag_flow_svr_queue"
 SVR_QUEUE_RETENTION = 60*60
