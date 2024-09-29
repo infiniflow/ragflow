@@ -18,7 +18,7 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.11.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.11.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.12.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.12.0"></a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
@@ -64,6 +64,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2024-09-29 Multi-turn conversation optimization.
 - 2024-09-13 Adds search mode for knowledge base Q&A.
 - 2024-09-09 Adds a medical consultant agent template.
 - 2024-08-22 Support text to SQL statements through RAG.
@@ -148,7 +149,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    ```
 
 3. Build the pre-built Docker images and start up the server:
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.11.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_VERSION` in **docker/.env** to the intended version, for example `RAGFLOW_VERSION=v0.12.0`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
