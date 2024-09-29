@@ -84,4 +84,4 @@ docker manifest create infiniflow/ragflow:dev --amend infiniflow/ragflow:dev-amd
 docker manifest push infiniflow/ragflow:dev
 ```
 
-This image's size is about 11 GB. It contains embedding models, and can inference via local CPU/GPU or external LLM services.
+This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes deepdoc, embedding, and chat models.
