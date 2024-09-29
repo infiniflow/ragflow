@@ -42,7 +42,8 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🔧 [Build RAGFlow image](#-build-ragflow-image)
+- 🔧 [Build light docker image](#-build-light-docker-image)
+- 🔧 [Build docker image](#-build-docker-image)
 - 🔧 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
@@ -210,7 +211,7 @@ Updates to the above configurations require a reboot of all containers to take e
 > $ docker-compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🛠️ Build light RAGFlow image
+## 🔧 Build light docker image
 
 This image is approximately 1 GB in size and relies on external LLM services, as it does not include document parsing and embedding models.
 
@@ -220,7 +221,7 @@ cd ragflow/
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-### Build docker image
+### 🔧 Build docker image
 
 This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes document parsing, and embedding models.
 
@@ -230,7 +231,7 @@ python3 download_deps.py # Download document parsing and embedding models
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
-## 🛠️ Launch service from source for development
+## 🔧 Launch service from source for development
 
 1. Install Poetry, if you already installed Poetry, please skip this step:
    ```bash
