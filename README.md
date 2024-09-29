@@ -64,7 +64,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2024-09-29 Multi-turn conversation optimization.
+- 2024-09-29 Optimizes multi-round conversations.
 - 2024-09-13 Adds search mode for knowledge base Q&A.
 - 2024-09-09 Adds a medical consultant agent template.
 - 2024-08-22 Support text to SQL statements through RAG.
