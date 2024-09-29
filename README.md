@@ -226,7 +226,7 @@ docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 
 ## 🪚 Build the Docker image including embedding models
 
-This image includes embedding models and is approximately 9 GB in size, and so relies on external LLM services only.
+This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -238,12 +238,12 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 
 ## 🔨 Launch service from source for development
 
-1. Install Poetry, or skip this step if it is already installed:
+1. Install Poetry, or skip this step if it is already installed:  
    ```bash
    curl -sSL https://install.python-poetry.org | python3 -
    ```
 
-2. Clone the source code and install Python dependencies:
+2. Clone the source code and install Python dependencies:  
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -251,7 +251,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
    ```
 
-3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:  
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
@@ -262,13 +262,13 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ```  
    In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
-4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
+4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:  
  
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. Launch backend service:  
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
@@ -284,7 +284,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 8. Launch frontend service:  
    ```bash
    npm run dev 
-   ```
+   ```  
 
    _The following output confirms a successful launch of the system:_  
 
