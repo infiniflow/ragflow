@@ -151,13 +151,11 @@ class TestDocument(TestSdk):
         name3 = 'westworld.pdf'
         path = 'test_data/westworld.pdf'
 
-
         # Create a document in the dataset using the file path
         rag.create_document(ds, name=name3, blob=open(path, "rb").read())
 
         # Retrieve the document by name
         doc = rag.get_document(name="westworld.pdf")
-
 
         # Initiate asynchronous parsing
         doc.async_parse()
@@ -231,7 +229,7 @@ class TestDocument(TestSdk):
     def test_parse_document_and_chunk_list(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         ds = rag.create_dataset(name="God7")
-        name='story.txt'
+        name = 'story.txt'
         path = 'test_data/story.txt'
         # name = "Test Document rag.txt"
         # blob = " Sample document content for rag test66. rag wonderful apple os documents apps. Sample document content for rag test66. rag wonderful apple os documents apps.Sample document content for rag test66. rag wonderful apple os documents apps.Sample document content for rag test66. rag wonderful apple os documents apps. Sample document content for rag test66. rag wonderful apple os documents apps. Sample document content for rag test66. rag wonderful apple os documents apps. Sample document content for rag test66. rag wonderful apple os documents apps. Sample document content for rag test66. rag wonderful apple os documents apps. Sample document content for rag test66. rag wonderful apple os documents apps.  Sample document content for rag test66. rag wonderful apple os documents apps. Sample document content for rag test66. rag wonderful apple os documents apps. Sample document content for rag test66. rag wonderful apple os documents apps."
@@ -266,11 +264,11 @@ class TestDocument(TestSdk):
         assert chunk is not None, "Chunk is None"
         assert isinstance(chunk, Chunk), "Chunk was not added to chunk list"
         doc = rag.get_document(name='story.txt')
-        chunk_count_before=doc.chunk_count
+        chunk_count_before = doc.chunk_count
         chunk.delete()
         doc = rag.get_document(name='story.txt')
-        assert doc.chunk_count == chunk_count_before-1, "Chunk was not deleted"
-       
+        assert doc.chunk_count == chunk_count_before - 1, "Chunk was not deleted"
+
     def test_update_chunk_content(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         doc = rag.get_document(name='story.txt')
@@ -278,9 +276,19 @@ class TestDocument(TestSdk):
         assert chunk is not None, "Chunk is None"
         assert isinstance(chunk, Chunk), "Chunk was not added to chunk list"
         chunk.content = "ragflow123"
-        res=chunk.save()
-        assert res is True, f"Failed to update chunk, error: {res}"
-        
+        res = chunk.save()
+        assert res is True, f"Failed to update chunk content, error: {res}"
+
+    def test_update_chunk_available(self):
+        rag = RAGFlow(API_KEY, HOST_ADDRESS)
+        doc = rag.get_document(name='story.txt')
+        chunk = doc.add_chunk(content="ragflow")
+        assert chunk is not None, "Chunk is None"
+        assert isinstance(chunk, Chunk), "Chunk was not added to chunk list"
+        chunk.available = 0
+        res = chunk.save()
+        assert res is True, f"Failed to update chunk status, error: {res}"
+
     def test_retrieval_chunks(self):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         ds = rag.create_dataset(name="God8")

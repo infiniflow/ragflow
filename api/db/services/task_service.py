@@ -133,9 +133,8 @@ class TaskService(CommonService):
                     cls.model.id == id).execute()
 
 
-def queue_tasks(doc, bucket, name):
+def queue_tasks(doc: dict, bucket: str, name: str):
     def new_task():
-        nonlocal doc
         return {
             "id": get_uuid(),
             "doc_id": doc["id"]
@@ -149,15 +148,9 @@ def queue_tasks(doc, bucket, name):
         page_size = doc["parser_config"].get("task_page_size", 12)
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size", 22)
-        if doc["parser_id"] == "one":
-            page_size = 1000000000
-        if doc["parser_id"] == "knowledge_graph":
-            page_size = 1000000000
-        if not do_layout:
-            page_size = 1000000000
-        page_ranges = doc["parser_config"].get("pages")
-        if not page_ranges:
-            page_ranges = [(1, 100000)]
+        if doc["parser_id"] in ["one", "knowledge_graph"] or not do_layout:
+            page_size = 10 ** 9
+        page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
@@ -170,8 +163,7 @@ def queue_tasks(doc, bucket, name):
 
     elif doc["parser_id"] == "table":
         file_bin = STORAGE_IMPL.get(bucket, name)
-        rn = RAGFlowExcelParser.row_number(
-            doc["name"], file_bin)
+        rn = RAGFlowExcelParser.row_number(doc["name"], file_bin)
         for i in range(0, rn, 3000):
             task = new_task()
             task["from_page"] = i

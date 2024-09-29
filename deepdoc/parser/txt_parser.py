@@ -10,28 +10,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from deepdoc.parser.utils import get_text
+from rag.nlp import num_tokens_from_string
 
-from rag.nlp import find_codec,num_tokens_from_string
-import re
 
 class RAGFlowTxtParser:
     def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；！？"):
-        txt = ""
-        if binary:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
-        else:
-            with open(fnm, "r") as f:
-                while True:
-                    l = f.readline()
-                    if not l:
-                        break
-                    txt += l
+        txt = get_text(fnm, binary)
         return self.parser_txt(txt, chunk_token_num, delimiter)
 
     @classmethod
     def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？"):
-        if type(txt) != str:
+        if not isinstance(txt, str):
             raise TypeError("txt type should be str!")
         cks = [""]
         tk_nums = [0]

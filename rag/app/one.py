@@ -13,8 +13,10 @@
 from tika import parser
 from io import BytesIO
 import re
+
+from deepdoc.parser.utils import get_text
 from rag.app import laws
-from rag.nlp import rag_tokenizer, tokenize, find_codec
+from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
 
 
@@ -82,17 +84,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(txt|md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        txt = ""
-        if binary:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
-        else:
-            with open(filename, "r") as f:
-                while True:
-                    l = f.readline()
-                    if not l:
-                        break
-                    txt += l
+        txt = get_text(filename, binary)
         sections = txt.split("\n")
         sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
