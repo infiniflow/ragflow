@@ -169,7 +169,6 @@ class Markdown(MarkdownParser):
         return sections, tbls
 
 
-
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     """
@@ -190,7 +189,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     pdf_parser = None
-    sections = []
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = Docx()(filename, binary)
@@ -222,13 +220,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
         if parser_config.get("html4excel"):
-            sections = [(l, "") for l in excel_parser.html(binary, 12) if l]
+            sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
         else:
-            sections = [(l, "") for l in excel_parser(binary) if l]
+            sections = [(_, "") for _ in excel_parser(binary) if _]
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = TxtParser()(filename,binary,
+        sections = TxtParser()(filename, binary,
                                parser_config.get("chunk_token_num", 128),
                                parser_config.get("delimiter", "\n!?;。；！？"))
         callback(0.8, "Finish parsing.")
@@ -242,13 +240,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
-        sections = [(l, "") for l in sections if l]
+        sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.json$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = JsonParser(int(parser_config.get("chunk_token_num", 128)))(binary)
-        sections = [(l, "") for l in sections if l]
+        sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
@@ -256,7 +254,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
-        sections = [(l, "") for l in sections if l]
+        sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
     else:

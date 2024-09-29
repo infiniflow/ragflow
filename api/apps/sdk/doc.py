@@ -609,8 +609,8 @@ def set(tenant_id):
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req["important_keywords"]
     d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_keywords"]))
-    if "available_int" in req:
-        d["available_int"] = req["available_int"]
+    if "available" in req:
+        d["available_int"] = req["available"]
 
     try:
         tenant_id = DocumentService.get_tenant_id(req["document_id"])

@@ -410,7 +410,7 @@ export const initialGoogleScholarValues = {
 };
 
 export const initialDeepLValues = {
-  text: 5,
+  top_n: 5,
   auth_key: 'relevance',
 };
 

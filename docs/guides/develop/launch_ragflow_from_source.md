@@ -118,7 +118,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
    ```bash
    npm run dev 
-   ```  
+   ```
 
    *The following message appears, showing the IP address and port number of your frontend service:*  
 
@@ -127,3 +127,15 @@ docker compose -f docker/docker-compose-base.yml up -d
 ### Access the RAGFlow service
 
 In your web browser, enter `http://127.0.0.1:<PORT>/`, ensuring the port number matches that shown in the screenshot above.
+
+### Stop the RAGFlow service when the development is done
+
+1. Stop the RAGFlow frontend service:
+   ```bash
+   pkill npm
+   ```
+
+2. Stop the RAGFlow backend service:
+   ```bash
+   pkill -f "docker/entrypoint.sh"
+   ```

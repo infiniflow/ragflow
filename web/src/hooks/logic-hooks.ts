@@ -224,6 +224,7 @@ export const useSendMessageWithSse = (
   const send = useCallback(
     async (
       body: any,
+      controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
       try {
         setDone(false);
@@ -234,6 +235,7 @@ export const useSendMessageWithSse = (
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(body),
+          signal: controller?.signal,
         });
 
         const res = response.clone().json();
@@ -249,6 +251,7 @@ export const useSendMessageWithSse = (
             const { done, value } = x;
             if (done) {
               console.info('done');
+              setAnswer({} as IAnswer);
               break;
             }
             try {
@@ -268,9 +271,12 @@ export const useSendMessageWithSse = (
         }
         console.info('done?');
         setDone(true);
+        setAnswer({} as IAnswer);
         return { data: await res, response };
       } catch (e) {
         setDone(true);
+        setAnswer({} as IAnswer);
+
         console.warn(e);
       }
     },

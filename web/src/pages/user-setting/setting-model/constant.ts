@@ -40,6 +40,7 @@ export const IconMap = {
   Anthropic: 'anthropic',
   'Voyage AI': 'voyage',
   'Google Cloud': 'google-cloud',
+  HuggingFace: 'huggingface',
 };
 
 export const BedrockRegionList = [
