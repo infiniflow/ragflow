@@ -21,7 +21,7 @@ from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from deepdoc.parser.utils import get_text
-from rag.nlp import rag_tokenizer, is_english, tokenize, find_codec
+from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import ExcelParser
 
 
