@@ -83,8 +83,6 @@ RUN --mount=type=bind,source=huggingface.io,target=/huggingface.io \
     tar -cf - \
         /huggingface.io/BAAI/bge-large-zh-v1.5 \
         /huggingface.io/BAAI/bge-reranker-v2-m3 \
-        /huggingface.io/jinaai/jina-embeddings-v3 \
-        /huggingface.io/jinaai/jina-reranker-v2-base-multilingual \
         /huggingface.io/maidalun1020/bce-embedding-base_v1 \
         /huggingface.io/maidalun1020/bce-reranker-base_v1 \
         | tar -xf - --strip-components=2 -C /root/.ragflow
