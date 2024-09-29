@@ -232,7 +232,7 @@ This image is approximately 9 GB in size. As it includes embedding models, it re
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub
-python3 download_deps.py # embedding models
+python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
