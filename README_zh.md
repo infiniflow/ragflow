@@ -200,7 +200,7 @@
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub
-python3 download_deps.py # embedding models
+python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
@@ -223,7 +223,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    curl -sSL https://install.python-poetry.org | python3 -
    ```
 
-2. 克隆源码并安装 Python 依赖：  
+2. 下载源代码并安装 Python 依赖：  
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -236,7 +236,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:  
+   在 `/etc/hosts` 中添加以下代码，将 **docker/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：  
    ```
    127.0.0.1       es01 mysql minio redis
    ```  
