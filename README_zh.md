@@ -18,7 +18,7 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.11.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.11.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.12.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.12.0"></a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
@@ -47,9 +47,10 @@
 
 ## 🔥 近期更新
 
+- 2024-09-29 优化多轮对话.
 - 2024-09-13 增加知识库问答搜索模式。
 - 2024-09-09 在 Agent 中加入医疗问诊模板。
-- 2024-08-22 支持用RAG技术实现从自然语言到SQL语句的转换。
+- 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
 - 2024-07-23 支持解析音频文件。
 - 2024-07-08 支持 Agentic RAG: 基于 [Graph](./agent/README.md) 的工作流。
@@ -134,10 +135,10 @@
    ```bash
    $ cd ragflow/docker
    $ chmod +x ./entrypoint.sh
-   $ docker compose -f docker-compose-CN.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
-   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_VERSION 变量，将其改为对应版本。例如 RAGFLOW_VERSION=v0.11.0，然后运行上述命令。
+   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`，然后运行上述命令。
 
    > 核心镜像下载大小为 9 GB，可能需要一定时间拉取。请耐心等待。
 
@@ -150,12 +151,11 @@
    _出现以下界面提示说明服务器启动成功：_
 
    ```bash
-       ____                 ______ __
-      / __ \ ____ _ ____ _ / ____// /____  _      __
-     / /_/ // __ `// __ `// /_   / // __ \| | /| / /
-    / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ /
-   /_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/
-                 /____/
+        ____   ___    ______ ______ __               
+       / __ \ /   |  / ____// ____// /____  _      __
+      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
@@ -178,19 +178,99 @@
 
 - [.env](./docker/.env)：存放一些基本的系统环境变量，比如 `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` 等。
 - [service_conf.yaml](./docker/service_conf.yaml)：配置各类后台服务。
-- [docker-compose-CN.yml](./docker/docker-compose-CN.yml): 系统依赖该文件完成启动。
+- [docker-compose.yml](./docker/docker-compose.yml): 系统依赖该文件完成启动。
 
 请务必确保 [.env](./docker/.env) 文件中的变量设置与 [service_conf.yaml](./docker/service_conf.yaml) 文件中的配置保持一致！
 
+如果不能访问镜像站点hub.docker.com或者模型站点huggingface.io，请按照[.env](./docker/.env)注释修改`RAGFLOW_IMAGE`和`HF_ENDPOINT`。
+
 > [./docker/README](./docker/README.md) 文件提供了环境变量设置和服务配置的详细信息。请**一定要**确保 [./docker/README](./docker/README.md) 文件当中列出来的环境变量的值与 [service_conf.yaml](./docker/service_conf.yaml) 文件当中的系统配置保持一致。
 
-如需更新默认的 HTTP 服务端口(80), 可以在 [docker-compose-CN.yml](./docker/docker-compose-CN.yml) 文件中将配置 `80:80` 改为 `<YOUR_SERVING_PORT>:80`。
+如需更新默认的 HTTP 服务端口(80), 可以在 [docker-compose.yml](./docker/docker-compose.yml) 文件中将配置 `80:80` 改为 `<YOUR_SERVING_PORT>:80`。
 
 > 所有系统配置都需要通过系统重启生效：
 >
 > ```bash
-> $ docker compose -f docker-compose-CN.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
+
+## 🪛 源码编译 Docker 镜像（不含 embedding 模型）
+
+本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和 embedding 服务。
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub
+python3 download_deps.py
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+```
+
+## 🪚 源码编译 Docker 镜像（包含 embedding 模型）
+
+本 Docker 大小约 9 GB 左右。由于已包含 embedding 模型，所以只需依赖外部的大模型服务即可。
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub
+python3 download_deps.py
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
+```
+
+## 🔨 以源代码启动服务
+
+1. 安装 Poetry。如已经安装，可跳过本步骤：  
+   ```bash
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
+
+2. 下载源代码并安装 Python 依赖：  
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow/
+   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
+   ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
+   ```
+
+3. 通过 Docker Compose 启动依赖的服务（MinIO, Elasticsearch, Redis, and MySQL）：  
+   ```bash
+   docker compose -f docker/docker-compose-base.yml up -d
+   ```
+
+   在 `/etc/hosts` 中添加以下代码，将 **docker/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：  
+   ```
+   127.0.0.1       es01 mysql minio redis
+   ```  
+   在文件 **docker/service_conf.yaml** 中，对照 **docker/.env** 的配置将 mysql 端口更新为 `5455`，es 端口更新为 `1200`。
+
+4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：  
+ 
+   ```bash
+   export HF_ENDPOINT=https://hf-mirror.com
+   ```
+
+5. 启动后端服务：  
+   ```bash
+   source .venv/bin/activate
+   export PYTHONPATH=$(pwd)
+   bash docker/launch_backend_service.sh
+   ```
+
+6. 安装前端依赖：  
+   ```bash
+   cd web
+   npm install --force
+   ```  
+7. 配置前端，将 **.umirc.ts** 的 `proxy.target` 更新为 `http://127.0.0.1:9380`：  
+8. 启动前端服务：  
+   ```bash
+   npm run dev 
+   ```  
+
+   _以下界面说明系统已经成功启动：_  
+
+   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
 ## 📚 技术文档
 

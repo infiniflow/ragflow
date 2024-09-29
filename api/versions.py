@@ -13,10 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os
 import dotenv
 import typing
-from api.utils.file_utils import get_project_base_directory
 
 
 def get_versions() -> typing.Mapping[str, typing.Any]:
@@ -25,4 +23,4 @@ def get_versions() -> typing.Mapping[str, typing.Any]:
 
 
 def get_rag_version() -> typing.Optional[str]:
-    return get_versions().get("RAGFLOW_VERSION", "dev")
+    return get_versions().get("RAGFLOW_IMAGE", "infiniflow/ragflow:dev").split(":")[-1]

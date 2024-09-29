@@ -1,6 +1,6 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Select } from 'antd';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   QWeatherLangOptions,
   QWeatherTimePeriodOptions,
@@ -32,12 +32,19 @@ const QWeatherForm = ({ onValuesChange, form }: IOperatorForm) => {
     }));
   }, [t]);
 
-  const qWeatherTimePeriodOptions = useMemo(() => {
-    return QWeatherTimePeriodOptions.map((x) => ({
-      value: x,
-      label: t(`qWeatherTimePeriodOptions.${x}`),
-    }));
-  }, [t]);
+  const getQWeatherTimePeriodOptions = useCallback(
+    (userType: string) => {
+      let options = QWeatherTimePeriodOptions;
+      if (userType === 'free') {
+        options = options.slice(0, 3);
+      }
+      return options.map((x) => ({
+        value: x,
+        label: t(`qWeatherTimePeriodOptions.${x}`),
+      }));
+    },
+    [t],
+  );
 
   return (
     <Form
@@ -60,11 +67,15 @@ const QWeatherForm = ({ onValuesChange, form }: IOperatorForm) => {
       <Form.Item label={t('userType')} name={'user_type'}>
         <Select options={qWeatherUserTypeOptions}></Select>
       </Form.Item>
-      <Form.Item noStyle dependencies={['type']}>
+      <Form.Item noStyle dependencies={['type', 'user_type']}>
         {({ getFieldValue }) =>
           getFieldValue('type') === 'weather' && (
             <Form.Item label={t('timePeriod')} name={'time_period'}>
-              <Select options={qWeatherTimePeriodOptions}></Select>
+              <Select
+                options={getQWeatherTimePeriodOptions(
+                  getFieldValue('user_type'),
+                )}
+              ></Select>
             </Form.Item>
           )
         }

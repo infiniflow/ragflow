@@ -72,7 +72,7 @@ pypdf = "^5.0.0"
 pytest = "8.2.2"
 python-dotenv = "1.0.1"
 python-dateutil = "2.8.2"
-python-pptx = "0.6.23"
+python-pptx = "^1.0.2"
 pywencai = "0.12.2"
 qianfan = "0.4.6"
 ranx = "0.3.20"
@@ -112,6 +112,7 @@ pypdf2 = "^3.0.1"
 graspologic = "^3.4.1"
 pymysql = "^1.1.1"
 mini-racer = "^0.12.4"
+pyicu = "^2.13.1"
 
 
 [tool.poetry.group.full]

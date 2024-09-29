@@ -370,8 +370,7 @@
           "params": {
             "cite": false,
             "frequency_penalty": 0.7,
-            "llm_id": "gpt-4@OpenAI",
-            "max_tokens": 256,
+            "llm_id": "deepseek-chat@DeepSeek",
             "message_history_window_size": 12,
             "output": null,
             "output_var_name": "output",
@@ -496,7 +495,7 @@
             "message_history_window_size": 22,
             "output": null,
             "output_var_name": "output",
-            "time_period": "now",
+            "time_period": "7d",
             "type": "weather",
             "user_type": "free",
             "web_apikey": "947e8994bc5f488f8857d618ebac1b19"
@@ -1271,7 +1270,7 @@
               "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
-              "maxTokensEnabled": true,
+              "maxTokensEnabled": false,
               "max_tokens": 256,
               "message_history_window_size": 12,
               "parameter": "Precise",
@@ -1688,7 +1687,7 @@
           "data": {
             "form": {
               "lang": "en",
-              "time_period": "now",
+              "time_period": "7d",
               "type": "weather",
               "user_type": "free",
               "web_apikey": "947e8994bc5f488f8857d618ebac1b19"
@@ -1719,8 +1718,8 @@
               "cite": false,
               "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
-              "llm_id": "gpt-4@OpenAI",
-              "maxTokensEnabled": true,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": false,
               "max_tokens": 256,
               "message_history_window_size": 12,
               "parameter": "Precise",
