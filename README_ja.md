@@ -194,9 +194,9 @@
 > $ docker-compose up -d
 > ```
 
-## 🪛 Build the Docker image without embedding models
+## 🪛 ソースコードでDockerイメージを作成（埋め込みモデルなし）
 
-This image is approximately 1 GB in size and relies on external LLM and embedding services.
+この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -206,9 +206,9 @@ python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 Build the Docker image including embedding models
+## 🪚 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
 
-This image includes embedding models and is approximately 9 GB in size, and so relies on external LLM services only.
+この Docker のサイズは約 9GB で、埋め込みモデルを含むため、外部の大モデルサービスのみが必要です。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -218,14 +218,14 @@ python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
-## 🔨 Launch service from source for development
+## 🔨 ソースコードからサービスを起動する方法
 
-1. Install Poetry, or skip this step if it is already installed:
+1. Poetry をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
    ```bash
    curl -sSL https://install.python-poetry.org | python3 -
    ```
 
-2. Clone the source code and install Python dependencies:
+2. ソースコードをクローンし、Python の依存関係をインストールする:
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -233,42 +233,42 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
    ```
 
-3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:  
+   `/etc/hosts` に以下の行を追加して、**docker/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:  
    ```
    127.0.0.1       es01 mysql minio redis
    ```  
-   In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
+   **docker/service_conf.yaml** で mysql のポートを `5455` に、es のポートを `1200` に更新します（**docker/.env** に指定された通り）.
 
-4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
+4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
  
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. バックエンドサービスを起動する:
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:  
+6. フロントエンドの依存関係をインストールする:  
    ```bash
    cd web
    npm install --force
    ```  
-7. Configure frontend to update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
-8. Launch frontend service:  
+7. フロントエンドを設定し、**.umirc.ts** の `proxy.target` を `http://127.0.0.1:9380` に更新します:
+8. フロントエンドサービスを起動する:  
    ```bash
    npm run dev 
    ```
 
-   _The following output confirms a successful launch of the system:_  
+   _以下の画面で、システムが正常に起動したことを示します:_  
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
