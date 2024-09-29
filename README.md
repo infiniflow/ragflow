@@ -42,8 +42,8 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🪛 [Build docker image without embedding model](#-build-docker-image-without-embedding-model)
-- 🪚 [Build docker image with embedding model](#-build-docker-image-with-embedding-model)
+- 🪛 [Build docker image without embedding models](#-build-docker-image-without-embedding-models)
+- 🪚 [Build docker image with embedding models](#-build-docker-image-with-embedding-models)
 - 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
@@ -211,7 +211,7 @@ Updates to the above configurations require a reboot of all containers to take e
 > $ docker-compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🪛 Build docker image without embedding model
+## 🪛 Build docker image without embedding models
 
 This image is approximately 1 GB in size and relies on external LLM and embedding services, as it only includes document parsing models.
 
@@ -223,9 +223,9 @@ python3 download_deps.py # embedding models
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 Build docker image with embedding model
+## 🪚 Build docker image with embedding models
 
-This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes document parsing, and embedding models.
+This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes document parsing and embedding models.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -237,12 +237,12 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 
 ## 🔨 Launch service from source for development
 
-1. Install Poetry, if you already installed Poetry, please skip this step:
+1. Install Poetry, or skip this step if it is already installed:
    ```bash
    curl -sSL https://install.python-poetry.org | python3 -
    ```
 
-2. Get RAGFlow source code and install Python dependencies:
+2. Clone the source code and install Python dependencies:
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -250,37 +250,37 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
    ```
 
-3. Launch the RAGFlow dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:
+   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:  
    ```
    127.0.0.1       es01 mysql minio redis
-   ```
+   ```  
    In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
-4. If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
+4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
  
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch RAGFlow backend service:
+5. Launch backend service:
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:
+6. Install frontend dependencies:  
    ```bash
    cd web
    npm install --force
-   ```
+   ```  
 7. Configure frontend to update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
-8. Launch RAGFlow frontend service:
+8. Launch frontend service:  
    ```bash
    npm run dev 
    ```
