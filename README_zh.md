@@ -192,6 +192,84 @@
 > $ docker compose -f docker-compose-CN.yml up -d
 > ```
 
+## 🪛 源码编译 Docker 镜像（不含 embedding 模型）
+
+本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和 embedding 服务。
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub
+python3 download_deps.py
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+```
+
+## 🪚 源码编译 Docker 镜像（包含 embedding 模型）
+
+本 Docker 大小约 9 GB 左右。由于已包含 embedding 模型，所以只需依赖外部的大模型服务即可。
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub
+python3 download_deps.py
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
+```
+
+## 🔨 以源代码启动服务
+
+1. 安装 Poetry。如已经安装，可跳过本步骤：  
+   ```bash
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
+
+2. 下载源代码并安装 Python 依赖：  
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow/
+   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
+   ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
+   ```
+
+3. 通过 Docker Compose 启动依赖的服务（MinIO, Elasticsearch, Redis, and MySQL）：  
+   ```bash
+   docker compose -f docker/docker-compose-base.yml up -d
+   ```
+
+   在 `/etc/hosts` 中添加以下代码，将 **docker/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：  
+   ```
+   127.0.0.1       es01 mysql minio redis
+   ```  
+   在文件 **docker/service_conf.yaml** 中，对照 **docker/.env** 的配置将 mysql 端口更新为 `5455`，es 端口更新为 `1200`。
+
+4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：  
+ 
+   ```bash
+   export HF_ENDPOINT=https://hf-mirror.com
+   ```
+
+5. 启动后端服务：  
+   ```bash
+   source .venv/bin/activate
+   export PYTHONPATH=$(pwd)
+   bash docker/launch_backend_service.sh
+   ```
+
+6. 安装前端依赖：  
+   ```bash
+   cd web
+   npm install --force
+   ```  
+7. 配置前端，将 **.umirc.ts** 的 `proxy.target` 更新为 `http://127.0.0.1:9380`：  
+8. 启动前端服务：  
+   ```bash
+   npm run dev 
+   ```  
+
+   _以下界面说明系统已经成功启动：_  
+
+   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
 ## 📚 技术文档
 
 - [Quickstart](https://ragflow.io/docs/dev/)
