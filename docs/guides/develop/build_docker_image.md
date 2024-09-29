@@ -36,17 +36,52 @@ cd ragflow
 
 ### Build the Docker Image
 
-Navigate to the `ragflow` directory where the Dockerfile and other necessary files are located. Now you can build the Docker image using the provided Dockerfile. The command below specifies which Dockerfile to use and tages the image with a name for reference purpose.
+Navigate to the `ragflow` directory where the Dockerfile and other necessary files are located. Now you can build the Docker image using the provided Dockerfile. The command below specifies which Dockerfile to use and tags the image with a name for reference purpose.
 
-#### Build image `ragflow:dev-slim`
-```bash
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
-```
-This image's size is about 1GB. It relies external LLM services since it doesn't contain embedding models. 
+#### Build and push multi-arch image `infiniflow/ragflow:dev-slim`
 
-#### Build image `ragflow:dev`
+On a `linux/amd64` host:
 ```bash
-cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim-amd64 .
+docker push infiniflow/ragflow:dev-slim-amd64
 ```
-This image's size is about 11GB. It contains embedding models, and can inference via local CPU/GPU or external LLM services.
+
+On a `linux/arm64` host:
+```bash
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim-arm64 .
+docker push infiniflow/ragflow:dev-slim-arm64
+```
+
+On a Linux host:
+```bash
+docker manifest create infiniflow/ragflow:dev-slim --amend infiniflow/ragflow:dev-slim-amd64 --amend infiniflow/ragflow:dev-slim-arm64
+docker manifest push infiniflow/ragflow:dev-slim
+```
+
+This image is approximately 1 GB in size and relies on external LLM services, as it does not include deepdoc, embedding, or chat models.
+
+#### Build and push multi-arch image `infiniflow/ragflow:dev`
+
+On a `linux/amd64` host:
+```bash
+pip3 install huggingface-hub
+python3 download_deps.py
+docker build -f Dockerfile -t infiniflow/ragflow:dev-amd64 .
+docker push infiniflow/ragflow:dev-amd64
+```
+
+On a `linux/arm64` host:
+```bash
+pip3 install huggingface-hub
+python3 download_deps.py
+docker build -f Dockerfile -t infiniflow/ragflow:dev-arm64 .
+docker push infiniflow/ragflow:dev-arm64
+```
+
+On any linux host:
+```bash
+docker manifest create infiniflow/ragflow:dev --amend infiniflow/ragflow:dev-amd64 --amend infiniflow/ragflow:dev-arm64
+docker manifest push infiniflow/ragflow:dev
+```
+
+This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes deepdoc, embedding, and chat models.
