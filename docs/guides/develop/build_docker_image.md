@@ -38,7 +38,7 @@ cd ragflow
 
 Navigate to the `ragflow` directory where the Dockerfile and other necessary files are located. Now you can build the Docker image using the provided Dockerfile. The command below specifies which Dockerfile to use and tags the image with a name for reference purpose.
 
-#### Build and push multi-arch image `ragflow:dev-slim`
+#### Build and push multi-arch image `infiniflow/ragflow:dev-slim`
 
 On a `linux/amd64` host:
 ```bash
@@ -60,7 +60,7 @@ docker manifest push infiniflow/ragflow:dev-slim
 
 This image's size is about 1 GB. It relies external LLM services since it doesn't contain embedding models. 
 
-#### Build and push multi-arch image `ragflow:dev`
+#### Build and push multi-arch image `infiniflow/ragflow:dev`
 
 On a `linux/amd64` host:
 ```bash
