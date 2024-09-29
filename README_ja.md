@@ -140,7 +140,7 @@
    $ docker compose up -d
    ```
 
-   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_VERSION変数を見つけて、対応するバージョンに変更してください。 例えば、RAGFLOW_VERSION=v0.12.0として、上記のコマンドを実行してください。
+   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_IMAGE変数を見つけて、対応するバージョンに変更してください。 例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`として、上記のコマンドを実行してください。
 
    > コアイメージのサイズは約 9 GB で、ロードに時間がかかる場合があります。
 
