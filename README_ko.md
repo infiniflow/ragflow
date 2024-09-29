@@ -199,9 +199,9 @@
 > $ docker-compose up -d
 > ```
 
-## 🪛 Build the Docker image without embedding models
+## 🪛 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함하지 않음)
 
-This image is approximately 1 GB in size and relies on external LLM and embedding services.
+이 Docker 이미지의 크기는 약 1GB이며, 외부 대형 모델과 임베딩 서비스에 의존합니다.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -211,9 +211,9 @@ python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 Build the Docker image including embedding models
+## 🪚 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
 
-This image includes embedding models and is approximately 9 GB in size, and so relies on external LLM services only.
+이 Docker의 크기는 약 9GB이며, 이미 임베딩 모델을 포함하고 있으므로 외부 대형 모델 서비스에만 의존하면 됩니다.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -223,14 +223,14 @@ python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
-## 🔨 Launch service from source for development
+## 🔨 소스 코드로 서비스를 시작합니다.
 
-1. Install Poetry, or skip this step if it is already installed:
+1. Poetry를 설치하거나 이미 설치된 경우 이 단계를 건너뜁니다:
    ```bash
    curl -sSL https://install.python-poetry.org | python3 -
    ```
 
-2. Clone the source code and install Python dependencies:
+2. 소스 코드를 클론하고 Python 의존성을 설치합니다:
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -238,42 +238,42 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
    ```
 
-3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+3. Docker Compose를 사용하여 의존 서비스(MinIO, Elasticsearch, Redis 및 MySQL)를 시작합니다:
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:  
+   `/etc/hosts` 에 다음 줄을 추가하여 **docker/service_conf.yaml** 에 지정된 모든 호스트를 `127.0.0.1` 로 해결합니다:  
    ```
    127.0.0.1       es01 mysql minio redis
    ```  
-   In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
+   **docker/service_conf.yaml** 에서 mysql 포트를 `5455` 로, es 포트를 `1200` 으로 업데이트합니다( **docker/.env** 에 지정된 대로).
 
-4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
+4. HuggingFace에 접근할 수 없는 경우, `HF_ENDPOINT` 환경 변수를 설정하여 미러 사이트를 사용하세요:
  
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. 백엔드 서비스를 시작합니다:
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:  
+6. 프론트엔드 의존성을 설치합니다:  
    ```bash
    cd web
    npm install --force
    ```  
-7. Configure frontend to update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
-8. Launch frontend service:  
+7. **.umirc.ts** 에서 `proxy.target` 을 `http://127.0.0.1:9380` 으로 업데이트합니다:
+8. 프론트엔드 서비스를 시작합니다:  
    ```bash
    npm run dev 
    ```
 
-   _The following output confirms a successful launch of the system:_  
+   _다음 인터페이스는 시스템이 성공적으로 시작되었음을 나타냅니다:_  
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
