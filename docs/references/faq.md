@@ -168,12 +168,11 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 *The server is successfully initialized, if your system displays the following:*
 
 ```
-    ____                 ______ __
-   / __ \ ____ _ ____ _ / ____// /____  _      __
-  / /_/ // __ `// __ `// /_   / // __ \| | /| / /
- / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ /
-/_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/
-              /____/
+     ____   ___    ______ ______ __               
+    / __ \ /   |  / ____// ____// /____  _      __
+   / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+  / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+ /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
 
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:9380
