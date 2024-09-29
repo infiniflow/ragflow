@@ -42,8 +42,8 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🪛 [Build docker image without embedding models](#-build-docker-image-without-embedding-models)
-- 🪚 [Build docker image with embedding models](#-build-docker-image-with-embedding-models)
+- 🪛 [Build the docker image without embedding models](#-build-the-docker-image-without-embedding-models)
+- 🪚 [Build the docker image including embedding models](#-build-the-docker-image-including-embedding-models)
 - 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
@@ -211,9 +211,9 @@ Updates to the above configurations require a reboot of all containers to take e
 > $ docker-compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🪛 Build docker image without embedding models
+## 🪛 Build the Docker image without embedding models
 
-This image is approximately 1 GB in size and relies on external LLM and embedding services, as it only includes document parsing models.
+This image is approximately 1 GB in size and relies on external LLM and embedding services.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -223,9 +223,9 @@ python3 download_deps.py # embedding models
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 Build docker image with embedding models
+## 🪚 Build the Docker image including embedding models
 
-This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes document parsing and embedding models.
+This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes embedding models.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
