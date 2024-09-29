@@ -42,9 +42,9 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🔧 [Build light docker image](#-build-light-docker-image)
-- 🔧 [Build docker image](#-build-docker-image)
-- 🔧 [Launch service from source for development](#-launch-service-from-source-for-development)
+- 🪛 [Build docker image without embedding model](#-build-docker-image-without-embedding-model)
+- 🪚 [Build docker image with embedding model](#-build-docker-image-with-embedding-model)
+- 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
 - 🏄 [Community](#-community)
@@ -211,27 +211,31 @@ Updates to the above configurations require a reboot of all containers to take e
 > $ docker-compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🔧 Build docker image without embedding model
+## 🪛 Build docker image without embedding model
 
 This image is approximately 1 GB in size and relies on external LLM and embedding services, as it only includes document parsing models.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
+pip3 install huggingface-hub
+python3 download_deps.py # embedding models
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-### 🔧 Build docker image with embedding model
+## 🪚 Build docker image with embedding model
 
 This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes document parsing, and embedding models.
 
 ```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
 pip3 install huggingface-hub
-python3 download_deps.py # Download document parsing and embedding models
+python3 download_deps.py # embedding models
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
-## 🔧 Launch service from source for development
+## 🔨 Launch service from source for development
 
 1. Install Poetry, if you already installed Poetry, please skip this step:
    ```bash
