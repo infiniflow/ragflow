@@ -52,7 +52,7 @@ docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim-arm64 .
 docker push infiniflow/ragflow:dev-slim-arm64
 ```
 
-On any linux host:
+On a Linux host:
 ```bash
 docker manifest create infiniflow/ragflow:dev-slim --amend infiniflow/ragflow:dev-slim-amd64 --amend infiniflow/ragflow:dev-slim-arm64
 docker manifest push infiniflow/ragflow:dev-slim
