@@ -192,9 +192,9 @@
 > $ docker compose -f docker-compose-CN.yml up -d
 > ```
 
-## 🪛 Build the Docker image without embedding models
+## 🪛 源码编译不含 embedding 模型的 Docker 镜像
 
-This image is approximately 1 GB in size and relies on external LLM and embedding services.
+本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和向量服务。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -204,9 +204,9 @@ python3 download_deps.py # embedding models
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 Build the Docker image including embedding models
+## 🪚 源码编译包含 embedding 模型的 Docker 镜像
 
-This image includes embedding models and is approximately 9 GB in size, and so relies on external LLM services only.
+本 Docker 大小约 9 GB 左右。由于已包含 embedding 模型，所以只需依赖外部的大模型服务即可。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -216,14 +216,14 @@ python3 download_deps.py # embedding models
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
-## 🔨 Launch service from source for development
+## 🔨 源码启动服务
 
-1. Install Poetry, or skip this step if it is already installed:
+1. 安装 Poetry。如已经安装，可跳过本步骤：  
    ```bash
    curl -sSL https://install.python-poetry.org | python3 -
    ```
 
-2. Clone the source code and install Python dependencies:
+2. 克隆源码并安装 Python 依赖：  
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -231,7 +231,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
    ```
 
-3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+3. 通过 Docker Compose 启动依赖的服务（MinIO, Elasticsearch, Redis, and MySQL）：  
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
@@ -240,33 +240,33 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ```
    127.0.0.1       es01 mysql minio redis
    ```  
-   In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
+   在文件 **docker/service_conf.yaml** 中，对照 **docker/.env** 的配置将 mysql 端口更新为 `5455`，es 端口更新为 `1200`。
 
-4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
+4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：  
  
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. 启动后端服务：  
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:  
+6. 安装前端依赖：  
    ```bash
    cd web
    npm install --force
    ```  
-7. Configure frontend to update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
-8. Launch frontend service:  
+7. 配置前端，将 **.umirc.ts** 的 `proxy.target` 更新为 `http://127.0.0.1:9380`：  
+8. 启动前端服务：  
    ```bash
    npm run dev 
-   ```
+   ```  
 
-   _The following output confirms a successful launch of the system:_  
+   _以下界面说明系统已经成功启动：_  
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
