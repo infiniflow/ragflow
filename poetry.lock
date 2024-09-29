@@ -6272,18 +6272,19 @@ cli = ["click (>=5.0)"]
 
 [[package]]
 name = "python-pptx"
-version = "0.6.23"
-description = "Generate and manipulate Open XML PowerPoint (.pptx) files"
+version = "1.0.2"
+description = "Create, read, and update PowerPoint 2007+ (.pptx) files."
 optional = false
-python-versions = "*"
+python-versions = ">=3.8"
 files = [
-    {file = "python-pptx-0.6.23.tar.gz", hash = "sha256:587497ff28e779ab18dbb074f6d4052893c85dedc95ed75df319364f331fedee"},
-    {file = "python_pptx-0.6.23-py3-none-any.whl", hash = "sha256:dd0527194627a2b7cc05f3ba23ecaa2d9a0d5ac9b6193a28ed1b7a716f4217d4"},
+    {file = "python_pptx-1.0.2-py3-none-any.whl", hash = "sha256:160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba"},
+    {file = "python_pptx-1.0.2.tar.gz", hash = "sha256:479a8af0eaf0f0d76b6f00b0887732874ad2e3188230315290cd1f9dd9cc7095"},
 ]
 
 [package.dependencies]
 lxml = ">=3.1.0"
 Pillow = ">=3.3.2"
+typing-extensions = ">=4.9.0"
 XlsxWriter = ">=0.5.7"
 
 [[package]]
@@ -8789,4 +8790,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.12,<3.13"
-content-hash = "05c3cc081abaadecfe80f093d0c23cf6bfe44449bbec701a7e8f84eb8fd26f3d"
+content-hash = "84aaaf574297e9683b944e09d6c0b2dd42075a2f4b9959fa74852a907c119483"
