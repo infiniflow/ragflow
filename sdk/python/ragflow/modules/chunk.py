@@ -11,7 +11,7 @@ class Chunk(Base):
         self.knowledgebase_id = None
         self.document_name = ""
         self.document_id = ""
-        self.status = "1"
+        self.available = 1
         for k in list(res_dict.keys()):
             if k not in self.__dict__:
                 res_dict.pop(k)
@@ -39,7 +39,7 @@ class Chunk(Base):
                          "content": self.content,
                          "important_keywords": self.important_keywords,
                          "document_id": self.document_id,
-                         "status": self.status,
+                         "available": self.available,
                          })
         res = res.json()
         if res.get("retmsg") == "success":
