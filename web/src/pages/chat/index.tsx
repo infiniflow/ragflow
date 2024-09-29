@@ -1,11 +1,6 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import RenameModal from '@/components/rename-modal';
-import {
-  CloudOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  PlusOutlined,
-} from '@ant-design/icons';
+import { CloudOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -35,6 +30,7 @@ import {
 } from './hooks';
 
 import ChatOverviewModal from '@/components/api-service/chat-overview-modal';
+import SvgIcon from '@/components/svg-icon';
 import {
   useClickConversationCard,
   useClickDialogCard,
@@ -297,7 +293,13 @@ const Chat = () => {
               <Tag>{conversationList.length}</Tag>
             </Space>
             <Tooltip title={t('newChat')}>
-              <PlusOutlined onClick={handleCreateTemporaryConversation} />
+              <div>
+                <SvgIcon
+                  name="plus-circle-fill"
+                  width={20}
+                  onClick={handleCreateTemporaryConversation}
+                ></SvgIcon>
+              </div>
             </Tooltip>
           </Flex>
           <Divider></Divider>
