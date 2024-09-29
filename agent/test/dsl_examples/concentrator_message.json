@@ -1,0 +1,113 @@
+{
+  "components": {
+            "begin": {
+                "obj":{
+                    "component_name": "Begin",
+                    "params": {
+                      "prologue": "Hi there!"
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": []
+            },
+            "answer:0": {
+                "obj": {
+                    "component_name": "Answer",
+                    "params": {}
+                },
+                "downstream": ["categorize:0"],
+                "upstream": ["begin"]
+            },
+            "categorize:0": {
+                "obj": {
+                    "component_name": "Categorize",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "category_description": {
+                        "product_related": {
+                          "description": "The question is about the product usage, appearance and how it works.",
+                          "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?",
+                          "to": "concentrator:0"
+                        },
+                        "others": {
+                          "description": "The question is not about the product usage, appearance and how it works.",
+                          "examples": "How are you doing?\nWhat is your name?\nAre you a robot?\nWhat's the weather?\nWill it rain?",
+                          "to": "concentrator:1"
+                        }
+                      }
+                    }
+                },
+                "downstream": ["concentrator:0","concentrator:1"],
+                "upstream": ["answer:0"]
+            },
+            "concentrator:0": {
+                "obj": {
+                    "component_name": "Concentrator",
+                    "params": {}
+                },
+                "downstream": ["message:0"],
+                "upstream": ["categorize:0"]
+            },
+            "concentrator:1": {
+                "obj": {
+                    "component_name": "Concentrator",
+                    "params": {}
+                },
+                "downstream": ["message:1_0","message:1_1","message:1_2"],
+                "upstream": ["categorize:0"]
+            },
+            "message:0": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                      "messages": [
+                        "Message 0_0!!!!!!!"
+                      ]
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": ["concentrator:0"]
+            },
+            "message:1_0": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                      "messages": [
+                        "Message 1_0!!!!!!!"
+                      ]
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": ["concentrator:1"]
+            },
+            "message:1_1": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                      "messages": [
+                        "Message 1_1!!!!!!!"
+                      ]
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": ["concentrator:1"]
+            },
+            "message:1_2": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                      "messages": [
+                        "Message 1_2!!!!!!!"
+                      ]
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": ["concentrator:1"]
+            }
+  },
+  "history": [],
+  "messages": [],
+  "path": [],
+  "reference": [],
+  "answer": []
+}

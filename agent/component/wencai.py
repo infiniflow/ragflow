@@ -64,6 +64,12 @@ class WenCai(ComponentBase, ABC):
                             continue
                         wencai_res.append({"content": pd.DataFrame.from_dict(item[1], orient='index').to_markdown()})
                         continue
+                    if isinstance(item[1], pd.DataFrame):
+                        if "image_url" in item[1].columns:
+                            continue
+                        wencai_res.append({"content": item[1].to_markdown()})
+                        continue
+                        
                     wencai_res.append({"content": item[0] + "\n" + str(item[1])})
         except Exception as e:
             return WenCai.be_output("**ERROR**: " + str(e))

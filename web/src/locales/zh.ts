@@ -934,6 +934,9 @@ export default {
         symbols: '品种列表',
         quotes: '最新行情',
       },
+      concentrator: '集线器',
+      concentratorDescription:
+        '该组件可用于连接多个下游组件。它接收来自上游组件的输入并将其传递给每个下游组件。',
     },
     footer: {
       profile: 'All rights reserved @ React',

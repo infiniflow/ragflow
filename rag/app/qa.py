@@ -16,6 +16,8 @@ from io import BytesIO
 from timeit import default_timer as timer
 from nltk import word_tokenize
 from openpyxl import load_workbook
+
+from deepdoc.parser.utils import get_txt
 from rag.nlp import is_english, random_choices, find_codec, qbullets_category, add_positions, has_qbullet, docx_question_level
 from rag.nlp import rag_tokenizer, tokenize_table, concat_img
 from rag.settings import cron_logger
@@ -305,17 +307,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         return res
     elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        txt = ""
-        if binary:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
-        else:
-            with open(filename, "r") as f:
-                while True:
-                    l = f.readline()
-                    if not l:
-                        break
-                    txt += l
+        txt = get_txt(filename, binary)
         lines = txt.split("\n")
         comma, tab = 0, 0
         for l in lines:
@@ -358,17 +350,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         return res
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        txt = ""
-        if binary:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
-        else:
-            with open(filename, "r") as f:
-                while True:
-                    l = f.readline()
-                    if not l:
-                        break
-                    txt += l
+        txt = get_txt(filename, binary)
         lines = txt.split("\n")
         last_question, last_answer = "", ""
         question_stack, level_stack = [], []
