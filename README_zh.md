@@ -135,10 +135,10 @@
    ```bash
    $ cd ragflow/docker
    $ chmod +x ./entrypoint.sh
-   $ docker compose -f docker-compose-CN.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
-   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_VERSION 变量，将其改为对应版本。例如 RAGFLOW_VERSION=v0.12.0，然后运行上述命令。
+   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`，然后运行上述命令。
 
    > 核心镜像下载大小为 9 GB，可能需要一定时间拉取。请耐心等待。
 
@@ -178,18 +178,20 @@
 
 - [.env](./docker/.env)：存放一些基本的系统环境变量，比如 `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` 等。
 - [service_conf.yaml](./docker/service_conf.yaml)：配置各类后台服务。
-- [docker-compose-CN.yml](./docker/docker-compose-CN.yml): 系统依赖该文件完成启动。
+- [docker-compose.yml](./docker/docker-compose.yml): 系统依赖该文件完成启动。
 
 请务必确保 [.env](./docker/.env) 文件中的变量设置与 [service_conf.yaml](./docker/service_conf.yaml) 文件中的配置保持一致！
 
+如果不能访问镜像站点hub.docker.com或者模型站点huggingface.io，请按照[.env](./docker/.env)注释修改`RAGFLOW_IMAGE`和`HF_ENDPOINT`。
+
 > [./docker/README](./docker/README.md) 文件提供了环境变量设置和服务配置的详细信息。请**一定要**确保 [./docker/README](./docker/README.md) 文件当中列出来的环境变量的值与 [service_conf.yaml](./docker/service_conf.yaml) 文件当中的系统配置保持一致。
 
-如需更新默认的 HTTP 服务端口(80), 可以在 [docker-compose-CN.yml](./docker/docker-compose-CN.yml) 文件中将配置 `80:80` 改为 `<YOUR_SERVING_PORT>:80`。
+如需更新默认的 HTTP 服务端口(80), 可以在 [docker-compose.yml](./docker/docker-compose.yml) 文件中将配置 `80:80` 改为 `<YOUR_SERVING_PORT>:80`。
 
 > 所有系统配置都需要通过系统重启生效：
 >
 > ```bash
-> $ docker compose -f docker-compose-CN.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ## 🪛 源码编译 Docker 镜像（不含 embedding 模型）
