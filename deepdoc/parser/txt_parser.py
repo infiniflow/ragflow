@@ -10,13 +10,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from deepdoc.parser.utils import get_txt
+from deepdoc.parser.utils import get_text
 from rag.nlp import num_tokens_from_string
 
 
 class RAGFlowTxtParser:
     def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；！？"):
-        txt = get_txt(fnm, binary)
+        txt = get_text(fnm, binary)
         return self.parser_txt(txt, chunk_token_num, delimiter)
 
     @classmethod
