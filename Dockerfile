@@ -16,11 +16,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN  sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt update && apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 \
+    apt update && apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 libssl-dev \
     && rm -rf /var/lib/apt/lists/* \
     && curl -sSL https://install.python-poetry.org | python3 -
 
-ENV PYTHONDONTWRITEBYTECODE=1 LD_LIBRARY_PATH=usr/lib/x86_64-linux-gnu/openmpi/lib:$LD_LIBRARY_PATH
+ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
 # Configure Poetry
 ENV POETRY_NO_INTERACTION=1
