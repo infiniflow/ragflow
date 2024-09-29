@@ -225,7 +225,7 @@ docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 
 ## 🪚 Build the Docker image including embedding models
 
-This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes embedding models.
+This image includes embedding models and is approximately 9 GB in size, and so relies on external LLM services only.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
