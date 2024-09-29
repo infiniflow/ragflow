@@ -12,9 +12,9 @@ const ChatApiKeyModal = ({
   dialogId,
   hideModal,
   idKey,
-}: IModalProps<any> & { dialogId: string; idKey: string }) => {
+}: IModalProps<any> & { dialogId?: string; idKey: string }) => {
   const { createToken, removeToken, tokenList, listLoading, creatingLoading } =
-    useOperateApiKey(dialogId, idKey);
+    useOperateApiKey(idKey, dialogId);
   const { t } = useTranslate('chat');
 
   const columns: TableProps<IToken>['columns'] = [
