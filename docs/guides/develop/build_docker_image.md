@@ -58,7 +58,7 @@ docker manifest create infiniflow/ragflow:dev-slim --amend infiniflow/ragflow:de
 docker manifest push infiniflow/ragflow:dev-slim
 ```
 
-This image's size is about 1 GB. It relies external LLM services since it doesn't contain embedding models. 
+This image is approximately 1 GB in size and relies on external LLM services, as it does not include deepdoc, embedding, or chat models.
 
 #### Build and push multi-arch image `infiniflow/ragflow:dev`
 
