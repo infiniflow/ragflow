@@ -192,9 +192,9 @@
 > $ docker compose -f docker-compose-CN.yml up -d
 > ```
 
-## 🪛 源码编译不含 embedding 模型的 Docker 镜像
+## 🪛 源码编译 Docker 镜像（不含 embedding 模型）
 
-本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和向量服务。
+本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和 embedding 服务。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -204,7 +204,7 @@ python3 download_deps.py # embedding models
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 源码编译包含 embedding 模型的 Docker 镜像
+## 🪚 源码编译 Docker 镜像（包含 embedding 模型）
 
 本 Docker 大小约 9 GB 左右。由于已包含 embedding 模型，所以只需依赖外部的大模型服务即可。
 
@@ -216,7 +216,7 @@ python3 download_deps.py # embedding models
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
-## 🔨 源码启动服务
+## 🔨 以源代码启动服务
 
 1. 安装 Poetry。如已经安装，可跳过本步骤：  
    ```bash
