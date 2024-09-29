@@ -211,9 +211,9 @@ Updates to the above configurations require a reboot of all containers to take e
 > $ docker-compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🔧 Build light docker image
+## 🔧 Build docker image without embedding model
 
-This image is approximately 1 GB in size and relies on external LLM services, as it does not include document parsing and embedding models.
+This image is approximately 1 GB in size and relies on external LLM and embedding services, as it only includes document parsing models.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -221,7 +221,7 @@ cd ragflow/
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-### 🔧 Build docker image
+### 🔧 Build docker image with embedding model
 
 This image's size is approximately 9 GB in size and can reference via either local CPU/GPU or an external LLM, as it includes document parsing, and embedding models.
 
