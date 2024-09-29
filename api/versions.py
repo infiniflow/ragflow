@@ -23,4 +23,4 @@ def get_versions() -> typing.Mapping[str, typing.Any]:
 
 
 def get_rag_version() -> typing.Optional[str]:
-    return get_versions().get("RAGFLOW_IMAGE", "infiniflow/ragflow:dev")
+    return get_versions().get("RAGFLOW_IMAGE", "infiniflow/ragflow:dev").split(":")[-1]
