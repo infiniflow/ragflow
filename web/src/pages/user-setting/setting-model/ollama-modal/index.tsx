@@ -9,7 +9,8 @@ type FieldType = IAddLlmRequestBody & { vision: boolean };
 const { Option } = Select;
 
 const llmFactoryToUrlMap = {
-  Ollama: 'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
+  Ollama:
+    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx',
   Xinference: 'https://inference.readthedocs.io/en/latest/user_guide',
   LocalAI: 'https://localai.io/docs/getting-started/models/',
   'LM-Studio': 'https://lmstudio.ai/docs/basics',
@@ -51,7 +52,7 @@ const OllamaModal = ({
   };
   const url =
     llmFactoryToUrlMap[llmFactory as LlmFactory] ||
-    'https://huggingface.co/docs/text-embeddings-inference/quick_tour';
+    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx';
   return (
     <Modal
       title={t('addLlmTitle', { name: llmFactory })}
@@ -92,6 +93,8 @@ const OllamaModal = ({
                 <Option value="embedding">embedding</Option>
                 <Option value="rerank">rerank</Option>
                 <Option value="image2text">image2text</Option>
+                <Option value="audio2text">audio2text</Option>
+                <Option value="text2andio">text2andio</Option>
               </>
             )}
           </Select>
