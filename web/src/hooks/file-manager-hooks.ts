@@ -208,13 +208,13 @@ export const useUploadFile = () => {
         formData.append('path', pathList[index]);
       });
       try {
-        const { data } = await fileManagerService.uploadFile(formData);
-        if (data.retcode === 0) {
+        const ret = await fileManagerService.uploadFile(formData);
+        if (ret?.data.retcode === 0) {
           message.success(t('message.uploaded'));
           setPaginationParams(1);
           queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
         }
-        return data.retcode;
+        return ret?.data?.retcode;
       } catch (error) {
         console.log('🚀 ~ useUploadFile ~ error:', error);
       }
