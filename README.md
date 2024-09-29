@@ -42,6 +42,9 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
+- 🪛 [Build the docker image without embedding models](#-build-the-docker-image-without-embedding-models)
+- 🪚 [Build the docker image including embedding models](#-build-the-docker-image-including-embedding-models)
+- 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
 - 🏄 [Community](#-community)
@@ -166,12 +169,12 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    _The following output confirms a successful launch of the system:_
 
    ```bash
-       ____                 ______ __
-      / __ \ ____ _ ____ _ / ____// /____  _      __
-     / /_/ // __ `// __ `// /_   / // __ \| | /| / /
-    / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ /
-   /_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/
-                 /____/
+        ____   ___    ______ ______ __               
+       / __ \ /   |  / ____// ____// /____  _      __
+      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
+ 
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
@@ -207,6 +210,84 @@ Updates to the above configurations require a reboot of all containers to take e
 > ```bash
 > $ docker-compose -f docker/docker-compose.yml up -d
 > ```
+
+## 🪛 Build the Docker image without embedding models
+
+This image is approximately 1 GB in size and relies on external LLM and embedding services.
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub
+python3 download_deps.py # embedding models
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+```
+
+## 🪚 Build the Docker image including embedding models
+
+This image includes embedding models and is approximately 9 GB in size, and so relies on external LLM services only.
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub
+python3 download_deps.py # embedding models
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
+```
+
+## 🔨 Launch service from source for development
+
+1. Install Poetry, or skip this step if it is already installed:
+   ```bash
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
+
+2. Clone the source code and install Python dependencies:
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow/
+   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
+   ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
+   ```
+
+3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+   ```bash
+   docker compose -f docker/docker-compose-base.yml up -d
+   ```
+
+   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:  
+   ```
+   127.0.0.1       es01 mysql minio redis
+   ```  
+   In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
+
+4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
+ 
+   ```bash
+   export HF_ENDPOINT=https://hf-mirror.com
+   ```
+
+5. Launch backend service:
+   ```bash
+   source .venv/bin/activate
+   export PYTHONPATH=$(pwd)
+   bash docker/launch_backend_service.sh
+   ```
+
+6. Install frontend dependencies:  
+   ```bash
+   cd web
+   npm install --force
+   ```  
+7. Configure frontend to update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
+8. Launch frontend service:  
+   ```bash
+   npm run dev 
+   ```
+
+   _The following output confirms a successful launch of the system:_  
+
+   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
 ## 📚 Documentation
 
