@@ -216,9 +216,16 @@ export const useSendMessageWithSse = (
 ) => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
+  const timer = useRef<any>();
 
   const resetAnswer = useCallback(() => {
-    setAnswer({} as IAnswer);
+    if (timer.current) {
+      clearTimeout(timer.current);
+    }
+    timer.current = setTimeout(() => {
+      setAnswer({} as IAnswer);
+      clearTimeout(timer.current);
+    }, 1000);
   }, []);
 
   const send = useCallback(
@@ -251,7 +258,7 @@ export const useSendMessageWithSse = (
             const { done, value } = x;
             if (done) {
               console.info('done');
-              setAnswer({} as IAnswer);
+              resetAnswer();
               break;
             }
             try {
@@ -271,16 +278,16 @@ export const useSendMessageWithSse = (
         }
         console.info('done?');
         setDone(true);
-        setAnswer({} as IAnswer);
+        resetAnswer();
         return { data: await res, response };
       } catch (e) {
         setDone(true);
-        setAnswer({} as IAnswer);
+        resetAnswer();
 
         console.warn(e);
       }
     },
-    [url],
+    [url, resetAnswer],
   );
 
   return { send, answer, done, setDone, resetAnswer };
