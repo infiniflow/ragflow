@@ -94,9 +94,6 @@ export const useSendQuestion = (kbIds: string[]) => {
     if (!isEmpty(answer)) {
       setCurrentAnswer(answer);
     }
-    return () => {
-      setCurrentAnswer({} as IAnswer);
-    };
   }, [answer]);
 
   useEffect(() => {
