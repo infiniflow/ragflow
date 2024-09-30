@@ -19,12 +19,12 @@ import re
 
 from api.db import ParserType
 from io import BytesIO
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, docx_question_level
-from deepdoc.parser import PdfParser, PlainParser
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
 from rag.utils import num_tokens_from_string
-from deepdoc.parser import PdfParser, ExcelParser, DocxParser
+from deepdoc.parser import PdfParser, PlainParser, DocxParser
 from docx import Document
 from PIL import Image
+
 
 class Pdf(PdfParser):
     def __init__(self):
