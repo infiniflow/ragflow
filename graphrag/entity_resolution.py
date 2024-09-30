@@ -98,7 +98,7 @@ class EntityResolution:
             for a, b in itertools.permutations(v, 2):
                 if self.is_similarity(a, b) and (b, a) not in candidate_resolution_tmp:
                     candidate_resolution_tmp.append((a, b))
-            candidate_resolution[k] = candidate_resolution_tmp or v
+            candidate_resolution[k] = candidate_resolution_tmp
 
         gen_conf = {"temperature": 0.5}
         resolution_result = set()
