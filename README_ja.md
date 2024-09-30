@@ -53,11 +53,12 @@
 - 2024-09-09 エージェントに医療相談テンプレートを追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 - 2024-08-02 [graphrag](https://github.com/microsoft/graphrag) からインスピレーションを得た GraphRAG とマインド マップをサポートします。
-- 2024-07-23 音声ファイルの解析をサポートしました。
-- 2024-07-08 [Graph](./agent/README.md) ベースのワークフローをサポート
-- 2024-06-27 Q&A 解析メソッドで Markdown と Docx をサポートし、Docx ファイルから画像を抽出し、Markdown ファイルからテーブルを抽出します。
-- 2024-05-23 より良いテキスト検索のために [RAPTOR](https://arxiv.org/html/2401.18059v1) をサポート。
 
+## 🎉 続きを楽しみに
+⭐️ リポジトリをスター登録して、エキサイティングな新機能やアップデートを最新の状態に保ちましょう！すべての新しいリリースに関する即時通知を受け取れます！ 🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
 
 ## 🌟 主な特徴
 

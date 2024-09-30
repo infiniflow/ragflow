@@ -52,10 +52,13 @@
 - 2024-09-09 在 Agent 中加入医疗问诊模板。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
-- 2024-07-23 支持解析音频文件。
-- 2024-07-08 支持 Agentic RAG: 基于 [Graph](./agent/README.md) 的工作流。
-- 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件，支持提取出 Docx 文件中的图片和 Markdown 文件中的表格。
-- 2024-05-23 实现 [RAPTOR](https://arxiv.org/html/2401.18059v1) 提供更好的文本检索。
+
+## 🎉 保持关注
+⭐️ 给项目加个星标，以获取令人兴奋的新功能和改进的最新信息！获取所有新发布的即时通知！ 🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
+
 
 ## 🌟 主要功能
 
