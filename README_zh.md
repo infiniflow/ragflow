@@ -53,8 +53,8 @@
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
 
-## 🎉 保持关注
-⭐️ 给项目加个星标，以获取令人兴奋的新功能和改进的最新信息！获取所有新发布的即时通知！ 🌟
+## 🎉 关注项目
+⭐️点击右上角的 Star 关注RAGFlow，可以获取最新发布的实时通知 !🌟
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>

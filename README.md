@@ -74,7 +74,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 - 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.
 
 ## 🎉 Stay Tuned
-⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for all new releases! 🌟
+⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new releases! 🌟
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
@@ -171,12 +171,12 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    _The following output confirms a successful launch of the system:_
 
    ```bash
-        ____   ___    ______ ______ __               
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
- 
+
+         ____   ___    ______ ______ __               
+        / __ \ /   |  / ____// ____// /____  _      __
+       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/ 
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
