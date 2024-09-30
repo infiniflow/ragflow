@@ -60,6 +60,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:dev-slim
+        if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
 
@@ -69,5 +70,6 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:dev
+        if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
