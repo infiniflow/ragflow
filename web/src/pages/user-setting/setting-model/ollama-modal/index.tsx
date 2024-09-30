@@ -93,8 +93,8 @@ const OllamaModal = ({
                 <Option value="embedding">embedding</Option>
                 <Option value="rerank">rerank</Option>
                 <Option value="image2text">image2text</Option>
-                <Option value="audio2text">audio2text</Option>
-                <Option value="text2andio">text2andio</Option>
+                <Option value="speech2text">sequence2text</Option>
+                <Option value="tts">tts</Option>
               </>
             )}
           </Select>
