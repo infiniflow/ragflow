@@ -48,7 +48,7 @@ jobs:
       - name: Build ragflow:dev-slim
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
-          ln -s ${RUNNER_WORKSPACE_PREFIX}/huggingface.co huggingface.co
+          cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co .
           sudo docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 
       - name: Build ragflow:dev
