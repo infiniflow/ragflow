@@ -76,17 +76,17 @@ COPY pyproject.toml poetry.toml poetry.lock ./
 
 # Copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
-RUN --mount=type=bind,source=huggingface.io,target=/huggingface.io \
+RUN --mount=type=bind,source=huggingface.co,target=/huggingface.co \
     tar --exclude='.*' -cf - \
-        /huggingface.io/InfiniFlow/text_concat_xgb_v1.0 \
-        /huggingface.io/InfiniFlow/deepdoc \
+        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+        /huggingface.co/InfiniFlow/deepdoc \
         | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
-RUN --mount=type=bind,source=huggingface.io,target=/huggingface.io \
+RUN --mount=type=bind,source=huggingface.co,target=/huggingface.co \
     tar -cf - \
-        /huggingface.io/BAAI/bge-large-zh-v1.5 \
-        /huggingface.io/BAAI/bge-reranker-v2-m3 \
-        /huggingface.io/maidalun1020/bce-embedding-base_v1 \
-        /huggingface.io/maidalun1020/bce-reranker-base_v1 \
+        /huggingface.co/BAAI/bge-large-zh-v1.5 \
+        /huggingface.co/BAAI/bge-reranker-v2-m3 \
+        /huggingface.co/maidalun1020/bce-embedding-base_v1 \
+        /huggingface.co/maidalun1020/bce-reranker-base_v1 \
         | tar -xf - --strip-components=2 -C /root/.ragflow
 
 # Copy compiled web pages

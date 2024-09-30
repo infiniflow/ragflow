@@ -182,7 +182,7 @@
 
 请务必确保 [.env](./docker/.env) 文件中的变量设置与 [service_conf.yaml](./docker/service_conf.yaml) 文件中的配置保持一致！
 
-如果不能访问镜像站点hub.docker.com或者模型站点huggingface.io，请按照[.env](./docker/.env)注释修改`RAGFLOW_IMAGE`和`HF_ENDPOINT`。
+如果不能访问镜像站点hub.docker.com或者模型站点huggingface.co，请按照[.env](./docker/.env)注释修改`RAGFLOW_IMAGE`和`HF_ENDPOINT`。
 
 > [./docker/README](./docker/README.md) 文件提供了环境变量设置和服务配置的详细信息。请**一定要**确保 [./docker/README](./docker/README.md) 文件当中列出来的环境变量的值与 [service_conf.yaml](./docker/service_conf.yaml) 文件当中的系统配置保持一致。
 
