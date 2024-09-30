@@ -1340,7 +1340,7 @@ class GoogleChat(Base):
                     + response["usage"]["output_tokens"],
                 )
             except Exception as e:
-                return ans + "\n**ERROR**: " + str(e), 0
+                return "\n**ERROR**: " + str(e), 0
         else:
             self.client._system_instruction = self.system
             if "max_tokens" in gen_conf:

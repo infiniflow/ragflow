@@ -14,7 +14,6 @@ import re
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
-from nltk import word_tokenize
 from openpyxl import load_workbook
 
 from deepdoc.parser.utils import get_text
