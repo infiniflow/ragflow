@@ -27,7 +27,7 @@ class RAGFlowTxtParser:
             raise TypeError("txt type should be str!")
 
         groups = itertools.groupby(txt, key=lambda x: x not in delimiter)
-        strs = ["".join(k) for k, v in groups if k]
+        strs = ["".join(v) for k, v in groups if k]
         cks, ck, num = [], "", 0
         for i, s in enumerate(strs):
             ck += s
