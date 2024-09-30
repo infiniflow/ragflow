@@ -97,7 +97,7 @@ class EntityResolution:
             candidate_resolution_tmp = []
             for a in v:
                 for b in v[1:]:
-                    if self.is_similarity(a, b):
+                    if self.is_similarity(a, b) and (b, a) not in candidate_resolution_tmp:
                         candidate_resolution_tmp.append((a, b))
             candidate_resolution[k] = candidate_resolution_tmp or v
 
