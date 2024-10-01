@@ -25,6 +25,7 @@ from functools import reduce
 from markdown import markdown
 from docx.image.exceptions import UnrecognizedImageError
 
+
 class Docx(DocxParser):
     def __init__(self):
         pass
@@ -93,7 +94,7 @@ class Docx(DocxParser):
 
         tbls = []
         for tb in self.doc.tables:
-            html= "<table>"
+            html = "<table>"
             for r in tb.rows:
                 html += "<tr>"
                 i = 0
@@ -146,8 +147,6 @@ class Pdf(PdfParser):
 
 class Markdown(MarkdownParser):
     def __call__(self, filename, binary=None):
-        txt = ""
-        tbls = []
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")

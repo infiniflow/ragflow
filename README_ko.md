@@ -59,14 +59,12 @@
   
 - 2024-08-02: [graphrag](https://github.com/microsoft/graphrag)와 마인드맵에서 영감을 받은 GraphRAG를 지원합니다.
 
-- 2024-07-23: 오디오 파일 분석을 지원합니다.
 
-- 2024-07-08: [Graph](./agent/README.md)를 기반으로 한 워크플로우를 지원합니다.
-
-- 2024-06-27 Q&A 구문 분석 방식에서 Markdown 및 Docx를 지원하고, Docx 파일에서 이미지 추출, Markdown 파일에서 테이블 추출을 지원합니다.
-
-- 2024-05-23: 더 나은 텍스트 검색을 위해 [RAPTOR](https://arxiv.org/html/2401.18059v1)를 지원합니다.
-
+## 🎉 계속 지켜봐 주세요
+⭐️우리의 저장소를 즐겨찾기에 등록하여 흥미로운 새로운 기능과 업데이트를 최신 상태로 유지하세요! 모든 새로운 릴리스에 대한 즉시 알림을 받으세요! 🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
 
 
 ## 🌟 주요 기능

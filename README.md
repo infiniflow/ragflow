@@ -72,11 +72,12 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 - 2024-09-09 Adds a medical consultant agent template.
 - 2024-08-22 Support text to SQL statements through RAG.
 - 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.
-- 2024-07-23 Supports audio file parsing.
-- 2024-07-08 Supports workflow based on [Graph](./agent/README.md).
-- 2024-06-27 Supports Markdown and Docx in the Q&A parsing method, extracting images from Docx files, extracting tables from Markdown files.
-- 2024-05-23 Supports [RAPTOR](https://arxiv.org/html/2401.18059v1) for better text retrieval.
 
+## 🎉 Stay Tuned
+⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new releases! 🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
 
 ## 🌟 Key Features
 
@@ -170,12 +171,12 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    _The following output confirms a successful launch of the system:_
 
    ```bash
-        ____   ___    ______ ______ __               
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
- 
+
+         ____   ___    ______ ______ __               
+        / __ \ /   |  / ____// ____// /____  _      __
+       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/ 
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
