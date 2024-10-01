@@ -64,7 +64,7 @@ This image is approximately 1 GB in size and relies on external LLM services, as
 
 On a `linux/amd64` host:
 ```bash
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev-amd64 .
 docker push infiniflow/ragflow:dev-amd64
@@ -72,7 +72,7 @@ docker push infiniflow/ragflow:dev-amd64
 
 On a `linux/arm64` host:
 ```bash
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev-arm64 .
 docker push infiniflow/ragflow:dev-arm64
