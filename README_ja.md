@@ -202,7 +202,7 @@
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
@@ -214,7 +214,7 @@ docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
