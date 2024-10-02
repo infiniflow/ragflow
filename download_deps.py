@@ -3,11 +3,6 @@
 from huggingface_hub import snapshot_download
 import nltk
 import os
-import urllib.request
-
-urls = [
-    "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz",
-]
 
 repos = [
     "InfiniFlow/text_concat_xgb_v1.0",
@@ -25,12 +20,6 @@ def download_model(repo_id):
 
 
 if __name__ == "__main__":
-    for url in urls:
-        filename = url.split("/")[-1]
-        print(f"Downloading {url}...")
-        if not os.path.exists(filename):
-            urllib.request.urlretrieve(url, filename)
-
     local_dir = os.path.abspath('nltk_data')
     for data in ['wordnet', 'punkt', 'punkt_tab']:
         print(f"Downloading nltk {data}...")
