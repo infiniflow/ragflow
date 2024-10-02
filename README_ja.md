@@ -195,7 +195,7 @@
 > $ docker-compose up -d
 > ```
 
-## 🪛 ソースコードでDockerイメージを作成（埋め込みモデルなし）
+## 🔧 ソースコードでDockerイメージを作成（埋め込みモデルなし）
 
 この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
 
@@ -207,7 +207,7 @@ python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
+## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
 
 この Docker のサイズは約 9GB で、埋め込みモデルを含むため、外部の大モデルサービスのみが必要です。
 

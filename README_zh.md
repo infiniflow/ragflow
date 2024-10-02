@@ -197,7 +197,7 @@
 > $ docker compose -f docker-compose.yml up -d
 > ```
 
-## 🪛 源码编译 Docker 镜像（不含 embedding 模型）
+## 🔧 源码编译 Docker 镜像（不含 embedding 模型）
 
 本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和 embedding 服务。
 
@@ -209,7 +209,7 @@ python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 源码编译 Docker 镜像（包含 embedding 模型）
+## 🔧 源码编译 Docker 镜像（包含 embedding 模型）
 
 本 Docker 大小约 9 GB 左右。由于已包含 embedding 模型，所以只需依赖外部的大模型服务即可。
 
