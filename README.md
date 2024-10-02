@@ -42,8 +42,8 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🪛 [Build the docker image without embedding models](#-build-the-docker-image-without-embedding-models)
-- 🪚 [Build the docker image including embedding models](#-build-the-docker-image-including-embedding-models)
+- 🔧 [Build a docker image without embedding models](#-build-the-docker-image-without-embedding-models)
+- 🔧 [Build a docker image including embedding models](#-build-the-docker-image-including-embedding-models)
 - 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
@@ -213,7 +213,7 @@ Updates to the above configurations require a reboot of all containers to take e
 > $ docker-compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🪛 Build the Docker image without embedding models
+## 🔧 Build a Docker image without embedding models
 
 This image is approximately 1 GB in size and relies on external LLM and embedding services.
 
@@ -225,7 +225,7 @@ python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 Build the Docker image including embedding models
+## 🔧 Build a Docker image including embedding models
 
 This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
 

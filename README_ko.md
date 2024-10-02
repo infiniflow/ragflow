@@ -197,7 +197,7 @@
 > $ docker-compose up -d
 > ```
 
-## 🪛 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함하지 않음)
+## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함하지 않음)
 
 이 Docker 이미지의 크기는 약 1GB이며, 외부 대형 모델과 임베딩 서비스에 의존합니다.
 
@@ -209,7 +209,7 @@ python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
+## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
 
 이 Docker의 크기는 약 9GB이며, 이미 임베딩 모델을 포함하고 있으므로 외부 대형 모델 서비스에만 의존하면 됩니다.
 
