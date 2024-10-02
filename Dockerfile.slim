@@ -56,9 +56,9 @@ COPY pyproject.toml poetry.toml poetry.lock ./
 
 RUN --mount=type=cache,id=ragflow_builder_poetry,target=/root/.cache/pypoetry,sharing=locked \
     if [ "$LIGHTEN" -eq 0 ]; then \
-        poetry install --sync --no-cache --no-root --with=full; \
+        poetry install --sync --no-root --with=full; \
     else \
-        poetry install --sync --no-cache --no-root; \
+        poetry install --sync --no-root; \
     fi
 
 # production stage
