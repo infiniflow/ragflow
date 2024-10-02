@@ -18,7 +18,7 @@ ENV POETRY_PYPI_MIRROR_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
 
 RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked \
     apt update && apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus python3-pip python3-poetry \
-    && pip3 install --user --break-system-packages poetry-plugin-pypi-mirror \
+    && pip3 install --user --break-system-packages poetry-plugin-pypi-mirror --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
     && rm -rf /var/lib/apt/lists/*
 
 RUN --mount=type=bind,source=openssl-1.1.1w.tar.gz,target=/root/openssl-1.1.1w.tar.gz  \
