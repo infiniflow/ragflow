@@ -19,7 +19,13 @@ RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked 
     apt update && apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus python3-poetry \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -o libssl1.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openssl1.0/libssl1.0.0_1.0.2n-1ubuntu5_amd64.deb && dpkg -i libssl1.deb && rm -f libssl1.deb
+RUN --mount=type=bind,source=openssl-1.1.1w.tar.gz,target=/root/openssl-1.1.1w.tar.gz  \
+    echo '/usr/local/lib' >> /etc/ld.so.conf.d/local.conf \
+    && echo '/usr/local/lib64' >> /etc/ld.so.conf.d/local.conf \
+    && cd /root && tar xzf openssl-1.1.1w.tar.gz \
+    && cd openssl-1.1.1w && ./config --prefix=/usr/local/openssl11 --openssldir=/usr/local/openssl11 shared \
+    && make -j && make install \
+    && ldconfig && cd /root && rm -rf openssl-1.1.1w
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
