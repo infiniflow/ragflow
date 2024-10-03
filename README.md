@@ -210,7 +210,7 @@ To update the default HTTP serving port (80), go to [docker-compose.yml](./docke
 Updates to the above configurations require a reboot of all containers to take effect:
 
 > ```bash
-> $ docker-compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
 ## 🔧 Build a Docker image without embedding models

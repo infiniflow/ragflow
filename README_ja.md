@@ -192,7 +192,7 @@
 > すべてのシステム設定のアップデートを有効にするには、システムの再起動が必要です:
 >
 > ```bash
-> $ docker-compose up -d
+> $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
 ## 🔧 ソースコードでDockerイメージを作成（埋め込みモデルなし）
