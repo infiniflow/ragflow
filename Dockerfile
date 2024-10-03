@@ -2,6 +2,7 @@
 FROM ubuntu:24.04 AS base
 USER root
 
+ARG ARCH=amd64
 ENV LIGHTEN=0
 
 WORKDIR /ragflow
@@ -21,13 +22,11 @@ RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked 
     && pip3 install --user --break-system-packages poetry-plugin-pypi-mirror --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
     && rm -rf /var/lib/apt/lists/*
 
-RUN --mount=type=bind,source=openssl-1.1.1w.tar.gz,target=/root/openssl-1.1.1w.tar.gz  \
-    echo '/usr/local/lib' >> /etc/ld.so.conf.d/local.conf \
-    && echo '/usr/local/lib64' >> /etc/ld.so.conf.d/local.conf \
-    && cd /root && tar xzf openssl-1.1.1w.tar.gz \
-    && cd openssl-1.1.1w && ./config --prefix=/usr/local/openssl11 --openssldir=/usr/local/openssl11 shared \
-    && make -j && make install \
-    && ldconfig && cd /root && rm -rf openssl-1.1.1w
+# https://forum.aspose.com/t/aspose-slides-for-net-no-usable-version-of-libssl-found-with-linux-server/271344/13
+# aspose-slides on linux/arm64 is unavailable
+RUN if [ "${ARCH}" = "amd64" ]; then \
+        curl -o libssl1.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb && dpkg -i libssl1.deb && rm -f libssl1.deb; \
+    fi
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
