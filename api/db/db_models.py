@@ -619,6 +619,11 @@ class LLM(DataBaseModel):
         help_text="is it validate(0: wasted，1: validate)",
         default="1",
         index=True)
+    api_version = CharField(
+        max_length=255,
+        null=True,
+        help_text="2023-05-15, 2024-02-01...",
+        index=True)
 
     def __str__(self):
         return self.llm_name
@@ -1049,6 +1054,13 @@ def migrate_db():
         try:
             migrate(
                 migrator.add_column('task', 'retry_count', IntegerField(default=0))
+            )
+        except Exception as e:
+            pass
+        try:
+            migrate(
+                migrator.add_column('llm', 'api_version',
+                                    CharField(max_length=255, null=True, help_text="2023-05-15, 2024-02-01...", index=True))
             )
         except Exception as e:
             pass

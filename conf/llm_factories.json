@@ -610,73 +610,85 @@
                     "llm_name": "gpt-4o-mini",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
-                    "model_type": "image2text"
+                    "model_type": "image2text",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "gpt-4o",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
-                    "model_type": "chat,image2text"
+                    "model_type": "chat,image2text",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "gpt-35-turbo",
                     "tags": "LLM,CHAT,4K",
                     "max_tokens": 4096,
-                    "model_type": "chat"
+                    "model_type": "chat",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "gpt-35-turbo-16k",
                     "tags": "LLM,CHAT,16k",
                     "max_tokens": 16385,
-                    "model_type": "chat"
+                    "model_type": "chat",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "text-embedding-ada-002",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
-                    "model_type": "embedding"
+                    "model_type": "embedding",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "text-embedding-3-small",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
-                    "model_type": "embedding"
+                    "model_type": "embedding",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "text-embedding-3-large",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
-                    "model_type": "embedding"
+                    "model_type": "embedding",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "whisper-1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
-                    "model_type": "speech2text"
+                    "model_type": "speech2text",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "gpt-4",
                     "tags": "LLM,CHAT,8K",
                     "max_tokens": 8191,
-                    "model_type": "chat"
+                    "model_type": "chat",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "gpt-4-turbo",
                     "tags": "LLM,CHAT,8K",
                     "max_tokens": 8191,
-                    "model_type": "chat"
+                    "model_type": "chat",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "gpt-4-32k",
                     "tags": "LLM,CHAT,32K",
                     "max_tokens": 32768,
-                    "model_type": "chat"
+                    "model_type": "chat",
+                    "api_version": "2024-02-01"
                 },
                 {
                     "llm_name": "gpt-4-vision-preview",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
                     "max_tokens": 765,
-                    "model_type": "image2text"
+                    "model_type": "image2text",
+                    "api_version": "2024-02-01"
                 }
             ]
         },
