@@ -194,7 +194,7 @@
 > 모든 시스템 구성 업데이트는 적용되기 위해 시스템 재부팅이 필요합니다.
 >
 > ```bash
-> $ docker-compose up -d
+> $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
 ## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함하지 않음)
