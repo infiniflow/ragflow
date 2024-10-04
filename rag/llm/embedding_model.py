@@ -441,7 +441,7 @@ class BedrockEmbed(Base):
 
         response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
         model_response = json.loads(response["body"].read())
-        embeddings.extend([model_response["embedding"]])
+        embeddings.extend(model_response["embedding"])
 
         return np.array(embeddings), token_count
 
