@@ -369,14 +369,14 @@ The error response includes a JSON object like the following:
 
 ## Upload files to a dataset
 
-**POST** `/api/v1/dataset/{dataset_id}/documents`
+**POST** `/api/v1/dataset/{dataset_id}/document`
 
 Uploads files to a dataset. 
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/dataset/{dataset_id}/documents`
+- URL: `/api/v1/dataset/{dataset_id}/document`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -392,7 +392,7 @@ Uploads files to a dataset.
 
 ```shell
 curl --request POST \
-     --url http://{address}//api/v1/dataset/{dataset_id}/documents \
+     --url http://{address}//api/v1/dataset/{dataset_id}/document \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
      --form 'dataset_id=ad403cd0758511efb63c0242ac120004' \      
@@ -431,14 +431,14 @@ The error response includes a JSON object like the following:
 
 ## Download a file from a dataset
 
-**GET** `/api/v1/dataset/{dataset_id}/documents/{document_id}`
+**GET** `/api/v1/dataset/{dataset_id}/document/{document_id}`
 
-Uploads files to a dataset. 
+Downloads files from a dataset. 
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/documents/{document_id}`
+- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -447,7 +447,7 @@ Uploads files to a dataset.
 
 ```shell
 curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/documents/{documents_id} \
+     --url http://{address}//api/v1/dataset/{dataset_id}/document/{documents_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 ```
@@ -485,14 +485,14 @@ The error response includes a JSON object like the following:
 
 ## List files of a dataset
 
-**GET** `/api/v1/dataset/{dataset_id}/documents?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}`
+**GET** `/api/v1/dataset/{dataset_id}/document?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}`
 
 List files to a dataset. 
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/documents?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}`
+- URL: `/api/v1/dataset/{dataset_id}/document?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -501,7 +501,7 @@ List files to a dataset.
 
 ```shell
 curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/documents?keywords=rag&page=0&page_size=10&orderby=create_time&desc=yes \
+     --url http://{address}//api/v1/dataset/{dataset_id}/info?keywords=rag&page=0&page_size=10&orderby=create_time&desc=yes \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 ```
@@ -510,13 +510,11 @@ curl --request GET \
 
 - `"dataset_id"`: (*PATH parameter*)
     The dataset id
-- `"documents_id"`: (*PATH parameter*)  
-    The document id of the file.
 - `keywords`: (*Filter parameter*)
     The keywords matches the search key workds;
-- `path`: (*Filter parameter*)
+- `page`: (*Filter parameter*)
     The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.
-- `path_size`: (*Filter parameter*)
+- `page_size`: (*Filter parameter*)
     The number of records to retrieve per page. This controls how many records will be included in each page. 
 - `orderby`: (*Filter parameter*)
     The field by which the records should be sorted. This specifies the attribute or column used to order the results.
@@ -629,7 +627,7 @@ Get the information of a file of a dataset
 
 ```shell
 curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/info \
+     --url http://{address}//api/v1/dataset/{dataset_id}/info/{document_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --data-binary '{
@@ -641,7 +639,7 @@ curl --request GET \
 
 - `dataset_id`: (*PATH parameter*)
     The dataset id
-- `"document_id"`: (*Body parameter*)
+- `"document_id"`: (*Path parameter*)
    The document id of the file.
 
 ### Response
@@ -694,16 +692,16 @@ The error response includes a JSON object like the following:
 ```
 
 
-## Update a file in dataset
+## Update a file information in dataset
 
-**PUT** `/api/v1/dataset/{dataset_id}/documents`
+**PUT** `/api/v1/dataset/{dataset_id}/document`
 
 Update a file in a dataset
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/dataset/{dataset_id}/documents`
+- URL: `/api/v1/dataset/{dataset_id}/document`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -712,7 +710,7 @@ Update a file in a dataset
 
 ```shell
 curl --request PUT \
-     --url http://{address}//api/v1/dataset/{dataset_id}/info \
+     --url http://{address}//api/v1/dataset/{dataset_id}/info/{document_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --raw '{
@@ -754,5 +752,360 @@ The error response includes a JSON object like the following:
     "code": 3016,
     "message": "Can't connect database"
 }
+```
+
+## Parse files in dataset
+
+**POST** `/api/v1/dataset/{dataset_id}/chunk`
+
+Parse files into chunks in a dataset
+
+### Request
+
+- Method: POST
+- URL: `/api/v1/dataset/{dataset_id}/chunk`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request POST \
+     --url http://{address}//api/v1/dataset/{dataset_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --raw '{
+         "documents": ["f6b170ac758811efa0660242ac120004", "97ad64b6759811ef9fc30242ac120004"]
+     }'
+```
+
+#### Request parameters
+
+- `"dataset_id"`: (*Path parameter*)
+- `"documents"`: (*Body parameter*)
+  - Documents to parse
+
+### Response
+
+The successful response includes a JSON object like the following:
+
+```shell
+{
+    "code": 0
+}
+```
+  
+The error response includes a JSON object like the following:
+
+```shell
+{
+    "code": 3016,
+    "message": "Can't connect database"
+}
+```
+
+## Stop file parsing
+
+**DELETE** `/api/v1/dataset/{dataset_id}/chunk`
+
+Stop file parsing
+
+### Request
+
+- Method: POST
+- URL: `/api/v1/dataset/{dataset_id}/chunk`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request DELETE \
+     --url http://{address}//api/v1/dataset/{dataset_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --raw '{
+         "documents": ["f6b170ac758811efa0660242ac120004", "97ad64b6759811ef9fc30242ac120004"]
+     }'
+```
+
+#### Request parameters
+
+- `"dataset_id"`: (*Path parameter*)
+- `"documents"`: (*Body parameter*)
+  - Documents to stop parsing
+
+### Response
+
+The successful response includes a JSON object like the following:
+
+```shell
+{
+    "code": 0
+}
+```
+  
+The error response includes a JSON object like the following:
+
+```shell
+{
+    "code": 3016,
+    "message": "Can't connect database"
+}
+```
+
+## Check file parsing progress
+
+**GET** `/api/v1/dataset/{dataset_id}/document/{document_id}/progress`
+
+Check document parsing progress
+
+### Request
+
+- Method: GET
+- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/progress`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request GET \
+     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/progress \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+```
+
+#### Request parameters
+
+- `"dataset_id"`: (*Path parameter*)
+- `"document_id"`: (*Path parameter*)
+
+### Response
+
+The successful response includes a JSON object like the following:
+
+```shell
+{
+    "code": 0
+    "progress": "97.5%"
+}
+```
+  
+The error response includes a JSON object like the following:
+
+```shell
+{
+    "code": 3016,
+    "message": "Can't connect database"
+}
+```
+
+## Check document chunk list
+
+**GET** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+
+Get document chunk list
+
+### Request
+
+- Method: GET
+- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request GET \
+     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+```
+
+#### Request parameters
+
+- `"dataset_id"`: (*Path parameter*)
+- `"document_id"`: (*Path parameter*)
+
+### Response
+
+The successful response includes a JSON object like the following:
+
+```shell
+{
+    "code": 0
+    "data": {
+        "chunks": [
+            {
+                "available_int": 1,
+                "content": "<em>advantag</em>of ragflow increas accuraci and relev:by incorpor retriev inform , ragflow can gener respons that are more accur",
+                "document_keyword": "ragflow_test.txt",
+                "document_id": "77df9ef4759a11ef8bdd0242ac120004",
+                "id": "4ab8c77cfac1a829c8d5ed022a0808c0",
+                "image_id": "",
+                "important_keywords": [],
+                "positions": [
+                    ""
+                ]
+            }
+        ],
+        "doc": {
+            "chunk_count": 5,
+            "create_date": "Wed, 18 Sep 2024 08:46:16 GMT",
+            "create_time": 1726649176833,
+            "created_by": "134408906b6811efbcd20242ac120005",
+            "id": "77df9ef4759a11ef8bdd0242ac120004",
+            "knowledgebase_id": "77d9d24e759a11ef880c0242ac120004",
+            "location": "ragflow_test.txt",
+            "name": "ragflow_test.txt",
+            "parser_config": {
+                "chunk_token_count": 128,
+                "delimiter": "\n!?。；！？",
+                "layout_recognize": true,
+                "task_page_size": 12
+            },
+            "parser_method": "naive",
+            "process_begin_at": "Wed, 18 Sep 2024 08:46:16 GMT",
+            "process_duation": 7.3213,
+            "progress": 1.0,
+            "progress_msg": "\nTask has been received.\nStart to parse.\nFinish parsing.\nFinished slicing files(5). Start to embedding the content.\nFinished embedding(6.16)! Start to build index!\nDone!",
+            "run": "3",
+            "size": 4209,
+            "source_type": "local",
+            "status": "1",
+            "thumbnail": null,
+            "token_count": 746,
+            "type": "doc",
+            "update_date": "Wed, 18 Sep 2024 08:46:23 GMT",
+            "update_time": 1726649183321
+        },
+        "total": 1
+    },
+}
+```
+  
+The error response includes a JSON object like the following:
+
+```shell
+{
+    "code": 3016,
+    "message": "Can't connect database"
+}
+```
+
+## Delete document chunks
+
+**DELETE** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+
+Delete document chunks
+
+### Request
+
+- Method: DELETE
+- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request DELETE \
+     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --raw '{
+         "chunks": ["f6b170ac758811efa0660242ac120004", "97ad64b6759811ef9fc30242ac120004"]
+     }'
+```
+
+## Update document chunk
+
+**PUT** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+
+Update document chunk
+
+### Request
+
+- Method: PUT
+- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request PUT \
+     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --raw '{
+        "chunk_id": "d87fb0b7212c15c18d0831677552d7de",  
+        "knowledgebase_id": null,  
+        "name": "",  
+        "content": "ragflow123",  
+        "important_keywords": [],   
+        "document_id": "e6bbba92759511efaa900242ac120004",  
+        "status": "1" 
+     }'
+```
+
+## Insert document chunks
+
+**POST** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+
+Insert document chunks
+
+### Request
+
+- Method: POST
+- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request POST \
+     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --raw '{
+         "document_id": "97ad64b6759811ef9fc30242ac120004",
+         "content": ["ragflow content", "ragflow content"]
+     }'
+```
+
+## Dataset retrieval test
+
+**GET** `/api/v1/dataset/{dataset_id}/retrieval`
+
+Retrieval test of a dataset
+
+### Request
+
+- Method: GET
+- URL: `/api/v1/dataset/{dataset_id}/retrieval`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request GET \
+     --url http://{address}//api/v1/dataset/{dataset_id}/retrieval \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --raw '{
+         "query_text": "This is a cat."
+     }'
 ```
 
