@@ -1109,3 +1109,305 @@ curl --request GET \
      }'
 ```
 
+## Create chat assistant
+
+**POST** `/api/v1/chat`
+
+Create a chat assistant
+
+### Request
+
+- Method: POST
+- URL: `/api/v1/chat`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+```shell
+curl --request POST \
+     --url http://{address}/api/v1/chat \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --data-binary '{
+     "avatar": "path",
+     "create_date": "Wed, 04 Sep 2024 10:08:01 GMT",
+     "create_time": 1725444481128,
+     "description": "A helpful Assistant",
+     "do_refer": "",
+     "knowledgebases": [
+       {
+         "avatar": null,
+         "chunk_count": 0,
+         "description": null,
+         "document_count": 0,
+         "embedding_model": "",
+         "id": "d6d0e8e868cd11ef92250242ac120006",
+         "language": "English",
+         "name": "Test_assistant",
+         "parse_method": "naive",
+         "parser_config": {
+           "pages": [
+             [
+               1,
+               1000000
+             ]
+           ]
+         },
+         "permission": "me",
+         "tenant_id": "4fb0cd625f9311efba4a0242ac120006"
+       }
+     ],
+     "language": "English",
+     "llm": {
+       "frequency_penalty": 0.7,
+       "max_tokens": 512,
+       "model_name": "deepseek-chat",
+       "presence_penalty": 0.4,
+       "temperature": 0.1,
+       "top_p": 0.3
+     },
+     "name": "Miss R",
+     "prompt": {
+       "empty_response": "Sorry! Can't find the context!",
+       "keywords_similarity_weight": 0.7,
+       "opener": "Hi! I am your assistant, what can I do for you?",
+       "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence 'The answer you are looking for is not found in the knowledge base!' Answers need to consider chat history.\nHere is the knowledge base:\n{knowledge}\nThe above is the knowledge base.",
+       "rerank_model": "",
+       "show_quote": true,
+       "similarity_threshold": 0.2,
+       "top_n": 8,
+       "variables": [
+         {
+           "key": "knowledge",
+           "optional": true
+         }
+       ]
+     },
+     "prompt_type": "simple",
+     "status": "1",
+     "top_k": 1024,
+     "update_date": "Wed, 04 Sep 2024 10:08:01 GMT",
+     "update_time": 1725444481128
+}'
+```
+
+## Update chat assistant
+
+**PUT** `/api/v1/chat`
+
+Update a chat assistant
+
+### Request
+
+- Method: PUT
+- URL: `/api/v1/chat`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+curl --request PUT \
+  --url http://{address}/api/v1/chat \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
+  --data-binary '{
+    "id":"554e96746aaa11efb06b0242ac120005",
+    "name":"Test"
+}'
+
+## Delete chat assistant
+
+**DELETE** `/api/v1/chat/{chat_assistant_id}`
+
+Delete a chat assistant
+
+### Request
+
+- Method: PUT
+- URL: `/api/v1/chat/{chat_assistant_id}`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+curl --request PUT \
+  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005 \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+}'
+
+## List chat assistant
+
+**GET** `/api/v1/chat`
+
+List all chat assistants
+
+### Request
+
+- Method: GET
+- URL: `/api/v1/chat`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+curl --request GET \
+  --url http://{address}/api/v1/chat \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+## Get a chat assistant
+
+**GET** `/api/v1/chat/{chat_assistant_id}`
+
+Get a chat assistant information
+
+### Request
+
+- Method: GET
+- URL: `/api/v1/chat/{chat_assistant_id}`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+
+curl --request GET \
+  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005 \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+## Create a chat session
+
+**POST** `/api/v1/chat/{chat_assistant_id}/session`
+
+Create a chat session
+
+### Request
+
+- Method: POST
+- URL: `/api/v1/chat/{chat_assistant_id}/session`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+curl --request POST \
+  --url http://{address}/api/v1/chat/{chat_assistant_id}/session \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
+  --data-binary '{
+    "name": "new session"
+  }'
+
+## List the sessions of a chat assistant
+
+**GET** `/api/v1/chat/{chat_assistant_id}/session`
+
+List all the session of a chat assistant
+
+### Request
+
+- Method: GET
+- URL: `/api/v1/chat/{chat_assistant_id}/session`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+curl --request GET \
+  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+## Get a sessions of a chat assistant
+
+**GET** `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+
+Get a session of a chat assistant
+
+### Request
+
+- Method: GET
+- URL: `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+curl --request GET \
+  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session/791aed9670ea11efbb7e0242ac120007 \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+## Delete a chat session
+
+**DELETE** `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+
+Delete a chat session
+
+### Request
+
+- Method: DELETE
+- URL: `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+curl --request DELETE \
+  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session/791aed9670ea11efbb7e0242ac120007 \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+## Update a chat session
+
+**PUT** `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+
+Update a chat session
+
+### Request
+
+- Method: PUT
+- URL: `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+curl --request PUT \
+  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session/791aed9670ea11efbb7e0242ac120007 \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  --data-binary '{
+    "name": "Updated session"
+  }'
+
+## Chat with a chat assistant session
+
+**POST** `/api/v1/chat/{chat_assistant_id}/session/{session_id}/completion`
+
+Chat with a chat assistant session
+
+### Request
+
+- Method: POST
+- URL: `/api/v1/chat/{chat_assistant_id}/session/{session_id}/completion`
+- Headers:
+  - `content-Type: application/json`
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+
+#### Request example
+curl --request POST \
+  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session/791aed9670ea11efbb7e0242ac120007/completion \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  --data-binary '{
+    "question":  "Hello!",
+    "stream": true,
+  }'
