@@ -630,7 +630,7 @@ class BedrockChat(Base):
                 modelId=self.model_name,
                 messages=history,
                 inferenceConfig=gen_conf,
-                system=[{"text": system}] if system else None,
+                system=[{"text": (system if system else "Answer the user's message.")}] ,
             )
             
             # Extract and print the response text.
@@ -675,7 +675,8 @@ class BedrockChat(Base):
             streaming_response = self.client.converse_stream(
                 modelId=self.model_name,
                 messages=history,
-                inferenceConfig=gen_conf
+                inferenceConfig=gen_conf,
+                system=[{"text": system if system else ""}],
             )
 
             # Extract and print the streamed response text in real-time.
