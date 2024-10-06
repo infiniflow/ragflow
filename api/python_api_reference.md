@@ -963,12 +963,14 @@ for assi in rag.list_assistants():
 ---
 
 :::tip API GROUPING
-Dialogue-specific APIs
+Chat-session APIs
 :::
 
-## Create Dialogue
+## Create session
 
-
+```python
+assistant_1.create_session(name: str = "New session") -> Session
+```
 
 ### Returns
 
@@ -1069,4 +1071,157 @@ from ragflow import RAGFlow
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
 assi = rag.get_assistant(name="Miss R")
 sess = assi.get_session(id="d5c55d2270dd11ef9bd90242ac120007")
+```
+
+---
+
+## Save session settings
+
+```python
+Session.save() -> bool
+```
+
+### Returns
+
+bool
+description:the case of updating a session, True or False.
+
+### Examples
+
+```python
+from ragflow import RAGFlow
+
+rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
+assi = rag.get_assistant(name="Miss R")
+sess = assi.get_session(id="d5c55d2270dd11ef9bd90242ac120007")
+sess.name = "Updated session"
+sess.save()
+```
+
+---
+
+## Chat
+
+```python
+Session.chat(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
+```
+
+### Parameters
+
+#### question: `str`, *Required*
+
+The question to start an AI chat. Defaults to `None`. ???????????????????
+
+#### stream: `bool`
+
+The approach of streaming text generation. When stream is True, it outputs results in a streaming fashion; otherwise, it outputs the complete result after the model has finished generating.
+
+#### session_id: `str` ??????????????????
+
+### Returns
+
+[Message, iter[Message]]
+
+#### id: `str`
+
+The id of the message. `id` is automatically generated. Defaults to `None`. ???????????????????
+
+#### content: `str`
+
+The content of the message. Defaults to `"Hi! I am your assistant, can I help you?"`.
+
+#### reference: `List[Chunk]`
+
+The auto-generated reference of the message. Each `chunk` object includes the following attributes:
+
+- **id**: `str`  
+  The id of the chunk. ?????????????????  
+- **content**: `str`  
+  The content of the chunk. Defaults to `None`. ?????????????????????  
+- **document_id**: `str`  
+  The ID of the document being referenced. Defaults to `""`.  
+- **document_name**: `str`  
+  The name of the referenced document being referenced. Defaults to `""`.  
+- **knowledgebase_id**: `str`  
+  The id of the knowledge base to which the relevant document belongs. Defaults to `""`.  
+- **image_id**: `str`  
+  The id of the image related to the chunk. Defaults to `""`.  
+- **similarity**: `float`
+  A general similarity score, usually a composite score derived from various similarity measures . This score represents the degree of similarity between two objects. The value ranges between 0 and 1, where a value closer to 1 indicates higher similarity. Defaults to `None`. ????????????????????????????????????   
+- **vector_similarity**: `float`  
+  A similarity score based on vector representations. This score is obtained by converting texts, words, or objects into vectors and then calculating the cosine similarity or other distance measures between these vectors to determine the similarity in vector space. A higher value indicates greater similarity in the vector space. Defaults to `None`. ?????????????????????????????????
+- **term_similarity**: `float`  
+  The similarity score based on terms or keywords. This score is calculated by comparing the similarity of key terms between texts or datasets, typically measuring how similar two words or phrases are in meaning or context. A higher value indicates a stronger similarity between terms. Defaults to `None`. ???????????????????  
+- **position**: `List[string]`  
+  Indicates the position or index of keywords or specific terms within the text. An array is typically used to mark the location of keywords or specific elements, facilitating precise operations or analysis of the text. Defaults to `None`. ??????????????
+
+### Examples
+
+```python
+from ragflow import RAGFlow
+
+rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
+assi = rag.get_assistant(name="Miss R")
+sess = assi.create_session()    
+
+print("\n==================== Miss R =====================\n")
+print(assi.get_prologue())
+
+while True:
+    question = input("\n==================== User =====================\n> ")
+    print("\n==================== Miss R =====================\n")
+    
+    cont = ""
+    for ans in sess.chat(question, stream=True):
+        print(ans.content[len(cont):], end='', flush=True)
+        cont = ans.content
+```
+
+---
+
+## List sessions
+
+```python
+Assistant.list_session() -> List[Session]
+```
+
+### Returns
+
+List[Session]
+description: the List contains information about multiple assistant object, with each dictionary containing information about one assistant.
+
+### Examples
+
+```python
+from ragflow import RAGFlow
+
+rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
+assi = rag.get_assistant(name="Miss R")
+
+for sess in assi.list_session():
+    print(sess)
+```
+
+---
+
+## Delete session
+
+```python
+Session.delete() -> bool
+```
+
+### Returns
+
+bool
+description:the case of deleting a session, True or False.
+
+### Examples
+
+```python
+from ragflow import RAGFlow
+
+rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
+assi = rag.get_assistant(name="Miss R")
+sess = assi.create_session()
+sess.delete()
 ```
