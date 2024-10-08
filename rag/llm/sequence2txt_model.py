@@ -129,6 +129,8 @@ class XinferenceSeq2txt(Base):
 
         except requests.exceptions.RequestException as e:
             return f"**ERROR**: {str(e)}", 0
+
+
 class TencentCloudSeq2txt(Base):
     def __init__(
             self, key, model_name="16k_zh", base_url="https://asr.tencentcloudapi.com"
