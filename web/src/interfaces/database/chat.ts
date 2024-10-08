@@ -6,6 +6,7 @@ export interface PromptConfig {
   parameters: Parameter[];
   prologue: string;
   system: string;
+  tts?: boolean;
 }
 
 export interface Parameter {
@@ -62,6 +63,7 @@ export interface IConversation {
   name: string;
   update_date: string;
   update_time: number;
+  is_new: true;
 }
 
 export interface Message {

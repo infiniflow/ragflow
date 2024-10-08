@@ -17,7 +17,7 @@ from api.db.services.user_service import TenantService
 from api.settings import database_logger
 from rag.llm import EmbeddingModel, CvModel, ChatModel, RerankModel, Seq2txtModel, TTSModel
 from api.db import LLMType
-from api.db.db_models import DB, UserTenant
+from api.db.db_models import DB
 from api.db.db_models import LLMFactories, LLM, TenantLLM
 from api.db.services.common_service import CommonService
 
@@ -36,7 +36,11 @@ class TenantLLMService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_api_key(cls, tenant_id, model_name):
-        objs = cls.query(tenant_id=tenant_id, llm_name=model_name)
+        arr = model_name.split("@")
+        if len(arr) < 2:
+            objs = cls.query(tenant_id=tenant_id, llm_name=model_name)
+        else:
+            objs = cls.query(tenant_id=tenant_id, llm_name=arr[0], llm_factory=arr[1])
         if not objs:
             return
         return objs[0]
@@ -81,14 +85,17 @@ class TenantLLMService(CommonService):
             assert False, "LLM type error"
 
         model_config = cls.get_api_key(tenant_id, mdlnm)
+        tmp = mdlnm.split("@")
+        fid = None if len(tmp) < 2 else tmp[1]
+        mdlnm = tmp[0]
         if model_config: model_config = model_config.to_dict()
         if not model_config:
             if llm_type in [LLMType.EMBEDDING, LLMType.RERANK]:
-                llm = LLMService.query(llm_name=llm_name if llm_name else mdlnm)
+                llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
                 if llm and llm[0].fid in ["Youdao", "FastEmbed", "BAAI"]:
-                    model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": llm_name if llm_name else mdlnm, "api_base": ""}
+                    model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": mdlnm, "api_base": ""}
             if not model_config:
-                if llm_name == "flag-embedding":
+                if mdlnm == "flag-embedding":
                     model_config = {"llm_factory": "Tongyi-Qianwen", "api_key": "",
                                 "llm_name": llm_name, "api_base": ""}
                 else:
@@ -162,8 +169,8 @@ class TenantLLMService(CommonService):
 
         num = 0
         try:
-            for u in cls.query(tenant_id = tenant_id, llm_name=mdlnm):
-                num += cls.model.update(used_tokens = u.used_tokens + used_tokens)\
+            for u in cls.query(tenant_id=tenant_id, llm_name=mdlnm):
+                num += cls.model.update(used_tokens=u.used_tokens + used_tokens)\
                     .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
                     .execute()
         except Exception as e:
@@ -188,9 +195,9 @@ class LLMBundle(object):
         self.llm_name = llm_name
         self.mdl = TenantLLMService.model_instance(
             tenant_id, llm_type, llm_name, lang=lang)
-        assert self.mdl, "Can't find mole for {}/{}/{}".format(
+        assert self.mdl, "Can't find model for {}/{}/{}".format(
             tenant_id, llm_type, llm_name)
-        self.max_length = 512
+        self.max_length = 8192
         for lm in LLMService.query(llm_name=llm_name):
             self.max_length = lm.max_tokens
             break
@@ -245,7 +252,6 @@ class LLMBundle(object):
                 return
             yield chunk     
 
-    
     def chat(self, system, history, gen_conf):
         txt, used_tokens = self.mdl.chat(system, history, gen_conf)
         if not TenantLLMService.increase_usage(

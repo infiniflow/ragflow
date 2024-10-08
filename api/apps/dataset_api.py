@@ -42,7 +42,7 @@ from api.utils.file_utils import filename_type, thumbnail
 from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture, audio, email
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
@@ -352,7 +352,7 @@ def upload_documents(dataset_id):
 
             # upload to the minio
             location = filename
-            while MINIO.obj_exist(dataset_id, location):
+            while STORAGE_IMPL.obj_exist(dataset_id, location):
                 location += "_"
 
             blob = file.read()
@@ -361,7 +361,7 @@ def upload_documents(dataset_id):
             if blob == b'':
                 warnings.warn(f"[WARNING]: The content of the file {filename} is empty.")
 
-            MINIO.put(dataset_id, location, blob)
+            STORAGE_IMPL.put(dataset_id, location, blob)
 
             doc = {
                 "id": get_uuid(),
@@ -381,6 +381,8 @@ def upload_documents(dataset_id):
                 doc["parser_id"] = ParserType.AUDIO.value
             if re.search(r"\.(ppt|pptx|pages)$", filename):
                 doc["parser_id"] = ParserType.PRESENTATION.value
+            if re.search(r"\.(eml)$", filename):
+                doc["parser_id"] = ParserType.EMAIL.value
             DocumentService.insert(doc)
 
             FileService.add_file_from_kb(doc, kb_folder["id"], dataset.tenant_id)
@@ -420,7 +422,7 @@ def delete_document(document_id, dataset_id):  # string
                         f" reason!", code=RetCode.AUTHENTICATION_ERROR)
 
         # get the doc's id and location
-        real_dataset_id, location = File2DocumentService.get_minio_address(doc_id=document_id)
+        real_dataset_id, location = File2DocumentService.get_storage_address(doc_id=document_id)
 
         if real_dataset_id != dataset_id:
             return construct_json_result(message=f"The document {document_id} is not in the dataset: {dataset_id}, "
@@ -441,7 +443,7 @@ def delete_document(document_id, dataset_id):  # string
         File2DocumentService.delete_by_document_id(document_id)
 
         # delete it from minio
-        MINIO.rm(dataset_id, location)
+        STORAGE_IMPL.rm(dataset_id, location)
     except Exception as e:
         errors += str(e)
     if errors:
@@ -595,8 +597,8 @@ def download_document(dataset_id, document_id):
                                          code=RetCode.ARGUMENT_ERROR)
 
         # The process of downloading
-        doc_id, doc_location = File2DocumentService.get_minio_address(doc_id=document_id)  # minio address
-        file_stream = MINIO.get(doc_id, doc_location)
+        doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+        file_stream = STORAGE_IMPL.get(doc_id, doc_location)
         if not file_stream:
             return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
 
@@ -736,8 +738,8 @@ def parsing_document_internal(id):
         doc_attributes = doc_attributes.to_dict()
         doc_id = doc_attributes["id"]
 
-        bucket, doc_name = File2DocumentService.get_minio_address(doc_id=doc_id)
-        binary = MINIO.get(bucket, doc_name)
+        bucket, doc_name = File2DocumentService.get_storage_address(doc_id=doc_id)
+        binary = STORAGE_IMPL.get(bucket, doc_name)
         parser_name = doc_attributes["parser_id"]
         if binary:
             res = doc_parse(binary, doc_name, parser_name, tenant_id, doc_id)

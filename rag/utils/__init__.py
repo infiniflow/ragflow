@@ -32,8 +32,8 @@ def singleton(cls, *args, **kw):
 
 
 def rmSpace(txt):
-    txt = re.sub(r"([^a-z0-9.,]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
-    return re.sub(r"([^ ]) +([^a-z0-9.,])", r"\1\2", txt, flags=re.IGNORECASE)
+    txt = re.sub(r"([^a-z0-9.,\)>]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
+    return re.sub(r"([^ ]) +([^a-z0-9.,\(<])", r"\1\2", txt, flags=re.IGNORECASE)
 
 
 def findMaxDt(fnm):
@@ -78,11 +78,9 @@ encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
 def num_tokens_from_string(string: str) -> int:
     """Returns the number of tokens in a text string."""
     try:
-        num_tokens = len(encoder.encode(string))
-        return num_tokens
-    except Exception as e:
-        pass
-    return 0
+        return len(encoder.encode(string))
+    except Exception:
+        return 0
 
 
 def truncate(string: str, max_len: int) -> str:

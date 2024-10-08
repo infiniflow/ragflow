@@ -217,20 +217,20 @@ const model: DvaModel<KFModelState> = {
         formData.append('file', file);
       });
 
-      const { data } = yield call(kbService.document_upload, formData);
+      const ret = yield call(kbService.document_upload, formData);
 
-      const succeed = data.retcode === 0;
+      const succeed = ret?.data?.retcode === 0;
 
       if (succeed) {
         message.success(i18n.t('message.uploaded'));
       }
-      if (succeed || data.retcode === 500) {
+      if (succeed || ret?.data?.retcode === 500) {
         yield put({
           type: 'getKfList',
           payload: { kb_id: payload.kb_id },
         });
       }
-      return data;
+      return ret?.data;
     },
     *web_crawl({ payload = {} }, { call, put }) {
       const formData = new FormData();

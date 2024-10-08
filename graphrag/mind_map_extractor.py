@@ -65,17 +65,20 @@ class MindMapExtractor:
         if isinstance(obj, str):
             obj = [obj]
         if isinstance(obj, list):
-            for i in obj: keyset.add(i)
-            return [{"id": re.sub(r"\*+", "", i), "children": []} for i in obj]
+            keyset.update(obj)
+            obj = [re.sub(r"\*+", "", i) for i in obj]
+            return [{"id": i, "children": []} for i in obj if i]
         arr = []
         for k, v in obj.items():
             k = self._key(k)
-            if not k or k in keyset: continue
-            keyset.add(k)
-            arr.append({
-                "id": k,
-                "children": self._be_children(v, keyset)
-            })
+            if k and k not in keyset:
+                keyset.add(k)
+                arr.append(
+                    {
+                        "id": k,
+                        "children": self._be_children(v, keyset)
+                    }
+                )
         return arr
 
     def __call__(
@@ -107,18 +110,25 @@ class MindMapExtractor:
                 res.append(_.result())
 
             if not res:
-                return MindMapResult(output={"root":{}})
+                return MindMapResult(output={"id": "root", "children": []})
 
             merge_json = reduce(self._merge, res)
-            if len(merge_json.keys()) > 1:
-                keyset = set(
-                    [re.sub(r"\*+", "", k) for k, v in merge_json.items() if isinstance(v, dict) and re.sub(r"\*+", "", k)])
-                merge_json = {"id": "root",
-                          "children": [{"id": self._key(k), "children": self._be_children(v, keyset)} for k, v in
-                                       merge_json.items() if isinstance(v, dict) and self._key(k)]}
+            if len(merge_json) > 1:
+                keys = [re.sub(r"\*+", "", k) for k, v in merge_json.items() if isinstance(v, dict)]
+                keyset = set(i for i in keys if i)
+                merge_json = {
+                    "id": "root",
+                    "children": [
+                        {
+                            "id": self._key(k),
+                            "children": self._be_children(v, keyset)
+                        }
+                        for k, v in merge_json.items() if isinstance(v, dict) and self._key(k)
+                    ]
+                }
             else:
                 k = self._key(list(merge_json.keys())[0])
-                merge_json = {"id": k, "children": self._be_children(list(merge_json.items())[0][1], set([k]))}
+                merge_json = {"id": k, "children": self._be_children(list(merge_json.items())[0][1], {k})}
 
         except Exception as e:
             logging.exception("error mind graph")

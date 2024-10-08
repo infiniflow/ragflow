@@ -15,7 +15,7 @@
 #
 import re
 from typing import Optional
-import  threading
+import threading
 import requests
 from huggingface_hub import snapshot_download
 from openai.lib.azure import AzureOpenAI
@@ -25,10 +25,10 @@ from abc import ABC
 from ollama import Client
 import dashscope
 from openai import OpenAI
-from FlagEmbedding import FlagModel
-import torch
 import numpy as np
 import asyncio
+
+from api.settings import LIGHTEN
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai 
@@ -60,8 +60,10 @@ class DefaultEmbedding(Base):
         ^_-
 
         """
-        if not DefaultEmbedding._model:
+        if not LIGHTEN and not DefaultEmbedding._model:
             with DefaultEmbedding._model_lock:
+                from FlagEmbedding import FlagModel
+                import torch
                 if not DefaultEmbedding._model:
                     try:
                         DefaultEmbedding._model = FlagModel(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
@@ -155,6 +157,7 @@ class QWenEmbed(Base):
 
     def encode(self, texts: list, batch_size=10):
         import dashscope
+        batch_size = min(batch_size, 4)
         try:
             res = []
             token_count = 0
@@ -242,8 +245,8 @@ class FastEmbed(Base):
             threads: Optional[int] = None,
             **kwargs,
     ):
-        from fastembed import TextEmbedding
-        if not FastEmbed._model:
+        if not LIGHTEN and not FastEmbed._model:
+            from fastembed import TextEmbedding
             self._model = TextEmbedding(model_name, cache_dir, threads, **kwargs)
 
     def encode(self, texts: list, batch_size=32):
@@ -267,6 +270,8 @@ class FastEmbed(Base):
 
 class XinferenceEmbed(Base):
     def __init__(self, key, model_name="", base_url=""):
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
         self.client = OpenAI(api_key="xxx", base_url=base_url)
         self.model_name = model_name
 
@@ -286,8 +291,8 @@ class YoudaoEmbed(Base):
     _client = None
 
     def __init__(self, key=None, model_name="maidalun1020/bce-embedding-base_v1", **kwargs):
-        from BCEmbedding import EmbeddingModel as qanthing
-        if not YoudaoEmbed._client:
+        if not LIGHTEN and not YoudaoEmbed._client:
+            from BCEmbedding import EmbeddingModel as qanthing
             try:
                 print("LOADING BCE...")
                 YoudaoEmbed._client = qanthing(model_name_or_path=os.path.join(
@@ -438,7 +443,7 @@ class BedrockEmbed(Base):
 
         response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
         model_response = json.loads(response["body"].read())
-        embeddings.extend([model_response["embedding"]])
+        embeddings.extend(model_response["embedding"])
 
         return np.array(embeddings), token_count
 
@@ -577,11 +582,40 @@ class UpstageEmbed(OpenAIEmbed):
         super().__init__(key, model_name, base_url)
 
 
-class SILICONFLOWEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1"):
+class SILICONFLOWEmbed(Base):
+    def __init__(
+        self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"
+    ):
         if not base_url:
-            base_url = "https://api.siliconflow.cn/v1"
-        super().__init__(key, model_name, base_url)
+            base_url = "https://api.siliconflow.cn/v1/embeddings"
+        self.headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "authorization": f"Bearer {key}",
+        }
+        self.base_url = base_url
+        self.model_name = model_name
+
+    def encode(self, texts: list, batch_size=32):
+        payload = {
+            "model": self.model_name,
+            "input": texts,
+            "encoding_format": "float",
+        }
+        res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        return (
+            np.array([d["embedding"] for d in res["data"]]),
+            res["usage"]["total_tokens"],
+        )
+
+    def encode_queries(self, text):
+        payload = {
+            "model": self.model_name,
+            "input": text,
+            "encoding_format": "float",
+        }
+        res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        return np.array(res["data"][0]["embedding"]), res["usage"]["total_tokens"]
 
 
 class ReplicateEmbed(Base):
@@ -644,3 +678,40 @@ class VoyageEmbed(Base):
             texts=text, model=self.model_name, input_type="query"
             )
         return np.array(res.embeddings), res.total_tokens
+
+
+class HuggingFaceEmbed(Base):
+    def __init__(self, key, model_name, base_url=None):
+        if not model_name:
+            raise ValueError("Model name cannot be None")
+        self.key = key
+        self.model_name = model_name
+        self.base_url = base_url or "http://127.0.0.1:8080"
+
+    def encode(self, texts: list, batch_size=32):
+        embeddings = []
+        for text in texts:
+            response = requests.post(
+                f"{self.base_url}/embed",
+                json={"inputs": text},
+                headers={'Content-Type': 'application/json'}
+            )
+            if response.status_code == 200:
+                embedding = response.json()
+                embeddings.append(embedding[0])
+            else:
+                raise Exception(f"Error: {response.status_code} - {response.text}")
+        return np.array(embeddings), sum([num_tokens_from_string(text) for text in texts])
+
+    def encode_queries(self, text):
+        response = requests.post(
+            f"{self.base_url}/embed",
+            json={"inputs": text},
+            headers={'Content-Type': 'application/json'}
+        )
+        if response.status_code == 200:
+            embedding = response.json()
+            return np.array(embedding[0]), num_tokens_from_string(text)
+        else:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+

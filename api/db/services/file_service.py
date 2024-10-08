@@ -27,7 +27,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
 from api.utils.file_utils import filename_type, thumbnail
-from rag.utils.minio_conn import MINIO
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class FileService(CommonService):
@@ -350,14 +350,14 @@ class FileService(CommonService):
                     raise RuntimeError("This type of file has not been supported yet!")
 
                 location = filename
-                while MINIO.obj_exist(kb.id, location):
+                while STORAGE_IMPL.obj_exist(kb.id, location):
                     location += "_"
                 blob = file.read()
-                MINIO.put(kb.id, location, blob)
+                STORAGE_IMPL.put(kb.id, location, blob)
                 doc = {
                     "id": get_uuid(),
                     "kb_id": kb.id,
-                    "parser_id": kb.parser_id,
+                    "parser_id": self.get_parser(filetype, filename, kb.parser_id),
                     "parser_config": kb.parser_config,
                     "created_by": user_id,
                     "type": filetype,
@@ -366,14 +366,6 @@ class FileService(CommonService):
                     "size": len(blob),
                     "thumbnail": thumbnail(filename, blob)
                 }
-                if doc["type"] == FileType.VISUAL:
-                    doc["parser_id"] = ParserType.PICTURE.value
-                if doc["type"] == FileType.AURAL:
-                    doc["parser_id"] = ParserType.AUDIO.value
-                if re.search(r"\.(ppt|pptx|pages)$", filename):
-                    doc["parser_id"] = ParserType.PRESENTATION.value
-                if re.search(r"\.(eml)$", filename):
-                    doc["parser_id"] = ParserType.EMAIL.value
                 DocumentService.insert(doc)
 
                 FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
@@ -382,3 +374,15 @@ class FileService(CommonService):
                 err.append(file.filename + ": " + str(e))
 
         return err, files
+
+    @staticmethod
+    def get_parser(doc_type, filename, default):
+        if doc_type == FileType.VISUAL:
+            return ParserType.PICTURE.value
+        if doc_type == FileType.AURAL:
+            return ParserType.AUDIO.value
+        if re.search(r"\.(ppt|pptx|pages)$", filename):
+            return ParserType.PRESENTATION.value
+        if re.search(r"\.(eml)$", filename):
+            return ParserType.EMAIL.value
+        return default

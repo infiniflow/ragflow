@@ -17,4 +17,14 @@ export const UserSettingIconMap = {
 
 export * from '@/constants/setting';
 
-export const LocalLlmFactories = ['Ollama', 'Xinference','LocalAI','LM-Studio',"OpenAI-API-Compatible",'TogetherAI','Replicate'];
+export const LocalLlmFactories = [
+  'Ollama',
+  'Xinference',
+  'LocalAI',
+  'LM-Studio',
+  'OpenAI-API-Compatible',
+  'TogetherAI',
+  'Replicate',
+  'OpenRouter',
+  'HuggingFace',
+];

@@ -20,7 +20,6 @@ from abc import ABC
 from openai import OpenAI
 import openai
 from ollama import Client
-from volcengine.maas.v2 import MaasService
 from rag.nlp import is_english
 from rag.utils import num_tokens_from_string
 from groq import Groq
@@ -28,6 +27,7 @@ import os
 import json
 import requests
 import asyncio
+
 
 class Base(ABC):
     def __init__(self, key, model_name, base_url):
@@ -103,7 +103,6 @@ class XinferenceChat(Base):
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
-        key = "xxx"
         super().__init__(key, model_name, base_url)
 
 
@@ -458,7 +457,7 @@ class VolcEngineChat(Base):
         """
         base_url = base_url if base_url else 'https://ark.cn-beijing.volces.com/api/v3'
         ark_api_key = json.loads(key).get('ark_api_key', '')
-        model_name = json.loads(key).get('ep_id', '')
+        model_name = json.loads(key).get('ep_id', '') + json.loads(key).get('endpoint_id', '')
         super().__init__(ark_api_key, model_name, base_url)
 
 
@@ -631,7 +630,7 @@ class BedrockChat(Base):
                 modelId=self.model_name,
                 messages=history,
                 inferenceConfig=gen_conf,
-                system=[{"text": system}] if system else None,
+                system=[{"text": (system if system else "Answer the user's message.")}] ,
             )
             
             # Extract and print the response text.
@@ -676,7 +675,8 @@ class BedrockChat(Base):
             streaming_response = self.client.converse_stream(
                 modelId=self.model_name,
                 messages=history,
-                inferenceConfig=gen_conf
+                inferenceConfig=gen_conf,
+                system=[{"text": system if system else ""}],
             )
 
             # Extract and print the streamed response text in real-time.
@@ -689,6 +689,7 @@ class BedrockChat(Base):
             yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
 
         yield num_tokens_from_string(ans)
+
 
 class GeminiChat(Base):
 
@@ -981,9 +982,9 @@ class SILICONFLOWChat(Base):
 
 
 class YiChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.01.ai/v1"):
+    def __init__(self, key, model_name, base_url="https://api.lingyiwanwu.com/v1"):
         if not base_url:
-            base_url = "https://api.01.ai/v1"
+            base_url = "https://api.lingyiwanwu.com/v1"
         super().__init__(key, model_name, base_url)
 
 
@@ -1340,7 +1341,7 @@ class GoogleChat(Base):
                     + response["usage"]["output_tokens"],
                 )
             except Exception as e:
-                return ans + "\n**ERROR**: " + str(e), 0
+                return "\n**ERROR**: " + str(e), 0
         else:
             self.client._system_instruction = self.system
             if "max_tokens" in gen_conf:
@@ -1414,3 +1415,4 @@ class GoogleChat(Base):
                 yield ans + "\n**ERROR**: " + str(e)
 
             yield response._chunks[-1].usage_metadata.total_token_count
+            

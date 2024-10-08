@@ -19,6 +19,7 @@ export default {
   set_api_key: `${api_host}/llm/set_api_key`,
   add_llm: `${api_host}/llm/add_llm`,
   delete_llm: `${api_host}/llm/delete_llm`,
+  deleteFactory: `${api_host}/llm/delete_factory`,
 
   // knowledge base
   kb_list: `${api_host}/kb/list`,
@@ -68,6 +69,7 @@ export default {
   tts: `${api_host}/conversation/tts`,
   ask: `${api_host}/conversation/ask`,
   mindmap: `${api_host}/conversation/mindmap`,
+  getRelatedQuestions: `${api_host}/conversation/related_questions`,
   // chat for external
   createToken: `${api_host}/api/new_token`,
   listToken: `${api_host}/api/token_list`,

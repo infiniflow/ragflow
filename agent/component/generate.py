@@ -112,7 +112,7 @@ class Generate(ComponentBase):
 
         kwargs["input"] = input
         for n, v in kwargs.items():
-            prompt = re.sub(r"\{%s\}" % n, re.escape(str(v)), prompt)
+            prompt = re.sub(r"\{%s\}" % re.escape(n), str(v), prompt)
 
         downstreams = self._canvas.get_component(self._id)["downstream"]
         if kwargs.get("stream") and len(downstreams) == 1 and self._canvas.get_component(downstreams[0])[
@@ -122,13 +122,13 @@ class Generate(ComponentBase):
         if "empty_response" in retrieval_res.columns and not "".join(retrieval_res["content"]):
             res = {"content": "\n- ".join(retrieval_res["empty_response"]) if "\n- ".join(
                 retrieval_res["empty_response"]) else "Nothing found in knowledgebase!", "reference": []}
-            return Generate.be_output(res)
+            return pd.DataFrame([res])
 
         ans = chat_mdl.chat(prompt, self._canvas.get_history(self._param.message_history_window_size),
                             self._param.gen_conf())
         if self._param.cite and "content_ltks" in retrieval_res.columns and "vector" in retrieval_res.columns:
-            df = self.set_cite(retrieval_res, ans)
-            return pd.DataFrame(df)
+            res = self.set_cite(retrieval_res, ans)
+            return pd.DataFrame([res])
 
         return Generate.be_output(ans)
 

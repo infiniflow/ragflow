@@ -12,13 +12,11 @@
 #
 import copy
 import re
-from collections import Counter
 
 from api.db import ParserType
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
 import numpy as np
-from rag.utils import num_tokens_from_string
 
 
 class Pdf(PdfParser):
@@ -135,7 +133,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Only pdf is supported.
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
-    pdf_parser = None
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         if not kwargs.get("parser_config", {}).get("layout_recognize", True):
             pdf_parser = PlainParser()

@@ -1,7 +1,7 @@
 {
   "id": 6,
   "title": "DB Assistant",
-  "description": "A more advanced agent that converts user queries into SQL statements, executes the queries, and assesses and returns the results. You must prepare three knowledge bases: 1: DDL for your database; 2: Examples of user queries converted to SQL statements; 3: A comprehensive description of your database, including but not limited to tables and records. And you are also required to configure the corresponding database.",
+  "description": "An advanced agent that converts user queries into SQL statements, executes the queries, and assesses and returns the results. You must prepare three knowledge bases: 1: DDL for your database; 2: Examples of user queries converted to SQL statements; 3: A comprehensive description of your database, including but not limited to tables and records. You are also required to configure the corresponding database.",
   "canvas_type": "chatbot",
   "dsl": {
             "answer": [],
@@ -120,6 +120,7 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
+                            "empty_response": "Nothing found in DB-Description!",
                             "kb_ids": [
                                 "b510f8f45f6011ef904f0242ac160006"
                             ],
@@ -139,6 +140,7 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
+                            "empty_response": "Nothing found in DDL!",
                             "kb_ids": [
                                 "9870268e5f6011efb8570242ac160006"
                             ],
@@ -158,6 +160,7 @@
                     "obj": {
                         "component_name": "Retrieval",
                         "params": {
+                            "empty_response": "Nothing found in Q->SQL!",
                             "kb_ids": [
                                 "dd401bcc5b9e11efae770242ac160006"
                             ],
@@ -408,6 +411,7 @@
                     {
                         "data": {
                             "form": {
+                                "empty_response": "Nothing found in Q->SQL!",
                                 "kb_ids": [
                                     "dd401bcc5b9e11efae770242ac160006"
                                 ],
@@ -493,6 +497,7 @@
                     {
                         "data": {
                             "form": {
+                                "empty_response": "Nothing found in DB-Description!",
                                 "kb_ids": [
                                     "b510f8f45f6011ef904f0242ac160006"
                                 ],
@@ -523,6 +528,7 @@
                     {
                         "data": {
                             "form": {
+                                "empty_response": "Nothing found in DDL!",
                                 "kb_ids": [
                                     "9870268e5f6011efb8570242ac160006"
                                 ],

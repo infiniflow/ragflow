@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from rag.settings import es_logger
 from rag.utils import rmSpace
-from rag.nlp import rag_tokenizer, query
+from rag.nlp import rag_tokenizer, query, is_english
 import numpy as np
 
 
@@ -79,9 +79,9 @@ class Dealer:
                     Q("bool", must_not=Q("range", available_int={"lt": 1})))
         return bqry
 
-    def search(self, req, idxnm, emb_mdl=None):
+    def search(self, req, idxnm, emb_mdl=None, highlight=False):
         qst = req.get("question", "")
-        bqry, keywords = self.qryr.question(qst)
+        bqry, keywords = self.qryr.question(qst, min_match="30%")
         bqry = self._add_filters(bqry, req)
         bqry.boost = 0.05
 
@@ -130,7 +130,7 @@ class Dealer:
                 qst, emb_mdl, req.get(
                     "similarity", 0.1), topk)
             s["knn"]["filter"] = bqry.to_dict()
-            if "highlight" in s:
+            if not highlight and "highlight" in s:
                 del s["highlight"]
             q_vec = s["knn"]["query_vector"]
         es_logger.info("【Q】: {}".format(json.dumps(s)))
@@ -164,7 +164,7 @@ class Dealer:
             ids=self.es.getDocIds(res),
             query_vector=q_vec,
             aggregation=aggs,
-            highlight=self.getHighlight(res),
+            highlight=self.getHighlight(res, keywords, "content_with_weight"),
             field=self.getFields(res, src),
             keywords=list(kwds)
         )
@@ -175,26 +175,27 @@ class Dealer:
         bkts = res["aggregations"]["aggs_" + g]["buckets"]
         return [(b["key"], b["doc_count"]) for b in bkts]
 
-    def getHighlight(self, res):
-        def rmspace(line):
-            eng = set(list("qwertyuioplkjhgfdsazxcvbnm"))
-            r = []
-            for t in line.split(" "):
-                if not t:
-                    continue
-                if len(r) > 0 and len(
-                        t) > 0 and r[-1][-1] in eng and t[0] in eng:
-                    r.append(" ")
-                r.append(t)
-            r = "".join(r)
-            return r
-
+    def getHighlight(self, res, keywords, fieldnm):
         ans = {}
         for d in res["hits"]["hits"]:
             hlts = d.get("highlight")
             if not hlts:
                 continue
-            ans[d["_id"]] = "".join([a for a in list(hlts.items())[0][1]])
+            txt = "...".join([a for a in list(hlts.items())[0][1]])
+            if not is_english(txt.split(" ")):
+                ans[d["_id"]] = txt
+                continue
+
+            txt = d["_source"][fieldnm]
+            txt = re.sub(r"[\r\n]", " ", txt, flags=re.IGNORECASE|re.MULTILINE)
+            txts = []
+            for t in re.split(r"[.?!;\n]", txt):
+                for w in keywords:
+                    t = re.sub(r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])"%re.escape(w), r"\1<em>\2</em>\3", t, flags=re.IGNORECASE|re.MULTILINE)
+                if not re.search(r"<em>[^<>]+</em>", t, flags=re.IGNORECASE|re.MULTILINE): continue
+                txts.append(t)
+            ans[d["_id"]] = "...".join(txts) if txts else "...".join([a for a in list(hlts.items())[0][1]])
+
         return ans
 
     def getFields(self, sres, flds):
@@ -224,6 +225,8 @@ class Dealer:
     def insert_citations(self, answer, chunks, chunk_v,
                          embd_mdl, tkweight=0.1, vtweight=0.9):
         assert len(chunks) == len(chunk_v)
+        if not chunks:
+            return answer, set([])
         pieces = re.split(r"(```)", answer)
         if len(pieces) >= 3:
             i = 0
@@ -263,7 +266,7 @@ class Dealer:
 
         ans_v, _ = embd_mdl.encode(pieces_)
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
-            len(ans_v[0]), len(chunk_v[0]))
+                len(ans_v[0]), len(chunk_v[0]))
 
         chunks_tks = [rag_tokenizer.tokenize(self.qryr.rmWWW(ck)).split(" ")
                       for ck in chunks]
@@ -345,7 +348,7 @@ class Dealer:
             ins_tw.append(tks)
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
-        vtsim,_ = rerank_mdl.similarity(" ".join(keywords), [rmSpace(" ".join(tks)) for tks in ins_tw])
+        vtsim,_ = rerank_mdl.similarity(query, [rmSpace(" ".join(tks)) for tks in ins_tw])
 
         return tkweight*np.array(tksim) + vtweight*vtsim, tksim, vtsim
 
@@ -356,33 +359,37 @@ class Dealer:
                                            rag_tokenizer.tokenize(inst).split(" "))
 
     def retrieval(self, question, embd_mdl, tenant_id, kb_ids, page, page_size, similarity_threshold=0.2,
-                  vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True, rerank_mdl=None):
+                  vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True, rerank_mdl=None, highlight=False):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
-        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": page_size,
+        RERANK_PAGE_LIMIT = 3
+        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": page_size*RERANK_PAGE_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
                "available_int": 1}
-        sres = self.search(req, index_name(tenant_id), embd_mdl)
+        if page > RERANK_PAGE_LIMIT:
+            req["page"] = page
+            req["size"] = page_size
+        sres = self.search(req, index_name(tenant_id), embd_mdl, highlight)
+        ranks["total"] = sres.total
 
-        if rerank_mdl:
-            sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
-                sres, question, 1 - vector_similarity_weight, vector_similarity_weight)
+        if page <= RERANK_PAGE_LIMIT:
+            if rerank_mdl:
+                sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
+                    sres, question, 1 - vector_similarity_weight, vector_similarity_weight)
+            else:
+                sim, tsim, vsim = self.rerank(
+                    sres, question, 1 - vector_similarity_weight, vector_similarity_weight)
+            idx = np.argsort(sim * -1)[(page-1)*page_size:page*page_size]
         else:
-            sim, tsim, vsim = self.rerank(
-                sres, question, 1 - vector_similarity_weight, vector_similarity_weight)
-        idx = np.argsort(sim * -1)
+            sim = tsim = vsim = [1]*len(sres.ids)
+            idx = list(range(len(sres.ids)))
 
         dim = len(sres.query_vector)
-        start_idx = (page - 1) * page_size
         for i in idx:
             if sim[i] < similarity_threshold:
                 break
-            ranks["total"] += 1
-            start_idx -= 1
-            if start_idx >= 0:
-                continue
             if len(ranks["chunks"]) >= page_size:
                 if aggs:
                     continue
@@ -405,6 +412,11 @@ class Dealer:
                 "vector": self.trans2floats(sres.field[id].get("q_%d_vec" % dim, "\t".join(["0"] * dim))),
                 "positions": sres.field[id].get("position_int", "").split("\t")
             }
+            if highlight:
+                if id in sres.highlight:
+                    d["highlight"] = rmSpace(sres.highlight[id])
+                else:
+                    d["highlight"] = d["content_with_weight"]
             if len(d["positions"]) % 5 == 0:
                 poss = []
                 for i in range(0, len(d["positions"]), 5):

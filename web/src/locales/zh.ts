@@ -27,6 +27,7 @@ export default {
       close: '关闭',
       preview: '预览',
       move: '移动',
+      warn: '提醒',
     },
     login: {
       login: '登录',
@@ -147,6 +148,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
       delimiter: `分段标识符`,
+      html4excel: '表格转HTML',
+      html4excelTip: `Excel 是否将被解析为 HTML 表。如果为 FALSE，Excel 中的每一行都将形成一个块。`,
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
@@ -192,7 +195,7 @@ export default {
       我们假设手册具有分层部分结构。 我们使用最低的部分标题作为对文档进行切片的枢轴。
       因此，同一部分中的图和表不会被分割，并且块大小可能会很大。
       </p>`,
-      naive: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>。</p>
+      naive: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML、HTML</b>。</p>
       <p>此方法将简单的方法应用于块文件：</p>
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
@@ -417,6 +420,11 @@ export default {
       read: '朗读内容',
       tts: '文本转语音',
       ttsTip: '是否用语音转换播放语音，请先在设置里面选择TTS（语音转换模型）。',
+      relatedQuestion: '相关问题',
+      answerTitle: '智能回答',
+      multiTurn: '多轮对话优化',
+      multiTurnTip:
+        '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
     },
     setting: {
       profile: '概要',
@@ -522,6 +530,12 @@ export default {
       SparkModelNameMessage: '请选择星火模型！',
       addSparkAPIPassword: '星火 APIPassword',
       SparkAPIPasswordMessage: '请输入 APIPassword',
+      addSparkAPPID: '星火 APPID',
+      SparkAPPIDMessage: '请输入 APPID',
+      addSparkAPISecret: '星火 APISecret',
+      SparkAPISecretMessage: '请输入 APISecret',
+      addSparkAPIKey: '星火 APIKey',
+      SparkAPIKeyMessage: '请输入 APIKey',
       yiyanModelNameMessage: '请输入模型名称',
       addyiyanAK: '一言 API KEY',
       yiyanAKMessage: '请输入 API KEY',
@@ -541,6 +555,8 @@ export default {
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
+      modelProvidersWarn:
+        '请首先在 <b>设置 > 模型提供商</b> 中添加嵌入模型和 LLM。',
     },
     message: {
       registered: '注册成功',
@@ -564,6 +580,7 @@ export default {
       404: '发出的请求针对的是不存在的记录，服务器没有进行操作。',
       406: '请求的格式不可得。',
       410: '请求的资源被永久删除，且不会再得到的。',
+      413: '上传的文件总大小过大。',
       422: '当创建一个对象时，发生一个验证错误。',
       500: '服务器发生错误，请检查服务器。',
       502: '网关错误。',
@@ -609,6 +626,7 @@ export default {
       messagePlaceholder: '消息',
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
+      addMessage: '新增消息',
       loop: '循环上限',
       loopTip:
         'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化agent',
@@ -620,7 +638,7 @@ export default {
       operation: '操作',
       run: '运行',
       save: '保存',
-      title: '标题：',
+      title: 'ID：',
       beginDescription: '这是流程开始的地方',
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,
@@ -631,6 +649,7 @@ export default {
       messageDescription:
         '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
+      switchDescription: `该组件用于根据前面组件的输出评估条件，并相应地引导执行流程。通过定义各种情况并指定操作，或在不满足条件时采取默认操作，实现复杂的分支逻辑。`,
       wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
@@ -846,6 +865,79 @@ export default {
       operator: '操作符',
       value: '值',
       useTemplate: '使用该模板',
+      wenCai: '问财',
+      queryType: '查询类型',
+      wenCaiDescription:
+        '该组件可用于获取广泛金融领域的信息，包括但不限于股票、基金等...',
+      wenCaiQueryTypeOptions: {
+        stock: '股票',
+        zhishu: '指数',
+        fund: '基金',
+        hkstock: '港股',
+        usstock: '美股',
+        threeboard: '新三板',
+        conbond: '可转债',
+        insurance: '保险',
+        futures: '期货',
+        lccp: '理财',
+        foreign_exchange: '外汇',
+      },
+      akShare: 'AkShare',
+      akShareDescription: '该组件可用于从东方财富网站获取相应股票的新闻信息。',
+      yahooFinance: '雅虎财经',
+      yahooFinanceDescription: '该组件根据提供的股票代码查询有关公司的信息。',
+      info: '信息',
+      history: '历史',
+      financials: '财务',
+      balanceSheet: '资产负债表',
+      cashFlowStatement: '现金流量表',
+      jin10: '金十',
+      jin10Description:
+        '该组件可用于从金十开放平台获取金融领域的信息，包括快讯、日历、行情、参考。',
+      flashType: '闪光类型',
+      filter: '筛选',
+      contain: '包含',
+      calendarType: '日历类型',
+      calendarDatashape: '日历数据形状',
+      symbolsDatatype: '符号数据类型',
+      symbolsType: '符号类型',
+      jin10TypeOptions: {
+        flash: '快讯',
+        calendar: '日历',
+        symbols: '行情',
+        news: '参考',
+      },
+      jin10FlashTypeOptions: {
+        '1': '市场快讯',
+        '2': '期货快讯',
+        '3': '美港快讯',
+        '4': 'A股快讯',
+        '5': '商品外汇快讯',
+      },
+      jin10CalendarTypeOptions: {
+        cj: '宏观数据日历',
+        qh: '期货日历',
+        hk: '港股日历',
+        us: '美股日历',
+      },
+      jin10CalendarDatashapeOptions: {
+        data: '数据',
+        event: ' 事件',
+        holiday: '假期',
+      },
+      jin10SymbolsTypeOptions: {
+        GOODS: '商品行情',
+        FOREX: '外汇行情',
+        FUTURE: '国际行情',
+        CRYPTO: '加密货币行情',
+      },
+      jin10SymbolsDatatypeOptions: {
+        symbols: '品种列表',
+        quotes: '最新行情',
+      },
+      concentrator: '集线器',
+      concentratorDescription:
+        '该组件可用于连接多个下游组件。它接收来自上游组件的输入并将其传递给每个下游组件。',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -13,9 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
+
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
+from api.settings import LIGHTEN
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
@@ -29,7 +32,19 @@ import requests
 def factories():
     try:
         fac = LLMFactoriesService.get_all()
-        return get_json_result(data=[f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]])
+        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]]
+        llms = LLMService.get_all()
+        mdl_types = {}
+        for m in llms:
+            if m.status != StatusEnum.VALID.value:
+                continue
+            if m.fid not in mdl_types:
+                mdl_types[m.fid] = set([])
+            mdl_types[m.fid].add(m.model_type)
+        for f in fac:
+            f["model_types"] = list(mdl_types.get(f["name"], [LLMType.CHAT, LLMType.EMBEDDING, LLMType.RERANK,
+                                                              LLMType.IMAGE2TEXT, LLMType.SPEECH2TEXT, LLMType.TTS]))
+        return get_json_result(data=fac)
     except Exception as e:
         return server_error_response(e)
 
@@ -81,24 +96,27 @@ def set_api_key():
     if msg:
         return get_data_error_result(retmsg=msg)
 
-    llm = {
+    llm_config = {
         "api_key": req["api_key"],
         "api_base": req.get("base_url", "")
     }
     for n in ["model_type", "llm_name"]:
         if n in req:
-            llm[n] = req[n]
+            llm_config[n] = req[n]
 
-    if not TenantLLMService.filter_update(
-            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory], llm):
-        for llm in LLMService.query(fid=factory):
+    for llm in LLMService.query(fid=factory):
+        if not TenantLLMService.filter_update(
+                [TenantLLM.tenant_id == current_user.id,
+                 TenantLLM.llm_factory == factory,
+                 TenantLLM.llm_name == llm.llm_name],
+                llm_config):
             TenantLLMService.save(
                 tenant_id=current_user.id,
                 llm_factory=factory,
                 llm_name=llm.llm_name,
                 model_type=llm.model_type,
-                api_key=req["api_key"],
-                api_base=req.get("base_url", "")
+                api_key=llm_config["api_key"],
+                api_base=llm_config["api_base"]
             )
 
     return get_json_result(data=True)
@@ -111,56 +129,63 @@ def add_llm():
     req = request.json
     factory = req["llm_factory"]
 
+    def apikey_json(keys):
+        nonlocal req
+        return json.dumps({k: req.get(k, "") for k in keys})
+
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
         # Assemble ark_api_key endpoint_id into api_key
         llm_name = req["llm_name"]
-        api_key = '{' + f'"ark_api_key": "{req.get("ark_api_key", "")}", ' \
-                        f'"ep_id": "{req.get("endpoint_id", "")}", ' + '}'
+        api_key = apikey_json(["ark_api_key", "endpoint_id"])
+
     elif factory == "Tencent Hunyuan":
-        api_key = '{' + f'"hunyuan_sid": "{req.get("hunyuan_sid", "")}", ' \
-                        f'"hunyuan_sk": "{req.get("hunyuan_sk", "")}"' + '}'
-        req["api_key"] = api_key
+        req["api_key"] = apikey_json(["hunyuan_sid", "hunyuan_sk"])
         return set_api_key()
+
     elif factory == "Tencent Cloud":
-        api_key = '{' + f'"tencent_cloud_sid": "{req.get("tencent_cloud_sid", "")}", ' \
-                f'"tencent_cloud_sk": "{req.get("tencent_cloud_sk", "")}"' + '}'
-        req["api_key"] = api_key
+        req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
+
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region
         llm_name = req["llm_name"]
-        api_key = '{' + f'"bedrock_ak": "{req.get("bedrock_ak", "")}", ' \
-                        f'"bedrock_sk": "{req.get("bedrock_sk", "")}", ' \
-                        f'"bedrock_region": "{req.get("bedrock_region", "")}", ' + '}'
+        api_key = apikey_json(["bedrock_ak", "bedrock_sk", "bedrock_region"])
+
     elif factory == "LocalAI":
         llm_name = req["llm_name"]+"___LocalAI"
         api_key = "xxxxxxxxxxxxxxx"
+        
+    elif factory == "HuggingFace":
+        llm_name = req["llm_name"]+"___HuggingFace"
+        api_key = "xxxxxxxxxxxxxxx"
+
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"]+"___OpenAI-API"
         api_key = req.get("api_key","xxxxxxxxxxxxxxx")
+
     elif factory =="XunFei Spark":
         llm_name = req["llm_name"]
-        api_key = req.get("spark_api_password","xxxxxxxxxxxxxxx") 
+        if req["model_type"] == "chat":
+            api_key = req.get("spark_api_password", "xxxxxxxxxxxxxxx")
+        elif req["model_type"] == "tts":
+            api_key = apikey_json(["spark_app_id", "spark_api_secret","spark_api_key"])
+
     elif factory == "BaiduYiyan":
         llm_name = req["llm_name"]
-        api_key = '{' + f'"yiyan_ak": "{req.get("yiyan_ak", "")}", ' \
-                f'"yiyan_sk": "{req.get("yiyan_sk", "")}"' + '}'
+        api_key = apikey_json(["yiyan_ak", "yiyan_sk"])
+
     elif factory == "Fish Audio":
         llm_name = req["llm_name"]
-        api_key = '{' + f'"fish_audio_ak": "{req.get("fish_audio_ak", "")}", ' \
-                f'"fish_audio_refid": "{req.get("fish_audio_refid", "59cb5986671546eaa6ca8ae6f29f6d22")}"' + '}'
+        api_key = apikey_json(["fish_audio_ak", "fish_audio_refid"])
+
     elif factory == "Google Cloud":
         llm_name = req["llm_name"]
-        api_key = (
-            "{" + f'"google_project_id": "{req.get("google_project_id", "")}", '
-            f'"google_region": "{req.get("google_region", "")}", '
-            f'"google_service_account_key": "{req.get("google_service_account_key", "")}"'
-            + "}"
-        )
+        api_key = apikey_json(["google_project_id", "google_region", "google_service_account_key"])
+
     else:
         llm_name = req["llm_name"]
-        api_key = req.get("api_key","xxxxxxxxxxxxxxx") 
+        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     llm = {
         "tenant_id": current_user.id,
@@ -264,6 +289,16 @@ def delete_llm():
     return get_json_result(data=True)
 
 
+@manager.route('/delete_factory', methods=['POST'])
+@login_required
+@validate_request("llm_factory")
+def delete_factory():
+    req = request.json
+    TenantLLMService.filter_delete(
+            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"]])
+    return get_json_result(data=True)
+
+
 @manager.route('/my_llms', methods=['GET'])
 @login_required
 def my_llms():
@@ -288,15 +323,17 @@ def my_llms():
 @manager.route('/list', methods=['GET'])
 @login_required
 def list_app():
+    self_deploied = ["Youdao","FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
+    weighted = ["Youdao","FastEmbed", "BAAI"] if LIGHTEN else []
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
         llms = LLMService.get_all()
         llms = [m.to_dict()
-                for m in llms if m.status == StatusEnum.VALID.value]
+                for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted]
         for m in llms:
-            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in ["Youdao","FastEmbed", "BAAI"]
+            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deploied
 
         llm_set = set([m["llm_name"] for m in llms])
         for o in objs:

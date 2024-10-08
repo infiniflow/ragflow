@@ -96,26 +96,6 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
     return max(0, countdown)
 
 
-def get_json_result(retcode=RetCode.SUCCESS, retmsg='success',
-                    data=None, job_id=None, meta=None):
-    result_dict = {
-        "retcode": retcode,
-        "retmsg": retmsg,
-        # "retmsg": re.sub(r"rag", "seceum", retmsg, flags=re.IGNORECASE),
-        "data": data,
-        "jobId": job_id,
-        "meta": meta,
-    }
-
-    response = {}
-    for key, value in result_dict.items():
-        if value is None and key != "retcode":
-            continue
-        else:
-            response[key] = value
-    return jsonify(response)
-
-
 def get_data_error_result(retcode=RetCode.DATA_ERROR,
                           retmsg='Sorry! Data missing!'):
     import re

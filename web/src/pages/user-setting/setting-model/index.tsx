@@ -34,6 +34,7 @@ import { IconMap } from './constant';
 import FishAudioModal from './fish-audio-modal';
 import GoogleModal from './google-modal';
 import {
+  useHandleDeleteFactory,
   useHandleDeleteLlm,
   useSubmitApiKey,
   useSubmitBedrock,
@@ -75,6 +76,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
   const { visible, switchVisible } = useSetModalState();
   const { t } = useTranslate('setting');
   const { handleDeleteLlm } = useHandleDeleteLlm(item.name);
+  const { handleDeleteFactory } = useHandleDeleteFactory(item.name);
 
   const handleApiKeyClick = () => {
     clickApiKey(item.name);
@@ -117,6 +119,9 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
                   {t('showMoreModels')}
                   <MoreModelIcon />
                 </Flex>
+              </Button>
+              <Button type={'text'} onClick={handleDeleteFactory}>
+                <CloseCircleOutlined style={{ color: '#D92D20' }} />
               </Button>
             </Space>
           </Col>

@@ -16,6 +16,7 @@ const {
   set_tenant_info,
   add_llm,
   delete_llm,
+  deleteFactory,
   getSystemStatus,
   getSystemVersion,
 } = api;
@@ -80,6 +81,10 @@ const methods = {
   getSystemVersion: {
     url: getSystemVersion,
     method: 'get',
+  },
+  deleteFactory: {
+    url: deleteFactory,
+    method: 'post',
   },
 } as const;
 

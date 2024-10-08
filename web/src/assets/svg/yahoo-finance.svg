@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="28px" height="28px" viewBox="0 0 28 28" version="1.1" xmlns="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 57.1 (83088) - https://sketch.com -->
+    <title>favicon_y19_28x28_custom</title>
+    <desc>Created with Sketch.</desc>
+    <defs>
+        <polygon id="path-1"
+            points="0.171073913 0.0931111111 9.4455087 0.0931111111 9.4455087 9.92442222 0.171073913 9.92442222">
+        </polygon>
+    </defs>
+    <g id="favicon_y19_28x28_custom" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <rect fill="#6001D2" x="0" y="0" width="28" height="28"></rect>
+        <g id="y!" transform="translate(5.000000, 6.000000)">
+            <polygon id="Fill-1" fill="#FFFFFF"
+                points="9.70835927 5 7.04604411 11.4197051 4.40657437 5 0 5 4.91176421 16.0265583 3.14442407 20 7.45914574 20 14 5">
+            </polygon>
+            <g id="!" transform="translate(12.000000, 0.000000)">
+                <path
+                    d="M2.88747609,10.8773778 C1.30283696,10.8773778 0.114280435,12.0684889 0.114280435,13.4547111 C0.114280435,14.8184889 1.25660652,15.9449333 2.79421522,15.9449333 C4.37917174,15.9449333 5.56741087,14.7756 5.56741087,13.3678222 C5.56741087,11.9818222 4.42580217,10.8773778 2.88747609,10.8773778"
+                    id="Fill-2" fill="#FFFFFF"></path>
+                <g id="Group-6" transform="translate(1.434783, 0.000000)">
+                    <mask id="mask-2" fill="white">
+                        <use xlink:href="#path-1"></use>
+                    </mask>
+                    <g id="Clip-5"></g>
+                    <polygon id="Fill-4" fill="#FFFFFF" mask="url(#mask-2)"
+                        points="4.55194348 0.0930888889 0.171073913 9.92442222 5.06487826 9.92442222 9.4455087 0.0930888889">
+                    </polygon>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

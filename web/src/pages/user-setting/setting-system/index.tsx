@@ -24,10 +24,17 @@ enum Status {
 
 const TitleMap = {
   es: 'Elasticsearch',
-  minio: 'MinIO Object Storage',
+  storage: 'Object Storage',
   redis: 'Redis',
-  mysql: 'Mysql',
+  database: 'Database',
   task_executor: 'Task Executor',
+};
+
+const IconMap = {
+  es: 'es',
+  storage: 'storage',
+  redis: 'redis',
+  database: 'database',
 };
 
 const SystemInfo = () => {
@@ -56,7 +63,7 @@ const SystemInfo = () => {
                     {key === 'task_executor' ? (
                       <img src="/logo.svg" alt="" width={26} />
                     ) : (
-                      <SvgIcon name={key} width={26}></SvgIcon>
+                      <SvgIcon name={IconMap[key as keyof typeof IconMap]} width={26}></SvgIcon>
                     )}
                     <span className={styles.title}>
                       {TitleMap[key as keyof typeof TitleMap]}

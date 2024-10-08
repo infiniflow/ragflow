@@ -3,6 +3,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById, useSpeechWithSse } from '@/hooks/logic-hooks';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
 import { getMessagePureId } from '@/utils/chat';
+import { hexStringToUint8Array } from '@/utils/common-util';
 import { SpeechPlayer } from 'openai-speech-stream-player';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -94,14 +95,18 @@ export const useSpeech = (content: string, audioBinary?: string) => {
     }
   }, [setIsPlaying, speech, isPlaying, pause]);
 
-  // useEffect(() => {
-  //   if (audioBinary) {
-  //     const units = hexStringToUint8Array(audioBinary);
-  //     if (units) {
-  //       player.current?.feed(units);
-  //     }
-  //   }
-  // }, [audioBinary]);
+  useEffect(() => {
+    if (audioBinary) {
+      const units = hexStringToUint8Array(audioBinary);
+      if (units) {
+        try {
+          player.current?.feed(units);
+        } catch (error) {
+          console.warn(error);
+        }
+      }
+    }
+  }, [audioBinary]);
 
   useEffect(() => {
     initialize();

@@ -18,8 +18,8 @@
     <a href="https://demo.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99"></a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.10.0-brightgreen"
-            alt="docker pull infiniflow/ragflow:v0.10.0"></a>
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.12.0-brightgreen"
+            alt="docker pull infiniflow/ragflow:v0.12.0"></a>
       <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
     <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
   </a>
@@ -48,19 +48,17 @@
 
 ## 🔥 最新情報
 
+- 2024-09-29 マルチラウンドダイアログを最適化。
+- 2024-09-13 ナレッジベース Q&A の検索モードを追加しました。
+- 2024-09-09 エージェントに医療相談テンプレートを追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 - 2024-08-02 [graphrag](https://github.com/microsoft/graphrag) からインスピレーションを得た GraphRAG とマインド マップをサポートします。
-- 2024-07-23 音声ファイルの解析をサポートしました。
-- 2024-07-21 より多くの LLM サプライヤー (LocalAI/OpenRouter/StepFun/Nvidia) をサポートします。
-- 2024-07-18 グラフにコンポーネント(Wikipedia/PubMed/Baidu/Duckduckgo)を追加しました。
-- 2024-07-08 [Graph](./graph/README.md) ベースのワークフローをサポート
-- 2024-06-27 Q&A解析方式はMarkdownファイルとDocxファイルをサポートしています。
-- 2024-06-27 Docxファイルからの画像の抽出をサポートします。
-- 2024-06-27 Markdownファイルからテーブルを抽出することをサポートします。
-- 2024-06-06 会話設定でデフォルトでチェックされている [Self-RAG](https://huggingface.co/papers/2310.11511) をサポートします。
-- 2024-05-30 [BCE](https://github.com/netease-youdao/BCEmbedding) 、[BGE](https://github.com/FlagOpen/FlagEmbedding) reranker を統合。
-- 2024-05-23 より良いテキスト検索のために [RAPTOR](https://arxiv.org/html/2401.18059v1) をサポート。
-- 2024-05-15 OpenAI GPT-4oを統合しました。
+
+## 🎉 続きを楽しみに
+⭐️ リポジトリをスター登録して、エキサイティングな新機能やアップデートを最新の状態に保ちましょう！すべての新しいリリースに関する即時通知を受け取れます！ 🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
 
 ## 🌟 主な特徴
 
@@ -143,7 +141,7 @@
    $ docker compose up -d
    ```
 
-   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_VERSION変数を見つけて、対応するバージョンに変更してください。 例えば、RAGFLOW_VERSION=v0.10.0として、上記のコマンドを実行してください。
+   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_IMAGE変数を見つけて、対応するバージョンに変更してください。 例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`として、上記のコマンドを実行してください。
 
    > コアイメージのサイズは約 9 GB で、ロードに時間がかかる場合があります。
 
@@ -156,12 +154,11 @@
    _以下の出力は、システムが正常に起動したことを確認するものです:_
 
    ```bash
-       ____                 ______ __
-      / __ \ ____ _ ____ _ / ____// /____  _      __
-     / /_/ // __ `// __ `// /_   / // __ \| | /| / /
-    / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ /
-   /_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/
-                 /____/
+        ____   ___    ______ ______ __               
+       / __ \ /   |  / ____// ____// /____  _      __
+      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
@@ -195,81 +192,86 @@
 > すべてのシステム設定のアップデートを有効にするには、システムの再起動が必要です:
 >
 > ```bash
-> $ docker-compose up -d
+> $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🛠️ ソースからビルドする
+## 🔧 ソースコードでDockerイメージを作成（埋め込みモデルなし）
 
-ソースからDockerイメージをビルドするには:
-
-```bash
-$ git clone https://github.com/infiniflow/ragflow.git
-$ cd ragflow/
-$ docker build -t infiniflow/ragflow:v0.10.0 .
-$ cd ragflow/docker
-$ chmod +x ./entrypoint.sh
-$ docker compose up -d
-```
-
-## 🛠️ ソースコードからサービスを起動する方法
-
-ソースコードからサービスを起動する場合は、以下の手順に従ってください:
-
-1. リポジトリをクローンします
-```bash
-$ git clone https://github.com/infiniflow/ragflow.git
-$ cd ragflow/
-```
-
-2. 仮想環境を作成します（AnacondaまたはMinicondaがインストールされていることを確認してください）
-```bash
-$ conda create -n ragflow python=3.11.0
-$ conda activate ragflow
-$ pip install -r requirements.txt
-```
-CUDAのバージョンが12.0以上の場合、以下の追加コマンドを実行してください：
-```bash
-$ pip uninstall -y onnxruntime-gpu
-$ pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
-```
-
-3. エントリースクリプトをコピーし、環境変数を設定します
-```bash
-$ cp docker/entrypoint.sh .
-$ vi entrypoint.sh
-```
-以下のコマンドで Python のパスとragflowプロジェクトのパスを取得します：
-```bash
-$ which python
-$ pwd
-```
-
-`which python` の出力を `PY` の値として、`pwd` の出力を `PYTHONPATH` の値として設定します。
-
-`LD_LIBRARY_PATH` が既に設定されている場合は、コメントアウトできます。
+この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
 
 ```bash
-# 実際の状況に応じて設定を調整してください。以下の二つの export は新たに追加された設定です
-PY=${PY}
-export PYTHONPATH=${PYTHONPATH}
-# オプション：Hugging Face ミラーを追加
-export HF_ENDPOINT=https://hf-mirror.com
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub nltk
+python3 download_deps.py
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-4. 基本サービスを起動します
+## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
+
+この Docker のサイズは約 9GB で、埋め込みモデルを含むため、外部の大モデルサービスのみが必要です。
+
 ```bash
-$ cd docker
-$ docker compose -f docker-compose-base.yml up -d 
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub nltk
+python3 download_deps.py
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
-5. 設定ファイルを確認します
-**docker/.env** 内の設定が**conf/service_conf.yaml**内の設定と一致していることを確認してください。**service_conf.yaml**内の関連サービスのIPアドレスとポートは、ローカルマシンのIPアドレスとコンテナが公開するポートに変更する必要があります。
+## 🔨 ソースコードからサービスを起動する方法
 
-6. サービスを起動します
-```bash
-$ chmod +x ./entrypoint.sh
-$ bash ./entrypoint.sh
-```
+1. Poetry をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
+   ```bash
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
+
+2. ソースコードをクローンし、Python の依存関係をインストールする:
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow/
+   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
+   ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
+   ```
+
+3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
+   ```bash
+   docker compose -f docker/docker-compose-base.yml up -d
+   ```
+
+   `/etc/hosts` に以下の行を追加して、**docker/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:  
+   ```
+   127.0.0.1       es01 mysql minio redis
+   ```  
+   **docker/service_conf.yaml** で mysql のポートを `5455` に、es のポートを `1200` に更新します（**docker/.env** に指定された通り）.
+
+4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
+ 
+   ```bash
+   export HF_ENDPOINT=https://hf-mirror.com
+   ```
+
+5. バックエンドサービスを起動する:
+   ```bash
+   source .venv/bin/activate
+   export PYTHONPATH=$(pwd)
+   bash docker/launch_backend_service.sh
+   ```
+
+6. フロントエンドの依存関係をインストールする:  
+   ```bash
+   cd web
+   npm install --force
+   ```  
+7. フロントエンドを設定し、**.umirc.ts** の `proxy.target` を `http://127.0.0.1:9380` に更新します:
+8. フロントエンドサービスを起動する:  
+   ```bash
+   npm run dev 
+   ```
+
+   _以下の画面で、システムが正常に起動したことを示します:_  
+
+   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
 ## 📚 ドキュメンテーション
 
@@ -290,4 +292,4 @@ $ bash ./entrypoint.sh
 
 ## 🙌 コントリビュート
 
-RAGFlow はオープンソースのコラボレーションによって発展してきました。この精神に基づき、私たちはコミュニティからの多様なコントリビュートを受け入れています。 参加を希望される方は、まず [コントリビューションガイド](./docs/references/CONTRIBUTING.md)をご覧ください。
+RAGFlow はオープンソースのコラボレーションによって発展してきました。この精神に基づき、私たちはコミュニティからの多様なコントリビュートを受け入れています。 参加を希望される方は、まず [コントリビューションガイド](./CONTRIBUTING.md)をご覧ください。

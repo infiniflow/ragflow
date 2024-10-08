@@ -42,6 +42,7 @@
     "openai-speech-stream-player": "^1.0.8",
     "rc-tween-one": "^3.0.6",
     "react-copy-to-clipboard": "^5.1.0",
+    "react-error-boundary": "^4.0.13",
     "react-force-graph": "^1.44.4",
     "react-i18next": "^14.0.0",
     "react-markdown": "^9.0.1",

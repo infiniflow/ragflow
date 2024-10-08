@@ -57,7 +57,7 @@ export const useFetchFlowTemplates = (): ResponseType<IFlowTemplate[]> => {
         data.data.unshift({
           id: uuid(),
           title: 'Blank',
-          description: 'Create from nothing',
+          description: 'Create your agent from scratch',
           dsl: EmptyDsl,
         });
       }

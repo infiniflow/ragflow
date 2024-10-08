@@ -25,6 +25,7 @@ from functools import reduce
 from markdown import markdown
 from docx.image.exceptions import UnrecognizedImageError
 
+
 class Docx(DocxParser):
     def __init__(self):
         pass
@@ -76,7 +77,7 @@ class Docx(DocxParser):
                         if last_image:
                             image_list.insert(0, last_image)
                             last_image = None
-                        lines.append((self.__clean(p.text), image_list, p.style.name))
+                        lines.append((self.__clean(p.text), image_list, p.style.name if p.style else ""))
                 else:
                     if current_image := self.get_picture(self.doc, p):
                         if lines:
@@ -93,7 +94,7 @@ class Docx(DocxParser):
 
         tbls = []
         for tb in self.doc.tables:
-            html= "<table>"
+            html = "<table>"
             for r in tb.rows:
                 html += "<tr>"
                 i = 0
@@ -146,8 +147,6 @@ class Pdf(PdfParser):
 
 class Markdown(MarkdownParser):
     def __call__(self, filename, binary=None):
-        txt = ""
-        tbls = []
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -167,7 +166,6 @@ class Markdown(MarkdownParser):
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         return sections, tbls
-
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -190,7 +188,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     pdf_parser = None
-    sections = []
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = Docx()(filename, binary)
@@ -221,11 +218,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
-        sections = [(l, "") for l in excel_parser.html(binary) if l]
+        if parser_config.get("html4excel"):
+            sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+        else:
+            sections = [(_, "") for _ in excel_parser(binary) if _]
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = TxtParser()(filename,binary,
+        sections = TxtParser()(filename, binary,
                                parser_config.get("chunk_token_num", 128),
                                parser_config.get("delimiter", "\n!?;。；！？"))
         callback(0.8, "Finish parsing.")
@@ -239,13 +239,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
-        sections = [(l, "") for l in sections if l]
+        sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.json$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = JsonParser(int(parser_config.get("chunk_token_num", 128)))(binary)
-        sections = [(l, "") for l in sections if l]
+        sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
@@ -253,7 +253,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
-        sections = [(l, "") for l in sections if l]
+        sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
     else:

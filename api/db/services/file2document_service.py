@@ -69,14 +69,14 @@ class File2DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_minio_address(cls, doc_id=None, file_id=None):
+    def get_storage_address(cls, doc_id=None, file_id=None):
         if doc_id:
             f2d = cls.get_by_document_id(doc_id)
         else:
             f2d = cls.get_by_file_id(file_id)
         if f2d:
             file = File.get_by_id(f2d[0].file_id)
-            if file.source_type == FileSource.LOCAL:
+            if not file.source_type or file.source_type == FileSource.LOCAL:
                 return file.parent_id, file.location
             doc_id = f2d[0].document_id
 
