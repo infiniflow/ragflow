@@ -86,49 +86,8 @@ class AzureSeq2txt(Base):
         self.lang = lang
 
 
-class OllamaSeq2txt(Base):
-    def __init__(self, base_url="http://localhost:11434", model_name="whisper-small"):
-        if base_url.split("/")[-1] != "api":
-            base_url = os.path.join(base_url, "api")
-        self.base_url = base_url
-        self.model_name = model_name
-
-    def transcription(self, audio, format="wav", **kwargs):
-        b64_audio = self.audio2base64(audio)
-
-        payload = {
-            "model": self.model_name,
-            "audio_data": b64_audio,
-            "format": format,
-        }
-
-        try:
-            response = requests.post(
-                f"{self.base_url}/transcription",
-                json=payload
-            )
-            response.raise_for_status()
-            result = response.json()
-
-            if 'text' in result:
-                transcription_text = result['text'].strip()
-                return transcription_text, num_tokens_from_string(transcription_text)
-            else:
-                return "**ERROR**: Failed to retrieve transcription.", 0
-
-        except requests.exceptions.RequestException as e:
-            return f"**ERROR**: {str(e)}", 0
-
-    def audio2base64(self, audio):
-        if isinstance(audio, bytes):
-            return base64.b64encode(audio).decode("utf-8")
-        if isinstance(audio, io.BytesIO):
-            return base64.b64encode(audio.getvalue()).decode("utf-8")
-        raise TypeError("The input audio file should be in binary format.")
-
-
 class XinferenceSeq2txt(Base):
-    def __init__(self, key,model_name="whisper-small",lang="Chinese",**kwargs):
+    def __init__(self,key,model_name="whisper-small",**kwargs):
         self.base_url = kwargs.get('base_url', None)
         self.model_name = model_name
 
@@ -170,15 +129,6 @@ class XinferenceSeq2txt(Base):
 
         except requests.exceptions.RequestException as e:
             return f"**ERROR**: {str(e)}", 0
-
-    def audio2base64(self, audio):
-        if isinstance(audio, bytes):
-            return base64.b64encode(audio).decode("utf-8")
-        if isinstance(audio, io.BytesIO):
-            return base64.b64encode(audio.getvalue()).decode("utf-8")
-        raise TypeError("The input audio file should be in binary format.")
-
-
 class TencentCloudSeq2txt(Base):
     def __init__(
             self, key, model_name="16k_zh", base_url="https://asr.tencentcloudapi.com"

@@ -127,7 +127,6 @@ RerankModel = {
 Seq2txtModel = {
     "OpenAI": GPTSeq2txt,
     "Tongyi-Qianwen": QWenSeq2txt,
-    "Ollama": OllamaSeq2txt,
     "Azure-OpenAI": AzureSeq2txt,
     "Xinference": XinferenceSeq2txt,
     "Tencent Cloud": TencentCloudSeq2txt
@@ -139,5 +138,4 @@ TTSModel = {
     "OpenAI": OpenAITTS,
     "XunFei Spark": SparkTTS,
     "Xinference": XinferenceTTS,
-    "Ollama": OllamaTTS
 }
