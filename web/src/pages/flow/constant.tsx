@@ -15,6 +15,7 @@ import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
 import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
+import { ReactComponent as TuShareIcon } from '@/assets/svg/tushare.svg';
 import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
@@ -69,6 +70,7 @@ export enum Operator {
   YahooFinance = 'YahooFinance',
   Jin10 = 'Jin10',
   Concentrator = 'Concentrator',
+  TuShare = 'TuShare',
 }
 
 export const operatorIconMap = {
@@ -100,6 +102,7 @@ export const operatorIconMap = {
   [Operator.YahooFinance]: YahooFinanceIcon,
   [Operator.Jin10]: Jin10Icon,
   [Operator.Concentrator]: ConcentratorIcon,
+  [Operator.TuShare]: TuShareIcon,
 };
 
 export const operatorMap: Record<
@@ -221,6 +224,7 @@ export const operatorMap: Record<
     fontSize: 10,
     iconFontSize: 16,
   },
+  [Operator.TuShare]: { backgroundColor: '#f8cfa0' },
 };
 
 export const componentMenuList = [
@@ -304,6 +308,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Jin10,
+  },
+  {
+    name: Operator.TuShare,
   },
 ];
 
@@ -467,6 +474,12 @@ export const initialJin10Values = {
 
 export const initialConcentratorValues = {};
 
+export const initialTuShareValues = {
+  token: 'xxx',
+  src: 'eastmoney',
+  start_date: '2024-01-01 09:00:00',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -542,6 +555,7 @@ export const RestrictedUpstreamMap = {
   [Operator.YahooFinance]: [Operator.Begin],
   [Operator.Jin10]: [Operator.Begin],
   [Operator.Concentrator]: [Operator.Begin],
+  [Operator.TuShare]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -573,6 +587,7 @@ export const NodeMap = {
   [Operator.AkShare]: 'ragNode',
   [Operator.YahooFinance]: 'ragNode',
   [Operator.Jin10]: 'ragNode',
+  [Operator.TuShare]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -2750,3 +2765,12 @@ export const Jin10CalendarTypeOptions = ['cj', 'qh', 'hk', 'us'];
 export const Jin10CalendarDatashapeOptions = ['data', 'event', 'holiday'];
 export const Jin10SymbolsTypeOptions = ['GOODS', 'FOREX', 'FUTURE', 'CRYPTO'];
 export const Jin10SymbolsDatatypeOptions = ['symbols', 'quotes'];
+export const TuShareSrcOptions = [
+  'sina',
+  'wallstreetcn',
+  '10jqka',
+  'eastmoney',
+  'yuncaijing',
+  'fenghuang',
+  'jinrongjie',
+];
