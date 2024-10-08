@@ -20,7 +20,7 @@ RAGFlow.create_dataset(
 ) -> DataSet
 ```
 
-Creates a dataset.
+Creates a knowledge base (dataset).
 
 ### Parameters
 
@@ -38,9 +38,9 @@ The unique name of the dataset to create. It must adhere to the following requir
 
 #### avatar: `str`
 
-The url or path to the avatar image associated with the created dataset. Defaults to `""`
+The url or ???????????????????????? path to the avatar image associated with the created dataset. Defaults to `""`
 
-#### tenant_id: `str`
+#### tenant_id: `str` ?????????????????
 
 The id of the tenant associated with the created dataset is used to identify different users. Defaults to `None`.
 
@@ -53,9 +53,9 @@ The description of the created dataset. Defaults to `""`.
 
 #### language: `str`
 
-The language setting for the created dataset. Defaults to `"English"`.
+The language setting of the created dataset. Defaults to `"English"`. ????????????
 
-#### embedding_model: `str`
+#### embedding_model: `str`       ????????????????
 
 The specific model or algorithm used by the dataset to generate vector embeddings. Defaults to `""`.
 
@@ -68,7 +68,7 @@ Specify who can operate on the dataset. Defaults to `"me"`.
 
 #### document_count: `int`
 
-The number of documents associated with the created dataset. Defaults to `0`.
+The number of documents associated with the dataset. Defaults to `0`.
 
 - If updating a dataset, `document_count` can't be changed.
 
