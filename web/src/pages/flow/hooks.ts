@@ -55,6 +55,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialTuShareValues,
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
@@ -123,6 +124,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.YahooFinance]: initialYahooFinanceValues,
       [Operator.Jin10]: initialJin10Values,
       [Operator.Concentrator]: initialConcentratorValues,
+      [Operator.TuShare]: initialTuShareValues,
     };
   }, [llmId]);
 

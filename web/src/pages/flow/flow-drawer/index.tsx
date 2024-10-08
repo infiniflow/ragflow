@@ -29,6 +29,7 @@ import RelevantForm from '../relevant-form';
 import RetrievalForm from '../retrieval-form';
 import RewriteQuestionForm from '../rewrite-question-form';
 import SwitchForm from '../switch-form';
+import TuShareForm from '../tushare-form';
 import WenCaiForm from '../wencai-form';
 import WikipediaForm from '../wikipedia-form';
 
@@ -68,6 +69,7 @@ const FormMap = {
   [Operator.AkShare]: AkShareForm,
   [Operator.YahooFinance]: YahooFinanceForm,
   [Operator.Jin10]: Jin10Form,
+  [Operator.TuShare]: TuShareForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

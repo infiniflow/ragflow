@@ -938,6 +938,23 @@ export default {
       concentrator: '集线器',
       concentratorDescription:
         '该组件可用于连接多个下游组件。它接收来自上游组件的输入并将其传递给每个下游组件。',
+      tuShare: 'TuShare',
+      tuShareDescription:
+        '该组件可用于从主流金融网站获取金融新闻简报，辅助行业和量化研究。',
+      tuShareSrcOptions: {
+        sina: '新浪财经',
+        wallstreetcn: '华尔街见闻',
+        '10jqka': '同花顺',
+        eastmoney: '东方财富',
+        yuncaijing: '云财经',
+        fenghuang: '凤凰新闻',
+        jinrongjie: '金融界',
+      },
+      token: 'Token',
+      src: '源',
+      startDate: '开始日期',
+      endDate: '结束日期',
+      keyword: '关键字',
     },
     footer: {
       profile: 'All rights reserved @ React',

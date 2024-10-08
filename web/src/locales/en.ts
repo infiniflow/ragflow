@@ -968,6 +968,23 @@ The above is the content you need to summarize.`,
       concentrator: 'Concentrator',
       concentratorDescription:
         'A component that receives the output from the upstream component and passes it on as input to the downstream components.',
+      tuShare: 'TuShare',
+      tuShareDescription:
+        'This component can be used to obtain financial news briefs from mainstream financial websites, aiding industry and quantitative research.',
+      tuShareSrcOptions: {
+        sina: 'Sina',
+        wallstreetcn: 'wallstreetcn',
+        '10jqka': 'Straight flush',
+        eastmoney: 'Eastmoney',
+        yuncaijing: 'YUNCAIJING',
+        fenghuang: 'FENGHUANG',
+        jinrongjie: 'JRJ',
+      },
+      token: 'Token',
+      src: 'Source',
+      startDate: 'Start date',
+      endDate: 'End date',
+      keyword: 'Keyword',
     },
     footer: {
       profile: 'All rights reserved @ React',
