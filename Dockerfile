@@ -13,7 +13,7 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean \
 RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked \
     apt update && apt-get --no-install-recommends install -y ca-certificates
 
-# If you are at mainland China, you can use tsinghua mirror to speed up apt and poetry
+# If you download Python modules too slow, you can use a pip mirror site to speed up apt and poetry
 RUN sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources
 ENV POETRY_PYPI_MIRROR_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
 
