@@ -16,14 +16,15 @@ from docx import Document
 from timeit import default_timer as timer
 import re
 from deepdoc.parser.pdf_parser import PlainParser
-from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, naive_merge_docx, tokenize_chunks_docx
+from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, \
+    naive_merge_docx, tokenize_chunks_docx
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser, MarkdownParser, TxtParser
 from rag.settings import cron_logger
 from rag.utils import num_tokens_from_string
 from PIL import Image
 from functools import reduce
 from markdown import markdown
-from docx.image.exceptions import UnrecognizedImageError
+from docx.image.exceptions import UnrecognizedImageError, UnexpectedEndOfFileError, InvalidImageStreamError
 
 
 class Docx(DocxParser):
@@ -41,6 +42,12 @@ class Docx(DocxParser):
             image_blob = related_part.image.blob
         except UnrecognizedImageError:
             print("Unrecognized image format. Skipping image.")
+            return None
+        except UnexpectedEndOfFileError:
+            print("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
+            return None
+        except InvalidImageStreamError:
+            print("The recognized image stream appears to be corrupted. Skipping image.")
             return None
         try:
             image = Image.open(BytesIO(image_blob)).convert('RGB')
@@ -101,7 +108,7 @@ class Docx(DocxParser):
                 while i < len(r.cells):
                     span = 1
                     c = r.cells[i]
-                    for j in range(i+1, len(r.cells)):
+                    for j in range(i + 1, len(r.cells)):
                         if c.text == r.cells[j].text:
                             span += 1
                             i = j
@@ -136,9 +143,9 @@ class Pdf(PdfParser):
         self._text_merge()
         callback(0.67, "Text merging finished")
         tbls = self._extract_table_figure(True, zoomin, True, True)
-        #self._naive_vertical_merge()
+        # self._naive_vertical_merge()
         self._concat_downward()
-        #self._filter_forpages()
+        # self._filter_forpages()
 
         cron_logger.info("layouts: {}".format(timer() - start))
         return [(b["text"], self._line_tag(b, zoomin))
@@ -158,8 +165,8 @@ class Markdown(MarkdownParser):
         tbls = []
         for sec in remainder.split("\n"):
             if num_tokens_from_string(sec) > 10 * self.chunk_token_num:
-                sections.append((sec[:int(len(sec)/2)], ""))
-                sections.append((sec[int(len(sec)/2):], ""))
+                sections.append((sec[:int(len(sec) / 2)], ""))
+                sections.append((sec[int(len(sec) / 2):], ""))
             else:
                 sections.append((sec, ""))
         print(tables)
@@ -191,7 +198,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = Docx()(filename, binary)
-        res = tokenize_table(tbls, doc, eng)    # just for table
+        res = tokenize_table(tbls, doc, eng)  # just for table
 
         callback(0.8, "Finish parsing.")
         st = timer()
@@ -229,7 +236,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                parser_config.get("chunk_token_num", 128),
                                parser_config.get("delimiter", "\n!?;。；！？"))
         callback(0.8, "Finish parsing.")
-    
+
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = Markdown(int(parser_config.get("chunk_token_num", 128)))(filename, binary)
@@ -276,7 +283,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
 
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
