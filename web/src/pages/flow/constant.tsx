@@ -12,6 +12,7 @@ import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
+import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
 import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
@@ -71,6 +72,7 @@ export enum Operator {
   Jin10 = 'Jin10',
   Concentrator = 'Concentrator',
   TuShare = 'TuShare',
+  Note = 'Note',
 }
 
 export const operatorIconMap = {
@@ -103,6 +105,7 @@ export const operatorIconMap = {
   [Operator.Jin10]: Jin10Icon,
   [Operator.Concentrator]: ConcentratorIcon,
   [Operator.TuShare]: TuShareIcon,
+  [Operator.Note]: NoteIcon,
 };
 
 export const operatorMap: Record<
@@ -225,6 +228,7 @@ export const operatorMap: Record<
     iconFontSize: 16,
   },
   [Operator.TuShare]: { backgroundColor: '#f8cfa0' },
+  [Operator.Note]: { backgroundColor: '#f8cfa0' },
 };
 
 export const componentMenuList = [
@@ -257,6 +261,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Concentrator,
+  },
+  {
+    name: Operator.Note,
   },
   {
     name: Operator.DuckDuckGo,
@@ -480,6 +487,10 @@ export const initialTuShareValues = {
   start_date: '2024-01-01 09:00:00',
 };
 
+export const initialNoteValues = {
+  text: '',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -588,6 +599,7 @@ export const NodeMap = {
   [Operator.YahooFinance]: 'ragNode',
   [Operator.Jin10]: 'ragNode',
   [Operator.TuShare]: 'ragNode',
+  [Operator.Note]: 'noteNode',
 };
 
 export const LanguageOptions = [

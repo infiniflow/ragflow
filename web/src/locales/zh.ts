@@ -955,6 +955,9 @@ export default {
       startDate: '开始日期',
       endDate: '结束日期',
       keyword: '关键字',
+      note: '注释',
+      noteDescription: '注释',
+      notePlaceholder: '请输入注释',
     },
     footer: {
       profile: 'All rights reserved @ React',
