@@ -46,7 +46,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.utils import get_uuid
 from api.db import FileType, TaskStatus, ParserType, FileSource, LLMType
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
-from api.settings import RetCode, stat_logger
+from api.settings import RetCode, stat_logger, retrievaler
 from api.utils.api_utils import get_json_result
 from rag.utils.storage_factory import STORAGE_IMPL
 from api.utils.file_utils import filename_type, thumbnail, get_project_base_directory
@@ -223,7 +223,7 @@ def docinfos():
 
 
 @manager.route('/thumbnails', methods=['GET'])
-#@login_required
+# @login_required
 def thumbnails():
     doc_ids = request.args.get("doc_ids").split(",")
     if not doc_ids:
@@ -298,6 +298,15 @@ def rm():
             tenant_id = DocumentService.get_tenant_id(doc_id)
             if not tenant_id:
                 return get_data_error_result(retmsg="Tenant not found!")
+
+            query = {"doc_ids": [doc_id], "question": "", "sort": True}
+            sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
+            chunk_ids = [id for id in sres.ids]
+
+            if not ELASTICSEARCH.deleteByQuery(
+                    Q("ids", values=chunk_ids), search.index_name(tenant_id)):
+                return get_data_error_result(retmsg="Index updating failure")
+            DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, len(chunk_ids), 0)
 
             b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
 
