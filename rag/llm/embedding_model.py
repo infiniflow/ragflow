@@ -18,7 +18,6 @@ from typing import Optional
 import threading
 import requests
 from huggingface_hub import snapshot_download
-from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 import os
 from abc import ABC
@@ -137,6 +136,7 @@ class LocalAIEmbed(Base):
 
 class AzureEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, **kwargs):
+        from openai.lib.azure import AzureOpenAI
         self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")
         self.model_name = model_name
 
