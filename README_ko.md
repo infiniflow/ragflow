@@ -278,7 +278,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ## 📚 문서
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [User guide](https://ragflow.io/docs/dev/category/guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQ](https://ragflow.io/docs/dev/faq)
 
