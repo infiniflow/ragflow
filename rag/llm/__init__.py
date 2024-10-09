@@ -47,9 +47,8 @@ EmbeddingModel = {
     "Replicate": ReplicateEmbed,
     "BaiduYiyan": BaiduYiyanEmbed,
     "Voyage AI": VoyageEmbed,
-    "HuggingFace":HuggingFaceEmbed,
+    "HuggingFace": HuggingFaceEmbed,
 }
-
 
 CvModel = {
     "OpenAI": GptV4,
@@ -64,13 +63,12 @@ CvModel = {
     "LocalAI": LocalAICV,
     "NVIDIA": NvidiaCV,
     "LM-Studio": LmStudioCV,
-    "StepFun":StepFunCV,
+    "StepFun": StepFunCV,
     "OpenAI-API-Compatible": OpenAI_APICV,
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
     "Tencent Hunyuan": HunyuanCV
 }
-
 
 ChatModel = {
     "OpenAI": GptTurbo,
@@ -99,7 +97,7 @@ ChatModel = {
     "LeptonAI": LeptonAIChat,
     "TogetherAI": TogetherAIChat,
     "PerfXCloud": PerfXCloudChat,
-    "Upstage":UpstageChat,
+    "Upstage": UpstageChat,
     "novita.ai": NovitaAIChat,
     "SILICONFLOW": SILICONFLOWChat,
     "01.AI": YiChat,
@@ -110,7 +108,6 @@ ChatModel = {
     "Anthropic": AnthropicChat,
     "Google Cloud": GoogleChat,
 }
-
 
 RerankModel = {
     "BAAI": DefaultRerank,
@@ -127,11 +124,9 @@ RerankModel = {
     "Voyage AI": VoyageRerank
 }
 
-
 Seq2txtModel = {
     "OpenAI": GPTSeq2txt,
     "Tongyi-Qianwen": QWenSeq2txt,
-    "Ollama": OllamaSeq2txt,
     "Azure-OpenAI": AzureSeq2txt,
     "Xinference": XinferenceSeq2txt,
     "Tencent Cloud": TencentCloudSeq2txt
@@ -140,6 +135,7 @@ Seq2txtModel = {
 TTSModel = {
     "Fish Audio": FishAudioTTS,
     "Tongyi-Qianwen": QwenTTS,
-    "OpenAI":OpenAITTS,
-    "XunFei Spark":SparkTTS
+    "OpenAI": OpenAITTS,
+    "XunFei Spark": SparkTTS,
+    "Xinference": XinferenceTTS,
 }

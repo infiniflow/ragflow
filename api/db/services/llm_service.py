@@ -195,7 +195,7 @@ class LLMBundle(object):
         self.llm_name = llm_name
         self.mdl = TenantLLMService.model_instance(
             tenant_id, llm_type, llm_name, lang=lang)
-        assert self.mdl, "Can't find mole for {}/{}/{}".format(
+        assert self.mdl, "Can't find model for {}/{}/{}".format(
             tenant_id, llm_type, llm_name)
         self.max_length = 8192
         for lm in LLMService.query(llm_name=llm_name):
