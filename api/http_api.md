@@ -5,7 +5,7 @@
 
 **POST** `/api/v1/dataset`
 
-Creates a dataset by its name. If the database already exists, the dataset name will be renamed by RAGFlow automatically.
+Creates a dataset with a name. If dataset of the same name already exists, the new dataset will be renamed by RAGFlow automatically.
 
 ### Request
 
@@ -80,9 +80,9 @@ The error response includes a JSON object like the following:
 
 ## Delete dataset
 
-**DELETE** `/api/v1/dataset/{dataset_id}`
+**DELETE** `/api/v1/dataset`
 
-Deletes a dataset by its id.
+Deletes a dataset by its id or name.
 
 ### Request
 
@@ -100,12 +100,19 @@ curl --request DELETE \
      --url http://{address}/api/v1/dataset/0 \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --data ' {
+        "names": ["ds1", "ds2"]
+     }'
 ```
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)
-    Dataset ID in RAGFlow.
+- `"names"`: (*Body parameter*)
+    Dataset names to delete.
+- `"ids"`: (*Body parameter*)
+    Dataset IDs to delete.
+
+`"names"` and `"ids"` are exclusive.
 
 ### Response
 
@@ -201,97 +208,16 @@ The error response includes a JSON object like the following:
 }
 ```
 
-
-## Retrieve dataset
-
-**GET** `/api/v1/dataset/{dataset_id}`
-
-Get a dataset by its id.
-
-### Request
-
-- Method: GET
-- URL: `/api/v1/dataset/{dataset_id}`
-- Headers:
-  - `content-Type: application/json`
-  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
-
-#### Request example
-
-```shell
-curl --request GET \
-     --url http://{address}/api/v1/dataset/0 \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-```
-
-#### Request parameters
-
-- `"dataset_id"`: (*Path parameter*)
-    Dataset ID in RAGFlow.
-
-### Response
-
-The successful response includes a JSON object like the following:
-
-```shell
-{
-    "code": 0,
-    "data": {
-        "avatar": "",
-        "chunk_count": 0,
-        "create_date": "Thu, 29 Aug 2024 03:13:07 GMT",
-        "create_time": 1724901187843,
-        "created_by": "4fb0cd625f9311efba4a0242ac120006",
-        "description": "",
-        "document_count": 0,
-        "embedding_model": "BAAI/bge-large-zh-v1.5",
-        "id": "9d3d906665b411ef87d10242ac120006",
-        "language": "English",
-        "name": "Test",
-        "parser_config": {
-            "chunk_token_count": 128,
-            "delimiter": "\n!?。；！？",
-            "layout_recognize": true,
-            "task_page_size": 12
-        },
-        "parse_method": "naive",
-        "permission": "me",
-        "similarity_threshold": 0.2,
-        "status": "1",
-        "tenant_id": "4fb0cd625f9311efba4a0242ac120006",
-        "token_count": 0,
-        "update_date": "Thu, 29 Aug 2024 03:13:07 GMT",
-        "update_time": 1724901187843,
-        "vector_similarity_weight": 0.3
-    }
-}
-```
-
-- `"error_code"`: `integer`  
-  `0`: The operation succeeds.
-
-  
-The error response includes a JSON object like the following:
-
-```shell
-{
-    "code": 3016,
-    "message": "No such dataset."
-}
-```
-
 ## List datasets
 
-**GET** `/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+**GET** `/api/v1/dataset?name={name}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
 
 List all datasets
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+- URL: `/api/v1/dataset?name={name}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -316,6 +242,8 @@ curl --request GET \
     The field by which the records should be sorted. This specifies the attribute or column used to order the results.
 - `desc`: (*Path parameter*)
     A boolean flag indicating whether the sorting should be in descending order.
+- `name`: (*Path parameter*)
+    Dataset name
 
 ### Response
 
@@ -378,30 +306,24 @@ Uploads files to a dataset.
 - Method: POST
 - URL: `/api/v1/dataset/{dataset_id}/document`
 - Headers:
-  - `content-Type: application/json`
+  - 'Content-Type: multipart/form-data'
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-- Body:
-  - `"dataset_name"`: `string`
-  - `"tenant_id"`: `string`
-  - `"embedding_model"`: `string`
-  - `"chunk_count"`: `integer`
-  - `"document_count"`: `integer`
-  - `"parse_method"`: `string`
+- Form:
+  - 'file=@{FILE_PATH}'
 
 #### Request example
 
 ```shell
 curl --request POST \
-     --url http://{address}//api/v1/dataset/{dataset_id}/document \
+     --url http://{address}/api/v1/dataset/{dataset_id}/document \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
-     --form 'dataset_id=ad403cd0758511efb63c0242ac120004' \      
      --form 'file=@test.txt'
 ```
 
 #### Request parameters
 
-- `"dataset_id"`: (*Body parameter*)
+- `"dataset_id"`: (*Path parameter*)
     The dataset id
 - `"file"`: (*Body parameter*)  
     The file to upload
@@ -442,14 +364,16 @@ Downloads files from a dataset.
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
+- Output:
+  - '{FILE_NAME}'
 #### Request example
 
 ```shell
 curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/document/{documents_id} \
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{documents_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+     --output '{FILE_NAME}'
 ```
 
 #### Request parameters
@@ -485,14 +409,14 @@ The error response includes a JSON object like the following:
 
 ## List files of a dataset
 
-**GET** `/api/v1/dataset/{dataset_id}/document?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}`
+**GET** `/api/v1/dataset/{dataset_id}/info?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name}`
 
 List files to a dataset. 
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/document?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}`
+- URL: `/api/v1/dataset/{dataset_id}/info?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -501,7 +425,7 @@ List files to a dataset.
 
 ```shell
 curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/info?keywords=rag&page=0&page_size=10&orderby=create_time&desc=yes \
+     --url http://{address}/api/v1/dataset/{dataset_id}/info?keywords=rag&page=0&page_size=10&orderby=create_time&desc=yes \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 ```
@@ -520,6 +444,8 @@ curl --request GET \
     The field by which the records should be sorted. This specifies the attribute or column used to order the results.
 - `desc`: (*Filter parameter*)
     A boolean flag indicating whether the sorting should be in descending order.
+- `name`: (*Filter parameter*)
+    File name.
 
 ### Response
 
@@ -609,92 +535,9 @@ The error response includes a JSON object like the following:
 }
 ```
 
-## Get the information of a file of a dataset
-
-**GET** `/api/v1/dataset/{dataset_id}/info`
-
-Get the information of a file of a dataset
-
-### Request
-
-- Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/info`
-- Headers:
-  - `content-Type: application/json`
-  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
-#### Request example
-
-```shell
-curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/info/{document_id} \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-     --data-binary '{
-         "document_id": "4fb0cd625f9311efba4a0242ac120006"
-     }'
-```
-
-#### Request parameters
-
-- `dataset_id`: (*PATH parameter*)
-    The dataset id
-- `"document_id"`: (*Path parameter*)
-   The document id of the file.
-
-### Response
-
-The successful response includes a JSON object like the following:
-
-```shell
-{
-    "code": 0,
-    "data": {
-        "chunk_count": 0,
-        "create_date": "Wed, 18 Sep 2024 06:40:58 GMT",
-        "create_time": 1726641658660,
-        "created_by": "134408906b6811efbcd20242ac120005",
-        "id": "f6b170ac758811efa0660242ac120004",
-        "knowledgebase_id": "779333c0758611ef910f0242ac120004",
-        "location": "story.txt",
-        "name": "story.txt",
-        "parser_config": {
-            "chunk_token_count": 128,
-            "delimiter": "\n!?。；！？",
-            "layout_recognize": true,
-            "task_page_size": 12
-        },
-        "parser_method": "naive",
-        "process_begin_at": null,
-        "process_duation": 0.0,
-        "progress": 0.0,
-        "progress_msg": "",
-        "run": "0",
-        "size": 0,
-        "source_type": "local",
-        "status": "1",
-        "thumbnail": null,
-        "token_count": 0,
-        "type": "doc",
-        "update_date": "Wed, 18 Sep 2024 06:40:58 GMT",
-        "update_time": 1726641658660
-    },
-}
-```
-  
-The error response includes a JSON object like the following:
-
-```shell
-{
-    "code": 3016,
-    "message": "Can't connect database"
-}
-```
-
-
 ## Update a file information in dataset
 
-**PUT** `/api/v1/dataset/{dataset_id}/document`
+**PUT** `/api/v1/dataset/{dataset_id}/info/{document_id}`
 
 Update a file in a dataset
 
@@ -710,7 +553,7 @@ Update a file in a dataset
 
 ```shell
 curl --request PUT \
-     --url http://{address}//api/v1/dataset/{dataset_id}/info/{document_id} \
+     --url http://{address}/api/v1/dataset/{dataset_id}/info/{document_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --raw '{
@@ -772,7 +615,7 @@ Parse files into chunks in a dataset
 
 ```shell
 curl --request POST \
-     --url http://{address}//api/v1/dataset/{dataset_id}/chunk \
+     --url http://{address}/api/v1/dataset/{dataset_id}/chunk \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --raw '{
@@ -823,7 +666,7 @@ Stop file parsing
 
 ```shell
 curl --request DELETE \
-     --url http://{address}//api/v1/dataset/{dataset_id}/chunk \
+     --url http://{address}/api/v1/dataset/{dataset_id}/chunk \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --raw '{
@@ -856,55 +699,7 @@ The error response includes a JSON object like the following:
 }
 ```
 
-## Check file parsing progress
-
-**GET** `/api/v1/dataset/{dataset_id}/document/{document_id}/progress`
-
-Check document parsing progress
-
-### Request
-
-- Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/progress`
-- Headers:
-  - `content-Type: application/json`
-  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
-#### Request example
-
-```shell
-curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/progress \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-```
-
-#### Request parameters
-
-- `"dataset_id"`: (*Path parameter*)
-- `"document_id"`: (*Path parameter*)
-
-### Response
-
-The successful response includes a JSON object like the following:
-
-```shell
-{
-    "code": 0
-    "progress": "97.5%"
-}
-```
-  
-The error response includes a JSON object like the following:
-
-```shell
-{
-    "code": 3016,
-    "message": "Can't connect database"
-}
-```
-
-## Check document chunk list
+## Get document chunk list
 
 **GET** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
 
@@ -922,7 +717,7 @@ Get document chunk list
 
 ```shell
 curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 ```
@@ -1016,7 +811,7 @@ Delete document chunks
 
 ```shell
 curl --request DELETE \
-     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --raw '{
@@ -1042,7 +837,7 @@ Update document chunk
 
 ```shell
 curl --request PUT \
-     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --raw '{
@@ -1074,7 +869,7 @@ Insert document chunks
 
 ```shell
 curl --request POST \
-     --url http://{address}//api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --raw '{
@@ -1101,7 +896,7 @@ Retrieval test of a dataset
 
 ```shell
 curl --request GET \
-     --url http://{address}//api/v1/dataset/{dataset_id}/retrieval \
+     --url http://{address}/api/v1/dataset/{dataset_id}/retrieval \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --raw '{
@@ -1109,11 +904,11 @@ curl --request GET \
      }'
 ```
 
-## Create chat assistant
+## Create chat
 
 **POST** `/api/v1/chat`
 
-Create a chat assistant
+Create a chat
 
 ### Request
 
@@ -1193,11 +988,11 @@ curl --request POST \
 }'
 ```
 
-## Update chat assistant
+## Update chat
 
 **PUT** `/api/v1/chat`
 
-Update a chat assistant
+Update a chat
 
 ### Request
 
@@ -1218,16 +1013,16 @@ curl --request PUT \
     "name":"Test"
 }'
 
-## Delete chat assistant
+## Delete chat
 
-**DELETE** `/api/v1/chat/{chat_assistant_id}`
+**DELETE** `/api/v1/chat/{chat_id}`
 
-Delete a chat assistant
+Delete a chat
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/chat/{chat_assistant_id}`
+- URL: `/api/v1/chat/{chat_id}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -1240,7 +1035,7 @@ curl --request PUT \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 }'
 
-## List chat assistant
+## List chat
 
 **GET** `/api/v1/chat`
 
@@ -1261,60 +1056,39 @@ curl --request GET \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 
-## Get a chat assistant
-
-**GET** `/api/v1/chat/{chat_assistant_id}`
-
-Get a chat assistant information
-
-### Request
-
-- Method: GET
-- URL: `/api/v1/chat/{chat_assistant_id}`
-- Headers:
-  - `content-Type: application/json`
-  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
-#### Request example
-
-curl --request GET \
-  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005 \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
 ## Create a chat session
 
-**POST** `/api/v1/chat/{chat_assistant_id}/session`
+**POST** `/api/v1/chat/{chat_id}/session`
 
 Create a chat session
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/chat/{chat_assistant_id}/session`
+- URL: `/api/v1/chat/{chat_id}/session`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 
 #### Request example
 curl --request POST \
-  --url http://{address}/api/v1/chat/{chat_assistant_id}/session \
+  --url http://{address}/api/v1/chat/{chat_id}/session \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
   --data-binary '{
     "name": "new session"
   }'
 
-## List the sessions of a chat assistant
+## List the sessions of a chat
 
-**GET** `/api/v1/chat/{chat_assistant_id}/session`
+**GET** `/api/v1/chat/{chat_id}/session`
 
-List all the session of a chat assistant
+List all the session of a chat
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/chat/{chat_assistant_id}/session`
+- URL: `/api/v1/chat/{chat_id}/session`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -1325,36 +1099,16 @@ curl --request GET \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 
-## Get a sessions of a chat assistant
-
-**GET** `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
-
-Get a session of a chat assistant
-
-### Request
-
-- Method: GET
-- URL: `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
-- Headers:
-  - `content-Type: application/json`
-  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
-#### Request example
-curl --request GET \
-  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session/791aed9670ea11efbb7e0242ac120007 \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
 ## Delete a chat session
 
-**DELETE** `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+**DELETE** `/api/v1/chat/{chat_id}/session/{session_id}`
 
 Delete a chat session
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+- URL: `/api/v1/chat/{chat_id}/session/{session_id}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -1367,14 +1121,14 @@ curl --request DELETE \
 
 ## Update a chat session
 
-**PUT** `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+**PUT** `/api/v1/chat/{chat_id}/session/{session_id}`
 
 Update a chat session
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/chat/{chat_assistant_id}/session/{session_id}`
+- URL: `/api/v1/chat/{chat_id}/session/{session_id}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
@@ -1388,16 +1142,16 @@ curl --request PUT \
     "name": "Updated session"
   }'
 
-## Chat with a chat assistant session
+## Chat with a chat session
 
-**POST** `/api/v1/chat/{chat_assistant_id}/session/{session_id}/completion`
+**POST** `/api/v1/chat/{chat_id}/session/{session_id}/completion`
 
-Chat with a chat assistant session
+Chat with a chat session
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/chat/{chat_assistant_id}/session/{session_id}/completion`
+- URL: `/api/v1/chat/{chat_id}/session/{session_id}/completion`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
