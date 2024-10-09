@@ -25,6 +25,7 @@ from cachetools import LRUCache, cached
 from ruamel.yaml import YAML
 
 from api.db import FileType
+from api.contants import IMG_BASE64_PREFIX
 
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
 RAG_BASE = os.getenv("RAG_BASE")
@@ -168,23 +169,20 @@ def filename_type(filename):
 
     return FileType.OTHER.value
 
-
-def thumbnail(filename, blob):
+def thumbnail_img(filename, blob):
     filename = filename.lower()
     if re.match(r".*\.pdf$", filename):
         pdf = pdfplumber.open(BytesIO(blob))
         buffered = BytesIO()
         pdf.pages[0].to_image(resolution=32).annotated.save(buffered, format="png")
-        return "data:image/png;base64," + \
-            base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return buffered.getvalue()
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
         image = Image.open(BytesIO(blob))
         image.thumbnail((30, 30))
         buffered = BytesIO()
         image.save(buffered, format="png")
-        return "data:image/png;base64," + \
-            base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return buffered.getvalue()
 
     if re.match(r".*\.(ppt|pptx)$", filename):
         import aspose.slides as slides
@@ -194,11 +192,15 @@ def thumbnail(filename, blob):
                 buffered = BytesIO()
                 presentation.slides[0].get_thumbnail(0.03, 0.03).save(
                     buffered, drawing.imaging.ImageFormat.png)
-                return "data:image/png;base64," + \
-                    base64.b64encode(buffered.getvalue()).decode("utf-8")
+                return buffered.getvalue()
         except Exception as e:
             pass
+    return None
 
+def thumbnail(filename, blob):
+    img = thumbnail_img(filename, blob)
+    return IMG_BASE64_PREFIX + \
+        base64.b64encode(img).decode("utf-8")
 
 def traversal_files(base):
     for root, ds, fs in os.walk(base):
