@@ -146,10 +146,10 @@
    
    $ cd ragflow/docker
    $ chmod +x ./entrypoint.sh
-   $ docker compose --env-file dev.env up -d
+   $ docker compose --env-file full.env up -d
    ```
 
-   > 该版本的核心镜像下大小为 9 GB，可能需要一定时间下载，请耐心等待。如果你想下载并运行特定版本的 docker 镜像，请在 docker/dev.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`，然后运行上述命令。
+   > 该版本的核心镜像下大小为 9 GB，可能需要一定时间下载，请耐心等待。如果你想下载并运行特定版本的 docker 镜像，请在 docker/full.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`，然后运行上述命令。
 
 4. 服务器启动成功后再次确认服务器状态：
 
