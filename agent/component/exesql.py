@@ -16,7 +16,8 @@
 from abc import ABC
 import re
 import pandas as pd
-from peewee import MySQLDatabase, PostgresqlDatabase
+import pymysql
+import psycopg2
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -66,14 +67,14 @@ class ExeSQL(ComponentBase, ABC):
             raise Exception("SQL statement not found!")
 
         if self._param.db_type in ["mysql", "mariadb"]:
-            db = MySQLDatabase(self._param.database, user=self._param.username, host=self._param.host,
-                               port=self._param.port, password=self._param.password)
+            db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
+                                 port=self._param.port, password=self._param.password)
         elif self._param.db_type == 'postgresql':
-            db = PostgresqlDatabase(self._param.database, user=self._param.username, host=self._param.host,
-                                    port=self._param.port, password=self._param.password)
+            db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=self._param.host,
+                                  port=self._param.port, password=self._param.password)
 
         try:
-            db.connect()
+            cursor = db.cursor()
         except Exception as e:
             raise Exception("Database Connection Failed! \n" + str(e))
         sql_res = []
@@ -81,13 +82,13 @@ class ExeSQL(ComponentBase, ABC):
             if not single_sql:
                 continue
             try:
-                query = db.execute_sql(single_sql)
-                if query.rowcount == 0:
-                    sql_res.append({"content": "\nTotal: " + str(query.rowcount) + "\n No record in the database!"})
+                cursor.execute(single_sql)
+                if cursor.rowcount == 0:
+                    sql_res.append({"content": "\nTotal: 0\n No record in the database!"})
                     continue
-                single_res = pd.DataFrame([i for i in query.fetchmany(size=self._param.top_n)])
-                single_res.columns = [i[0] for i in query.description]
-                sql_res.append({"content": "\nTotal: " + str(query.rowcount) + "\n" + single_res.to_markdown()})
+                single_res = pd.DataFrame([i for i in cursor.fetchmany(size=self._param.top_n)])
+                single_res.columns = [i[0] for i in cursor.description]
+                sql_res.append({"content": "\nTotal: " + str(cursor.rowcount) + "\n" + single_res.to_markdown()})
             except Exception as e:
                 sql_res.append({"content": "**Error**:" + str(e) + "\nError SQL Statement:" + single_sql})
                 pass
