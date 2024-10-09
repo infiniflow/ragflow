@@ -49,6 +49,7 @@ import {
   initialJin10Values,
   initialKeywordExtractValues,
   initialMessageValues,
+  initialNoteValues,
   initialPubMedValues,
   initialQWeatherValues,
   initialRelevantValues,
@@ -125,6 +126,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Jin10]: initialJin10Values,
       [Operator.Concentrator]: initialConcentratorValues,
       [Operator.TuShare]: initialTuShareValues,
+      [Operator.Note]: initialNoteValues,
     };
   }, [llmId]);
 
