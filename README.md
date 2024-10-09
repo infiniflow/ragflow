@@ -160,7 +160,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    $ docker compose up -d
    ```
 
-   > The core image is about 9 GB in size and may take a while to load.
+   > The core image is about 1 GB in size and may take a while to load.
 
 4. Check the server status after having the server up and running:
 
