@@ -38,9 +38,9 @@ The unique name of the dataset to create. It must adhere to the following requir
 
 #### avatar: `str`
 
-The url or ???????????????????????? path to the avatar image associated with the created dataset. Defaults to `""`
+Base64 encoding of the avatar. Defaults to `""`
 
-#### tenant_id: `str` ?????????????????
+#### tenant_id: `str` 
 
 The id of the tenant associated with the created dataset is used to identify different users. Defaults to `None`.
 
@@ -55,9 +55,9 @@ The description of the created dataset. Defaults to `""`.
 
 The language setting of the created dataset. Defaults to `"English"`. ????????????
 
-#### embedding_model: `str`       ????????????????
+#### embedding_model: `str`
 
-The specific model or algorithm used by the dataset to generate vector embeddings. Defaults to `""`.
+The specific model used by the dataset to generate vector embeddings. Defaults to `""`.
 
 - If creating a dataset, embedding_model must not be provided.
 - If updating a dataset, embedding_model can't be changed.
@@ -89,12 +89,10 @@ The method used by the dataset to parse and process data.
 The configuration settings for the parser used by the dataset.
 
 ### Returns
-
-- Success: An `infinity.local_infinity.table.LocalTable` object in Python module mode or an `infinity.remote_thrift.table.RemoteTable` object in client-server mode.
-- Failure: `InfinityException`
-  - `error_code`: `int` A non-zero value indicating a specific error condition.
-  - `error_msg`: `str` A message providing additional details about the error.
-
+```python
+DataSet
+description: dataset object
+```
 ### Examples
 
 ```python
@@ -106,19 +104,28 @@ ds = rag.create_dataset(name="kb_1")
 
 ---
 
-## Delete knowledge base
+## Delete knowledge bases
 
 ```python
-DataSet.delete() -> bool
+RAGFlow.delete_dataset(ids: List[str] = None, names: List[str] = None)
 ```
+Deletes knowledge bases. 
+### Parameters
 
-Deletes a knowledge base. 
+#### ids: `List[str]`
 
+The ids of the datasets to be deleted. 
+
+#### names: `List[str]`
+
+The names of the datasets to be deleted. 
+
+Either `ids` or `names` must be provided, but not both.
 ### Returns
 
-`bool`
-
-description:the case of updating an dateset, `True` or `False`.
+```python
+no return
+```
 
 ### Examples
 
@@ -126,8 +133,8 @@ description:the case of updating an dateset, `True` or `False`.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-ds = rag.create_dataset(name="kb_1")
-ds.delete()
+rag.delete_dataset(names=["name_1","name_2"])
+rag.delete_dataset(ids=["id_1","id_2"])
 ```
 
 ---
@@ -139,7 +146,9 @@ RAGFlow.list_datasets(
     page: int = 1, 
     page_size: int = 1024, 
     orderby: str = "create_time", 
-    desc: bool = True
+    desc: bool = True,
+    id: str = None,
+    name: str = None
 ) -> List[DataSet]
 ```
 
@@ -163,6 +172,14 @@ The field by which the records should be sorted. This specifies the attribute or
 
 Whether the sorting should be in descending order. Defaults to `True`.
 
+#### id: `str`
+
+The id of the dataset to be got. Defaults to `None`.
+
+#### name: `str`
+
+The name of the dataset to be got. Defaults to `None`.
+
 ### Returns
 
 ```python
@@ -182,57 +199,17 @@ for ds in rag.list_datasets():
 
 ---
 
-## Retrieve knowledge base
+
+## Update knowledge base 
 
 ```python
-RAGFlow.get_dataset(
-    id: str = None, 
-    name: str = None
-) -> DataSet
-```
-
-Retrieves a knowledge base by name.
-
-### Parameters
-
-#### name: `str`
-
-The name of the dataset to be got. If `id` is not provided,  `name` is required.
-
-#### id: `str`
-
-The id of the dataset to be got. If `name` is not provided,  `id` is required.
-
-### Returns
-
-```python
-DataSet
-description: dataset object
-```
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-ds = rag.get_dataset(name="ragflow")
-print(ds)
-```
-
----
-
-## Save knowledge base configurations
-
-```python
-DataSet.save() -> bool
+DataSet.update(update_message: dict)
 ```
 
 ### Returns
 
 ```python
-bool
-description:the case of updating an dateset, True or False.
+no return
 ```
 
 ### Examples
@@ -242,8 +219,7 @@ from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
 ds = rag.get_dataset(name="kb_1")
-ds.parse_method = "manual"
-ds.save()
+ds.update({"parse_method":"manual", ...}}
 ```
 
 ---

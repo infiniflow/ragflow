@@ -142,3 +142,27 @@ class KnowledgebaseService(CommonService):
     @DB.connection_context()
     def get_all_ids(cls):
         return [m["id"] for m in cls.model.select(cls.model.id).dicts()]
+
+    @classmethod
+    @DB.connection_context()
+    def get_list(cls, joined_tenant_ids, user_id,
+                 page_number, items_per_page, orderby, desc, id , name):
+        kbs = cls.model.select()
+        if id:
+            kbs = kbs.where(cls.model.id == id)
+        if name:
+            kbs = kbs.where(cls.model.name == name)
+        kbs = kbs.where(
+            ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission ==
+                                                            TenantPermission.TEAM.value)) | (
+                     cls.model.tenant_id == user_id))
+            & (cls.model.status == StatusEnum.VALID.value)
+        )
+        if desc:
+            kbs = kbs.order_by(cls.model.getter_by(orderby).desc())
+        else:
+            kbs = kbs.order_by(cls.model.getter_by(orderby).asc())
+
+        kbs = kbs.paginate(page_number, items_per_page)
+
+        return list(kbs.dicts())

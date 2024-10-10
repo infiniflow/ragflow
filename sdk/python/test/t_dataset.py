@@ -24,9 +24,8 @@ class TestDataset(TestSdk):
         ds = rag.create_dataset("ABC")
         if isinstance(ds, DataSet):
             assert ds.name == "ABC", "Name does not match."
-            ds.name = 'DEF'
-            res = ds.save()
-            assert res is True, f"Failed to update dataset, error: {res}"
+            res = ds.update({"name":"DEF"})
+            assert res is None, f"Failed to update dataset, error: {res}"
         else:
             assert False, f"Failed to create dataset, error: {ds}"
 
@@ -38,8 +37,8 @@ class TestDataset(TestSdk):
         ds = rag.create_dataset("MA")
         if isinstance(ds, DataSet):
             assert ds.name == "MA", "Name does not match."
-            res = ds.delete()
-            assert res is True, f"Failed to delete dataset, error: {res}"
+            res = rag.delete_dataset(names=["MA"])
+            assert res is None, f"Failed to delete dataset, error: {res}"
         else:
             assert False, f"Failed to create dataset, error: {ds}"
 
@@ -52,12 +51,3 @@ class TestDataset(TestSdk):
         assert len(list_datasets) > 0, "Do not exist any dataset"
         for ds in list_datasets:
             assert isinstance(ds, DataSet), "Existence type is not dataset."
-
-    def test_get_detail_dataset_with_success(self):
-        """
-        Test getting a dataset's detail with success
-        """
-        rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        ds = rag.get_dataset(name="God")
-        assert isinstance(ds, DataSet), f"Failed to get dataset, error: {ds}."
-        assert ds.name == "God", "Name does not match"

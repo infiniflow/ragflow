@@ -5,63 +5,134 @@
 
 **POST** `/api/v1/dataset`
 
-Creates a dataset with a name. If dataset of the same name already exists, the new dataset will be renamed by RAGFlow automatically.
+Creates a dataset.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/dataset`
+- URL: `http://{address}/api/v1/dataset`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 - Body:
-  - `"dataset_name"`: `string`
+  - `"id"`: `string`
+  - `"name"`: `string`
+  - `"avatar"`: `string`
   - `"tenant_id"`: `string`
+  - `"description"`: `string`
+  - `"language"`: `string`
   - `"embedding_model"`: `string`
-  - `"chunk_count"`: `integer`
+  - `"permission"`: `string`
   - `"document_count"`: `integer`
+  - `"chunk_count"`: `integer`
   - `"parse_method"`: `string`
+  - `"parser_config"`: `Dataset.ParserConfig`
 
 #### Request example
 
-```shell
+```bash
+# "id": id must not be provided.
+# "name": name is required and can't be duplicated.
+# "tenant_id": tenant_id must not be provided.
+# "embedding_model": embedding_model must not be provided.
+# "navie" means general.
 curl --request POST \
-     --url http://{address}/api/v1/dataset \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
-     --data-binary '{
-     "dataset_name": "test",
-     "tenant_id": "4fb0cd625f9311efba4a0242ac120006",
-     "embedding_model": "BAAI/bge--zh-v1.5",
-     "chunk_count": 0,
-     "document_count": 0,
-     "parse_method": "general"
+  --url http://{address}/api/v1/dataset \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
+  --data '{
+  "name": "test",
+  "chunk_count": 0,
+  "document_count": 0,
+  "parse_method": "naive"
 }'
 ```
 
 #### Request parameters
 
-- `"dataset_name"`: (*Body parameter*)
+- `"id"`: (*Body parameter*)  
+    The ID of the created dataset used to uniquely identify different datasets.  
+    - If creating a dataset, `id` must not be provided.
+
+- `"name"`: (*Body parameter*)  
     The name of the dataset, which must adhere to the following requirements:  
-    - Maximum 65,535 characters.
+    - Required when creating a dataset and must be unique.
+    - If updating a dataset, `name` must still be unique.
+
+- `"avatar"`: (*Body parameter*)  
+    Base64 encoding of the avatar.
+
 - `"tenant_id"`: (*Body parameter*)  
-    The ID of the tenant.
+    The ID of the tenant associated with the dataset, used to link it with specific users.  
+    - If creating a dataset, `tenant_id` must not be provided.
+    - If updating a dataset, `tenant_id` cannot be changed.
+
+- `"description"`: (*Body parameter*)  
+    The description of the dataset.
+
+- `"language"`: (*Body parameter*)  
+    The language setting for the dataset.
+
 - `"embedding_model"`: (*Body parameter*)  
-    Embedding model used in the dataset.
-- `"chunk_count"`: (*Body parameter*)  
-    Chunk count of the dataset.
+    Embedding model used in the dataset to generate vector embeddings.  
+    - If creating a dataset, `embedding_model` must not be provided.
+    - If updating a dataset, `embedding_model` cannot be changed.
+
+- `"permission"`: (*Body parameter*)  
+    Specifies who can manipulate the dataset.
+
 - `"document_count"`: (*Body parameter*)  
-    Document count of the dataset.
-- `"parse_mehtod"`: (*Body parameter*)  
-    Parsing method of the dataset.
+    Document count of the dataset.  
+    - If updating a dataset, `document_count` cannot be changed.
+
+- `"chunk_count"`: (*Body parameter*)  
+    Chunk count of the dataset.  
+    - If updating a dataset, `chunk_count` cannot be changed.
+
+- `"parse_method"`: (*Body parameter*)  
+    Parsing method of the dataset.  
+    - If updating `parse_method`, `chunk_count` must be greater than 0.
+
+- `"parser_config"`: (*Body parameter*)  
+    The configuration settings for the dataset parser.
 
 ### Response
 
 The successful response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 0 
+    "code": 0,
+    "data": {
+        "avatar": null,
+        "chunk_count": 0,
+        "create_date": "Thu, 10 Oct 2024 05:57:37 GMT",
+        "create_time": 1728539857641,
+        "created_by": "69736c5e723611efb51b0242ac120007",
+        "description": null,
+        "document_count": 0,
+        "embedding_model": "BAAI/bge-large-zh-v1.5",
+        "id": "8d73076886cc11ef8c270242ac120006",
+        "language": "English",
+        "name": "test_1",
+        "parse_method": "naive",
+        "parser_config": {
+            "pages": [
+                [
+                    1,
+                    1000000
+                ]
+            ]
+        },
+        "permission": "me",
+        "similarity_threshold": 0.2,
+        "status": "1",
+        "tenant_id": "69736c5e723611efb51b0242ac120007",
+        "token_num": 0,
+        "update_date": "Thu, 10 Oct 2024 05:57:37 GMT",
+        "update_time": 1728539857641,
+        "vector_similarity_weight": 0.3
+    }
 }
 ```
 
@@ -71,10 +142,10 @@ The successful response includes a JSON object like the following:
   
 The error response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 3016,
-    "message": "Can't connect database"
+    "code": 102,
+    "message": "Duplicated knowledgebase name in creating dataset."
 }
 ```
 
@@ -82,27 +153,31 @@ The error response includes a JSON object like the following:
 
 **DELETE** `/api/v1/dataset`
 
-Deletes a dataset by its id or name.
+Deletes datasets by ids or names.
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/dataset/{dataset_id}`
+- URL: `http://{address}/api/v1/dataset`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  - Body:
+    - `"names"`: `List[string]`
+    - `"ids"`: `List[string]`
 
 
 #### Request example
 
-```shell
+```bash
+# Either id or name must be provided, but not both.
 curl --request DELETE \
-     --url http://{address}/api/v1/dataset/0 \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-     --data ' {
-        "names": ["ds1", "ds2"]
-     }'
+  --url http://{address}/api/v1/dataset \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
+  --data '{
+  "names": ["test_1", "test_2"]
+  }'
 ```
 
 #### Request parameters
@@ -118,7 +193,7 @@ curl --request DELETE \
 
 The successful response includes a JSON object like the following:
 
-```shell
+```json
 {
     "code": 0 
 }
@@ -130,10 +205,10 @@ The successful response includes a JSON object like the following:
   
 The error response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 3016,
-    "message": "Try to delete non-existent dataset."
+    "code": 102,
+    "message": "You don't own the dataset."
 }
 ```
 
@@ -146,50 +221,47 @@ Updates a dataset by its id.
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/dataset/{dataset_id}`
+- URL: `http://{address}/api/v1/dataset/{dataset_id}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  - Body: (Refer to the "Create Dataset" for the complete structure of the request body.)
 
 
 #### Request example
 
-```shell
+```bash
+# "id":  id is required.
+# "name": If you update name, it can't be duplicated.
+# "tenant_id": If you update tenant_id, it can't be changed
+# "embedding_model": If you update embedding_model, it can't be changed.
+# "chunk_count": If you update chunk_count, it can't be changed.
+# "document_count": If you update document_count, it can't be changed.
+# "parse_method": If you update parse_method, chunk_count must be 0. 
+# "navie" means general.
 curl --request PUT \
-     --url http://{address}/api/v1/dataset/0 \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-     --data-binary '{
-     "dataset_name": "test",
-     "tenant_id": "4fb0cd625f9311efba4a0242ac120006",
-     "embedding_model": "BAAI/bge--zh-v1.5",
-     "chunk_count": 0,
-     "document_count": 0,
-     "parse_method": "general"
+  --url http://{address}/api/v1/dataset/{dataset_id} \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
+  --data '{
+  "name": "test",
+  "tenant_id": "4fb0cd625f9311efba4a0242ac120006",
+  "embedding_model": "BAAI/bge-zh-v1.5",
+  "chunk_count": 0,
+  "document_count": 0,
+  "parse_method": "navie"
 }'
 ```
 
 #### Request parameters
+(Refer to the "Create Dataset" for the complete structure of the request parameters.)
 
-- `"dataset_name"`: (*Body parameter*)
-    The name of the dataset, which must adhere to the following requirements:  
-    - Maximum 65,535 characters.
-- `"tenant_id"`: (*Body parameter*)  
-    The ID of the tenant.
-- `"embedding_model"`: (*Body parameter*)  
-    Embedding model used in the dataset.
-- `"chunk_count"`: (*Body parameter*)  
-    Chunk count of the dataset.
-- `"document_count"`: (*Body parameter*)  
-    Document count of the dataset.
-- `"parse_mehtod"`: (*Body parameter*)  
-    Parsing method of the dataset.
 
 ### Response
 
 The successful response includes a JSON object like the following:
 
-```shell
+```json
 {
     "code": 0 
 }
@@ -201,35 +273,37 @@ The successful response includes a JSON object like the following:
   
 The error response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 3016,
-    "message": "Can't change embedding model since some files already use it."
+    "code": 102,
+    "message": "Can't change tenant_id."
 }
 ```
 
 ## List datasets
 
-**GET** `/api/v1/dataset?name={name}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+**GET** `/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 
 List all datasets
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset?name={name}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+- URL: `http://{address}/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 - Headers:
-  - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 
 
 #### Request example
 
-```shell
+```bash
+# If no page parameter is passed, the default is 1
+# If no page_size parameter is passed, the default is 1024
+# If no order_by parameter is passed, the default is "create_time"
+# If no desc parameter is passed, the default is True
 curl --request GET \
-     --url http://{address}/api/v1/dataset?page=0&page_size=50&orderby=create_time&desc=false \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  --url http://{address}/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 ```
 
 #### Request parameters
@@ -244,54 +318,63 @@ curl --request GET \
     A boolean flag indicating whether the sorting should be in descending order.
 - `name`: (*Path parameter*)
     Dataset name
+- - `"id"`: (*Path parameter*)  
+    The ID of the dataset to be retrieved.
+- `"name"`: (*Path parameter*)  
+    The name of the dataset to be retrieved.
 
 ### Response
 
 The successful response includes a JSON object like the following:
 
-```shell
+```json
 {
     "code": 0,
     "data": [
         {
-          "avatar": "",
-          "chunk_count": 0,
-          "create_date": "Thu, 29 Aug 2024 03:13:07 GMT",
-          "create_time": 1724901187843,
-          "created_by": "4fb0cd625f9311efba4a0242ac120006",
-          "description": "",
-          "document_count": 0,
-          "embedding_model": "BAAI/bge-large-zh-v1.5",
-          "id": "9d3d906665b411ef87d10242ac120006",
-          "language": "English",
-          "name": "Test",
-          "parser_config": {
-              "chunk_token_count": 128,
-              "delimiter": "\n!?。；！？",
-              "layout_recognize": true,
-              "task_page_size": 12
-          },
-          "parse_method": "naive",
-          "permission": "me",
-          "similarity_threshold": 0.2,
-          "status": "1",
-          "tenant_id": "4fb0cd625f9311efba4a0242ac120006",
-          "token_count": 0,
-          "update_date": "Thu, 29 Aug 2024 03:13:07 GMT",
-          "update_time": 1724901187843,
-          "vector_similarity_weight": 0.3
+            "avatar": "",
+            "chunk_count": 59,
+            "create_date": "Sat, 14 Sep 2024 01:12:37 GMT",
+            "create_time": 1726276357324,
+            "created_by": "69736c5e723611efb51b0242ac120007",
+            "description": null,
+            "document_count": 1,
+            "embedding_model": "BAAI/bge-large-zh-v1.5",
+            "id": "6e211ee0723611efa10a0242ac120007",
+            "language": "English",
+            "name": "mysql",
+            "parse_method": "knowledge_graph",
+            "parser_config": {
+                "chunk_token_num": 8192,
+                "delimiter": "\\n!?;。；！？",
+                "entity_types": [
+                    "organization",
+                    "person",
+                    "location",
+                    "event",
+                    "time"
+                ]
+            },
+            "permission": "me",
+            "similarity_threshold": 0.2,
+            "status": "1",
+            "tenant_id": "69736c5e723611efb51b0242ac120007",
+            "token_num": 12744,
+            "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
+            "update_time": 1728533243536,
+            "vector_similarity_weight": 0.3
         }
-    ],
+    ]
 }
 ```
 
   
 The error response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 3016,
-    "message": "Can't access database to get the dataset list."
+    "code": 102,
+    "message": "The dataset doesn't exist"
 }
 ```
 
