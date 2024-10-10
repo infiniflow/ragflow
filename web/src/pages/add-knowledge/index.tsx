@@ -6,19 +6,17 @@ import {
 } from '@/hooks/route-hook';
 import { Breadcrumb } from 'antd';
 import { ItemType } from 'antd/es/breadcrumb/Breadcrumb';
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Outlet, useDispatch, useLocation } from 'umi';
+import { Link, Outlet } from 'umi';
 import Siderbar from './components/knowledge-sidebar';
 import { KnowledgeDatasetRouteKey, KnowledgeRouteKey } from './constant';
 import styles from './index.less';
 
 const KnowledgeAdding = () => {
-  const dispatch = useDispatch();
   const knowledgeBaseId = useKnowledgeBaseId();
 
   const { t } = useTranslation();
-  const location = useLocation();
   const activeKey: KnowledgeRouteKey =
     (useSecondPathName() as KnowledgeRouteKey) || KnowledgeRouteKey.Dataset;
 
@@ -57,23 +55,6 @@ const KnowledgeAdding = () => {
 
     return items;
   }, [activeKey, datasetActiveKey, gotoList, knowledgeBaseId, t]);
-
-  useEffect(() => {
-    const search: string = location.search.slice(1);
-    const map = search.split('&').reduce<Record<string, string>>((obj, cur) => {
-      const [key, value] = cur.split('=');
-      obj[key] = value;
-      return obj;
-    }, {});
-
-    dispatch({
-      type: 'kAModel/updateState',
-      payload: {
-        doc_id: undefined,
-        ...map,
-      },
-    });
-  }, [location, dispatch]);
 
   return (
     <>
