@@ -141,7 +141,6 @@
    > 다음 명령어를 실행하면 *dev* 버전의 RAGFlow Docker 이미지가 자동으로 다운로드됩니다. 특정 Docker 버전을 다운로드하고 실행하려면, **docker/.env** 파일에서 `RAGFLOW_IMAGE`을 원하는 버전으로 업데이트한 후, 예를 들어 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`로 업데이트 한 뒤, 다음 명령어를 실행하세요.
    ```bash
    $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
    $ docker compose up -d
    ```
    

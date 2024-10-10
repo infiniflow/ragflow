@@ -137,7 +137,6 @@
 
    ```bash
    $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
    $ docker compose -f docker-compose.yml up -d
    ```
 
