@@ -137,12 +137,11 @@
 
    ```bash
    $ cd ragflow/docker
-   $ docker compose up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
-   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_IMAGE変数を見つけて、対応するバージョンに変更してください。 例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`として、上記のコマンドを実行してください。
-
-   > コアイメージのサイズは約 1 GB で、ロードに時間がかかる場合があります。
+   > 上記のコマンドは、RAGFlow Slim（`dev-slim`）の開発版 Docker イメージをダウンロードします。RAGFlow Slim の Docker イメージには、埋め込みモデルやPythonライブラリは含まれておらず、サイズは約1GBです。特定のバージョンのDockerイメージをダウンロードするには、**docker/.env** 内の `RAGFlow_IMAGE` 変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim` とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
+   > RAGFlow の Docker イメージ（埋め込みモデルと Python ライブラリを含む）を開発版でダウンロードするには、**docker/.env** 内の`RAGFlow_IMAGE` 変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0` とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
 
 4. サーバーを立ち上げた後、サーバーの状態を確認する:
 
