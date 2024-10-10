@@ -107,7 +107,7 @@ def set_api_key():
             except Exception as e:
                 msg += f"\nFail to access model({model_name}) using this api key." + str(e)
 
-        if embd_passed or chat_passed or rerank_passed:
+        if any([embd_passed, chat_passed, rerank_passed]):
             msg = ''
             break
 
