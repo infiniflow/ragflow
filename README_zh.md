@@ -137,19 +137,12 @@
 
    ```bash
    $ cd ragflow/docker
-   $ docker compose -f docker-compose.yml up -d
+   $ docker compose -f up -d
    ```
 
-   > 运行上述命令会自动下载 RAGFlow 的 slim-dev 版本的 Docker 镜像，该镜像并不包含 embedding 模型以及很多 Python 库，因此镜像大小约 1GB。如果你想下载并运行特定版本的 Docker 镜像，请在 docker/slim.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`，然后再运行上述命令。
-   > 如果您想安装内置 embedding 模型的 dev 版本的 docker 镜像，请运行下面的命令：
+   > 运行上述命令会自动下载 RAGFlow 的 slim-dev 版本的 Docker 镜像，该镜像并不包含 embedding 模型以及一些 Python 库，因此镜像大小约 1GB。如果你想下载并运行特定版本的 Docker 镜像，请在 docker/slim.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`，然后再运行上述命令。
+   > 如果您想安装内置 embedding 模型的 dev 版本的 docker 镜像，需要把docker/.env文件中 RAGFLOW_IMAGE 变量，这样的修改： `RAGFLOW_IMAGE=infiniflow/ragflow:dev`。如果您想指定指定特定版本，则可以修改为：`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`。修改后，再运行上面的命令。注意 dev 版本的 RAGFlow Docker image 大小约 9 GB，可能需要一定时间下载，请耐心等待。
    
-   $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
-   $ docker compose --env-file full.env up -d
-   ```
-
-   > 该版本的核心镜像下大小为 9 GB，可能需要一定时间下载，请耐心等待。如果你想下载并运行特定版本的 docker 镜像，请在 docker/full.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`，然后运行上述命令。
-
 4. 服务器启动成功后再次确认服务器状态：
 
    ```bash
