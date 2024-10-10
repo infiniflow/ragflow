@@ -1,7 +1,6 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import classNames from 'classnames';
@@ -50,7 +49,6 @@ const MessageItem = ({
 }: IProps) => {
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const fileThumbnails = useSelectFileThumbnails();
   const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
   const { data: documentThumbnails, setDocumentIds: setIds } =
     useFetchDocumentThumbnailsByIds();
@@ -77,12 +75,12 @@ const MessageItem = ({
     const ids = item?.doc_ids ?? [];
     if (ids.length) {
       setDocumentIds(ids);
-      const documentIds = ids.filter((x) => !(x in fileThumbnails));
+      const documentIds = ids.filter((x) => !(x in documentThumbnails));
       if (documentIds.length) {
         setIds(documentIds);
       }
     }
-  }, [item.doc_ids, setDocumentIds, setIds, fileThumbnails]);
+  }, [item.doc_ids, setDocumentIds, setIds, documentThumbnails]);
 
   return (
     <div
@@ -184,7 +182,7 @@ const MessageItem = ({
                 renderItem={(item) => {
                   // TODO:
                   const fileThumbnail =
-                    documentThumbnails[item.id] || fileThumbnails[item.id];
+                    documentThumbnails[item.id] || documentThumbnails[item.id];
                   const fileExtension = getExtension(item.name);
                   return (
                     <List.Item>

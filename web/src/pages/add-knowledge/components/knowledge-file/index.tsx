@@ -1,12 +1,11 @@
 import ChunkMethodModal from '@/components/chunk-method-modal';
 import SvgIcon from '@/components/svg-icon';
 import {
-  useSelectDocumentList,
-  useSetDocumentStatus,
+  useFetchNextDocumentList,
+  useSetNextDocumentStatus,
 } from '@/hooks/document-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { useSelectParserList } from '@/hooks/user-setting-hooks';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/document-util';
 import { Divider, Flex, Switch, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -16,8 +15,6 @@ import DocumentToolbar from './document-toolbar';
 import {
   useChangeDocumentParser,
   useCreateEmptyDocument,
-  useFetchDocumentListOnMount,
-  useGetPagination,
   useGetRowSelection,
   useHandleUploadDocument,
   useHandleWebCrawl,
@@ -30,19 +27,19 @@ import RenameModal from './rename-modal';
 import WebCrawlModal from './web-crawl-modal';
 
 import FileUploadModal from '@/components/file-upload-modal';
+import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatDate } from '@/utils/date';
 import styles from './index.less';
 
 const { Text } = Typography;
 
 const KnowledgeFile = () => {
-  const data = useSelectDocumentList();
-  const { fetchDocumentList } = useFetchDocumentListOnMount();
+  const { searchString, documents, pagination, handleInputChange } =
+    useFetchNextDocumentList();
   const parserList = useSelectParserList();
-  const { pagination } = useGetPagination(fetchDocumentList);
-  const onChangeStatus = useSetDocumentStatus();
+  const { setDocumentStatus } = useSetNextDocumentStatus();
   const { toChunk } = useNavigateToOtherPage();
-  const { currentRecord, setRecord } = useSetSelectedRecord();
+  const { currentRecord, setRecord } = useSetSelectedRecord<IDocumentInfo>();
   const {
     renameLoading,
     onRenameOk,
@@ -84,7 +81,7 @@ const KnowledgeFile = () => {
 
   const rowSelection = useGetRowSelection();
 
-  const columns: ColumnsType<IKnowledgeFile> = [
+  const columns: ColumnsType<IDocumentInfo> = [
     {
       title: t('name'),
       dataIndex: 'name',
@@ -138,7 +135,7 @@ const KnowledgeFile = () => {
           <Switch
             checked={status === '1'}
             onChange={(e) => {
-              onChangeStatus(e, id);
+              setDocumentStatus({ status: e, documentId: id });
             }}
           />
         </>
@@ -181,12 +178,13 @@ const KnowledgeFile = () => {
         showCreateModal={showCreateModal}
         showWebCrawlModal={showWebCrawlUploadModal}
         showDocumentUploadModal={showDocumentUploadModal}
+        searchString={searchString}
+        handleInputChange={handleInputChange}
       ></DocumentToolbar>
       <Table
         rowKey="id"
         columns={finalColumns}
-        dataSource={data}
-        // loading={loading}
+        dataSource={documents}
         pagination={pagination}
         rowSelection={rowSelection}
         className={styles.documentTable}

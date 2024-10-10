@@ -1,7 +1,8 @@
 import { getExtension } from '@/utils/document-util';
 import SvgIcon from '../svg-icon';
 
-import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
+import { useFetchDocumentThumbnailsByIds } from '@/hooks/document-hooks';
+import { useEffect } from 'react';
 import styles from './index.less';
 
 interface IProps {
@@ -11,9 +12,14 @@ interface IProps {
 
 const FileIcon = ({ name, id }: IProps) => {
   const fileExtension = getExtension(name);
-  // TODO: replace this line with react query
-  const fileThumbnails = useSelectFileThumbnails();
+
+  const { data: fileThumbnails, setDocumentIds } =
+    useFetchDocumentThumbnailsByIds();
   const fileThumbnail = fileThumbnails[id];
+
+  useEffect(() => {
+    setDocumentIds([id]);
+  }, [id, setDocumentIds]);
 
   return fileThumbnail ? (
     <img src={fileThumbnail} className={styles.thumbnailImg}></img>

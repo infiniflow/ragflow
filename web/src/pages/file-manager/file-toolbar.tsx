@@ -1,5 +1,10 @@
 import { ReactComponent as DeleteIcon } from '@/assets/svg/delete.svg';
+import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/common-hooks';
+import {
+  IListResult,
+  useFetchParentFolderList,
+} from '@/hooks/file-manager-hooks';
 import {
   DownOutlined,
   FileTextOutlined,
@@ -24,11 +29,6 @@ import {
   useSelectBreadcrumbItems,
 } from './hooks';
 
-import SvgIcon from '@/components/svg-icon';
-import {
-  IListResult,
-  useFetchParentFolderList,
-} from '@/hooks/file-manager-hooks';
 import styles from './index.less';
 
 interface IProps
