@@ -32,24 +32,13 @@ class DataSet(Base):
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
 
-    def save(self) -> bool:
-        res = self.post('/dataset/save',
-                        {"id": self.id, "name": self.name, "avatar": self.avatar, "tenant_id": self.tenant_id,
-                         "description": self.description, "language": self.language, "embedding_model": self.embedding_model,
-                         "permission": self.permission,
-                         "document_count": self.document_count, "chunk_count": self.chunk_count, "parse_method": self.parse_method,
-                         "parser_config": self.parser_config.to_json()
-                         })
+    def update(self, update_message: dict):
+        res = self.put(f'/dataset/{self.id}',
+                        update_message)
         res = res.json()
-        if res.get("retmsg") == "success": return True
-        raise Exception(res["retmsg"])
+        if res.get("code") != 0:
+            raise Exception(res["message"])
 
-    def delete(self) -> bool:
-        res = self.rm('/dataset/delete',
-                      {"id": self.id})
-        res = res.json()
-        if res.get("retmsg") == "success": return True
-        raise Exception(res["retmsg"])
 
     def list_docs(self, keywords: Optional[str] = None, offset: int = 0, limit: int = -1) -> List[Document]:
         """
