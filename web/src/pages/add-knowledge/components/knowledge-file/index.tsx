@@ -2,7 +2,7 @@ import ChunkMethodModal from '@/components/chunk-method-modal';
 import SvgIcon from '@/components/svg-icon';
 import {
   useFetchNextDocumentList,
-  useSetDocumentStatus,
+  useSetNextDocumentStatus,
 } from '@/hooks/document-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { useSelectParserList } from '@/hooks/user-setting-hooks';
@@ -37,7 +37,7 @@ const KnowledgeFile = () => {
   const { searchString, documents, pagination, handleInputChange } =
     useFetchNextDocumentList();
   const parserList = useSelectParserList();
-  const onChangeStatus = useSetDocumentStatus();
+  const { setDocumentStatus } = useSetNextDocumentStatus();
   const { toChunk } = useNavigateToOtherPage();
   const { currentRecord, setRecord } = useSetSelectedRecord<IDocumentInfo>();
   const {
@@ -135,7 +135,7 @@ const KnowledgeFile = () => {
           <Switch
             checked={status === '1'}
             onChange={(e) => {
-              onChangeStatus(e, id);
+              setDocumentStatus({ status: e, documentId: id });
             }}
           />
         </>

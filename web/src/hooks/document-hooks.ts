@@ -1,12 +1,13 @@
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import i18n from '@/locales/config';
 import chatService from '@/services/chat-service';
 import kbService from '@/services/knowledge-service';
 import { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { UploadFile } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { UploadFile, message } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useDispatch, useSelector } from 'umi';
@@ -45,23 +46,6 @@ export const useGetChunkHighlights = (selectedChunk: IChunk) => {
   };
 
   return { highlights, setWidthAndHeight };
-};
-
-export const useFetchDocumentList = () => {
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-
-  const dispatch = useDispatch();
-
-  const fetchKfList = useCallback(() => {
-    return dispatch<any>({
-      type: 'kFModel/getKfList',
-      payload: {
-        kb_id: knowledgeId,
-      },
-    });
-  }, [dispatch, knowledgeId]);
-
-  return fetchKfList;
 };
 
 export const useFetchNextDocumentList = () => {
@@ -112,25 +96,35 @@ export const useFetchNextDocumentList = () => {
   };
 };
 
-export const useSetDocumentStatus = () => {
-  const dispatch = useDispatch();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
+export const useSetNextDocumentStatus = () => {
+  const queryClient = useQueryClient();
 
-  const setDocumentStatus = useCallback(
-    (status: boolean, documentId: string) => {
-      dispatch({
-        type: 'kFModel/updateDocumentStatus',
-        payload: {
-          doc_id: documentId,
-          status: Number(status),
-          kb_id: knowledgeId,
-        },
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['updateDocumentStatus'],
+    mutationFn: async ({
+      status,
+      documentId,
+    }: {
+      status: boolean;
+      documentId: string;
+    }) => {
+      const { data } = await kbService.document_change_status({
+        doc_id: documentId,
+        status: Number(status),
       });
+      if (data.retcode === 0) {
+        message.success(i18n.t('message.modified'));
+        queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+      }
+      return data;
     },
-    [dispatch, knowledgeId],
-  );
+  });
 
-  return setDocumentStatus;
+  return { setDocumentStatus: mutateAsync, data, loading };
 };
 
 export const useSelectDocumentList = () => {

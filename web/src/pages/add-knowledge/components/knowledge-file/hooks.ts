@@ -1,7 +1,6 @@
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import {
   useCreateDocument,
-  useFetchDocumentList,
   useRunDocument,
   useSaveDocumentName,
   useSelectRunDocumentLoading,
@@ -15,32 +14,9 @@ import { Pagination } from '@/interfaces/common';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { getUnSupportedFilesCount } from '@/utils/document-util';
 import { PaginationProps, UploadFile } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useDispatch, useNavigate, useSelector } from 'umi';
 import { KnowledgeRouteKey } from './constant';
-
-export const useFetchDocumentListOnMount = () => {
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-  const fetchDocumentList = useFetchDocumentList();
-  const dispatch = useDispatch();
-
-  useEffect(() => {
-    if (knowledgeId) {
-      fetchDocumentList();
-      dispatch({
-        type: 'kFModel/pollGetDocumentList-start',
-        payload: knowledgeId,
-      });
-    }
-    return () => {
-      dispatch({
-        type: 'kFModel/pollGetDocumentList-stop',
-      });
-    };
-  }, [knowledgeId, dispatch, fetchDocumentList]);
-
-  return { fetchDocumentList };
-};
 
 export const useGetPagination = (fetchDocumentList: () => void) => {
   const dispatch = useDispatch();

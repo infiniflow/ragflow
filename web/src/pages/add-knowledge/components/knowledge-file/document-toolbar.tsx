@@ -7,7 +7,7 @@ import { useShowDeleteConfirm, useTranslate } from '@/hooks/common-hooks';
 import {
   useRemoveDocument,
   useRunDocument,
-  useSetDocumentStatus,
+  useSetNextDocumentStatus,
 } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import {
@@ -43,7 +43,7 @@ const DocumentToolbar = ({
   const showDeleteConfirm = useShowDeleteConfirm();
   const runDocumentByIds = useRunDocument();
   const { knowledgeId } = useGetKnowledgeSearchParams();
-  const changeStatus = useSetDocumentStatus();
+  const { setDocumentStatus } = useSetNextDocumentStatus();
 
   const actionItems: MenuProps['items'] = useMemo(() => {
     return [
@@ -107,10 +107,10 @@ const DocumentToolbar = ({
   const onChangeStatus = useCallback(
     (enabled: boolean) => {
       selectedRowKeys.forEach((id) => {
-        changeStatus(enabled, id);
+        setDocumentStatus({ status: enabled, documentId: id });
       });
     },
-    [selectedRowKeys, changeStatus],
+    [selectedRowKeys, setDocumentStatus],
   );
 
   const handleEnableClick = useCallback(() => {

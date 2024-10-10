@@ -4,7 +4,6 @@ import i18n from '@/locales/config';
 import kbService, { getDocumentFile } from '@/services/knowledge-service';
 import { message } from 'antd';
 import omit from 'lodash/omit';
-import pick from 'lodash/pick';
 import { DvaModel } from 'umi';
 
 export interface KFModelState extends BaseState {
@@ -103,20 +102,6 @@ const model: DvaModel<KFModelState> = {
       },
       { type: 'poll', delay: 15000 }, // TODO: Provide type support for this effect
     ],
-    *updateDocumentStatus({ payload = {} }, { call, put }) {
-      const { data } = yield call(
-        kbService.document_change_status,
-        pick(payload, ['doc_id', 'status']),
-      );
-      const { retcode } = data;
-      if (retcode === 0) {
-        message.success(i18n.t('message.modified'));
-        yield put({
-          type: 'getKfList',
-          payload: { kb_id: payload.kb_id },
-        });
-      }
-    },
     *document_rm({ payload = {} }, { call, put }) {
       const { data } = yield call(kbService.document_rm, {
         doc_id: payload.doc_id,
