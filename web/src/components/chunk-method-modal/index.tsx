@@ -1,7 +1,5 @@
 import MaxTokenNumber from '@/components/max-token-number';
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
-import { IKnowledgeFileParserConfig } from '@/interfaces/database/knowledge';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import {
   MinusCircleOutlined,
   PlusOutlined,
@@ -22,6 +20,8 @@ import React, { useEffect, useMemo } from 'react';
 import { useFetchParserListOnMount } from './hooks';
 
 import { useTranslate } from '@/hooks/common-hooks';
+import { IParserConfig } from '@/interfaces/database/document';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import Delimiter from '../delimiter';
 import EntityTypesItem from '../entity-types-item';
 import ExcelToHtml from '../excel-to-html';
@@ -39,7 +39,7 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   ) => void;
   showModal?(): void;
   parserId: string;
-  parserConfig: IKnowledgeFileParserConfig;
+  parserConfig: IParserConfig;
   documentExtension: string;
   documentId: string;
 }
@@ -115,7 +115,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
   useEffect(() => {
     if (visible) {
       const pages =
-        parserConfig.pages?.map((x) => ({ from: x[0], to: x[1] })) ?? [];
+        parserConfig?.pages?.map((x) => ({ from: x[0], to: x[1] })) ?? [];
       form.setFieldsValue({
         pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
         parser_config: omit(parserConfig, 'pages'),

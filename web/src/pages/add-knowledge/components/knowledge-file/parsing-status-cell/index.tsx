@@ -2,7 +2,7 @@ import { ReactComponent as CancelIcon } from '@/assets/svg/cancel.svg';
 import { ReactComponent as RefreshIcon } from '@/assets/svg/refresh.svg';
 import { ReactComponent as RunIcon } from '@/assets/svg/run.svg';
 import { useTranslate } from '@/hooks/common-hooks';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IDocumentInfo } from '@/interfaces/database/document';
 import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -21,7 +21,7 @@ const iconMap = {
 };
 
 interface IProps {
-  record: IKnowledgeFile;
+  record: IDocumentInfo;
 }
 
 const PopoverContent = ({ record }: IProps) => {

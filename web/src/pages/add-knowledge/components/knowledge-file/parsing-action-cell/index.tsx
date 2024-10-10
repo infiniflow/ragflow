@@ -1,6 +1,6 @@
 import { useShowDeleteConfirm, useTranslate } from '@/hooks/common-hooks';
 import { useRemoveDocument } from '@/hooks/document-hooks';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IDocumentInfo } from '@/interfaces/database/document';
 import { api_host } from '@/utils/api';
 import { downloadFile } from '@/utils/file-util';
 import {
@@ -15,8 +15,8 @@ import { isParserRunning } from '../utils';
 import styles from './index.less';
 
 interface IProps {
-  record: IKnowledgeFile;
-  setCurrentRecord: (record: IKnowledgeFile) => void;
+  record: IDocumentInfo;
+  setCurrentRecord: (record: IDocumentInfo) => void;
   showRenameModal: () => void;
   showChangeParserModal: () => void;
 }

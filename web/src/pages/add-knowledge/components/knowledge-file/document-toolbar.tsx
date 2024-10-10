@@ -19,11 +19,7 @@ import {
 } from '@ant-design/icons';
 import { Button, Dropdown, Flex, Input, MenuProps, Space } from 'antd';
 import { useCallback, useMemo } from 'react';
-import {
-  useFetchDocumentListOnMount,
-  useGetPagination,
-  useHandleSearchChange,
-} from './hooks';
+
 import styles from './index.less';
 
 interface IProps {
@@ -31,18 +27,18 @@ interface IProps {
   showCreateModal(): void;
   showWebCrawlModal(): void;
   showDocumentUploadModal(): void;
+  searchString: string;
+  handleInputChange: React.ChangeEventHandler<HTMLInputElement>;
 }
 
 const DocumentToolbar = ({
+  searchString,
   selectedRowKeys,
   showCreateModal,
-  showWebCrawlModal,
   showDocumentUploadModal,
+  handleInputChange,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
-  const { fetchDocumentList } = useFetchDocumentListOnMount();
-  const { setPagination, searchString } = useGetPagination(fetchDocumentList);
-  const { handleInputChange } = useHandleSearchChange(setPagination);
   const removeDocument = useRemoveDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
   const runDocumentByIds = useRunDocument();
@@ -65,19 +61,6 @@ const DocumentToolbar = ({
           </div>
         ),
       },
-      { type: 'divider' },
-      // {
-      //   key: '2',
-      //   onClick: showWebCrawlModal,
-      //   label: (
-      //     <div>
-      //       <Button type="link">
-      //         <FileTextOutlined />
-      //         {t('webCrawl')}
-      //       </Button>
-      //     </div>
-      //   ),
-      // },
       { type: 'divider' },
       {
         key: '3',

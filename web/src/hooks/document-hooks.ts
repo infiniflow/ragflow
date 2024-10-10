@@ -10,6 +10,10 @@ import { UploadFile } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useDispatch, useSelector } from 'umi';
+import {
+  useGetPaginationWithRouter,
+  useHandleSearchChange,
+} from './logic-hooks';
 import { useGetKnowledgeSearchParams } from './route-hook';
 import { useOneNamespaceEffectsLoading } from './store-hooks';
 
@@ -58,6 +62,54 @@ export const useFetchDocumentList = () => {
   }, [dispatch, knowledgeId]);
 
   return fetchKfList;
+};
+
+export const useFetchNextDocumentList = () => {
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { pagination, setPagination } = useGetPaginationWithRouter();
+
+  const { data, isFetching: loading } = useQuery<{
+    docs: IDocumentInfo[];
+    total: number;
+  }>({
+    queryKey: ['fetchDocumentList', searchString, pagination],
+    initialData: { docs: [], total: 0 },
+    refetchInterval: 15000,
+    queryFn: async () => {
+      const ret = await kbService.get_document_list({
+        kb_id: knowledgeId,
+        keywords: searchString,
+        page_size: pagination.pageSize,
+        page: pagination.current,
+      });
+      if (ret.data.retcode === 0) {
+        return ret.data.data;
+      }
+
+      return {
+        docs: [],
+        total: 0,
+      };
+    },
+  });
+
+  const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
+    (e) => {
+      setPagination({ page: 1 });
+      handleInputChange(e);
+    },
+    [handleInputChange, setPagination],
+  );
+
+  return {
+    loading,
+    searchString,
+    documents: data.docs,
+    pagination: { ...pagination, total: data?.total },
+    handleInputChange: onInputChange,
+    setPagination,
+  };
 };
 
 export const useSetDocumentStatus = () => {
