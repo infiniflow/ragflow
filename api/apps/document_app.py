@@ -213,7 +213,7 @@ def list_docs():
 
         for doc_item in docs:
             if doc_item['thumbnail'] and not doc_item['thumbnail'].startswith(IMG_BASE64_PREFIX):
-                doc_item['thumbnail'] = f'/v1/document/image/{kb_id}-{doc_item['thumbnail']}'
+                doc_item['thumbnail'] = f"/v1/document/image/{kb_id}-{doc_item['thumbnail']}"
 
         return get_json_result(data={"total": tol, "docs": docs})
     except Exception as e:
