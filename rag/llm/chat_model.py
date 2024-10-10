@@ -661,7 +661,7 @@ class BedrockChat(Base):
                     modelId=self.model_name,
                     messages=history,
                     inferenceConfig=gen_conf,
-                    system=[{"text": system}] if system else None,
+                    system=[{"text": (system if system else "Answer the user's message.")}]
                 )
                 ans = response["output"]["message"]["content"][0]["text"]
                 return ans, num_tokens_from_string(ans)
@@ -676,7 +676,7 @@ class BedrockChat(Base):
                 modelId=self.model_name,
                 messages=history,
                 inferenceConfig=gen_conf,
-                system=[{"text": system if system else ""}],
+                system=[{"text": (system if system else "Answer the user's message.")}]
             )
 
             # Extract and print the streamed response text in real-time.
