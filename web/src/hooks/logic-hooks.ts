@@ -5,7 +5,6 @@ import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
 import { IAnswer, Message } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { IClientConversation, IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -25,42 +24,9 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'umi';
 import { v4 as uuid } from 'uuid';
-import { useSetModalState, useTranslate } from './common-hooks';
-import { useSetDocumentParser } from './document-hooks';
+import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
-import { useOneNamespaceEffectsLoading } from './store-hooks';
 import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
-
-export const useChangeDocumentParser = (documentId: string) => {
-  const setDocumentParser = useSetDocumentParser();
-
-  const {
-    visible: changeParserVisible,
-    hideModal: hideChangeParserModal,
-    showModal: showChangeParserModal,
-  } = useSetModalState();
-  const loading = useOneNamespaceEffectsLoading('kFModel', [
-    'document_change_parser',
-  ]);
-
-  const onChangeParserOk = useCallback(
-    async (parserId: string, parserConfig: IChangeParserConfigRequestBody) => {
-      const ret = await setDocumentParser(parserId, documentId, parserConfig);
-      if (ret === 0) {
-        hideChangeParserModal();
-      }
-    },
-    [hideChangeParserModal, setDocumentParser, documentId],
-  );
-
-  return {
-    changeParserLoading: loading,
-    onChangeParserOk,
-    changeParserVisible,
-    hideChangeParserModal,
-    showChangeParserModal,
-  };
-};
 
 export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
   const [currentRecord, setCurrentRecord] = useState<T>({} as T);

@@ -1,5 +1,5 @@
 import { useShowDeleteConfirm, useTranslate } from '@/hooks/common-hooks';
-import { useRemoveDocument } from '@/hooks/document-hooks';
+import { useRemoveNextDocument } from '@/hooks/document-hooks';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { api_host } from '@/utils/api';
 import { downloadFile } from '@/utils/file-util';
@@ -30,7 +30,7 @@ const ParsingActionCell = ({
   const documentId = record.id;
   const isRunning = isParserRunning(record.run);
   const { t } = useTranslate('knowledgeDetails');
-  const removeDocument = useRemoveDocument();
+  const { removeDocument } = useRemoveNextDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
 
   const onRmDocument = () => {

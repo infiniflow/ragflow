@@ -93,7 +93,7 @@ export const ParsingStatusCell = ({ record }: IProps) => {
   const label = t(`knowledgeDetails.runningStatus${text}`);
 
   const handleOperationIconClick = () => {
-    handleRunDocumentByIds(record.id, record.kb_id, isRunning);
+    handleRunDocumentByIds(record.id, isRunning);
   };
 
   return (

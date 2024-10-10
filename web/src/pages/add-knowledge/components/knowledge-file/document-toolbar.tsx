@@ -5,11 +5,10 @@ import { ReactComponent as EnableIcon } from '@/assets/svg/enable.svg';
 import { ReactComponent as RunIcon } from '@/assets/svg/run.svg';
 import { useShowDeleteConfirm, useTranslate } from '@/hooks/common-hooks';
 import {
-  useRemoveDocument,
-  useRunDocument,
+  useRemoveNextDocument,
+  useRunNextDocument,
   useSetNextDocumentStatus,
 } from '@/hooks/document-hooks';
-import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import {
   DownOutlined,
   FileOutlined,
@@ -39,10 +38,9 @@ const DocumentToolbar = ({
   handleInputChange,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
-  const removeDocument = useRemoveDocument();
+  const { removeDocument } = useRemoveNextDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
-  const runDocumentByIds = useRunDocument();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const { runDocumentByIds } = useRunNextDocument();
   const { setDocumentStatus } = useSetNextDocumentStatus();
 
   const actionItems: MenuProps['items'] = useMemo(() => {
@@ -88,12 +86,11 @@ const DocumentToolbar = ({
   const runDocument = useCallback(
     (run: number) => {
       runDocumentByIds({
-        doc_ids: selectedRowKeys,
+        documentIds: selectedRowKeys,
         run,
-        knowledgeBaseId: knowledgeId,
       });
     },
-    [runDocumentByIds, selectedRowKeys, knowledgeId],
+    [runDocumentByIds, selectedRowKeys],
   );
 
   const handleRunClick = useCallback(() => {

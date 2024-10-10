@@ -1,5 +1,5 @@
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IChunk } from '@/interfaces/database/knowledge';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import chatService from '@/services/chat-service';
@@ -8,15 +8,17 @@ import { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UploadFile, message } from 'antd';
+import { get } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
-import { useDispatch, useSelector } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { useGetKnowledgeSearchParams } from './route-hook';
-import { useOneNamespaceEffectsLoading } from './store-hooks';
+import {
+  useGetKnowledgeSearchParams,
+  useSetPaginationParams,
+} from './route-hook';
 
 export const useGetDocumentUrl = (documentId?: string) => {
   const getDocumentUrl = useCallback(
@@ -127,181 +129,205 @@ export const useSetNextDocumentStatus = () => {
   return { setDocumentStatus: mutateAsync, data, loading };
 };
 
-export const useSelectDocumentList = () => {
-  const list: IKnowledgeFile[] = useSelector(
-    (state: any) => state.kFModel.data,
-  );
-  return list;
-};
+export const useSaveNextDocumentName = () => {
+  const queryClient = useQueryClient();
 
-export const useSaveDocumentName = () => {
-  const dispatch = useDispatch();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-
-  const saveName = useCallback(
-    (documentId: string, name: string) => {
-      return dispatch<any>({
-        type: 'kFModel/document_rename',
-        payload: {
-          doc_id: documentId,
-          name: name,
-          kb_id: knowledgeId,
-        },
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['saveDocumentName'],
+    mutationFn: async ({
+      name,
+      documentId,
+    }: {
+      name: string;
+      documentId: string;
+    }) => {
+      const { data } = await kbService.document_rename({
+        doc_id: documentId,
+        name: name,
       });
+      if (data.retcode === 0) {
+        message.success(i18n.t('message.renamed'));
+        queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+      }
+      return data.retcode;
     },
-    [dispatch, knowledgeId],
-  );
+  });
 
-  return saveName;
+  return { loading, saveName: mutateAsync, data };
 };
 
-export const useCreateDocument = () => {
-  const dispatch = useDispatch();
+export const useCreateNextDocument = () => {
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const { setPaginationParams, page } = useSetPaginationParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['createDocument'],
+    mutationFn: async (name: string) => {
+      const { data } = await kbService.document_create({
+        name,
+        kb_id: knowledgeId,
+      });
+      if (data.retcode === 0) {
+        if (page === 1) {
+          queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+        } else {
+          setPaginationParams(); // fetch document list
+        }
+
+        message.success(i18n.t('message.created'));
+      }
+      return data.retcode;
+    },
+  });
+
+  return { createDocument: mutateAsync, loading, data };
+};
+
+export const useSetNextDocumentParser = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['setDocumentParser'],
+    mutationFn: async ({
+      parserId,
+      documentId,
+      parserConfig,
+    }: {
+      parserId: string;
+      documentId: string;
+      parserConfig: IChangeParserConfigRequestBody;
+    }) => {
+      const { data } = await kbService.document_change_parser({
+        parser_id: parserId,
+        doc_id: documentId,
+        parser_config: parserConfig,
+      });
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+
+        message.success(i18n.t('message.modified'));
+      }
+      return data.retcode;
+    },
+  });
+
+  return { setDocumentParser: mutateAsync, data, loading };
+};
+
+export const useUploadNextDocument = () => {
+  const queryClient = useQueryClient();
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
-  const createDocument = useCallback(
-    (name: string) => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['uploadDocument'],
+    mutationFn: async (fileList: UploadFile[]) => {
+      const formData = new FormData();
+      formData.append('kb_id', knowledgeId);
+      fileList.forEach((file: any) => {
+        formData.append('file', file);
+      });
+
       try {
-        return dispatch<any>({
-          type: 'kFModel/document_create',
-          payload: {
-            name,
-            kb_id: knowledgeId,
-          },
-        });
-      } catch (errorInfo) {
-        console.log('Failed:', errorInfo);
+        const ret = await kbService.document_upload(formData);
+        const retcode = get(ret, 'data.retcode');
+        if (retcode === 0) {
+          message.success(i18n.t('message.uploaded'));
+        }
+
+        if (retcode === 0 || retcode === 500) {
+          queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+        }
+        return ret?.data;
+      } catch (error) {
+        console.warn(error);
+        return {};
       }
     },
-    [dispatch, knowledgeId],
-  );
+  });
 
-  return createDocument;
+  return { uploadDocument: mutateAsync, loading, data };
 };
 
-export const useSetDocumentParser = () => {
-  const dispatch = useDispatch();
+export const useNextWebCrawl = () => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
-  const setDocumentParser = useCallback(
-    (
-      parserId: string,
-      documentId: string,
-      parserConfig: IChangeParserConfigRequestBody,
-    ) => {
-      try {
-        return dispatch<any>({
-          type: 'kFModel/document_change_parser',
-          payload: {
-            parser_id: parserId,
-            doc_id: documentId,
-            kb_id: knowledgeId,
-            parser_config: parserConfig,
-          },
-        });
-      } catch (errorInfo) {
-        console.log('Failed:', errorInfo);
-      }
-    },
-    [dispatch, knowledgeId],
-  );
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['webCrawl'],
+    mutationFn: async ({ name, url }: { name: string; url: string }) => {
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('url', url);
+      formData.append('kb_id', knowledgeId);
 
-  return setDocumentParser;
+      const ret = await kbService.web_crawl(formData);
+      const retcode = get(ret, 'data.retcode');
+      if (retcode === 0) {
+        message.success(i18n.t('message.uploaded'));
+      }
+
+      return retcode;
+    },
+  });
+
+  return {
+    data,
+    loading,
+    webCrawl: mutateAsync,
+  };
 };
 
-export const useRemoveDocument = () => {
-  const dispatch = useDispatch();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
+export const useRunNextDocument = () => {
+  const queryClient = useQueryClient();
 
-  const removeDocument = useCallback(
-    (documentIds: string[]) => {
-      try {
-        return dispatch<any>({
-          type: 'kFModel/document_rm',
-          payload: {
-            doc_id: documentIds,
-            kb_id: knowledgeId,
-          },
-        });
-      } catch (errorInfo) {
-        console.log('Failed:', errorInfo);
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['runDocumentByIds'],
+    mutationFn: async ({
+      documentIds,
+      run,
+    }: {
+      documentIds: string[];
+      run: number;
+    }) => {
+      const ret = await kbService.document_run({
+        doc_ids: documentIds,
+        run,
+      });
+      const retcode = get(ret, 'data.retcode');
+      if (retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+        message.success(i18n.t('message.operated'));
       }
+
+      return retcode;
     },
-    [dispatch, knowledgeId],
-  );
+  });
 
-  return removeDocument;
-};
-
-export const useUploadDocument = () => {
-  const dispatch = useDispatch();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-
-  const uploadDocument = useCallback(
-    (fileList: UploadFile[]) => {
-      try {
-        return dispatch<any>({
-          type: 'kFModel/upload_document',
-          payload: {
-            fileList,
-            kb_id: knowledgeId,
-          },
-        });
-      } catch (errorInfo) {
-        console.log('Failed:', errorInfo);
-      }
-    },
-    [dispatch, knowledgeId],
-  );
-
-  return uploadDocument;
-};
-
-export const useWebCrawl = () => {
-  const dispatch = useDispatch();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-  return useCallback(
-    (name: string, url: string) => {
-      try {
-        return dispatch<any>({
-          type: 'kFModel/web_crawl',
-          payload: {
-            name,
-            url,
-            kb_id: knowledgeId,
-          },
-        });
-      } catch (errorInfo) {
-        console.log('Failed:', errorInfo);
-      }
-    },
-    [dispatch],
-  );
-};
-
-export const useRunDocument = () => {
-  const dispatch = useDispatch();
-
-  const runDocumentByIds = useCallback(
-    (payload: any) => {
-      try {
-        return dispatch<any>({
-          type: 'kFModel/document_run',
-          payload,
-        });
-      } catch (errorInfo) {
-        console.log('Failed:', errorInfo);
-      }
-    },
-    [dispatch],
-  );
-
-  return runDocumentByIds;
-};
-
-export const useSelectRunDocumentLoading = () => {
-  const loading = useOneNamespaceEffectsLoading('kFModel', ['document_run']);
-  return loading;
+  return { runDocumentByIds: mutateAsync, loading, data };
 };
 
 export const useFetchDocumentInfosByIds = () => {
@@ -342,19 +368,20 @@ export const useFetchDocumentThumbnailsByIds = () => {
 };
 
 export const useRemoveNextDocument = () => {
-  // const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
     mutationKey: ['removeDocument'],
-    mutationFn: async (documentId: string) => {
-      const data = await kbService.document_rm({ doc_id: documentId });
-      // if (data.retcode === 0) {
-      //   queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
-      // }
-      return data;
+    mutationFn: async (documentIds: string | string[]) => {
+      const { data } = await kbService.document_rm({ doc_id: documentIds });
+      if (data.retcode === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+      }
+      return data.retcode;
     },
   });
 
