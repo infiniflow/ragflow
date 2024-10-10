@@ -135,13 +135,17 @@
 
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
+   > 以下のコマンドは、RAGFlow slim（`dev-slim`）の開発版Dockerイメージをダウンロードします。RAGFlow slimのDockerイメージには、埋め込みモデルやPythonライブラリが含まれていないため、サイズは約1GBです。
+
    ```bash
    $ cd ragflow/docker
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > 上記のコマンドは、RAGFlow Slim（`dev-slim`）の開発版 Docker イメージをダウンロードします。RAGFlow Slim の Docker イメージには、埋め込みモデルやPythonライブラリは含まれておらず、サイズは約1GBです。特定のバージョンのDockerイメージをダウンロードするには、**docker/.env** 内の `RAGFlow_IMAGE` 変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim` とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
-   > RAGFlow の Docker イメージ（埋め込みモデルと Python ライブラリを含む）を開発版でダウンロードするには、**docker/.env** 内の`RAGFlow_IMAGE` 変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0` とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
+   > - 特定のバージョンのRAGFlow slim Dockerイメージをダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
+   > - RAGFlowの埋め込みモデルとPythonライブラリを含む開発版Dockerイメージをダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を`RAGFLOW_IMAGE=infiniflow/ragflow:dev`に更新します。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
+   > - 特定のバージョンのRAGFlow Dockerイメージ（埋め込みモデルとPythonライブラリを含む）をダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
+   > **NOTE:** 埋め込みモデルとPythonライブラリを含むRAGFlow Dockerイメージのサイズは約9GBであり、読み込みにかなりの時間がかかる場合があります。
 
 4. サーバーを立ち上げた後、サーバーの状態を確認する:
 
