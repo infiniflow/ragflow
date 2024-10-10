@@ -53,11 +53,12 @@
 - 2024-09-09 エージェントに医療相談テンプレートを追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 - 2024-08-02 [graphrag](https://github.com/microsoft/graphrag) からインスピレーションを得た GraphRAG とマインド マップをサポートします。
-- 2024-07-23 音声ファイルの解析をサポートしました。
-- 2024-07-08 [Graph](./agent/README.md) ベースのワークフローをサポート
-- 2024-06-27 Q&A 解析メソッドで Markdown と Docx をサポートし、Docx ファイルから画像を抽出し、Markdown ファイルからテーブルを抽出します。
-- 2024-05-23 より良いテキスト検索のために [RAPTOR](https://arxiv.org/html/2401.18059v1) をサポート。
 
+## 🎉 続きを楽しみに
+⭐️ リポジトリをスター登録して、エキサイティングな新機能やアップデートを最新の状態に保ちましょう！すべての新しいリリースに関する即時通知を受け取れます！ 🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
 
 ## 🌟 主な特徴
 
@@ -136,13 +137,12 @@
 
    ```bash
    $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
    $ docker compose up -d
    ```
 
-   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_IMAGE変数を見つけて、対応するバージョンに変更してください。 例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`として、上記のコマンドを実行してください。
+   > 上記のコマンドを実行すると、RAGFlowの開発版dockerイメージが自動的にダウンロードされます。 特定のバージョンのDockerイメージをダウンロードして実行したい場合は、docker/.envファイルのRAGFLOW_IMAGE変数を見つけて、対応するバージョンに変更してください。 例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`として、上記のコマンドを実行してください。
 
-   > コアイメージのサイズは約 9 GB で、ロードに時間がかかる場合があります。
+   > コアイメージのサイズは約 1 GB で、ロードに時間がかかる場合があります。
 
 4. サーバーを立ち上げた後、サーバーの状態を確認する:
 
@@ -191,29 +191,29 @@
 > すべてのシステム設定のアップデートを有効にするには、システムの再起動が必要です:
 >
 > ```bash
-> $ docker-compose up -d
+> $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🪛 ソースコードでDockerイメージを作成（埋め込みモデルなし）
+## 🔧 ソースコードでDockerイメージを作成（埋め込みモデルなし）
 
 この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
+## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
 
 この Docker のサイズは約 9GB で、埋め込みモデルを含むため、外部の大モデルサービスのみが必要です。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
@@ -275,7 +275,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ## 📚 ドキュメンテーション
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [User guide](https://ragflow.io/docs/dev/category/guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQ](https://ragflow.io/docs/dev/faq)
 

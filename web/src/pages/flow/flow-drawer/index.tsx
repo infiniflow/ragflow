@@ -3,37 +3,38 @@ import { IModalProps } from '@/interfaces/common';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
-import AkShareForm from '../akshare-form';
-import AnswerForm from '../answer-form';
-import ArXivForm from '../arxiv-form';
-import BaiduFanyiForm from '../baidu-fanyi-form';
-import BaiduForm from '../baidu-form';
-import BeginForm from '../begin-form';
-import BingForm from '../bing-form';
-import CategorizeForm from '../categorize-form';
 import { Operator } from '../constant';
-import DeepLForm from '../deepl-form';
-import DuckDuckGoForm from '../duckduckgo-form';
-import ExeSQLForm from '../exesql-form';
-import GenerateForm from '../generate-form';
-import GithubForm from '../github-form';
-import GoogleForm from '../google-form';
-import GoogleScholarForm from '../google-scholar-form';
+import AkShareForm from '../form/akshare-form';
+import AnswerForm from '../form/answer-form';
+import ArXivForm from '../form/arxiv-form';
+import BaiduFanyiForm from '../form/baidu-fanyi-form';
+import BaiduForm from '../form/baidu-form';
+import BeginForm from '../form/begin-form';
+import BingForm from '../form/bing-form';
+import CategorizeForm from '../form/categorize-form';
+import DeepLForm from '../form/deepl-form';
+import DuckDuckGoForm from '../form/duckduckgo-form';
+import ExeSQLForm from '../form/exesql-form';
+import GenerateForm from '../form/generate-form';
+import GithubForm from '../form/github-form';
+import GoogleForm from '../form/google-form';
+import GoogleScholarForm from '../form/google-scholar-form';
+import Jin10Form from '../form/jin10-form';
+import KeywordExtractForm from '../form/keyword-extract-form';
+import MessageForm from '../form/message-form';
+import PubMedForm from '../form/pubmed-form';
+import QWeatherForm from '../form/qweather-form';
+import RelevantForm from '../form/relevant-form';
+import RetrievalForm from '../form/retrieval-form';
+import RewriteQuestionForm from '../form/rewrite-question-form';
+import SwitchForm from '../form/switch-form';
+import TuShareForm from '../form/tushare-form';
+import WenCaiForm from '../form/wencai-form';
+import WikipediaForm from '../form/wikipedia-form';
+import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
-import KeywordExtractForm from '../keyword-extract-form';
-import MessageForm from '../message-form';
 import OperatorIcon from '../operator-icon';
-import PubMedForm from '../pubmed-form';
-import QWeatherForm from '../qweather-form';
-import RelevantForm from '../relevant-form';
-import RetrievalForm from '../retrieval-form';
-import RewriteQuestionForm from '../rewrite-question-form';
-import SwitchForm from '../switch-form';
-import WenCaiForm from '../wencai-form';
-import WikipediaForm from '../wikipedia-form';
 
-import Jin10Form from '../jin10-form';
-import YahooFinanceForm from '../yahoo-finance-form';
 import styles from './index.less';
 
 interface IProps {
@@ -68,6 +69,7 @@ const FormMap = {
   [Operator.AkShare]: AkShareForm,
   [Operator.YahooFinance]: YahooFinanceForm,
   [Operator.Jin10]: Jin10Form,
+  [Operator.TuShare]: TuShareForm,
 };
 
 const EmptyContent = () => <div>empty</div>;

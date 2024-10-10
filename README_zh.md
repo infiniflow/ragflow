@@ -52,10 +52,13 @@
 - 2024-09-09 在 Agent 中加入医疗问诊模板。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
-- 2024-07-23 支持解析音频文件。
-- 2024-07-08 支持 Agentic RAG: 基于 [Graph](./agent/README.md) 的工作流。
-- 2024-06-27 Q&A 解析方式支持 Markdown 文件和 Docx 文件，支持提取出 Docx 文件中的图片和 Markdown 文件中的表格。
-- 2024-05-23 实现 [RAPTOR](https://arxiv.org/html/2401.18059v1) 提供更好的文本检索。
+
+## 🎉 关注项目
+⭐️点击右上角的 Star 关注RAGFlow，可以获取最新发布的实时通知 !🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
+
 
 ## 🌟 主要功能
 
@@ -134,14 +137,12 @@
 
    ```bash
    $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`，然后运行上述命令。
-
-   > 核心镜像下载大小为 9 GB，可能需要一定时间拉取。请耐心等待。
-
+   > 运行上述命令会自动下载 RAGFlow 的 dev-slim 版本的 Docker 镜像，该镜像并不包含 embedding 模型以及一些 Python 库，因此镜像大小约 1GB。如果你想下载并运行特定版本的 Docker 镜像，请在 docker/slim.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`，然后再运行上述命令。
+   > 如果您想安装内置 embedding 模型的 dev 版本的 docker 镜像，需要把docker/.env文件中 RAGFLOW_IMAGE 变量，这样的修改： `RAGFLOW_IMAGE=infiniflow/ragflow:dev`。如果您想指定指定特定版本，则可以修改为：`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`。修改后，再运行上面的命令。注意 dev 版本的 RAGFlow Docker image 大小约 9 GB，可能需要一定时间下载，请耐心等待。
+   
 4. 服务器启动成功后再次确认服务器状态：
 
    ```bash
@@ -194,26 +195,26 @@
 > $ docker compose -f docker-compose.yml up -d
 > ```
 
-## 🪛 源码编译 Docker 镜像（不含 embedding 模型）
+## 🔧 源码编译 Docker 镜像（不含 embedding 模型）
 
 本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和 embedding 服务。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 源码编译 Docker 镜像（包含 embedding 模型）
+## 🔧 源码编译 Docker 镜像（包含 embedding 模型）
 
 本 Docker 大小约 9 GB 左右。由于已包含 embedding 模型，所以只需依赖外部的大模型服务即可。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
@@ -275,7 +276,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ## 📚 技术文档
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [User guide](https://ragflow.io/docs/dev/category/guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQ](https://ragflow.io/docs/dev/faq)
 

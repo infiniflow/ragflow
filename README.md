@@ -42,8 +42,8 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🪛 [Build the docker image without embedding models](#-build-the-docker-image-without-embedding-models)
-- 🪚 [Build the docker image including embedding models](#-build-the-docker-image-including-embedding-models)
+- 🔧 [Build a docker image without embedding models](#-build-the-docker-image-without-embedding-models)
+- 🔧 [Build a docker image including embedding models](#-build-the-docker-image-including-embedding-models)
 - 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
@@ -72,11 +72,12 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 - 2024-09-09 Adds a medical consultant agent template.
 - 2024-08-22 Support text to SQL statements through RAG.
 - 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.
-- 2024-07-23 Supports audio file parsing.
-- 2024-07-08 Supports workflow based on [Graph](./agent/README.md).
-- 2024-06-27 Supports Markdown and Docx in the Q&A parsing method, extracting images from Docx files, extracting tables from Markdown files.
-- 2024-05-23 Supports [RAPTOR](https://arxiv.org/html/2401.18059v1) for better text retrieval.
 
+## 🎉 Stay Tuned
+⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new releases! 🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
 
 ## 🌟 Key Features
 
@@ -152,14 +153,14 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    ```
 
 3. Build the pre-built Docker images and start up the server:
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_IMAGE` in **docker/.env** to the intended version, for example `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev-slim* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_IMAGE` in **docker/.env** to the intended version, for example `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
    $ docker compose up -d
    ```
 
-   > The core image is about 9 GB in size and may take a while to load.
+   > The core image is about 1 GB in size and may take a while to load.
 
 4. Check the server status after having the server up and running:
 
@@ -170,12 +171,12 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    _The following output confirms a successful launch of the system:_
 
    ```bash
-        ____   ___    ______ ______ __               
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
- 
+
+         ____   ___    ______ ______ __               
+        / __ \ /   |  / ____// ____// /____  _      __
+       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/ 
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
@@ -209,29 +210,29 @@ To update the default HTTP serving port (80), go to [docker-compose.yml](./docke
 Updates to the above configurations require a reboot of all containers to take effect:
 
 > ```bash
-> $ docker-compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🪛 Build the Docker image without embedding models
+## 🔧 Build a Docker image without embedding models
 
 This image is approximately 1 GB in size and relies on external LLM and embedding services.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 Build the Docker image including embedding models
+## 🔧 Build a Docker image including embedding models
 
 This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
@@ -293,7 +294,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ## 📚 Documentation
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [User guide](https://ragflow.io/docs/dev/category/guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQ](https://ragflow.io/docs/dev/faq)
 

@@ -2,6 +2,7 @@
 FROM ubuntu:24.04 AS base
 USER root
 
+ARG ARCH=amd64
 ENV LIGHTEN=1
 
 WORKDIR /ragflow
@@ -9,18 +10,23 @@ WORKDIR /ragflow
 RUN rm -f /etc/apt/apt.conf.d/docker-clean \
     && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked \
     apt update && apt-get --no-install-recommends install -y ca-certificates
 
-# if you located in China, you can use tsinghua mirror to speed up apt
-RUN  sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources
+# If you download Python modules too slow, you can use a pip mirror site to speed up apt and poetry
+RUN sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources
+ENV POETRY_PYPI_MIRROR_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt update && apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -sSL https://install.python-poetry.org | python3 -
+RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked \
+    apt update && apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus python3-pip python3-poetry \
+    && pip3 install --user --break-system-packages poetry-plugin-pypi-mirror --index-url https://pypi.tuna.tsinghua.edu.cn/simple/ \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN curl -o libssl1.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openssl1.0/libssl1.0.0_1.0.2n-1ubuntu5_amd64.deb && dpkg -i libssl1.deb && rm -f libssl1.deb
+# https://forum.aspose.com/t/aspose-slides-for-net-no-usable-version-of-libssl-found-with-linux-server/271344/13
+# aspose-slides on linux/arm64 is unavailable
+RUN if [ "${ARCH}" = "amd64" ]; then \
+        curl -o libssl1.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb && dpkg -i libssl1.deb && rm -f libssl1.deb; \
+    fi
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
@@ -36,21 +42,22 @@ USER root
 
 WORKDIR /ragflow
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=cache,id=ragflow_builder_apt,target=/var/cache/apt,sharing=locked \
     apt update && apt install -y nodejs npm cargo && \
     rm -rf /var/lib/apt/lists/*
 
 COPY web web
-RUN cd web && npm i --force && npm run build
+RUN --mount=type=cache,id=ragflow_builder_npm,target=/root/.npm,sharing=locked \
+    cd web && npm i --force && npm run build
 
 # install dependencies from poetry.lock file
 COPY pyproject.toml poetry.toml poetry.lock ./
 
-RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
+RUN --mount=type=cache,id=ragflow_builder_poetry,target=/root/.cache/pypoetry,sharing=locked \
     if [ "$LIGHTEN" -eq 0 ]; then \
-        /root/.local/bin/poetry install --sync --no-cache --no-root --with=full; \
+        poetry install --sync --no-root --with=full; \
     else \
-        /root/.local/bin/poetry install --sync --no-cache --no-root; \
+        poetry install --sync --no-root; \
     fi
 
 # production stage
@@ -61,7 +68,7 @@ WORKDIR /ragflow
 
 # Install python packages' dependencies
 # cv2 requires libGL.so.1
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=cache,id=ragflow_production_apt,target=/var/cache/apt,sharing=locked \
     apt update && apt install -y --no-install-recommends nginx libgl1 vim less && \
     rm -rf /var/lib/apt/lists/*
 
@@ -82,16 +89,16 @@ RUN --mount=type=bind,source=huggingface.co,target=/huggingface.co \
         /huggingface.co/InfiniFlow/deepdoc \
         | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
 
+# Copy nltk data downloaded via download_deps.py
+COPY nltk_data /root/nltk_data
+
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
 # Copy Python environment and packages
 ENV VIRTUAL_ENV=/ragflow/.venv
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-ENV PATH="${VIRTUAL_ENV}/bin:/root/.local/bin:${PATH}"
-
-# Download nltk data
-RUN python3 -m nltk.downloader wordnet punkt punkt_tab
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 ENV PYTHONPATH=/ragflow/
 

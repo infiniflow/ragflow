@@ -59,14 +59,12 @@
   
 - 2024-08-02: [graphrag](https://github.com/microsoft/graphrag)와 마인드맵에서 영감을 받은 GraphRAG를 지원합니다.
 
-- 2024-07-23: 오디오 파일 분석을 지원합니다.
 
-- 2024-07-08: [Graph](./agent/README.md)를 기반으로 한 워크플로우를 지원합니다.
-
-- 2024-06-27 Q&A 구문 분석 방식에서 Markdown 및 Docx를 지원하고, Docx 파일에서 이미지 추출, Markdown 파일에서 테이블 추출을 지원합니다.
-
-- 2024-05-23: 더 나은 텍스트 검색을 위해 [RAPTOR](https://arxiv.org/html/2401.18059v1)를 지원합니다.
-
+## 🎉 계속 지켜봐 주세요
+⭐️우리의 저장소를 즐겨찾기에 등록하여 흥미로운 새로운 기능과 업데이트를 최신 상태로 유지하세요! 모든 새로운 릴리스에 대한 즉시 알림을 받으세요! 🌟
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
 
 
 ## 🌟 주요 기능
@@ -140,14 +138,13 @@
 
 3. 미리 빌드된 Docker 이미지를 생성하고 서버를 시작하세요:
 
-   > 다음 명령어를 실행하면 *dev* 버전의 RAGFlow Docker 이미지가 자동으로 다운로드됩니다. 특정 Docker 버전을 다운로드하고 실행하려면, **docker/.env** 파일에서 `RAGFLOW_IMAGE`을 원하는 버전으로 업데이트한 후, 예를 들어 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`로 업데이트 한 뒤, 다음 명령어를 실행하세요.
+   > 다음 명령어를 실행하면 *dev* 버전의 RAGFlow Docker 이미지가 자동으로 다운로드됩니다. 특정 Docker 버전을 다운로드하고 실행하려면, **docker/.env** 파일에서 `RAGFLOW_IMAGE`을 원하는 버전으로 업데이트한 후, 예를 들어 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`로 업데이트 한 뒤, 다음 명령어를 실행하세요.
    ```bash
    $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
    $ docker compose up -d
    ```
    
-   > 기본 이미지는 약 9GB 크기이며 로드하는 데 시간이 걸릴 수 있습니다.
+   > 기본 이미지는 약 1GB 크기이며 로드하는 데 시간이 걸릴 수 있습니다.
 
 
 4. 서버가 시작된 후 서버 상태를 확인하세요:
@@ -196,29 +193,29 @@
 > 모든 시스템 구성 업데이트는 적용되기 위해 시스템 재부팅이 필요합니다.
 >
 > ```bash
-> $ docker-compose up -d
+> $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
-## 🪛 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함하지 않음)
+## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함하지 않음)
 
 이 Docker 이미지의 크기는 약 1GB이며, 외부 대형 모델과 임베딩 서비스에 의존합니다.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
-## 🪚 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
+## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
 
 이 Docker의 크기는 약 9GB이며, 이미 임베딩 모델을 포함하고 있으므로 외부 대형 모델 서비스에만 의존하면 됩니다.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub
+pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
@@ -280,7 +277,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ## 📚 문서
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [User guide](https://ragflow.io/docs/dev/category/guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQ](https://ragflow.io/docs/dev/faq)
 

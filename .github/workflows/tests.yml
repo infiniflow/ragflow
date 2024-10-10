@@ -1,0 +1,76 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - 'main'
+      - '*.*.*'
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '*.mdx'
+  pull_request:
+    types: [ opened, synchronize, reopened, labeled ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '*.mdx'
+
+# https://docs.github.com/en/actions/using-jobs/using-concurrency
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ragflow_tests:
+    name: ragflow_tests
+    # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
+    # https://github.com/orgs/community/discussions/26261
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci') }}
+    runs-on: [ "self-hosted", "debug" ]
+    steps:
+      # https://github.com/hmarr/debug-action
+      #- uses: hmarr/debug-action@v2
+
+      - name: Show PR labels
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          if [[ ${{ github.event_name }} == 'pull_request' ]]; then
+            echo "PR labels: ${{ join(github.event.pull_request.labels.*.name, ', ') }}"
+          fi
+
+      - name: Ensure workspace ownership
+        run: echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build ragflow:dev-slim
+        run: |
+          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
+          cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb .
+          sudo docker pull ubuntu:24.04
+          sudo docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+
+      - name: Build ragflow:dev
+        run: |
+          sudo docker build -f Dockerfile -t infiniflow/ragflow:dev .
+
+      - name: Start ragflow:dev-slim
+        run: |
+          sudo docker compose -f docker/docker-compose.yml up -d
+
+      - name: Stop ragflow:dev-slim
+        if: always()  # always run this step even if previous steps failed
+        run: |
+          sudo docker compose -f docker/docker-compose.yml down -v
+
+      - name: Start ragflow:dev
+        run: |
+          echo "RAGFLOW_IMAGE=infiniflow/ragflow:dev" >> docker/.env
+          sudo docker compose -f docker/docker-compose.yml up -d
+
+      - name: Stop ragflow:dev
+        if: always()  # always run this step even if previous steps failed
+        run: |
+          sudo docker compose -f docker/docker-compose.yml down -v

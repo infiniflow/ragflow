@@ -42,7 +42,7 @@ RAG_FLOW_SERVICE_NAME = "ragflow"
 SERVER_MODULE = "rag_flow_server.py"
 TEMP_DIRECTORY = os.path.join(get_project_base_directory(), "temp")
 RAG_FLOW_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
-LIGHTEN = os.environ.get('LIGHTEN')
+LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
 
 SUBPROCESS_STD_LOG_NAME = "std.log"
 
