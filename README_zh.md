@@ -137,8 +137,7 @@
 
    ```bash
    $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
-   $ docker compose --env-file slim.env up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
    > 运行上述命令会自动下载 RAGFlow 的 slim-dev 版本的 Docker 镜像，该镜像并不包含 embedding 模型以及很多 Python 库，因此镜像大小约 1GB。如果你想下载并运行特定版本的 Docker 镜像，请在 docker/slim.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`，然后再运行上述命令。
