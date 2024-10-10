@@ -137,13 +137,12 @@
 
    ```bash
    $ cd ragflow/docker
-   $ chmod +x ./entrypoint.sh
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`，然后运行上述命令。
+   > 请注意，运行上述命令会自动下载 RAGFlow 的开发版本 docker 镜像。如果你想下载并运行特定版本的 docker 镜像，请在 docker/.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`，然后运行上述命令。
 
-   > 核心镜像下载大小为 9 GB，可能需要一定时间拉取。请耐心等待。
+   > 核心镜像下载大小为 1 GB，可能需要一定时间拉取。请耐心等待。
 
 4. 服务器启动成功后再次确认服务器状态：
 
@@ -278,7 +277,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ## 📚 技术文档
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [User guide](https://ragflow.io/docs/dev/category/guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQ](https://ragflow.io/docs/dev/faq)
 

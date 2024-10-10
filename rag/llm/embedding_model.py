@@ -143,6 +143,7 @@ class AzureEmbed(OpenAIEmbed):
         from openai.lib.azure import AzureOpenAI
         api_version = kwargs.get("api_version", "2024-02-01")
         self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+
         self.model_name = model_name
 
 

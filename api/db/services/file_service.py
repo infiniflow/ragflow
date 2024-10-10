@@ -26,7 +26,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
-from api.utils.file_utils import filename_type, thumbnail
+from api.utils.file_utils import filename_type, thumbnail_img
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -354,8 +354,15 @@ class FileService(CommonService):
                     location += "_"
                 blob = file.read()
                 STORAGE_IMPL.put(kb.id, location, blob)
+
+                doc_id = get_uuid()
+
+                img = thumbnail_img(filename, blob)
+                thumbnail_location = f'thumbnail_{doc_id}.png'
+                STORAGE_IMPL.put(kb.id, thumbnail_location, img)
+
                 doc = {
-                    "id": get_uuid(),
+                    "id": doc_id,
                     "kb_id": kb.id,
                     "parser_id": self.get_parser(filetype, filename, kb.parser_id),
                     "parser_config": kb.parser_config,
@@ -364,7 +371,7 @@ class FileService(CommonService):
                     "name": filename,
                     "location": location,
                     "size": len(blob),
-                    "thumbnail": thumbnail(filename, blob)
+                    "thumbnail": thumbnail_location
                 }
                 DocumentService.insert(doc)
 

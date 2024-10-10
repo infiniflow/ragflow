@@ -937,6 +937,9 @@ export default {
       startDate: '開始日期',
       endDate: '結束日期',
       keyword: '關鍵字',
+      note: '註解',
+      noteDescription: '註解',
+      notePlaceholder: '請輸入註釋',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

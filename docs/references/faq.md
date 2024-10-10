@@ -75,7 +75,6 @@ $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow
 $ docker build -t infiniflow/ragflow:latest .
 $ cd ragflow/docker
-$ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 

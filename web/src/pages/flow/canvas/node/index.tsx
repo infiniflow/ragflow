@@ -1,4 +1,3 @@
-import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import pick from 'lodash/pick';
@@ -10,12 +9,6 @@ import NodeDropdown from './dropdown';
 import styles from './index.less';
 import NodePopover from './popover';
 
-const ZeroGapOperators = [
-  Operator.RewriteQuestion,
-  Operator.KeywordExtract,
-  Operator.ArXiv,
-];
-
 export function RagNode({
   id,
   data,
@@ -23,7 +16,6 @@ export function RagNode({
   selected,
 }: NodeProps<NodeData>) {
   const style = operatorMap[data.label as Operator];
-  const { t } = useTranslate('flow');
 
   return (
     <NodePopover nodeId={id}>
@@ -51,12 +43,7 @@ export function RagNode({
           id="b"
         ></Handle>
         <Handle type="source" position={Position.Bottom} id="a" isConnectable />
-        <Flex
-          vertical
-          align="center"
-          justify={'space-around'}
-          // gap={ZeroGapOperators.some((x) => x === data.label) ? 0 : 6}
-        >
+        <Flex vertical align="center" justify={'space-around'}>
           <Flex flex={1} justify="center" align="center">
             <label htmlFor=""> </label>
           </Flex>

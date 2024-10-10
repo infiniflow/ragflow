@@ -153,14 +153,14 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    ```
 
 3. Build the pre-built Docker images and start up the server:
-   > Running the following commands automatically downloads the *dev* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_IMAGE` in **docker/.env** to the intended version, for example `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`, before running the following commands.
+   > Running the following commands automatically downloads the *dev-slim* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_IMAGE` in **docker/.env** to the intended version, for example `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`, before running the following commands.
 
    ```bash
    $ cd ragflow/docker
    $ docker compose up -d
    ```
 
-   > The core image is about 9 GB in size and may take a while to load.
+   > The core image is about 1 GB in size and may take a while to load.
 
 4. Check the server status after having the server up and running:
 
@@ -294,7 +294,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ## 📚 Documentation
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/user-guides)
+- [User guide](https://ragflow.io/docs/dev/category/guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQ](https://ragflow.io/docs/dev/faq)
 

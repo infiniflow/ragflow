@@ -6,9 +6,8 @@ import ReactFlow, {
   NodeMouseHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-
-import { ButtonEdge } from './edge';
-
+import ChatDrawer from '../chat/drawer';
+import { Operator } from '../constant';
 import FlowDrawer from '../flow-drawer';
 import {
   useHandleDrop,
@@ -18,13 +17,13 @@ import {
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
-import { RagNode } from './node';
-
-import ChatDrawer from '../chat/drawer';
+import { ButtonEdge } from './edge';
 import styles from './index.less';
+import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { LogicNode } from './node/logic-node';
+import NoteNode from './node/note-node';
 import { RelevantNode } from './node/relevant-node';
 
 const nodeTypes = {
@@ -33,6 +32,7 @@ const nodeTypes = {
   beginNode: BeginNode,
   relevantNode: RelevantNode,
   logicNode: LogicNode,
+  noteNode: NoteNode,
 };
 
 const edgeTypes = {
@@ -60,7 +60,9 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (e, node) => {
-      showDrawer(node);
+      if (node.data.label !== Operator.Note) {
+        showDrawer(node);
+      }
     },
     [showDrawer],
   );
@@ -121,14 +123,7 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
         defaultEdgeOptions={{
           type: 'buttonEdge',
           markerEnd: 'logo',
-          // markerEnd: {
-          //   type: MarkerType.ArrowClosed,
-          //   color: 'rgb(157 149 225)',
-          //   width: 20,
-          //   height: 20,
-          // },
           style: {
-            // edge style
             strokeWidth: 2,
             stroke: 'rgb(202 197 245)',
           },
