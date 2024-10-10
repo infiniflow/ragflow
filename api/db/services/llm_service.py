@@ -105,46 +105,50 @@ class TenantLLMService(CommonService):
         model_with_version = model_config["llm_name"].split('#')
         model_name = model_with_version[0]
         api_version = model_with_version[1] if len(model_with_version) > 1 else None
+        params = {
+            "key": model_config["api_key"],
+            "model_name": model_name,
+            "base_url": model_config["api_base"]
+        }
+
+        if fid == 'Azure-OpenAI':
+            params["api_version"] = api_version
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return
             return EmbeddingModel[model_config["llm_factory"]](
-                model_config["api_key"], model_name, base_url=model_config["api_base"], api_version=api_version)
+                **params)
 
         if llm_type == LLMType.RERANK:
             if model_config["llm_factory"] not in RerankModel:
                 return
             return RerankModel[model_config["llm_factory"]](
-                model_config["api_key"], model_name, base_url=model_config["api_base"])
+                **params)
 
         if llm_type == LLMType.IMAGE2TEXT.value:
             if model_config["llm_factory"] not in CvModel:
                 return
             return CvModel[model_config["llm_factory"]](
-                model_config["api_key"], model_name, lang,
-                base_url=model_config["api_base"]
+                **params
             )
 
         if llm_type == LLMType.CHAT.value:
             if model_config["llm_factory"] not in ChatModel:
                 return
             return ChatModel[model_config["llm_factory"]](
-                model_config["api_key"], model_name, base_url=model_config["api_base"], api_version=api_version)
+                **params)
 
         if llm_type == LLMType.SPEECH2TEXT:
             if model_config["llm_factory"] not in Seq2txtModel:
                 return
             return Seq2txtModel[model_config["llm_factory"]](
-                model_config["api_key"],model_name, lang,
-                base_url=model_config["api_base"]
+                **params
             )
         if llm_type == LLMType.TTS:
             if model_config["llm_factory"] not in TTSModel:
                 return
             return TTSModel[model_config["llm_factory"]](
-                model_config["api_key"],
-                model_name,
-                base_url=model_config["api_base"],
+                **params
             )
 
     @classmethod

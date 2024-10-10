@@ -58,49 +58,58 @@ def set_api_key():
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
     msg = ""
-    default_model=req.get("default_model") if req.get("default_model")!="" else None
-    api_version=req.get("api_version")
-    default_model=default_model+'#'+api_version if factory=='Azure-OpenAI'and default_model else default_model
-    for llm in LLMService.query(fid=factory, llm_name=default_model)[:3]:
-        llm_name = llm.llm_name.split('#')[0] if llm.fid == 'Azure-OpenAI' else llm.llm_name
+    default_model = req.get("default_model")
+    api_version = req.get("api_version")
+    if factory == 'Azure-OpenAI' and default_model:
+        default_model = f"{default_model}#{api_version}"
+
+    for llm in LLMService.query(fid=factory, llm_name=default_model):
+        model_name = llm.llm_name.split('#')[0] if llm.fid == 'Azure-OpenAI' else llm.llm_name
         api_version = llm.llm_name.split('#')[1] if llm.fid == 'Azure-OpenAI' else None
 
+        params = {
+            "key": req["api_key"],
+            "model_name": model_name,
+            "base_url": req.get("base_url")
+        }
+
+        if llm.fid == 'Azure-OpenAI':
+            params["api_version"] = api_version
+
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
-            mdl = EmbeddingModel[factory](
-                req["api_key"], llm_name, base_url=req.get("base_url"), api_version=api_version)
+            mdl = EmbeddingModel[factory](**params)
             try:
                 arr, tc = mdl.encode(["Test if the api key is available"])
                 if len(arr[0]) == 0:
                     raise Exception("Fail")
                 embd_passed = True
-                break
             except Exception as e:
-                msg += f"\nFail to access embedding model({llm_name}) using this api key." + str(e)
+                msg += f"\nFail to access embedding model({model_name}) using this api key." + str(e)
 
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
-            mdl = ChatModel[factory](
-                req["api_key"], llm_name, base_url=req.get("base_url"), api_version=api_version)
+            mdl = ChatModel[factory](**params)
             try:
                 m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}],
                                  {"temperature": 0.9, 'max_tokens': 50})
                 if m.find("**ERROR**") >= 0:
                     raise Exception(m)
                 chat_passed = True
-                break
             except Exception as e:
-                msg += f"\nFail to access model({llm_name}) using this api key." + str(e)
+                msg += f"\nFail to access model({model_name}) using this api key." + str(e)
 
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
-            mdl = RerankModel[factory](
-                req["api_key"], llm_name, base_url=req.get("base_url"))
+            mdl = RerankModel[factory](**params)
             try:
                 arr, tc = mdl.similarity("What's the weather?", ["Is it sunny today?"])
                 if len(arr) == 0 or tc == 0:
                     raise Exception("Fail")
                 rerank_passed = True
-                break
             except Exception as e:
-                msg += f"\nFail to access model({llm_name}) using this api key." + str(e)
+                msg += f"\nFail to access model({model_name}) using this api key." + str(e)
+
+        if embd_passed or chat_passed or rerank_passed:
+            msg = ''
+            break
 
     if msg:
         return get_data_error_result(retmsg=msg)
@@ -114,7 +123,8 @@ def set_api_key():
             llm_config[n] = req[n]
 
     for llm in LLMService.query(fid=factory):
-        llm.llm_name = llm.llm_name.split('#')[0]+'#'+api_version if llm.fid == 'Azure-OpenAI' else llm.llm_name
+        if llm.fid == 'Azure-OpenAI':
+            llm.llm_name = f"{llm.llm_name.split('#')[0]}#{api_version}"
         if not TenantLLMService.filter_update(
                 [TenantLLM.tenant_id == current_user.id,
                  TenantLLM.llm_factory == factory,
@@ -165,7 +175,7 @@ def add_llm():
     elif factory == "LocalAI":
         llm_name = req["llm_name"]+"___LocalAI"
         api_key = "xxxxxxxxxxxxxxx"
-        
+
     elif factory == "HuggingFace":
         llm_name = req["llm_name"]+"___HuggingFace"
         api_key = "xxxxxxxxxxxxxxx"
@@ -210,7 +220,7 @@ def add_llm():
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"], 
+            model_name=llm["llm_name"],
             base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
@@ -234,8 +244,8 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.RERANK:
         mdl = RerankModel[factory](
-            key=llm["api_key"], 
-            model_name=llm["llm_name"], 
+            key=llm["api_key"],
+            model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
         try:
@@ -247,8 +257,8 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
-            key=llm["api_key"], 
-            model_name=llm["llm_name"], 
+            key=llm["api_key"],
+            model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
         try:

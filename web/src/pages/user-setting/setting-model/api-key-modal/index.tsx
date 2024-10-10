@@ -71,19 +71,20 @@ const ApiKeyModal = ({
           <Input />
         </Form.Item>
         {modelsWithBaseUrl.some((x) => x === llmFactory) && (
+          <Form.Item
+            label={t('baseUrl')}
+            name="base_url"
+            tooltip={t('baseUrlTip')}
+          >
+            <Input placeholder="https://api.openai.com/v1" />
+          </Form.Item>
+        )}
+        {llmFactory?.toLowerCase() === 'Azure-OpenAI'.toLowerCase() && (
           <>
-            <Form.Item
-              label={t('baseUrl')}
-              name="base_url"
-              tooltip={t('baseUrlTip')}
-            >
-              <Input placeholder="https://api.openai.com/v1" />
-            </Form.Item>
-
             <Form.Item
               label={t('defaultModel')}
               name="default_model"
-              tooltip={t('defaultModelNameTip')}
+              tooltip={t('defaultModelTip')}
             >
               <Input placeholder="gpt-3.5-turbo" />
             </Form.Item>

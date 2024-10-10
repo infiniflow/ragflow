@@ -18,7 +18,6 @@ from typing import Optional
 import threading
 import requests
 from huggingface_hub import snapshot_download
-from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 import os
 from abc import ABC
@@ -31,8 +30,9 @@ import asyncio
 from api.settings import LIGHTEN
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
-import google.generativeai as genai 
+import google.generativeai as genai
 import json
+
 
 class Base(ABC):
     def __init__(self, key, model_name):
@@ -48,6 +48,7 @@ class Base(ABC):
 class DefaultEmbedding(Base):
     _model = None
     _model_lock = threading.Lock()
+
     def __init__(self, key, model_name, **kwargs):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
@@ -66,12 +67,14 @@ class DefaultEmbedding(Base):
                 import torch
                 if not DefaultEmbedding._model:
                     try:
-                        DefaultEmbedding._model = FlagModel(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
-                                                            query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
-                                                            use_fp16=torch.cuda.is_available())
+                        DefaultEmbedding._model = FlagModel(
+                            os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                            query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
+                            use_fp16=torch.cuda.is_available())
                     except Exception as e:
                         model_dir = snapshot_download(repo_id="BAAI/bge-large-zh-v1.5",
-                                                      local_dir=os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                                                      local_dir=os.path.join(get_home_cache_dir(),
+                                                                             re.sub(r"^[a-zA-Z]+/", "", model_name)),
                                                       local_dir_use_symlinks=False)
                         DefaultEmbedding._model = FlagModel(model_dir,
                                                             query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
@@ -95,7 +98,7 @@ class DefaultEmbedding(Base):
 
 class OpenAIEmbed(Base):
     def __init__(self, key, model_name="text-embedding-ada-002",
-                 base_url="https://api.openai.com/v1",**kwargs):
+                 base_url="https://api.openai.com/v1"):
         if not base_url:
             base_url = "https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
@@ -115,7 +118,7 @@ class OpenAIEmbed(Base):
 
 
 class LocalAIEmbed(Base):
-    def __init__(self, key, model_name, base_url,**kwargs):
+    def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local embedding model url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -137,14 +140,16 @@ class LocalAIEmbed(Base):
 
 class AzureEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, **kwargs):
-        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version=kwargs["api_version"])
+        from openai.lib.azure import AzureOpenAI
+        api_version = kwargs.get("api_version", "2024-02-01")
+        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
 
 
 class BaiChuanEmbed(OpenAIEmbed):
     def __init__(self, key,
                  model_name='Baichuan-Text-Embedding',
-                 base_url='https://api.baichuan-ai.com/v1',**kwargs):
+                 base_url='https://api.baichuan-ai.com/v1'):
         if not base_url:
             base_url = "https://api.baichuan-ai.com/v1"
         super().__init__(key, model_name, base_url)
@@ -175,7 +180,7 @@ class QWenEmbed(Base):
                 token_count += resp["usage"]["total_tokens"]
             return np.array(res), token_count
         except Exception as e:
-            raise Exception("Account abnormal. Please ensure it's on good standing to use QWen's "+self.model_name)
+            raise Exception("Account abnormal. Please ensure it's on good standing to use QWen's " + self.model_name)
         return np.array([]), 0
 
     def encode_queries(self, text):
@@ -188,7 +193,7 @@ class QWenEmbed(Base):
             return np.array(resp["output"]["embeddings"][0]
                             ["embedding"]), resp["usage"]["total_tokens"]
         except Exception as e:
-            raise Exception("Account abnormal. Please ensure it's on good standing to use QWen's "+self.model_name)
+            raise Exception("Account abnormal. Please ensure it's on good standing to use QWen's " + self.model_name)
         return np.array([]), 0
 
 
@@ -269,7 +274,7 @@ class FastEmbed(Base):
 
 
 class XinferenceEmbed(Base):
-    def __init__(self, key, model_name="", base_url="",**kwargs):
+    def __init__(self, key, model_name="", base_url=""):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         self.client = OpenAI(api_key="xxx", base_url=base_url)
@@ -320,8 +325,7 @@ class YoudaoEmbed(Base):
 
 class JinaEmbed(Base):
     def __init__(self, key, model_name="jina-embeddings-v2-base-zh",
-                 base_url="https://api.jina.ai/v1/embeddings",**kwargs):
-
+                 base_url="https://api.jina.ai/v1/embeddings"):
         self.base_url = "https://api.jina.ai/v1/embeddings"
         self.headers = {
             "Content-Type": "application/json",
@@ -351,14 +355,15 @@ class InfinityEmbed(Base):
             self,
             model_names: list[str] = ("BAAI/bge-small-en-v1.5",),
             engine_kwargs: dict = {},
-            key = None,**kwargs
+            key=None,
     ):
 
         from infinity_emb import EngineArgs
         from infinity_emb.engine import AsyncEngineArray
 
         self._default_model = model_names[0]
-        self.engine_array = AsyncEngineArray.from_args([EngineArgs(model_name_or_path = model_name, **engine_kwargs) for model_name in model_names])
+        self.engine_array = AsyncEngineArray.from_args(
+            [EngineArgs(model_name_or_path=model_name, **engine_kwargs) for model_name in model_names])
 
     async def _embed(self, sentences: list[str], model_name: str = ""):
         if not model_name:
@@ -386,7 +391,7 @@ class InfinityEmbed(Base):
 
 class MistralEmbed(Base):
     def __init__(self, key, model_name="mistral-embed",
-                 base_url=None,**kwargs):
+                 base_url=None):
         from mistralai.client import MistralClient
         self.client = MistralClient(api_key=key)
         self.model_name = model_name
@@ -394,13 +399,13 @@ class MistralEmbed(Base):
     def encode(self, texts: list, batch_size=32):
         texts = [truncate(t, 8196) for t in texts]
         res = self.client.embeddings(input=texts,
-                                            model=self.model_name)
+                                     model=self.model_name)
         return np.array([d.embedding for d in res.data]
                         ), res.usage.total_tokens
 
     def encode_queries(self, text):
         res = self.client.embeddings(input=[truncate(text, 8196)],
-                                            model=self.model_name)
+                                     model=self.model_name)
         return np.array(res.data[0].embedding), res.usage.total_tokens
 
 
@@ -447,12 +452,13 @@ class BedrockEmbed(Base):
 
         return np.array(embeddings), token_count
 
+
 class GeminiEmbed(Base):
     def __init__(self, key, model_name='models/text-embedding-004',
                  **kwargs):
         genai.configure(api_key=key)
         self.model_name = 'models/' + model_name
-        
+
     def encode(self, texts: list, batch_size=32):
         texts = [truncate(t, 2048) for t in texts]
         token_count = sum(num_tokens_from_string(text) for text in texts)
@@ -461,20 +467,21 @@ class GeminiEmbed(Base):
             content=texts,
             task_type="retrieval_document",
             title="Embedding of list of strings")
-        return np.array(result['embedding']),token_count
-    
+        return np.array(result['embedding']), token_count
+
     def encode_queries(self, text):
         result = genai.embed_content(
             model=self.model_name,
-            content=truncate(text,2048),
+            content=truncate(text, 2048),
             task_type="retrieval_document",
             title="Embedding of single string")
         token_count = num_tokens_from_string(text)
-        return np.array(result['embedding']),token_count
+        return np.array(result['embedding']), token_count
+
 
 class NvidiaEmbed(Base):
     def __init__(
-        self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings",**kwargs
+            self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"
     ):
         if not base_url:
             base_url = "https://integrate.api.nvidia.com/v1/embeddings"
@@ -512,7 +519,7 @@ class NvidiaEmbed(Base):
 
 
 class LmStudioEmbed(LocalAIEmbed):
-    def __init__(self, key, model_name, base_url,**kwargs):
+    def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -522,7 +529,7 @@ class LmStudioEmbed(LocalAIEmbed):
 
 
 class OpenAI_APIEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url,**kwargs):
+    def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -532,7 +539,7 @@ class OpenAI_APIEmbed(OpenAIEmbed):
 
 
 class CoHereEmbed(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         from cohere import Client
 
         self.client = Client(api_key=key)
@@ -562,21 +569,21 @@ class CoHereEmbed(Base):
 
 
 class TogetherAIEmbed(OllamaEmbed):
-    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1"):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
         super().__init__(key, model_name, base_url)
 
 
 class PerfXCloudEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1"):
         if not base_url:
             base_url = "https://cloud.perfxlab.cn/v1"
         super().__init__(key, model_name, base_url)
 
 
 class UpstageEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar",**kwargs):
+    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar"):
         if not base_url:
             base_url = "https://api.upstage.ai/v1/solar"
         super().__init__(key, model_name, base_url)
@@ -584,7 +591,7 @@ class UpstageEmbed(OpenAIEmbed):
 
 class SILICONFLOWEmbed(Base):
     def __init__(
-        self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings",**kwargs
+            self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"
     ):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1/embeddings"
@@ -619,7 +626,7 @@ class SILICONFLOWEmbed(Base):
 
 
 class ReplicateEmbed(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         from replicate.client import Client
 
         self.model_name = model_name
@@ -635,7 +642,7 @@ class ReplicateEmbed(Base):
 
 
 class BaiduYiyanEmbed(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         import qianfan
 
         key = json.loads(key)
@@ -660,7 +667,7 @@ class BaiduYiyanEmbed(Base):
 
 
 class VoyageEmbed(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         import voyageai
 
         self.client = voyageai.Client(api_key=key)
@@ -676,12 +683,12 @@ class VoyageEmbed(Base):
         res = self.client.embed
         res = self.client.embed(
             texts=text, model=self.model_name, input_type="query"
-            )
+        )
         return np.array(res.embeddings), res.total_tokens
 
 
 class HuggingFaceEmbed(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         if not model_name:
             raise ValueError("Model name cannot be None")
         self.key = key
@@ -714,4 +721,3 @@ class HuggingFaceEmbed(Base):
             return np.array(embedding[0]), num_tokens_from_string(text)
         else:
             raise Exception(f"Error: {response.status_code} - {response.text}")
-

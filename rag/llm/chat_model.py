@@ -86,19 +86,19 @@ class Base(ABC):
 
 
 class GptTurbo(Base):
-    def __init__(self, key, model_name="gpt-3.5-turbo", base_url="https://api.openai.com/v1",**kwargs):
+    def __init__(self, key, model_name="gpt-3.5-turbo", base_url="https://api.openai.com/v1"):
         if not base_url: base_url = "https://api.openai.com/v1"
         super().__init__(key, model_name, base_url)
 
 
 class MoonshotChat(Base):
-    def __init__(self, key, model_name="moonshot-v1-8k", base_url="https://api.moonshot.cn/v1",**kwargs):
+    def __init__(self, key, model_name="moonshot-v1-8k", base_url="https://api.moonshot.cn/v1"):
         if not base_url: base_url = "https://api.moonshot.cn/v1"
         super().__init__(key, model_name, base_url)
 
 
 class XinferenceChat(Base):
-    def __init__(self, key=None, model_name="", base_url="",**kwargs):
+    def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -107,21 +107,20 @@ class XinferenceChat(Base):
 
 
 class DeepSeekChat(Base):
-    def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1",**kwargs):
+    def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1"):
         if not base_url: base_url = "https://api.deepseek.com/v1"
         super().__init__(key, model_name, base_url)
 
 
 class AzureChat(Base):
     def __init__(self, key, model_name, **kwargs):
-        base_url = kwargs["base_url"]
-        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version=kwargs["api_version"])
+        api_version = kwargs.get("api_version", "2024-02-01")
+        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
-        super().__init__(key, model_name, base_url)
 
 
 class BaiChuanChat(Base):
-    def __init__(self, key, model_name="Baichuan3-Turbo", base_url="https://api.baichuan-ai.com/v1",**kwargs):
+    def __init__(self, key, model_name="Baichuan3-Turbo", base_url="https://api.baichuan-ai.com/v1"):
         if not base_url:
             base_url = "https://api.baichuan-ai.com/v1"
         super().__init__(key, model_name, base_url)
@@ -371,7 +370,7 @@ class OllamaChat(Base):
 
 
 class LocalAIChat(Base):
-    def __init__(self, key, model_name, base_url,**kwargs):
+    def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -408,7 +407,7 @@ class LocalLLM(Base):
 
             return do_rpc
 
-    def __init__(self, key, model_name,**kwargs):
+    def __init__(self, key, model_name):
         from jina import Client
 
         self.client = Client(port=12345, protocol="grpc", asyncio=True)
@@ -452,7 +451,7 @@ class LocalLLM(Base):
 
 
 class VolcEngineChat(Base):
-    def __init__(self, key, model_name, base_url='https://ark.cn-beijing.volces.com/api/v3',**kwargs):
+    def __init__(self, key, model_name, base_url='https://ark.cn-beijing.volces.com/api/v3'):
         """
         Since do not want to modify the original database fields, and the VolcEngine authentication method is quite special,
         Assemble ark_api_key, ep_id into api_key, store it as a dictionary type, and parse it for use
@@ -469,7 +468,7 @@ class MiniMaxChat(Base):
             self,
             key,
             model_name,
-            base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",**kwargs
+            base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",
     ):
         if not base_url:
             base_url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
@@ -548,7 +547,7 @@ class MiniMaxChat(Base):
 
 class MistralChat(Base):
 
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         from mistralai.client import MistralClient
         self.client = MistralClient(api_key=key)
         self.model_name = model_name
@@ -633,7 +632,6 @@ class BedrockChat(Base):
                 messages=history,
                 inferenceConfig=gen_conf,
                 system=[{"text": (system if system else "Answer the user's message.")}],
-
             )
 
             # Extract and print the response text.
@@ -664,7 +662,7 @@ class BedrockChat(Base):
                     modelId=self.model_name,
                     messages=history,
                     inferenceConfig=gen_conf,
-                    system=[{"text": system}] if system else None,
+                    system=[{"text": (system if system else "Answer the user's message.")}]
                 )
                 ans = response["output"]["message"]["content"][0]["text"]
                 return ans, num_tokens_from_string(ans)
@@ -679,7 +677,7 @@ class BedrockChat(Base):
                 modelId=self.model_name,
                 messages=history,
                 inferenceConfig=gen_conf,
-                system=[{"text": (system if system else "Answer the user's message.")}],
+                system=[{"text": (system if system else "Answer the user's message.")}]
             )
 
             # Extract and print the streamed response text in real-time.
@@ -696,7 +694,7 @@ class BedrockChat(Base):
 
 class GeminiChat(Base):
 
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         from google.generativeai import client, GenerativeModel
 
         client.configure(api_key=key)
@@ -764,7 +762,7 @@ class GeminiChat(Base):
 
 
 class GroqChat:
-    def __init__(self, key, model_name, base_url='',**kwargs):
+    def __init__(self, key, model_name, base_url=''):
         self.client = Groq(api_key=key)
         self.model_name = model_name
 
@@ -822,28 +820,28 @@ class GroqChat:
 
 ## openrouter
 class OpenRouterChat(Base):
-    def __init__(self, key, model_name, base_url="https://openrouter.ai/api/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://openrouter.ai/api/v1"):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
         super().__init__(key, model_name, base_url)
 
 
 class StepFunChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1"):
         if not base_url:
             base_url = "https://api.stepfun.com/v1"
         super().__init__(key, model_name, base_url)
 
 
 class NvidiaChat(Base):
-    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1"):
         if not base_url:
             base_url = "https://integrate.api.nvidia.com/v1"
         super().__init__(key, model_name, base_url)
 
 
 class LmStudioChat(Base):
-    def __init__(self, key, model_name, base_url,**kwargs):
+    def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -853,7 +851,7 @@ class LmStudioChat(Base):
 
 
 class OpenAI_APIChat(Base):
-    def __init__(self, key, model_name, base_url,**kwargs):
+    def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -863,7 +861,7 @@ class OpenAI_APIChat(Base):
 
 
 class CoHereChat(Base):
-    def __init__(self, key, model_name, base_url="",**kwargs):
+    def __init__(self, key, model_name, base_url=""):
         from cohere import Client
 
         self.client = Client(api_key=key)
@@ -944,56 +942,56 @@ class CoHereChat(Base):
 
 
 class LeptonAIChat(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         if not base_url:
             base_url = os.path.join("https://" + model_name + ".lepton.run", "api", "v1")
         super().__init__(key, model_name, base_url)
 
 
 class TogetherAIChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1"):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
         super().__init__(key, model_name, base_url)
 
 
 class PerfXCloudChat(Base):
-    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1"):
         if not base_url:
             base_url = "https://cloud.perfxlab.cn/v1"
         super().__init__(key, model_name, base_url)
 
 
 class UpstageChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar",**kwargs):
+    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar"):
         if not base_url:
             base_url = "https://api.upstage.ai/v1/solar"
         super().__init__(key, model_name, base_url)
 
 
 class NovitaAIChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai",**kwargs):
+    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai"):
         if not base_url:
             base_url = "https://api.novita.ai/v3/openai"
         super().__init__(key, model_name, base_url)
 
 
 class SILICONFLOWChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1"):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
         super().__init__(key, model_name, base_url)
 
 
 class YiChat(Base):
-    def __init__(self, key, model_name, base_url="https://api.lingyiwanwu.com/v1",**kwargs):
+    def __init__(self, key, model_name, base_url="https://api.lingyiwanwu.com/v1"):
         if not base_url:
             base_url = "https://api.lingyiwanwu.com/v1"
         super().__init__(key, model_name, base_url)
 
 
 class ReplicateChat(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         from replicate.client import Client
 
         self.model_name = model_name
@@ -1044,7 +1042,7 @@ class ReplicateChat(Base):
 
 
 class HunyuanChat(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         from tencentcloud.common import credential
         from tencentcloud.hunyuan.v20230901 import hunyuan_client
 
@@ -1125,7 +1123,7 @@ class HunyuanChat(Base):
 
 class SparkChat(Base):
     def __init__(
-            self, key, model_name, base_url="https://spark-api-open.xf-yun.com/v1",**kwargs
+            self, key, model_name, base_url="https://spark-api-open.xf-yun.com/v1"
     ):
         if not base_url:
             base_url = "https://spark-api-open.xf-yun.com/v1"
@@ -1141,7 +1139,7 @@ class SparkChat(Base):
 
 
 class BaiduYiyanChat(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         import qianfan
 
         key = json.loads(key)
@@ -1209,7 +1207,7 @@ class BaiduYiyanChat(Base):
 
 
 class AnthropicChat(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         import anthropic
 
         self.client = anthropic.Anthropic(api_key=key)
@@ -1273,7 +1271,7 @@ class AnthropicChat(Base):
 
 
 class GoogleChat(Base):
-    def __init__(self, key, model_name, base_url=None,**kwargs):
+    def __init__(self, key, model_name, base_url=None):
         from google.oauth2 import service_account
         import base64
 

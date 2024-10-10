@@ -583,6 +583,8 @@ The above is the content you need to summarize.`,
         'Please add both embedding model and LLM in <b>Settings > Model providers</b>  firstly.',
       defaultModel: 'Default-Model',
       apiVersion: 'API-Version',
+      defaultModelTip: 'Set your default model',
+      apiVersionTip: 'Set your api version',
     },
     message: {
       registered: 'Registered!',
