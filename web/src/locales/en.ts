@@ -581,6 +581,8 @@ The above is the content you need to summarize.`,
       GoogleRegionMessage: 'Please input Google Cloud Region',
       modelProvidersWarn:
         'Please add both embedding model and LLM in <b>Settings > Model providers</b>  firstly.',
+      defaultModel: 'Default-Model',
+      apiVersion: 'API-Version',
     },
     message: {
       registered: 'Registered!',

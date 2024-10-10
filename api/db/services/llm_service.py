@@ -102,24 +102,26 @@ class TenantLLMService(CommonService):
                     if not mdlnm:
                         raise LookupError(f"Type of {llm_type} model is not set.")
                     raise LookupError("Model({}) not authorized".format(mdlnm))
-
+        model_with_version = model_config["llm_name"].split('#')
+        model_name = model_with_version[0]
+        api_version = model_with_version[1] if len(model_with_version) > 1 else None
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return
             return EmbeddingModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
+                model_config["api_key"], model_name, base_url=model_config["api_base"], api_version=api_version)
 
         if llm_type == LLMType.RERANK:
             if model_config["llm_factory"] not in RerankModel:
                 return
             return RerankModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
+                model_config["api_key"], model_name, base_url=model_config["api_base"])
 
         if llm_type == LLMType.IMAGE2TEXT.value:
             if model_config["llm_factory"] not in CvModel:
                 return
             return CvModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"], lang,
+                model_config["api_key"], model_name, lang,
                 base_url=model_config["api_base"]
             )
 
@@ -127,13 +129,13 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in ChatModel:
                 return
             return ChatModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
+                model_config["api_key"], model_name, base_url=model_config["api_base"], api_version=api_version)
 
         if llm_type == LLMType.SPEECH2TEXT:
             if model_config["llm_factory"] not in Seq2txtModel:
                 return
             return Seq2txtModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"], lang,
+                model_config["api_key"],model_name, lang,
                 base_url=model_config["api_base"]
             )
         if llm_type == LLMType.TTS:
@@ -141,7 +143,7 @@ class TenantLLMService(CommonService):
                 return
             return TTSModel[model_config["llm_factory"]](
                 model_config["api_key"],
-                model_config["llm_name"],
+                model_name,
                 base_url=model_config["api_base"],
             )
 

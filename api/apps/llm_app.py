@@ -58,40 +58,49 @@ def set_api_key():
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
     msg = ""
-    for llm in LLMService.query(fid=factory)[:3]:
+    default_model=req.get("default_model") if req.get("default_model")!="" else None
+    api_version=req.get("api_version")
+    default_model=default_model+'#'+api_version if factory=='Azure-OpenAI'and default_model else default_model
+    for llm in LLMService.query(fid=factory, llm_name=default_model)[:3]:
+        llm_name = llm.llm_name.split('#')[0] if llm.fid == 'Azure-OpenAI' else llm.llm_name
+        api_version = llm.llm_name.split('#')[1] if llm.fid == 'Azure-OpenAI' else None
+
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
             mdl = EmbeddingModel[factory](
-                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+                req["api_key"], llm_name, base_url=req.get("base_url"), api_version=api_version)
             try:
                 arr, tc = mdl.encode(["Test if the api key is available"])
                 if len(arr[0]) == 0:
                     raise Exception("Fail")
                 embd_passed = True
+                break
             except Exception as e:
-                msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
+                msg += f"\nFail to access embedding model({llm_name}) using this api key." + str(e)
+
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
             mdl = ChatModel[factory](
-                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+                req["api_key"], llm_name, base_url=req.get("base_url"), api_version=api_version)
             try:
-                m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], 
-                                 {"temperature": 0.9,'max_tokens':50})
-                if m.find("**ERROR**") >=0:
+                m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}],
+                                 {"temperature": 0.9, 'max_tokens': 50})
+                if m.find("**ERROR**") >= 0:
                     raise Exception(m)
+                chat_passed = True
+                break
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
-                    e)
-            chat_passed = True
+                msg += f"\nFail to access model({llm_name}) using this api key." + str(e)
+
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
             mdl = RerankModel[factory](
-                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+                req["api_key"], llm_name, base_url=req.get("base_url"))
             try:
                 arr, tc = mdl.similarity("What's the weather?", ["Is it sunny today?"])
                 if len(arr) == 0 or tc == 0:
                     raise Exception("Fail")
+                rerank_passed = True
+                break
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
-                    e)
-            rerank_passed = True
+                msg += f"\nFail to access model({llm_name}) using this api key." + str(e)
 
     if msg:
         return get_data_error_result(retmsg=msg)
@@ -105,6 +114,7 @@ def set_api_key():
             llm_config[n] = req[n]
 
     for llm in LLMService.query(fid=factory):
+        llm.llm_name = llm.llm_name.split('#')[0]+'#'+api_version if llm.fid == 'Azure-OpenAI' else llm.llm_name
         if not TenantLLMService.filter_update(
                 [TenantLLM.tenant_id == current_user.id,
                  TenantLLM.llm_factory == factory,
@@ -215,7 +225,7 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
+            m, tc = mdl.chat("", [{"role": "user", "content": "Hello! How are you doing!"}], {
                              "temperature": 0.9})
             if not tc:
                 raise Exception(m)

@@ -557,6 +557,8 @@ export default {
       GoogleRegionMessage: '请输入 Google Cloud 区域',
       modelProvidersWarn:
         '请首先在 <b>设置 > 模型提供商</b> 中添加嵌入模型和 LLM。',
+      defaultModel: '默认模型名称',
+      apiVersion: 'API版本',
     },
     message: {
       registered: '注册成功',

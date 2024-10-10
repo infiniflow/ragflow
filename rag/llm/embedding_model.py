@@ -95,7 +95,7 @@ class DefaultEmbedding(Base):
 
 class OpenAIEmbed(Base):
     def __init__(self, key, model_name="text-embedding-ada-002",
-                 base_url="https://api.openai.com/v1"):
+                 base_url="https://api.openai.com/v1",**kwargs):
         if not base_url:
             base_url = "https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
@@ -115,7 +115,7 @@ class OpenAIEmbed(Base):
 
 
 class LocalAIEmbed(Base):
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url,**kwargs):
         if not base_url:
             raise ValueError("Local embedding model url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -137,14 +137,14 @@ class LocalAIEmbed(Base):
 
 class AzureEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, **kwargs):
-        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")
+        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version=kwargs["api_version"])
         self.model_name = model_name
 
 
 class BaiChuanEmbed(OpenAIEmbed):
     def __init__(self, key,
                  model_name='Baichuan-Text-Embedding',
-                 base_url='https://api.baichuan-ai.com/v1'):
+                 base_url='https://api.baichuan-ai.com/v1',**kwargs):
         if not base_url:
             base_url = "https://api.baichuan-ai.com/v1"
         super().__init__(key, model_name, base_url)
@@ -269,7 +269,7 @@ class FastEmbed(Base):
 
 
 class XinferenceEmbed(Base):
-    def __init__(self, key, model_name="", base_url=""):
+    def __init__(self, key, model_name="", base_url="",**kwargs):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         self.client = OpenAI(api_key="xxx", base_url=base_url)
@@ -320,7 +320,7 @@ class YoudaoEmbed(Base):
 
 class JinaEmbed(Base):
     def __init__(self, key, model_name="jina-embeddings-v2-base-zh",
-                 base_url="https://api.jina.ai/v1/embeddings"):
+                 base_url="https://api.jina.ai/v1/embeddings",**kwargs):
 
         self.base_url = "https://api.jina.ai/v1/embeddings"
         self.headers = {
@@ -351,7 +351,7 @@ class InfinityEmbed(Base):
             self,
             model_names: list[str] = ("BAAI/bge-small-en-v1.5",),
             engine_kwargs: dict = {},
-            key = None,
+            key = None,**kwargs
     ):
 
         from infinity_emb import EngineArgs
@@ -386,7 +386,7 @@ class InfinityEmbed(Base):
 
 class MistralEmbed(Base):
     def __init__(self, key, model_name="mistral-embed",
-                 base_url=None):
+                 base_url=None,**kwargs):
         from mistralai.client import MistralClient
         self.client = MistralClient(api_key=key)
         self.model_name = model_name
@@ -474,7 +474,7 @@ class GeminiEmbed(Base):
 
 class NvidiaEmbed(Base):
     def __init__(
-        self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"
+        self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings",**kwargs
     ):
         if not base_url:
             base_url = "https://integrate.api.nvidia.com/v1/embeddings"
@@ -512,7 +512,7 @@ class NvidiaEmbed(Base):
 
 
 class LmStudioEmbed(LocalAIEmbed):
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url,**kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -522,7 +522,7 @@ class LmStudioEmbed(LocalAIEmbed):
 
 
 class OpenAI_APIEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url,**kwargs):
         if not base_url:
             raise ValueError("url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -532,7 +532,7 @@ class OpenAI_APIEmbed(OpenAIEmbed):
 
 
 class CoHereEmbed(Base):
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None,**kwargs):
         from cohere import Client
 
         self.client = Client(api_key=key)
@@ -562,21 +562,21 @@ class CoHereEmbed(Base):
 
 
 class TogetherAIEmbed(OllamaEmbed):
-    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1"):
+    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1",**kwargs):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
         super().__init__(key, model_name, base_url)
 
 
 class PerfXCloudEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1"):
+    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1",**kwargs):
         if not base_url:
             base_url = "https://cloud.perfxlab.cn/v1"
         super().__init__(key, model_name, base_url)
 
 
 class UpstageEmbed(OpenAIEmbed):
-    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar"):
+    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar",**kwargs):
         if not base_url:
             base_url = "https://api.upstage.ai/v1/solar"
         super().__init__(key, model_name, base_url)
@@ -584,7 +584,7 @@ class UpstageEmbed(OpenAIEmbed):
 
 class SILICONFLOWEmbed(Base):
     def __init__(
-        self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"
+        self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings",**kwargs
     ):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1/embeddings"
@@ -619,7 +619,7 @@ class SILICONFLOWEmbed(Base):
 
 
 class ReplicateEmbed(Base):
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None,**kwargs):
         from replicate.client import Client
 
         self.model_name = model_name
@@ -635,7 +635,7 @@ class ReplicateEmbed(Base):
 
 
 class BaiduYiyanEmbed(Base):
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None,**kwargs):
         import qianfan
 
         key = json.loads(key)
@@ -660,7 +660,7 @@ class BaiduYiyanEmbed(Base):
 
 
 class VoyageEmbed(Base):
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None,**kwargs):
         import voyageai
 
         self.client = voyageai.Client(api_key=key)
@@ -681,7 +681,7 @@ class VoyageEmbed(Base):
 
 
 class HuggingFaceEmbed(Base):
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None,**kwargs):
         if not model_name:
             raise ValueError("Model name cannot be None")
         self.key = key
