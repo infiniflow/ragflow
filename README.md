@@ -42,8 +42,8 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🔧 [Build a docker image without embedding models](#-build-the-docker-image-without-embedding-models)
-- 🔧 [Build a docker image including embedding models](#-build-the-docker-image-including-embedding-models)
+- 🔧 [Build a docker image without embedding models](#-build-a-docker-image-without-embedding-models)
+- 🔧 [Build a docker image including embedding models](#-build-a-docker-image-including-embedding-models)
 - 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
@@ -163,7 +163,8 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
    > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`. After making this change, rerun the command above to initiate the download.
    > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlow_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change, rerun the command above to initiate the download.
-   > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`. After making this change, rerun the command above to initiate the download.
+   > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`. After making this change, rerun the command above to initiate the download.  
+   
    > **NOTE:** A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size and may take significantly longer time to load.
 
 4. Check the server status after having the server up and running:
