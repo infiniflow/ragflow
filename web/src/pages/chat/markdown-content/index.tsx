@@ -45,7 +45,7 @@ const MarkdownContent = ({
   }, [content, loading, t]);
 
   useEffect(() => {
-    setDocumentIds(reference?.doc_aggs.map((x) => x.doc_id) ?? []);
+    setDocumentIds(reference?.doc_aggs?.map((x) => x.doc_id) ?? []);
   }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
