@@ -190,6 +190,7 @@ def add_llm():
     elif factory == "Azure-OpenAI":
         llm_name = req["llm_name"]
         api_key = apikey_json(["api_key", "api_version"])
+
     else:
         llm_name = req["llm_name"]
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
