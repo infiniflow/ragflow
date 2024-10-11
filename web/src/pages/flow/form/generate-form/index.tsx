@@ -13,11 +13,10 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 10 }}
-      wrapperCol={{ span: 14 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
       <Form.Item
         name={'llm_id'}

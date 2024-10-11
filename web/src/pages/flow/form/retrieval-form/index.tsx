@@ -24,13 +24,12 @@ const RetrievalForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 12 }}
-      wrapperCol={{ span: 12 }}
       onFinish={onFinish}
       onFinishFailed={onFinishFailed}
       autoComplete="off"
       onValuesChange={onValuesChange}
       form={form}
+      layout={'vertical'}
     >
       <SimilaritySlider
         isTooltipShown

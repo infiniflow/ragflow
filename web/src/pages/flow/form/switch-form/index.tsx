@@ -13,14 +13,6 @@ import { useBuildComponentIdSelectOptions } from '../../hooks';
 import { IOperatorForm, ISwitchForm } from '../../interface';
 import { getOtherFieldValues } from '../../utils';
 
-const subLabelCol = {
-  span: 11,
-};
-
-const subWrapperCol = {
-  span: 13,
-};
-
 const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
   const { t } = useTranslation();
   const buildCategorizeToOptions = useBuildFormSelectOptions(
@@ -53,13 +45,12 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
 
   return (
     <Form
-      labelCol={{ span: 8 }}
-      wrapperCol={{ span: 16 }}
       form={form}
       name="dynamic_form_complex"
       autoComplete="off"
       initialValues={{ conditions: [{}] }}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
       <Form.List name="conditions">
         {(fields, { add, remove }) => (
@@ -125,8 +116,6 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                             <Form.Item
                               label={t('flow.componentId')}
                               name={[subField.name, 'cpn_id']}
-                              labelCol={subLabelCol}
-                              wrapperCol={subWrapperCol}
                             >
                               <Select
                                 placeholder={t('flow.componentId')}
@@ -136,8 +125,6 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                             <Form.Item
                               label={t('flow.operator')}
                               name={[subField.name, 'operator']}
-                              labelCol={subLabelCol}
-                              wrapperCol={subWrapperCol}
                             >
                               <Select
                                 placeholder={t('flow.operator')}
@@ -147,8 +134,6 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                             <Form.Item
                               label={t('flow.value')}
                               name={[subField.name, 'value']}
-                              labelCol={subLabelCol}
-                              wrapperCol={subWrapperCol}
                             >
                               <Input placeholder={t('flow.value')} />
                             </Form.Item>
