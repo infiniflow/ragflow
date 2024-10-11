@@ -161,7 +161,10 @@ def list(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 1024))
     orderby = request.args.get("orderby", "create_time")
-    desc = bool(request.args.get("desc", True))
+    if request.args.get("desc") == "False":
+        desc = False
+    else:
+        desc = True
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
     kbs = KnowledgebaseService.get_list(
         [m["tenant_id"] for m in tenants], tenant_id, page_number, items_per_page, orderby, desc, id, name)
