@@ -29,6 +29,7 @@ import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
 import TencentCloudModal from './Tencent-modal';
 import ApiKeyModal from './api-key-modal';
+import AzureOpenAIModal from './azure-openai-modal';
 import BedrockModal from './bedrock-modal';
 import { IconMap } from './constant';
 import FishAudioModal from './fish-audio-modal';
@@ -37,6 +38,7 @@ import {
   useHandleDeleteFactory,
   useHandleDeleteLlm,
   useSubmitApiKey,
+  useSubmitAzure,
   useSubmitBedrock,
   useSubmitFishAudio,
   useSubmitGoogle,
@@ -109,7 +111,8 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
                 item.name === 'BaiduYiyan' ||
                 item.name === 'Fish Audio' ||
                 item.name === 'Tencent Cloud' ||
-                item.name === 'Google Cloud'
+                item.name === 'Google Cloud' ||
+                item.name === 'Azure OpenAI'
                   ? t('addTheModel')
                   : 'API-Key'}
                 <SettingOutlined />
@@ -242,6 +245,14 @@ const UserSettingModel = () => {
     showBedrockAddingModal,
   } = useSubmitBedrock();
 
+  const {
+    AzureAddingVisible,
+    hideAzureAddingModal,
+    showAzureAddingModal,
+    onAzureAddingOk,
+    AzureAddingLoading,
+  } = useSubmitAzure();
+
   const ModalMap = useMemo(
     () => ({
       Bedrock: showBedrockAddingModal,
@@ -252,6 +263,7 @@ const UserSettingModel = () => {
       'Fish Audio': showFishAudioAddingModal,
       'Tencent Cloud': showTencentCloudAddingModal,
       'Google Cloud': showGoogleAddingModal,
+      'Azure-OpenAI': showAzureAddingModal,
     }),
     [
       showBedrockAddingModal,
@@ -262,6 +274,7 @@ const UserSettingModel = () => {
       showyiyanAddingModal,
       showFishAudioAddingModal,
       showGoogleAddingModal,
+      showAzureAddingModal,
     ],
   );
 
@@ -435,6 +448,13 @@ const UserSettingModel = () => {
         loading={bedrockAddingLoading}
         llmFactory={'Bedrock'}
       ></BedrockModal>
+      <AzureOpenAIModal
+        visible={AzureAddingVisible}
+        hideModal={hideAzureAddingModal}
+        onOk={onAzureAddingOk}
+        loading={AzureAddingLoading}
+        llmFactory={'Azure-OpenAI'}
+      ></AzureOpenAIModal>
     </section>
   );
 };

@@ -619,13 +619,13 @@
                     "model_type": "chat,image2text"
                 },
                 {
-                    "llm_name": "gpt-35-turbo",
+                    "llm_name": "gpt-3.5-turbo",
                     "tags": "LLM,CHAT,4K",
                     "max_tokens": 4096,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "gpt-35-turbo-16k",
+                    "llm_name": "gpt-3.5-turbo-16k",
                     "tags": "LLM,CHAT,16k",
                     "max_tokens": 16385,
                     "model_type": "chat"

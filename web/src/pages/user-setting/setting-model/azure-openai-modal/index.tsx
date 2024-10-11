@@ -1,29 +1,17 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Flex, Form, Input, Modal, Select, Space, Switch } from 'antd';
+import { Form, Input, Modal, Select, Switch } from 'antd';
 import omit from 'lodash/omit';
 
-type FieldType = IAddLlmRequestBody & { vision: boolean };
+type FieldType = IAddLlmRequestBody & {
+  api_version: string;
+  vision: boolean;
+};
 
 const { Option } = Select;
 
-const llmFactoryToUrlMap = {
-  Ollama:
-    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx',
-  Xinference: 'https://inference.readthedocs.io/en/latest/user_guide',
-  LocalAI: 'https://localai.io/docs/getting-started/models/',
-  'LM-Studio': 'https://lmstudio.ai/docs/basics',
-  'OpenAI-API-Compatible': 'https://platform.openai.com/docs/models/gpt-4',
-  TogetherAI: 'https://docs.together.ai/docs/deployment-options',
-  Replicate: 'https://replicate.com/docs/topics/deployments',
-  OpenRouter: 'https://openrouter.ai/docs',
-  HuggingFace:
-    'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
-};
-type LlmFactory = keyof typeof llmFactoryToUrlMap;
-
-const OllamaModal = ({
+const AzureOpenAIModal = ({
   visible,
   hideModal,
   onOk,
@@ -50,28 +38,15 @@ const OllamaModal = ({
 
     onOk?.(data);
   };
-  const url =
-    llmFactoryToUrlMap[llmFactory as LlmFactory] ||
-    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx';
   const optionsMap = {
-    HuggingFace: [{ value: 'embedding', label: 'embedding' }],
-    Xinference: [
-      { value: 'chat', label: 'chat' },
-      { value: 'embedding', label: 'embedding' },
-      { value: 'rerank', label: 'rerank' },
-      { value: 'image2text', label: 'image2text' },
-      { value: 'speech2text', label: 'sequence2text' },
-      { value: 'tts', label: 'tts' },
-    ],
     Default: [
       { value: 'chat', label: 'chat' },
       { value: 'embedding', label: 'embedding' },
-      { value: 'rerank', label: 'rerank' },
       { value: 'image2text', label: 'image2text' },
     ],
   };
   const getOptions = (factory: string) => {
-    return optionsMap[factory as keyof typeof optionsMap] || optionsMap.Default;
+    return optionsMap.Default;
   };
   return (
     <Modal
@@ -80,16 +55,6 @@ const OllamaModal = ({
       onOk={handleOk}
       onCancel={hideModal}
       okButtonProps={{ loading }}
-      footer={(originNode: React.ReactNode) => {
-        return (
-          <Flex justify={'space-between'}>
-            <a href={url} target="_blank" rel="noreferrer">
-              {t('ollamaLink', { name: llmFactory })}
-            </a>
-            <Space>{originNode}</Space>
-          </Flex>
-        );
-      }}
     >
       <Form
         name="basic"
@@ -113,13 +78,6 @@ const OllamaModal = ({
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
-          label={t(llmFactory === 'Xinference' ? 'modelUid' : 'modelName')}
-          name="llm_name"
-          rules={[{ required: true, message: t('modelNameMessage') }]}
-        >
-          <Input placeholder={t('modelNameMessage')} />
-        </Form.Item>
-        <Form.Item<FieldType>
           label={t('addLlmBaseUrl')}
           name="api_base"
           rules={[{ required: true, message: t('baseUrlNameMessage') }]}
@@ -132,6 +90,22 @@ const OllamaModal = ({
           rules={[{ required: false, message: t('apiKeyMessage') }]}
         >
           <Input placeholder={t('apiKeyMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('modelName')}
+          name="llm_name"
+          initialValue="gpt-3.5-turbo"
+          rules={[{ required: true, message: t('modelNameMessage') }]}
+        >
+          <Input placeholder={t('modelNameMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('apiVersion')}
+          name="api_version"
+          initialValue="2024-02-01"
+          rules={[{ required: false, message: t('apiVersionMessage') }]}
+        >
+          <Input placeholder={t('apiVersionMessage')} />
         </Form.Item>
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>
@@ -151,4 +125,4 @@ const OllamaModal = ({
   );
 };
 
-export default OllamaModal;
+export default AzureOpenAIModal;
