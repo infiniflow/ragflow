@@ -332,7 +332,7 @@ def my_llms():
 @login_required
 def list_app():
     self_deploied = ["Youdao","FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
-    weighted = ["Youdao","FastEmbed", "BAAI"] if not LIGHTEN else []
+    weighted = ["Youdao","FastEmbed", "BAAI"] if LIGHTEN != 0 else []
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
