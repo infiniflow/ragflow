@@ -501,17 +501,6 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
 
     for sec, pos in sections:
         add_chunk(sec, pos)
-        continue
-        s, e = 0, 1
-        while e < len(sec):
-            if sec[e] in delimiter:
-                add_chunk(sec[s: e + 1], pos)
-                s = e + 1
-                e = s + 1
-            else:
-                e += 1
-        if s < e:
-            add_chunk(sec[s: e], pos)
 
     return cks
 
