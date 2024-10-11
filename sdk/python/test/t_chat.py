@@ -31,7 +31,7 @@ class TestChat(TestSdk):
         else:
             assert False, f"Failed to create chat, error: {chat}"
 
-    def test_delete_chat_with_success(self):
+    def test_delete_chats_with_success(self):
         """
         Test deleting an chat with success
         """
@@ -40,7 +40,7 @@ class TestChat(TestSdk):
         chat = rag.create_chat("test_delete", knowledgebases=[kb])
         if isinstance(chat, Chat):
             assert chat.name == "test_delete", "Name does not match."
-            res = rag.delete_chat(names=["test_delete"])
+            res = rag.delete_chats(ids=[chat.id])
             assert res is None, f"Failed to delete chat, error: {res}"
         else:
             assert False, f"Failed to create chat, error: {chat}"

@@ -149,11 +149,11 @@ The error response includes a JSON object like the following:
 }
 ```
 
-## Delete dataset
+## Delete datasets
 
 **DELETE** `/api/v1/dataset`
 
-Deletes datasets by ids or names.
+Deletes datasets by ids.
 
 ### Request
 
@@ -163,7 +163,6 @@ Deletes datasets by ids or names.
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
   - Body:
-    - `"names"`: `List[string]`
     - `"ids"`: `List[string]`
 
 
@@ -176,14 +175,12 @@ curl --request DELETE \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
   --data '{
-  "names": ["test_1", "test_2"]
+  "ids": ["test_1", "test_2"]
   }'
 ```
 
 #### Request parameters
 
-- `"names"`: (*Body parameter*)
-    Dataset names to delete.
 - `"ids"`: (*Body parameter*)
     Dataset IDs to delete.
 
@@ -1271,7 +1268,6 @@ Delete chats
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 - Body:
   - `ids`: List[string]
-  - `names`: List[string]
 #### Request example
 ```bash
 # Either id or name must be provided, but not both.
@@ -1280,14 +1276,11 @@ curl --request DELETE \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
   --data '{
-  "names": ["test_1", "test_2"]
+  "ids": ["test_1", "test_2"]
   }'
 }'
 ```
 #### Request parameters:
-- `"names"`: (*Body parameter*)  
-    Names of the chats to be deleted.  
-    - `None`
 
 - `"ids"`: (*Body parameter*)  
     IDs of the chats to be deleted.  
@@ -1303,7 +1296,7 @@ Error
 ```json
 {
     "code": 102,
-    "message": "ids or names is required"
+    "message": "ids are required"
 }
 ```
 

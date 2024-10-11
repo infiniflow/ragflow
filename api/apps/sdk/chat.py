@@ -223,22 +223,11 @@ def update(tenant_id,chat_id):
 def delete(tenant_id):
     req = request.json
     ids = req.get("ids")
-    names = req.get("names")
-    if not ids and not names:
-        return get_error_data_result(retmsg="ids or names is required")
-    id_list=[]
-    if ids:
-        for id in ids:
-            if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
-                return get_error_data_result(retmsg=f"You don't own the chat {id}")
-        id_list.extend(ids)
-    if names:
-        for name in names:
-            chat=DialogService.query(tenant_id=tenant_id, name=name, status=StatusEnum.VALID.value)
-            if not chat:
-                return get_error_data_result(retmsg=f"You don't own the chat {name}")
-            id_list.append(chat[0].id)
-    for id in id_list:
+    if not ids:
+        return get_error_data_result(retmsg="ids are required")
+    for id in ids:
+        if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
+            return get_error_data_result(retmsg=f"You don't own the chat {id}")
         temp_dict = {"status": StatusEnum.INVALID.value}
         DialogService.update_by_id(id, temp_dict)
     return get_result()

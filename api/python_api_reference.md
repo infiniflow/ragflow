@@ -107,7 +107,7 @@ ds = rag.create_dataset(name="kb_1")
 ## Delete knowledge bases
 
 ```python
-RAGFlow.delete_dataset(ids: List[str] = None, names: List[str] = None)
+RAGFlow.delete_datasets(ids: List[str] = None)
 ```
 Deletes knowledge bases. 
 ### Parameters
@@ -115,10 +115,6 @@ Deletes knowledge bases.
 #### ids: `List[str]`
 
 The ids of the datasets to be deleted. 
-
-#### names: `List[str]`
-
-The names of the datasets to be deleted. 
 
 
 ### Returns
@@ -133,8 +129,7 @@ no return
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-rag.delete_dataset(names=["name_1","name_2"])
-rag.delete_dataset(ids=["id_1","id_2"])
+rag.delete_datasets(ids=["id_1","id_2"])
 ```
 
 ---
@@ -818,19 +813,14 @@ assi.update({"temperature":0.8})
 ## Delete chats
 
 ```python
-RAGFlow.delete_chat(ids: List[str] = None, names: List[str] = None)
+RAGFlow.delete_chats(ids: List[str] = None)
 ```
 ### Parameters
 
 #### ids: `str`
 
-IDs of the chat to be deleted. 
+IDs of the chats to be deleted. 
 
-#### names: `str`
-
-Names of the chat to be deleted. 
-
-Either `ids` or `names` must be provided, but not both.
 
 ### Returns
 
@@ -844,7 +834,7 @@ no return
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-rag.delete_chat(ids=["id_1","id_2"])
+rag.delete_chats(ids=["id_1","id_2"])
 ```
 
 ---

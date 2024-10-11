@@ -68,7 +68,7 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_dataset(self, ids: List[str] = None, names: List[str] = None):
+    def delete_datasets(self, ids: List[str] = None, names: List[str] = None):
         res = self.delete("/dataset",{"ids": ids, "names": names})
         res=res.json()
         if res.get("code") != 0:
@@ -133,7 +133,7 @@ class RAGFlow:
             return Chat(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_chat(self,ids: List[str] = None,names: List[str] = None ) -> bool:
+    def delete_chats(self,ids: List[str] = None,names: List[str] = None ) -> bool:
         res = self.delete('/chat',
                       {"ids":ids, "names":names})
         res = res.json()

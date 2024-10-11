@@ -73,35 +73,24 @@ def create(tenant_id):
 @token_required
 def delete(tenant_id):
     req = request.json
-    names=req.get("names")
     ids = req.get("ids")
-    if not ids and not names:
+    if not ids:
         return get_error_data_result(
-            retmsg="ids or names is required")
-    id_list=[]
-    if names:
-        for name in names:
-            kbs=KnowledgebaseService.query(name=name,tenant_id=tenant_id)
-            if not kbs:
-                return get_error_data_result(retmsg=f"You don't own the dataset {name}")
-            id_list.append(kbs[0].id)
-    if ids:
-        for id in ids:
-            kbs=KnowledgebaseService.query(id=id,tenant_id=tenant_id)
-            if not kbs:
-                return get_error_data_result(retmsg=f"You don't own the dataset {id}")
-        id_list.extend(ids)
-    for id in id_list:
-        for doc in DocumentService.query(kb_id=id):
-            if not DocumentService.remove_document(doc, tenant_id):
-                return get_error_data_result(
-                    retmsg="Remove document error.(Database error)")
-            f2d = File2DocumentService.get_by_document_id(doc.id)
-            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
-            File2DocumentService.delete_by_document_id(doc.id)
-        if not KnowledgebaseService.delete_by_id(id):
+            retmsg="ids are required")
+    for id in ids:
+        kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
+        if not kbs:
+            return get_error_data_result(retmsg=f"You don't own the dataset {id}")
+    for doc in DocumentService.query(kb_id=id):
+        if not DocumentService.remove_document(doc, tenant_id):
             return get_error_data_result(
-                retmsg="Delete dataset error.(Database serror)")
+                retmsg="Remove document error.(Database error)")
+        f2d = File2DocumentService.get_by_document_id(doc.id)
+        FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+        File2DocumentService.delete_by_document_id(doc.id)
+    if not KnowledgebaseService.delete_by_id(id):
+        return get_error_data_result(
+            retmsg="Delete dataset error.(Database serror)")
     return get_result(retcode=RetCode.SUCCESS)
 
 @manager.route('/dataset/<dataset_id>', methods=['PUT'])
