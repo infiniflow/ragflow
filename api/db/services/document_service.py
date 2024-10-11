@@ -431,7 +431,6 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         ParserType.AUDIO.value: audio,
         ParserType.EMAIL.value: email
     }
-    parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": False}
     exe = ThreadPoolExecutor(max_workers=12)
     threads = []
     doc_nm = {}
@@ -440,7 +439,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     for d, blob in files:
         kwargs = {
             "callback": dummy,
-            "parser_config": parser_config,
+            "parser_config": kb.parser_config,
             "from_page": 0,
             "to_page": 100000,
             "tenant_id": kb.tenant_id,
