@@ -98,7 +98,7 @@ const routes = [
     ],
   },
   {
-    path: 'document/:id',
+    path: '/document/:id',
     component: '@/pages/document-viewer',
     layout: false,
   },
