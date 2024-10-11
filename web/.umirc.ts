@@ -18,8 +18,7 @@ export default defineConfig({
   history: {
     type: 'browser',
   },
-  plugins: ['@react-dev-inspector/umi4-plugin', '@umijs/plugins/dist/dva'],
-  dva: {},
+  plugins: ['@react-dev-inspector/umi4-plugin'],
   jsMinifier: 'terser',
   lessLoader: {
     modifyVars: {
