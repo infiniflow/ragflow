@@ -14,20 +14,24 @@
 #  limitations under the License.
 #
 import re
-import  threading
+import threading
+from urllib.parse import urljoin
+
 import requests
-import torch
-from FlagEmbedding import FlagReranker
 from huggingface_hub import snapshot_download
 import os
 from abc import ABC
 import numpy as np
+
+from api.settings import LIGHTEN
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import json
 
+
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
+
 
 class Base(ABC):
     def __init__(self, key, model_name):
@@ -53,20 +57,25 @@ class DefaultRerank(Base):
         ^_-
 
         """
-        if not DefaultRerank._model:
+        if not LIGHTEN and not DefaultRerank._model:
+            import torch
+            from FlagEmbedding import FlagReranker
             with DefaultRerank._model_lock:
                 if not DefaultRerank._model:
                     try:
-                        DefaultRerank._model = FlagReranker(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)), use_fp16=torch.cuda.is_available())
+                        DefaultRerank._model = FlagReranker(
+                            os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                            use_fp16=torch.cuda.is_available())
                     except Exception as e:
-                        model_dir = snapshot_download(repo_id= model_name,
-                                                      local_dir=os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                        model_dir = snapshot_download(repo_id=model_name,
+                                                      local_dir=os.path.join(get_home_cache_dir(),
+                                                                             re.sub(r"^[a-zA-Z]+/", "", model_name)),
                                                       local_dir_use_symlinks=False)
                         DefaultRerank._model = FlagReranker(model_dir, use_fp16=torch.cuda.is_available())
         self._model = DefaultRerank._model
 
     def similarity(self, query: str, texts: list):
-        pairs = [(query,truncate(t, 2048)) for t in texts]
+        pairs = [(query, truncate(t, 2048)) for t in texts]
         token_count = 0
         for _, t in pairs:
             token_count += num_tokens_from_string(t)
@@ -75,8 +84,10 @@ class DefaultRerank(Base):
         for i in range(0, len(pairs), batch_size):
             scores = self._model.compute_score(pairs[i:i + batch_size], max_length=2048)
             scores = sigmoid(np.array(scores)).tolist()
-            if isinstance(scores, float): res.append(scores)
-            else:  res.extend(scores)
+            if isinstance(scores, float):
+                res.append(scores)
+            else:
+                res.extend(scores)
         return np.array(res), token_count
 
 
@@ -99,7 +110,10 @@ class JinaRerank(Base):
             "top_n": len(texts)
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
-        return np.array([d["relevance_score"] for d in res["results"]]), res["usage"]["total_tokens"]
+        rank = np.zeros(len(texts), dtype=float)
+        for d in res["results"]:
+            rank[d["index"]] = d["relevance_score"]
+        return rank, res["usage"]["total_tokens"]
 
 
 class YoudaoRerank(DefaultRerank):
@@ -107,8 +121,8 @@ class YoudaoRerank(DefaultRerank):
     _model_lock = threading.Lock()
 
     def __init__(self, key=None, model_name="maidalun1020/bce-reranker-base_v1", **kwargs):
-        from BCEmbedding import RerankerModel
-        if not YoudaoRerank._model:
+        if not LIGHTEN and not YoudaoRerank._model:
+            from BCEmbedding import RerankerModel
             with YoudaoRerank._model_lock:
                 if not YoudaoRerank._model:
                     try:
@@ -122,7 +136,7 @@ class YoudaoRerank(DefaultRerank):
                                 "maidalun1020", "InfiniFlow"))
 
         self._model = YoudaoRerank._model
-    
+
     def similarity(self, query: str, texts: list):
         pairs = [(query, truncate(t, self._model.max_length)) for t in texts]
         token_count = 0
@@ -133,15 +147,17 @@ class YoudaoRerank(DefaultRerank):
         for i in range(0, len(pairs), batch_size):
             scores = self._model.compute_score(pairs[i:i + batch_size], max_length=self._model.max_length)
             scores = sigmoid(np.array(scores)).tolist()
-            if isinstance(scores, float): res.append(scores)
-            else: res.extend(scores)
+            if isinstance(scores, float):
+                res.append(scores)
+            else:
+                res.extend(scores)
         return np.array(res), token_count
 
 
 class XInferenceRerank(Base):
     def __init__(self, key="xxxxxxx", model_name="", base_url=""):
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        if base_url.find("/v1") == -1:
+            base_url = urljoin(base_url, "/v1/rerank")
         self.model_name = model_name
         self.base_url = base_url
         self.headers = {
@@ -160,7 +176,10 @@ class XInferenceRerank(Base):
             "documents": texts
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
-        return np.array([d["relevance_score"] for d in res["results"]]), res["meta"]["tokens"]["input_tokens"]+res["meta"]["tokens"]["output_tokens"]
+        rank = np.zeros(len(texts), dtype=float)
+        for d in res["results"]:
+            rank[d["index"]] = d["relevance_score"]
+        return rank, res["meta"]["tokens"]["input_tokens"] + res["meta"]["tokens"]["output_tokens"]
 
 
 class LocalAIRerank(Base):
@@ -173,7 +192,7 @@ class LocalAIRerank(Base):
 
 class NvidiaRerank(Base):
     def __init__(
-        self, key, model_name, base_url="https://ai.api.nvidia.com/v1/retrieval/nvidia/"
+            self, key, model_name, base_url="https://ai.api.nvidia.com/v1/retrieval/nvidia/"
     ):
         if not base_url:
             base_url = "https://ai.api.nvidia.com/v1/retrieval/nvidia/"
@@ -206,9 +225,10 @@ class NvidiaRerank(Base):
             "top_n": len(texts),
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
-        rank = np.array([d["logit"] for d in res["rankings"]])
-        indexs = [d["index"] for d in res["rankings"]]
-        return rank[indexs], token_count
+        rank = np.zeros(len(texts), dtype=float)
+        for d in res["rankings"]:
+            rank[d["index"]] = d["logit"]
+        return rank, token_count
 
 
 class LmStudioRerank(Base):
@@ -245,9 +265,10 @@ class CoHereRerank(Base):
             top_n=len(texts),
             return_documents=False,
         )
-        rank = np.array([d.relevance_score for d in res.results])
-        indexs = [d.index for d in res.results]
-        return rank[indexs], token_count
+        rank = np.zeros(len(texts), dtype=float)
+        for d in res.results:
+            rank[d.index] = d.relevance_score
+        return rank, token_count
 
 
 class TogetherAIRerank(Base):
@@ -260,7 +281,7 @@ class TogetherAIRerank(Base):
 
 class SILICONFLOWRerank(Base):
     def __init__(
-        self, key, model_name, base_url="https://api.siliconflow.cn/v1/rerank"
+            self, key, model_name, base_url="https://api.siliconflow.cn/v1/rerank"
     ):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1/rerank"
@@ -285,10 +306,11 @@ class SILICONFLOWRerank(Base):
         response = requests.post(
             self.base_url, json=payload, headers=self.headers
         ).json()
-        rank = np.array([d["relevance_score"] for d in response["results"]])
-        indexs = [d["index"] for d in response["results"]]
+        rank = np.zeros(len(texts), dtype=float)
+        for d in response["results"]:
+            rank[d["index"]] = d["relevance_score"]
         return (
-            rank[indexs],
+            rank,
             response["meta"]["tokens"]["input_tokens"] + response["meta"]["tokens"]["output_tokens"],
         )
 
@@ -310,9 +332,10 @@ class BaiduYiyanRerank(Base):
             documents=texts,
             top_n=len(texts),
         ).body
-        rank = np.array([d["relevance_score"] for d in res["results"]])
-        indexs = [d["index"] for d in res["results"]]
-        return rank[indexs], res["usage"]["total_tokens"]
+        rank = np.zeros(len(texts), dtype=float)
+        for d in res["results"]:
+            rank[d["index"]] = d["relevance_score"]
+        return rank, res["usage"]["total_tokens"]
 
 
 class VoyageRerank(Base):
@@ -326,6 +349,7 @@ class VoyageRerank(Base):
         res = self.client.rerank(
             query=query, documents=texts, model=self.model_name, top_k=len(texts)
         )
-        rank = np.array([r.relevance_score for r in res.results])
-        indexs = [r.index for r in res.results]
-        return rank[indexs], res.total_tokens
+        rank = np.zeros(len(texts), dtype=float)
+        for r in res.results:
+            rank[r.index] = r.relevance_score
+        return rank, res.total_tokens

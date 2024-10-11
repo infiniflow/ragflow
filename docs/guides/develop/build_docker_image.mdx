@@ -1,0 +1,64 @@
+---
+sidebar_position: 1
+slug: /build_docker_image
+---
+
+# Build a RAGFlow Docker Image
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+A guide explaining how to build a RAGFlow Docker image from its source code. By following this guide, you'll be able to create a local Docker image that can be used for development, debugging, or testing purposes.
+
+## Target Audience
+
+- Developers who have added new features or modified the existing code and require a Docker image to view and debug their changes.
+- Testers looking to explore the latest features of RAGFlow in a Docker image.
+
+## Prerequisites
+
+- CPU &ge; 4 cores
+- RAM &ge; 16 GB
+- Disk &ge; 50 GB
+- Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
+
+:::tip NOTE
+If you have not installed Docker on your local machine (Windows, Mac, or Linux), see the [Install Docker Engine](https://docs.docker.com/engine/install/) guide.
+:::
+
+## Build a Docker image
+
+<Tabs
+  defaultValue="without"
+  values={[
+    {label: 'Build a Docker image without embedding models', value: 'without'},
+    {label: 'Build a Docker image including embedding models', value: 'including'}
+  ]}>
+  <TabItem value="without">
+
+This image is approximately 1 GB in size and relies on external LLM and embedding services.
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub nltk
+python3 download_deps.py
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+```
+
+  </TabItem>
+  <TabItem value="including">
+
+## Build a Docker image including embedding models
+
+This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub nltk
+python3 download_deps.py
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
+```
+
+  </TabItem>
+</Tabs>

@@ -14,6 +14,7 @@ import userService from '@/services/user-service';
 import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
+import { DefaultOptionType } from 'antd/es/select';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -42,7 +43,7 @@ export const useSelectLlmOptions = () => {
         label: key,
         options: value.map((x) => ({
           label: x.llm_name,
-          value: x.llm_name,
+          value: `${x.llm_name}@${x.fid}`,
           disabled: !x.available,
         })),
       };
@@ -71,7 +72,7 @@ export const useSelectLlmOptionsByModelType = () => {
             )
             .map((x) => ({
               label: x.llm_name,
-              value: x.llm_name,
+              value: `${x.llm_name}@${x.fid}`,
               disabled: !x.available,
             })),
         };
@@ -89,6 +90,26 @@ export const useSelectLlmOptionsByModelType = () => {
     [LlmModelType.Rerank]: groupOptionsByModelType(LlmModelType.Rerank),
     [LlmModelType.TTS]: groupOptionsByModelType(LlmModelType.TTS),
   };
+};
+
+export const useComposeLlmOptionsByModelTypes = (
+  modelTypes: LlmModelType[],
+) => {
+  const allOptions = useSelectLlmOptionsByModelType();
+
+  return modelTypes.reduce<DefaultOptionType[]>((pre, cur) => {
+    const options = allOptions[cur];
+    options.forEach((x) => {
+      const item = pre.find((y) => y.label === x.label);
+      if (item) {
+        item.options.push(...x.options);
+      } else {
+        pre.push(x);
+      }
+    });
+
+    return pre;
+  }, []);
 };
 
 export const useFetchLlmFactoryList = (): ResponseGetType<IFactory[]> => {
@@ -256,4 +277,27 @@ export const useDeleteLlm = () => {
   });
 
   return { data, loading, deleteLlm: mutateAsync };
+};
+
+export const useDeleteFactory = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteFactory'],
+    mutationFn: async (params: IDeleteLlmRequestBody) => {
+      const { data } = await userService.deleteFactory(params);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+        message.success(t('message.deleted'));
+      }
+      return data.retcode;
+    },
+  });
+
+  return { data, loading, deleteFactory: mutateAsync };
 };

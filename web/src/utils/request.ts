@@ -22,6 +22,7 @@ const RetcodeMessage = {
   404: i18n.t('message.404'),
   406: i18n.t('message.406'),
   410: i18n.t('message.410'),
+  413: i18n.t('message.413'),
   422: i18n.t('message.422'),
   500: i18n.t('message.500'),
   502: i18n.t('message.502'),
@@ -39,6 +40,7 @@ type ResultCode =
   | 404
   | 406
   | 410
+  | 413
   | 422
   | 500
   | 502
@@ -97,6 +99,10 @@ request.interceptors.request.use((url: string, options: any) => {
 });
 
 request.interceptors.response.use(async (response: any, options) => {
+  if (response?.status === 413) {
+    message.error(RetcodeMessage[413]);
+  }
+
   if (options.responseType === 'blob') {
     return response;
   }

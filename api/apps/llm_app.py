@@ -18,6 +18,7 @@ import json
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
+from api.settings import LIGHTEN
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
@@ -154,6 +155,10 @@ def add_llm():
     elif factory == "LocalAI":
         llm_name = req["llm_name"]+"___LocalAI"
         api_key = "xxxxxxxxxxxxxxx"
+        
+    elif factory == "HuggingFace":
+        llm_name = req["llm_name"]+"___HuggingFace"
+        api_key = "xxxxxxxxxxxxxxx"
 
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"]+"___OpenAI-API"
@@ -161,7 +166,10 @@ def add_llm():
 
     elif factory =="XunFei Spark":
         llm_name = req["llm_name"]
-        api_key = req.get("spark_api_password","xxxxxxxxxxxxxxx")
+        if req["model_type"] == "chat":
+            api_key = req.get("spark_api_password", "xxxxxxxxxxxxxxx")
+        elif req["model_type"] == "tts":
+            api_key = apikey_json(["spark_app_id", "spark_api_secret","spark_api_key"])
 
     elif factory == "BaiduYiyan":
         llm_name = req["llm_name"]
@@ -281,6 +289,16 @@ def delete_llm():
     return get_json_result(data=True)
 
 
+@manager.route('/delete_factory', methods=['POST'])
+@login_required
+@validate_request("llm_factory")
+def delete_factory():
+    req = request.json
+    TenantLLMService.filter_delete(
+            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"]])
+    return get_json_result(data=True)
+
+
 @manager.route('/my_llms', methods=['GET'])
 @login_required
 def my_llms():
@@ -306,13 +324,14 @@ def my_llms():
 @login_required
 def list_app():
     self_deploied = ["Youdao","FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
+    weighted = ["Youdao","FastEmbed", "BAAI"] if LIGHTEN else []
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
         llms = LLMService.get_all()
         llms = [m.to_dict()
-                for m in llms if m.status == StatusEnum.VALID.value]
+                for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted]
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deploied
 

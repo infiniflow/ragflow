@@ -19,10 +19,13 @@ import {
 } from '@/hooks/chat-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { memo } from 'react';
-import { ConversationContext } from '../context';
 import styles from './index.less';
 
-const ChatContainer = () => {
+interface IProps {
+  controller: AbortController;
+}
+
+const ChatContainer = ({ controller }: IProps) => {
   const { conversationId } = useGetChatSearchParams();
   const { data: conversation } = useFetchNextConversation();
 
@@ -36,8 +39,7 @@ const ChatContainer = () => {
     handlePressEnter,
     regenerateMessage,
     removeMessageById,
-    redirectToNewConversation,
-  } = useSendNextMessage();
+  } = useSendNextMessage(controller);
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
@@ -54,35 +56,33 @@ const ChatContainer = () => {
         <Flex flex={1} vertical className={styles.messageContainer}>
           <div>
             <Spin spinning={loading}>
-              <ConversationContext.Provider value={redirectToNewConversation}>
-                {derivedMessages?.map((message, i) => {
-                  return (
-                    <MessageItem
-                      loading={
-                        message.role === MessageType.Assistant &&
-                        sendLoading &&
-                        derivedMessages.length - 1 === i
-                      }
-                      key={message.id}
-                      item={message}
-                      nickname={userInfo.nickname}
-                      avatar={userInfo.avatar}
-                      reference={buildMessageItemReference(
-                        {
-                          message: derivedMessages,
-                          reference: conversation.reference,
-                        },
-                        message,
-                      )}
-                      clickDocumentButton={clickDocumentButton}
-                      index={i}
-                      removeMessageById={removeMessageById}
-                      regenerateMessage={regenerateMessage}
-                      sendLoading={sendLoading}
-                    ></MessageItem>
-                  );
-                })}
-              </ConversationContext.Provider>
+              {derivedMessages?.map((message, i) => {
+                return (
+                  <MessageItem
+                    loading={
+                      message.role === MessageType.Assistant &&
+                      sendLoading &&
+                      derivedMessages.length - 1 === i
+                    }
+                    key={message.id}
+                    item={message}
+                    nickname={userInfo.nickname}
+                    avatar={userInfo.avatar}
+                    reference={buildMessageItemReference(
+                      {
+                        message: derivedMessages,
+                        reference: conversation.reference,
+                      },
+                      message,
+                    )}
+                    clickDocumentButton={clickDocumentButton}
+                    index={i}
+                    removeMessageById={removeMessageById}
+                    regenerateMessage={regenerateMessage}
+                    sendLoading={sendLoading}
+                  ></MessageItem>
+                );
+              })}
             </Spin>
           </div>
           <div ref={ref} />

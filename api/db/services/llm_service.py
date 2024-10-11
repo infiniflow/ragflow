@@ -169,8 +169,8 @@ class TenantLLMService(CommonService):
 
         num = 0
         try:
-            for u in cls.query(tenant_id = tenant_id, llm_name=mdlnm):
-                num += cls.model.update(used_tokens = u.used_tokens + used_tokens)\
+            for u in cls.query(tenant_id=tenant_id, llm_name=mdlnm):
+                num += cls.model.update(used_tokens=u.used_tokens + used_tokens)\
                     .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == mdlnm)\
                     .execute()
         except Exception as e:
@@ -195,7 +195,7 @@ class LLMBundle(object):
         self.llm_name = llm_name
         self.mdl = TenantLLMService.model_instance(
             tenant_id, llm_type, llm_name, lang=lang)
-        assert self.mdl, "Can't find mole for {}/{}/{}".format(
+        assert self.mdl, "Can't find model for {}/{}/{}".format(
             tenant_id, llm_type, llm_name)
         self.max_length = 8192
         for lm in LLMService.query(llm_name=llm_name):
@@ -252,7 +252,6 @@ class LLMBundle(object):
                 return
             yield chunk     
 
-    
     def chat(self, system, history, gen_conf):
         txt, used_tokens = self.mdl.chat(system, history, gen_conf)
         if not TenantLLMService.increase_usage(

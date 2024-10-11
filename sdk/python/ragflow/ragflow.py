@@ -18,9 +18,9 @@ from typing import List
 import requests
 
 from .modules.assistant import Assistant
+from .modules.chunk import Chunk
 from .modules.dataset import DataSet
 from .modules.document import Document
-from .modules.chunk import Chunk
 
 
 class RAGFlow:
@@ -41,7 +41,11 @@ class RAGFlow:
         return res
 
     def delete(self, path, params):
-        res = requests.delete(url=self.api_url + path, params=params, headers=self.authorization_header)
+        res = requests.delete(url=self.api_url + path, json=params, headers=self.authorization_header)
+        return res
+
+    def put(self, path, json):
+        res = requests.put(url=self.api_url + path, json= json,headers=self.authorization_header)
         return res
 
     def create_dataset(self, name: str, avatar: str = "", description: str = "", language: str = "English",
@@ -52,7 +56,7 @@ class RAGFlow:
             parser_config = DataSet.ParserConfig(self, {"chunk_token_count": 128, "layout_recognize": True,
                                                         "delimiter": "\n!?。；！？", "task_page_size": 12})
         parser_config = parser_config.to_json()
-        res = self.post("/dataset/save",
+        res = self.post("/dataset",
                         {"name": name, "avatar": avatar, "description": description, "language": language,
                          "permission": permission,
                          "document_count": document_count, "chunk_count": chunk_count, "parse_method": parse_method,
@@ -60,27 +64,28 @@ class RAGFlow:
                          }
                         )
         res = res.json()
-        if res.get("retmsg") == "success":
+        if res.get("code") == 0:
             return DataSet(self, res["data"])
-        raise Exception(res["retmsg"])
+        raise Exception(res["message"])
 
-    def list_datasets(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True) -> \
+    def delete_dataset(self, ids: List[str] = None, names: List[str] = None):
+        res = self.delete("/dataset",{"ids": ids, "names": names})
+        res=res.json()
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+
+    def list_datasets(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
+                      id: str = None, name: str = None) -> \
             List[DataSet]:
-        res = self.get("/dataset/list", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
+        res = self.get("/dataset",
+                       {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
         result_list = []
-        if res.get("retmsg") == "success":
+        if res.get("code") == 0:
             for data in res['data']:
                 result_list.append(DataSet(self, data))
             return result_list
-        raise Exception(res["retmsg"])
-
-    def get_dataset(self, id: str = None, name: str = None) -> DataSet:
-        res = self.get("/dataset/detail", {"id": id, "name": name})
-        res = res.json()
-        if res.get("retmsg") == "success":
-            return DataSet(self, res['data'])
-        raise Exception(res["retmsg"])
+        raise Exception(res["message"])
 
     def create_assistant(self, name: str = "assistant", avatar: str = "path", knowledgebases: List[DataSet] = [],
                          llm: Assistant.LLM = None, prompt: Assistant.Prompt = None) -> Assistant:
@@ -272,4 +277,3 @@ class RAGFlow:
         except Exception as e:
             print(f"An error occurred during retrieval: {e}")
             raise
-

@@ -3,6 +3,7 @@ import {
   IApiKeySavingParams,
   ISystemModelSettingSavingParams,
   useAddLlm,
+  useDeleteFactory,
   useDeleteLlm,
   useSaveApiKey,
   useSaveTenantInfo,
@@ -365,4 +366,19 @@ export const useHandleDeleteLlm = (llmFactory: string) => {
   };
 
   return { handleDeleteLlm };
+};
+
+export const useHandleDeleteFactory = (llmFactory: string) => {
+  const { deleteFactory } = useDeleteFactory();
+  const showDeleteConfirm = useShowDeleteConfirm();
+
+  const handleDeleteFactory = () => {
+    showDeleteConfirm({
+      onOk: async () => {
+        deleteFactory({ llm_factory: llmFactory });
+      },
+    });
+  };
+
+  return { handleDeleteFactory };
 };

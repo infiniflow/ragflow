@@ -9,12 +9,13 @@ services:
         condition: service_healthy
       es01:
         condition: service_healthy
-    image: infiniflow/ragflow:${RAGFLOW_VERSION}
+    image: ${RAGFLOW_IMAGE}
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
       - 80:80
       - 443:443
+      - 5678:5678
     volumes:
       - ./service_conf.yaml:/ragflow/conf/service_conf.yaml
       - ./ragflow-logs:/ragflow/logs
@@ -23,7 +24,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     environment:
       - TZ=${TIMEZONE}
-      - HF_ENDPOINT=https://huggingface.co
+      - HF_ENDPOINT=${HF_ENDPOINT}
       - MACOS=${MACOS}
     networks:
       - ragflow

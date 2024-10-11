@@ -180,7 +180,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": empty_res, "reference": kbinfos, "audio_binary": tts(tts_mdl, empty_res)}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
-    kwargs["knowledge"] = "\n------\n".join(knowledges)
+    kwargs["knowledge"] = "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
@@ -189,6 +189,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.97))
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
     prompt = msg[0]["content"]
+    prompt += "\n\n### Query:\n%s" % " ".join(questions)
 
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(
@@ -221,7 +222,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
         done_tm = timer()
-        prompt += "\n### Elapsed\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms"%((retrieval_tm-st)*1000, (done_tm-st)*1000)
+        prompt += "\n\n### Elapsed\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms"%((retrieval_tm-st)*1000, (done_tm-st)*1000)
         return {"answer": answer, "reference": refs, "prompt": prompt}
 
     if stream:

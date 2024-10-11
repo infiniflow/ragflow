@@ -1,9 +1,13 @@
-.ragNode {
-  position: relative;
+.commonNode() {
   box-shadow:
     -6px 0 12px 0 rgba(179, 177, 177, 0.08),
     -3px 0 6px -4px rgba(0, 0, 0, 0.12),
     -6px 0 16px 6px rgba(0, 0, 0, 0.05);
+}
+
+.ragNode {
+  position: relative;
+  .commonNode();
 
   padding: 5px;
   border-radius: 5px;
@@ -68,10 +72,7 @@
 
 .logicNode {
   position: relative;
-  box-shadow:
-    -6px 0 12px 0 rgba(179, 177, 177, 0.08),
-    -3px 0 6px -4px rgba(0, 0, 0, 0.12),
-    -6px 0 16px 6px rgba(0, 0, 0, 0.05);
+  .commonNode();
 
   padding: 5px;
   border-radius: 5px;
@@ -114,5 +115,19 @@
     top: -4px;
     left: 8px;
     white-space: nowrap;
+  }
+}
+
+.noteNode {
+  .commonNode();
+  width: 140px;
+  padding: 4px 6px 6px;
+  border-radius: 10px;
+  background-color: #dbf8f4;
+  .noteTitle {
+    font-size: 12px;
+  }
+  .noteForm {
+    margin-top: 4px;
   }
 }

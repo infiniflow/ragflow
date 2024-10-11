@@ -1,11 +1,6 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import RenameModal from '@/components/rename-modal';
-import {
-  CloudOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  PlusOutlined,
-} from '@ant-design/icons';
+import { CloudOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -17,15 +12,15 @@ import {
   Space,
   Spin,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { MenuItemProps } from 'antd/lib/menu/MenuItem';
 import classNames from 'classnames';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import ChatConfigurationModal from './chat-configuration-modal';
 import ChatContainer from './chat-container';
 import {
-  useClickConversationCard,
   useDeleteConversation,
   useDeleteDialog,
   useEditDialog,
@@ -35,7 +30,9 @@ import {
 } from './hooks';
 
 import ChatOverviewModal from '@/components/api-service/chat-overview-modal';
+import SvgIcon from '@/components/svg-icon';
 import {
+  useClickConversationCard,
   useClickDialogCard,
   useFetchNextDialogList,
   useGetChatSearchParams,
@@ -89,6 +86,7 @@ const Chat = () => {
     showModal: showOverviewModal,
   } = useSetModalState();
   const { currentRecord, setRecord } = useSetSelectedRecord<IDialog>();
+  const [controller, setController] = useState(new AbortController());
 
   const handleAppCardEnter = (id: string) => () => {
     handleItemEnter(id);
@@ -139,30 +137,27 @@ const Chat = () => {
       showConversationRenameModal(conversationId);
     };
 
-  const handleDialogCardClick = (dialogId: string) => () => {
-    handleClickDialog(dialogId);
-  };
+  const handleDialogCardClick = useCallback(
+    (dialogId: string) => () => {
+      handleClickDialog(dialogId);
+    },
+    [handleClickDialog],
+  );
 
-  const handleConversationCardClick = (dialogId: string) => () => {
-    handleClickConversation(dialogId);
-  };
+  const handleConversationCardClick = useCallback(
+    (conversationId: string, isNew: boolean) => () => {
+      handleClickConversation(conversationId, isNew ? 'true' : '');
+      setController((pre) => {
+        pre.abort();
+        return new AbortController();
+      });
+    },
+    [handleClickConversation],
+  );
 
   const handleCreateTemporaryConversation = useCallback(() => {
     addTemporaryConversation();
   }, [addTemporaryConversation]);
-
-  const items: MenuProps['items'] = [
-    {
-      key: '1',
-      onClick: handleCreateTemporaryConversation,
-      label: (
-        <Space>
-          <PlusOutlined />
-          {t('newChat')}
-        </Space>
-      ),
-    },
-  ];
 
   const buildAppItems = (dialog: IDialog) => {
     const dialogId = dialog.id;
@@ -297,10 +292,15 @@ const Chat = () => {
               <b>{t('chat')}</b>
               <Tag>{conversationList.length}</Tag>
             </Space>
-            <Dropdown menu={{ items }}>
-              {/* <FormOutlined /> */}
-              <PlusOutlined />
-            </Dropdown>
+            <Tooltip title={t('newChat')}>
+              <div>
+                <SvgIcon
+                  name="plus-circle-fill"
+                  width={20}
+                  onClick={handleCreateTemporaryConversation}
+                ></SvgIcon>
+              </div>
+            </Tooltip>
           </Flex>
           <Divider></Divider>
           <Flex vertical gap={10} className={styles.chatTitleContent}>
@@ -312,7 +312,7 @@ const Chat = () => {
                 <Card
                   key={x.id}
                   hoverable
-                  onClick={handleConversationCardClick(x.id)}
+                  onClick={handleConversationCardClick(x.id, x.is_new)}
                   onMouseEnter={handleConversationCardEnter(x.id)}
                   onMouseLeave={handleConversationItemLeave}
                   className={classNames(styles.chatTitleCard, {
@@ -347,7 +347,7 @@ const Chat = () => {
         </Flex>
       </Flex>
       <Divider type={'vertical'} className={styles.divider}></Divider>
-      <ChatContainer></ChatContainer>
+      <ChatContainer controller={controller}></ChatContainer>
       {dialogEditVisible && (
         <ChatConfigurationModal
           visible={dialogEditVisible}

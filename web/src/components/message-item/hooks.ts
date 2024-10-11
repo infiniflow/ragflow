@@ -2,11 +2,10 @@ import { useDeleteMessage, useFeedback } from '@/hooks/chat-hooks';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById, useSpeechWithSse } from '@/hooks/logic-hooks';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
-import { ConversationContext } from '@/pages/chat/context';
 import { getMessagePureId } from '@/utils/chat';
 import { hexStringToUint8Array } from '@/utils/common-util';
 import { SpeechPlayer } from 'openai-speech-stream-player';
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const useSendFeedback = (messageId: string) => {
   const { visible, hideModal, showModal } = useSetModalState();
@@ -59,24 +58,21 @@ export const useSpeech = (content: string, audioBinary?: string) => {
   const { read } = useSpeechWithSse();
   const player = useRef<SpeechPlayer>();
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const callback = useContext(ConversationContext);
 
   const initialize = useCallback(async () => {
     player.current = new SpeechPlayer({
       audio: ref.current!,
       onPlaying: () => {
         setIsPlaying(true);
-        callback?.(true);
       },
       onPause: () => {
         setIsPlaying(false);
-        callback?.(false);
       },
       onChunkEnd: () => {},
       mimeType: 'audio/mpeg',
     });
     await player.current.init();
-  }, [callback]);
+  }, []);
 
   const pause = useCallback(() => {
     player.current?.pause();
@@ -103,7 +99,11 @@ export const useSpeech = (content: string, audioBinary?: string) => {
     if (audioBinary) {
       const units = hexStringToUint8Array(audioBinary);
       if (units) {
-        player.current?.feed(units);
+        try {
+          player.current?.feed(units);
+        } catch (error) {
+          console.warn(error);
+        }
       }
     }
   }, [audioBinary]);

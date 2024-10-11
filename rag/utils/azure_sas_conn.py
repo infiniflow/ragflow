@@ -23,10 +23,10 @@ class RAGFlowAzureSasBlob(object):
             pass
 
         try:
-            self.conn = ContainerClient.from_container_url(self.account_url + "?" + self.sas_token)
+            self.conn = ContainerClient.from_container_url(self.container_url + "?" + self.sas_token)
         except Exception as e:
             azure_logger.error(
-                "Fail to connect %s " % self.account_url + str(e))
+                "Fail to connect %s " % self.container_url + str(e))
 
     def __close__(self):
         del self.conn
