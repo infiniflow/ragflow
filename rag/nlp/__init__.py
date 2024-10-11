@@ -151,6 +151,7 @@ def qbullets_category(sections):
         maxium = h
     return res, QUESTION_PATTERN[res]
 
+
 BULLET_PATTERN = [[
     r"第[零一二三四五六七八九十百0-9]+(分?编|部分)",
     r"第[零一二三四五六七八九十百0-9]+章",
