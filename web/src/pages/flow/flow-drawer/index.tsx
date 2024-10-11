@@ -118,13 +118,15 @@ const FlowDrawer = ({
       mask={false}
       width={470}
     >
-      {visible && (
-        <OperatorForm
-          onValuesChange={handleValuesChange}
-          form={form}
-          node={node}
-        ></OperatorForm>
-      )}
+      <section className={styles.formWrapper}>
+        {visible && (
+          <OperatorForm
+            onValuesChange={handleValuesChange}
+            form={form}
+            node={node}
+          ></OperatorForm>
+        )}
+      </section>
     </Drawer>
   );
 };
