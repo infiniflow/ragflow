@@ -91,7 +91,11 @@ class RewriteQuestion(Generate, ABC):
             raise Exception("Sorry! Nothing relevant found.")
         self._loop += 1
 
-        conv = self._canvas.get_history(4)
+        hist = self._canvas.get_history(4)
+        conv = []
+        for m in hist:
+            if m["role"] not in ["user", "assistant"]: continue
+            conv.append("{}: {}".format(m["role"].upper(), m["content"]))
         conv = "\n".join(conv)
 
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)

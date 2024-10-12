@@ -4,14 +4,14 @@ from .base import Base
 from .session import Session
 
 
-class Assistant(Base):
+class Chat(Base):
     def __init__(self, rag, res_dict):
         self.id = ""
         self.name = "assistant"
         self.avatar = "path/to/avatar"
         self.knowledgebases = ["kb1"]
-        self.llm = Assistant.LLM(rag, {})
-        self.prompt = Assistant.Prompt(rag, {})
+        self.llm = Chat.LLM(rag, {})
+        self.prompt = Chat.Prompt(rag, {})
         super().__init__(rag, res_dict)
 
     class LLM(Base):
@@ -42,21 +42,13 @@ class Assistant(Base):
             )
             super().__init__(rag, res_dict)
 
-    def save(self) -> bool:
-        res = self.post('/assistant/save',
-                        {"id": self.id, "name": self.name, "avatar": self.avatar, "knowledgebases": self.knowledgebases,
-                         "llm": self.llm.to_json(), "prompt": self.prompt.to_json()
-                         })
+    def update(self, update_message: dict):
+        res = self.put(f'/chat/{self.id}',
+                        update_message)
         res = res.json()
-        if res.get("retmsg") == "success": return True
-        raise Exception(res["retmsg"])
+        if res.get("code") != 0:
+            raise Exception(res["message"])
 
-    def delete(self) -> bool:
-        res = self.rm('/assistant/delete',
-                      {"id": self.id})
-        res = res.json()
-        if res.get("retmsg") == "success": return True
-        raise Exception(res["retmsg"])
 
     def create_session(self, name: str = "New session") -> Session:
         res = self.post("/session/save", {"name": name, "assistant_id": self.id})

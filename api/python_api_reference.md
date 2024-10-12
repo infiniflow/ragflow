@@ -118,7 +118,7 @@ ds = rag_object.create_dataset(name="kb_1")
 ## Delete knowledge bases
 
 ```python
-RAGFlow.delete_dataset(ids: list[str] = None, names: list[str] = None)
+RAGFlow.delete_datasets(ids: List[str] = None)
 ```
 
 Deletes knowledge bases by name or ID.
@@ -128,18 +128,6 @@ Deletes knowledge bases by name or ID.
 #### ids: `list[str]`
 
 The IDs of the knowledge bases to delete.
-
-:::note
-You only need to specify either `ids` or `names`, *not* both.
-:::
-
-#### names: `list[str]`
-
-The names of the datasets to delete.
-
-:::note
-You only need to specify either `ids` or `names`, *not* both.
-:::
 
 ### Returns
 
@@ -151,13 +139,7 @@ You only need to specify either `ids` or `names`, *not* both.
 #### Delete knowledge bases by name
 
 ```python
-rag_object.delete_dataset(names=["name_1","name_2"])
-```
-
-#### Delete knowledge bases by ID
-
-```python
-rag.delete_dataset(ids=["id_1","id_2"])
+rag.delete_datasets(ids=["id_1","id_2"])
 ```
 
 ---
@@ -742,32 +724,35 @@ for c in rag.retrieval(question="What's ragflow?",
 ---
 
 :::tip API GROUPING
-Chat assistant APIs
+Chat APIs
 :::
 
-## Create assistant
+## Create chat
 
 ```python
-RAGFlow.create_assistant(
+RAGFlow.create_chat(
     name: str = "assistant", 
     avatar: str = "path", 
-    knowledgebases: list[DataSet] = ["kb1"], 
-    llm: Assistant.LLM = None, 
-    prompt: Assistant.Prompt = None
-) -> Assistant
+    knowledgebases: List[DataSet] = ["kb1"], 
+    llm: Chat.LLM = None, 
+    prompt: Chat.Prompt = None
+) -> Chat
+
 ```
 
 ### Returns
 
-Assistant object.
+Chat
+
+description: assitant object.
 
 #### name: `str`
 
-The name of the created assistant. Defaults to `"assistant"`.
+The name of the created chat. Defaults to `"assistant"`.
 
 #### avatar: `str`
 
-The icon of the created assistant. Defaults to `"path"`. 
+The icon of the created chat. Defaults to `"path"`. 
 
 #### knowledgebases: `list[DataSet]`
 
@@ -775,11 +760,11 @@ Select knowledgebases associated. Defaults to `["kb1"]`.
 
 #### id: `str`
 
-The id of the created assistant. Defaults to `""`.
+The id of the created chat. Defaults to `""`.
 
 #### llm: `LLM`
 
-The llm of the created assistant. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.
+The llm of the created chat. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.
 
 - **model_name**, `str`  
   Large language chat model. If it is `None`, it will return the user's default model.  
@@ -813,22 +798,21 @@ from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
 kb = rag.get_dataset(name="kb_1")
-assi = rag.create_assistant("Miss R", knowledgebases=[kb])
+assi = rag.create_chat("Miss R", knowledgebases=[kb])
 ```
 
 ---
 
-## Save updates to a chat assistant
+## Update chat
 
 ```python
-Assistant.save() -> bool
+Chat.update(update_message: dict)
 ```
 
 ### Returns
 
 ```python
-bool
-description:the case of updating an assistant, True or False.
+no return
 ```
 
 ### Examples
@@ -838,24 +822,28 @@ from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
 kb = rag.get_knowledgebase(name="kb_1")
-assi = rag.create_assistant("Miss R"， knowledgebases=[kb])
-assi.llm.temperature = 0.8
-assi.save()
+assi = rag.create_chat("Miss R"， knowledgebases=[kb])
+assi.update({"temperature":0.8})
 ```
 
 ---
 
-## Delete assistant
+## Delete chats
 
 ```python
-Assistant.delete() -> bool
+RAGFlow.delete_chats(ids: List[str] = None)
 ```
+### Parameters
+
+#### ids: `str`
+
+IDs of the chats to be deleted. 
+
 
 ### Returns
 
 ```python
-bool
-description:the case of deleting an assistant, True or False.
+no return
 ```
 
 ### Examples
@@ -864,77 +852,58 @@ description:the case of deleting an assistant, True or False.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-kb = rag.get_knowledgebase(name="kb_1")
-assi = rag.create_assistant("Miss R"， knowledgebases=[kb])
-assi.delete()
+rag.delete_chats(ids=["id_1","id_2"])
 ```
 
 ---
 
-## Retrieve assistant
+## List chats
 
 ```python
-RAGFlow.get_assistant(id: str = None, name: str = None) -> Assistant
+RAGFlow.list_chats(
+    page: int = 1, 
+    page_size: int = 1024, 
+    orderby: str = "create_time", 
+    desc: bool = True,
+    id: str = None,
+    name: str = None
+) -> List[Chat]
 ```
 
 ### Parameters
 
-#### id: `str`
+#### page: `int`  
 
-ID of the assistant to retrieve. If `name` is not provided,  `id` is required.
+The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
+- `1`
 
-#### name: `str`
+#### page_size: `int`  
 
-Name of the assistant to retrieve. If `id` is not provided,  `name` is required.
+The number of records to retrieve per page. This controls how many records will be included in each page.  
+- `1024`
 
+#### orderby: `string`  
+
+The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
+- `"create_time"`
+
+#### desc: `bool`  
+
+A boolean flag indicating whether the sorting should be in descending order.  
+- `True`
+
+#### id: `string`  
+
+The ID of the chat to be retrieved.  
+- `None`
+
+#### name: `string`  
+
+The name of the chat to be retrieved.  
+- `None`
 ### Returns
 
-Assistant object.
-
-#### name: `str`
-
-The name of the created assistant. Defaults to `"assistant"`.
-
-#### avatar: `str`
-
-The icon of the created assistant. Defaults to `"path"`. 
-
-#### knowledgebases: `list[DataSet]`
-
-Select knowledgebases associated. Defaults to `["kb1"]`.
-
-#### id: `str`
-
-The id of the created assistant. Defaults to `""`.
-
-#### llm: `LLM`
-
-The llm of the created assistant. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.
-
-- **model_name**, `str`  
-  Large language chat model. If it is `None`, it will return the user's default model.  
-- **temperature**, `float`  
-  This parameter controls the randomness of predictions by the model. A lower temperature makes the model more confident in its responses, while a higher temperature makes it more creative and diverse. Defaults to `0.1`.  
-- **top_p**, `float`  
-  Also known as “nucleus sampling,” this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-- **presence_penalty**, `float`  
-  This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
-- **frequency penalty**, `float`  
-  Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
-- **max_token**, `int`  
-  This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.
-
-#### Prompt: `str`
-
-Instructions you need LLM to follow when LLM answers questions, like character design, answer length and answer language etc. 
-
-Defaults:
-```
-You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
-      Here is the knowledge base:
-      {knowledge}
-      The above is the knowledge base.
-```
+A list of chat objects.
 
 ### Examples
 
@@ -942,28 +911,7 @@ You are an intelligent assistant. Please summarize the content of the knowledge 
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-assi = rag.get_assistant(name="Miss R")
-```
-
----
-
-## List assistants
-
-```python
-RAGFlow.list_assistants() -> list[Assistant]
-```
-
-### Returns
-
-A list of assistant objects.
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-for assi in rag.list_assistants():
+for assi in rag.list_chats():
     print(assi)
 ```
 

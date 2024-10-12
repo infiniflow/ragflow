@@ -17,7 +17,7 @@ from typing import List
 
 import requests
 
-from .modules.assistant import Assistant
+from .modules.chat import Chat
 from .modules.chunk import Chunk
 from .modules.dataset import DataSet
 from .modules.document import Document
@@ -32,16 +32,16 @@ class RAGFlow:
         self.api_url = f"{base_url}/api/{version}"
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
-    def post(self, path, param, stream=False):
-        res = requests.post(url=self.api_url + path, json=param, headers=self.authorization_header, stream=stream)
+    def post(self, path, json, stream=False):
+        res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream)
         return res
 
     def get(self, path, params=None):
         res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header)
         return res
 
-    def delete(self, path, params):
-        res = requests.delete(url=self.api_url + path, json=params, headers=self.authorization_header)
+    def delete(self, path, json):
+        res = requests.delete(url=self.api_url + path, json=json, headers=self.authorization_header)
         return res
 
     def put(self, path, json):
@@ -68,7 +68,7 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_dataset(self, ids: List[str] = None, names: List[str] = None):
+    def delete_datasets(self, ids: List[str] = None, names: List[str] = None):
         res = self.delete("/dataset",{"ids": ids, "names": names})
         res=res.json()
         if res.get("code") != 0:
@@ -87,21 +87,21 @@ class RAGFlow:
             return result_list
         raise Exception(res["message"])
 
-    def create_assistant(self, name: str = "assistant", avatar: str = "path", knowledgebases: List[DataSet] = [],
-                         llm: Assistant.LLM = None, prompt: Assistant.Prompt = None) -> Assistant:
+    def create_chat(self, name: str = "assistant", avatar: str = "path", knowledgebases: List[DataSet] = [],
+                         llm: Chat.LLM = None, prompt: Chat.Prompt = None) -> Chat:
         datasets = []
         for dataset in knowledgebases:
             datasets.append(dataset.to_json())
 
         if llm is None:
-            llm = Assistant.LLM(self, {"model_name": None,
+            llm = Chat.LLM(self, {"model_name": None,
                                        "temperature": 0.1,
                                        "top_p": 0.3,
                                        "presence_penalty": 0.4,
                                        "frequency_penalty": 0.7,
                                        "max_tokens": 512, })
         if prompt is None:
-            prompt = Assistant.Prompt(self, {"similarity_threshold": 0.2,
+            prompt = Chat.Prompt(self, {"similarity_threshold": 0.2,
                                              "keywords_similarity_weight": 0.7,
                                              "top_n": 8,
                                              "variables": [{
@@ -127,28 +127,29 @@ class RAGFlow:
                      "knowledgebases": datasets,
                      "llm": llm.to_json(),
                      "prompt": prompt.to_json()}
-        res = self.post("/assistant/save", temp_dict)
+        res = self.post("/chat", temp_dict)
         res = res.json()
-        if res.get("retmsg") == "success":
-            return Assistant(self, res["data"])
-        raise Exception(res["retmsg"])
+        if res.get("code") == 0:
+            return Chat(self, res["data"])
+        raise Exception(res["message"])
 
-    def get_assistant(self, id: str = None, name: str = None) -> Assistant:
-        res = self.get("/assistant/get", {"id": id, "name": name})
+    def delete_chats(self,ids: List[str] = None,names: List[str] = None ) -> bool:
+        res = self.delete('/chat',
+                      {"ids":ids, "names":names})
         res = res.json()
-        if res.get("retmsg") == "success":
-            return Assistant(self, res['data'])
-        raise Exception(res["retmsg"])
+        if res.get("code") != 0:
+            raise Exception(res["message"])
 
-    def list_assistants(self) -> List[Assistant]:
-        res = self.get("/assistant/list")
+    def list_chats(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
+                      id: str = None, name: str = None) -> List[Chat]:
+        res = self.get("/chat",{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
         result_list = []
-        if res.get("retmsg") == "success":
+        if res.get("code") == 0:
             for data in res['data']:
-                result_list.append(Assistant(self, data))
+                result_list.append(Chat(self, data))
             return result_list
-        raise Exception(res["retmsg"])
+        raise Exception(res["message"])
 
     def create_document(self, ds: DataSet, name: str, blob: bytes) -> bool:
         url = f"/doc/dataset/{ds.id}/documents/upload"

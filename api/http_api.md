@@ -148,11 +148,11 @@ An error response includes a JSON object like the following:
 }
 ```
 
-## Delete dataset
+## Delete datasets
 
 **DELETE** `/api/v1/dataset`
 
-Deletes knowledge bases (datasets) by ID or name.
+Deletes datasets by their IDs.
 
 ### Request
 
@@ -162,7 +162,6 @@ Deletes knowledge bases (datasets) by ID or name.
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
   - Body:
-    - `"names"`: `List[string]`
     - `"ids"`: `List[string]`
 
 
@@ -175,20 +174,15 @@ curl --request DELETE \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
   --data '{
-  "names": ["test_1", "test_2"]
+  "ids": ["test_1", "test_2"]
   }'
 ```
 
 #### Request parameters
 
-- `"names"`: (*Body parameter*)  
-    Names of the datasets to delete.
 - `"ids"`: (*Body parameter*)  
     IDs of the datasets to delete.
 
-:::tip NOTE
-Specify either `"names"` or `"ids"`, *not* both.
-:::
 
 ### Response
 
@@ -320,7 +314,7 @@ curl --request GET \
     A boolean flag indicating whether the sorting should be in descending order.
 - `name`: (*Path parameter*)
     Dataset name
-- - `"id"`: (*Path parameter*)  
+- `"id"`: (*Path parameter*)  
     The ID of the dataset to be retrieved.
 - `"name"`: (*Path parameter*)  
     The name of the dataset to be retrieved.
@@ -998,10 +992,18 @@ Create a chat
 ### Request
 
 - Method: POST
-- URL: `/api/v1/chat`
+- URL: `http://{address}/api/v1/chat`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+- Body:
+  - `"name"`: `string`
+  - `"avatar"`: `string`
+  - `"knowledgebases"`: `List[DataSet]`
+  - `"id"`: `string`
+  - `"llm"`: `LLM`
+  - `"prompt"`: `Prompt`
+
 
 #### Request example
 
@@ -1011,135 +1013,424 @@ curl --request POST \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
      --data-binary '{
-     "avatar": "path",
-     "create_date": "Wed, 04 Sep 2024 10:08:01 GMT",
-     "create_time": 1725444481128,
-     "description": "A helpful Assistant",
-     "do_refer": "",
-     "knowledgebases": [
-       {
-         "avatar": null,
-         "chunk_count": 0,
-         "description": null,
-         "document_count": 0,
-         "embedding_model": "",
-         "id": "d6d0e8e868cd11ef92250242ac120006",
-         "language": "English",
-         "name": "Test_assistant",
-         "parse_method": "naive",
-         "parser_config": {
-           "pages": [
-             [
-               1,
-               1000000
-             ]
-           ]
-         },
-         "permission": "me",
-         "tenant_id": "4fb0cd625f9311efba4a0242ac120006"
-       }
-     ],
-     "language": "English",
-     "llm": {
-       "frequency_penalty": 0.7,
-       "max_tokens": 512,
-       "model_name": "deepseek-chat",
-       "presence_penalty": 0.4,
-       "temperature": 0.1,
-       "top_p": 0.3
-     },
-     "name": "Miss R",
-     "prompt": {
-       "empty_response": "Sorry! Can't find the context!",
-       "keywords_similarity_weight": 0.7,
-       "opener": "Hi! I am your assistant, what can I do for you?",
-       "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence 'The answer you are looking for is not found in the knowledge base!' Answers need to consider chat history.\nHere is the knowledge base:\n{knowledge}\nThe above is the knowledge base.",
-       "rerank_model": "",
-       "show_quote": true,
-       "similarity_threshold": 0.2,
-       "top_n": 8,
-       "variables": [
-         {
-           "key": "knowledge",
-           "optional": true
-         }
-       ]
-     },
-     "prompt_type": "simple",
-     "status": "1",
-     "top_k": 1024,
-     "update_date": "Wed, 04 Sep 2024 10:08:01 GMT",
-     "update_time": 1725444481128
+   "knowledgebases": [
+    {
+      "avatar": null,
+      "chunk_count": 0,
+      "description": null,
+      "document_count": 0,
+      "embedding_model": "",
+      "id": "0b2cbc8c877f11ef89070242ac120005",
+      "language": "English",
+      "name": "Test_assistant",
+      "parse_method": "naive",
+      "parser_config": {
+        "pages": [
+          [
+            1,
+            1000000
+          ]
+        ]
+      },
+      "permission": "me",
+      "tenant_id": "4fb0cd625f9311efba4a0242ac120006"
+    }
+  ],
+    "name":"new_chat_1"
 }'
+```
+
+#### Request parameters
+
+- `"name"`: (*Body parameter*)  
+    The name of the created chat.  
+    - `"assistant"`
+
+- `"avatar"`: (*Body parameter*)  
+    The icon of the created chat.  
+    - `"path"`
+
+- `"knowledgebases"`: (*Body parameter*)  
+    Select knowledgebases associated.  
+    - `["kb1"]`
+
+- `"id"`: (*Body parameter*)  
+    The id of the created chat.  
+    - `""`
+
+- `"llm"`: (*Body parameter*)  
+    The LLM of the created chat.  
+    - If the value is `None`, a dictionary with default values will be generated.
+
+- `"prompt"`: (*Body parameter*)  
+    The prompt of the created chat.  
+    - If the value is `None`, a dictionary with default values will be generated.
+
+---
+
+##### Chat.LLM parameters:
+
+- `"model_name"`: (*Body parameter*)  
+    Large language chat model.  
+    - If it is `None`, it will return the user's default model.
+
+- `"temperature"`: (*Body parameter*)  
+    Controls the randomness of predictions by the model. A lower temperature makes the model more confident, while a higher temperature makes it more creative and diverse.  
+    - `0.1`
+
+- `"top_p"`: (*Body parameter*)  
+    Also known as "nucleus sampling," it focuses on the most likely words, cutting off the less probable ones.  
+    - `0.3`
+
+- `"presence_penalty"`: (*Body parameter*)  
+    Discourages the model from repeating the same information by penalizing repeated content.  
+    - `0.4`
+
+- `"frequency_penalty"`: (*Body parameter*)  
+    Reduces the model’s tendency to repeat words frequently.  
+    - `0.7`
+
+- `"max_tokens"`: (*Body parameter*)  
+    Sets the maximum length of the model’s output, measured in tokens (words or pieces of words).  
+    - `512`
+
+---
+
+##### Chat.Prompt parameters:
+
+- `"similarity_threshold"`: (*Body parameter*)  
+    Filters out chunks with similarity below this threshold.  
+    - `0.2`
+
+- `"keywords_similarity_weight"`: (*Body parameter*)  
+    Weighted keywords similarity and vector cosine similarity; the sum of weights is 1.0.  
+    - `0.7`
+
+- `"top_n"`: (*Body parameter*)  
+    Only the top N chunks above the similarity threshold will be fed to LLMs.  
+    - `8`
+
+- `"variables"`: (*Body parameter*)  
+    Variables help with different chat strategies by filling in the 'System' part of the prompt.  
+    - `[{"key": "knowledge", "optional": True}]`
+
+- `"rerank_model"`: (*Body parameter*)  
+    If empty, it uses vector cosine similarity; otherwise, it uses rerank score.  
+    - `""`
+
+- `"empty_response"`: (*Body parameter*)  
+    If nothing is retrieved, this will be used as the response. Leave blank if LLM should provide its own opinion.  
+    - `None`
+
+- `"opener"`: (*Body parameter*)  
+    The welcome message for clients.  
+    - `"Hi! I'm your assistant, what can I do for you?"`
+
+- `"show_quote"`: (*Body parameter*)  
+    Indicates whether the source of the original text should be displayed.  
+    - `True`
+
+- `"prompt"`: (*Body parameter*)  
+    Instructions for LLM to follow when answering questions, such as character design or answer length.  
+    - `"You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence 'The answer you are looking for is not found in the knowledge base!' Answers need to consider chat history. Here is the knowledge base: {knowledge} The above is the knowledge base."`
+### Response
+Success:
+```json
+{
+    "code": 0,
+    "data": {
+        "avatar": "",
+        "create_date": "Fri, 11 Oct 2024 03:23:24 GMT",
+        "create_time": 1728617004635,
+        "description": "A helpful Assistant",
+        "do_refer": "1",
+        "id": "2ca4b22e878011ef88fe0242ac120005",
+        "knowledgebases": [
+            {
+                "avatar": null,
+                "chunk_count": 0,
+                "description": null,
+                "document_count": 0,
+                "embedding_model": "",
+                "id": "0b2cbc8c877f11ef89070242ac120005",
+                "language": "English",
+                "name": "Test_assistant",
+                "parse_method": "naive",
+                "parser_config": {
+                    "pages": [
+                        [
+                            1,
+                            1000000
+                        ]
+                    ]
+                },
+                "permission": "me",
+                "tenant_id": "4fb0cd625f9311efba4a0242ac120006"
+            }
+        ],
+        "language": "English",
+        "llm": {
+            "frequency_penalty": 0.7,
+            "max_tokens": 512,
+            "model_name": "deepseek-chat___OpenAI-API@OpenAI-API-Compatible",
+            "presence_penalty": 0.4,
+            "temperature": 0.1,
+            "top_p": 0.3
+        },
+        "name": "new_chat_1",
+        "prompt": {
+            "empty_response": "Sorry! 知识库中未找到相关内容！",
+            "keywords_similarity_weight": 0.3,
+            "opener": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
+            "prompt": "你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\n            以下是知识库：\n            {knowledge}\n            以上是知识库。",
+            "rerank_model": "",
+            "similarity_threshold": 0.2,
+            "top_n": 6,
+            "variables": [
+                {
+                    "key": "knowledge",
+                    "optional": false
+                }
+            ]
+        },
+        "prompt_type": "simple",
+        "status": "1",
+        "tenant_id": "69736c5e723611efb51b0242ac120007",
+        "top_k": 1024,
+        "update_date": "Fri, 11 Oct 2024 03:23:24 GMT",
+        "update_time": 1728617004635
+    }
+}
+```
+Error:
+```json
+{
+    "code": 102,
+    "message": "Duplicated chat name in creating dataset."
+}
 ```
 
 ## Update chat
 
-**PUT** `/api/v1/chat`
+**PUT** `/api/v1/chat/{chat_id}`
 
 Update a chat
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/chat`
+- URL: `http://{address}/api/v1/chat/{chat_id}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
+- Body: (Refer to the "Create chat" for the complete structure of the request body.)
+  
 #### Request example
-
+```bash
 curl --request PUT \
-  --url http://{address}/api/v1/chat \
+  --url http://{address}/api/v1/chat/{chat_id} \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
-  --data-binary '{
-    "id":"554e96746aaa11efb06b0242ac120005",
+  --data '{
     "name":"Test"
 }'
+```
+#### Parameters
+(Refer to the "Create chat" for the complete structure of the request parameters.)
 
-## Delete chat
+### Response
+Success
+```json
+{
+    "code": 0
+}
+```
+Error
+```json
+{
+    "code": 102,
+    "message": "Duplicated chat name in updating dataset."
+}
+```
 
-**DELETE** `/api/v1/chat/{chat_id}`
+## Delete chats
 
-Delete a chat
+**DELETE** `/api/v1/chat`
+
+Delete chats
 
 ### Request
 
-- Method: PUT
-- URL: `/api/v1/chat/{chat_id}`
+- Method: DELETE
+- URL: `http://{address}/api/v1/chat`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-
+- Body:
+  - `ids`: List[string]
 #### Request example
-
-curl --request PUT \
-  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005 \
+```bash
+# Either id or name must be provided, but not both.
+curl --request DELETE \
+  --url http://{address}/api/v1/chat \
   --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
+  --data '{
+  "ids": ["test_1", "test_2"]
+  }'
 }'
+```
+#### Request parameters:
 
-## List chat
+- `"ids"`: (*Body parameter*)  
+    IDs of the chats to be deleted.  
+    - `None`
+### Response
+Success
+```json
+{
+    "code": 0
+}
+```
+Error
+```json
+{
+    "code": 102,
+    "message": "ids are required"
+}
+```
 
-**GET** `/api/v1/chat`
+## List chats
 
-List all chat assistants
+**GET** `/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+
+List chats based on filter criteria.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/chat`
+- URL: `http://{address}/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 - Headers:
-  - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 
 #### Request example
 
+```bash
 curl --request GET \
-  --url http://{address}/api/v1/chat \
-  --header 'Content-Type: application/json' \
+  --url http://{address}/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+```
+
+#### Request parameters
+- `"page"`: (*Path parameter*)  
+    The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
+    - `1`
+
+- `"page_size"`: (*Path parameter*)  
+    The number of records to retrieve per page. This controls how many records will be included in each page.  
+    - `1024`
+
+- `"orderby"`: (*Path parameter*)  
+    The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
+    - `"create_time"`
+
+- `"desc"`: (*Path parameter*)  
+    A boolean flag indicating whether the sorting should be in descending order.  
+    - `True`
+
+- `"id"`: (*Path parameter*)  
+    The ID of the chat to be retrieved.  
+    - `None`
+
+- `"name"`: (*Path parameter*)  
+    The name of the chat to be retrieved.  
+    - `None`
+
+### Response
+Success
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "avatar": "",
+            "create_date": "Fri, 11 Oct 2024 03:23:24 GMT",
+            "create_time": 1728617004635,
+            "description": "A helpful Assistant",
+            "do_refer": "1",
+            "id": "2ca4b22e878011ef88fe0242ac120005",
+            "knowledgebases": [
+                {
+                    "avatar": "",
+                    "chunk_num": 0,
+                    "create_date": "Fri, 11 Oct 2024 03:15:18 GMT",
+                    "create_time": 1728616518986,
+                    "created_by": "69736c5e723611efb51b0242ac120007",
+                    "description": "",
+                    "doc_num": 0,
+                    "embd_id": "BAAI/bge-large-zh-v1.5",
+                    "id": "0b2cbc8c877f11ef89070242ac120005",
+                    "language": "English",
+                    "name": "test_delete_chat",
+                    "parser_config": {
+                        "chunk_token_count": 128,
+                        "delimiter": "\n!?。；！？",
+                        "layout_recognize": true,
+                        "task_page_size": 12
+                    },
+                    "parser_id": "naive",
+                    "permission": "me",
+                    "similarity_threshold": 0.2,
+                    "status": "1",
+                    "tenant_id": "69736c5e723611efb51b0242ac120007",
+                    "token_num": 0,
+                    "update_date": "Fri, 11 Oct 2024 04:01:31 GMT",
+                    "update_time": 1728619291228,
+                    "vector_similarity_weight": 0.3
+                }
+            ],
+            "language": "English",
+            "llm": {
+                "frequency_penalty": 0.7,
+                "max_tokens": 512,
+                "model_name": "deepseek-chat___OpenAI-API@OpenAI-API-Compatible",
+                "presence_penalty": 0.4,
+                "temperature": 0.1,
+                "top_p": 0.3
+            },
+            "name": "Test",
+            "prompt": {
+                "empty_response": "Sorry! 知识库中未找到相关内容！",
+                "keywords_similarity_weight": 0.3,
+                "opener": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
+                "prompt": "你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\n            以下是知识库：\n            {knowledge}\n            以上是知识库。",
+                "rerank_model": "",
+                "similarity_threshold": 0.2,
+                "top_n": 6,
+                "variables": [
+                    {
+                        "key": "knowledge",
+                        "optional": false
+                    }
+                ]
+            },
+            "prompt_type": "simple",
+            "status": "1",
+            "tenant_id": "69736c5e723611efb51b0242ac120007",
+            "top_k": 1024,
+            "update_date": "Fri, 11 Oct 2024 03:47:58 GMT",
+            "update_time": 1728618478392
+        }
+    ]
+}
+```
+Error
+```json
+{
+    "code": 102,
+    "message": "The chat doesn't exist"
+}
+```
 
 ## Create a chat session
 

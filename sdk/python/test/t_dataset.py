@@ -29,7 +29,7 @@ class TestDataset(TestSdk):
         else:
             assert False, f"Failed to create dataset, error: {ds}"
 
-    def test_delete_dataset_with_success(self):
+    def test_delete_datasets_with_success(self):
         """
         Test deleting a dataset with success
         """
@@ -37,7 +37,7 @@ class TestDataset(TestSdk):
         ds = rag.create_dataset("MA")
         if isinstance(ds, DataSet):
             assert ds.name == "MA", "Name does not match."
-            res = rag.delete_dataset(names=["MA"])
+            res = rag.delete_datasets(ids=[ds.id])
             assert res is None, f"Failed to delete dataset, error: {res}"
         else:
             assert False, f"Failed to create dataset, error: {ds}"
