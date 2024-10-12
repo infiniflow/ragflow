@@ -58,7 +58,7 @@ You can also change the chunk template for a particular file on the **Datasets**
 
 ### Select embedding model
 
-An embedding model builds vector index on file chunks. Once you have chosen an embedding model and used it to parse a file, you are no longer allowed to change it. To switch to a different embedding model, you *must* deletes all completed file chunks in the knowledge base. The obvious reason is that we must *ensure* that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are compared in the same embedding space). 
+An embedding model builds vector index on file chunks. Once you have chosen an embedding model and used it to parse a file, you are no longer allowed to change it. To switch to a different embedding model, you *must* delete all completed file chunks in the knowledge base. The obvious reason is that we must *ensure* that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are compared in the same embedding space). 
 
 The following embedding models can be deployed locally:
 
@@ -128,7 +128,7 @@ RAGFlow uses multiple recall of both full-text search and vector search in its c
 
 ## Search for knowledge base
 
-As of RAGFlow v0.11.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
+As of RAGFlow v0.12.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
 
 ![search knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/836ae94c-2438-42be-879e-c7ad2a59693e)
 

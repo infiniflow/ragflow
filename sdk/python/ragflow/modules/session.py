@@ -16,9 +16,12 @@ class Session(Base):
             if "reference" in message:
                 message.pop("reference")
         res = self.post("/session/completion",
-                        {"id": self.id, "question": question, "stream": stream}, stream=True)
+                        {"session_id": self.id, "question": question, "stream": True}, stream=stream)
         for line in res.iter_lines():
             line = line.decode("utf-8")
+            if line.startswith("{"):
+                json_data = json.loads(line)
+                raise Exception(json_data["retmsg"])
             if line.startswith("data:"):
                 json_data = json.loads(line[5:])
                 if json_data["data"] != True:
@@ -69,6 +72,7 @@ class Message(Base):
         self.reference = None
         self.role = "assistant"
         self.prompt = None
+        self.id = None
         super().__init__(rag, res_dict)
 
 
@@ -76,10 +80,10 @@ class Chunk(Base):
     def __init__(self, rag, res_dict):
         self.id = None
         self.content = None
-        self.document_id = None
-        self.document_name = None
-        self.knowledgebase_id = None
-        self.image_id = None
+        self.document_id = ""
+        self.document_name = ""
+        self.knowledgebase_id = ""
+        self.image_id = ""
         self.similarity = None
         self.vector_similarity = None
         self.term_similarity = None

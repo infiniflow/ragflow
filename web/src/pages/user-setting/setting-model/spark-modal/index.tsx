@@ -7,6 +7,9 @@ import omit from 'lodash/omit';
 type FieldType = IAddLlmRequestBody & {
   vision: boolean;
   spark_api_password: string;
+  spark_app_id: string;
+  spark_api_secret: string;
+  spark_api_key: string;
 };
 
 const { Option } = Select;
@@ -63,28 +66,67 @@ const SparkModal = ({
         >
           <Select placeholder={t('modelTypeMessage')}>
             <Option value="chat">chat</Option>
+            <Option value="tts">tts</Option>
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
           label={t('modelName')}
           name="llm_name"
-          initialValue={'Spark-Max'}
           rules={[{ required: true, message: t('SparkModelNameMessage') }]}
         >
-          <Select placeholder={t('modelTypeMessage')}>
-            <Option value="Spark-Max">Spark-Max</Option>
-            <Option value="Spark-Lite">Spark-Lite</Option>
-            <Option value="Spark-Pro">Spark-Pro</Option>
-            <Option value="Spark-Pro-128K">Spark-Pro-128K</Option>
-            <Option value="Spark-4.0-Ultra">Spark-4.0-Ultra</Option>
-          </Select>
+          <Input placeholder={t('modelNameMessage')} />
         </Form.Item>
-        <Form.Item<FieldType>
-          label={t('addSparkAPIPassword')}
-          name="spark_api_password"
-          rules={[{ required: true, message: t('SparkAPIPasswordMessage') }]}
-        >
-          <Input placeholder={t('SparkAPIPasswordMessage')} />
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'chat' && (
+                <Form.Item<FieldType>
+                  label={t('addSparkAPIPassword')}
+                  name="spark_api_password"
+                  rules={[{ required: true, message: t('SparkAPIPasswordMessage') }]}
+                >
+                  <Input placeholder={t('SparkAPIPasswordMessage')} />
+                </Form.Item>
+            )
+          }
+        </Form.Item>
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'tts' && (
+                <Form.Item<FieldType>
+                  label={t('addSparkAPPID')}
+                  name="spark_app_id"
+                  rules={[{ required: true, message: t('SparkAPPIDMessage') }]}
+                >
+                  <Input placeholder={t('SparkAPPIDMessage')} />
+                </Form.Item>
+            )
+          }
+        </Form.Item>
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'tts' && (
+                <Form.Item<FieldType>
+                  label={t('addSparkAPISecret')}
+                  name="spark_api_secret"
+                  rules={[{ required: true, message: t('SparkAPISecretMessage') }]}
+                >
+                  <Input placeholder={t('SparkAPISecretMessage')} />
+                </Form.Item>
+            )
+          }
+        </Form.Item>
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'tts' && (
+                <Form.Item<FieldType>
+                  label={t('addSparkAPIKey')}
+                  name="spark_api_key"
+                  rules={[{ required: true, message: t('SparkAPIKeyMessage') }]}
+                >
+                  <Input placeholder={t('SparkAPIKeyMessage')} />
+                </Form.Item>
+            )
+          }
         </Form.Item>
       </Form>
     </Modal>

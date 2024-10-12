@@ -16,7 +16,6 @@ import random
 
 import xgboost as xgb
 from io import BytesIO
-import torch
 import re
 import pdfplumber
 import logging
@@ -25,6 +24,7 @@ import numpy as np
 from timeit import default_timer as timer
 from pypdf import PdfReader as pdf2_read
 
+from api.settings import LIGHTEN
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
@@ -44,8 +44,13 @@ class RAGFlowPdfParser:
         self.tbl_det = TableStructureRecognizer()
 
         self.updown_cnt_mdl = xgb.Booster()
-        if torch.cuda.is_available():
-            self.updown_cnt_mdl.set_param({"device": "cuda"})
+        if not LIGHTEN:
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    self.updown_cnt_mdl.set_param({"device": "cuda"})
+            except Exception as e:
+                logging.error(str(e))
         try:
             model_dir = os.path.join(
                 get_project_base_directory(),
@@ -486,7 +491,7 @@ class RAGFlowPdfParser:
                         i += 1
                         continue
 
-                    if not down["text"].strip():
+                    if not down["text"].strip() or not up["text"].strip():
                         i += 1
                         continue
 

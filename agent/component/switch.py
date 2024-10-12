@@ -49,34 +49,15 @@ class Switch(ComponentBase, ABC):
 
     def _run(self, history, **kwargs):
         for cond in self._param.conditions:
-
-            if len(cond["items"]) == 1:
-                out = self._canvas.get_component(cond["items"][0]["cpn_id"])["obj"].output()[1]
-                cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
-                if self.process_operator(cpn_input, cond["items"][0]["operator"], cond["items"][0]["value"]):
-                    return Switch.be_output(cond["to"])
-                continue
-
-            if cond["logical_operator"] == "and":
-                res = True
-                for item in cond["items"]:
-                    out = self._canvas.get_component(item["cpn_id"])["obj"].output()[1]
-                    cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
-                    if not self.process_operator(cpn_input, item["operator"], item["value"]):
-                        res = False
-                        break
-                if res:
-                    return Switch.be_output(cond["to"])
-                continue
-
-            res = False
+            res = []
             for item in cond["items"]:
                 out = self._canvas.get_component(item["cpn_id"])["obj"].output()[1]
                 cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
-                if self.process_operator(cpn_input, item["operator"], item["value"]):
-                    res = True
-                    break
-            if res:
+                res.append(self.process_operator(cpn_input, item["operator"], item["value"]))
+                if cond["logical_operator"] != "and" and any(res):
+                    return Switch.be_output(cond["to"])
+
+            if all(res):
                 return Switch.be_output(cond["to"])
 
         return Switch.be_output(self._param.end_cpn_id)

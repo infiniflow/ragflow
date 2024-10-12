@@ -3,6 +3,7 @@ import {
   IApiKeySavingParams,
   ISystemModelSettingSavingParams,
   useAddLlm,
+  useDeleteFactory,
   useDeleteLlm,
   useSaveApiKey,
   useSaveTenantInfo,
@@ -352,6 +353,33 @@ export const useSubmitBedrock = () => {
   };
 };
 
+export const useSubmitAzure = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: AzureAddingVisible,
+    hideModal: hideAzureAddingModal,
+    showModal: showAzureAddingModal,
+  } = useSetModalState();
+
+  const onAzureAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideAzureAddingModal();
+      }
+    },
+    [hideAzureAddingModal, addLlm],
+  );
+
+  return {
+    AzureAddingLoading: loading,
+    onAzureAddingOk,
+    AzureAddingVisible,
+    hideAzureAddingModal,
+    showAzureAddingModal,
+  };
+};
+
 export const useHandleDeleteLlm = (llmFactory: string) => {
   const { deleteLlm } = useDeleteLlm();
   const showDeleteConfirm = useShowDeleteConfirm();
@@ -365,4 +393,19 @@ export const useHandleDeleteLlm = (llmFactory: string) => {
   };
 
   return { handleDeleteLlm };
+};
+
+export const useHandleDeleteFactory = (llmFactory: string) => {
+  const { deleteFactory } = useDeleteFactory();
+  const showDeleteConfirm = useShowDeleteConfirm();
+
+  const handleDeleteFactory = () => {
+    showDeleteConfirm({
+      onOk: async () => {
+        deleteFactory({ llm_factory: llmFactory });
+      },
+    });
+  };
+
+  return { handleDeleteFactory };
 };

@@ -30,7 +30,8 @@ services:
     restart: always
 
   mysql:
-    image: mysql:5.7.18
+    # mysql:5.7 linux/arm64 image is unavailable.
+    image: mysql:8.0.39
     container_name: ragflow-mysql
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}

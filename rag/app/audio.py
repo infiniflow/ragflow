@@ -10,9 +10,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import io
 import re
-import numpy as np
 
 from api.db import LLMType
 from rag.nlp import rag_tokenizer

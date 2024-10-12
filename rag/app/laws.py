@@ -10,15 +10,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import copy
 from tika import parser
 import re
 from io import BytesIO
 from docx import Document
 
 from api.db import ParserType
-from rag.nlp import bullets_category, is_english, tokenize, remove_contents_table, hierarchical_merge, \
-    make_colon_as_title, add_positions, tokenize_chunks, find_codec, docx_question_level
+from deepdoc.parser.utils import get_text
+from rag.nlp import bullets_category, remove_contents_table, hierarchical_merge, \
+    make_colon_as_title, tokenize_chunks, docx_question_level
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
 from rag.settings import cron_logger
@@ -165,17 +165,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        txt = ""
-        if binary:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
-        else:
-            with open(filename, "r") as f:
-                while True:
-                    l = f.readline()
-                    if not l:
-                        break
-                    txt += l
+        txt = get_text(filename, binary)
         sections = txt.split("\n")
         sections = [l for l in sections if l]
         callback(0.8, "Finish parsing.")

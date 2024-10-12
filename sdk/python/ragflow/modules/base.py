@@ -18,16 +18,20 @@ class Base(object):
                     pr[name] = value
         return pr
 
-    def post(self, path, param, stream=False):
-        res = self.rag.post(path, param, stream=stream)
+    def post(self, path, json, stream=False):
+        res = self.rag.post(path, json, stream=stream)
         return res
 
     def get(self, path, params):
         res = self.rag.get(path, params)
         return res
 
-    def rm(self, path, params):
-        res = self.rag.delete(path, params)
+    def rm(self, path, json):
+        res = self.rag.delete(path, json)
+        return res
+
+    def put(self,path, json):
+        res = self.rag.put(path,json)
         return res
 
     def __str__(self):

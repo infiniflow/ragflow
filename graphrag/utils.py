@@ -14,23 +14,25 @@ ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
 
 def perform_variable_replacements(
-    input: str, history: list[dict]=[], variables: dict | None ={}
+    input: str, history: list[dict] | None = None, variables: dict | None = None
 ) -> str:
     """Perform variable replacements on the input string and in a chat log."""
+    if history is None:
+        history = []
+    if variables is None:
+        variables = {}
     result = input
 
     def replace_all(input: str) -> str:
         result = input
-        if variables:
-            for entry in variables:
-                result = result.replace(f"{{{entry}}}", variables[entry])
+        for k, v in variables.items():
+            result = result.replace(f"{{{k}}}", v)
         return result
 
     result = replace_all(result)
-    for i in range(len(history)):
-        entry = history[i]
+    for i, entry in enumerate(history):
         if entry.get("role") == "system":
-            history[i]["content"] = replace_all(entry.get("content") or "")
+            entry["content"] = replace_all(entry.get("content") or "")
 
     return result
 

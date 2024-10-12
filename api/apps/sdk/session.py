@@ -87,9 +87,9 @@ def completion(tenant_id):
     # req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
     #    {"role": "user", "content": "上海有吗？"}
     # ]}
-    if "id" not in req:
-        return get_data_error_result(retmsg="id is required")
-    conv = ConversationService.query(id=req["id"])
+    if "session_id" not in req:
+        return get_data_error_result(retmsg="session_id is required")
+    conv = ConversationService.query(id=req["session_id"])
     if not conv:
         return get_data_error_result(retmsg="Session does not exist")
     conv = conv[0]
@@ -108,7 +108,7 @@ def completion(tenant_id):
         msg.append(m)
     message_id = msg[-1].get("id")
     e, dia = DialogService.get_by_id(conv.dialog_id)
-    del req["id"]
+    del req["session_id"]
 
     if not conv.reference:
         conv.reference = []
@@ -168,6 +168,9 @@ def get(tenant_id):
         return get_data_error_result(retmsg="Session does not exist")
     if not DialogService.query(id=conv[0].dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_data_error_result(retmsg="You do not own the session")
+    if "assistant_id" in req:
+        if req["assistant_id"] != conv[0].dialog_id:
+            return get_data_error_result(retmsg="The session doesn't belong to the assistant")
     conv = conv[0].to_dict()
     conv['messages'] = conv.pop("message")
     conv["assistant_id"] = conv.pop("dialog_id")
@@ -207,7 +210,7 @@ def list(tenant_id):
     assistant_id = request.args["assistant_id"]
     if not DialogService.query(tenant_id=tenant_id, id=assistant_id, status=StatusEnum.VALID.value):
         return get_json_result(
-            data=False, retmsg=f'Only owner of the assistant is authorized for this operation.',
+            data=False, retmsg=f"You don't own the assistant.",
             retcode=RetCode.OPERATING_ERROR)
     convs = ConversationService.query(
         dialog_id=assistant_id,

@@ -19,6 +19,7 @@ export default {
   set_api_key: `${api_host}/llm/set_api_key`,
   add_llm: `${api_host}/llm/add_llm`,
   delete_llm: `${api_host}/llm/delete_llm`,
+  deleteFactory: `${api_host}/llm/delete_factory`,
 
   // knowledge base
   kb_list: `${api_host}/kb/list`,

@@ -122,21 +122,23 @@ export const buildDslComponentsByGraph = (
 ): DSLComponents => {
   const components: DSLComponents = {};
 
-  nodes.forEach((x) => {
-    const id = x.id;
-    const operatorName = x.data.label;
-    components[id] = {
-      obj: {
-        component_name: operatorName,
-        params:
-          buildOperatorParams(operatorName)(
-            x.data.form as Record<string, unknown>,
-          ) ?? {},
-      },
-      downstream: buildComponentDownstreamOrUpstream(edges, id, true),
-      upstream: buildComponentDownstreamOrUpstream(edges, id, false),
-    };
-  });
+  nodes
+    .filter((x) => x.data.label !== Operator.Note)
+    .forEach((x) => {
+      const id = x.id;
+      const operatorName = x.data.label;
+      components[id] = {
+        obj: {
+          component_name: operatorName,
+          params:
+            buildOperatorParams(operatorName)(
+              x.data.form as Record<string, unknown>,
+            ) ?? {},
+        },
+        downstream: buildComponentDownstreamOrUpstream(edges, id, true),
+        upstream: buildComponentDownstreamOrUpstream(edges, id, false),
+      };
+    });
 
   return components;
 };

@@ -16,7 +16,7 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 ### 2. Which languages does RAGFlow support?
 
-English, simplified Chinese, traditional Chinese for now. 
+English, simplified Chinese, traditional Chinese for now.
 
 ### 3. Which embedding models can be deployed locally?
 
@@ -45,19 +45,19 @@ RAGFlow has a number of built-in models for document structure parsing, which ac
 
 ### 1. Which architectures or devices does RAGFlow support?
 
-Currently, we only support x86 CPU and Nvidia GPU. 
+Currently, we only support x86 CPU and Nvidia GPU.
 
 ### 2. Do you offer an API for integration with third-party applications?
 
-The corresponding APIs are now available. See the [RAGFlow API Reference](./api.md) for more information. 
+The corresponding APIs are now available. See the [RAGFlow API Reference](./api.md) for more information.
 
 ### 3. Do you support stream output?
 
-No, this feature is still in development. Contributions are welcome. 
+This feature is supported.
 
 ### 4. Is it possible to share dialogue through URL?
 
-Yes, this feature is now available.
+No, this feature is not supported.
 
 ### 5. Do you support multiple rounds of dialogues, i.e., referencing previous dialogues as context for the current dialogue?
 
@@ -75,7 +75,6 @@ $ git clone https://github.com/infiniflow/ragflow.git
 $ cd ragflow
 $ docker build -t infiniflow/ragflow:latest .
 $ cd ragflow/docker
-$ chmod +x ./entrypoint.sh
 $ docker compose up -d
 ```
 
@@ -168,12 +167,11 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 *The server is successfully initialized, if your system displays the following:*
 
 ```
-    ____                 ______ __
-   / __ \ ____ _ ____ _ / ____// /____  _      __
-  / /_/ // __ `// __ `// /_   / // __ \| | /| / /
- / _, _// /_/ // /_/ // __/  / // /_/ /| |/ |/ /
-/_/ |_| \__,_/ \__, //_/    /_/ \____/ |__/|__/
-              /____/
+     ____   ___    ______ ______ __               
+    / __ \ /   |  / ____// ____// /____  _      __
+   / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+  / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+ /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
 
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:9380
@@ -408,49 +406,25 @@ You can upgrade RAGFlow to either the dev version or the latest version:
 
 To upgrade RAGFlow to the dev version:
 
-1. Pull the latest source code
+Update the RAGFlow image and restart RAGFlow:
+1. Update **ragflow/docker/.env** as follows:
    ```bash
-   cd ragflow
-   git pull
+   RAGFLOW_IMAGE=infiniflow/ragflow:dev
    ```
-2. If you used `docker compose up -d` to start up RAGFlow server:
+2. Update ragflow image and restart ragflow:
    ```bash
-   docker pull infiniflow/ragflow:dev
-   ```
-   ```bash
-   docker compose up ragflow -d
-   ```
-3. If you used `docker compose -f docker-compose-CN.yml up -d` to start up RAGFlow server:
-   ```bash
-   docker pull swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev
-   ```
-   ```bash
-   docker compose -f docker-compose-CN.yml up -d
+   docker compose -f docker/docker-compose.yml pull
+   docker compose -f docker/docker-compose.yml up -d
    ```
    
 To upgrade RAGFlow to the latest version:
 
 1. Update **ragflow/docker/.env** as follows:
    ```bash
-   RAGFLOW_VERSION=latest
+   RAGFLOW_IMAGE=infiniflow/ragflow:latest
    ```
-2. Pull the latest source code:
+2. Update the RAGFlow image and restart RAGFlow:
    ```bash
-   cd ragflow
-   git pull
+   docker compose -f docker/docker-compose.yml pull
+   docker compose -f docker/docker-compose.yml up -d
    ```   
-
-3. If you used `docker compose up -d` to start up RAGFlow server:
-   ```bash
-   docker pull infiniflow/ragflow:latest
-   ```
-   ```bash
-   docker compose up ragflow -d
-   ```
-4. If you used `docker compose -f docker-compose-CN.yml up -d` to start up RAGFlow server:
-   ```bash
-   docker pull swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:latest
-   ```
-   ```bash
-   docker compose -f docker-compose-CN.yml up -d
-   ```

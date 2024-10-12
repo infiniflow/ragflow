@@ -18,6 +18,7 @@ import json
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
+from api.settings import LIGHTEN
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
@@ -57,7 +58,7 @@ def set_api_key():
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
     msg = ""
-    for llm in LLMService.query(fid=factory)[:3]:
+    for llm in LLMService.query(fid=factory):
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
             mdl = EmbeddingModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
@@ -76,10 +77,10 @@ def set_api_key():
                                  {"temperature": 0.9,'max_tokens':50})
                 if m.find("**ERROR**") >=0:
                     raise Exception(m)
+                chat_passed = True
             except Exception as e:
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
                     e)
-            chat_passed = True
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
             mdl = RerankModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
@@ -87,10 +88,14 @@ def set_api_key():
                 arr, tc = mdl.similarity("What's the weather?", ["Is it sunny today?"])
                 if len(arr) == 0 or tc == 0:
                     raise Exception("Fail")
+                rerank_passed = True
+                print(f'passed model rerank{llm.llm_name}',flush=True)
             except Exception as e:
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
                     e)
-            rerank_passed = True
+        if any([embd_passed, chat_passed, rerank_passed]):
+            msg = ''
+            break
 
     if msg:
         return get_data_error_result(retmsg=msg)
@@ -154,6 +159,10 @@ def add_llm():
     elif factory == "LocalAI":
         llm_name = req["llm_name"]+"___LocalAI"
         api_key = "xxxxxxxxxxxxxxx"
+        
+    elif factory == "HuggingFace":
+        llm_name = req["llm_name"]+"___HuggingFace"
+        api_key = "xxxxxxxxxxxxxxx"
 
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"]+"___OpenAI-API"
@@ -161,7 +170,10 @@ def add_llm():
 
     elif factory =="XunFei Spark":
         llm_name = req["llm_name"]
-        api_key = req.get("spark_api_password","xxxxxxxxxxxxxxx")
+        if req["model_type"] == "chat":
+            api_key = req.get("spark_api_password", "xxxxxxxxxxxxxxx")
+        elif req["model_type"] == "tts":
+            api_key = apikey_json(["spark_app_id", "spark_api_secret","spark_api_key"])
 
     elif factory == "BaiduYiyan":
         llm_name = req["llm_name"]
@@ -174,6 +186,10 @@ def add_llm():
     elif factory == "Google Cloud":
         llm_name = req["llm_name"]
         api_key = apikey_json(["google_project_id", "google_region", "google_service_account_key"])
+
+    elif factory == "Azure-OpenAI":
+        llm_name = req["llm_name"]
+        api_key = apikey_json(["api_key", "api_version"])
 
     else:
         llm_name = req["llm_name"]
@@ -281,6 +297,16 @@ def delete_llm():
     return get_json_result(data=True)
 
 
+@manager.route('/delete_factory', methods=['POST'])
+@login_required
+@validate_request("llm_factory")
+def delete_factory():
+    req = request.json
+    TenantLLMService.filter_delete(
+            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"]])
+    return get_json_result(data=True)
+
+
 @manager.route('/my_llms', methods=['GET'])
 @login_required
 def my_llms():
@@ -306,13 +332,14 @@ def my_llms():
 @login_required
 def list_app():
     self_deploied = ["Youdao","FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
+    weighted = ["Youdao","FastEmbed", "BAAI"] if LIGHTEN != 0 else []
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
         llms = LLMService.get_all()
         llms = [m.to_dict()
-                for m in llms if m.status == StatusEnum.VALID.value]
+                for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted]
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deploied
 

@@ -19,8 +19,8 @@ import json
 import re
 from copy import deepcopy
 from timeit import default_timer as timer
-from api.db import LLMType, ParserType
-from api.db.db_models import Dialog, Conversation
+from api.db import LLMType, ParserType,StatusEnum
+from api.db.db_models import Dialog, Conversation,DB
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
@@ -34,6 +34,28 @@ from api.utils.file_utils import get_project_base_directory
 
 class DialogService(CommonService):
     model = Dialog
+
+    @classmethod
+    @DB.connection_context()
+    def get_list(cls, tenant_id,
+                 page_number, items_per_page, orderby, desc, id , name):
+        chats = cls.model.select()
+        if id:
+            chats = chats.where(cls.model.id == id)
+        if name:
+            chats = chats.where(cls.model.name == name)
+        chats = chats.where(
+              (cls.model.tenant_id == tenant_id)
+            & (cls.model.status == StatusEnum.VALID.value)
+        )
+        if desc:
+            chats = chats.order_by(cls.model.getter_by(orderby).desc())
+        else:
+            chats = chats.order_by(cls.model.getter_by(orderby).asc())
+
+        chats = chats.paginate(page_number, items_per_page)
+
+        return list(chats.dicts())
 
 
 class ConversationService(CommonService):
@@ -85,7 +107,7 @@ def llm_id2llm_type(llm_id):
         for llm in llm_factory["llm"]:
             if llm_id == llm["llm_name"]:
                 return llm["model_type"].strip(",")[-1]
-                
+
 
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
@@ -180,7 +202,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": empty_res, "reference": kbinfos, "audio_binary": tts(tts_mdl, empty_res)}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
-    kwargs["knowledge"] = "\n------\n".join(knowledges)
+    kwargs["knowledge"] = "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
@@ -189,6 +211,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.97))
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
     prompt = msg[0]["content"]
+    prompt += "\n\n### Query:\n%s" % " ".join(questions)
 
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(
@@ -221,7 +244,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
         done_tm = timer()
-        prompt += "\n### Elapsed\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms"%((retrieval_tm-st)*1000, (done_tm-st)*1000)
+        prompt += "\n\n### Elapsed\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms"%((retrieval_tm-st)*1000, (done_tm-st)*1000)
         return {"answer": answer, "reference": refs, "prompt": prompt}
 
     if stream:

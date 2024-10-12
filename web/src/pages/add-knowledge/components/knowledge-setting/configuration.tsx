@@ -1,5 +1,6 @@
 import Delimiter from '@/components/delimiter';
 import EntityTypesItem from '@/components/entity-types-item';
+import ExcelToHtml from '@/components/excel-to-html';
 import LayoutRecognize from '@/components/layout-recognize';
 import MaxTokenNumber from '@/components/max-token-number';
 import ParseConfiguration, {
@@ -124,6 +125,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
                   <MaxTokenNumber></MaxTokenNumber>
                   <Delimiter></Delimiter>
                   <LayoutRecognize></LayoutRecognize>
+                  <ExcelToHtml></ExcelToHtml>
                 </>
               )}
               {showRaptorParseConfiguration(parserId) && (

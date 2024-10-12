@@ -8,6 +8,21 @@ type FieldType = IAddLlmRequestBody & { vision: boolean };
 
 const { Option } = Select;
 
+const llmFactoryToUrlMap = {
+  Ollama:
+    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx',
+  Xinference: 'https://inference.readthedocs.io/en/latest/user_guide',
+  LocalAI: 'https://localai.io/docs/getting-started/models/',
+  'LM-Studio': 'https://lmstudio.ai/docs/basics',
+  'OpenAI-API-Compatible': 'https://platform.openai.com/docs/models/gpt-4',
+  TogetherAI: 'https://docs.together.ai/docs/deployment-options',
+  Replicate: 'https://replicate.com/docs/topics/deployments',
+  OpenRouter: 'https://openrouter.ai/docs',
+  HuggingFace:
+    'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
+};
+type LlmFactory = keyof typeof llmFactoryToUrlMap;
+
 const OllamaModal = ({
   visible,
   hideModal,
@@ -35,7 +50,32 @@ const OllamaModal = ({
 
     onOk?.(data);
   };
-
+  const url =
+    llmFactoryToUrlMap[llmFactory as LlmFactory] ||
+    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx';
+  const optionsMap = {
+    HuggingFace: [
+      { value: 'embedding', label: 'embedding' },
+      { value: 'chat', label: 'chat' },
+    ],
+    Xinference: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'rerank', label: 'rerank' },
+      { value: 'image2text', label: 'image2text' },
+      { value: 'speech2text', label: 'sequence2text' },
+      { value: 'tts', label: 'tts' },
+    ],
+    Default: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'rerank', label: 'rerank' },
+      { value: 'image2text', label: 'image2text' },
+    ],
+  };
+  const getOptions = (factory: string) => {
+    return optionsMap[factory as keyof typeof optionsMap] || optionsMap.Default;
+  };
   return (
     <Modal
       title={t('addLlmTitle', { name: llmFactory })}
@@ -46,11 +86,7 @@ const OllamaModal = ({
       footer={(originNode: React.ReactNode) => {
         return (
           <Flex justify={'space-between'}>
-            <a
-              href={`https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx`}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a href={url} target="_blank" rel="noreferrer">
               {t('ollamaLink', { name: llmFactory })}
             </a>
             <Space>{originNode}</Space>
@@ -68,14 +104,15 @@ const OllamaModal = ({
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
-          initialValue={'chat'}
+          initialValue={'embedding'}
           rules={[{ required: true, message: t('modelTypeMessage') }]}
         >
           <Select placeholder={t('modelTypeMessage')}>
-            <Option value="chat">chat</Option>
-            <Option value="embedding">embedding</Option>
-            <Option value="rerank">rerank</Option>
-            <Option value="image2text">image2text</Option>
+            {getOptions(llmFactory).map((option) => (
+              <Option key={option.value} value={option.value}>
+                {option.label}
+              </Option>
+            ))}
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
