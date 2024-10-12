@@ -30,5 +30,9 @@ class Base(object):
         res = self.rag.delete(path, params)
         return res
 
+    def put(self,path, json):
+        res = self.rag.put(path,json)
+        return res
+
     def __str__(self):
         return str(self.to_json())

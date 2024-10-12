@@ -123,7 +123,7 @@ if not LIGHTEN:
 
     CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"]
     EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"]
-    RERANK_MDL = default_llm["BAAI"]["rerank_model"] if not LIGHTEN else ""
+    RERANK_MDL = default_llm["BAAI"]["rerank_model"]
     ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
     IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
 else:

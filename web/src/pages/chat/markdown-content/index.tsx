@@ -1,19 +1,19 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
-import { useSelectFileThumbnails } from '@/hooks/knowledge-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Button, Flex, Popover, Space } from 'antd';
 import DOMPurify from 'dompurify';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import remarkGfm from 'remark-gfm';
 import { visitParents } from 'unist-util-visit-parents';
 
+import { useFetchDocumentThumbnailsByIds } from '@/hooks/document-hooks';
 import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
@@ -34,6 +34,8 @@ const MarkdownContent = ({
   clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
 }) => {
   const { t } = useTranslation();
+  const { setDocumentIds, data: fileThumbnails } =
+    useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
     let text = content;
     if (text === '') {
@@ -42,7 +44,9 @@ const MarkdownContent = ({
     return loading ? text?.concat('~~2$$') : text;
   }, [content, loading, t]);
 
-  const fileThumbnails = useSelectFileThumbnails();
+  useEffect(() => {
+    setDocumentIds(reference?.doc_aggs?.map((x) => x.doc_id) ?? []);
+  }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
     (documentId: string, chunk: IChunk, isPdf: boolean) => () => {

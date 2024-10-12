@@ -42,8 +42,8 @@
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Get Started](#-get-started)
 - 🔧 [Configurations](#-configurations)
-- 🔧 [Build a docker image without embedding models](#-build-the-docker-image-without-embedding-models)
-- 🔧 [Build a docker image including embedding models](#-build-the-docker-image-including-embedding-models)
+- 🔧 [Build a docker image without embedding models](#-build-a-docker-image-without-embedding-models)
+- 🔧 [Build a docker image including embedding models](#-build-a-docker-image-including-embedding-models)
 - 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
@@ -153,14 +153,19 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
    ```
 
 3. Build the pre-built Docker images and start up the server:
-   > Running the following commands automatically downloads the *dev-slim* version RAGFlow Docker image. To download and run a specified Docker version, update `RAGFLOW_IMAGE` in **docker/.env** to the intended version, for example `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`, before running the following commands.
+
+   > The command below downloads the dev version Docker image for RAGFlow slim (`dev-slim`). Note that RAGFlow slim Docker images do not include embedding models or Python libraries and hence are approximately 1GB in size.
 
    ```bash
    $ cd ragflow/docker
-   $ docker compose up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
-   > The core image is about 1 GB in size and may take a while to load.
+   > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`. After making this change, rerun the command above to initiate the download.
+   > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlow_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change, rerun the command above to initiate the download.
+   > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`. After making this change, rerun the command above to initiate the download.  
+   
+   > **NOTE:** A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size and may take significantly longer time to load.
 
 4. Check the server status after having the server up and running:
 

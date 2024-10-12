@@ -135,13 +135,17 @@
 
 3. 进入 **docker** 文件夹，利用提前编译好的 Docker 镜像启动服务器：
 
+   > 运行以下命令会自动下载 dev 版的 RAGFlow slim Docker 镜像（`dev-slim`），该镜像并不包含 embedding 模型以及一些 Python 库，因此镜像大小约 1GB。
+
    ```bash
    $ cd ragflow/docker
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > 运行上述命令会自动下载 RAGFlow 的 dev-slim 版本的 Docker 镜像，该镜像并不包含 embedding 模型以及一些 Python 库，因此镜像大小约 1GB。如果你想下载并运行特定版本的 Docker 镜像，请在 docker/slim.env 文件中找到 RAGFLOW_IMAGE 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`，然后再运行上述命令。
-   > 如果您想安装内置 embedding 模型的 dev 版本的 docker 镜像，需要把docker/.env文件中 RAGFLOW_IMAGE 变量，这样的修改： `RAGFLOW_IMAGE=infiniflow/ragflow:dev`。如果您想指定指定特定版本，则可以修改为：`RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`。修改后，再运行上面的命令。注意 dev 版本的 RAGFlow Docker image 大小约 9 GB，可能需要一定时间下载，请耐心等待。
+   > - 如果你想下载并运行特定版本的 RAGFlow slim Docker 镜像，请在 **docker/.env** 文件中找到 `RAGFLOW_IMAGE` 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`，然后再运行上述命令。
+   > - 如果您想安装内置 embedding 模型和 Python 库的 dev 版本的 Docker 镜像，需要将 **docker/.env** 文件中的 `RAGFLOW_IMAGE` 变量修改为： `RAGFLOW_IMAGE=infiniflow/ragflow:dev`。
+   > - 如果您想安装内置 embedding 模型和 Python 库的指定版本的 RAGFlow Docker 镜像，需要将 **docker/.env** 文件中的 `RAGFLOW_IMAGE` 变量修改为： `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`。修改后，再运行上面的命令。
+   > **注意：** 安装内置 embedding 模型和 Python 库的指定版本的 RAGFlow Docker 镜像大小约 9 GB，可能需要更长时间下载，请耐心等待。
    
 4. 服务器启动成功后再次确认服务器状态：
 

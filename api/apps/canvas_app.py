@@ -112,7 +112,7 @@ def run():
             canvas.messages.append({"role": "user", "content": req["message"], "id": message_id})
             if len([m for m in canvas.messages if m["role"] == "user"]) > 1:
                 ten = TenantService.get_by_user_id(current_user.id)[0]
-                req["message"] = full_question(ten["tenant_id"], ten["llm_id"], canvas.messages)
+                #req["message"] = full_question(ten["tenant_id"], ten["llm_id"], canvas.messages)
             canvas.add_user_input(req["message"])
         answer = canvas.run(stream=stream)
         print(canvas)

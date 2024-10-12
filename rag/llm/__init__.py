@@ -107,6 +107,7 @@ ChatModel = {
     "BaiduYiyan": BaiduYiyanChat,
     "Anthropic": AnthropicChat,
     "Google Cloud": GoogleChat,
+    "HuggingFace": HuggingFaceChat,
 }
 
 RerankModel = {

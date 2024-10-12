@@ -18,12 +18,11 @@ const CategorizeForm = ({ form, onValuesChange, node }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 6 }}
-      wrapperCol={{ span: 18 }}
       autoComplete="off"
       form={form}
       onValuesChange={handleValuesChange}
       initialValues={{ items: [{}] }}
+      layout={'vertical'}
     >
       <Form.Item
         name={'llm_id'}

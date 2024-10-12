@@ -238,6 +238,11 @@ def thumbnails():
 
     try:
         docs = DocumentService.get_thumbnails(doc_ids)
+
+        for doc_item in docs:
+            if doc_item['thumbnail'] and not doc_item['thumbnail'].startswith(IMG_BASE64_PREFIX):
+                doc_item['thumbnail'] = f"/v1/document/image/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+
         return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
         return server_error_response(e)
