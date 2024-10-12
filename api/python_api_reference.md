@@ -906,7 +906,7 @@ Chat-session APIs
 ## Create session
 
 ```python
-assistant_1.create_session(name: str = "New session") -> Session
+Chat.create_session(name: str = "New session") -> Session
 ```
 
 ### Returns
@@ -916,8 +916,7 @@ A `session` object.
 #### id: `str`
 
 The id of the created session is used to identify different sessions.
-- `id` cannot be provided in creating
-- `id` is required in updating
+- id can not be provided in creating
 
 #### name: `str`
 
@@ -936,10 +935,10 @@ Defaults:
 [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
 ```
 
-#### assistant_id: `str`
+#### chat_id: `str`
 
-The id of associated assistant. Defaults to `""`.
-- `assistant_id` is required in creating if you use HTTP API.
+The id of associated chat
+- `chat_id` can't be changed
 
 ### Examples
 
@@ -947,58 +946,21 @@ The id of associated assistant. Defaults to `""`.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-assi = rag.get_assistant(name="Miss R")
+assi = rag.list_chats(name="Miss R")
+assi = assi[0]
 sess = assi.create_session()
 ```
 
-## Retrieve session
+
+## Update session
 
 ```python
-Assistant.get_session(id: str) -> Session
+Session.update(update_message:dict)
 ```
-
-### Parameters
-
-#### id: `str`, *Required*
-
-???????????????????????????????
 
 ### Returns
 
-### Returns
-
-A `session` object.
-
-#### id: `str`
-
-The id of the created session is used to identify different sessions.
-- `id` cannot be provided in creating
-- `id` is required in updating
-
-#### name: `str`
-
-The name of the created session. Defaults to `"New session"`.
-
-#### messages: `List[Message]`
-
-The messages of the created session.
-- messages cannot be provided.
-
-Defaults:
-
-??????????????????????????????????????????????????????????????????????????????????????????????
-
-```
-[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
-```
-
-#### assistant_id: `str`
-
-
-???????????????????????????????????????How to get
-
-The id of associated assistant. Defaults to `""`.
-- `assistant_id` is required in creating if you use HTTP API.
+no return
 
 ### Examples
 
@@ -1006,33 +968,10 @@ The id of associated assistant. Defaults to `""`.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-assi = rag.get_assistant(name="Miss R")
-sess = assi.get_session(id="d5c55d2270dd11ef9bd90242ac120007")
-```
-
----
-
-## Save session settings
-
-```python
-Session.save() -> bool
-```
-
-### Returns
-
-bool
-description:the case of updating a session, True or False.
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-assi = rag.get_assistant(name="Miss R")
-sess = assi.get_session(id="d5c55d2270dd11ef9bd90242ac120007")
-sess.name = "Updated session"
-sess.save()
+assi = rag.list_chats(name="Miss R")
+assi = assi[0]
+sess = assi.create_session("new_session")
+sess.update({"name": "Updated session"...})
 ```
 
 ---
@@ -1040,7 +979,7 @@ sess.save()
 ## Chat
 
 ```python
-Session.chat(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
+Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
 ```
 
 ### Parameters
@@ -1053,7 +992,6 @@ The question to start an AI chat. Defaults to `None`. ???????????????????
 
 The approach of streaming text generation. When stream is True, it outputs results in a streaming fashion; otherwise, it outputs the complete result after the model has finished generating.
 
-#### session_id: `str` ??????????????????
 
 ### Returns
 
@@ -1098,7 +1036,8 @@ The auto-generated reference of the message. Each `chunk` object includes the fo
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-assi = rag.get_assistant(name="Miss R")
+assi = rag.list_chats(name="Miss R")
+assi = assi[0]
 sess = assi.create_session()    
 
 print("\n==================== Miss R =====================\n")
@@ -1109,9 +1048,10 @@ while True:
     print("\n==================== Miss R =====================\n")
     
     cont = ""
-    for ans in sess.chat(question, stream=True):
+    for ans in sess.ask(question, stream=True):
         print(ans.content[len(cont):], end='', flush=True)
         cont = ans.content
+
 ```
 
 ---
@@ -1119,7 +1059,14 @@ while True:
 ## List sessions
 
 ```python
-Assistant.list_session() -> List[Session]
+Chat.list_sessions(
+    page: int = 1, 
+    page_size: int = 1024, 
+    orderby: str = "create_time", 
+    desc: bool = True,
+    id: str = None,
+    name: str = None
+) -> List[Session]
 ```
 
 ### Returns
@@ -1133,24 +1080,54 @@ description: the List contains information about multiple assistant object, with
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-assi = rag.get_assistant(name="Miss R")
-
-for sess in assi.list_session():
+assi = rag.list_chats(name="Miss R")
+assi = assi[0]
+for sess in assi.list_sessions():
     print(sess)
 ```
 
+### Parameters
+
+#### page: `int`  
+
+The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
+- `1`
+
+#### page_size: `int`  
+
+The number of records to retrieve per page. This controls how many records will be included in each page.  
+- `1024`
+
+#### orderby: `string`  
+
+The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
+- `"create_time"`
+
+#### desc: `bool`  
+
+A boolean flag indicating whether the sorting should be in descending order.  
+- `True`
+
+#### id: `string`  
+
+The ID of the chat to be retrieved.  
+- `None`
+
+#### name: `string`  
+
+The name of the chat to be retrieved.  
+- `None`
 ---
 
 ## Delete session
 
 ```python
-Session.delete() -> bool
+Chat.delete_sessions(ids:List[str] = None)
 ```
 
 ### Returns
 
-bool
-description:the case of deleting a session, True or False.
+no return
 
 ### Examples
 
@@ -1158,7 +1135,12 @@ description:the case of deleting a session, True or False.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-assi = rag.get_assistant(name="Miss R")
-sess = assi.create_session()
-sess.delete()
+assi = rag.list_chats(name="Miss R")
+assi = assi[0]
+assi.delete_sessions(ids=["id_1","id_2"])
 ```
+### Parameters
+#### ids: `List[string]`
+IDs of the sessions to be deleted.
+- `None`
+

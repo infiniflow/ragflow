@@ -19,6 +19,8 @@ import json
 import re
 from copy import deepcopy
 from timeit import default_timer as timer
+
+
 from api.db import LLMType, ParserType,StatusEnum
 from api.db.db_models import Dialog, Conversation,DB
 from api.db.services.common_service import CommonService
@@ -61,6 +63,22 @@ class DialogService(CommonService):
 class ConversationService(CommonService):
     model = Conversation
 
+    @classmethod
+    @DB.connection_context()
+    def get_list(cls,dialog_id,page_number, items_per_page, orderby, desc, id , name):
+        sessions = cls.model.select().where(cls.model.dialog_id ==dialog_id)
+        if id:
+            sessions = sessions.where(cls.model.id == id)
+        if name:
+            sessions = sessions.where(cls.model.name == name)
+        if desc:
+            sessions = sessions.order_by(cls.model.getter_by(orderby).desc())
+        else:
+            sessions = sessions.order_by(cls.model.getter_by(orderby).asc())
+
+        sessions = sessions.paginate(page_number, items_per_page)
+
+        return list(sessions.dicts())
 
 def message_fit_in(msg, max_length=4000):
     def count():
