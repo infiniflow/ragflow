@@ -279,8 +279,8 @@ def get_result(retcode=RetCode.SUCCESS, retmsg='error', data=None):
             response = {"code": retcode, "message": retmsg}
     return jsonify(response)
 
-def get_error_data_result(retcode=RetCode.DATA_ERROR,
-                          retmsg='Sorry! Data missing!'):
+def get_error_data_result(retmsg='Sorry! Data missing!',retcode=RetCode.DATA_ERROR,
+                          ):
     import re
     result_dict = {
         "code": retcode,
@@ -296,4 +296,3 @@ def get_error_data_result(retcode=RetCode.DATA_ERROR,
         else:
             response[key] = value
     return jsonify(response)
-
