@@ -5,7 +5,7 @@
 
 **POST** `/api/v1/dataset`
 
-Creates a dataset.
+Creates a knowledge base (dataset).
 
 ### Request
 
@@ -31,11 +31,11 @@ Creates a dataset.
 #### Request example
 
 ```bash
-# "id": id must not be provided.
-# "name": name is required and can't be duplicated.
+# "id": "id" must not be provided.
+# "name": name is required and cannot be duplicated.
 # "tenant_id": tenant_id must not be provided.
-# "embedding_model": embedding_model must not be provided.
-# "navie" means general.
+# "embedding_model": REQUIRED.
+# "naive": general.
 curl --request POST \
   --url http://{address}/api/v1/dataset \
   --header 'Content-Type: application/json' \
@@ -51,21 +51,21 @@ curl --request POST \
 #### Request parameters
 
 - `"id"`: (*Body parameter*)  
-    The ID of the created dataset used to uniquely identify different datasets.  
-    - If creating a dataset, `id` must not be provided.
+    The unique identifier of each created dataset.  
+    - When creating a dataset, `id` must not be provided.
 
 - `"name"`: (*Body parameter*)  
     The name of the dataset, which must adhere to the following requirements:  
     - Required when creating a dataset and must be unique.
-    - If updating a dataset, `name` must still be unique.
+    - When updating a dataset, `name` must still be unique.
 
 - `"avatar"`: (*Body parameter*)  
     Base64 encoding of the avatar.
 
 - `"tenant_id"`: (*Body parameter*)  
     The ID of the tenant associated with the dataset, used to link it with specific users.  
-    - If creating a dataset, `tenant_id` must not be provided.
-    - If updating a dataset, `tenant_id` cannot be changed.
+    - When creating a dataset, `tenant_id` must not be provided.
+    - When updating a dataset, `tenant_id` cannot be changed.
 
 - `"description"`: (*Body parameter*)  
     The description of the dataset.
@@ -74,31 +74,31 @@ curl --request POST \
     The language setting for the dataset.
 
 - `"embedding_model"`: (*Body parameter*)  
-    Embedding model used in the dataset to generate vector embeddings.  
-    - If creating a dataset, `embedding_model` must not be provided.
-    - If updating a dataset, `embedding_model` cannot be changed.
+    Embedding model used in the dataset for generating vector embeddings.  
+    - When creating a dataset, `embedding_model` must not be provided.
+    - When updating a dataset, `embedding_model` cannot be changed.
 
 - `"permission"`: (*Body parameter*)  
     Specifies who can manipulate the dataset.
 
 - `"document_count"`: (*Body parameter*)  
     Document count of the dataset.  
-    - If updating a dataset, `document_count` cannot be changed.
+    - When updating a dataset, `document_count` cannot be changed.
 
 - `"chunk_count"`: (*Body parameter*)  
     Chunk count of the dataset.  
-    - If updating a dataset, `chunk_count` cannot be changed.
+    - When updating a dataset, `chunk_count` cannot be changed.
 
 - `"parse_method"`: (*Body parameter*)  
     Parsing method of the dataset.  
-    - If updating `parse_method`, `chunk_count` must be greater than 0.
+    - When updating `parse_method`, `chunk_count` must be greater than 0.
 
 - `"parser_config"`: (*Body parameter*)  
     The configuration settings for the dataset parser.
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```json
 {
@@ -139,8 +139,7 @@ The successful response includes a JSON object like the following:
 - `"error_code"`: `integer`  
   `0`: The operation succeeds.
 
-  
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```json
 {
@@ -153,7 +152,7 @@ The error response includes a JSON object like the following:
 
 **DELETE** `/api/v1/dataset`
 
-Deletes datasets by ids or names.
+Deletes knowledge bases (datasets) by ID or name.
 
 ### Request
 
@@ -170,7 +169,7 @@ Deletes datasets by ids or names.
 #### Request example
 
 ```bash
-# Either id or name must be provided, but not both.
+# Specify either "ids" or "names", NOT both.
 curl --request DELETE \
   --url http://{address}/api/v1/dataset \
   --header 'Content-Type: application/json' \
@@ -182,16 +181,18 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"names"`: (*Body parameter*)
-    Dataset names to delete.
-- `"ids"`: (*Body parameter*)
-    Dataset IDs to delete.
+- `"names"`: (*Body parameter*)  
+    Names of the datasets to delete.
+- `"ids"`: (*Body parameter*)  
+    IDs of the datasets to delete.
 
-`"names"` and `"ids"` are exclusive.
+:::tip NOTE
+Specify either `"names"` or `"ids"`, *not* both.
+:::
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```json
 {
@@ -203,7 +204,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```json
 {
@@ -216,7 +217,7 @@ The error response includes a JSON object like the following:
 
 **PUT** `/api/v1/dataset/{dataset_id}`
 
-Updates a dataset by its id.
+Updates a dataset by its ID.
 
 ### Request
 
@@ -231,14 +232,14 @@ Updates a dataset by its id.
 #### Request example
 
 ```bash
-# "id":  id is required.
-# "name": If you update name, it can't be duplicated.
-# "tenant_id": If you update tenant_id, it can't be changed
-# "embedding_model": If you update embedding_model, it can't be changed.
-# "chunk_count": If you update chunk_count, it can't be changed.
-# "document_count": If you update document_count, it can't be changed.
-# "parse_method": If you update parse_method, chunk_count must be 0. 
-# "navie" means general.
+# "id": REQUIRED
+# "name": If you update "name", it cannot be duplicated.
+# "tenant_id": If you update "tenant_id", it cannot be changed
+# "embedding_model": If you update "embedding_model", it cannot be changed.
+# "chunk_count": If you update "chunk_count", it cannot be changed.
+# "document_count": If you update "document_count", it cannot be changed.
+# "parse_method": If you update "parse_method", "chunk_count" must be 0. 
+# "naive": General.
 curl --request PUT \
   --url http://{address}/api/v1/dataset/{dataset_id} \
   --header 'Content-Type: application/json' \
@@ -249,17 +250,18 @@ curl --request PUT \
   "embedding_model": "BAAI/bge-zh-v1.5",
   "chunk_count": 0,
   "document_count": 0,
-  "parse_method": "navie"
+  "parse_method": "naive"
 }'
 ```
 
 #### Request parameters
-(Refer to the "Create Dataset" for the complete structure of the request parameters.)
+
+See the "Create Dataset" for the complete structure of the request parameters.
 
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```json
 {
@@ -271,7 +273,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```json
 {
@@ -325,7 +327,7 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```json
 {
@@ -369,7 +371,7 @@ The successful response includes a JSON object like the following:
 ```
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```json
 {
@@ -413,7 +415,7 @@ curl --request POST \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -425,7 +427,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -468,7 +470,7 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -480,7 +482,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -532,7 +534,7 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -609,7 +611,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -663,7 +665,7 @@ curl --request PUT \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -671,7 +673,7 @@ The successful response includes a JSON object like the following:
 }
 ```
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -714,7 +716,7 @@ curl --request POST \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -722,7 +724,7 @@ The successful response includes a JSON object like the following:
 }
 ```
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -765,7 +767,7 @@ curl --request DELETE \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -773,7 +775,7 @@ The successful response includes a JSON object like the following:
 }
 ```
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -812,7 +814,7 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -867,7 +869,7 @@ The successful response includes a JSON object like the following:
 }
 ```
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {

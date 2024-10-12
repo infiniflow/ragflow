@@ -44,8 +44,8 @@ Base64 encoding of the avatar. Defaults to `""`
 
 The id of the tenant associated with the created dataset is used to identify different users. Defaults to `None`.
 
-- If creating a dataset, tenant_id must not be provided.
-- If updating a dataset, tenant_id can't be changed.
+- When creating a dataset, `tenant_id` must not be provided.
+- When updating a dataset, `tenant_id` cannot be changed.
 
 #### description: `str`
 
@@ -53,53 +53,64 @@ The description of the created dataset. Defaults to `""`.
 
 #### language: `str`
 
-The language setting of the created dataset. Defaults to `"English"`. ????????????
+The language setting of the created dataset. Defaults to `"English"`.
 
 #### embedding_model: `str`
 
 The specific model used by the dataset to generate vector embeddings. Defaults to `""`.
 
-- If creating a dataset, embedding_model must not be provided.
-- If updating a dataset, embedding_model can't be changed.
+- When creating a dataset, `embedding_model` must not be provided.
+- When updating a dataset, `embedding_model` cannot be changed.
 
 #### permission: `str`
 
-Specify who can operate on the dataset. Defaults to `"me"`.
+The person who can operate on the dataset. Defaults to `"me"`.
 
 #### document_count: `int`
 
 The number of documents associated with the dataset. Defaults to `0`.
 
-- If updating a dataset, `document_count` can't be changed.
+:::tip NOTE  
+When updating a dataset, `document_count` cannot be changed.
+:::
 
 #### chunk_count: `int`
 
 The number of data chunks generated or processed by the created dataset. Defaults to `0`.
 
-- If updating a dataset, chunk_count can't be changed.
+:::tip NOTE
+When updating a dataset, `chunk_count` cannot be changed.
+:::
 
 #### parse_method, `str`
 
-The method used by the dataset to parse and process data.
+The method used by the dataset to parse and process data. Defaults to `"naive"`.
 
-- If updating parse_method in a dataset, chunk_count must be greater than 0. Defaults to `"naive"`.
+:::tip NOTE  
+When updating `parse_method` in a dataset, `chunk_count` must be greater than 0.
+:::
 
 #### parser_config, `Dataset.ParserConfig`
 
-The configuration settings for the parser used by the dataset.
+The parser configuration of the dataset. A `ParserConfig` object contains the following attributes:
+
+- `chunk_token_count`: Defaults to `128`.
+- `layout_recognize`: Defaults to `True`.
+- `delimiter`: Defaults to `'\n!?。；！？'`.
+- `task_page_size`: Defaults to `12`.
 
 ### Returns
-```python
-DataSet
-description: dataset object
-```
+
+- Success: A `dataset` object.
+- Failure: `Exception`
+
 ### Examples
 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-ds = rag.create_dataset(name="kb_1")
+rag_object = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
+ds = rag_object.create_dataset(name="kb_1")
 ```
 
 ---
@@ -107,33 +118,45 @@ ds = rag.create_dataset(name="kb_1")
 ## Delete knowledge bases
 
 ```python
-RAGFlow.delete_dataset(ids: List[str] = None, names: List[str] = None)
+RAGFlow.delete_dataset(ids: list[str] = None, names: list[str] = None)
 ```
-Deletes knowledge bases. 
+
+Deletes knowledge bases by name or ID.
+
 ### Parameters
 
-#### ids: `List[str]`
+#### ids: `list[str]`
 
-The ids of the datasets to be deleted. 
+The IDs of the knowledge bases to delete.
 
-#### names: `List[str]`
+:::note
+You only need to specify either `ids` or `names`, *not* both.
+:::
 
-The names of the datasets to be deleted. 
+#### names: `list[str]`
 
-Either `ids` or `names` must be provided, but not both.
+The names of the datasets to delete.
+
+:::note
+You only need to specify either `ids` or `names`, *not* both.
+:::
+
 ### Returns
 
-```python
-no return
-```
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
-```python
-from ragflow import RAGFlow
+#### Delete knowledge bases by name
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-rag.delete_dataset(names=["name_1","name_2"])
+```python
+rag_object.delete_dataset(names=["name_1","name_2"])
+```
+
+#### Delete knowledge bases by ID
+
+```python
 rag.delete_dataset(ids=["id_1","id_2"])
 ```
 
@@ -149,10 +172,10 @@ RAGFlow.list_datasets(
     desc: bool = True,
     id: str = None,
     name: str = None
-) -> List[DataSet]
+) -> list[DataSet]
 ```
 
-Lists all knowledge bases in the RAGFlow system. 
+Retrieves a pagenated list of knowledge bases associated with the current user.
 
 ### Parameters
 
@@ -166,51 +189,59 @@ The number of records to retrieve per page. This controls how many records will 
 
 #### order_by: `str`
 
-The field by which the records should be sorted. This specifies the attribute or column used to order the results. Defaults to `"create_time"`.
+The attribute by which the results are sorted. Defaults to `"create_time"`.
 
 #### desc: `bool`
 
-Whether the sorting should be in descending order. Defaults to `True`.
+Indicates whether to sort the results in descending order. Defaults to `True`.
 
 #### id: `str`
 
-The id of the dataset to be got. Defaults to `None`.
+The ID of the dataset to retrieve. Defaults to `None`.
 
 #### name: `str`
 
-The name of the dataset to be got. Defaults to `None`.
+The name of the dataset to retrieve. Defaults to `None`.
 
 ### Returns
 
-```python
-List[DataSet]
-description:the list of datasets.
-```
+- Success: A list of `DataSet` objects representing the retrieved knowledge bases.
+- Failure: `Exception`.
 
 ### Examples
 
-```python
-from ragflow import RAGFlow
+#### Retrieve a list of knowledge bases associated with the current user
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-for ds in rag.list_datasets():
-    print(ds)
+```python
+for ds in rag_object.list_datasets():
+    print(ds.name)
+```
+
+#### Retrieve a knowledge base by ID
+
+```python
+ds = rag_object.list_datasets(id = "id_1")
+print(ds.name)
 ```
 
 ---
 
-
-## Update knowledge base 
+## Update knowledge base
 
 ```python
 DataSet.update(update_message: dict)
 ```
 
+Updates the current knowlege base.
+
+### Parameters
+
+#### update_message: `dict`
+
 ### Returns
 
-```python
-no return
-```
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
@@ -218,7 +249,7 @@ no return
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-ds = rag.get_dataset(name="kb_1")
+ds = rag.list_datasets(name="kb_1")
 ds.update({"parse_method":"manual", ...}}
 ```
 
@@ -397,7 +428,7 @@ print(doc)
 ## List documents
 
 ```python
-Dataset.list_docs(keywords: str=None, offset: int=0, limit:int = -1) -> List[Document]
+Dataset.list_docs(keywords: str=None, offset: int=0, limit:int = -1) -> list[Document]
 ```
 
 ### Parameters
@@ -412,11 +443,11 @@ The beginning number of records for paging. Defaults to `0`.
 
 #### limit: `int`
 
-Records number to return, -1 means all of them. Records number to return, -1 means all of them.
+Records number to return, -1 means all of them.
 
 ### Returns
 
-List[Document]
+list[Document]
 
 ### Examples
 
@@ -643,7 +674,7 @@ chunk.save()
 ## Retrieval
 
 ```python
-RAGFlow.retrieval(question:str, datasets:List[Dataset], document=List[Document]=None,     offset:int=0, limit:int=6, similarity_threshold:float=0.1, vector_similarity_weight:float=0.3, top_k:int=1024) -> List[Chunk]
+RAGFlow.retrieval(question:str, datasets:list[Dataset], document=list[Document]=None,     offset:int=0, limit:int=6, similarity_threshold:float=0.1, vector_similarity_weight:float=0.3, top_k:int=1024) -> list[Chunk]
 ```
 
 ### Parameters
@@ -652,11 +683,11 @@ RAGFlow.retrieval(question:str, datasets:List[Dataset], document=List[Document]=
 
 The user query or query keywords. Defaults to `""`.
 
-#### datasets: `List[Dataset]`, *Required*
+#### datasets: `list[Dataset]`, *Required*
 
 The scope of datasets.
 
-#### document: `List[Document]`
+#### document: `list[Document]`
 
 The scope of document. `None` means no limitation. Defaults to `None`.
 
@@ -682,7 +713,7 @@ Number of records engaged in vector cosine computaton. Defaults to `1024`.
 
 ### Returns
 
-List[Chunk]
+list[Chunk]
 
 ### Examples
 
@@ -720,7 +751,7 @@ Chat assistant APIs
 RAGFlow.create_assistant(
     name: str = "assistant", 
     avatar: str = "path", 
-    knowledgebases: List[DataSet] = ["kb1"], 
+    knowledgebases: list[DataSet] = ["kb1"], 
     llm: Assistant.LLM = None, 
     prompt: Assistant.Prompt = None
 ) -> Assistant
@@ -738,7 +769,7 @@ The name of the created assistant. Defaults to `"assistant"`.
 
 The icon of the created assistant. Defaults to `"path"`. 
 
-#### knowledgebases: `List[DataSet]`
+#### knowledgebases: `list[DataSet]`
 
 Select knowledgebases associated. Defaults to `["kb1"]`.
 
@@ -868,7 +899,7 @@ The name of the created assistant. Defaults to `"assistant"`.
 
 The icon of the created assistant. Defaults to `"path"`. 
 
-#### knowledgebases: `List[DataSet]`
+#### knowledgebases: `list[DataSet]`
 
 Select knowledgebases associated. Defaults to `["kb1"]`.
 
@@ -919,7 +950,7 @@ assi = rag.get_assistant(name="Miss R")
 ## List assistants
 
 ```python
-RAGFlow.list_assistants() -> List[Assistant]
+RAGFlow.list_assistants() -> list[Assistant]
 ```
 
 ### Returns
@@ -962,7 +993,7 @@ The id of the created session is used to identify different sessions.
 
 The name of the created session. Defaults to `"New session"`.
 
-#### messages: `List[Message]`
+#### messages: `list[Message]`
 
 The messages of the created session.
 - messages cannot be provided.
@@ -1018,7 +1049,7 @@ The id of the created session is used to identify different sessions.
 
 The name of the created session. Defaults to `"New session"`.
 
-#### messages: `List[Message]`
+#### messages: `list[Message]`
 
 The messages of the created session.
 - messages cannot be provided.
@@ -1106,7 +1137,7 @@ The id of the message. `id` is automatically generated. Defaults to `None`. ????
 
 The content of the message. Defaults to `"Hi! I am your assistant, can I help you?"`.
 
-#### reference: `List[Chunk]`
+#### reference: `list[Chunk]`
 
 The auto-generated reference of the message. Each `chunk` object includes the following attributes:
 
@@ -1128,7 +1159,7 @@ The auto-generated reference of the message. Each `chunk` object includes the fo
   A similarity score based on vector representations. This score is obtained by converting texts, words, or objects into vectors and then calculating the cosine similarity or other distance measures between these vectors to determine the similarity in vector space. A higher value indicates greater similarity in the vector space. Defaults to `None`. ?????????????????????????????????
 - **term_similarity**: `float`  
   The similarity score based on terms or keywords. This score is calculated by comparing the similarity of key terms between texts or datasets, typically measuring how similar two words or phrases are in meaning or context. A higher value indicates a stronger similarity between terms. Defaults to `None`. ???????????????????  
-- **position**: `List[string]`  
+- **position**: `list[string]`  
   Indicates the position or index of keywords or specific terms within the text. An array is typically used to mark the location of keywords or specific elements, facilitating precise operations or analysis of the text. Defaults to `None`. ??????????????
 
 ### Examples
@@ -1158,12 +1189,12 @@ while True:
 ## List sessions
 
 ```python
-Assistant.list_session() -> List[Session]
+Assistant.list_session() -> list[Session]
 ```
 
 ### Returns
 
-List[Session]
+list[Session]
 description: the List contains information about multiple assistant object, with each dictionary containing information about one assistant.
 
 ### Examples
