@@ -51,28 +51,28 @@ class Chat(Base):
 
 
     def create_session(self, name: str = "New session") -> Session:
-        res = self.post("/session/save", {"name": name, "assistant_id": self.id})
+        res = self.post(f"/chat/{self.id}/session", {"name": name})
         res = res.json()
-        if res.get("retmsg") == "success":
+        if res.get("code") == 0:
             return Session(self.rag, res['data'])
-        raise Exception(res["retmsg"])
+        raise Exception(res["message"])
 
-    def list_session(self) -> List[Session]:
-        res = self.get('/session/list', {"assistant_id": self.id})
+    def list_sessions(self,page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
+                      id: str = None, name: str = None) -> List[Session]:
+        res = self.get(f'/chat/{self.id}/session',{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name} )
         res = res.json()
-        if res.get("retmsg") == "success":
+        if res.get("code") == 0:
             result_list = []
             for data in res["data"]:
                 result_list.append(Session(self.rag, data))
             return result_list
-        raise Exception(res["retmsg"])
+        raise Exception(res["message"])
 
-    def get_session(self, id) -> Session:
-        res = self.get("/session/get", {"id": id,"assistant_id":self.id})
+    def delete_sessions(self,ids):
+        res = self.rm(f"/chat/{self.id}/session", {"ids": ids})
         res = res.json()
-        if res.get("retmsg") == "success":
-            return Session(self.rag, res["data"])
-        raise Exception(res["retmsg"])
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
 
     def get_prologue(self):
         return self.prompt.opener
