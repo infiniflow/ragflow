@@ -74,6 +74,12 @@ class RAGFlow:
         if res.get("code") != 0:
             raise Exception(res["message"])
 
+    def get_dataset(self,name: str):
+        _list = self.list_datasets(name=name)
+        if len(_list) > 0:
+            return _list[0]
+        raise Exception("Dataset %s not found" % name)
+
     def list_datasets(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
                       id: str = None, name: str = None) -> \
             List[DataSet]:
@@ -152,7 +158,7 @@ class RAGFlow:
         raise Exception(res["message"])
 
     def create_document(self, ds: DataSet, name: str, blob: bytes) -> bool:
-        url = f"/doc/dataset/{ds.id}/documents/upload"
+        url = f"/dataset/{ds.id}/document"
         files = {
             'file': (name, blob)
         }
