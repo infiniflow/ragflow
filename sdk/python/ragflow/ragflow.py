@@ -74,6 +74,12 @@ class RAGFlow:
         if res.get("code") != 0:
             raise Exception(res["message"])
 
+    def get_dataset(self,name: str):
+        _list = self.list_datasets(name=name)
+        if len(_list) > 0:
+            return _list[0]
+        raise Exception("Dataset %s not found" % name)
+
     def list_datasets(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
                       id: str = None, name: str = None) -> \
             List[DataSet]:
