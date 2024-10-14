@@ -43,7 +43,7 @@ The unique name of the dataset to create. It must adhere to the following requir
 Base64 encoding of the avatar. Defaults to `""`
 
 #### description
-=======
+
 #### tenant_id: `str` 
 
 The id of the tenant associated with the created dataset is used to identify different users. Defaults to `None`.
