@@ -1,11 +1,13 @@
 
-# HTTP API Reference
+# DRAFT! HTTP API Reference
+
+**THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
 
 ## Create dataset
 
 **POST** `/api/v1/dataset`
 
-Creates a knowledge base (dataset).
+Creates a dataset.
 
 ### Request
 
@@ -31,11 +33,11 @@ Creates a knowledge base (dataset).
 #### Request example
 
 ```bash
-# "id": "id" must not be provided.
-# "name": name is required and cannot be duplicated.
+# "id": id must not be provided.
+# "name": name is required and can't be duplicated.
 # "tenant_id": tenant_id must not be provided.
-# "embedding_model": REQUIRED.
-# "naive": general.
+# "embedding_model": embedding_model must not be provided.
+# "navie" means general.
 curl --request POST \
   --url http://{address}/api/v1/dataset \
   --header 'Content-Type: application/json' \
@@ -51,21 +53,21 @@ curl --request POST \
 #### Request parameters
 
 - `"id"`: (*Body parameter*)  
-    The unique identifier of each created dataset.  
-    - When creating a dataset, `id` must not be provided.
+    The ID of the created dataset used to uniquely identify different datasets.  
+    - If creating a dataset, `id` must not be provided.
 
 - `"name"`: (*Body parameter*)  
     The name of the dataset, which must adhere to the following requirements:  
     - Required when creating a dataset and must be unique.
-    - When updating a dataset, `name` must still be unique.
+    - If updating a dataset, `name` must still be unique.
 
 - `"avatar"`: (*Body parameter*)  
     Base64 encoding of the avatar.
 
 - `"tenant_id"`: (*Body parameter*)  
     The ID of the tenant associated with the dataset, used to link it with specific users.  
-    - When creating a dataset, `tenant_id` must not be provided.
-    - When updating a dataset, `tenant_id` cannot be changed.
+    - If creating a dataset, `tenant_id` must not be provided.
+    - If updating a dataset, `tenant_id` cannot be changed.
 
 - `"description"`: (*Body parameter*)  
     The description of the dataset.
@@ -74,31 +76,31 @@ curl --request POST \
     The language setting for the dataset.
 
 - `"embedding_model"`: (*Body parameter*)  
-    Embedding model used in the dataset for generating vector embeddings.  
-    - When creating a dataset, `embedding_model` must not be provided.
-    - When updating a dataset, `embedding_model` cannot be changed.
+    Embedding model used in the dataset to generate vector embeddings.  
+    - If creating a dataset, `embedding_model` must not be provided.
+    - If updating a dataset, `embedding_model` cannot be changed.
 
 - `"permission"`: (*Body parameter*)  
     Specifies who can manipulate the dataset.
 
 - `"document_count"`: (*Body parameter*)  
     Document count of the dataset.  
-    - When updating a dataset, `document_count` cannot be changed.
+    - If updating a dataset, `document_count` cannot be changed.
 
 - `"chunk_count"`: (*Body parameter*)  
     Chunk count of the dataset.  
-    - When updating a dataset, `chunk_count` cannot be changed.
+    - If updating a dataset, `chunk_count` cannot be changed.
 
 - `"parse_method"`: (*Body parameter*)  
     Parsing method of the dataset.  
-    - When updating `parse_method`, `chunk_count` must be greater than 0.
+    - If updating `parse_method`, `chunk_count` must be greater than 0.
 
 - `"parser_config"`: (*Body parameter*)  
     The configuration settings for the dataset parser.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
 ```json
 {
@@ -139,7 +141,8 @@ A successful response includes a JSON object like the following:
 - `"error_code"`: `integer`  
   `0`: The operation succeeds.
 
-An error response includes a JSON object like the following:
+  
+The error response includes a JSON object like the following:
 
 ```json
 {
@@ -152,7 +155,7 @@ An error response includes a JSON object like the following:
 
 **DELETE** `/api/v1/dataset`
 
-Deletes datasets by their IDs.
+Deletes datasets by ids.
 
 ### Request
 
@@ -168,7 +171,7 @@ Deletes datasets by their IDs.
 #### Request example
 
 ```bash
-# Specify either "ids" or "names", NOT both.
+# Either id or name must be provided, but not both.
 curl --request DELETE \
   --url http://{address}/api/v1/dataset \
   --header 'Content-Type: application/json' \
@@ -180,13 +183,13 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"ids"`: (*Body parameter*)  
-    IDs of the datasets to delete.
+- `"ids"`: (*Body parameter*)
+    Dataset IDs to delete.
 
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
 ```json
 {
@@ -198,7 +201,7 @@ A successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
 ```json
 {
@@ -211,7 +214,7 @@ An error response includes a JSON object like the following:
 
 **PUT** `/api/v1/dataset/{dataset_id}`
 
-Updates a dataset by its ID.
+Updates a dataset by its id.
 
 ### Request
 
@@ -226,14 +229,14 @@ Updates a dataset by its ID.
 #### Request example
 
 ```bash
-# "id": REQUIRED
-# "name": If you update "name", it cannot be duplicated.
-# "tenant_id": If you update "tenant_id", it cannot be changed
-# "embedding_model": If you update "embedding_model", it cannot be changed.
-# "chunk_count": If you update "chunk_count", it cannot be changed.
-# "document_count": If you update "document_count", it cannot be changed.
-# "parse_method": If you update "parse_method", "chunk_count" must be 0. 
-# "naive": General.
+# "id":  id is required.
+# "name": If you update name, it can't be duplicated.
+# "tenant_id": If you update tenant_id, it can't be changed
+# "embedding_model": If you update embedding_model, it can't be changed.
+# "chunk_count": If you update chunk_count, it can't be changed.
+# "document_count": If you update document_count, it can't be changed.
+# "parse_method": If you update parse_method, chunk_count must be 0. 
+# "navie" means general.
 curl --request PUT \
   --url http://{address}/api/v1/dataset/{dataset_id} \
   --header 'Content-Type: application/json' \
@@ -244,18 +247,17 @@ curl --request PUT \
   "embedding_model": "BAAI/bge-zh-v1.5",
   "chunk_count": 0,
   "document_count": 0,
-  "parse_method": "naive"
+  "parse_method": "navie"
 }'
 ```
 
 #### Request parameters
-
-See the "Create Dataset" for the complete structure of the request parameters.
+(Refer to the "Create Dataset" for the complete structure of the request parameters.)
 
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
 ```json
 {
@@ -267,7 +269,7 @@ A successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
 ```json
 {
@@ -321,7 +323,7 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
 ```json
 {
@@ -365,7 +367,7 @@ A successful response includes a JSON object like the following:
 ```
 
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
 ```json
 {
@@ -392,12 +394,12 @@ Uploads files to a dataset.
 
 #### Request example
 
-```shell
+```bash
 curl --request POST \
      --url http://{address}/api/v1/dataset/{dataset_id}/document \
      --header 'Content-Type: multipart/form-data' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
-     --form 'file=@test.txt'
+     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \     
+     --form 'file=@./test.txt'
 ```
 
 #### Request parameters
@@ -409,9 +411,9 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
-```shell
+```json
 {
     "code": 0 
 }
@@ -421,12 +423,12 @@ A successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 3016,
-    "message": "Can't connect database"
+    "code": 101,
+    "message": "No file part!"
 }
 ```
 
@@ -447,7 +449,7 @@ Downloads files from a dataset.
   - '{FILE_NAME}'
 #### Request example
 
-```shell
+```bash
 curl --request GET \
      --url http://{address}/api/v1/dataset/{dataset_id}/document/{documents_id} \
      --header 'Content-Type: application/json' \
@@ -464,31 +466,29 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
-```shell
-{
-    "code": 0 
-}
+```text
+test_2.
 ```
 
 - `"error_code"`: `integer`  
   `0`: The operation succeeds.
 
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 3016,
-    "message": "Can't connect database"
+    "code": 102,
+    "message": "You do not own the dataset 7898da028a0511efbf750242ac1220005."
 }
 ```
 
 
 ## List files of a dataset
 
-**GET** `/api/v1/dataset/{dataset_id}/info?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name}`
+**GET** `/api/v1/dataset/{dataset_id}/info?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}`
 
 List files to a dataset. 
 
@@ -502,48 +502,47 @@ List files to a dataset.
 
 #### Request example
 
-```shell
+```bash
 curl --request GET \
-     --url http://{address}/api/v1/dataset/{dataset_id}/info?keywords=rag&page=0&page_size=10&orderby=create_time&desc=yes \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  --url http://{address}/api/v1/dataset/{dataset_id}/info?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id} \
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 ```
 
 #### Request parameters
 
 - `"dataset_id"`: (*PATH parameter*)
     The dataset id
+- `offset`: (*Filter parameter*)
+    The beginning number of records for paging.
 - `keywords`: (*Filter parameter*)
     The keywords matches the search key workds;
-- `page`: (*Filter parameter*)
-    The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.
-- `page_size`: (*Filter parameter*)
-    The number of records to retrieve per page. This controls how many records will be included in each page. 
+- `limit`: (*Filter parameter*)
+    Records number to return.
 - `orderby`: (*Filter parameter*)
     The field by which the records should be sorted. This specifies the attribute or column used to order the results.
 - `desc`: (*Filter parameter*)
     A boolean flag indicating whether the sorting should be in descending order.
-- `name`: (*Filter parameter*)
-    File name.
+- `id`: (*Filter parameter*)
+    The id of the document to be got.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
-```shell
+```json
 {
     "code": 0,
     "data": {
         "docs": [
             {
                 "chunk_count": 0,
-                "create_date": "Wed, 18 Sep 2024 08:20:49 GMT",
-                "create_time": 1726647649379,
-                "created_by": "134408906b6811efbcd20242ac120005",
-                "id": "e970a94a759611efae5b0242ac120004",
-                "knowledgebase_id": "e95f574e759611efbc850242ac120004",
-                "location": "Test Document222.txt",
-                "name": "Test Document222.txt",
+                "create_date": "Mon, 14 Oct 2024 09:11:01 GMT",
+                "create_time": 1728897061948,
+                "created_by": "69736c5e723611efb51b0242ac120007",
+                "id": "3bcfbf8a8a0c11ef8aba0242ac120006",
+                "knowledgebase_id": "7898da028a0511efbf750242ac120005",
+                "location": "Test_2.txt",
+                "name": "Test_2.txt",
                 "parser_config": {
                     "chunk_token_count": 128,
                     "delimiter": "\n!?。；！？",
@@ -556,48 +555,18 @@ A successful response includes a JSON object like the following:
                 "progress": 0.0,
                 "progress_msg": "",
                 "run": "0",
-                "size": 46,
+                "size": 7,
                 "source_type": "local",
                 "status": "1",
                 "thumbnail": null,
                 "token_count": 0,
                 "type": "doc",
-                "update_date": "Wed, 18 Sep 2024 08:20:49 GMT",
-                "update_time": 1726647649379
-            },
-            {
-                "chunk_count": 0,
-                "create_date": "Wed, 18 Sep 2024 08:20:49 GMT",
-                "create_time": 1726647649340,
-                "created_by": "134408906b6811efbcd20242ac120005",
-                "id": "e96aad9c759611ef9ab60242ac120004",
-                "knowledgebase_id": "e95f574e759611efbc850242ac120004",
-                "location": "Test Document111.txt",
-                "name": "Test Document111.txt",
-                "parser_config": {
-                    "chunk_token_count": 128,
-                    "delimiter": "\n!?。；！？",
-                    "layout_recognize": true,
-                    "task_page_size": 12
-                },
-                "parser_method": "naive",
-                "process_begin_at": null,
-                "process_duation": 0.0,
-                "progress": 0.0,
-                "progress_msg": "",
-                "run": "0",
-                "size": 46,
-                "source_type": "local",
-                "status": "1",
-                "thumbnail": null,
-                "token_count": 0,
-                "type": "doc",
-                "update_date": "Wed, 18 Sep 2024 08:20:49 GMT",
-                "update_time": 1726647649340
+                "update_date": "Mon, 14 Oct 2024 09:11:01 GMT",
+                "update_time": 1728897061948
             }
         ],
-        "total": 2
-    },
+        "total": 1
+    }
 }
 ```
 
@@ -605,12 +574,12 @@ A successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 3016,
-    "message": "Can't connect database"
+    "code": 102,
+    "message": "You don't own the dataset 7898da028a0511efbf750242ac1220005. "
 }
 ```
 
@@ -623,56 +592,114 @@ Update a file in a dataset
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/dataset/{dataset_id}/document`
+- URL: `http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 
 #### Request example
 
-```shell
+```bash
 curl --request PUT \
-     --url http://{address}/api/v1/dataset/{dataset_id}/info/{document_id} \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-     --raw '{
-         "document_id": "f6b170ac758811efa0660242ac120004", 
-         "document_name": "manual.txt", 
-         "thumbnail": null, 
-         "knowledgebase_id": "779333c0758611ef910f0242ac120004", 
-         "parser_method": "manual", 
-         "parser_config": {"chunk_token_count": 128, "delimiter": "\n!?。；！？", "layout_recognize": true, "task_page_size": 12}, 
-         "source_type": "local", "type": "doc", 
-         "created_by": "134408906b6811efbcd20242ac120005", 
-         "size": 0, "token_count": 0, "chunk_count": 0, 
-         "progress": 0.0, 
-         "progress_msg": "", 
-         "process_begin_at": null, 
-         "process_duration": 0.0
-     }'
+  --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id} \
+  --header 'Authorization: Bearer {YOUR_ACCESS TOKEN}' \
+  --header 'Content-Type: application/json' \
+  --data '{
+  "name": "manual.txt", 
+  "thumbnail": null, 
+  "knowledgebase_id": "779333c0758611ef910f0242ac120004", 
+  "parser_method": "manual", 
+  "parser_config": {"chunk_token_count": 128, "delimiter": "\n!?。；！？", "layout_recognize": true, "task_page_size": 12}, 
+  "source_type": "local", "type": "doc", 
+  "created_by": "134408906b6811efbcd20242ac120005", 
+  "size": 0, "token_count": 0, "chunk_count": 0, 
+  "progress": 0.0, 
+  "progress_msg": "", 
+  "process_begin_at": null, 
+  "process_duration": 0.0
+  }'
+
 ```
 
 #### Request parameters
 
-- `"document_id"`: (*Body parameter*)
-- `"document_name"`: (*Body parameter*)
+- `"thumbnail"`: (*Body parameter*)  
+    Thumbnail image of the document.  
+    - `""`
+
+- `"knowledgebase_id"`: (*Body parameter*)  
+    Knowledge base ID related to the document.  
+    - `""`
+
+- `"parser_method"`: (*Body parameter*)  
+    Method used to parse the document.  
+    - `""`
+
+- `"parser_config"`: (*Body parameter*)  
+    Configuration object for the parser.  
+    - If the value is `None`, a dictionary with default values will be generated.
+
+- `"source_type"`: (*Body parameter*)  
+    Source type of the document.  
+    - `""`
+
+- `"type"`: (*Body parameter*)  
+    Type or category of the document.  
+    - `""`
+
+- `"created_by"`: (*Body parameter*)  
+    Creator of the document.  
+    - `""`
+
+- `"name"`: (*Body parameter*)  
+    Name or title of the document.  
+    - `""`
+
+- `"size"`: (*Body parameter*)  
+    Size of the document in bytes or some other unit.  
+    - `0`
+
+- `"token_count"`: (*Body parameter*)  
+    Number of tokens in the document.  
+    - `0`
+
+- `"chunk_count"`: (*Body parameter*)  
+    Number of chunks the document is split into.  
+    - `0`
+
+- `"progress"`: (*Body parameter*)  
+    Current processing progress as a percentage.  
+    - `0.0`
+
+- `"progress_msg"`: (*Body parameter*)  
+    Message indicating current progress status.  
+    - `""`
+
+- `"process_begin_at"`: (*Body parameter*)  
+    Start time of the document processing.  
+    - `None`
+
+- `"process_duration"`: (*Body parameter*)  
+    Duration of the processing in seconds or minutes.  
+    - `0.0`
+
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
-```shell
+```json
 {
     "code": 0
 }
 ```
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
-```shell
+```json
 {
-    "code": 3016,
-    "message": "Can't connect database"
+    "code": 102,
+    "message": "The dataset not own the document."
 }
 ```
 
@@ -710,7 +737,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -718,7 +745,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
 ```shell
 {
@@ -761,7 +788,7 @@ curl --request DELETE \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -769,7 +796,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
 ```shell
 {
@@ -808,7 +835,7 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+The successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -863,7 +890,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+The error response includes a JSON object like the following:
 
 ```shell
 {
