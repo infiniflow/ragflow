@@ -6,14 +6,14 @@ const MessageHistoryWindowSizeItem = ({
 }: {
   initialValue: number;
 }) => {
-  const { t } = useTranslation('flow');
+  const { t } = useTranslation();
 
   return (
     <Form.Item
       name={'message_history_window_size'}
-      label={t('messageHistoryWindowSize')}
+      label={t('flow.messageHistoryWindowSize')}
       initialValue={initialValue}
-      tooltip={t('messageHistoryWindowSizeTip')}
+      tooltip={t('flow.messageHistoryWindowSizeTip')}
     >
       <InputNumber style={{ width: '100%' }} />
     </Form.Item>
