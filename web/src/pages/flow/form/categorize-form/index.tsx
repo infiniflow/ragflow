@@ -1,4 +1,5 @@
 import LLMSelect from '@/components/llm-select';
+import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form } from 'antd';
 import { useSetLlmSetting } from '../../hooks';
@@ -31,6 +32,9 @@ const CategorizeForm = ({ form, onValuesChange, node }: IOperatorForm) => {
       >
         <LLMSelect></LLMSelect>
       </Form.Item>
+      <MessageHistoryWindowSizeItem
+        initialValue={1}
+      ></MessageHistoryWindowSizeItem>
       <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
     </Form>
   );

@@ -262,7 +262,7 @@ class Canvas(ABC):
         convs = []
         for role, obj in self.history[(window_size + 1) * -1:]:
             convs.append({"role": role, "content": (obj if role == "user" else
-                                                    '\n'.join(pd.DataFrame(obj)['content']))})
+                    '\n'.join([str(s) for s in pd.DataFrame(obj)['content']]))})
         return convs
 
     def add_user_input(self, question):

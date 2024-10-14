@@ -107,11 +107,6 @@ def update(tenant_id,dataset_id):
         if req["tenant_id"] != tenant_id:
             return get_error_data_result(
                 retmsg="Can't change tenant_id.")
-    if "embedding_model" in req:
-        if req["embedding_model"] != t.embd_id:
-            return get_error_data_result(
-                retmsg="Can't change embedding_model.")
-        req.pop("embedding_model")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if "chunk_count" in req:
         if req["chunk_count"] != kb.chunk_num:
@@ -128,6 +123,11 @@ def update(tenant_id,dataset_id):
             return get_error_data_result(
                 retmsg="If chunk count is not 0, parse method is not changable.")
         req['parser_id'] = req.pop('parse_method')
+    if "embedding_model" in req:
+        if kb.chunk_num != 0 and req['parse_method'] != kb.parser_id:
+            return get_error_data_result(
+                retmsg="If chunk count is not 0, parse method is not changable.")
+        req['embd_id'] = req.pop('embedding_model')
     if "name" in req:
         req["name"] = req["name"].strip()
         if req["name"].lower() != kb.name.lower() \
@@ -150,7 +150,7 @@ def list(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 1024))
     orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc") == "False":
+    if request.args.get("desc") == "False" or request.args.get("desc") == "false" :
         desc = False
     else:
         desc = True
