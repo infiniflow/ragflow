@@ -1,5 +1,7 @@
 # DRAFT Python API Reference
 
+**THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
+
 :::tip NOTE
 Knowledgebase APIs
 :::
@@ -129,17 +131,17 @@ RAGFlow.list_datasets(
 ) -> list[DataSet]
 ```
 
-Lists all knowledge bases.
+Retrieves a list of knowledge bases.
 
 ### Parameters
 
 #### page
 
-The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched. Defaults to `1`.
+The current page number to retrieve from the paginated results. Defaults to `1`.
 
 #### page_size
 
-The number of records to retrieve per page. This controls how many records will be included in each page. Defaults to `1024`.
+The number of records on each page. Defaults to `1024`.
 
 #### order_by
 
@@ -168,15 +170,14 @@ The name of the dataset to retrieve. Defaults to `None`.
 
 ```python
 for ds in rag_object.list_datasets():
-    print(ds.name)
+    print(ds)
 ```
 
 #### Retrieve a knowledge base by ID
 
 ```python
 dataset = rag_object.list_datasets(id = "id_1")
-ds = dataset[0]
-print(ds.name)
+print(dataset[0])
 ```
 
 ---
@@ -200,6 +201,16 @@ Updates the current knowledge base.
 - `"parser_method"`: `str`
   - `"naive"`: General
   - `"manual`: Manual
+  - `"qa"`: Q&A
+  - `"table"`: Table
+  - `"paper"`: Paper
+  - `"book"`: Book
+  - `"laws"`: Laws
+  - `"presentation"`: Presentation
+  - `"picture"`: Picture
+  - `"one"`:One
+  - `"knowledge_graph"`: Knowledge Graph
+  - `"email"`: Email
 
 ### Returns
 
@@ -733,7 +744,7 @@ The name of the chat assistant. Defaults to `"assistant"`.
 
 #### avatar: `str`
 
-The icon of the chat assistant. Defaults to `"path"`.
+Base64 encoding of the avatar. Defaults to `""`.
 
 #### knowledgebases: `list[str]`
 
@@ -774,7 +785,7 @@ from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 kb = rag.list_datasets(name="kb_1")
-assistant = rag.create_chat("Miss R", knowledgebases=[kb])
+assistant = rag.create_chat("Miss R", knowledgebases=kb)
 ```
 
 ---
@@ -792,9 +803,8 @@ Chat.update(update_message: dict)
 #### update_message: `dict[str, Any]`, *Required*
 
 - `"name"`: `str` The name of the chat assistant to update.
-- `"avatar"`: `str` The path to the icon file for the chat assistant.
+- `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
 - `"knowledgebases"`: `list[str]` Knowledge bases to update.
-- 
 
 
 ### Returns
@@ -810,7 +820,7 @@ from ragflow import RAGFlow
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 kb = rag.list_datasets(name="kb_1")
 assistant = rag.create_chat("Miss R"， knowledgebases=[kb])
-assistant.update({"temperature":0.8})
+assistant.update({llm: {"temperature":0.8}})
 ```
 
 ---
@@ -860,15 +870,13 @@ RAGFlow.list_chats(
 
 ### Parameters
 
-#### page: `int`  
+#### page
 
-The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
-- `1`
+The current page number to retrieve from the paginated results. Defaults to `1`.
 
-#### page_size: `int`  
+#### page_size
 
-The number of records to retrieve per page. This controls how many records will be included in each page.  
-- `1024`
+The number of records on each page. Defaults to `1024`.
 
 #### order_by
 

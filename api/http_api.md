@@ -1,5 +1,7 @@
 
-# HTTP API Reference
+# DRAFT! HTTP API Reference
+
+**THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
 
 ## Create dataset
 
