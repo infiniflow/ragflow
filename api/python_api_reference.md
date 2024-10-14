@@ -42,7 +42,6 @@ The unique name of the dataset to create. It must adhere to the following requir
 
 Base64 encoding of the avatar. Defaults to `""`
 
-<<<<<<< HEAD
 #### description
 =======
 #### tenant_id: `str` 
@@ -53,7 +52,6 @@ The id of the tenant associated with the created dataset is used to identify dif
 - If updating a dataset, tenant_id can't be changed.
 
 #### description: `str`
->>>>>>> upstream/main
 
 The description of the created dataset. Defaults to `""`.
 
@@ -813,6 +811,14 @@ Chat.update(update_message: dict)
 - `"name"`: `str` The name of the chat assistant to update.
 - `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
 - `"knowledgebases"`: `list[str]` Knowledge bases to update.
+- `"llm"`: `dict` llm settings
+  - `"model_name"`, `str` The chat model name.   
+  - `"temperature"`, `float` This parameter controls the randomness of predictions by the model.  
+  - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
+  - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation.
+  - `"frequency penalty"`, `float` Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.
+  - `"max_token"`, `int` This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).
+- `"prompt"` : Instructions for LLM's responses, including character design, answer length, and language.
 
 ### Returns
 
