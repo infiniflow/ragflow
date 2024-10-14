@@ -1,5 +1,7 @@
 # DRAFT Python API Reference
 
+**THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
+
 :::tip NOTE
 Knowledgebase APIs
 :::
@@ -40,6 +42,8 @@ The unique name of the dataset to create. It must adhere to the following requir
 
 Base64 encoding of the avatar. Defaults to `""`
 
+#### description
+
 #### tenant_id: `str` 
 
 The id of the tenant associated with the created dataset is used to identify different users. Defaults to `None`.
@@ -55,14 +59,7 @@ The description of the created dataset. Defaults to `""`.
 
 The language setting of the created dataset. Defaults to `"English"`. ????????????
 
-#### embedding_model: `str`
-
-The specific model used by the dataset to generate vector embeddings. Defaults to `""`.
-
-- If creating a dataset, embedding_model must not be provided.
-- If updating a dataset, embedding_model can't be changed.
-
-#### permission: `str`
+#### permission
 
 Specify who can operate on the dataset. Defaults to `"me"`.
 
@@ -70,36 +67,35 @@ Specify who can operate on the dataset. Defaults to `"me"`.
 
 The number of documents associated with the dataset. Defaults to `0`.
 
-- If updating a dataset, `document_count` can't be changed.
-
 #### chunk_count: `int`
 
 The number of data chunks generated or processed by the created dataset. Defaults to `0`.
 
-- If updating a dataset, chunk_count can't be changed.
-
 #### parse_method, `str`
 
-The method used by the dataset to parse and process data.
+The method used by the dataset to parse and process data. Defaults to `"naive"`.
 
-- If updating parse_method in a dataset, chunk_count must be greater than 0. Defaults to `"naive"`.
+#### parser_config
 
-#### parser_config, `Dataset.ParserConfig`
+The parser configuration of the dataset. A `ParserConfig` object contains the following attributes:
 
-The configuration settings for the parser used by the dataset.
+- `chunk_token_count`: Defaults to `128`.
+- `layout_recognize`: Defaults to `True`.
+- `delimiter`: Defaults to `'\n!?。；！？'`.
+- `task_page_size`: Defaults to `12`.
 
 ### Returns
-```python
-DataSet
-description: dataset object
-```
+
+- Success: A `dataset` object.
+- Failure: `Exception`
+
 ### Examples
 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-ds = rag.create_dataset(name="kb_1")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+ds = rag_object.create_dataset(name="kb_1")
 ```
 
 ---
@@ -107,28 +103,25 @@ ds = rag.create_dataset(name="kb_1")
 ## Delete knowledge bases
 
 ```python
-RAGFlow.delete_datasets(ids: List[str] = None)
+RAGFlow.delete_datasets(ids: list[str] = None)
 ```
-Deletes knowledge bases. 
+
+Deletes knowledge bases by name or ID.
+
 ### Parameters
 
-#### ids: `List[str]`
+#### ids
 
-The ids of the datasets to be deleted. 
-
+The IDs of the knowledge bases to delete.
 
 ### Returns
 
-```python
-no return
-```
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
 ```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
 rag.delete_datasets(ids=["id_1","id_2"])
 ```
 
@@ -147,17 +140,17 @@ RAGFlow.list_datasets(
 ) -> List[DataSet]
 ```
 
-Lists all knowledge bases in the RAGFlow system. 
+Retrieves a list of knowledge bases.
 
 ### Parameters
 
 #### page: `int`
 
-The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched. Defaults to `1`.
+The current page number to retrieve from the paginated results. Defaults to `1`.
 
 #### page_size: `int`
 
-The number of records to retrieve per page. This controls how many records will be included in each page. Defaults to `1024`.
+The number of records on each page. Defaults to `1024`.
 
 #### order_by: `str`
 
@@ -177,46 +170,71 @@ The name of the dataset to be got. Defaults to `None`.
 
 ### Returns
 
-```python
-List[DataSet]
-description:the list of datasets.
-```
+- Success: A list of `DataSet` objects representing the retrieved knowledge bases.
+- Failure: `Exception`.
 
 ### Examples
 
-```python
-from ragflow import RAGFlow
+#### List all knowledge bases
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-for ds in rag.list_datasets():
+```python
+for ds in rag_object.list_datasets():
     print(ds)
+```
+
+#### Retrieve a knowledge base by ID
+
+```python
+dataset = rag_object.list_datasets(id = "id_1")
+print(dataset[0])
 ```
 
 ---
 
-
-## Update knowledge base 
+## Update knowledge base
 
 ```python
 DataSet.update(update_message: dict)
 ```
 
+Updates the current knowledge base.
+
+### Parameters
+
+#### update_message: `dict[str, str|int]`, *Required*
+
+- `"name"`: `str` The name of the knowledge base to update.
+- `"tenant_id"`: `str` The `"tenant_id` you get after calling `create_dataset()`.
+- `"embedding_model"`: `str` The embedding model for generating vector embeddings.
+  - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
+- `"parser_method"`: `str`
+  - `"naive"`: General
+  - `"manual`: Manual
+  - `"qa"`: Q&A
+  - `"table"`: Table
+  - `"paper"`: Paper
+  - `"book"`: Book
+  - `"laws"`: Laws
+  - `"presentation"`: Presentation
+  - `"picture"`: Picture
+  - `"one"`:One
+  - `"knowledge_graph"`: Knowledge Graph
+  - `"email"`: Email
+
 ### Returns
 
-```python
-no return
-```
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-ds = rag.get_dataset(name="kb_1")
-ds.update({"parse_method":"manual", ...}}
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+ds = rag.list_datasets(name="kb_1")
+ds.update({"embedding_model":"BAAI/bge-zh-v1.5", "parse_method":"manual"})
 ```
-
 ---
 
 :::tip API GROUPING
@@ -709,6 +727,8 @@ Chat APIs
 
 ## Create chat
 
+Creates a chat assistant.
+
 ```python
 RAGFlow.create_chat(
     name: str = "assistant", 
@@ -717,41 +737,35 @@ RAGFlow.create_chat(
     llm: Chat.LLM = None, 
     prompt: Chat.Prompt = None
 ) -> Chat
-
 ```
 
 ### Returns
 
-Chat
-
-description: assitant object.
+- Success: A `Chat` object representing the chat assistant.
+- Failure: `Exception`
 
 #### name: `str`
 
-The name of the created chat. Defaults to `"assistant"`.
+The name of the chat assistant. Defaults to `"assistant"`.
 
 #### avatar: `str`
 
-The icon of the created chat. Defaults to `"path"`. 
+Base64 encoding of the avatar. Defaults to `""`.
 
-#### knowledgebases: `List[DataSet]`
+#### knowledgebases: `list[str]`
 
-Select knowledgebases associated. Defaults to `["kb1"]`.
-
-#### id: `str`
-
-The id of the created chat. Defaults to `""`.
+The associated knowledge bases. Defaults to `["kb1"]`.
 
 #### llm: `LLM`
 
 The llm of the created chat. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.
 
 - **model_name**, `str`  
-  Large language chat model. If it is `None`, it will return the user's default model.  
+  The chat model name. If it is `None`, the user's default chat model will be returned.  
 - **temperature**, `float`  
   This parameter controls the randomness of predictions by the model. A lower temperature makes the model more confident in its responses, while a higher temperature makes it more creative and diverse. Defaults to `0.1`.  
 - **top_p**, `float`  
-  Also known as “nucleus sampling,” this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
+  Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
 - **presence_penalty**, `float`  
   This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
 - **frequency penalty**, `float`  
@@ -761,9 +775,8 @@ The llm of the created chat. Defaults to `None`. When the value is `None`, a dic
 
 #### Prompt: `str`
 
-Instructions you need LLM to follow when LLM answers questions, like character design, answer length and answer language etc. 
+Instructions for LLM's responses, including character design, answer length, and language. Defaults to:
 
-Defaults:
 ```
 You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
@@ -776,62 +789,81 @@ You are an intelligent assistant. Please summarize the content of the knowledge 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-kb = rag.get_dataset(name="kb_1")
-assi = rag.create_chat("Miss R", knowledgebases=[kb])
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+knowledge_base = rag.list_datasets(name="kb_1")
+assistant = rag.create_chat("Miss R", knowledgebases=knowledge_base)
 ```
 
 ---
 
 ## Update chat
 
+Updates the current chat assistant.
+
 ```python
 Chat.update(update_message: dict)
 ```
 
+### Parameters
+
+#### update_message: `dict[str, Any]`, *Required*
+
+- `"name"`: `str` The name of the chat assistant to update.
+- `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
+- `"knowledgebases"`: `list[str]` Knowledge bases to update.
+- `"llm"`: `dict` llm settings
+  - `"model_name"`, `str` The chat model name.   
+  - `"temperature"`, `float` This parameter controls the randomness of predictions by the model.  
+  - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
+  - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation.
+  - `"frequency penalty"`, `float` Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.
+  - `"max_token"`, `int` This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).
+- `"prompt"` : Instructions for LLM's responses, including character design, answer length, and language.
+
 ### Returns
 
-```python
-no return
-```
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-kb = rag.get_knowledgebase(name="kb_1")
-assi = rag.create_chat("Miss R"， knowledgebases=[kb])
-assi.update({"temperature":0.8})
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+knowledge_base = rag.list_datasets(name="kb_1")
+assistant = rag.create_chat("Miss R", knowledgebases=knowledge_base)
+assistant.update({"llm": {"temperature":0.8}})
+
 ```
 
 ---
 
 ## Delete chats
 
+Deletes specified chat assistants.
+
 ```python
 RAGFlow.delete_chats(ids: List[str] = None)
 ```
+
 ### Parameters
 
-#### ids: `str`
+#### ids
 
-IDs of the chats to be deleted. 
-
+IDs of the chat assistants to delete.
 
 ### Returns
 
-```python
-no return
-```
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag.delete_chats(ids=["id_1","id_2"])
 ```
 
@@ -852,47 +884,43 @@ RAGFlow.list_chats(
 
 ### Parameters
 
-#### page: `int`  
+#### page
 
-The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
-- `1`
+The current page number to retrieve from the paginated results. Defaults to `1`.
 
-#### page_size: `int`  
+#### page_size
 
-The number of records to retrieve per page. This controls how many records will be included in each page.  
-- `1024`
+The number of records on each page. Defaults to `1024`.
 
-#### orderby: `string`  
+#### order_by
 
-The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
-- `"create_time"`
+The attribute by which the results are sorted. Defaults to `"create_time"`.
 
-#### desc: `bool`  
+#### desc
 
-A boolean flag indicating whether the sorting should be in descending order.  
-- `True`
+Indicates whether to sort the results in descending order. Defaults to `True`.
 
 #### id: `string`  
 
-The ID of the chat to be retrieved.  
-- `None`
+The ID of the chat to be retrieved. Defaults to `None`.
 
 #### name: `string`  
 
-The name of the chat to be retrieved.  
-- `None`
+The name of the chat to be retrieved. Defaults to `None`.
+
 ### Returns
 
-A list of chat objects.
+- Success: A list of `Chat` objects representing the retrieved knowledge bases.
+- Failure: `Exception`.
 
 ### Examples
 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="xxxxxx", base_url="http://xxx.xx.xx.xxx:9380")
-for assi in rag.list_chats():
-    print(assi)
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+for assistant in rag.list_chats():
+    print(assistant)
 ```
 
 ---
