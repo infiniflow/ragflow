@@ -8,20 +8,20 @@ class Session(Base):
         self.id = None
         self.name = "New session"
         self.messages = [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
-        self.assistant_id = None
+        self.chat_id = None
         super().__init__(rag, res_dict)
 
-    def chat(self, question: str, stream: bool = False):
+    def ask(self, question: str, stream: bool = False):
         for message in self.messages:
             if "reference" in message:
                 message.pop("reference")
-        res = self.post("/session/completion",
-                        {"session_id": self.id, "question": question, "stream": True}, stream=stream)
+        res = self.post(f"/chat/{self.chat_id}/session/{self.id}/completion",
+                        {"question": question, "stream": True}, stream=stream)
         for line in res.iter_lines():
             line = line.decode("utf-8")
             if line.startswith("{"):
                 json_data = json.loads(line)
-                raise Exception(json_data["retmsg"])
+                raise Exception(json_data["message"])
             if line.startswith("data:"):
                 json_data = json.loads(line[5:])
                 if json_data["data"] != True:
@@ -52,19 +52,12 @@ class Session(Base):
                     message = Message(self.rag, temp_dict)
                     yield message
 
-    def save(self):
-        res = self.post("/session/save",
-                        {"id": self.id, "assistant_id": self.assistant_id, "name": self.name})
+    def update(self,update_message):
+        res = self.put(f"/chat/{self.chat_id}/session/{self.id}",
+                        update_message)
         res = res.json()
-        if res.get("retmsg") == "success": return True
-        raise Exception(res.get("retmsg"))
-
-    def delete(self):
-        res = self.rm("/session/delete", {"id": self.id})
-        res = res.json()
-        if res.get("retmsg") == "success": return True
-        raise Exception(res.get("retmsg"))
-
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
 
 class Message(Base):
     def __init__(self, rag, res_dict):

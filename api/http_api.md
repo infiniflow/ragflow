@@ -5,7 +5,7 @@
 
 **POST** `/api/v1/dataset`
 
-Creates a dataset.
+Creates a knowledge base (dataset).
 
 ### Request
 
@@ -31,11 +31,11 @@ Creates a dataset.
 #### Request example
 
 ```bash
-# "id": id must not be provided.
-# "name": name is required and can't be duplicated.
+# "id": "id" must not be provided.
+# "name": name is required and cannot be duplicated.
 # "tenant_id": tenant_id must not be provided.
-# "embedding_model": embedding_model must not be provided.
-# "navie" means general.
+# "embedding_model": REQUIRED.
+# "naive": general.
 curl --request POST \
   --url http://{address}/api/v1/dataset \
   --header 'Content-Type: application/json' \
@@ -51,21 +51,21 @@ curl --request POST \
 #### Request parameters
 
 - `"id"`: (*Body parameter*)  
-    The ID of the created dataset used to uniquely identify different datasets.  
-    - If creating a dataset, `id` must not be provided.
+    The unique identifier of each created dataset.  
+    - When creating a dataset, `id` must not be provided.
 
 - `"name"`: (*Body parameter*)  
     The name of the dataset, which must adhere to the following requirements:  
     - Required when creating a dataset and must be unique.
-    - If updating a dataset, `name` must still be unique.
+    - When updating a dataset, `name` must still be unique.
 
 - `"avatar"`: (*Body parameter*)  
     Base64 encoding of the avatar.
 
 - `"tenant_id"`: (*Body parameter*)  
     The ID of the tenant associated with the dataset, used to link it with specific users.  
-    - If creating a dataset, `tenant_id` must not be provided.
-    - If updating a dataset, `tenant_id` cannot be changed.
+    - When creating a dataset, `tenant_id` must not be provided.
+    - When updating a dataset, `tenant_id` cannot be changed.
 
 - `"description"`: (*Body parameter*)  
     The description of the dataset.
@@ -74,31 +74,31 @@ curl --request POST \
     The language setting for the dataset.
 
 - `"embedding_model"`: (*Body parameter*)  
-    Embedding model used in the dataset to generate vector embeddings.  
-    - If creating a dataset, `embedding_model` must not be provided.
-    - If updating a dataset, `embedding_model` cannot be changed.
+    Embedding model used in the dataset for generating vector embeddings.  
+    - When creating a dataset, `embedding_model` must not be provided.
+    - When updating a dataset, `embedding_model` cannot be changed.
 
 - `"permission"`: (*Body parameter*)  
     Specifies who can manipulate the dataset.
 
 - `"document_count"`: (*Body parameter*)  
     Document count of the dataset.  
-    - If updating a dataset, `document_count` cannot be changed.
+    - When updating a dataset, `document_count` cannot be changed.
 
 - `"chunk_count"`: (*Body parameter*)  
     Chunk count of the dataset.  
-    - If updating a dataset, `chunk_count` cannot be changed.
+    - When updating a dataset, `chunk_count` cannot be changed.
 
 - `"parse_method"`: (*Body parameter*)  
     Parsing method of the dataset.  
-    - If updating `parse_method`, `chunk_count` must be greater than 0.
+    - When updating `parse_method`, `chunk_count` must be greater than 0.
 
 - `"parser_config"`: (*Body parameter*)  
     The configuration settings for the dataset parser.
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```json
 {
@@ -139,8 +139,7 @@ The successful response includes a JSON object like the following:
 - `"error_code"`: `integer`  
   `0`: The operation succeeds.
 
-  
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```json
 {
@@ -153,7 +152,7 @@ The error response includes a JSON object like the following:
 
 **DELETE** `/api/v1/dataset`
 
-Deletes datasets by ids.
+Deletes datasets by their IDs.
 
 ### Request
 
@@ -169,7 +168,7 @@ Deletes datasets by ids.
 #### Request example
 
 ```bash
-# Either id or name must be provided, but not both.
+# Specify either "ids" or "names", NOT both.
 curl --request DELETE \
   --url http://{address}/api/v1/dataset \
   --header 'Content-Type: application/json' \
@@ -181,13 +180,13 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"ids"`: (*Body parameter*)
-    Dataset IDs to delete.
+- `"ids"`: (*Body parameter*)  
+    IDs of the datasets to delete.
 
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```json
 {
@@ -199,7 +198,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```json
 {
@@ -212,7 +211,7 @@ The error response includes a JSON object like the following:
 
 **PUT** `/api/v1/dataset/{dataset_id}`
 
-Updates a dataset by its id.
+Updates a dataset by its ID.
 
 ### Request
 
@@ -227,14 +226,14 @@ Updates a dataset by its id.
 #### Request example
 
 ```bash
-# "id":  id is required.
-# "name": If you update name, it can't be duplicated.
-# "tenant_id": If you update tenant_id, it can't be changed
-# "embedding_model": If you update embedding_model, it can't be changed.
-# "chunk_count": If you update chunk_count, it can't be changed.
-# "document_count": If you update document_count, it can't be changed.
-# "parse_method": If you update parse_method, chunk_count must be 0. 
-# "navie" means general.
+# "id": REQUIRED
+# "name": If you update "name", it cannot be duplicated.
+# "tenant_id": If you update "tenant_id", it cannot be changed
+# "embedding_model": If you update "embedding_model", it cannot be changed.
+# "chunk_count": If you update "chunk_count", it cannot be changed.
+# "document_count": If you update "document_count", it cannot be changed.
+# "parse_method": If you update "parse_method", "chunk_count" must be 0. 
+# "naive": General.
 curl --request PUT \
   --url http://{address}/api/v1/dataset/{dataset_id} \
   --header 'Content-Type: application/json' \
@@ -245,17 +244,18 @@ curl --request PUT \
   "embedding_model": "BAAI/bge-zh-v1.5",
   "chunk_count": 0,
   "document_count": 0,
-  "parse_method": "navie"
+  "parse_method": "naive"
 }'
 ```
 
 #### Request parameters
-(Refer to the "Create Dataset" for the complete structure of the request parameters.)
+
+See the "Create Dataset" for the complete structure of the request parameters.
 
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```json
 {
@@ -267,7 +267,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```json
 {
@@ -321,7 +321,7 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```json
 {
@@ -365,7 +365,7 @@ The successful response includes a JSON object like the following:
 ```
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```json
 {
@@ -409,7 +409,7 @@ curl --request POST \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -421,7 +421,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -464,7 +464,7 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -476,7 +476,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -528,7 +528,7 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -605,7 +605,7 @@ The successful response includes a JSON object like the following:
   `0`: The operation succeeds.
 
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -659,7 +659,7 @@ curl --request PUT \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -667,7 +667,7 @@ The successful response includes a JSON object like the following:
 }
 ```
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -710,7 +710,7 @@ curl --request POST \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -718,7 +718,7 @@ The successful response includes a JSON object like the following:
 }
 ```
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -761,7 +761,7 @@ curl --request DELETE \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -769,7 +769,7 @@ The successful response includes a JSON object like the following:
 }
 ```
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -808,7 +808,7 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a JSON object like the following:
+A successful response includes a JSON object like the following:
 
 ```shell
 {
@@ -863,7 +863,7 @@ The successful response includes a JSON object like the following:
 }
 ```
   
-The error response includes a JSON object like the following:
+An error response includes a JSON object like the following:
 
 ```shell
 {
@@ -1441,60 +1441,196 @@ Create a chat session
 ### Request
 
 - Method: POST
-- URL: `/api/v1/chat/{chat_id}/session`
+- URL: `http://{address}/api/v1/chat/{chat_id}/session`
 - Headers:
   - `content-Type: application/json`
-  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' 
+- Body:
+  - name: `string`
 
 #### Request example
+```bash
 curl --request POST \
   --url http://{address}/api/v1/chat/{chat_id}/session \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
-  --data-binary '{
+  --data '{
     "name": "new session"
   }'
+```
+#### Request parameters
+- `"id"`: (*Body parameter*)  
+    The ID of the created session used to identify different sessions.  
+    - `None`  
+    - `id` cannot be provided when creating.
+
+- `"name"`: (*Body parameter*)  
+    The name of the created session.  
+    - `"New session"`
+
+- `"messages"`: (*Body parameter*)  
+    The messages of the created session.  
+    - `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`  
+    - `messages` cannot be provided when creating.
+
+- `"chat_id"`: (*Path parameter*)  
+    The ID of the associated chat.  
+    - `""`  
+    - `chat_id` cannot be changed.
+
+### Response
+Success
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "create_date": "Fri, 11 Oct 2024 08:46:14 GMT",
+        "create_time": 1728636374571,
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [
+            {
+                "content": "Hi! I am your assistant，can I help you?",
+                "role": "assistant"
+            }
+        ],
+        "name": "new session",
+        "update_date": "Fri, 11 Oct 2024 08:46:14 GMT",
+        "update_time": 1728636374571
+    }
+}
+```
+Error
+```json
+{
+    "code": 102,
+    "message": "Name can not be empty."
+}
+```
 
 ## List the sessions of a chat
 
-**GET** `/api/v1/chat/{chat_id}/session`
+**GET** `/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 
-List all the session of a chat
+List all sessions under the chat based on the filtering criteria.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/chat/{chat_id}/session`
+- URL: `http://{address}/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 - Headers:
-  - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
 
 #### Request example
+```bash
 curl --request GET \
-  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session \
-  --header 'Content-Type: application/json' \
+  --url http://{address}/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
   --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+```
 
-## Delete a chat session
+#### Request Parameters
+- `"page"`: (*Path parameter*)  
+    The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
+    - `1`
 
-**DELETE** `/api/v1/chat/{chat_id}/session/{session_id}`
+- `"page_size"`: (*Path parameter*)  
+    The number of records to retrieve per page. This controls how many records will be included in each page.  
+    - `1024`
 
-Delete a chat session
+- `"orderby"`: (*Path parameter*)  
+    The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
+    - `"create_time"`
+
+- `"desc"`: (*Path parameter*)  
+    A boolean flag indicating whether the sorting should be in descending order.  
+    - `True`
+
+- `"id"`: (*Path parameter*)  
+    The ID of the session to be retrieved.  
+    - `None`
+
+- `"name"`: (*Path parameter*)  
+    The name of the session to be retrieved.  
+    - `None`
+### Response
+Success
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "chat": "2ca4b22e878011ef88fe0242ac120005",
+            "create_date": "Fri, 11 Oct 2024 08:46:43 GMT",
+            "create_time": 1728636403974,
+            "id": "578d541e87ad11ef96b90242ac120006",
+            "messages": [
+                {
+                    "content": "Hi! I am your assistant，can I help you?",
+                    "role": "assistant"
+                }
+            ],
+            "name": "new session",
+            "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
+            "update_time": 1728636403974
+        }
+    ]
+}
+```
+Error
+```json
+{
+    "code": 102,
+    "message": "The session doesn't exist"
+}
+```
+
+
+## Delete chat sessions
+
+**DELETE** `/api/v1/chat/{chat_id}/session`
+
+Delete chat sessions
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/chat/{chat_id}/session/{session_id}`
+- URL: `http://{address}/api/v1/chat/{chat_id}/session`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+- Body:
+  - `ids`: List[string]
 
 #### Request example
+```bash
+# Either id or name must be provided, but not both.
 curl --request DELETE \
-  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session/791aed9670ea11efbb7e0242ac120007 \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+--url http://{address}/api/v1/chat/{chat_id}/session \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bear {YOUR_ACCESS_TOKEN}' \
+  --data '{
+  "ids": ["test_1", "test_2"]
+  }'
+```
 
+#### Request Parameters
+- `ids`: (*Body Parameter*)  
+    IDs of the sessions to be deleted.
+    - `None`
+### Response
+Success
+```json
+{
+    "code": 0
+}
+```
+Error
+```json
+{
+    "code": 102,
+    "message": "The chat doesn't own the session"
+}
+```
 ## Update a chat session
 
 **PUT** `/api/v1/chat/{chat_id}/session/{session_id}`
@@ -1504,19 +1640,44 @@ Update a chat session
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/chat/{chat_id}/session/{session_id}`
+- URL: `http://{address}/api/v1/chat/{chat_id}/session/{session_id}`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+- Body:
+  - `name`: string
 
 #### Request example
+```bash
 curl --request PUT \
-  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session/791aed9670ea11efbb7e0242ac120007 \
+  --url http://{address}/api/v1/chat/{chat_id}/session/{session_id} \
   --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
-  --data-binary '{
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
+  --data '{
     "name": "Updated session"
   }'
+
+```
+
+#### Request Parameter
+- `name`:(*Body Parameter)  
+    The name of the created session.
+    - `None`
+
+### Response
+Success
+```json
+{
+    "code": 0
+}
+```
+Error
+```json
+{
+    "code": 102,
+    "message": "Name can not be empty."
+}
+```
 
 ## Chat with a chat session
 
@@ -1527,17 +1688,139 @@ Chat with a chat session
 ### Request
 
 - Method: POST
-- URL: `/api/v1/chat/{chat_id}/session/{session_id}/completion`
+- URL: `http://{address} /api/v1/chat/{chat_id}/session/{session_id}/completion`
 - Headers:
   - `content-Type: application/json`
   - 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+- Body:
+  - `question`: string
+  - `stream`: bool
+
 
 #### Request example
+```bash
 curl --request POST \
-  --url http://{address}/api/v1/chat/554e96746aaa11efb06b0242ac120005/session/791aed9670ea11efbb7e0242ac120007/completion \
+  --url http://{address} /api/v1/chat/{chat_id}/session/{session_id}/completion \
   --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}'
+  --header 'Authorization: Bearer {YOUR_ACCESS_TOKEN}' \
   --data-binary '{
-    "question":  "Hello!",
-    "stream": true,
+    "question":  "你好!",
+    "stream": true
   }'
+```
+#### Request Parameters
+- `question`:(*Body Parameter*)  
+    The question you want to ask.
+    - question is required.
+    `None`
+- `stream`: (*Body Parameter*)  
+    The approach of streaming text generation.
+    `False`
+### Response
+Success
+```json
+data: {
+    "code": 0,
+    "data": {
+        "answer": "您好！有什么具体的问题或者需要的帮助",
+        "reference": {},
+        "audio_binary": null,
+        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+    }
+}
+
+data: {
+    "code": 0,
+    "data": {
+        "answer": "您好！有什么具体的问题或者需要的帮助可以告诉我吗？我在这里是为了帮助",
+        "reference": {},
+        "audio_binary": null,
+        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+    }
+}
+
+data: {
+    "code": 0,
+    "data": {
+        "answer": "您好！有什么具体的问题或者需要的帮助可以告诉我吗？我在这里是为了帮助您的。如果您有任何疑问或是需要获取",
+        "reference": {},
+        "audio_binary": null,
+        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+    }
+}
+
+data: {
+    "code": 0,
+    "data": {
+        "answer": "您好！有什么具体的问题或者需要的帮助可以告诉我吗？我在这里是为了帮助您的。如果您有任何疑问或是需要获取某些信息，请随时提出。",
+        "reference": {},
+        "audio_binary": null,
+        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+    }
+}
+
+data: {
+    "code": 0,
+    "data": {
+        "answer": "您好！有什么具体的问题或者需要的帮助可以告诉我吗 ##0$$？我在这里是为了帮助您的。如果您有任何疑问或是需要获取某些信息，请随时提出。",
+        "reference": {
+            "total": 19,
+            "chunks": [
+                {
+                    "chunk_id": "9d87f9d70a0d8a7565694a81fd4c5d5f",
+                    "content_ltks": "当所有知识库内容都与问题无关时 ,你的回答必须包括“知识库中未找到您要的答案!”这句话。回答需要考虑聊天历史。\r\n以下是知识库:\r\n{knowledg}\r\n以上是知识库\r\n\"\"\"\r\n 1\r\n 2\r\n 3\r\n 4\r\n 5\r\n 6\r\n总结\r\n通过上面的介绍,可以对开源的 ragflow有了一个大致的了解,与前面的有道qanyth整体流程还是比较类似的。 ",
+                    "content_with_weight": "当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\r\n    以下是知识库：\r\n    {knowledge}\r\n    以上是知识库\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n总结\r\n通过上面的介绍，可以对开源的 RagFlow 有了一个大致的了解，与前面的 有道 QAnything 整体流程还是比较类似的。",
+                    "doc_id": "5c5999ec7be811ef9cab0242ac120005",
+                    "docnm_kwd": "1.txt",
+                    "kb_id": "c7ee74067a2c11efb21c0242ac120006",
+                    "important_kwd": [],
+                    "img_id": "",
+                    "similarity": 0.38337178633282265,
+                    "vector_similarity": 0.3321336754679629,
+                    "term_similarity": 0.4053309767034769,
+                    "positions": [
+                        ""
+                    ]
+                },
+                {
+                    "chunk_id": "895d34de762e674b43e8613c6fb54c6d",
+                    "content_ltks": "\r\n\r\n实际内容可能会超过大模型的输入token数量,因此在调用大模型前会调用api/db/servic/dialog_service.py文件中 messag_fit_in ()根据大模型可用的 token数量进行过滤。这部分与有道的 qanyth的实现大同小异,就不额外展开了。\r\n\r\n将检索的内容,历史聊天记录以及问题构造为 prompt ,即可作为大模型的输入了 ,默认的英文prompt如下所示:\r\n\r\n\"\"\"\r\nyou are an intellig assistant. pleas summar the content of the knowledg base to answer the question. pleas list thedata in the knowledg base and answer in detail. when all knowledg base content is irrelev to the question , your answer must includ the sentenc\"the answer you are lookfor isnot found in the knowledg base!\" answer needto consid chat history.\r\n here is the knowledg base:\r\n{ knowledg}\r\nthe abov is the knowledg base.\r\n\"\"\"\r\n1\r\n 2\r\n 3\r\n 4\r\n 5\r\n 6\r\n对应的中文prompt如下所示:\r\n\r\n\"\"\"\r\n你是一个智能助手,请总结知识库的内容来回答问题,请列举知识库中的数据详细回答。 ",
+                    "content_with_weight": "\r\n\r\n实际内容可能会超过大模型的输入 token 数量，因此在调用大模型前会调用 api/db/services/dialog_service.py 文件中 message_fit_in() 根据大模型可用的 token 数量进行过滤。这部分与有道的 QAnything 的实现大同小异，就不额外展开了。\r\n\r\n将检索的内容，历史聊天记录以及问题构造为 prompt，即可作为大模型的输入了，默认的英文 prompt 如下所示：\r\n\r\n\"\"\"\r\nYou are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n      Here is the knowledge base:\r\n      {knowledge}\r\n      The above is the knowledge base.\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n对应的中文 prompt 如下所示：\r\n\r\n\"\"\"\r\n你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。",
+                    "doc_id": "5c5999ec7be811ef9cab0242ac120005",
+                    "docnm_kwd": "1.txt",
+                    "kb_id": "c7ee74067a2c11efb21c0242ac120006",
+                    "important_kwd": [],
+                    "img_id": "",
+                    "similarity": 0.2788204323926715,
+                    "vector_similarity": 0.35489427679953667,
+                    "term_similarity": 0.2462173562183008,
+                    "positions": [
+                        ""
+                    ]
+                }
+            ],
+            "doc_aggs": [
+                {
+                    "doc_name": "1.txt",
+                    "doc_id": "5c5999ec7be811ef9cab0242ac120005",
+                    "count": 2
+                }
+            ]
+        },
+        "prompt": "你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\n            以下是知识库：\n            当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\r\n    以下是知识库：\r\n    {knowledge}\r\n    以上是知识库\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n总结\r\n通过上面的介绍，可以对开源的 RagFlow 有了一个大致的了解，与前面的 有道 QAnything 整体流程还是比较类似的。\n\n------\n\n\r\n\r\n实际内容可能会超过大模型的输入 token 数量，因此在调用大模型前会调用 api/db/services/dialog_service.py 文件中 message_fit_in() 根据大模型可用的 token 数量进行过滤。这部分与有道的 QAnything 的实现大同小异，就不额外展开了。\r\n\r\n将检索的内容，历史聊天记录以及问题构造为 prompt，即可作为大模型的输入了，默认的英文 prompt 如下所示：\r\n\r\n\"\"\"\r\nYou are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n      Here is the knowledge base:\r\n      {knowledge}\r\n      The above is the knowledge base.\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n对应的中文 prompt 如下所示：\r\n\r\n\"\"\"\r\n你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。\n            以上是知识库。\n\n### Query:\n你好，请问有什么问题需要我帮忙解答吗？\n\n### Elapsed\n  - Retrieval: 9131.1 ms\n  - LLM: 12802.6 ms",
+        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+    }
+}
+
+data:{
+    "code": 0,
+    "data": true
+}
+```
+Error
+```json
+{
+    "code": 102,
+    "message": "Please input your question."
+}
+```
