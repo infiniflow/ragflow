@@ -19,8 +19,10 @@ import json
 import re
 from copy import deepcopy
 from timeit import default_timer as timer
-from api.db import LLMType, ParserType
-from api.db.db_models import Dialog, Conversation
+
+
+from api.db import LLMType, ParserType,StatusEnum
+from api.db.db_models import Dialog, Conversation,DB
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
@@ -35,10 +37,48 @@ from api.utils.file_utils import get_project_base_directory
 class DialogService(CommonService):
     model = Dialog
 
+    @classmethod
+    @DB.connection_context()
+    def get_list(cls, tenant_id,
+                 page_number, items_per_page, orderby, desc, id , name):
+        chats = cls.model.select()
+        if id:
+            chats = chats.where(cls.model.id == id)
+        if name:
+            chats = chats.where(cls.model.name == name)
+        chats = chats.where(
+              (cls.model.tenant_id == tenant_id)
+            & (cls.model.status == StatusEnum.VALID.value)
+        )
+        if desc:
+            chats = chats.order_by(cls.model.getter_by(orderby).desc())
+        else:
+            chats = chats.order_by(cls.model.getter_by(orderby).asc())
+
+        chats = chats.paginate(page_number, items_per_page)
+
+        return list(chats.dicts())
+
 
 class ConversationService(CommonService):
     model = Conversation
 
+    @classmethod
+    @DB.connection_context()
+    def get_list(cls,dialog_id,page_number, items_per_page, orderby, desc, id , name):
+        sessions = cls.model.select().where(cls.model.dialog_id ==dialog_id)
+        if id:
+            sessions = sessions.where(cls.model.id == id)
+        if name:
+            sessions = sessions.where(cls.model.name == name)
+        if desc:
+            sessions = sessions.order_by(cls.model.getter_by(orderby).desc())
+        else:
+            sessions = sessions.order_by(cls.model.getter_by(orderby).asc())
+
+        sessions = sessions.paginate(page_number, items_per_page)
+
+        return list(sessions.dicts())
 
 def message_fit_in(msg, max_length=4000):
     def count():
@@ -85,7 +125,7 @@ def llm_id2llm_type(llm_id):
         for llm in llm_factory["llm"]:
             if llm_id == llm["llm_name"]:
                 return llm["model_type"].strip(",")[-1]
-                
+
 
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
