@@ -40,13 +40,6 @@ The unique name of the dataset to create. It must adhere to the following requir
 
 Base64 encoding of the avatar. Defaults to `""`
 
-#### tenant_id
-
-The id of the tenant associated with the created dataset is used to identify different users. Defaults to `None`.
-
-- When creating a dataset, `tenant_id` must not be provided.
-- When updating a dataset, `tenant_id` cannot be changed.
-
 #### description
 
 The description of the created dataset. Defaults to `""`.
@@ -54,13 +47,6 @@ The description of the created dataset. Defaults to `""`.
 #### language
 
 The language setting of the created dataset. Defaults to `"English"`.
-
-#### embedding_model
-
-The specific model used by the dataset to generate vector embeddings. Defaults to `""`.
-
-- When creating a dataset, `embedding_model` must not be provided.
-- When updating a dataset, `embedding_model` cannot be changed.
 
 #### permission
 
@@ -70,25 +56,13 @@ The person who can operate on the dataset. Defaults to `"me"`.
 
 The number of documents associated with the dataset. Defaults to `0`.
 
-:::tip NOTE  
-When updating a dataset, `document_count` cannot be changed.
-:::
-
 #### chunk_count
 
 The number of data chunks generated or processed by the created dataset. Defaults to `0`.
 
-:::tip NOTE
-When updating a dataset, `chunk_count` cannot be changed.
-:::
-
 #### parse_method
 
 The method used by the dataset to parse and process data. Defaults to `"naive"`.
-
-:::tip NOTE  
-When updating `parse_method` in a dataset, `chunk_count` must be greater than 0.
-:::
 
 #### parser_config
 
@@ -135,8 +109,6 @@ The IDs of the knowledge bases to delete.
 - Failure: `Exception`
 
 ### Examples
-
-#### Delete knowledge bases by name
 
 ```python
 rag.delete_datasets(ids=["id_1","id_2"])
@@ -192,7 +164,7 @@ The name of the dataset to retrieve. Defaults to `None`.
 
 ### Examples
 
-#### Retrieve a list of knowledge bases associated with the current user
+#### List all knowledge bases
 
 ```python
 for ds in rag_object.list_datasets():
@@ -202,7 +174,8 @@ for ds in rag_object.list_datasets():
 #### Retrieve a knowledge base by ID
 
 ```python
-ds = rag_object.list_datasets(id = "id_1")
+dataset = rag_object.list_datasets(id = "id_1")
+ds = dataset[0]
 print(ds.name)
 ```
 
@@ -218,7 +191,15 @@ Updates the current knowledge base.
 
 ### Parameters
 
-#### update_message
+#### update_message: `dict[str, str|int]`, *Required*
+
+- `"name"`: `str` The name of the knowledge base to update.
+- `"tenant_id"`: `str` The `"tenant_id` you get after calling `create_dataset()`.
+- `"embedding_model"`: `str` The embedding model for generating vector embeddings.
+  - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
+- `"parser_method"`: `str`
+  - `"naive"`: General
+  - `"manual`: Manual
 
 ### Returns
 
@@ -232,7 +213,7 @@ from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 ds = rag.list_datasets(name="kb_1")
-ds.update({"parse_method":"manual", ...}}
+ds.update({"embedding_model":"BAAI/bge-zh-v1.5", "parse_method":"manual"})
 ```
 
 ---
@@ -729,6 +710,8 @@ Chat APIs
 
 ## Create chat
 
+Creates a chat assistant.
+
 ```python
 RAGFlow.create_chat(
     name: str = "assistant", 
@@ -737,41 +720,35 @@ RAGFlow.create_chat(
     llm: Chat.LLM = None, 
     prompt: Chat.Prompt = None
 ) -> Chat
-
 ```
 
 ### Returns
 
-Chat
-
-description: assitant object.
+- Success: A `Chat` object representing the chat assistant.
+- Failure: `Exception`
 
 #### name: `str`
 
-The name of the created chat. Defaults to `"assistant"`.
+The name of the chat assistant. Defaults to `"assistant"`.
 
 #### avatar: `str`
 
-The icon of the created chat. Defaults to `"path"`. 
+The icon of the chat assistant. Defaults to `"path"`.
 
-#### knowledgebases: `list[DataSet]`
+#### knowledgebases: `list[str]`
 
-Select knowledgebases associated. Defaults to `["kb1"]`.
-
-#### id: `str`
-
-The id of the created chat. Defaults to `""`.
+The associated knowledge bases. Defaults to `["kb1"]`.
 
 #### llm: `LLM`
 
 The llm of the created chat. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.
 
 - **model_name**, `str`  
-  Large language chat model. If it is `None`, it will return the user's default model.  
+  The chat model name. If it is `None`, the user's default chat model will be returned.  
 - **temperature**, `float`  
   This parameter controls the randomness of predictions by the model. A lower temperature makes the model more confident in its responses, while a higher temperature makes it more creative and diverse. Defaults to `0.1`.  
 - **top_p**, `float`  
-  Also known as “nucleus sampling,” this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
+  Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
 - **presence_penalty**, `float`  
   This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
 - **frequency penalty**, `float`  
@@ -781,9 +758,8 @@ The llm of the created chat. Defaults to `None`. When the value is `None`, a dic
 
 #### Prompt: `str`
 
-Instructions you need LLM to follow when LLM answers questions, like character design, answer length and answer language etc. 
+Instructions for LLM's responses, including character design, answer length, and language. Defaults to:
 
-Defaults:
 ```
 You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
@@ -797,23 +773,34 @@ You are an intelligent assistant. Please summarize the content of the knowledge 
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-kb = rag.get_dataset(name="kb_1")
-assi = rag.create_chat("Miss R", knowledgebases=[kb])
+kb = rag.list_datasets(name="kb_1")
+assistant = rag.create_chat("Miss R", knowledgebases=[kb])
 ```
 
 ---
 
 ## Update chat
 
+Updates the current chat assistant.
+
 ```python
 Chat.update(update_message: dict)
 ```
 
+### Parameters
+
+#### update_message: `dict[str, Any]`, *Required*
+
+- `"name"`: `str` The name of the chat assistant to update.
+- `"avatar"`: `str` The path to the icon file for the chat assistant.
+- `"knowledgebases"`: `list[str]` Knowledge bases to update.
+- 
+
+
 ### Returns
 
-```python
-no return
-```
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
@@ -821,30 +808,31 @@ no return
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-kb = rag.get_knowledgebase(name="kb_1")
-assi = rag.create_chat("Miss R"， knowledgebases=[kb])
-assi.update({"temperature":0.8})
+kb = rag.list_datasets(name="kb_1")
+assistant = rag.create_chat("Miss R"， knowledgebases=[kb])
+assistant.update({"temperature":0.8})
 ```
 
 ---
 
 ## Delete chats
 
+Deletes specified chat assistants.
+
 ```python
 RAGFlow.delete_chats(ids: list[str] = None)
 ```
+
 ### Parameters
 
-#### ids: `str`
+#### ids
 
-IDs of the chats to be deleted. 
-
+IDs of the chat assistants to delete.
 
 ### Returns
 
-```python
-no return
-```
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
@@ -882,28 +870,26 @@ The current page number to retrieve from the paginated data. This parameter dete
 The number of records to retrieve per page. This controls how many records will be included in each page.  
 - `1024`
 
-#### orderby: `string`  
+#### order_by
 
-The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
-- `"create_time"`
+The attribute by which the results are sorted. Defaults to `"create_time"`.
 
-#### desc: `bool`  
+#### desc
 
-A boolean flag indicating whether the sorting should be in descending order.  
-- `True`
+Indicates whether to sort the results in descending order. Defaults to `True`.
 
 #### id: `string`  
 
-The ID of the chat to be retrieved.  
-- `None`
+The ID of the chat to be retrieved. Defaults to `None`.
 
 #### name: `string`  
 
-The name of the chat to be retrieved.  
-- `None`
+The name of the chat to be retrieved. Defaults to `None`.
+
 ### Returns
 
-A list of chat objects.
+- Success: A list of `Chat` objects representing the retrieved knowledge bases.
+- Failure: `Exception`.
 
 ### Examples
 
@@ -911,8 +897,8 @@ A list of chat objects.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-for assi in rag.list_chats():
-    print(assi)
+for assistant in rag.list_chats():
+    print(assistant)
 ```
 
 ---
