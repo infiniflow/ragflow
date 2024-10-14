@@ -32,12 +32,12 @@ class RAGFlow:
         self.api_url = f"{base_url}/api/{version}"
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
-    def post(self, path, json, stream=False):
-        res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream)
+    def post(self, path, json=None, stream=False, files=None):
+        res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream,files=files)
         return res
 
-    def get(self, path, params=None):
-        res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header)
+    def get(self, path, params=None, json=None):
+        res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header,json=json)
         return res
 
     def delete(self, path, json):
@@ -151,31 +151,7 @@ class RAGFlow:
             return result_list
         raise Exception(res["message"])
 
-    def create_document(self, ds: DataSet, name: str, blob: bytes) -> bool:
-        url = f"/doc/dataset/{ds.id}/documents/upload"
-        files = {
-            'file': (name, blob)
-        }
-        headers = {
-            'Authorization': f"Bearer {ds.rag.user_key}"
-        }
 
-        response = requests.post(self.api_url + url, files=files,
-                                 headers=headers)
-
-        if response.status_code == 200 and response.json().get('retmsg') == 'success':
-            return True
-        else:
-            raise Exception(f"Upload failed: {response.json().get('retmsg')}")
-
-        return False
-
-    def get_document(self, id: str = None, name: str = None) -> Document:
-        res = self.get("/doc/infos", {"id": id, "name": name})
-        res = res.json()
-        if res.get("retmsg") == "success":
-            return Document(self, res['data'])
-        raise Exception(res["retmsg"])
 
     def async_parse_documents(self, doc_ids):
         """
