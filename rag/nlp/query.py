@@ -186,8 +186,5 @@ class EsQueryer:
                 s += v  # * dtwt[k]
         q = 1e-9
         for k, v in qtwt.items():
-            q += v  # * v
-        #d = 1e-9
-        # for k, v in dtwt.items():
-        #    d += v * v
-        return s / q / max(1, math.sqrt(math.log10(max(len(qtwt.keys()), len(dtwt.keys())))))# math.sqrt(q) / math.sqrt(d)
+            q += v
+        return s / q
