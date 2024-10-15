@@ -200,6 +200,27 @@ def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None):
     response = {"retcode": retcode, "retmsg": retmsg, "data": data}
     return jsonify(response)
 
+def apikey_required(func):
+    @wraps(func)
+    def decorated_function(*args, **kwargs):
+        token = flask_request.headers.get('Authorization').split()[1]
+        objs = APIToken.query(token=token)
+        if not objs:
+            return build_error_result(
+                error_msg='API-KEY is invalid!', retcode=RetCode.FORBIDDEN
+            )
+        kwargs['tenant_id'] = objs[0].tenant_id
+        return func(*args, **kwargs)
+
+    return decorated_function
+
+
+def build_error_result(retcode=RetCode.FORBIDDEN, error_msg='success'):
+    response = {"error_code": retcode, "error_msg": error_msg}
+    response = jsonify(response)
+    response.status_code = retcode
+    return response
+
 
 def construct_response(retcode=RetCode.SUCCESS,
                        retmsg='success', data=None, auth=None):
