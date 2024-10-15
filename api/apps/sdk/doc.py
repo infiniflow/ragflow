@@ -258,6 +258,8 @@ def parse(tenant_id,dataset_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(retmsg=f"You don't own the dataset {dataset_id}.")
     req = request.json
+    if not req.get("document_ids"):
+        return get_error_data_result("Please input `document_ids`")
     for id in req["document_ids"]:
         if not DocumentService.query(id=id,kb_id=dataset_id):
             return get_error_data_result(retmsg=f"You don't own the document {id}.")
@@ -283,9 +285,14 @@ def stop_parsing(tenant_id,dataset_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(retmsg=f"You don't own the dataset {dataset_id}.")
     req = request.json
+    if not req.get("document_ids"):
+        return get_error_data_result("Please input `document_ids`")
     for id in req["document_ids"]:
-        if not DocumentService.query(id=id,kb_id=dataset_id):
+        doc = DocumentService.query(id=id, kb_id=dataset_id)
+        if not doc:
             return get_error_data_result(retmsg=f"You don't own the document {id}.")
+        if doc[0].progress == 100.0 or doc[0].progress == 0.0:
+            return get_error_data_result("Can't stop parsing document with progress at 0 or 100")
         info = {"run": "2", "progress": 0}
         DocumentService.update_by_id(id, info)
         # if str(req["run"]) == TaskStatus.CANCEL.value:
@@ -297,7 +304,7 @@ def stop_parsing(tenant_id,dataset_id):
 
 @manager.route('/dataset/<dataset_id>/document/<document_id>/chunk', methods=['GET'])
 @token_required
-def list_chunk(tenant_id,dataset_id,document_id):
+def list_chunks(tenant_id,dataset_id,document_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(retmsg=f"You don't own the dataset {dataset_id}.")
     doc=DocumentService.query(id=document_id, kb_id=dataset_id)
@@ -309,57 +316,58 @@ def list_chunk(tenant_id,dataset_id,document_id):
     page = int(req.get("offset", 1))
     size = int(req.get("limit", 30))
     question = req.get("keywords", "")
-    try:
-        query = {
-            "doc_ids": [doc_id], "page": page, "size": size, "question": question, "sort": True
+    query = {
+        "doc_ids": [doc_id], "page": page, "size": size, "question": question, "sort": True
+    }
+    sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
+    res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
+    origin_chunks = []
+    sign = 0
+    for id in sres.ids:
+        d = {
+            "chunk_id": id,
+            "content_with_weight": rmSpace(sres.highlight[id]) if question and id in sres.highlight else sres.field[
+                id].get(
+                "content_with_weight", ""),
+            "doc_id": sres.field[id]["doc_id"],
+            "docnm_kwd": sres.field[id]["docnm_kwd"],
+            "important_kwd": sres.field[id].get("important_kwd", []),
+            "img_id": sres.field[id].get("img_id", ""),
+            "available_int": sres.field[id].get("available_int", 1),
+            "positions": sres.field[id].get("position_int", "").split("\t")
         }
-        if "available_int" in req:
-            query["available_int"] = int(req["available_int"])
-        sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
-        res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
+        if len(d["positions"]) % 5 == 0:
+            poss = []
+            for i in range(0, len(d["positions"]), 5):
+                poss.append([float(d["positions"][i]), float(d["positions"][i + 1]), float(d["positions"][i + 2]),
+                             float(d["positions"][i + 3]), float(d["positions"][i + 4])])
+            d["positions"] = poss
 
-        origin_chunks = []
-        for id in sres.ids:
-            d = {
-                "chunk_id": id,
-                "content_with_weight": rmSpace(sres.highlight[id]) if question and id in sres.highlight else sres.field[
-                    id].get(
-                    "content_with_weight", ""),
-                "doc_id": sres.field[id]["doc_id"],
-                "docnm_kwd": sres.field[id]["docnm_kwd"],
-                "important_kwd": sres.field[id].get("important_kwd", []),
-                "img_id": sres.field[id].get("img_id", ""),
-                "available_int": sres.field[id].get("available_int", 1),
-                "positions": sres.field[id].get("position_int", "").split("\t")
-            }
-            if len(d["positions"]) % 5 == 0:
-                poss = []
-                for i in range(0, len(d["positions"]), 5):
-                    poss.append([float(d["positions"][i]), float(d["positions"][i + 1]), float(d["positions"][i + 2]),
-                                 float(d["positions"][i + 3]), float(d["positions"][i + 4])])
-                d["positions"] = poss
+        origin_chunks.append(d)
+        if req.get("id"):
+            if req.get("id") == id:
+                origin_chunks.clear()
+                origin_chunks.append(d)
+                sign = 1
+                break
+    if req.get("id"):
+        if sign == 0:
+            return get_error_data_result(f"Can't find this chunk {req.get('id')}")
+    for chunk in origin_chunks:
+        key_mapping = {
+            "chunk_id": "id",
+            "content_with_weight": "content",
+            "doc_id": "document_id",
+            "important_kwd": "important_keywords",
+            "img_id": "image_id",
+        }
+        renamed_chunk = {}
+        for key, value in chunk.items():
+            new_key = key_mapping.get(key, key)
+            renamed_chunk[new_key] = value
+        res["chunks"].append(renamed_chunk)
+    return get_result(data=res)
 
-            origin_chunks.append(d)
-            ##rename keys
-            for chunk in origin_chunks:
-                key_mapping = {
-                    "chunk_id": "id",
-                    "content_with_weight": "content",
-                    "doc_id": "document_id",
-                    "important_kwd": "important_keywords",
-                    "img_id": "image_id",
-                }
-                renamed_chunk = {}
-                for key, value in chunk.items():
-                    new_key = key_mapping.get(key, key)
-                    renamed_chunk[new_key] = value
-                res["chunks"].append(renamed_chunk)
-        return get_result(data=res)
-    except Exception as e:
-        if str(e).find("not_found") > 0:
-            return get_result(retmsg=f'No chunk found!',
-                                   retcode=RetCode.DATA_ERROR)
-        return server_error_response(e)
 
 
 @manager.route('/dataset/<dataset_id>/document/<document_id>/chunk', methods=['POST'])
@@ -432,12 +440,12 @@ def rm_chunk(tenant_id,dataset_id,document_id):
     req = request.json
     if not req.get("chunk_ids"):
         return get_error_data_result("`chunk_ids` is required")
+    query = {
+        "doc_ids": [doc.id], "page": 1, "size": 1024, "question": "", "sort": True}
+    sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
     for chunk_id in req.get("chunk_ids"):
-        res = ELASTICSEARCH.get(
-            chunk_id, search.index_name(
-                tenant_id))
-        if not res.get("found"):
-            return server_error_response(f"Chunk {chunk_id} not found")
+        if chunk_id not in sres.ids:
+            return get_error_data_result(f"Chunk {chunk_id} not found")
     if not ELASTICSEARCH.deleteByQuery(
             Q("ids", values=req["chunk_ids"]), search.index_name(tenant_id)):
         return get_error_data_result(retmsg="Index updating failure")
@@ -461,14 +469,23 @@ def set(tenant_id,dataset_id,document_id,chunk_id):
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
         return get_error_data_result(retmsg=f"You don't own the document {document_id}.")
+    doc = doc[0]
+    query = {
+        "doc_ids": [document_id], "page": 1, "size": 1024, "question": "", "sort": True
+    }
+    sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
+    if chunk_id not in sres.ids:
+        return get_error_data_result(f"You don't own the chunk {chunk_id}")
     req = request.json
+    content=res["_source"].get("content_with_weight")
     d = {
         "id": chunk_id,
-        "content_with_weight": req.get("content",res.get["content_with_weight"])}
-    d["content_ltks"] = rag_tokenizer.tokenize(req["content"])
+        "content_with_weight": req.get("content",content)}
+    d["content_ltks"] = rag_tokenizer.tokenize(d["content_with_weight"])
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["important_kwd"] = req.get("important_keywords",[])
-    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_keywords"]))
+    if "important_keywords" in req:
+        d["important_kwd"] = req.get("important_keywords")
+        d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_keywords"]))
     if "available" in req:
         d["available_int"] = req["available"]
     embd_id = DocumentService.get_embd_id(document_id)
@@ -478,7 +495,7 @@ def set(tenant_id,dataset_id,document_id,chunk_id):
         arr = [
             t for t in re.split(
                 r"[\n\t]",
-                req["content"]) if len(t) > 1]
+                d["content_with_weight"]) if len(t) > 1]
         if len(arr) != 2:
             return get_error_data_result(
                 retmsg="Q&A must be separated by TAB/ENTER key.")
@@ -486,7 +503,7 @@ def set(tenant_id,dataset_id,document_id,chunk_id):
         d = beAdoc(d, arr[0], arr[1], not any(
             [rag_tokenizer.is_chinese(t) for t in q + a]))
 
-    v, c = embd_mdl.encode([doc.name, req["content"]])
+    v, c = embd_mdl.encode([doc.name, d["content_with_weight"]])
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
     ELASTICSEARCH.upsert([d], search.index_name(tenant_id))
@@ -512,7 +529,7 @@ def retrieval_test(tenant_id):
     kb_id = req_json["datasets"]
     if isinstance(kb_id, str): kb_id = [kb_id]
     doc_ids = req_json.get("documents", [])
-    similarity_threshold = float(req.get("similarity_threshold", 0.0))
+    similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
     if req.get("highlight")=="False" or  req.get("highlight")=="false":
@@ -562,6 +579,6 @@ def retrieval_test(tenant_id):
         return get_result(data=ranks)
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return get_result(retmsg=f'No chunk found! Check the chunk statu    s please!',
+            return get_result(retmsg=f'No chunk found! Check the chunk status please!',
                                    retcode=RetCode.DATA_ERROR)
         return server_error_response(e)

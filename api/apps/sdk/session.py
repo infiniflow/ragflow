@@ -24,10 +24,9 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_error_data_result
 from api.utils.api_utils import get_result, token_required
 
-
 @manager.route('/chat/<chat_id>/session', methods=['POST'])
 @token_required
-def create(tenant_id, chat_id):
+def create(tenant_id,chat_id):
     req = request.json
     req["dialog_id"] = chat_id
     dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
@@ -51,14 +50,13 @@ def create(tenant_id, chat_id):
     del conv["reference"]
     return get_result(data=conv)
 
-
 @manager.route('/chat/<chat_id>/session/<session_id>', methods=['PUT'])
 @token_required
-def update(tenant_id, chat_id, session_id):
+def update(tenant_id,chat_id,session_id):
     req = request.json
     req["dialog_id"] = chat_id
     conv_id = session_id
-    conv = ConversationService.query(id=conv_id, dialog_id=chat_id)
+    conv = ConversationService.query(id=conv_id,dialog_id=chat_id)
     if not conv:
         return get_error_data_result(retmsg="Session does not exist")
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
@@ -74,16 +72,30 @@ def update(tenant_id, chat_id, session_id):
     return get_result()
 
 
-@manager.route('/chat/<chat_id>/session/<session_id>/completion', methods=['POST'])
+@manager.route('/chat/<chat_id>/completion', methods=['POST'])
 @token_required
-def completion(tenant_id, chat_id, session_id):
+def completion(tenant_id,chat_id):
     req = request.json
     # req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
     #    {"role": "user", "content": "上海有吗？"}
     # ]}
+    if not req.get("session_id"):
+        conv = {
+            "id": get_uuid(),
+            "dialog_id": chat_id,
+            "name": req.get("name", "New session"),
+            "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
+        }
+        if not conv.get("name"):
+            return get_error_data_result(retmsg="Name can not be empty.")
+        ConversationService.save(**conv)
+        e, conv = ConversationService.get_by_id(conv["id"])
+        session_id=conv.id
+    else:
+        session_id = req.get("session_id")
     if not req.get("question"):
         return get_error_data_result(retmsg="Please input your question.")
-    conv = ConversationService.query(id=session_id, dialog_id=chat_id)
+    conv = ConversationService.query(id=session_id,dialog_id=chat_id)
     if not conv:
         return get_error_data_result(retmsg="Session does not exist")
     conv = conv[0]
@@ -123,13 +135,13 @@ def completion(tenant_id, chat_id, session_id):
         try:
             for ans in chat(dia, msg, **req):
                 fillin_conv(ans)
-                yield "data:" + json.dumps({"code": 0, "data": ans}, ensure_ascii=False) + "\n\n"
+                yield "data:" + json.dumps({"code": 0,  "data": ans,"session_id":session_id}, ensure_ascii=False) + "\n\n"
             ConversationService.update_by_id(conv.id, conv.to_dict())
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                        "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
+                                        "data": {"answer": "**ERROR**: " + str(e), "session_id":session_id,"reference": []}},
                                        ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
+        yield "data:" + json.dumps({"code": 0, "data": True,"session_id":session_id}, ensure_ascii=False) + "\n\n"
 
     if req.get("stream", True):
         resp = Response(stream(), mimetype="text/event-stream")
@@ -148,15 +160,14 @@ def completion(tenant_id, chat_id, session_id):
             break
         return get_result(data=answer)
 
-
 @manager.route('/chat/<chat_id>/session', methods=['GET'])
 @token_required
-def list(chat_id, tenant_id):
+def list(chat_id,tenant_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(retmsg=f"You don't own the assistant {chat_id}.")
     id = request.args.get("id")
     name = request.args.get("name")
-    session = ConversationService.query(id=id, name=name, dialog_id=chat_id)
+    session = ConversationService.query(id=id,name=name,dialog_id=chat_id)
     if not session:
         return get_error_data_result(retmsg="The session doesn't exist")
     page_number = int(request.args.get("page", 1))
@@ -166,7 +177,7 @@ def list(chat_id, tenant_id):
         desc = False
     else:
         desc = True
-    convs = ConversationService.get_list(chat_id, page_number, items_per_page, orderby, desc, id, name)
+    convs = ConversationService.get_list(chat_id,page_number,items_per_page,orderby,desc,id,name)
     if not convs:
         return get_result(data=[])
     for conv in convs:
@@ -201,17 +212,16 @@ def list(chat_id, tenant_id):
         del conv["reference"]
     return get_result(data=convs)
 
-
 @manager.route('/chat/<chat_id>/session', methods=["DELETE"])
 @token_required
-def delete(tenant_id, chat_id):
+def delete(tenant_id,chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(retmsg="You don't own the chat")
     ids = request.json.get("ids")
     if not ids:
         return get_error_data_result(retmsg="`ids` is required in deleting operation")
     for id in ids:
-        conv = ConversationService.query(id=id, dialog_id=chat_id)
+        conv = ConversationService.query(id=id,dialog_id=chat_id)
         if not conv:
             return get_error_data_result(retmsg="The chat doesn't own the session")
         ConversationService.delete_by_id(id)

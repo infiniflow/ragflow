@@ -152,105 +152,30 @@ class RAGFlow:
         raise Exception(res["message"])
 
 
-
-    def async_parse_documents(self, doc_ids):
-        """
-        Asynchronously start parsing multiple documents without waiting for completion.
-
-        :param doc_ids: A list containing multiple document IDs.
-        """
-        try:
-            if not doc_ids or not isinstance(doc_ids, list):
-                raise ValueError("doc_ids must be a non-empty list of document IDs")
-
-            data = {"document_ids": doc_ids, "run": 1}
-
-            res = self.post(f'/doc/run', data)
-
-            if res.status_code != 200:
-                raise Exception(f"Failed to start async parsing for documents: {res.text}")
-
-            print(f"Async parsing started successfully for documents: {doc_ids}")
-
-        except Exception as e:
-            print(f"Error occurred during async parsing for documents: {str(e)}")
-            raise
-
-    def async_cancel_parse_documents(self, doc_ids):
-        """
-        Cancel the asynchronous parsing of multiple documents.
-
-        :param doc_ids: A list containing multiple document IDs.
-        """
-        try:
-            if not doc_ids or not isinstance(doc_ids, list):
-                raise ValueError("doc_ids must be a non-empty list of document IDs")
-            data = {"document_ids": doc_ids, "run": 2}
-            res = self.post(f'/doc/run', data)
-
-            if res.status_code != 200:
-                raise Exception(f"Failed to cancel async parsing for documents: {res.text}")
-
-            print(f"Async parsing canceled successfully for documents: {doc_ids}")
-
-        except Exception as e:
-            print(f"Error occurred during canceling parsing for documents: {str(e)}")
-            raise
-
-    def retrieval(self,
-                  question,
-                  datasets=None,
-                  documents=None,
-                  offset=0,
-                  limit=6,
-                  similarity_threshold=0.1,
-                  vector_similarity_weight=0.3,
-                  top_k=1024):
-        """
-        Perform document retrieval based on the given parameters.
-
-        :param question: The query question.
-        :param datasets: A list of datasets (optional, as documents may be provided directly).
-        :param documents: A list of documents (if specific documents are provided).
-        :param offset: Offset for the retrieval results.
-        :param limit: Maximum number of retrieval results.
-        :param similarity_threshold: Similarity threshold.
-        :param vector_similarity_weight: Weight of vector similarity.
-        :param top_k: Number of top most similar documents to consider (for pre-filtering or ranking).
-
-        Note: This is a hypothetical implementation and may need adjustments based on the actual backend service API.
-        """
-        try:
-            data = {
-                "question": question,
-                "datasets": datasets if datasets is not None else [],
-                "documents": [doc.id if hasattr(doc, 'id') else doc for doc in
-                              documents] if documents is not None else [],
+    def retrieval(self, question="",datasets=None,documents=None, offset=1, limit=30, similarity_threshold=0.2,vector_similarity_weight=0.3,top_k=1024,rerank_id:str=None,keyword:bool=False,):
+            data_params = {
                 "offset": offset,
                 "limit": limit,
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight,
                 "top_k": top_k,
                 "knowledgebase_id": datasets,
+                "rerank_id":rerank_id,
+                "keyword":keyword
+            }
+            data_json ={
+                "question": question,
+                "datasets": datasets,
+                "documents": documents
             }
 
             # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
-            res = self.post(f'/doc/retrieval_test', data)
-
-            # Check the response status code
-            if res.status_code == 200:
-                res_data = res.json()
-                if res_data.get("retmsg") == "success":
-                    chunks = []
-                    for chunk_data in res_data["data"].get("chunks", []):
-                        chunk = Chunk(self, chunk_data)
-                        chunks.append(chunk)
-                    return chunks
-                else:
-                    raise Exception(f"Error fetching chunks: {res_data.get('retmsg')}")
-            else:
-                raise Exception(f"API request failed with status code {res.status_code}")
-
-        except Exception as e:
-            print(f"An error occurred during retrieval: {e}")
-            raise
+            res = self.get(f'/retrieval', data_params,data_json)
+            res = res.json()
+            if res.get("code") ==0:
+                chunks=[]
+                for chunk_data in res["data"].get("chunks"):
+                    chunk=Chunk(self,chunk_data)
+                    chunks.append(chunk)
+                return chunks
+            raise Exception(res.get("message"))
