@@ -163,7 +163,7 @@ class XInferenceRerank(Base):
         self.headers = {
             "Content-Type": "application/json",
             "accept": "application/json",
-            "Authroization": f"Bearer {key}"
+            "Authorization": f"Bearer {key}"
         }
 
     def similarity(self, query: str, texts: list):
