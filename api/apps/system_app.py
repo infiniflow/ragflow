@@ -17,16 +17,14 @@ import json
 from datetime import datetime
 
 from flask_login import login_required, current_user
-
-from api.apps.api_app import generate_confirmation_token
 from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
 from api.settings import DATABASE_TYPE
 from api.utils import current_timestamp, datetime_format
-from api.utils.api_utils import get_json_result, request, get_data_error_result, server_error_response
+from api.utils.api_utils import get_json_result, get_data_error_result, server_error_response, \
+    generate_confirmation_token
 from api.versions import get_rag_version
-from rag.settings import SVR_QUEUE_NAME
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
