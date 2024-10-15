@@ -14,12 +14,17 @@
 #  limitations under the License
 #
 import json
+from datetime import datetime
 
-from flask_login import login_required
+from flask_login import login_required, current_user
 
+from api.apps.api_app import generate_confirmation_token
+from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.user_service import UserTenantService
 from api.settings import DATABASE_TYPE
-from api.utils.api_utils import get_json_result
+from api.utils import current_timestamp, datetime_format
+from api.utils.api_utils import get_json_result, request, get_data_error_result, server_error_response
 from api.versions import get_rag_version
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.es_conn import ELASTICSEARCH
@@ -88,3 +93,42 @@ def status():
         res["task_executor"] = {"status": "red", "error": str(e)}
 
     return get_json_result(data=res)
+
+
+@manager.route('/new_token', methods=['POST'])
+@login_required
+def new_token():
+    try:
+        tenants = UserTenantService.query(user_id=current_user.id)
+        if not tenants:
+            return get_data_error_result(retmsg="Tenant not found!")
+
+        tenant_id = tenants[0].tenant_id
+        obj = {"tenant_id": tenant_id, "token": generate_confirmation_token(tenant_id),
+               "create_time": current_timestamp(),
+               "create_date": datetime_format(datetime.now()),
+               "update_time": None,
+               "update_date": None
+               }
+
+        if not APITokenService.save(**obj):
+            return get_data_error_result(retmsg="Fail to new a dialog!")
+
+        return get_json_result(data=obj)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/token_list', methods=['GET'])
+@login_required
+def token_list():
+    try:
+        tenants = UserTenantService.query(user_id=current_user.id)
+        if not tenants:
+            return get_data_error_result(retmsg="Tenant not found!")
+
+        objs = APITokenService.query(tenant_id=tenants[0].tenant_id)
+        return get_json_result(data=[o.to_dict() for o in objs])
+    except Exception as e:
+        return server_error_response(e)
+
