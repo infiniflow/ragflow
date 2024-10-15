@@ -7,7 +7,7 @@ from settings import retrievaler, kg_retrievaler, RetCode
 from utils.api_utils import validate_request, build_error_result, apikey_required
 
 
-@manager.route('/retrieval', methods=['POST'])
+@manager.route('/dify/retrieval', methods=['POST'])
 @apikey_required
 @validate_request("knowledge_id", "query")
 def retrieval(tenant_id):
@@ -36,7 +36,7 @@ def retrieval(tenant_id):
             kb.tenant_id,
             [kb_id],
             page=1,
-            size=top,
+            page_size=top,
             similarity_threshold=similarity_threshold,
             vector_similarity_weight=0.3,
             top=top
