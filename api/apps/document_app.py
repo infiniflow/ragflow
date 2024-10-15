@@ -439,8 +439,9 @@ def change_parser():
             else:
                 return get_json_result(data=True)
 
-        if doc.type == FileType.VISUAL or re.search(
-                r"\.(ppt|pptx|pages)$", doc.name):
+        if ((doc.type == FileType.VISUAL and req["parser_id"] != "picture")
+                or (re.search(
+                    r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
             return get_data_error_result(retmsg="Not supported yet!")
 
         e = DocumentService.update_by_id(doc.id,

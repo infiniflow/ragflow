@@ -68,6 +68,7 @@ class Excel(ExcelParser):
             [rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
         return res
 
+
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
@@ -155,6 +156,7 @@ class Pdf(PdfParser):
         if last_q:
             qai_list.append((last_q, last_a, *self.crop(last_tag, need_position=True)))
         return qai_list, tbls
+
     def get_tbls_info(self, tbls, tbl_index):
         if tbl_index >= len(tbls):
             return 1, 0, 0, 0, 0, '@@0\t0\t0\t0\t0##', ''
@@ -166,10 +168,13 @@ class Pdf(PdfParser):
         tbl_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
             .format(tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom)
         tbl_text = ''.join(tbls[tbl_index][0][1])
-        return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text
+        return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag,
+
+
 class Docx(DocxParser):
     def __init__(self):
         pass
+
     def get_picture(self, document, paragraph):
         img = paragraph._element.xpath('.//pic:pic')
         if not img:
@@ -242,6 +247,7 @@ class Docx(DocxParser):
             tbls.append(((None, html), ""))
         return qai_list, tbls
 
+
 def rmPrefix(txt):
     return re.sub(
         r"^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+", "", txt.strip(), flags=re.IGNORECASE)
@@ -258,6 +264,7 @@ def beAdocPdf(d, q, a, eng, image, poss):
     add_positions(d, poss)
     return d
 
+
 def beAdocDocx(d, q, a, eng, image):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
@@ -267,6 +274,7 @@ def beAdocDocx(d, q, a, eng, image):
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["image"] = image
     return d
+
 
 def beAdoc(d, q, a, eng):
     qprefix = "Question: " if eng else "问题："
@@ -281,6 +289,7 @@ def beAdoc(d, q, a, eng):
 def mdQuestionLevel(s):
     match = re.match(r'#*', s)
     return (len(match.group(0)), s.lstrip('#').lstrip()) if match else (0, s)
+
 
 def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """

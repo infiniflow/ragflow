@@ -29,18 +29,14 @@ class Document(Base):
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
 
-    def save(self) -> bool:
+    def update(self,update_message:dict) -> bool:
         """
         Save the document details to the server.
         """
-        res = self.post('/doc/save',
-                        {"id": self.id, "name": self.name, "thumbnail": self.thumbnail, "knowledgebase_id": self.knowledgebase_id,
-                         "parser_method": self.parser_method, "parser_config": self.parser_config.to_json(),
-                         })
+        res = self.post(f'/dataset/{self.knowledgebase_id}/info/{self.id}',update_message)
         res = res.json()
-        if res.get("retmsg") == "success":
-            return True
-        raise Exception(res["retmsg"])
+        if res.get("code") != 0:
+            raise Exception(res["message"])
 
     def delete(self) -> bool:
         """
@@ -60,8 +56,7 @@ class Document(Base):
         :return: The downloaded document content in bytes.
         """
         # Construct the URL for the API request using the document ID and knowledge base ID
-        res = self.get(f"/doc/{self.id}",
-                       {"headers": self.rag.authorization_header, "id": self.id, "name": self.name, "stream": True})
+        res = self.get(f"/dataset/{self.knowledgebase_id}/document/{self.id}")
 
         # Check the response status code to ensure the request was successful
         if res.status_code == 200:
