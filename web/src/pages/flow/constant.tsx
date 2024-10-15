@@ -75,6 +75,10 @@ export enum Operator {
   Note = 'Note',
 }
 
+export const CommonOperatorList = Object.values(Operator).filter(
+  (x) => x !== Operator.Note,
+);
+
 export const operatorIconMap = {
   [Operator.Retrieval]: RocketOutlined,
   [Operator.Generate]: MergeCellsOutlined,
