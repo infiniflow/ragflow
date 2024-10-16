@@ -217,26 +217,36 @@ class QWenChat(Base):
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
-        from http import HTTPStatus
-        if system:
-            history.insert(0, {"role": "system", "content": system})
-        response = Generation.call(
-            self.model_name,
-            messages=history,
-            result_format='message',
-            **gen_conf
-        )
-        ans = ""
-        tk_count = 0
-        if response.status_code == HTTPStatus.OK:
-            ans += response.output.choices[0]['message']['content']
-            tk_count += response.usage.total_tokens
-            if response.output.choices[0].get("finish_reason", "") == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-            return ans, tk_count
+        if 'stream' in gen_conf and str(gen_conf['stream']).lower() == 'false':
+            from http import HTTPStatus
+            if system:
+                history.insert(0, {"role": "system", "content": system})
 
-        return "**ERROR**: " + response.message, tk_count
+            response = Generation.call(
+                self.model_name,
+                messages=history,
+                result_format='message',
+                **gen_conf
+            )
+            ans = ""
+            tk_count = 0
+            if response.status_code == HTTPStatus.OK:
+                ans += response.output.choices[0]['message']['content']
+                tk_count += response.usage.total_tokens
+                if response.output.choices[0].get("finish_reason", "") == "length":
+                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
+                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                return ans, tk_count
+
+            return "**ERROR**: " + response.message, tk_count
+        else:
+            g = self.chat_streamly(system, history, gen_conf)
+            result_list = list(g)
+            error_msg_list = [item for item in result_list if item.find("**ERROR**") >= 0]
+            if len(error_msg_list) > 0:
+                return "**ERROR**: " + "".join(error_msg_list) , 0
+            else:
+                return "".join(result_list[:-1]), result_list[-1]
 
     def chat_streamly(self, system, history, gen_conf):
         from http import HTTPStatus
