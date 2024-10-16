@@ -1,23 +1,23 @@
 import { SharedFrom } from '@/constants/chat';
 import {
-  useCreateNextToken,
-  useFetchTokenList,
-  useRemoveNextToken,
-} from '@/hooks/chat-hooks';
-import {
   useSetModalState,
   useShowDeleteConfirm,
   useTranslate,
 } from '@/hooks/common-hooks';
+import {
+  useCreateSystemToken,
+  useFetchSystemTokenList,
+  useRemoveSystemToken,
+} from '@/hooks/user-setting-hooks';
 import { IStats } from '@/interfaces/database/chat';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useCallback } from 'react';
 
 export const useOperateApiKey = (idKey: string, dialogId?: string) => {
-  const { removeToken } = useRemoveNextToken();
-  const { createToken, loading: creatingLoading } = useCreateNextToken();
-  const { data: tokenList, loading: listLoading } = useFetchTokenList({
+  const { removeToken } = useRemoveSystemToken();
+  const { createToken, loading: creatingLoading } = useCreateSystemToken();
+  const { data: tokenList, loading: listLoading } = useFetchSystemTokenList({
     [idKey]: dialogId,
   });
 
@@ -80,7 +80,9 @@ const getUrlWithToken = (token: string, from: string = 'chat') => {
 const useFetchTokenListBeforeOtherStep = (idKey: string, dialogId?: string) => {
   const { showTokenEmptyError } = useShowTokenEmptyError();
 
-  const { data: tokenList, refetch } = useFetchTokenList({ [idKey]: dialogId });
+  const { data: tokenList, refetch } = useFetchSystemTokenList({
+    [idKey]: dialogId,
+  });
 
   const token =
     Array.isArray(tokenList) && tokenList.length > 0 ? tokenList[0].token : '';

@@ -1,15 +1,11 @@
-import { useFetchNextStats } from '@/hooks/chat-hooks';
+import HightLightMarkdown from '@/components/highlight-markdown';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
-import { Button, Card, DatePicker, Flex, Space } from 'antd';
-import { RangePickerProps } from 'antd/es/date-picker';
-import dayjs from 'dayjs';
+import { Button, Card, Flex, Space } from 'antd';
+import apiDoc from '../../../../../docs/references/api.md';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import EmbedModal from '../embed-modal';
 import { usePreviewChat, useShowEmbedModal } from '../hooks';
 import BackendServiceApi from './backend-service-api';
-import StatsChart from './stats-chart';
-
-const { RangePicker } = DatePicker;
 
 const ApiContent = ({
   id,
@@ -29,12 +25,6 @@ const ApiContent = ({
   const { embedVisible, hideEmbedModal, showEmbedModal, embedToken } =
     useShowEmbedModal(idKey, id);
 
-  const { pickerValue, setPickerValue } = useFetchNextStats();
-
-  const disabledDate: RangePickerProps['disabledDate'] = (current) => {
-    return current && current > dayjs().endOf('day');
-  };
-
   const { handlePreview } = usePreviewChat(idKey, id);
 
   return (
@@ -51,17 +41,7 @@ const ApiContent = ({
             </Flex>
           </Card>
         )}
-
-        <Space>
-          <b>{t('dateRange')}</b>
-          <RangePicker
-            disabledDate={disabledDate}
-            value={pickerValue}
-            onChange={setPickerValue}
-            allowClear={false}
-          />
-        </Space>
-        <StatsChart></StatsChart>
+        <HightLightMarkdown>{apiDoc}</HightLightMarkdown>
       </Flex>
       {apiKeyVisible && (
         <ChatApiKeyModal

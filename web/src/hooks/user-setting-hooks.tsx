@@ -1,5 +1,6 @@
 import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
+import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { ISystemStatus, IUserInfo } from '@/interfaces/database/user-setting';
 import userService from '@/services/user-service';
@@ -151,4 +152,67 @@ export const useFetchSystemStatus = () => {
     fetchSystemStatus,
     loading,
   };
+};
+
+export const useFetchSystemTokenList = (params: Record<string, any>) => {
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IToken[]>({
+    queryKey: ['fetchSystemTokenList', params],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await userService.listToken(params);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useRemoveSystemToken = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['removeSystemToken'],
+    mutationFn: async (params: {
+      tenantId: string;
+      dialogId?: string;
+      tokens: string[];
+    }) => {
+      const { data } = await userService.removeToken(params);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['fetchSystemTokenList'] });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, removeToken: mutateAsync };
+};
+
+export const useCreateSystemToken = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['createSystemToken'],
+    mutationFn: async (params: Record<string, any>) => {
+      const { data } = await userService.createToken(params);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['fetchSystemTokenList'] });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, createToken: mutateAsync };
 };
