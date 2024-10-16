@@ -152,7 +152,7 @@ class RAGFlow:
         raise Exception(res["message"])
 
 
-    def retrieval(self, question="",datasets=None,documents=None, offset=1, limit=30, similarity_threshold=0.2,vector_similarity_weight=0.3,top_k=1024,rerank_id:str=None,keyword:bool=False,):
+    def retrieve(self, question="",datasets=None,documents=None, offset=1, limit=30, similarity_threshold=0.2,vector_similarity_weight=0.3,top_k=1024,rerank_id:str=None,keyword:bool=False,):
             data_params = {
                 "offset": offset,
                 "limit": limit,

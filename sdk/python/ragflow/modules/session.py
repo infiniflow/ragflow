@@ -82,3 +82,4 @@ class Chunk(Base):
         self.term_similarity = None
         self.positions = None
         super().__init__(rag, res_dict)
+

@@ -129,21 +129,20 @@ def completion(tenant_id,chat_id):
         conv.message[-1] = {"role": "assistant", "content": ans["answer"],
                             "id": message_id, "prompt": ans.get("prompt", "")}
         ans["id"] = message_id
+        ans["session_id"]=session_id
 
     def stream():
         nonlocal dia, msg, req, conv
         try:
             for ans in chat(dia, msg, **req):
                 fillin_conv(ans)
-                yield "data:" + json.dumps({"code": 0,  "data": {**ans, "session_id":session_id}}, ensure_ascii=False) + "\n\n"
-
+                yield "data:" + json.dumps({"code": 0,  "data": ans}, ensure_ascii=False) + "\n\n"
             ConversationService.update_by_id(conv.id, conv.to_dict())
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                        "data": {"answer": "**ERROR**: " + str(e), "session_id":session_id,"reference": []}},
+                                        "data": {"answer": "**ERROR**: " + str(e),"reference": []}},
                                        ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
-
 
     if req.get("stream", True):
         resp = Response(stream(), mimetype="text/event-stream")
