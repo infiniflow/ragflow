@@ -142,7 +142,8 @@ def completion(tenant_id,chat_id):
             yield "data:" + json.dumps({"code": 500, "message": str(e),
                                         "data": {"answer": "**ERROR**: " + str(e), "session_id":session_id,"reference": []}},
                                        ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "data": True,"session_id":session_id}, ensure_ascii=False) + "\n\n"
+        yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
+
 
     if req.get("stream", True):
         resp = Response(stream(), mimetype="text/event-stream")
