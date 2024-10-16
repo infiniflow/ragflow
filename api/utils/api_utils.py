@@ -29,6 +29,7 @@ from flask import (
     Response, jsonify, send_file, make_response,
     request as flask_request,
 )
+from itsdangerous import URLSafeTimedSerializer
 from werkzeug.http import HTTP_STATUS_CODES
 
 from api.db.db_models import APIToken
@@ -37,7 +38,7 @@ from api.settings import (
     stat_logger, CLIENT_AUTHENTICATION, HTTP_APP_KEY, SECRET_KEY
 )
 from api.settings import RetCode
-from api.utils import CustomJSONEncoder
+from api.utils import CustomJSONEncoder, get_uuid
 from api.utils import json_dumps
 
 requests.models.complexjson.dumps = functools.partial(
@@ -52,7 +53,7 @@ def request(**kwargs):
         k.replace(
             '_',
             '-').upper(): v for k,
-        v in kwargs.get(
+                                v in kwargs.get(
             'headers',
             {}).items()}
     prepped = requests.Request(**kwargs).prepare()
@@ -199,6 +200,27 @@ def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None):
     response = {"retcode": retcode, "retmsg": retmsg, "data": data}
     return jsonify(response)
 
+def apikey_required(func):
+    @wraps(func)
+    def decorated_function(*args, **kwargs):
+        token = flask_request.headers.get('Authorization').split()[1]
+        objs = APIToken.query(token=token)
+        if not objs:
+            return build_error_result(
+                error_msg='API-KEY is invalid!', retcode=RetCode.FORBIDDEN
+            )
+        kwargs['tenant_id'] = objs[0].tenant_id
+        return func(*args, **kwargs)
+
+    return decorated_function
+
+
+def build_error_result(retcode=RetCode.FORBIDDEN, error_msg='success'):
+    response = {"error_code": retcode, "error_msg": error_msg}
+    response = jsonify(response)
+    response.status_code = retcode
+    return response
+
 
 def construct_response(retcode=RetCode.SUCCESS,
                        retmsg='success', data=None, auth=None):
@@ -269,6 +291,7 @@ def token_required(func):
 
     return decorated_function
 
+
 def get_result(retcode=RetCode.SUCCESS, retmsg='error', data=None):
     if retcode == 0:
         if data is not None:
@@ -276,10 +299,11 @@ def get_result(retcode=RetCode.SUCCESS, retmsg='error', data=None):
         else:
             response = {"code": retcode}
     else:
-            response = {"code": retcode, "message": retmsg}
+        response = {"code": retcode, "message": retmsg}
     return jsonify(response)
 
-def get_error_data_result(retmsg='Sorry! Data missing!',retcode=RetCode.DATA_ERROR,
+
+def get_error_data_result(retmsg='Sorry! Data missing!', retcode=RetCode.DATA_ERROR,
                           ):
     import re
     result_dict = {
@@ -296,3 +320,8 @@ def get_error_data_result(retmsg='Sorry! Data missing!',retcode=RetCode.DATA_ERR
         else:
             response[key] = value
     return jsonify(response)
+
+
+def generate_confirmation_token(tenent_id):
+    serializer = URLSafeTimedSerializer(tenent_id)
+    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
