@@ -494,25 +494,24 @@ def set(tenant_id,dataset_id,document_id,chunk_id):
 
 
 
-@manager.route('/retrieval', methods=['GET'])
+@manager.route('/retrieval', methods=['POST'])
 @token_required
 def retrieval_test(tenant_id):
-    req = request.args
-    req_json = request.json
-    if not req_json.get("datasets"):
+    req = request.json
+    if not req.get("datasets"):
         return get_error_data_result("`datasets` is required.")
-    for id in req_json.get("datasets"):
+    kb_id = req["datasets"]
+    if isinstance(kb_id, str): kb_id = [kb_id]
+    for id in kb_id:
         if not KnowledgebaseService.query(id=id,tenant_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     if "question" not in req_json:
         return get_error_data_result("`question` is required.")
     page = int(req.get("offset", 1))
     size = int(req.get("limit", 30))
-    question = req_json["question"]
-    kb_id = req_json["datasets"]
-    if isinstance(kb_id, str): kb_id = [kb_id]
-    doc_ids = req_json.get("documents", [])
-    similarity_threshold = float(req.get("similarity_threshold", 0.0))
+    question = req["question"]
+    doc_ids = req.get("documents", [])
+    similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
     if req.get("highlight")=="False" or  req.get("highlight")=="false":
