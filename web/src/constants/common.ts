@@ -41,6 +41,12 @@ export const fileIconMap = {
 
 export const LanguageList = ['English', 'Chinese', 'Traditional Chinese'];
 
+export const LanguageMap = {
+  English: 'English',
+  Chinese: '简体中文',
+  'Traditional Chinese': '繁體中文',
+};
+
 export const LanguageTranslationMap = {
   English: 'en',
   Chinese: 'zh',

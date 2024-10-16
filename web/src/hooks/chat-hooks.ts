@@ -441,7 +441,7 @@ export const useRemoveNextToken = () => {
     mutationKey: ['removeToken'],
     mutationFn: async (params: {
       tenantId: string;
-      dialogId: string;
+      dialogId?: string;
       tokens: string[];
     }) => {
       const { data } = await chatService.removeToken(params);
