@@ -90,6 +90,7 @@ class XinferenceSeq2txt(Base):
     def __init__(self,key,model_name="whisper-small",**kwargs):
         self.base_url = kwargs.get('base_url', None)
         self.model_name = model_name
+        self.key = key
 
     def transcription(self, audio, language="zh", prompt=None, response_format="json", temperature=0.7):
         if isinstance(audio, str):
