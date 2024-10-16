@@ -344,3 +344,8 @@ def download_img(url):
     return "data:" + \
            response.headers.get('Content-Type', 'image/jpg') + ";" + \
            "base64," + base64.b64encode(response.content).decode("utf-8")
+
+
+def delta_seconds(date_string: str):
+    dt = datetime.datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
+    return (datetime.datetime.now() - dt).total_seconds()

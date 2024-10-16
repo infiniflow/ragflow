@@ -218,7 +218,7 @@ def tts():
     req = request.json
     text = req["text"]
 
-    tenants = TenantService.get_by_user_id(current_user.id)
+    tenants = TenantService.get_info_by(current_user.id)
     if not tenants:
         return get_data_error_result(retmsg="Tenant not found!")
 
