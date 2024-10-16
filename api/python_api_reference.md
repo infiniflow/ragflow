@@ -963,31 +963,12 @@ The name of the chat session to create.
 
 ### Returns
 
-- Success: A `Session` object.
+- Success: A `Session` object containing the following attributes:
+  - `id`: `str` The auto-generated unique identifier of the created session.
+  - `name`: `str` The name of the created session.
+  - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
+  - `chat_id`: `str` The ID of the associate chat assistant. You cannot change `chat_id`.
 - Failure: `Exception`
-
-#### id: `str`
-
-The auto-generated unique identifier of the created session.
-
-#### name: `str`
-
-The name of the created session. Defaults to `"New session"`.
-
-#### messages: `list[Message]`
-
-The messages of the created session assistant.
-
-Defaults:
-
-```
-[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
-```
-
-#### chat_id: `str`
-
-The id of associated chat
-- `chat_id` can't be changed
 
 ### Examples
 
@@ -1012,10 +993,7 @@ Updates the current session.
 
 #### update_message: `dict[str, Any]`, *Required*
 
-- `"id"`: `str` The auto-generated unique identifier of the session to update.
-- `"name"`: `str` The name of the created session. Defaults to `"New session"`.
-- `"messages"`: `list[Message]` The messages of the created session assistant.
-- `"chat_id"`: `str` The ID of associated chat assistant. It is auto-generated in the returned `Chat` object.
+- `"name"`: `str` The name of the created session.
 
 ### Returns
 
