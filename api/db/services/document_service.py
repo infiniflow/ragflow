@@ -61,14 +61,13 @@ class DocumentService(CommonService):
             docs = docs.where(
                 fn.LOWER(cls.model.name).contains(keywords.lower())
             )
-        count = docs.count()
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
             docs = docs.order_by(cls.model.getter_by(orderby).asc())
 
         docs = docs.paginate(page_number, items_per_page)
-
+        count = docs.count()
         return list(docs.dicts()), count
 
 

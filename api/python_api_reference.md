@@ -244,41 +244,116 @@ File management inside knowledge base
 ## Upload document
 
 ```python
-RAGFLOW.upload_document(ds:DataSet, name:str, blob:bytes)-> bool
+DataSet.upload_documents(document_list: List[dict])
 ```
 
 ### Parameters
 
-#### name
-
-#### blob
-
+#### document_list:`List[dict]`
+A list composed of dicts containing `name` and `blob`.
 
 
 ### Returns
+no return
 
+### Examples
+```python
+from ragflow import RAGFlow
+
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+ds = rag.create_dataset(name="kb_1")
+ds.upload_documents([{name="1.txt", blob="123"}, ...] }
+```
+---
+
+## Update document
+
+```python
+Document.update(update_message:dict)
+```
+
+### Parameters
+
+#### update_message:`dict`  
+only `name`,`parser_config`,`parser_method` can be changed
+
+### Returns
+
+no return
 
 ### Examples
 
+```python
+from ragflow import RAGFlow
+
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+ds=rag.list_datasets(id='id')
+ds=ds[0]
+doc = ds.list_documents(id="wdfxb5t547d")
+doc = doc[0]
+doc.update([{"parser_method": "manual"...}])
+```
+
 ---
 
-## Retrieve document
+## Download document
 
 ```python
-RAGFlow.get_document(id:str=None,name:str=None) -> Document
+Document.download() -> bytes
+```
+
+### Returns
+
+bytes of the document.
+
+### Examples
+
+```python
+from ragflow import RAGFlow
+
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+ds=rag.list_datasets(id="id")
+ds=ds[0]
+doc = ds.list_documents(id="wdfxb5t547d")
+doc = doc[0]
+open("~/ragflow.txt", "wb+").write(doc.download())
+print(doc)
+```
+
+---
+
+## List documents
+
+```python
+Dataset.list_documents(id:str =None, keywords: str=None, offset: int=0, limit:int = 1024,order_by:str = "create_time", desc: bool = True) -> List[Document]
 ```
 
 ### Parameters
 
-#### id: `str`, *Required*
+#### id: `str`
 
-ID of the document to retrieve.
+The id of the document to be got
 
-#### name: `str`
+#### keywords: `str`
 
-Name or title of the document.
+List documents whose name has the given keywords. Defaults to `None`.
 
+#### offset: `int`
+
+The beginning number of records for paging. Defaults to `0`.
+
+#### limit: `int`
+
+Records number to return, -1 means all of them. Records number to return, -1 means all of them.
+
+#### orderby: `str`
+The field by which the records should be sorted. This specifies the attribute or column used to order the results.
+
+#### desc:`bool`
+A boolean flag indicating whether the sorting should be in descending order.
 ### Returns
+
+List[Document]  
 
 A document object containing the following attributes:
 
@@ -353,97 +428,13 @@ Duration of the processing in seconds or minutes. Defaults to `0.0`.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-doc = rag.get_document(id="wdfxb5t547d",name='testdocument.txt')
-print(doc)
-```
-
----
-
-## Save document settings
-
-```python
-Document.save() -> bool
-```
-
-### Returns
-
-bool
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-doc = rag.get_document(id="wdfxb5t547d")
-doc.parser_method= "manual"
-doc.save()
-```
-
----
-
-## Download document
-
-```python
-Document.download() -> bytes
-```
-
-### Returns
-
-bytes of the document.
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-doc = rag.get_document(id="wdfxb5t547d")
-open("~/ragflow.txt", "w+").write(doc.download())
-print(doc) 
-```
-
----
-
-## List documents
-
-```python
-Dataset.list_docs(keywords: str=None, offset: int=0, limit:int = -1) -> list[Document]
-```
-
-### Parameters
-
-#### keywords: `str`
-
-List documents whose name has the given keywords. Defaults to `None`.
-
-#### offset: `int`
-
-The beginning number of records for paging. Defaults to `0`.
-
-#### limit: `int`
-
-Records number to return, -1 means all of them. Records number to return, -1 means all of them.
-
-### Returns
-
-list[Document]
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 ds = rag.create_dataset(name="kb_1")
 
 filename1 = "~/ragflow.txt"
-rag.create_document(ds, name=filename1 , blob=open(filename1 , "rb").read())
-
-filename2 = "~/infinity.txt"
-rag.create_document(ds, name=filename2 , blob=open(filename2 , "rb").read())
-
-for d in ds.list_docs(keywords="rag", offset=0, limit=12):
+blob=open(filename1 , "rb").read()
+list_files=[{"name":filename1,"blob":blob}]
+ds.upload_documents(list_files)
+for d in ds.list_documents(keywords="rag", offset=0, limit=12):
     print(d)
 ```
 
@@ -452,12 +443,11 @@ for d in ds.list_docs(keywords="rag", offset=0, limit=12):
 ## Delete documents
 
 ```python
-Document.delete() -> bool
+DataSet.delete_documents(ids: List[str] = None)
 ```
 ### Returns
 
-bool
-description: delete success or not
+no return
 
 ### Examples
 
@@ -465,63 +455,29 @@ description: delete success or not
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.create_dataset(name="kb_1")
-
-filename1 = "~/ragflow.txt"
-rag.create_document(ds, name=filename1 , blob=open(filename1 , "rb").read())
-
-filename2 = "~/infinity.txt"
-rag.create_document(ds, name=filename2 , blob=open(filename2 , "rb").read())
-for d in ds.list_docs(keywords="rag", offset=0, limit=12):
-    d.delete()
+ds = rag.list_datasets(name="kb_1")
+ds = ds[0]
+ds.delete_documents(ids=["id_1","id_2"])
 ```
 
 ---
 
-## Parse document
+## Parse and stop parsing document
 
 ```python
-Document.async_parse() -> None
+DataSet.async_parse_documents(document_ids:List[str]) -> None
+DataSet.async_cancel_parse_documents(document_ids:List[str])-> None
 ```
 
 ### Parameters
 
+#### document_ids:`List[str]`
+The ids of the documents to be parsed
 ????????????????????????????????????????????????????
 
 ### Returns
-
+no return
 ????????????????????????????????????????????????????
-
-### Examples
-
-```python
-#document parse and cancel
-rag = RAGFlow(API_KEY, HOST_ADDRESS)
-ds = rag.create_dataset(name="dataset_name")
-name3 = 'ai.pdf'
-path = 'test_data/ai.pdf'
-rag.create_document(ds, name=name3, blob=open(path, "rb").read())
-doc = rag.get_document(name="ai.pdf")
-doc.async_parse()
-print("Async parsing initiated")
-```
-
----
-
-## Cancel document parsing
-
-```python
-rag.async_cancel_parse_documents(ids)
-RAGFLOW.async_cancel_parse_documents()-> None
-```
-
-### Parameters
-
-#### ids, `list[]`
-
-### Returns
-
-?????????????????????????????????????????????????
 
 ### Examples
 
@@ -530,53 +486,56 @@ RAGFLOW.async_cancel_parse_documents()-> None
 rag = RAGFlow(API_KEY, HOST_ADDRESS)
 ds = rag.create_dataset(name="God5")
 documents = [
-    {'name': 'test1.txt', 'path': 'test_data/test1.txt'},
-    {'name': 'test2.txt', 'path': 'test_data/test2.txt'},
-    {'name': 'test3.txt', 'path': 'test_data/test3.txt'}
+    {'name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
+    {'name': 'test2.txt', 'blob': open('./test_data/test2.txt',"rb").read()},
+    {'name': 'test3.txt', 'blob': open('./test_data/test3.txt',"rb").read()}
 ]
-
-# Create documents in bulk
-for doc_info in documents:
-    with open(doc_info['path'], "rb") as file:
-        created_doc = rag.create_document(ds, name=doc_info['name'], blob=file.read())
-docs = [rag.get_document(name=doc_info['name']) for doc_info in documents]
-ids = [doc.id for doc in docs]
-
-rag.async_parse_documents(ids)
+ds.upload_documents(documents)
+documents=ds.list_documents(keywords="test")
+ids=[]
+for document in documents:
+    ids.append(document.id)
+ds.async_parse_documents(ids)
 print("Async bulk parsing initiated")
-
-for doc in docs:
-    for progress, msg in doc.join(interval=5, timeout=10):
-        print(f"{doc.name}: Progress: {progress}, Message: {msg}")
-
-cancel_result = rag.async_cancel_parse_documents(ids)
+ds.async_cancel_parse_documents(ids)
 print("Async bulk parsing cancelled")
 ```
 
----
-
-## Join document
-
-??????????????????
-
+## List chunks
 ```python
-Document.join(interval=15, timeout=3600) -> iteral[Tuple[float, str]]
+Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id : str = None) -> List[Chunk]
 ```
-
 ### Parameters
 
-#### interval: `int`
+- `keywords`: `str`  
+  List chunks whose name has the given keywords  
+  default: `None`
 
-Time interval in seconds for progress report. Defaults to `15`.
+- `offset`: `int`  
+  The beginning number of records for paging  
+  default: `1`
 
-#### timeout: `int`
+- `limit`: `int`  
+  Records number to return  
+  default: `30`
 
-Timeout in seconds. Defaults to `3600`.
-
+- `id`: `str`  
+  The ID of the chunk to be retrieved  
+  default: `None`
 ### Returns
+List[chunk]
 
-iteral[Tuple[float, str]]
+### Examples
+```python
+from ragflow import RAGFlow
 
+rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+ds = rag.list_datasets("123")
+ds = ds[0]
+ds.async_parse_documents(["wdfxb5t547d"])
+for c in doc.list_chunks(keywords="rag", offset=0, limit=12):
+    print(c)
+```
 ## Add chunk
 
 ```python
@@ -586,6 +545,9 @@ Document.add_chunk(content:str) -> Chunk
 ### Parameters
 
 #### content: `str`, *Required*
+Contains the main text or information of the chunk.
+#### important_keywords :`List[str]`
+list the key terms or phrases that are significant or central to the chunk's content.
 
 ### Returns
 
@@ -597,7 +559,10 @@ chunk
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-doc = rag.get_document(id="wdfxb5t547d")
+ds = rag.list_datasets(id="123")
+ds = ds[0]
+doc = ds.list_documents(id="wdfxb5t547d")
+doc = doc[0]
 chunk = doc.add_chunk(content="xxxxxxx")
 ```
 
@@ -606,12 +571,15 @@ chunk = doc.add_chunk(content="xxxxxxx")
 ## Delete chunk
 
 ```python
-Chunk.delete() -> bool
+Document.delete_chunks(chunk_ids: List[str])
 ```
+### Parameters
+#### chunk_ids:`List[str]`
+The list of chunk_id
 
 ### Returns
 
-bool
+no return
 
 ### Examples
 
@@ -619,22 +587,34 @@ bool
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-doc = rag.get_document(id="wdfxb5t547d")
+ds = rag.list_datasets(id="123")
+ds = ds[0]
+doc = ds.list_documents(id="wdfxb5t547d")
+doc = doc[0]
 chunk = doc.add_chunk(content="xxxxxxx")
-chunk.delete()
+doc.delete_chunks(["id_1","id_2"])
 ```
 
 ---
 
-## Save chunk contents
+## Update chunk
 
 ```python
-Chunk.save() -> bool
+Chunk.update(update_message: dict)
 ```
+### Parameters
+- `content`: `str`  
+  Contains the main text or information of the chunk
+
+- `important_keywords`: `List[str]`  
+  List the key terms or phrases that are significant or central to the chunk's content
+
+- `available`: `int`  
+  Indicating the availability status, `0` means unavailable and `1` means available
 
 ### Returns
 
-bool
+no return
 
 ### Examples
 
@@ -642,10 +622,12 @@ bool
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-doc = rag.get_document(id="wdfxb5t547d")
+ds = rag.list_datasets(id="123")
+ds = ds[0]
+doc = ds.list_documents(id="wdfxb5t547d")
+doc = doc[0]
 chunk = doc.add_chunk(content="xxxxxxx")
-chunk.content = "sdfx"
-chunk.save()
+chunk.update({"content":"sdfx...})
 ```
 
 ---
@@ -653,7 +635,7 @@ chunk.save()
 ## Retrieval
 
 ```python
-RAGFlow.retrieval(question:str, datasets:list[Dataset], document=list[Document]=None,     offset:int=0, limit:int=6, similarity_threshold:float=0.1, vector_similarity_weight:float=0.3, top_k:int=1024) -> list[Chunk]
+RAGFlow.retrieve(question:str="", datasets:List[str]=None, document=List[str]=None, offset:int=1, limit:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> List[Chunk]
 ```
 
 ### Parameters
@@ -690,6 +672,15 @@ The weight of vector cosine similarity, 1 - x is the term similarity weight. Def
 
 Number of records engaged in vector cosine computaton. Defaults to `1024`.
 
+#### rerank_id:`str`
+ID of the rerank model.  Defaults to `None`.
+
+#### keyword:`bool`
+Indicating whether keyword-based matching is enabled (True) or disabled (False).
+
+#### highlight:`bool`
+
+Specifying whether to enable highlighting of matched terms in the results (True) or not (False).
 ### Returns
 
 list[Chunk]
@@ -700,18 +691,17 @@ list[Chunk]
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.get_dataset(name="ragflow")
+ds = rag.list_datasets(name="ragflow")
+ds = ds[0]
 name = 'ragflow_test.txt'
-path = 'test_data/ragflow_test.txt'
+path = './test_data/ragflow_test.txt'
 rag.create_document(ds, name=name, blob=open(path, "rb").read())
-doc = rag.get_document(name=name)
-doc.async_parse()
-# Wait for parsing to complete 
-for progress, msg in doc.join(interval=5, timeout=30):
-    print(progress, msg)
-for c in rag.retrieval(question="What's ragflow?", 
-             datasets=[ds], documents=[doc], 
-             offset=0, limit=6, similarity_threshold=0.1, 
+doc = ds.list_documents(name=name)
+doc = doc[0]
+ds.async_parse_documents([doc.id])
+for c in rag.retrieve(question="What's ragflow?", 
+             datasets=[ds.id], documents=[doc.id], 
+             offset=1, limit=30, similarity_threshold=0.2, 
              vector_similarity_weight=0.3,
              top_k=1024
              ):
@@ -772,7 +762,7 @@ The llm of the created chat. Defaults to `None`. When the value is `None`, a dic
 - **max_token**, `int`  
   This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.
 
-#### Prompt: `str` 
+#### Prompt: `str`
 
 Instructions for the LLM to follow.
 
@@ -788,8 +778,6 @@ Instructions for the LLM to follow.
       Here is the knowledge base:
       {knowledge}
       The above is the knowledge base.`.
-
-```
 
 ### Examples
 
