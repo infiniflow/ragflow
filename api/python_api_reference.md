@@ -482,7 +482,6 @@ for d in ds.list_docs(keywords="rag", offset=0, limit=12):
 
 ```python
 Document.async_parse() -> None
-RAGFLOW.async_parse_documents() -> None
 ```
 
 ### Parameters
@@ -905,7 +904,7 @@ RAGFlow.list_chats(
 
 #### page
 
-The current page number to retrieve from the paginated results. Defaults to `1`.
+The number of records page to display. Defaults to `1`.
 
 #### page_size
 
@@ -1053,14 +1052,13 @@ The question to start an AI chat. Defaults to `None`.
 
 Indicates whether to output responses in a streaming fashion. Defaults to `False`.
 
-
 ### Returns
 
 [Message, iter[Message]]
 
 #### id: `str`
 
-The ID of the message. `id` is automatically generated. Defaults to `None`. ???????????????????
+The ID of the message. `id` is automatically generated. 
 
 #### content: `str`
 
@@ -1130,13 +1128,42 @@ Chat.list_sessions(
 ) -> list[Session]
 ```
 
+Lists sessions associated with the current chat assistant.
+
+### Parameters
+
+#### page
+
+The number of records page to display. Defaults to `1`.
+
+#### page_size
+
+The number of records on each page. Defaults to `1024`.
+
+#### orderby
+
+The field by which the records should be sorted. This specifies the attribute or column used to sort the results. Defaults to `"create_time"`.
+
+#### desc
+
+Whether the sorting should be in descending order. Defaults to `True`.
+
+#### id
+
+The ID of the chat session to retrieve. Defaults to `None`.
+
+#### name
+
+The name of the chat to retrieve. Defaults to `None`.
+
+
 ### Returns
 
 list[Session]
 description: the List contains information about multiple assistant object, with each dictionary containing information about one assistant.
 
 - Success: A list of `Session` objects.
-- Failure: `Session`.
+- Failure: `Exception`.
 
 ### Examples
 
@@ -1144,43 +1171,12 @@ description: the List contains information about multiple assistant object, with
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assi = rag.list_chats(name="Miss R")
-assi = assi[0]
-for sess in assi.list_sessions():
-    print(sess)
+assistant = rag.list_chats(name="Miss R")
+assistant = assistant[0]
+for session in assistant.list_sessions():
+    print(session)
 ```
 
-### Parameters
-
-#### page: `int`  
-
-The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
-- `1`
-
-#### page_size: `int`  
-
-The number of records to retrieve per page. This controls how many records will be included in each page.  
-- `1024`
-
-#### orderby: `string`  
-
-The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
-- `"create_time"`
-
-#### desc: `bool`  
-
-A boolean flag indicating whether the sorting should be in descending order.  
-- `True`
-
-#### id: `string`  
-
-The ID of the chat to be retrieved.  
-- `None`
-
-#### name: `string`  
-
-The name of the chat to be retrieved.  
-- `None`
 ---
 
 ## Delete sessions
@@ -1189,7 +1185,13 @@ The name of the chat to be retrieved.
 Chat.delete_sessions(ids:list[str] = None)
 ```
 
-Deletes sessions.
+Deletes specified sessions or all sessions associated with the current chat assistant.
+
+### Parameters
+
+#### ids
+
+IDs of the sessions to delete. If not specified, all sessions associated with the current chat assistant will be deleted.
 
 ### Returns
 
@@ -1206,8 +1208,5 @@ assi = rag.list_chats(name="Miss R")
 assi = assi[0]
 assi.delete_sessions(ids=["id_1","id_2"])
 ```
-### Parameters
-#### ids: `list[string]`
-IDs of the sessions to be deleted.
-- `None`
+
 
