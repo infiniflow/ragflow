@@ -28,6 +28,7 @@ export default {
       preview: '預覽',
       move: '移動',
       warn: '提醒',
+      action: '操作',
     },
     login: {
       login: '登入',
@@ -540,6 +541,9 @@ export default {
       GoogleRegionMessage: '請輸入 Google Cloud 區域',
       modelProvidersWarn:
         '請先在 <b>「設定」>「模型提供者」</b> 中新增嵌入模型和LLM。',
+      add: '添加',
+      updateDate: '更新日期',
+      role: '角色',
     },
     message: {
       registered: '註冊成功',

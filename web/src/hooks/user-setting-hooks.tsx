@@ -2,8 +2,19 @@ import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
-import { ISystemStatus, IUserInfo } from '@/interfaces/database/user-setting';
-import userService from '@/services/user-service';
+import {
+  ISystemStatus,
+  ITenant,
+  ITenantUser,
+  IUserInfo,
+} from '@/interfaces/database/user-setting';
+import userService, {
+  addTenantUser,
+  agreeTenant,
+  deleteTenantUser,
+  listTenant,
+  listTenantUser,
+} from '@/services/user-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal, message } from 'antd';
 import DOMPurify from 'dompurify';
@@ -214,4 +225,118 @@ export const useCreateSystemToken = () => {
   });
 
   return { data, loading, createToken: mutateAsync };
+};
+
+export const useListTenantUser = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const tenantId = tenantInfo.tenant_id;
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<ITenantUser[]>({
+    queryKey: ['listTenantUser', tenantId],
+    initialData: [],
+    gcTime: 0,
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data } = await listTenantUser(tenantId);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useAddTenantUser = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['addTenantUser'],
+    mutationFn: async (email: string) => {
+      const { data } = await addTenantUser(tenantInfo.tenant_id, email);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['listTenantUser'] });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, addTenantUser: mutateAsync };
+};
+
+export const useDeleteTenantUser = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteTenantUser'],
+    mutationFn: async (userId: string) => {
+      const { data } = await deleteTenantUser({
+        tenantId: tenantInfo.tenant_id,
+        userId,
+      });
+      if (data.retcode === 0) {
+        message.success(t('message.deleted'));
+        queryClient.invalidateQueries({ queryKey: ['listTenantUser'] });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, deleteTenantUser: mutateAsync };
+};
+
+export const useListTenant = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const tenantId = tenantInfo.tenant_id;
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<ITenant[]>({
+    queryKey: ['listTenant', tenantId],
+    initialData: [],
+    gcTime: 0,
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data } = await listTenant();
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useAgreeTenant = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['agreeTenant'],
+    mutationFn: async () => {
+      const { data } = await agreeTenant(tenantInfo.tenant_id);
+      if (data.retcode === 0) {
+        queryClient.invalidateQueries({ queryKey: ['listTenantUser'] });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, agreeTenant: mutateAsync };
 };
