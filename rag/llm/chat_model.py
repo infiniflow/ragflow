@@ -255,13 +255,22 @@ class QWenChat(Base):
         ans = ""
         tk_count = 0
         try:
-            response = Generation.call(
-                self.model_name,
-                messages=history,
-                result_format='message',
-                stream=True,
-                **gen_conf
-            )
+            if 'stream' not in gen_conf:
+                response = Generation.call(
+                    self.model_name,
+                    messages=history,
+                    result_format='message',
+                    stream=True,
+                    **gen_conf
+                )
+            else:
+                gen_conf['stream'] = True
+                response = Generation.call(
+                    self.model_name,
+                    messages=history,
+                    result_format='message',
+                    **gen_conf
+                )
             for resp in response:
                 if resp.status_code == HTTPStatus.OK:
                     ans = resp.output.choices[0]['message']['content']
