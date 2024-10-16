@@ -75,6 +75,10 @@ export enum Operator {
   Note = 'Note',
 }
 
+export const CommonOperatorList = Object.values(Operator).filter(
+  (x) => x !== Operator.Note,
+);
+
 export const operatorIconMap = {
   [Operator.Retrieval]: RocketOutlined,
   [Operator.Generate]: MergeCellsOutlined,
@@ -366,6 +370,7 @@ export const initialRelevantValues = {
 
 export const initialCategorizeValues = {
   ...initialLlmBaseValues,
+  message_history_window_size: 1,
   category_description: {},
 };
 

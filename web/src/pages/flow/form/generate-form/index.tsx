@@ -1,6 +1,7 @@
 import LLMSelect from '@/components/llm-select';
+import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Input, InputNumber, Switch } from 'antd';
+import { Form, Input, Switch } from 'antd';
 import { useSetLlmSetting } from '../../hooks';
 import { IOperatorForm } from '../../interface';
 import DynamicParameters from './dynamic-parameters';
@@ -48,14 +49,9 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       >
         <Switch />
       </Form.Item>
-      <Form.Item
-        name={'message_history_window_size'}
-        label={t('messageHistoryWindowSize')}
+      <MessageHistoryWindowSizeItem
         initialValue={12}
-        tooltip={t('messageHistoryWindowSizeTip')}
-      >
-        <InputNumber style={{ width: '100%' }} />
-      </Form.Item>
+      ></MessageHistoryWindowSizeItem>
       <DynamicParameters nodeId={node?.id}></DynamicParameters>
     </Form>
   );

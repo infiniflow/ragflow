@@ -21,22 +21,16 @@ class TestDocument(TestSdk):
 
         # Step 2: Create a new document
         # The blob is the actual file content or a placeholder in this case
-        name = "TestDocument.txt"
         blob = b"Sample document content for ingestion test."
-
-        res = rag.create_document(ds, name=name, blob=blob)
-
+        blob_2 =  b"test_2."
+        list_1 = []
+        list_1.append({"name":"Test_1.txt",
+                       "blob":blob})
+        list_1.append({"name":"Test_2.txt",
+                       "blob":blob_2})
+        res = ds.upload_documents(list_1)
         # Ensure document ingestion was successful
-        assert res is True, f"Failed to create document, error: {res}"
-
-    def test_get_detail_document_with_success(self):
-        """
-        Test getting a document's detail with success
-        """
-        rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        doc = rag.get_document(name="TestDocument.txt")
-        assert isinstance(doc, Document), f"Failed to get dataset, error: {doc}."
-        assert doc.name == "TestDocument.txt", "Name does not match"
+        assert res is None, f"Failed to create document, error: {res}"
 
     def test_update_document_with_success(self):
         """
@@ -44,12 +38,13 @@ class TestDocument(TestSdk):
         Update name or parser_method are supported
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
-        doc = rag.get_document(name="TestDocument.txt")
+        ds = rag.list_datasets(name="God")
+        ds = ds[0]
+        doc = ds.list_documents()
+        doc = doc[0]
         if isinstance(doc, Document):
-            doc.parser_method = "manual"
-            doc.name = "manual.txt"
-            res = doc.save()
-            assert res is True, f"Failed to update document, error: {res}"
+            res = doc.update({"parser_method":"manual","name":"manual.txt"})
+            assert res is None, f"Failed to update document, error: {res}"
         else:
             assert False, f"Failed to get document, error: {doc}"
 
@@ -61,8 +56,10 @@ class TestDocument(TestSdk):
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
 
         # Retrieve a document
-        doc = rag.get_document(name="manual.txt")
-
+        ds = rag.list_datasets(name="God")
+        ds = ds[0]
+        doc = ds.list_documents(name="manual.txt")
+        doc = doc[0]
         # Check if the retrieved document is of type Document
         if isinstance(doc, Document):
             # Download the document content and save it to a file
@@ -81,7 +78,7 @@ class TestDocument(TestSdk):
             # If the document retrieval fails, assert failure
             assert False, f"Failed to get document, error: {doc}"
 
-    def test_list_all_documents_in_dataset_with_success(self):
+    def test_list_documents_in_dataset_with_success(self):
         """
         Test list all documents into a dataset with success.
         """
@@ -101,12 +98,10 @@ class TestDocument(TestSdk):
         blob1 = b"Sample document content for ingestion test111."
         name2 = "Test Document222.txt"
         blob2 = b"Sample document content for ingestion test222."
-
-        rag.create_document(ds, name=name1, blob=blob1)
-        rag.create_document(ds, name=name2, blob=blob2)
+        list_1 = [{"name":name1,"blob":blob1},{"name":name2,"blob":blob2}]
+        ds.upload_documents(list_1)
         for d in ds.list_docs(keywords="test", offset=0, limit=12):
-            assert isinstance(d, Document)
-            print(d)
+            assert isinstance(d, Document), "Failed to upload documents"
 
     def test_delete_documents_in_dataset_with_success(self):
         """

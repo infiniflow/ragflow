@@ -250,3 +250,5 @@ class RetCode(IntEnum, CustomEnum):
     AUTHENTICATION_ERROR = 109
     UNAUTHORIZED = 401
     SERVER_ERROR = 500
+    FORBIDDEN = 403
+    NOT_FOUND = 404

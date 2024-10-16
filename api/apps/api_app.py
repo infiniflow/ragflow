@@ -22,7 +22,7 @@ from api.db.services.llm_service import TenantLLMService
 from flask_login import login_required, current_user
 
 from api.db import FileType, LLMType, ParserType, FileSource
-from api.db.db_models import APIToken, API4Conversation, Task, File
+from api.db.db_models import APIToken, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.dialog_service import DialogService, chat
@@ -34,21 +34,16 @@ from api.db.services.task_service import queue_tasks, TaskService
 from api.db.services.user_service import UserTenantService
 from api.settings import RetCode, retrievaler
 from api.utils import get_uuid, current_timestamp, datetime_format
-from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request
-from itsdangerous import URLSafeTimedSerializer
+from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request, \
+    generate_confirmation_token
 
 from api.utils.file_utils import filename_type, thumbnail
 from rag.nlp import keyword_extraction
 from rag.utils.storage_factory import STORAGE_IMPL
 
-from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas
 from functools import partial
-
-
-def generate_confirmation_token(tenent_id):
-    serializer = URLSafeTimedSerializer(tenent_id)
-    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
 
 
 @manager.route('/new_token', methods=['POST'])
