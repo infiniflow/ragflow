@@ -58,7 +58,7 @@ def set_api_key():
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
     msg = ""
-    for llm in LLMService.query(fid=factory)[:3]:
+    for llm in LLMService.query(fid=factory):
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
             mdl = EmbeddingModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
@@ -77,10 +77,10 @@ def set_api_key():
                                  {"temperature": 0.9,'max_tokens':50})
                 if m.find("**ERROR**") >=0:
                     raise Exception(m)
+                chat_passed = True
             except Exception as e:
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
                     e)
-            chat_passed = True
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
             mdl = RerankModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
@@ -88,10 +88,14 @@ def set_api_key():
                 arr, tc = mdl.similarity("What's the weather?", ["Is it sunny today?"])
                 if len(arr) == 0 or tc == 0:
                     raise Exception("Fail")
+                rerank_passed = True
+                print(f'passed model rerank{llm.llm_name}',flush=True)
             except Exception as e:
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
                     e)
-            rerank_passed = True
+        if any([embd_passed, chat_passed, rerank_passed]):
+            msg = ''
+            break
 
     if msg:
         return get_data_error_result(retmsg=msg)
@@ -182,6 +186,10 @@ def add_llm():
     elif factory == "Google Cloud":
         llm_name = req["llm_name"]
         api_key = apikey_json(["google_project_id", "google_region", "google_service_account_key"])
+
+    elif factory == "Azure-OpenAI":
+        llm_name = req["llm_name"]
+        api_key = apikey_json(["api_key", "api_version"])
 
     else:
         llm_name = req["llm_name"]
@@ -324,7 +332,7 @@ def my_llms():
 @login_required
 def list_app():
     self_deploied = ["Youdao","FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
-    weighted = ["Youdao","FastEmbed", "BAAI"] if LIGHTEN else []
+    weighted = ["Youdao","FastEmbed", "BAAI"] if LIGHTEN != 0 else []
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
@@ -335,10 +343,10 @@ def list_app():
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deploied
 
-        llm_set = set([m["llm_name"] for m in llms])
+        llm_set = set([m["llm_name"]+"@"+m["fid"] for m in llms])
         for o in objs:
             if not o.api_key:continue
-            if o.llm_name in llm_set:continue
+            if o.llm_name+"@"+o.llm_factory in llm_set:continue
             llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})
 
         res = {}

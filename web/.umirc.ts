@@ -18,8 +18,7 @@ export default defineConfig({
   history: {
     type: 'browser',
   },
-  plugins: ['@react-dev-inspector/umi4-plugin', '@umijs/plugins/dist/dva'],
-  dva: {},
+  plugins: ['@react-dev-inspector/umi4-plugin'],
   jsMinifier: 'terser',
   lessLoader: {
     modifyVars: {
@@ -30,7 +29,7 @@ export default defineConfig({
   copy: ['src/conf.json'],
   proxy: {
     '/v1': {
-      target: 'http://127.0.0.1:9380/',
+      target: 'http://127.0.0.1:9456/',
       changeOrigin: true,
       ws: true,
       logger: console,

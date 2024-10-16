@@ -42,7 +42,7 @@ RAG_FLOW_SERVICE_NAME = "ragflow"
 SERVER_MODULE = "rag_flow_server.py"
 TEMP_DIRECTORY = os.path.join(get_project_base_directory(), "temp")
 RAG_FLOW_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
-LIGHTEN = os.environ.get('LIGHTEN')
+LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
 
 SUBPROCESS_STD_LOG_NAME = "std.log"
 
@@ -123,7 +123,7 @@ if not LIGHTEN:
 
     CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"]
     EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"]
-    RERANK_MDL = default_llm["BAAI"]["rerank_model"] if not LIGHTEN else ""
+    RERANK_MDL = default_llm["BAAI"]["rerank_model"]
     ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
     IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
 else:
@@ -250,3 +250,5 @@ class RetCode(IntEnum, CustomEnum):
     AUTHENTICATION_ERROR = 109
     UNAUTHORIZED = 401
     SERVER_ERROR = 500
+    FORBIDDEN = 403
+    NOT_FOUND = 404

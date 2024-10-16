@@ -15,6 +15,8 @@
 #
 import re
 import threading
+from urllib.parse import urljoin
+
 import requests
 from huggingface_hub import snapshot_download
 import os
@@ -140,7 +142,7 @@ class YoudaoRerank(DefaultRerank):
         token_count = 0
         for _, t in pairs:
             token_count += num_tokens_from_string(t)
-        batch_size = 32
+        batch_size = 8
         res = []
         for i in range(0, len(pairs), batch_size):
             scores = self._model.compute_score(pairs[i:i + batch_size], max_length=self._model.max_length)
@@ -154,13 +156,14 @@ class YoudaoRerank(DefaultRerank):
 
 class XInferenceRerank(Base):
     def __init__(self, key="xxxxxxx", model_name="", base_url=""):
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        if base_url.find("/v1") == -1:
+            base_url = urljoin(base_url, "/v1/rerank")
         self.model_name = model_name
         self.base_url = base_url
         self.headers = {
             "Content-Type": "application/json",
-            "accept": "application/json"
+            "accept": "application/json",
+            "Authorization": f"Bearer {key}"
         }
 
     def similarity(self, query: str, texts: list):

@@ -920,6 +920,26 @@ export default {
       concentrator: '集線器',
       concentratorDescription:
         '此組件可用於連接多個下游組件。它接收來自上游組件的輸入並將其傳遞給每個下游組件。 ',
+      tuShare: 'TuShare',
+      tuShareDescription:
+        '該組件可用於從主流金融網站獲取金融新聞簡報，輔助行業和量化研究。 ',
+      tuShareSrcOptions: {
+        sina: '新浪財經',
+        wallstreetcn: '華爾街見聞',
+        '10jqka': '同花順',
+        eastmoney: '東方財富',
+        yuncaijing: '雲財經',
+        fenghuang: '鳳凰新聞',
+        jinrongjie: '金融界',
+      },
+      token: 'Token',
+      src: '來源',
+      startDate: '開始日期',
+      endDate: '結束日期',
+      keyword: '關鍵字',
+      note: '註解',
+      noteDescription: '註解',
+      notePlaceholder: '請輸入註釋',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

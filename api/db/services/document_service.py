@@ -51,6 +51,29 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_list(cls, kb_id, page_number, items_per_page,
+                     orderby, desc, keywords, id):
+        docs =cls.model.select().where(cls.model.kb_id==kb_id)
+        if id:
+            docs = docs.where(
+                cls.model.id== id )
+        if keywords:
+            docs = docs.where(
+                fn.LOWER(cls.model.name).contains(keywords.lower())
+            )
+        count = docs.count()
+        if desc:
+            docs = docs.order_by(cls.model.getter_by(orderby).desc())
+        else:
+            docs = docs.order_by(cls.model.getter_by(orderby).asc())
+
+        docs = docs.paginate(page_number, items_per_page)
+
+        return list(docs.dicts()), count
+
+
+    @classmethod
+    @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page,
                      orderby, desc, keywords):
         if keywords:

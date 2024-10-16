@@ -15,6 +15,14 @@ interface IProps {
   collapsed: boolean;
 }
 
+const dividerProps = {
+  marginTop: 10,
+  marginBottom: 10,
+  padding: 0,
+  borderBlockColor: '#b4afaf',
+  borderStyle: 'dotted',
+};
+
 const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
   const { handleDragStart } = useHandleDrag();
   const { t } = useTranslate('flow');
@@ -31,16 +39,11 @@ const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
         {componentMenuList.map((x) => {
           return (
             <React.Fragment key={x.name}>
+              {x.name === Operator.Note && (
+                <Divider style={dividerProps}></Divider>
+              )}
               {x.name === Operator.DuckDuckGo && (
-                <Divider
-                  style={{
-                    marginTop: 10,
-                    marginBottom: 10,
-                    padding: 0,
-                    borderBlockColor: '#b4afaf',
-                    borderStyle: 'dotted',
-                  }}
-                ></Divider>
+                <Divider style={dividerProps}></Divider>
               )}
               <Card
                 key={x.name}

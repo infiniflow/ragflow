@@ -18,7 +18,6 @@ from typing import Optional
 import threading
 import requests
 from huggingface_hub import snapshot_download
-from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 import os
 from abc import ABC
@@ -137,7 +136,10 @@ class LocalAIEmbed(Base):
 
 class AzureEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, **kwargs):
-        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")
+        from openai.lib.azure import AzureOpenAI
+        api_key = json.loads(key).get('api_key', '')
+        api_version = json.loads(key).get('api_version', '2024-02-01')
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
 
 
@@ -272,7 +274,7 @@ class XinferenceEmbed(Base):
     def __init__(self, key, model_name="", base_url=""):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
-        self.client = OpenAI(api_key="xxx", base_url=base_url)
+        self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=32):

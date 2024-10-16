@@ -13,16 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import datetime
-import hashlib
-import json
-import os
 import pathlib
 import re
-import traceback
-from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
-from io import BytesIO
 
 import flask
 from elasticsearch_dsl import Q
@@ -30,27 +22,24 @@ from flask import request
 from flask_login import login_required, current_user
 
 from api.db.db_models import Task, File
-from api.db.services.dialog_service import DialogService, ConversationService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, queue_tasks
-from api.db.services.user_service import TenantService, UserTenantService
-from graphrag.mind_map_extractor import MindMapExtractor
-from rag.app import naive
+from api.db.services.user_service import UserTenantService
 from rag.nlp import search
 from rag.utils.es_conn import ELASTICSEARCH
 from api.db.services import duplicate_name
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
-from api.db import FileType, TaskStatus, ParserType, FileSource, LLMType
+from api.db import FileType, TaskStatus, ParserType, FileSource
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
-from api.settings import RetCode, stat_logger
+from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from rag.utils.storage_factory import STORAGE_IMPL
-from api.utils.file_utils import filename_type, thumbnail, get_project_base_directory
+from api.utils.file_utils import filename_type, thumbnail
 from api.utils.web_utils import html2pdf, is_valid_url
+from api.contants import IMG_BASE64_PREFIX
 
 
 @manager.route('/upload', methods=['POST'])
@@ -209,6 +198,11 @@ def list_docs():
     try:
         docs, tol = DocumentService.get_by_kb_id(
             kb_id, page_number, items_per_page, orderby, desc, keywords)
+
+        for doc_item in docs:
+            if doc_item['thumbnail'] and not doc_item['thumbnail'].startswith(IMG_BASE64_PREFIX):
+                doc_item['thumbnail'] = f"/v1/document/image/{kb_id}-{doc_item['thumbnail']}"
+
         return get_json_result(data={"total": tol, "docs": docs})
     except Exception as e:
         return server_error_response(e)
@@ -232,6 +226,11 @@ def thumbnails():
 
     try:
         docs = DocumentService.get_thumbnails(doc_ids)
+
+        for doc_item in docs:
+            if doc_item['thumbnail'] and not doc_item['thumbnail'].startswith(IMG_BASE64_PREFIX):
+                doc_item['thumbnail'] = f"/v1/document/image/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+
         return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
         return server_error_response(e)
@@ -428,8 +427,9 @@ def change_parser():
             else:
                 return get_json_result(data=True)
 
-        if doc.type == FileType.VISUAL or re.search(
-                r"\.(ppt|pptx|pages)$", doc.name):
+        if ((doc.type == FileType.VISUAL and req["parser_id"] != "picture")
+                or (re.search(
+                    r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
             return get_data_error_result(retmsg="Not supported yet!")
 
         e = DocumentService.update_by_id(doc.id,

@@ -23,7 +23,9 @@ import api from '@/utils/api';
 import { useDebounceEffect } from 'ahooks';
 import { FormInstance, message } from 'antd';
 import { humanId } from 'human-id';
+import { lowerFirst } from 'lodash';
 import trim from 'lodash/trim';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import {
@@ -49,12 +51,14 @@ import {
   initialJin10Values,
   initialKeywordExtractValues,
   initialMessageValues,
+  initialNoteValues,
   initialPubMedValues,
   initialQWeatherValues,
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialTuShareValues,
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
@@ -123,6 +127,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.YahooFinance]: initialYahooFinanceValues,
       [Operator.Jin10]: initialJin10Values,
       [Operator.Concentrator]: initialConcentratorValues,
+      [Operator.TuShare]: initialTuShareValues,
+      [Operator.Note]: initialNoteValues,
     };
   }, [llmId]);
 
@@ -148,16 +154,67 @@ export const useHandleDrag = () => {
   return { handleDragStart };
 };
 
+const splitName = (name: string) => {
+  const names = name.split('_');
+  const type = names.at(0);
+  const index = Number(names.at(-1));
+
+  return { type, index };
+};
+
 export const useHandleDrop = () => {
   const addNode = useGraphStore((state) => state.addNode);
+  const nodes = useGraphStore((state) => state.nodes);
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<any, any>>();
   const initializeOperatorParams = useInitializeOperatorParams();
+  const { t } = useTranslation();
 
   const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
+
+  const generateNodeName = useCallback(
+    (type: string) => {
+      const name = t(`flow.${lowerFirst(type)}`);
+      const templateNameList = nodes
+        .filter((x) => {
+          const temporaryName = x.data.name;
+
+          const { type, index } = splitName(temporaryName);
+
+          return (
+            temporaryName.match(/_/g)?.length === 1 &&
+            type === name &&
+            !isNaN(index)
+          );
+        })
+        .map((x) => {
+          const temporaryName = x.data.name;
+          const { index } = splitName(temporaryName);
+
+          return {
+            idx: index,
+            name: temporaryName,
+          };
+        })
+        .sort((a, b) => a.idx - b.idx);
+
+      let index: number = 0;
+      for (let i = 0; i < templateNameList.length; i++) {
+        const idx = templateNameList[i]?.idx;
+        const nextIdx = templateNameList[i + 1]?.idx;
+        if (idx + 1 !== nextIdx) {
+          index = idx + 1;
+          break;
+        }
+      }
+
+      return `${name}_${index}`;
+    },
+    [t, nodes],
+  );
 
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
@@ -186,7 +243,7 @@ export const useHandleDrop = () => {
         },
         data: {
           label: `${type}`,
-          name: humanId(),
+          name: generateNodeName(type),
           form: initializeOperatorParams(type as Operator),
         },
         sourcePosition: Position.Right,
@@ -195,7 +252,7 @@ export const useHandleDrop = () => {
 
       addNode(newNode);
     },
-    [reactFlowInstance, addNode, initializeOperatorParams],
+    [reactFlowInstance, addNode, initializeOperatorParams, generateNodeName],
   );
 
   return { onDrop, onDragOver, setReactFlowInstance };

@@ -54,7 +54,10 @@ const OllamaModal = ({
     llmFactoryToUrlMap[llmFactory as LlmFactory] ||
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx';
   const optionsMap = {
-    HuggingFace: [{ value: 'embedding', label: 'embedding' }],
+    HuggingFace: [
+      { value: 'embedding', label: 'embedding' },
+      { value: 'chat', label: 'chat' },
+    ],
     Xinference: [
       { value: 'chat', label: 'chat' },
       { value: 'embedding', label: 'embedding' },
@@ -101,7 +104,7 @@ const OllamaModal = ({
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
-          initialValue={'chat'}
+          initialValue={'embedding'}
           rules={[{ required: true, message: t('modelTypeMessage') }]}
         >
           <Select placeholder={t('modelTypeMessage')}>
