@@ -15,8 +15,8 @@ class Session(Base):
         for message in self.messages:
             if "reference" in message:
                 message.pop("reference")
-        res = self.post(f"/chat/{self.chat_id}/session/{self.id}/completion",
-                        {"question": question, "stream": True}, stream=stream)
+        res = self.post(f"/chat/{self.chat_id}/completion",
+                        {"question": question, "stream": True,"session_id":self.id}, stream=stream)
         for line in res.iter_lines():
             line = line.decode("utf-8")
             if line.startswith("{"):
@@ -82,3 +82,4 @@ class Chunk(Base):
         self.term_similarity = None
         self.positions = None
         super().__init__(rag, res_dict)
+

@@ -65,3 +65,14 @@ class DataSet(Base):
         if res.get("code") != 0:
             raise Exception(res["message"])
 
+    def async_parse_documents(self,document_ids):
+        res = self.post(f"/dataset/{self.id}/chunk",{"document_ids":document_ids})
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
+
+    def async_cancel_parse_documents(self,document_ids):
+        res = self.rm(f"/dataset/{self.id}/chunk",{"document_ids":document_ids})
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
