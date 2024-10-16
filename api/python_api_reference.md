@@ -857,7 +857,7 @@ RAGFlow.delete_chats(ids: list[str] = None)
 
 #### ids
 
-IDs of the chat assistants to delete.
+IDs of the chat assistants to delete. If not specified, all chat assistants will be deleted.
 
 ### Returns
 
@@ -892,7 +892,7 @@ RAGFlow.list_chats(
 
 #### page
 
-The number of records page to display. Defaults to `1`.
+Specifies the page on which the records will be displayed. Defaults to `1`.
 
 #### page_size
 
@@ -1035,25 +1035,25 @@ The content of the message. Defaults to `"Hi! I am your assistant, can I help yo
 The auto-generated reference of the message. Each `chunk` object includes the following attributes:
 
 - **id**: `str`  
-  The id of the chunk. ?????????????????  
+  The id of the chunk. 
 - **content**: `str`  
-  The content of the chunk. Defaults to `None`. ?????????????????????  
+  The content of the chunk. 
 - **document_id**: `str`  
-  The ID of the document being referenced. Defaults to `""`.  
+  The ID of the document being referenced. 
 - **document_name**: `str`  
-  The name of the referenced document being referenced. Defaults to `""`.  
+  The name of the referenced document being referenced.
 - **knowledgebase_id**: `str`  
-  The id of the knowledge base to which the relevant document belongs. Defaults to `""`.  
+  The id of the knowledge base to which the relevant document belongs.
 - **image_id**: `str`  
-  The id of the image related to the chunk. Defaults to `""`.  
+  The id of the image related to the chunk.
 - **similarity**: `float`
-  A general similarity score, usually a composite score derived from various similarity measures . This score represents the degree of similarity between two objects. The value ranges between 0 and 1, where a value closer to 1 indicates higher similarity. Defaults to `None`. ????????????????????????????????????   
+  A general similarity score, usually a composite score derived from various similarity measures . This score represents the degree of similarity between two objects. The value ranges between 0 and 1, where a value closer to 1 indicates higher similarity.
 - **vector_similarity**: `float`  
-  A similarity score based on vector representations. This score is obtained by converting texts, words, or objects into vectors and then calculating the cosine similarity or other distance measures between these vectors to determine the similarity in vector space. A higher value indicates greater similarity in the vector space. Defaults to `None`. ?????????????????????????????????
+  A similarity score based on vector representations. This score is obtained by converting texts, words, or objects into vectors and then calculating the cosine similarity or other distance measures between these vectors to determine the similarity in vector space. A higher value indicates greater similarity in the vector space. 
 - **term_similarity**: `float`  
-  The similarity score based on terms or keywords. This score is calculated by comparing the similarity of key terms between texts or datasets, typically measuring how similar two words or phrases are in meaning or context. A higher value indicates a stronger similarity between terms. Defaults to `None`. ???????????????????  
+  The similarity score based on terms or keywords. This score is calculated by comparing the similarity of key terms between texts or datasets, typically measuring how similar two words or phrases are in meaning or context. A higher value indicates a stronger similarity between terms.  
 - **position**: `list[string]`  
-  Indicates the position or index of keywords or specific terms within the text. An array is typically used to mark the location of keywords or specific elements, facilitating precise operations or analysis of the text. Defaults to `None`. ??????????????
+  Indicates the position or index of keywords or specific terms within the text. An array is typically used to mark the location of keywords or specific elements, facilitating precise operations or analysis of the text.
 
 ### Examples
 
@@ -1100,7 +1100,7 @@ Lists sessions associated with the current chat assistant.
 
 #### page
 
-The number of records page to display. Defaults to `1`.
+Specifies the page on which records will be displayed. Defaults to `1`.
 
 #### page_size
 
@@ -1122,13 +1122,9 @@ The ID of the chat session to retrieve. Defaults to `None`.
 
 The name of the chat to retrieve. Defaults to `None`.
 
-
 ### Returns
 
-list[Session]
-description: the List contains information about multiple assistant object, with each dictionary containing information about one assistant.
-
-- Success: A list of `Session` objects.
+- Success: A list of `Session` objects associated with the current chat assistant.
 - Failure: `Exception`.
 
 ### Examples
@@ -1170,9 +1166,7 @@ IDs of the sessions to delete. If not specified, all sessions associated with th
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assi = rag.list_chats(name="Miss R")
-assi = assi[0]
-assi.delete_sessions(ids=["id_1","id_2"])
+assistant = rag.list_chats(name="Miss R")
+assistant = assistant[0]
+assistant.delete_sessions(ids=["id_1","id_2"])
 ```
-
-
