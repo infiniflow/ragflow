@@ -240,7 +240,7 @@ class QWenChat(Base):
 
             return "**ERROR**: " + response.message, tk_count
         else:
-            g = self.chat_streamly(system, history, gen_conf)
+            g = self._chat_streamly(system, history, gen_conf, incremental_output=True)
             result_list = list(g)
             error_msg_list = [item for item in result_list if str(item).find("**ERROR**") >= 0]
             if len(error_msg_list) > 0:
@@ -248,7 +248,7 @@ class QWenChat(Base):
             else:
                 return "".join(result_list[:-1]), result_list[-1]
 
-    def chat_streamly(self, system, history, gen_conf):
+    def _chat_streamly(self, system, history, gen_conf, incremental_output=False):
         from http import HTTPStatus
         if system:
             history.insert(0, {"role": "system", "content": system})
@@ -261,6 +261,7 @@ class QWenChat(Base):
                     messages=history,
                     result_format='message',
                     stream=True,
+                    incremental_output=incremental_output,
                     **gen_conf
                 )
             else:
@@ -269,6 +270,7 @@ class QWenChat(Base):
                     self.model_name,
                     messages=history,
                     result_format='message',
+                    incremental_output=incremental_output,
                     **gen_conf
                 )
             for resp in response:
@@ -286,6 +288,9 @@ class QWenChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield tk_count
+
+    def chat_streamly(self, system, history, gen_conf):
+        return self._chat_streamly(system, history, gen_conf)
 
 
 class ZhipuChat(Base):
