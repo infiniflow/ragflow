@@ -87,7 +87,7 @@ class TenantService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_user_id(cls, user_id):
+    def get_info_by(cls, user_id):
         fields = [
             cls.model.id.alias("tenant_id"),
             cls.model.name,
@@ -100,7 +100,7 @@ class TenantService(CommonService):
             cls.model.parser_ids,
             UserTenant.role]
         return list(cls.model.select(*fields)
-                    .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value)))
+                    .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value) & (UserTenant.role == UserTenantRole.OWNER)))
                     .where(cls.model.status == StatusEnum.VALID.value).dicts())
 
     @classmethod
@@ -115,7 +115,7 @@ class TenantService(CommonService):
             cls.model.img2txt_id,
             UserTenant.role]
         return list(cls.model.select(*fields)
-                    .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value) & (UserTenant.role == UserTenantRole.NORMAL.value)))
+                    .join(UserTenant, on=((cls.model.id == UserTenant.tenant_id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value) & (UserTenant.role == UserTenantRole.NORMAL)))
                     .where(cls.model.status == StatusEnum.VALID.value).dicts())
 
     @classmethod
@@ -143,9 +143,8 @@ class UserTenantService(CommonService):
     def get_by_tenant_id(cls, tenant_id):
         fields = [
             cls.model.user_id,
-            cls.model.tenant_id,
-            cls.model.role,
             cls.model.status,
+            cls.model.role,
             User.nickname,
             User.email,
             User.avatar,
@@ -153,8 +152,24 @@ class UserTenantService(CommonService):
             User.is_active,
             User.is_anonymous,
             User.status,
+            User.update_date,
             User.is_superuser]
         return list(cls.model.select(*fields)
-                    .join(User, on=((cls.model.user_id == User.id) & (cls.model.status == StatusEnum.VALID.value)))
+                    .join(User, on=((cls.model.user_id == User.id) & (cls.model.status == StatusEnum.VALID.value) & (cls.model.role != UserTenantRole.OWNER)))
                     .where(cls.model.tenant_id == tenant_id)
                     .dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def get_tenants_by_user_id(cls, user_id):
+        fields = [
+            cls.model.tenant_id,
+            cls.model.role,
+            User.nickname,
+            User.email,
+            User.avatar,
+            User.update_date
+        ]
+        return list(cls.model.select(*fields)
+                    .join(User, on=((cls.model.tenant_id == User.id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value)))
+                    .where(cls.model.status == StatusEnum.VALID.value).dicts())

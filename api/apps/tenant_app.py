@@ -15,25 +15,14 @@
 #
 
 from flask import request
-from flask_login import current_user, login_required
+from flask_login import login_required, current_user
 
 from api.db import UserTenantRole, StatusEnum
 from api.db.db_models import UserTenant
-from api.db.services.user_service import TenantService, UserTenantService
-from api.settings import RetCode
+from api.db.services.user_service import UserTenantService, UserService
 
-from api.utils import get_uuid
-from api.utils.api_utils import get_json_result, validate_request, server_error_response
-
-
-@manager.route("/list", methods=["GET"])
-@login_required
-def tenant_list():
-    try:
-        tenants = TenantService.get_by_user_id(current_user.id)
-        return get_json_result(data=tenants)
-    except Exception as e:
-        return server_error_response(e)
+from api.utils import get_uuid, delta_seconds
+from api.utils.api_utils import get_json_result, validate_request, server_error_response, get_data_error_result
 
 
 @manager.route("/<tenant_id>/user/list", methods=["GET"])
@@ -41,6 +30,8 @@ def tenant_list():
 def user_list(tenant_id):
     try:
         users = UserTenantService.get_by_tenant_id(tenant_id)
+        for u in users:
+            u["delta_seconds"] = delta_seconds(u["update_date"])
         return get_json_result(data=users)
     except Exception as e:
         return server_error_response(e)
@@ -48,30 +39,31 @@ def user_list(tenant_id):
 
 @manager.route('/<tenant_id>/user', methods=['POST'])
 @login_required
-@validate_request("user_id")
+@validate_request("email")
 def create(tenant_id):
-    user_id = request.json.get("user_id")
-    if not user_id:
-        return get_json_result(
-            data=False, retmsg='Lack of "USER ID"', retcode=RetCode.ARGUMENT_ERROR)
+    req = request.json
+    usrs = UserService.query(email=req["email"])
+    if not usrs:
+        return get_data_error_result(retmsg="User not found.")
 
-    try:
-        user_tenants = UserTenantService.query(user_id=user_id, tenant_id=tenant_id)
-        if user_tenants:
-            uuid = user_tenants[0].id
-            return get_json_result(data={"id": uuid})
+    user_id = usrs[0].id
+    user_tenants = UserTenantService.query(user_id=user_id, tenant_id=tenant_id)
+    if user_tenants:
+        if user_tenants[0].status == UserTenantRole.NORMAL.value:
+            return get_data_error_result(retmsg="This user is in the team already.")
+        return get_data_error_result(retmsg="Invitation notification is sent.")
 
-        uuid = get_uuid()
-        UserTenantService.save(
-            id = uuid,
-            user_id = user_id,
-            tenant_id = tenant_id,
-            role = UserTenantRole.NORMAL.value,
-            status = StatusEnum.VALID.value)
+    UserTenantService.save(
+        id=get_uuid(),
+        user_id=user_id,
+        tenant_id=tenant_id,
+        role=UserTenantRole.INVITE,
+        status=StatusEnum.VALID.value)
 
-        return get_json_result(data={"id": uuid})
-    except Exception as e:
-        return server_error_response(e)
+    usr = list(usrs.dicts())[0]
+    usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
+
+    return get_json_result(data=usr)
 
 
 @manager.route('/<tenant_id>/user/<user_id>', methods=['DELETE'])
@@ -82,4 +74,25 @@ def rm(tenant_id, user_id):
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
-    
+
+
+@manager.route("/list", methods=["GET"])
+@login_required
+def tenant_list():
+    try:
+        users = UserTenantService.get_tenants_by_user_id(current_user.id)
+        for u in users:
+            u["delta_seconds"] = delta_seconds(u["update_date"])
+        return get_json_result(data=users)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/agree/<tenant_id>", methods=["GET"])
+@login_required
+def agree(tenant_id):
+    try:
+        UserTenantService.filter_update([UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id], {"role": UserTenantRole.NORMAL})
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)

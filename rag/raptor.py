@@ -49,6 +49,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
         if len(chunks) <= 1: return
+        chunks = [(s, a) for s, a in chunks if len(a) > 0]
 
         def summarize(ck_idx, lock):
             nonlocal chunks
@@ -64,6 +65,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 print("SUM:", cnt)
                 embds, _ = self._embd_model.encode([cnt])
                 with lock:
+                    if not len(embds[0]): return
                     chunks.append((cnt, embds[0]))
             except Exception as e:
                 print(e, flush=True)
