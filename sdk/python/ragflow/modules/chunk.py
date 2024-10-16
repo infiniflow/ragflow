@@ -17,32 +17,11 @@ class Chunk(Base):
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
 
-    def delete(self) -> bool:
-        """
-        Delete the chunk in the document.
-        """
-        res = self.post('/doc/chunk/rm',
-                        {"document_id": self.document_id, 'chunk_ids': [self.id]})
-        res = res.json()
-        if res.get("retmsg") == "success":
-            return True
-        raise Exception(res["retmsg"])
 
-    def save(self) -> bool:
-        """
-        Save the document details to the server.
-        """
-        res = self.post('/doc/chunk/set',
-                        {"chunk_id": self.id,
-                         "knowledgebase_id": self.knowledgebase_id,
-                         "name": self.document_name,
-                         "content": self.content,
-                         "important_keywords": self.important_keywords,
-                         "document_id": self.document_id,
-                         "available": self.available,
-                         })
+    def update(self,update_message:dict):
+        res = self.put(f"/dataset/{self.knowledgebase_id}/document/{self.document_id}/chunk/{self.id}",update_message)
         res = res.json()
-        if res.get("retmsg") == "success":
-            return True
-        raise Exception(res["retmsg"])
+        if res.get("code") != 0 :
+            raise Exception(res["message"])
+
 

@@ -38,7 +38,7 @@ from api.versions import get_versions
 
 def update_progress():
     while True:
-        time.sleep(1)
+        time.sleep(3)
         try:
             DocumentService.update_progress()
         except Exception as e:
