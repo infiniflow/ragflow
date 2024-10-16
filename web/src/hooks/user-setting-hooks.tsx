@@ -175,19 +175,18 @@ export const useFetchSystemTokenList = (params: Record<string, any>) => {
 
 export const useRemoveSystemToken = () => {
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
     mutationKey: ['removeSystemToken'],
-    mutationFn: async (params: {
-      tenantId: string;
-      dialogId?: string;
-      tokens: string[];
-    }) => {
-      const { data } = await userService.removeToken(params);
+    mutationFn: async (token: string) => {
+      const { data } = await userService.removeToken({}, token);
       if (data.retcode === 0) {
+        message.success(t('message.deleted'));
         queryClient.invalidateQueries({ queryKey: ['fetchSystemTokenList'] });
       }
       return data?.data ?? [];

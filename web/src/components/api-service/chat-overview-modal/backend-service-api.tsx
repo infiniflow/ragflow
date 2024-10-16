@@ -9,28 +9,25 @@ const BackendServiceApi = ({ show }: { show(): void }) => {
   const { t } = useTranslate('chat');
 
   return (
-    <Card title={t('backendServiceApi')}>
-      <Flex gap={8} vertical>
-        {t('serviceApiEndpoint')}
+    <Card
+      title={
+        <Space size={'large'}>
+          <span>RAGFlow API</span>
+          <Button onClick={show} type="primary">
+            {t('apiKey')}
+          </Button>
+        </Space>
+      }
+    >
+      <Flex gap={8} align="center">
+        <b>{t('backendServiceApi')}</b>
         <Paragraph
           copyable={{ text: `${location.origin}/v1/api/` }}
-          className={styles.linkText}
+          className={styles.apiLinkText}
         >
           {location.origin}/v1/api/
         </Paragraph>
       </Flex>
-      <Space size={'middle'}>
-        <Button onClick={show}>{t('apiKey')}</Button>
-        <a
-          href={
-            'https://github.com/infiniflow/ragflow/blob/main/docs/references/api.md'
-          }
-          target="_blank"
-          rel="noreferrer"
-        >
-          <Button>{t('apiReference')}</Button>
-        </a>
-      </Space>
     </Card>
   );
 };

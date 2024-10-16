@@ -99,7 +99,7 @@ const methods = {
   },
   removeToken: {
     url: removeSystemToken,
-    method: 'post',
+    method: 'delete',
   },
 } as const;
 

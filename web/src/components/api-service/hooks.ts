@@ -23,9 +23,9 @@ export const useOperateApiKey = (idKey: string, dialogId?: string) => {
 
   const showDeleteConfirm = useShowDeleteConfirm();
 
-  const onRemoveToken = (token: string, tenantId: string) => {
+  const onRemoveToken = (token: string) => {
     showDeleteConfirm({
-      onOk: () => removeToken({ dialogId, tokens: [token], tenantId }),
+      onOk: () => removeToken(token),
     });
   };
 
