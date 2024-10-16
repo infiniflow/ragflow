@@ -244,12 +244,12 @@ File management inside knowledge base
 ## Upload document
 
 ```python
-DataSet.upload_documents(document_list: List[dict])
+DataSet.upload_documents(document_list: list[dict])
 ```
 
 ### Parameters
 
-#### document_list:`List[dict]`
+#### document_list:`list[dict]`
 A list composed of dicts containing `name` and `blob`.
 
 
@@ -325,7 +325,7 @@ print(doc)
 ## List documents
 
 ```python
-Dataset.list_documents(id:str =None, keywords: str=None, offset: int=0, limit:int = 1024,order_by:str = "create_time", desc: bool = True) -> List[Document]
+Dataset.list_documents(id:str =None, keywords: str=None, offset: int=0, limit:int = 1024,order_by:str = "create_time", desc: bool = True) -> list[Document]
 ```
 
 ### Parameters
@@ -353,7 +353,7 @@ The field by which the records should be sorted. This specifies the attribute or
 A boolean flag indicating whether the sorting should be in descending order.
 ### Returns
 
-List[Document]  
+list[Document]  
 
 A document object containing the following attributes:
 
@@ -443,7 +443,7 @@ for d in ds.list_documents(keywords="rag", offset=0, limit=12):
 ## Delete documents
 
 ```python
-DataSet.delete_documents(ids: List[str] = None)
+DataSet.delete_documents(ids: list[str] = None)
 ```
 ### Returns
 
@@ -465,13 +465,13 @@ ds.delete_documents(ids=["id_1","id_2"])
 ## Parse and stop parsing document
 
 ```python
-DataSet.async_parse_documents(document_ids:List[str]) -> None
-DataSet.async_cancel_parse_documents(document_ids:List[str])-> None
+DataSet.async_parse_documents(document_ids:list[str]) -> None
+DataSet.async_cancel_parse_documents(document_ids:list[str])-> None
 ```
 
 ### Parameters
 
-#### document_ids:`List[str]`
+#### document_ids:`list[str]`
 The ids of the documents to be parsed
 ????????????????????????????????????????????????????
 
@@ -503,7 +503,7 @@ print("Async bulk parsing cancelled")
 
 ## List chunks
 ```python
-Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id : str = None) -> List[Chunk]
+Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id : str = None) -> list[Chunk]
 ```
 ### Parameters
 
@@ -523,7 +523,7 @@ Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id 
   The ID of the chunk to be retrieved  
   default: `None`
 ### Returns
-List[chunk]
+list[chunk]
 
 ### Examples
 ```python
@@ -546,7 +546,7 @@ Document.add_chunk(content:str) -> Chunk
 
 #### content: `str`, *Required*
 Contains the main text or information of the chunk.
-#### important_keywords :`List[str]`
+#### important_keywords :`list[str]`
 list the key terms or phrases that are significant or central to the chunk's content.
 
 ### Returns
@@ -571,10 +571,10 @@ chunk = doc.add_chunk(content="xxxxxxx")
 ## Delete chunk
 
 ```python
-Document.delete_chunks(chunk_ids: List[str])
+Document.delete_chunks(chunk_ids: list[str])
 ```
 ### Parameters
-#### chunk_ids:`List[str]`
+#### chunk_ids:`list[str]`
 The list of chunk_id
 
 ### Returns
@@ -606,7 +606,7 @@ Chunk.update(update_message: dict)
 - `content`: `str`  
   Contains the main text or information of the chunk
 
-- `important_keywords`: `List[str]`  
+- `important_keywords`: `list[str]`  
   List the key terms or phrases that are significant or central to the chunk's content
 
 - `available`: `int`  
@@ -635,7 +635,7 @@ chunk.update({"content":"sdfx...})
 ## Retrieval
 
 ```python
-RAGFlow.retrieve(question:str="", datasets:List[str]=None, document=List[str]=None, offset:int=1, limit:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> List[Chunk]
+RAGFlow.retrieve(question:str="", datasets:list[str]=None, document=list[str]=None, offset:int=1, limit:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
 ```
 
 ### Parameters
@@ -714,13 +714,13 @@ for c in rag.retrieve(question="What's ragflow?",
 Chat APIs
 :::
 
-## Create chat
+## Create chat assistant
 
 ```python
 RAGFlow.create_chat(
     name: str = "assistant", 
     avatar: str = "path", 
-    knowledgebases: list[DataSet] = ["kb1"], 
+    knowledgebases: list[DataSet] = [], 
     llm: Chat.LLM = None, 
     prompt: Chat.Prompt = None
 ) -> Chat
@@ -766,10 +766,10 @@ The llm of the created chat. Defaults to `None`. When the value is `None`, a dic
 
 Instructions for the LLM to follow.
 
-- `"similarity_threshold"`: `float` We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out. Defaults to `0.2`.
-- `"keywords_similarity_weight"`: `float` We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity or rerank score (0~1). Defaults to `0.7`.
-- `"top_n"`: `int` Not all the chunks whose similarity score is above the 'simialrity threashold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
-- `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill-in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
+- `"similarity_threshold"`: `float` A similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out. Defaults to `0.2`.
+- `"keywords_similarity_weight"`: `float` It's weighted keywords similarity and vector cosine similarity or rerank score (0~1). Defaults to `0.7`.
+- `"top_n"`: `int` Not all the chunks whose similarity score is above the 'similarity threshold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
+- `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
 - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
 - `"empty_response"`: `str` If nothing is retrieved in the knowledge base for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
 - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
@@ -814,10 +814,10 @@ Updates the current chat assistant.
   - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
   - `"max_token"`, `int` This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).
 - `"prompt"` : Instructions for the LLM to follow.
-  - `"similarity_threshold"`: `float` We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out. Defaults to `0.2`.
-  - `"keywords_similarity_weight"`: `float` We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity or rerank score (0~1). Defaults to `0.7`.
-  - `"top_n"`: `int` Not all the chunks whose similarity score is above the 'simialrity threashold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
-  - `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill-in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
+  - `"similarity_threshold"`: `float` A score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out. Defaults to `0.2`.
+  - `"keywords_similarity_weight"`: `float` It's weighted keywords similarity and vector cosine similarity or rerank score (0~1). Defaults to `0.7`.
+  - `"top_n"`: `int` Not all the chunks whose similarity score is above the 'similarity threshold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
+  - `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
   - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
   - `"empty_response"`: `str` If nothing is retrieved in the knowledge base for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
   - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
@@ -908,15 +908,15 @@ Indicates whether to sort the results in descending order. Defaults to `True`.
 
 #### id: `string`  
 
-The ID of the chat to be retrieved. Defaults to `None`.
+The ID of the chat to retrieve. Defaults to `None`.
 
 #### name: `string`  
 
-The name of the chat to be retrieved. Defaults to `None`.
+The name of the chat to retrieve. Defaults to `None`.
 
 ### Returns
 
-- Success: A list of `Chat` objects representing the retrieved knowledge bases.
+- Success: A list of `Chat` objects.
 - Failure: `Exception`.
 
 ### Examples
@@ -955,7 +955,7 @@ The name of the chat session to create.
   - `id`: `str` The auto-generated unique identifier of the created session.
   - `name`: `str` The name of the created session.
   - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
-  - `chat_id`: `str` The ID of the associate chat assistant. You cannot change `chat_id`.
+  - `chat_id`: `str` The ID of the associated chat assistant.
 - Failure: `Exception`
 
 ### Examples
@@ -966,13 +966,13 @@ from ragflow import RAGFlow
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag.list_chats(name="Miss R")
 assistant = assistant[0]
-sessession = assistant.create_session()
+session = assistant.create_session()
 ```
 
 ## Update session
 
 ```python
-Session.update(update_message:dict)
+Session.update(update_message: dict)
 ```
 
 Updates the current session.
@@ -981,7 +981,7 @@ Updates the current session.
 
 #### update_message: `dict[str, Any]`, *Required*
 
-- `"name"`: `str` The name of the created session.
+- `"name"`: `str` The name of the session to update.
 
 ### Returns
 
@@ -996,8 +996,8 @@ from ragflow import RAGFlow
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag.list_chats(name="Miss R")
 assistant = assistant[0]
-session = assistant.create_session("new_session")
-session.update({"name": "Updated session"})
+session = assistant.create_session("session_name")
+session.update({"name": "updated_name"})
 ```
 
 ---
@@ -1016,11 +1016,14 @@ The question to start an AI chat. Defaults to `None`.
 
 #### stream
 
-Indicates whether to output responses in a streaming fashion. Defaults to `False`.
+Indicates whether to output responses in a streaming way. Defaults to `False`.
 
 ### Returns
 
-[Message, iter[Message]]
+Optional[Message, iter[Message]]
+
+- Message object, if `stream` is set to `False`
+- iter[Message] object, if `stream` is set to `True`
 
 #### id: `str`
 
@@ -1061,12 +1064,12 @@ The auto-generated reference of the message. Each `chunk` object includes the fo
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assi = rag.list_chats(name="Miss R")
-assi = assi[0]
-sess = assi.create_session()    
+assistant = rag.list_chats(name="Miss R")
+assistant = assistant[0]
+sess = assistant.create_session()    
 
 print("\n==================== Miss R =====================\n")
-print(assi.get_prologue())
+print(assistant.get_prologue())
 
 while True:
     question = input("\n==================== User =====================\n> ")
