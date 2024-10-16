@@ -242,7 +242,7 @@ class QWenChat(Base):
         else:
             g = self.chat_streamly(system, history, gen_conf)
             result_list = list(g)
-            error_msg_list = [item for item in result_list if item.find("**ERROR**") >= 0]
+            error_msg_list = [item for item in result_list if str(item).find("**ERROR**") >= 0]
             if len(error_msg_list) > 0:
                 return "**ERROR**: " + "".join(error_msg_list) , 0
             else:
