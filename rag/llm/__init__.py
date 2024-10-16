@@ -122,7 +122,8 @@ RerankModel = {
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,
     "BaiduYiyan": BaiduYiyanRerank,
-    "Voyage AI": VoyageRerank
+    "Voyage AI": VoyageRerank,
+    "Tongyi-Qianwen": QWenRerank,
 }
 
 Seq2txtModel = {

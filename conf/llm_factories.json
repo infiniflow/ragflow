@@ -89,7 +89,7 @@
         {
             "name": "Tongyi-Qianwen",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
             "status": "1",
             "llm": [
                 {
@@ -139,6 +139,12 @@
                     "tags": "LLM,CHAT,IMAGE2TEXT",
                     "max_tokens": 765,
                     "model_type": "image2text"
+                },
+                {
+                    "llm_name": "gte-rerank",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4000,
+                    "model_type": "rerank"
                 }
             ]
         },
