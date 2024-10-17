@@ -30,3 +30,9 @@ export const LocalLlmFactories = [
   'OpenRouter',
   'HuggingFace',
 ];
+
+export enum TenantRole {
+  Owner = 'owner',
+  Invite = 'invite',
+  Normal = 'normal',
+}

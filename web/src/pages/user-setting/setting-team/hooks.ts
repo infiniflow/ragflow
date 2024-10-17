@@ -3,6 +3,7 @@ import {
   useAddTenantUser,
   useAgreeTenant,
   useDeleteTenantUser,
+  useFetchUserInfo,
 } from '@/hooks/user-setting-hooks';
 import { useCallback } from 'react';
 
@@ -15,10 +16,13 @@ export const useAddUser = () => {
   } = useSetModalState();
 
   const handleAddUserOk = useCallback(
-    (email: string) => {
-      addTenantUser(email);
+    async (email: string) => {
+      const retcode = await addTenantUser(email);
+      if (retcode === 0) {
+        hideAddingTenantModal();
+      }
     },
-    [addTenantUser],
+    [addTenantUser, hideAddingTenantModal],
   );
 
   return {
@@ -36,7 +40,7 @@ export const useHandleDeleteUser = () => {
   const handleDeleteTenantUser = (userId: string) => () => {
     showDeleteConfirm({
       onOk: async () => {
-        const retcode = await deleteTenantUser(userId);
+        const retcode = await deleteTenantUser({ userId });
         if (retcode === 0) {
         }
         return;
@@ -48,19 +52,17 @@ export const useHandleDeleteUser = () => {
 };
 
 export const useHandleAgreeTenant = () => {
-  const { agreeTenant, loading } = useAgreeTenant();
-  const showDeleteConfirm = useShowDeleteConfirm();
+  const { agreeTenant } = useAgreeTenant();
+  const { deleteTenantUser } = useDeleteTenantUser();
+  const { data: user } = useFetchUserInfo();
 
-  const handleDeleteTenantUser = (userId: string) => () => {
-    showDeleteConfirm({
-      onOk: async () => {
-        const retcode = await deleteTenantUser(userId);
-        if (retcode === 0) {
-        }
-        return;
-      },
-    });
+  const handleAgree = (tenantId: string, isAgree: boolean) => () => {
+    if (isAgree) {
+      agreeTenant(tenantId);
+    } else {
+      deleteTenantUser({ tenantId, userId: user.id });
+    }
   };
 
-  return { handleDeleteTenantUser, loading };
+  return { handleAgree };
 };

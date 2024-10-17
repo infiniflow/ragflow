@@ -544,6 +544,11 @@ export default {
       add: '添加',
       updateDate: '更新日期',
       role: '角色',
+      invite: '邀請',
+      agree: '同意',
+      refuse: '拒絕',
+      teamMembers: '團隊成員',
+      joinedTeams: '加入的團隊',
     },
     message: {
       registered: '註冊成功',

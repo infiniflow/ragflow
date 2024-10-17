@@ -3,9 +3,16 @@ import { ITenantUser } from '@/interfaces/database/user-setting';
 import { formatDate } from '@/utils/date';
 import { DeleteOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Table } from 'antd';
+import { Button, Table, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
+
+const ColorMap = {
+  [TenantRole.Normal]: 'green',
+  [TenantRole.Invite]: 'orange',
+  [TenantRole.Owner]: 'red',
+};
 
 const UserTable = () => {
   const { data, loading } = useListTenantUser();
@@ -27,6 +34,11 @@ const UserTable = () => {
       title: t('setting.role'),
       dataIndex: 'role',
       key: 'role',
+      render(value, { role }) {
+        return (
+          <Tag color={ColorMap[role as keyof typeof ColorMap]}>{role}</Tag>
+        );
+      },
     },
     {
       title: t('setting.updateDate'),
@@ -53,6 +65,7 @@ const UserTable = () => {
       columns={columns}
       dataSource={data}
       loading={loading}
+      pagination={false}
     />
   );
 };

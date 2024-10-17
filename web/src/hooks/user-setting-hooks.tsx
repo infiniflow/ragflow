@@ -263,7 +263,7 @@ export const useAddTenantUser = () => {
       if (data.retcode === 0) {
         queryClient.invalidateQueries({ queryKey: ['listTenantUser'] });
       }
-      return data?.data ?? [];
+      return data?.retcode;
     },
   });
 
@@ -281,14 +281,21 @@ export const useDeleteTenantUser = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: ['deleteTenantUser'],
-    mutationFn: async (userId: string) => {
+    mutationFn: async ({
+      userId,
+      tenantId,
+    }: {
+      userId: string;
+      tenantId?: string;
+    }) => {
       const { data } = await deleteTenantUser({
-        tenantId: tenantInfo.tenant_id,
+        tenantId: tenantId ?? tenantInfo.tenant_id,
         userId,
       });
       if (data.retcode === 0) {
         message.success(t('message.deleted'));
         queryClient.invalidateQueries({ queryKey: ['listTenantUser'] });
+        queryClient.invalidateQueries({ queryKey: ['listTenant'] });
       }
       return data?.data ?? [];
     },
@@ -320,8 +327,8 @@ export const useListTenant = () => {
 };
 
 export const useAgreeTenant = () => {
-  const { data: tenantInfo } = useFetchTenantInfo();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   const {
     data,
@@ -329,10 +336,11 @@ export const useAgreeTenant = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: ['agreeTenant'],
-    mutationFn: async () => {
-      const { data } = await agreeTenant(tenantInfo.tenant_id);
+    mutationFn: async (tenantId: string) => {
+      const { data } = await agreeTenant(tenantId);
       if (data.retcode === 0) {
-        queryClient.invalidateQueries({ queryKey: ['listTenantUser'] });
+        message.success(t('message.operated'));
+        queryClient.invalidateQueries({ queryKey: ['listTenant'] });
       }
       return data?.data ?? [];
     },

@@ -2,12 +2,15 @@ import { useListTenant } from '@/hooks/user-setting-hooks';
 import { ITenant } from '@/interfaces/database/user-setting';
 import { formatDate } from '@/utils/date';
 import type { TableProps } from 'antd';
-import { Button, Table } from 'antd';
+import { Button, Space, Table } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { TenantRole } from '../constants';
+import { useHandleAgreeTenant } from './hooks';
 
 const TenantTable = () => {
   const { t } = useTranslation();
-  const { data } = useListTenant();
+  const { data, loading } = useListTenant();
+  const { handleAgree } = useHandleAgreeTenant();
 
   const columns: TableProps<ITenant>['columns'] = [
     {
@@ -21,11 +24,6 @@ const TenantTable = () => {
       key: 'email',
     },
     {
-      title: t('setting.role'),
-      dataIndex: 'role',
-      key: 'role',
-    },
-    {
       title: t('setting.updateDate'),
       dataIndex: 'update_date',
       key: 'update_date',
@@ -36,12 +34,31 @@ const TenantTable = () => {
     {
       title: t('common.action'),
       key: 'action',
-      render: (_, record) => <Button type="primary">Invite</Button>,
+      render: (_, { role, tenant_id }) => {
+        if (role === TenantRole.Invite) {
+          return (
+            <Space>
+              <Button type="link" onClick={handleAgree(tenant_id, true)}>
+                {t(`setting.agree`)}
+              </Button>
+              <Button type="link" onClick={handleAgree(tenant_id, false)}>
+                {t(`setting.refuse`)}
+              </Button>
+            </Space>
+          );
+        }
+      },
     },
   ];
 
   return (
-    <Table<ITenant> columns={columns} dataSource={data} rowKey={'tenant_id'} />
+    <Table<ITenant>
+      columns={columns}
+      dataSource={data}
+      rowKey={'tenant_id'}
+      loading={loading}
+      pagination={false}
+    />
   );
 };
 

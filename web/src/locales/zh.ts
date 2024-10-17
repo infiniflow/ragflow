@@ -563,6 +563,11 @@ export default {
       add: '添加',
       updateDate: '更新日期',
       role: '角色',
+      invite: '邀请',
+      agree: '同意',
+      refuse: '拒绝',
+      teamMembers: '团队成员',
+      joinedTeams: '加入的团队',
     },
     message: {
       registered: '注册成功',

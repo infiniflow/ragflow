@@ -2,15 +2,17 @@ import {
   useFetchUserInfo,
   useListTenantUser,
 } from '@/hooks/user-setting-hooks';
-import { Button, Card, Flex } from 'antd';
+import { Button, Card, Flex, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 
-import { UserAddOutlined } from '@ant-design/icons';
+import { TeamOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
 import AddingUserModal from './add-user-modal';
 import { useAddUser } from './hooks';
 import styles from './index.less';
 import TenantTable from './tenant-table';
 import UserTable from './user-table';
+
+const iconStyle = { fontSize: 20, color: '#1677ff' };
 
 const UserSettingTeam = () => {
   const { data: userInfo } = useFetchUserInfo();
@@ -32,12 +34,30 @@ const UserSettingTeam = () => {
           </span>
           <Button type="primary" onClick={showAddingTenantModal}>
             <UserAddOutlined />
-            {t('setting.add')}
+            {t('setting.invite')}
           </Button>
         </Flex>
       </Card>
-      <UserTable></UserTable>
-      <TenantTable></TenantTable>
+      <Card
+        title={
+          <Space>
+            <UserOutlined style={iconStyle} /> {t('setting.teamMembers')}
+          </Space>
+        }
+        bordered={false}
+      >
+        <UserTable></UserTable>
+      </Card>
+      <Card
+        title={
+          <Space>
+            <TeamOutlined style={iconStyle} /> {t('setting.joinedTeams')}
+          </Space>
+        }
+        bordered={false}
+      >
+        <TenantTable></TenantTable>
+      </Card>
       {addingTenantModalVisible && (
         <AddingUserModal
           visible
