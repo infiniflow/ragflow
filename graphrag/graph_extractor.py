@@ -162,7 +162,7 @@ class GraphExtractor:
         }
         token_count = 0
         text = perform_variable_replacements(self._extraction_prompt, variables=variables)
-        gen_conf = {"temperature": 0.3, "stream": True}
+        gen_conf = {"temperature": 0.3}
         response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         if response.find("**ERROR**") >= 0: raise Exception(response)
         token_count = num_tokens_from_string(text + response)

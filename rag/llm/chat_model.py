@@ -217,7 +217,8 @@ class QWenChat(Base):
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
-        if 'stream' in gen_conf and str(gen_conf['stream']).lower() == 'false':
+        stream_flag = str(os.environ.get('QWEN_CHAT_BY_STREAM', 'true')).lower() == 'true'
+        if not stream_flag:
             from http import HTTPStatus
             if system:
                 history.insert(0, {"role": "system", "content": system})
@@ -255,24 +256,14 @@ class QWenChat(Base):
         ans = ""
         tk_count = 0
         try:
-            if 'stream' not in gen_conf:
-                response = Generation.call(
-                    self.model_name,
-                    messages=history,
-                    result_format='message',
-                    stream=True,
-                    incremental_output=incremental_output,
-                    **gen_conf
-                )
-            else:
-                gen_conf['stream'] = True
-                response = Generation.call(
-                    self.model_name,
-                    messages=history,
-                    result_format='message',
-                    incremental_output=incremental_output,
-                    **gen_conf
-                )
+            response = Generation.call(
+                self.model_name,
+                messages=history,
+                result_format='message',
+                stream=True,
+                incremental_output=incremental_output,
+                **gen_conf
+            )
             for resp in response:
                 if resp.status_code == HTTPStatus.OK:
                     ans = resp.output.choices[0]['message']['content']
