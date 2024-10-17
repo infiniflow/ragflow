@@ -918,6 +918,16 @@ The above is the content you need to summarize.`,
       yahooFinance: 'YahooFinance',
       yahooFinanceDescription:
         'The component queries information about the company based on the provided ticker symbol.',
+      crawler: 'Web Crawler',
+      crawlerDescription:
+        'This component can be used to crawl HTML source code from a specified URL.',
+      proxy: 'Proxy',
+      crawlerResultOptions: {
+        html: 'Html',
+        markdown: 'Markdown',
+        content: 'Content',
+      },
+      extractType: 'extractType',
       info: 'Info',
       history: 'History',
       financials: 'Financials',
