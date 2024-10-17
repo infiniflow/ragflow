@@ -204,10 +204,10 @@ Updates the current knowledge base.
 #### update_message: `dict[str, str|int]`, *Required*
 
 - `"name"`: `str` The name of the knowledge base to update.
-- `"tenant_id"`: `str` The `"tenant_id` you get after calling `create_dataset()`.
+- `"tenant_id"`: `str` The `"tenant_id` you get after calling `create_dataset()`. ?????????????????????
 - `"embedding_model"`: `str` The embedding model for generating vector embeddings.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
-- `"parser_method"`: `str`
+- `"parser_method"`: `str` The default parsing method for the knowledge base.
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -232,7 +232,7 @@ Updates the current knowledge base.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-dataset = rag.list_datasets(name="kb_1")
+dataset = rag.list_datasets(name="kb_name")
 dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "parse_method":"manual"})
 ```
 
@@ -269,7 +269,7 @@ A list of dictionaries representing the documents to upload, each containing the
 
 ```python
 dataset = rag.create_dataset(name="kb_name")
-dataset.upload_documents([{name="1.txt", blob="123"}, ...])
+dataset.upload_documents([{"name": "1.txt", "blob": "123"}])
 ```
 
 ---
@@ -284,7 +284,7 @@ Updates configurations for the current document.
 
 ### Parameters
 
-#### update_message: `dict`
+#### update_message: `dict[str, str|int]`, *Required*
 
 only `name`, `parser_config`, and `parser_method` can be changed
 
@@ -316,7 +316,7 @@ Document.download() -> bytes
 
 ### Returns
 
-bytes of the document.
+Bytes of the document.
 
 ### Examples
 
@@ -344,7 +344,7 @@ Dataset.list_documents(id:str =None, keywords: str=None, offset: int=0, limit:in
 
 #### id
 
-The id of the document to be got
+The id of the document to retrieve.
 
 #### keywords
 
@@ -368,73 +368,27 @@ A boolean flag indicating whether the sorting should be in descending order.
 
 ### Returns
 
-list[Document]  
+- Success: A list of `Document` objects.
+- Failure: `Exception`.
 
-A document object containing the following attributes:
+A `Document` object contains the following attributes:
 
-#### id
-
-Id of the retrieved document. Defaults to `""`.
-
-#### thumbnail
-
-Thumbnail image of the retrieved document. Defaults to `""`.
-
-#### knowledgebase_id
-
-Knowledge base ID related to the document. Defaults to `""`.
-
-#### parser_method
-
-Method used to parse the document. Defaults to `""`.
-
-#### parser_config: `ParserConfig`
-
-Configuration object for the parser. Defaults to `None`.
-
-#### source_type
-
-Source type of the document. Defaults to `""`.
-
-#### type
-
-Type or category of the document. Defaults to `""`.
-
-#### created_by: `str`
-
-Creator of the document. Defaults to `""`.
-
-#### name
-
-Name or title of the document. Defaults to `""`.
-
-#### size: `int`
-
-Size of the document in bytes or some other unit. Defaults to `0`.
-
-#### token_count: `int`
-
-Number of tokens in the document. Defaults to `""`.
-
-#### chunk_count: `int`
-
-Number of chunks the document is split into. Defaults to `0`.
-
-#### progress: `float`
-
-Current processing progress as a percentage. Defaults to `0.0`.
-
-#### progress_msg: `str`
-
-Message indicating current progress status. Defaults to `""`.
-
-#### process_begin_at: `datetime`
-
-Start time of the document processing. Defaults to `None`.
-
-#### process_duation: `float`
-
-Duration of the processing in seconds or minutes. Defaults to `0.0`.
+- `id` Id of the retrieved document. Defaults to `""`.
+- `thumbnail` Thumbnail image of the retrieved document. Defaults to `""`.
+- `knowledgebase_id` Knowledge base ID related to the document. Defaults to `""`.
+- `parser_method` Method used to parse the document. Defaults to `""`.
+- `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `None`.
+- `source_type`: Source type of the document. Defaults to `""`.
+- `type`: Type or category of the document. Defaults to `""`.
+- `created_by`: `str` Creator of the document. Defaults to `""`.
+- `name` Name or title of the document. Defaults to `""`.
+- `size`: `int` Size of the document in bytes or some other unit. Defaults to `0`.
+- `token_count`: `int` Number of tokens in the document. Defaults to `""`.
+- `chunk_count`: `int` Number of chunks the document is split into. Defaults to `0`.
+- `progress`: `float` Current processing progress as a percentage. Defaults to `0.0`.
+- `progress_msg`: `str` Message indicating current progress status. Defaults to `""`.
+- `process_begin_at`: `datetime` Start time of the document processing. Defaults to `None`.
+- `process_duation`: `float` Duration of the processing in seconds or minutes. Defaults to `0.0`.
 
 ### Examples
 
@@ -459,6 +413,8 @@ for d in dataset.list_documents(keywords="rag", offset=0, limit=12):
 ```python
 DataSet.delete_documents(ids: list[str] = None)
 ```
+
+Deletes specified documents or all documents from the current knowledge base.
 
 ### Returns
 
@@ -489,8 +445,7 @@ DataSet.async_cancel_parse_documents(document_ids:list[str])-> None
 
 #### document_ids: `list[str]`
 
-The ids of the documents to be parsed
-????????????????????????????????????????????????????
+The IDs of the documents to parse.
 
 ### Returns
 
@@ -529,26 +484,28 @@ Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id 
 
 ### Parameters
 
-- `keywords`: `str`  
-  List chunks whose name has the given keywords  
-  default: `None`
+#### keywords  
+  
+List chunks whose name has the given keywords. Defaults to `None`
 
-- `offset`: `int`  
-  The beginning number of records for paging  
-  default: `1`
+#### offset 
 
-- `limit`: `int`  
-  Records number to return  
-  default: `30`
+The beginning number of records for paging. Defaults to `1`
 
-- `id`: `str`  
-  The ID of the chunk to be retrieved  
-  default: `None`
+#### limit  
+
+Records number to return.  Default: `30`
+
+#### id
+
+The ID of the chunk to retrieve. Default: `None`
 
 ### Returns
+
 list[chunk]
 
 ### Examples
+
 ```python
 from ragflow import RAGFlow
 
@@ -568,13 +525,13 @@ Document.add_chunk(content:str) -> Chunk
 
 ### Parameters
 
-#### content: `str`, *Required*
+#### content: *Required*
 
-Contains the main text or information of the chunk.
+The main text or information of the chunk.
 
 #### important_keywords :`list[str]`
 
-list the key terms or phrases that are significant or central to the chunk's content.
+List the key terms or phrases that are significant or central to the chunk's content.
 
 ### Returns
 
@@ -586,9 +543,9 @@ chunk
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.list_datasets(id="123")
-ds = ds[0]
-doc = ds.list_documents(id="wdfxb5t547d")
+dataset = rag.list_datasets(id="123")
+dtaset = dataset[0]
+doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
 chunk = doc.add_chunk(content="xxxxxxx")
 ```
@@ -600,11 +557,12 @@ chunk = doc.add_chunk(content="xxxxxxx")
 ```python
 Document.delete_chunks(chunk_ids: list[str])
 ```
+
 ### Parameters
 
 #### chunk_ids:`list[str]`
 
-The list of chunk_id
+A list of chunk_id.
 
 ### Returns
 
@@ -633,14 +591,12 @@ doc.delete_chunks(["id_1","id_2"])
 Chunk.update(update_message: dict)
 ```
 ### Parameters
-- `content`: `str`  
-  Contains the main text or information of the chunk
 
-- `important_keywords`: `list[str]`  
-  List the key terms or phrases that are significant or central to the chunk's content
+#### update_message: *Required*
 
-- `available`: `int`  
-  Indicating the availability status, `0` means unavailable and `1` means available
+- `content`: `str` Contains the main text or information of the chunk
+- `important_keywords`: `list[str]` List the key terms or phrases that are significant or central to the chunk's content
+- `available`: `int` Indicating the availability status, `0` means unavailable and `1` means available
 
 ### Returns
 
@@ -653,12 +609,12 @@ Chunk.update(update_message: dict)
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.list_datasets(id="123")
-ds = ds[0]
-doc = ds.list_documents(id="wdfxb5t547d")
+dataset = rag.list_datasets(id="123")
+dataset = dataset[0]
+doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
 chunk = doc.add_chunk(content="xxxxxxx")
-chunk.update({"content":"sdfx...})
+chunk.update({"content":"sdfx..."})
 ```
 
 ---
@@ -764,44 +720,30 @@ Creates a chat assistant.
 - Success: A `Chat` object representing the chat assistant.
 - Failure: `Exception`
 
-#### name: `str`
+The following shows the attributes of a `Chat` object:
 
-The name of the chat assistant. Defaults to `"assistant"`.
-
-#### avatar: `str`
-
-Base64 encoding of the avatar. Defaults to `""`.
-
-#### knowledgebases: `list[str]`
-
-The associated knowledge bases. Defaults to `["kb1"]`.
-
-#### llm: `LLM`
-
-The llm of the created chat. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.
-
-- **model_name**, `str`  
-  The chat model name. If it is `None`, the user's default chat model will be returned.  
-- **temperature**, `float`  
-  Controls the randomness of the model's predictions. A lower temperature increases the model's conficence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
-- **top_p**, `float`  
-  Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-- **presence_penalty**, `float`  
-  This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
-- **frequency penalty**, `float`  
-  Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
-- **max_token**, `int`  
-  This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.
-
-#### Prompt: `str`
-
-Instructions for the LLM to follow.
-
-- `"similarity_threshold"`: `float` A similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out. Defaults to `0.2`.
-- `"keywords_similarity_weight"`: `float` It's weighted keywords similarity and vector cosine similarity or rerank score (0~1). Defaults to `0.7`.
-- `"top_n"`: `int` Not all the chunks whose similarity score is above the 'similarity threshold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
-- `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
-- `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+- `name`: `str` The name of the chat assistant. Defaults to `"assistant"`.
+- `avatar`: `str` Base64 encoding of the avatar. Defaults to `""`.
+- `knowledgebases`: `list[str]` The associated knowledge bases. Defaults to `["kb1"]`.
+- `llm`: `LLM` The llm of the created chat. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.  
+  - `model_name`, `str`  
+    The chat model name. If it is `None`, the user's default chat model will be returned.  
+  - `temperature`, `float`  
+    Controls the randomness of the model's predictions. A lower temperature increases the model's conficence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+  - `top_p`, `float`  
+    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
+  - `presence_penalty`, `float`  
+    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
+  - `frequency penalty`, `float`  
+    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+  - `max_token`, `int`  
+    This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.
+- `Prompt`: `Prompt` Instructions for the LLM to follow.  
+  - `"similarity_threshold"`: `float` A similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out. Defaults to `0.2`.
+  - `"keywords_similarity_weight"`: `float` It's weighted keywords similarity and vector cosine similarity or rerank score (0~1). Defaults to `0.7`.
+  - `"top_n"`: `int` Not all the chunks whose similarity score is above the 'similarity threshold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
+  - `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
+  - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
 - `"empty_response"`: `str` If nothing is retrieved in the knowledge base for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
 - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
 - `"show_quote`: `bool` Indicates whether the source of text should be displayed Defaults to `True`.
@@ -918,6 +860,8 @@ RAGFlow.list_chats(
     name: str = None
 ) -> list[Chat]
 ```
+
+Retrieves a list of chat assistants.
 
 ### Parameters
 

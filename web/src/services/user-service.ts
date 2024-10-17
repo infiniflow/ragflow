@@ -1,6 +1,6 @@
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
-import request from '@/utils/request';
+import request, { post } from '@/utils/request';
 
 const {
   login,
@@ -104,5 +104,24 @@ const methods = {
 } as const;
 
 const userService = registerServer<keyof typeof methods>(methods, request);
+
+export const listTenantUser = (tenantId: string) =>
+  request.get(api.listTenantUser(tenantId));
+
+export const addTenantUser = (tenantId: string, email: string) =>
+  post(api.addTenantUser(tenantId), { email });
+
+export const deleteTenantUser = ({
+  tenantId,
+  userId,
+}: {
+  tenantId: string;
+  userId: string;
+}) => request.delete(api.deleteTenantUser(tenantId, userId));
+
+export const listTenant = () => request.get(api.listTenant);
+
+export const agreeTenant = (tenantId: string) =>
+  request.put(api.agreeTenant(tenantId));
 
 export default userService;
