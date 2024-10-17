@@ -23,7 +23,7 @@ from flask_login import login_required, current_user, login_user, logout_user
 
 from api.db.db_models import TenantLLM
 from api.db.services.llm_service import TenantLLMService, LLMService
-from api.utils.api_utils import server_error_response, validate_request
+from api.utils.api_utils import server_error_response, validate_request, get_data_error_result
 from api.utils import get_uuid, get_format_time, decrypt, download_img, current_timestamp, datetime_format
 from api.db import UserTenantRole, LLMType, FileType
 from api.settings import RetCode, GITHUB_OAUTH, FEISHU_OAUTH, CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, \
@@ -402,8 +402,10 @@ def user_add():
 @login_required
 def tenant_info():
     try:
-        tenants = TenantService.get_by_user_id(current_user.id)[0]
-        return get_json_result(data=tenants)
+        tenants = TenantService.get_info_by(current_user.id)
+        if not tenants:
+            return get_data_error_result(retmsg="Tenant not found!")
+        return get_json_result(data=tenants[0])
     except Exception as e:
         return server_error_response(e)
 

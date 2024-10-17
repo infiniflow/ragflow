@@ -1,3 +1,8 @@
+.tableCell() {
+  padding: 6px 13px;
+  border: 1px solid #d1d9e0;
+}
+
 .chunkText() {
   em {
     color: red;
@@ -5,6 +10,8 @@
   }
   table {
     width: 100%;
+    box-sizing: border-box;
+    border-collapse: collapse;
   }
 
   caption {
@@ -17,8 +24,13 @@
   }
 
   th {
-    color: #fff;
-    background-color: @blurBackground;
+    // color: #fff;
+    // background-color: @blurBackground;
+    .tableCell;
+  }
+
+  td {
+    .tableCell;
   }
 
   td:hover {
@@ -55,4 +67,11 @@
   -webkit-line-clamp: @line;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.linkText() {
+  border-radius: 6px;
+  padding: 6px 10px;
+  background-color: #eff8ff;
+  border: 1px;
 }

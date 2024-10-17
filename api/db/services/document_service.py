@@ -61,14 +61,13 @@ class DocumentService(CommonService):
             docs = docs.where(
                 fn.LOWER(cls.model.name).contains(keywords.lower())
             )
-        count = docs.count()
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
             docs = docs.order_by(cls.model.getter_by(orderby).asc())
 
         docs = docs.paginate(page_number, items_per_page)
-
+        count = docs.count()
         return list(docs.dicts()), count
 
 
@@ -362,7 +361,7 @@ class DocumentService(CommonService):
                 elif finished:
                     if d["parser_config"].get("raptor", {}).get("use_raptor") and d["progress_msg"].lower().find(" raptor")<0:
                         queue_raptor_tasks(d)
-                        prg *= 0.98
+                        prg = 0.98 * len(tsks)/(len(tsks)+1)
                         msg.append("------ RAPTOR -------")
                     else:
                         status = TaskStatus.DONE.value
@@ -379,7 +378,8 @@ class DocumentService(CommonService):
                     info["progress_msg"] = msg
                 cls.update_by_id(d["id"], info)
             except Exception as e:
-                stat_logger.error("fetch task exception:" + str(e))
+                if str(e).find("'0'") < 0:
+                    stat_logger.error("fetch task exception:" + str(e))
 
     @classmethod
     @DB.connection_context()

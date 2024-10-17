@@ -5,7 +5,7 @@ import camelCase from 'lodash/camelCase';
 import React from 'react';
 import User from '../user';
 
-import { LanguageList } from '@/constants/common';
+import { LanguageList, LanguageMap } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styled from './index.less';
@@ -35,7 +35,7 @@ const RightToolBar = () => {
 
   const items: MenuProps['items'] = LanguageList.map((x) => ({
     key: x,
-    label: <span>{t(camelCase(x))}</span>,
+    label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
   })).reduce<MenuProps['items']>((pre, cur) => {
     return [...pre!, { type: 'divider' }, cur];
   }, []);

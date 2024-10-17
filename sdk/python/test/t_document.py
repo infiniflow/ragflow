@@ -63,17 +63,13 @@ class TestDocument(TestSdk):
         # Check if the retrieved document is of type Document
         if isinstance(doc, Document):
             # Download the document content and save it to a file
-            try:
-                with open("ragflow.txt", "wb+") as file:
-                    file.write(doc.download())
-                    # Print the document object for debugging
-                print(doc)
+            with open("./ragflow.txt", "wb+") as file:
+                file.write(doc.download())
+                # Print the document object for debugging
+            print(doc)
 
-                # Assert that the download was successful
-                assert True, "Document downloaded successfully."
-            except Exception as e:
-                # If an error occurs, raise an assertion error
-                assert False, f"Failed to download document, error: {str(e)}"
+            # Assert that the download was successful
+            assert True, f"Failed to download document, error: {doc}"
         else:
             # If the document retrieval fails, assert failure
             assert False, f"Failed to get document, error: {doc}"
@@ -100,7 +96,7 @@ class TestDocument(TestSdk):
         blob2 = b"Sample document content for ingestion test222."
         list_1 = [{"name":name1,"blob":blob1},{"name":name2,"blob":blob2}]
         ds.upload_documents(list_1)
-        for d in ds.list_docs(keywords="test", offset=0, limit=12):
+        for d in ds.list_documents(keywords="test", offset=0, limit=12):
             assert isinstance(d, Document), "Failed to upload documents"
 
     def test_delete_documents_in_dataset_with_success(self):
@@ -123,16 +119,11 @@ class TestDocument(TestSdk):
         blob1 = b"Sample document content for ingestion test333."
         name2 = "Test Document444.txt"
         blob2 = b"Sample document content for ingestion test444."
-        name3 = 'test.txt'
-        path = 'test_data/test.txt'
-        rag.create_document(ds, name=name3, blob=open(path, "rb").read())
-        rag.create_document(ds, name=name1, blob=blob1)
-        rag.create_document(ds, name=name2, blob=blob2)
-        for d in ds.list_docs(keywords="document", offset=0, limit=12):
+        ds.upload_documents([{"name":name1,"blob":blob1},{"name":name2,"blob":blob2}])
+        for d in ds.list_documents(keywords="document", offset=0, limit=12):
             assert isinstance(d, Document)
-            d.delete()
-            print(d)
-        remaining_docs = ds.list_docs(keywords="rag", offset=0, limit=12)
+            ds.delete_documents([d.id])
+        remaining_docs = ds.list_documents(keywords="rag", offset=0, limit=12)
         assert len(remaining_docs) == 0, "Documents were not properly deleted."
 
     def test_parse_and_cancel_document(self):
@@ -144,16 +135,15 @@ class TestDocument(TestSdk):
 
         # Define the document name and path
         name3 = 'westworld.pdf'
-        path = 'test_data/westworld.pdf'
+        path = './test_data/westworld.pdf'
 
         # Create a document in the dataset using the file path
-        rag.create_document(ds, name=name3, blob=open(path, "rb").read())
+        ds.upload_documents({"name":name3, "blob":open(path, "rb").read()})
 
         # Retrieve the document by name
-        doc = rag.get_document(name="westworld.pdf")
-
-        # Initiate asynchronous parsing
-        doc.async_parse()
+        doc = rag.list_documents(name="westworld.pdf")
+        doc = doc[0]
+        ds.async_parse_documents(document_ids=[])
 
         # Print message to confirm asynchronous parsing has been initiated
         print("Async parsing initiated")

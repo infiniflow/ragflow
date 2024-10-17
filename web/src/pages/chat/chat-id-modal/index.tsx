@@ -1,13 +1,15 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { Modal } from 'antd';
-import ApiContent from './api-content';
+import { Modal, Typography } from 'antd';
 
-const ChatOverviewModal = ({
+import styles from './index.less';
+
+const { Paragraph } = Typography;
+
+const ChatIdModal = ({
   visible,
   hideModal,
   id,
-  idKey,
 }: IModalProps<any> & { id: string; name?: string; idKey: string }) => {
   const { t } = useTranslate('chat');
 
@@ -19,13 +21,14 @@ const ChatOverviewModal = ({
         onCancel={hideModal}
         cancelButtonProps={{ style: { display: 'none' } }}
         onOk={hideModal}
-        width={'100vw'}
         okText={t('close', { keyPrefix: 'common' })}
       >
-        <ApiContent id={id} idKey={idKey}></ApiContent>
+        <Paragraph copyable={{ text: id }} className={styles.id}>
+          {id}
+        </Paragraph>
       </Modal>
     </>
   );
 };
 
-export default ChatOverviewModal;
+export default ChatIdModal;

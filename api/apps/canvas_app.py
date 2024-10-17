@@ -18,8 +18,6 @@ from functools import partial
 from flask import request, Response
 from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
-from api.db.services.dialog_service import full_question
-from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
@@ -111,8 +109,9 @@ def run():
         if "message" in req:
             canvas.messages.append({"role": "user", "content": req["message"], "id": message_id})
             if len([m for m in canvas.messages if m["role"] == "user"]) > 1:
-                ten = TenantService.get_by_user_id(current_user.id)[0]
+                #ten = TenantService.get_info_by(current_user.id)[0]
                 #req["message"] = full_question(ten["tenant_id"], ten["llm_id"], canvas.messages)
+                pass
             canvas.add_user_input(req["message"])
         answer = canvas.run(stream=stream)
         print(canvas)

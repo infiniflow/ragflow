@@ -94,6 +94,10 @@ export default {
   // system
   getSystemVersion: `${api_host}/system/version`,
   getSystemStatus: `${api_host}/system/status`,
+  getSystemTokenList: `${api_host}/system/token_list`,
+  createSystemToken: `${api_host}/system/new_token`,
+  listSystemToken: `${api_host}/system/token_list`,
+  removeSystemToken: `${api_host}/system/token`,
 
   // flow
   listTemplates: `${api_host}/canvas/templates`,
