@@ -3,7 +3,7 @@
 **THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
 
 :::tip NOTE
-Knowledgebase APIs
+Knowledge Base Management
 :::
 
 ## Create knowledge base
@@ -232,38 +232,46 @@ Updates the current knowledge base.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.list_datasets(name="kb_1")
-ds.update({"embedding_model":"BAAI/bge-zh-v1.5", "parse_method":"manual"})
+dataset = rag.list_datasets(name="kb_1")
+dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "parse_method":"manual"})
 ```
+
 ---
 
 :::tip API GROUPING
-File management inside knowledge base
+File Management within Knowledge Base
 :::
 
-## Upload document
+## Upload documents
 
 ```python
 DataSet.upload_documents(document_list: list[dict])
 ```
 
+Updloads documents to the current knowledge base.
+
 ### Parameters
 
-#### document_list:`list[dict]`
-A list composed of dicts containing `name` and `blob`.
+#### document_list
 
+A list of dictionaries representing the documents to upload, each containing the following keys:
+
+- `"name"`: (Optional) File path to the document to upload.  
+  Ensure that each file path has a suffix.
+- `"blob"`: (Optional) The document to upload in binary format.
 
 ### Returns
-no return
+
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
-```python
-from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.create_dataset(name="kb_1")
-ds.upload_documents([{name="1.txt", blob="123"}, ...] }
+```python
+dataset = rag.create_dataset(name="kb_name")
+dataset.upload_documents([{name="1.txt", blob="123"}, ...])
 ```
+
 ---
 
 ## Update document
@@ -272,14 +280,18 @@ ds.upload_documents([{name="1.txt", blob="123"}, ...] }
 Document.update(update_message:dict)
 ```
 
+Updates configurations for the current document.
+
 ### Parameters
 
-#### update_message:`dict`  
-only `name`,`parser_config`,`parser_method` can be changed
+#### update_message: `dict`
+
+only `name`, `parser_config`, and `parser_method` can be changed
 
 ### Returns
 
-no return
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
@@ -287,11 +299,11 @@ no return
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds=rag.list_datasets(id='id')
-ds=ds[0]
-doc = ds.list_documents(id="wdfxb5t547d")
+dataset=rag.list_datasets(id='id')
+dataset=dataset[0]
+doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
-doc.update([{"parser_method": "manual"...}])
+doc.update([{"parser_method": "manual"}])
 ```
 
 ---
@@ -330,46 +342,49 @@ Dataset.list_documents(id:str =None, keywords: str=None, offset: int=0, limit:in
 
 ### Parameters
 
-#### id: `str`
+#### id
 
 The id of the document to be got
 
-#### keywords: `str`
+#### keywords
 
 List documents whose name has the given keywords. Defaults to `None`.
 
-#### offset: `int`
+#### offset
 
 The beginning number of records for paging. Defaults to `0`.
 
-#### limit: `int`
+#### limit
 
-Records number to return, -1 means all of them. Records number to return, -1 means all of them.
+Records number to return, `-1` means all of them. Records number to return, `-1` means all of them.
 
-#### orderby: `str`
+#### orderby
+
 The field by which the records should be sorted. This specifies the attribute or column used to order the results.
 
-#### desc:`bool`
+#### desc
+
 A boolean flag indicating whether the sorting should be in descending order.
+
 ### Returns
 
 list[Document]  
 
 A document object containing the following attributes:
 
-#### id: `str`
+#### id
 
 Id of the retrieved document. Defaults to `""`.
 
-#### thumbnail: `str`
+#### thumbnail
 
 Thumbnail image of the retrieved document. Defaults to `""`.
 
-#### knowledgebase_id: `str`
+#### knowledgebase_id
 
 Knowledge base ID related to the document. Defaults to `""`.
 
-#### parser_method: `str`
+#### parser_method
 
 Method used to parse the document. Defaults to `""`.
 
@@ -377,11 +392,11 @@ Method used to parse the document. Defaults to `""`.
 
 Configuration object for the parser. Defaults to `None`.
 
-#### source_type: `str`
+#### source_type
 
 Source type of the document. Defaults to `""`.
 
-#### type: `str`
+#### type
 
 Type or category of the document. Defaults to `""`.
 
@@ -389,9 +404,8 @@ Type or category of the document. Defaults to `""`.
 
 Creator of the document. Defaults to `""`.
 
-#### name: `str`
-string
-''
+#### name
+
 Name or title of the document. Defaults to `""`.
 
 #### size: `int`
@@ -428,13 +442,13 @@ Duration of the processing in seconds or minutes. Defaults to `0.0`.
 from ragflow import RAGFlow
 
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.create_dataset(name="kb_1")
+dataset = rag.create_dataset(name="kb_1")
 
 filename1 = "~/ragflow.txt"
 blob=open(filename1 , "rb").read()
 list_files=[{"name":filename1,"blob":blob}]
-ds.upload_documents(list_files)
-for d in ds.list_documents(keywords="rag", offset=0, limit=12):
+dataset.upload_documents(list_files)
+for d in dataset.list_documents(keywords="rag", offset=0, limit=12):
     print(d)
 ```
 
@@ -445,9 +459,11 @@ for d in ds.list_documents(keywords="rag", offset=0, limit=12):
 ```python
 DataSet.delete_documents(ids: list[str] = None)
 ```
+
 ### Returns
 
-no return
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
@@ -471,20 +487,22 @@ DataSet.async_cancel_parse_documents(document_ids:list[str])-> None
 
 ### Parameters
 
-#### document_ids:`list[str]`
+#### document_ids: `list[str]`
+
 The ids of the documents to be parsed
 ????????????????????????????????????????????????????
 
 ### Returns
-no return
-????????????????????????????????????????????????????
+
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
 ```python
 #documents parse and cancel
 rag = RAGFlow(API_KEY, HOST_ADDRESS)
-ds = rag.create_dataset(name="God5")
+ds = rag.create_dataset(name="dataset_name")
 documents = [
     {'name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
     {'name': 'test2.txt', 'blob': open('./test_data/test2.txt',"rb").read()},
@@ -501,10 +519,14 @@ ds.async_cancel_parse_documents(ids)
 print("Async bulk parsing cancelled")
 ```
 
+---
+
 ## List chunks
+
 ```python
 Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id : str = None) -> list[Chunk]
 ```
+
 ### Parameters
 
 - `keywords`: `str`  
@@ -522,6 +544,7 @@ Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id 
 - `id`: `str`  
   The ID of the chunk to be retrieved  
   default: `None`
+
 ### Returns
 list[chunk]
 
@@ -536,6 +559,7 @@ ds.async_parse_documents(["wdfxb5t547d"])
 for c in doc.list_chunks(keywords="rag", offset=0, limit=12):
     print(c)
 ```
+
 ## Add chunk
 
 ```python
@@ -545,8 +569,11 @@ Document.add_chunk(content:str) -> Chunk
 ### Parameters
 
 #### content: `str`, *Required*
+
 Contains the main text or information of the chunk.
+
 #### important_keywords :`list[str]`
+
 list the key terms or phrases that are significant or central to the chunk's content.
 
 ### Returns
@@ -574,12 +601,15 @@ chunk = doc.add_chunk(content="xxxxxxx")
 Document.delete_chunks(chunk_ids: list[str])
 ```
 ### Parameters
+
 #### chunk_ids:`list[str]`
+
 The list of chunk_id
 
 ### Returns
 
-no return
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
@@ -614,7 +644,8 @@ Chunk.update(update_message: dict)
 
 ### Returns
 
-no return
+- Success: No value is returned.
+- Failure: `Exception`
 
 ### Examples
 
@@ -711,7 +742,7 @@ for c in rag.retrieve(question="What's ragflow?",
 ---
 
 :::tip API GROUPING
-Chat APIs
+Chat Assistant Management
 :::
 
 ## Create chat assistant
@@ -1008,6 +1039,8 @@ session.update({"name": "updated_name"})
 Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
 ```
 
+Asks a question to start a conversation.
+
 ### Parameters
 
 #### question *Required*
@@ -1016,18 +1049,21 @@ The question to start an AI chat. Defaults to `None`.
 
 #### stream
 
-Indicates whether to output responses in a streaming way. Defaults to `False`.
+Indicates whether to output responses in a streaming way:
+
+- `True`: Enable streaming.
+- `False`: (Default) Disable streaming.
 
 ### Returns
 
-Optional[Message, iter[Message]]
+- A `Message` object containing the response to the question if `stream` is set to `False`
+- An iterator containing multiple `message` objects (`iter[Message]`) if `stream` is set to `True`
 
-- Message object, if `stream` is set to `False`
-- iter[Message] object, if `stream` is set to `True`
+The following shows the attributes of a `Message` object:
 
 #### id: `str`
 
-The ID of the message. `id` is automatically generated. 
+The auto-generated message ID.
 
 #### content: `str`
 
@@ -1035,28 +1071,29 @@ The content of the message. Defaults to `"Hi! I am your assistant, can I help yo
 
 #### reference: `list[Chunk]`
 
-The auto-generated reference of the message. Each `chunk` object includes the following attributes:
+A list of `Chunk` objects representing references to the message, each containing the following attributes:
 
 - **id**: `str`  
-  The id of the chunk. 
+  The chunk ID.
 - **content**: `str`  
-  The content of the chunk. 
-- **document_id**: `str`  
-  The ID of the document being referenced. 
-- **document_name**: `str`  
-  The name of the referenced document being referenced.
-- **knowledgebase_id**: `str`  
-  The id of the knowledge base to which the relevant document belongs.
+  The content of the chunk.
 - **image_id**: `str`  
-  The id of the image related to the chunk.
+  The ID of the snapshot of the chunk.
+- **document_id**: `str`  
+  The ID of the referenced document.
+- **document_name**: `str`  
+  The name of the referenced document.
+- **position**: `list[str]`  
+  The location information of the chunk within the referenced document.
+- **knowledgebase_id**: `str`  
+  The ID of the knowledge base to which the referenced document belongs.
 - **similarity**: `float`
-  A general similarity score, usually a composite score derived from various similarity measures . This score represents the degree of similarity between two objects. The value ranges between 0 and 1, where a value closer to 1 indicates higher similarity.
+  A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity.
 - **vector_similarity**: `float`  
-  A similarity score based on vector representations. This score is obtained by converting texts, words, or objects into vectors and then calculating the cosine similarity or other distance measures between these vectors to determine the similarity in vector space. A higher value indicates greater similarity in the vector space. 
+  A vector similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between vector embeddings.
 - **term_similarity**: `float`  
-  The similarity score based on terms or keywords. This score is calculated by comparing the similarity of key terms between texts or datasets, typically measuring how similar two words or phrases are in meaning or context. A higher value indicates a stronger similarity between terms.  
-- **position**: `list[string]`  
-  Indicates the position or index of keywords or specific terms within the text. An array is typically used to mark the location of keywords or specific elements, facilitating precise operations or analysis of the text.
+  A keyword similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between keywords.
+
 
 ### Examples
 
@@ -1066,7 +1103,7 @@ from ragflow import RAGFlow
 rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag.list_chats(name="Miss R")
 assistant = assistant[0]
-sess = assistant.create_session()    
+session = assistant.create_session()    
 
 print("\n==================== Miss R =====================\n")
 print(assistant.get_prologue())
@@ -1076,10 +1113,9 @@ while True:
     print("\n==================== Miss R =====================\n")
     
     cont = ""
-    for ans in sess.ask(question, stream=True):
-        print(ans.content[len(cont):], end='', flush=True)
-        cont = ans.content
-
+    for ans in session.ask(question, stream=True):
+        print(answer.content[len(cont):], end='', flush=True)
+        cont = answer.content
 ```
 
 ---
