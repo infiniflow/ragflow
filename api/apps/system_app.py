@@ -133,15 +133,9 @@ def token_list():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])
-@validate_request("tokens", "tenant_id")
+@manager.route('/token/<token>', methods=['DELETE'])
 @login_required
-def rm():
-    req = request.json
-    try:
-        for token in req["tokens"]:
-            APITokenService.filter_delete(
-                [APIToken.tenant_id == req["tenant_id"], APIToken.token == token])
-        return get_json_result(data=True)
-    except Exception as e:
-        return server_error_response(e)
+def rm(token):
+    APITokenService.filter_delete(
+                [APIToken.tenant_id == current_user.id, APIToken.token == token])
+    return get_json_result(data=True)

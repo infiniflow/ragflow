@@ -1,6 +1,6 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import RenameModal from '@/components/rename-modal';
-import { CloudOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, KeyOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -29,7 +29,6 @@ import {
   useSelectDerivedConversationList,
 } from './hooks';
 
-import ChatOverviewModal from '@/components/api-service/chat-overview-modal';
 import SvgIcon from '@/components/svg-icon';
 import {
   useClickConversationCard,
@@ -40,6 +39,7 @@ import {
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { IDialog } from '@/interfaces/database/chat';
+import ChatIdModal from './chat-id-modal';
 import styles from './index.less';
 
 const { Text } = Typography;
@@ -190,7 +190,7 @@ const Chat = () => {
         onClick: handleShowOverviewModal(dialog),
         label: (
           <Space>
-            <CloudOutlined />
+            <KeyOutlined />
             {t('overview')}
           </Space>
         ),
@@ -367,13 +367,13 @@ const Chat = () => {
         loading={conversationRenameLoading}
       ></RenameModal>
       {overviewVisible && (
-        <ChatOverviewModal
+        <ChatIdModal
           visible={overviewVisible}
           hideModal={hideOverviewModal}
           id={currentRecord.id}
           name={currentRecord.name}
           idKey="dialogId"
-        ></ChatOverviewModal>
+        ></ChatIdModal>
       )}
     </Flex>
   );
