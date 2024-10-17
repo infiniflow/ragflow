@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'umi';
 import { appName } from './src/conf.json';
 import routes from './src/routes';
@@ -5,7 +6,7 @@ import routes from './src/routes';
 export default defineConfig({
   title: appName,
   outputPath: 'dist',
-  // alias: { '@': './src' },
+  alias: { '@parent': path.resolve(__dirname, '../') },
   npmClient: 'npm',
   base: '/',
   routes,
@@ -25,9 +26,6 @@ export default defineConfig({
       hack: `true; @import "~@/less/index.less";`,
     },
   },
-  mdx: {
-    loader: 'remark-loader',
-  },
   devtool: 'source-map',
   copy: ['src/conf.json'],
   proxy: {
@@ -40,14 +38,7 @@ export default defineConfig({
     },
   },
   chainWebpack(memo, args) {
-    memo.module
-      .rule('markdown')
-      .test(/\.md$/)
-      .use('html-loader')
-      .loader('html-loader')
-      .end()
-      .use('remark-loader')
-      .loader('remark-loader');
+    memo.module.rule('markdown').test(/\.md$/).type('asset/source');
 
     return memo;
   },
