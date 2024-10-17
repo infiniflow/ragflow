@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'umi';
 import { appName } from './src/conf.json';
 import routes from './src/routes';
@@ -5,7 +6,7 @@ import routes from './src/routes';
 export default defineConfig({
   title: appName,
   outputPath: 'dist',
-  // alias: { '@': './src' },
+  alias: { root: path.resolve('../') },
   npmClient: 'npm',
   base: '/',
   routes,
