@@ -93,6 +93,12 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "qwen-long",
+                    "tags": "LLM,CHAT,10000K",
+                    "max_tokens": 1000000,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "qwen-turbo",
                     "tags": "LLM,CHAT,8K",
                     "max_tokens": 8191,
