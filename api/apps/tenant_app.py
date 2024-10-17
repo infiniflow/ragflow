@@ -31,7 +31,7 @@ def user_list(tenant_id):
     try:
         users = UserTenantService.get_by_tenant_id(tenant_id)
         for u in users:
-            u["delta_seconds"] = delta_seconds(u["update_date"])
+            u["delta_seconds"] = delta_seconds(str(u["update_date"]))
         return get_json_result(data=users)
     except Exception as e:
         return server_error_response(e)
@@ -82,7 +82,7 @@ def tenant_list():
     try:
         users = UserTenantService.get_tenants_by_user_id(current_user.id)
         for u in users:
-            u["delta_seconds"] = delta_seconds(u["update_date"])
+            u["delta_seconds"] = delta_seconds(str(u["update_date"]))
         return get_json_result(data=users)
     except Exception as e:
         return server_error_response(e)
