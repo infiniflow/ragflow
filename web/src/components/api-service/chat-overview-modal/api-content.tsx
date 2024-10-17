@@ -2,7 +2,7 @@ import HightLightMarkdown from '@/components/highlight-markdown';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { Button, Card, Flex, Space } from 'antd';
 // import apiDoc from '../../../../../api/http_api.md';
-import apiDoc from 'root/api/http_api.md';
+import apiDoc from '@parent/api/http_api.md';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import EmbedModal from '../embed-modal';
 import { usePreviewChat, useShowEmbedModal } from '../hooks';
