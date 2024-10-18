@@ -325,3 +325,16 @@ def get_error_data_result(retmsg='Sorry! Data missing!', retcode=RetCode.DATA_ER
 def generate_confirmation_token(tenent_id):
     serializer = URLSafeTimedSerializer(tenent_id)
     return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
+
+
+def valid(permission,valid_permission,language,valid_language,chunk_method,valid_chunk_method):
+    if valid_parameter(permission,valid_permission):
+        return valid_parameter(permission,valid_permission)
+    if valid_parameter(language,valid_language):
+        return valid_parameter(language,valid_language)
+    if valid_parameter(chunk_method,valid_chunk_method):
+        return valid_parameter(chunk_method,valid_chunk_method)
+
+def valid_parameter(parameter,valid_values):
+    if parameter and parameter not in valid_values:
+       return get_error_data_result(f"{parameter}  not in {valid_values}")

@@ -30,18 +30,17 @@ from api.utils.api_utils import get_result
 @token_required
 def create(tenant_id):
     req=request.json
-    if not req.get("knowledgebases"):
-        return get_error_data_result(retmsg="knowledgebases are required")
-    kb_list = []
-    for kb in req.get("knowledgebases"):
-        if not kb["id"]:
-            return get_error_data_result(retmsg="knowledgebase needs id")
-        if not KnowledgebaseService.query(id=kb["id"], tenant_id=tenant_id):
-            return get_error_data_result(retmsg="you do not own the knowledgebase")
-        # if not DocumentService.query(kb_id=kb["id"]):
-        #  return get_error_data_result(retmsg="There is a invalid knowledgebase")
-        kb_list.append(kb["id"])
-    req["kb_ids"] = kb_list
+    ids= req.get("knowledgebases")
+    if not ids:
+        return get_error_data_result(retmsg="`knowledgebases` is required")
+    for kb_id in ids:
+        kbs = KnowledgebaseService.query(id=kb_id,tenant_id=tenant_id)
+        if not kbs:
+            return get_error_data_result(f"You don't own the dataset {kb_id}")
+        kb=kbs[0]
+        if kb.chunk_num == 0:
+            return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+    req["kb_ids"] = ids
     # llm
     llm = req.get("llm")
     if llm:
@@ -81,24 +80,24 @@ def create(tenant_id):
     else:
         req["llm_id"] = tenant.llm_id
     if not req.get("name"):
-        return get_error_data_result(retmsg="name is required.")
+        return get_error_data_result(retmsg="`name` is required.")
     if DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(retmsg="Duplicated chat name in creating dataset.")
+        return get_error_data_result(retmsg="Duplicated chat name in creating chat.")
     # tenant_id
     if req.get("tenant_id"):
-        return get_error_data_result(retmsg="tenant_id must not be provided.")
+        return get_error_data_result(retmsg="`tenant_id` must not be provided.")
     req["tenant_id"] = tenant_id
     # prompt more parameter
     default_prompt = {
-        "system": """你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
-            以下是知识库：
-            {knowledge}
-            以上是知识库。""",
-        "prologue": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
+        "system": """You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
+      Here is the knowledge base:
+      {knowledge}
+      The above is the knowledge base.""",
+        "prologue": "Hi! I'm your assistant, what can I do for you?",
         "parameters": [
             {"key": "knowledge", "optional": False}
         ],
-        "empty_response": "Sorry! 知识库中未找到相关内容！"
+        "empty_response": "Sorry! No relevant content was found in the knowledge base!"
     }
     key_list_2 = ["system", "prologue", "parameters", "empty_response"]
     if "prompt_config" not in req:
@@ -149,7 +148,7 @@ def update(tenant_id,chat_id):
     req =request.json
     if "knowledgebases" in req:
         if not req.get("knowledgebases"):
-            return  get_error_data_result(retmsg="knowledgebases can't be empty value")
+            return  get_error_data_result(retmsg="`knowledgebases` can't be empty value")
         kb_list = []
         for kb in req.get("knowledgebases"):
             if not kb["id"]:
@@ -189,10 +188,10 @@ def update(tenant_id,chat_id):
     res = res.to_json()
     if "llm_id" in req:
         if not TenantLLMService.query(llm_name=req["llm_id"]):
-            return get_error_data_result(retmsg="the model_name does not exist.")
+            return get_error_data_result(retmsg="The `model_name` does not exist.")
     if "name" in req:
         if not req.get("name"):
-            return get_error_data_result(retmsg="name is not empty.")
+            return get_error_data_result(retmsg="`name` is not empty.")
         if req["name"].lower() != res["name"].lower() \
                 and len(
             DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
@@ -224,7 +223,7 @@ def delete(tenant_id):
     req = request.json
     ids = req.get("ids")
     if not ids:
-        return get_error_data_result(retmsg="ids are required")
+        return get_error_data_result(retmsg="`ids` are required")
     for id in ids:
         if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
             return get_error_data_result(retmsg=f"You don't own the chat {id}")
@@ -234,7 +233,7 @@ def delete(tenant_id):
 
 @manager.route('/chat', methods=['GET'])
 @token_required
-def list(tenant_id):
+def list_chat(tenant_id):
     id = request.args.get("id")
     name = request.args.get("name")
     chat = DialogService.query(id=id,name=name,status=StatusEnum.VALID.value)
