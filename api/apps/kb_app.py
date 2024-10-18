@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
@@ -23,14 +22,12 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from api.utils import get_uuid, get_format_time
-from api.db import StatusEnum, UserTenantRole, FileSource
+from api.utils import get_uuid
+from api.db import StatusEnum, FileSource
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.db_models import Knowledgebase, File
-from api.settings import stat_logger, RetCode
+from api.db.db_models import File
+from api.settings import RetCode
 from api.utils.api_utils import get_json_result
-from rag.nlp import search
-from rag.utils.es_conn import ELASTICSEARCH
 
 
 @manager.route('/create', methods=['post'])
@@ -65,6 +62,12 @@ def create():
 def update():
     req = request.json
     req["name"] = req["name"].strip()
+    if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
+        return get_json_result(
+            data=False,
+            retmsg='No authorization.',
+            retcode=RetCode.AUTHENTICATION_ERROR
+        )
     try:
         if not KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"]):
@@ -139,6 +142,12 @@ def list_kbs():
 @validate_request("kb_id")
 def rm():
     req = request.json
+    if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
+        return get_json_result(
+            data=False,
+            retmsg='No authorization.',
+            retcode=RetCode.AUTHENTICATION_ERROR
+        )
     try:
         kbs = KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"])
