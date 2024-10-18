@@ -24,16 +24,14 @@ from copy import deepcopy
 from datetime import datetime
 from io import BytesIO
 
-from elasticsearch_dsl import Q
 from peewee import fn
 
 from api.db.db_utils import bulk_insert_into_db
-from api.settings import stat_logger
+from api.settings import stat_logger, docStoreConn
 from api.utils import current_timestamp, get_format_time, get_uuid
 from api.utils.file_utils import get_project_base_directory
 from graphrag.mind_map_extractor import MindMapExtractor
 from rag.settings import SVR_QUEUE_NAME
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search, rag_tokenizer
 
@@ -138,8 +136,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+        docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id))
         cls.clear_chunk_num(doc.id)
         return cls.delete_by_id(doc.id)
 
@@ -317,7 +314,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_thumbnails(cls, docids):
-        fields = [cls.model.id, cls.model.thumbnail]
+        fields = [cls.model.id, cls.model.thumbnail, cls.model.kb_id]
         return list(cls.model.select(
             *fields).where(cls.model.id.in_(docids)).dicts())
 
@@ -421,7 +418,7 @@ class DocumentService(CommonService):
         try:
             _, doc = DocumentService.get_by_id(doc_id)
             return doc.run == TaskStatus.CANCEL.value or doc.progress < 0
-        except Exception as e:
+        except Exception:
             pass
         return False
 
@@ -463,8 +460,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         raise LookupError("Can't find this knowledgebase!")
 
     idxnm = search.index_name(kb.tenant_id)
-    if not ELASTICSEARCH.indexExist(idxnm):
-        ELASTICSEARCH.createIdx(idxnm, json.load(
+    if not docStoreConn.indexExist(idxnm):
+        docStoreConn.createIdx(idxnm, json.load(
             open(os.path.join(get_project_base_directory(), "conf", "mapping.json"), "r")))
 
     embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id, lang=kb.language)
@@ -574,7 +571,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             v = vects[i]
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
-            ELASTICSEARCH.bulk(cks[b:b + es_bulk_size], idxnm)
+            docStoreConn.upsertBulk(cks[b:b + es_bulk_size], idxnm)
 
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)
