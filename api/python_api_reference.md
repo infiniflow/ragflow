@@ -3,10 +3,10 @@
 **THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
 
 :::tip NOTE
-Knowledge Base Management
+Dataset Management
 :::
 
-## Create knowledge base
+## Create dataset
 
 ```python
 RAGFlow.create_dataset(
@@ -22,7 +22,7 @@ RAGFlow.create_dataset(
 ) -> DataSet
 ```
 
-Creates a knowledge base (dataset).
+Creates a dataset.
 
 ### Parameters
 
@@ -44,18 +44,18 @@ Base64 encoding of the avatar. Defaults to `""`
 
 #### description: `str`
 
-A brief description of the knowledge base to create. Defaults to `""`.
+A brief description of the dataset to create. Defaults to `""`.
 
 #### language: `str`
 
-The language setting of the knowledge base to create. Available options:
+The language setting of the dataset to create. Available options:
 
 - `"English"` (Default)
 - `"Chinese"`
 
 #### permission
 
-Specifies who can operate on the knowledge base. You can set it only to `"me"` for now.
+Specifies who can operate on the dataset. You can set it only to `"me"` for now.
 
 #### chunk_method, `str`
 
@@ -86,19 +86,19 @@ ds = rag_object.create_dataset(name="kb_1")
 
 ---
 
-## Delete knowledge bases
+## Delete datasets
 
 ```python
 RAGFlow.delete_datasets(ids: list[str] = None)
 ```
 
-Deletes knowledge bases by name or ID.
+Deletes datasets by name or ID.
 
 ### Parameters
 
 #### ids
 
-The IDs of the knowledge bases to delete.
+The IDs of the datasets to delete.
 
 ### Returns
 
@@ -113,7 +113,7 @@ rag.delete_datasets(ids=["id_1","id_2"])
 
 ---
 
-## List knowledge bases
+## List datasets
 
 ```python
 RAGFlow.list_datasets(
@@ -126,7 +126,7 @@ RAGFlow.list_datasets(
 ) -> list[DataSet]
 ```
 
-Retrieves a list of knowledge bases.
+Retrieves a list of datasets.
 
 ### Parameters
 
@@ -144,7 +144,7 @@ The field by which the records should be sorted. This specifies the attribute or
 
 #### desc: `bool`
 
-Indicates whether the retrieved knowledge bases should be sorted in descending order. Defaults to `True`.
+Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `True`.
 
 #### id: `str`
 
@@ -156,19 +156,19 @@ The name of the dataset to be got. Defaults to `None`.
 
 ### Returns
 
-- Success: A list of `DataSet` objects representing the retrieved knowledge bases.
+- Success: A list of `DataSet` objects representing the retrieved datasets.
 - Failure: `Exception`.
 
 ### Examples
 
-#### List all knowledge bases
+#### List all datasets
 
 ```python
 for ds in rag_object.list_datasets():
     print(ds)
 ```
 
-#### Retrieve a knowledge base by ID
+#### Retrieve a dataset by ID
 
 ```python
 dataset = rag_object.list_datasets(id = "id_1")
@@ -177,22 +177,22 @@ print(dataset[0])
 
 ---
 
-## Update knowledge base
+## Update dataset
 
 ```python
 DataSet.update(update_message: dict)
 ```
 
-Updates the current knowledge base.
+Updates the current dataset.
 
 ### Parameters
 
 #### update_message: `dict[str, str|int]`, *Required*
 
-- `"name"`: `str` The name of the knowledge base to update.
+- `"name"`: `str` The name of the dataset to update.
 - `"embedding_model"`: `str` The embedding model for generating vector embeddings.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
-- `"chunk_method"`: `str` The default parsing method for the knowledge base.
+- `"chunk_method"`: `str` The default parsing method for the dataset.
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -224,7 +224,7 @@ dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
 ---
 
 :::tip API GROUPING
-File Management within Knowledge Base
+File Management within Dataset
 :::
 
 ---
@@ -235,7 +235,7 @@ File Management within Knowledge Base
 DataSet.upload_documents(document_list: list[dict])
 ```
 
-Updloads documents to the current knowledge base.
+Uploads documents to the current dataset.
 
 ### Parameters
 
@@ -387,7 +387,7 @@ A `Document` object contains the following attributes:
 
 - `id` Id of the retrieved document. Defaults to `""`.
 - `thumbnail` Thumbnail image of the retrieved document. Defaults to `""`.
-- `knowledgebase_id` Knowledge base ID related to the document. Defaults to `""`.
+- `knowledgebase_id` Dataset ID related to the document. Defaults to `""`.
 - `chunk_method` Method used to parse the document. Defaults to `""`.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `None`.
 - `source_type`: Source type of the document. Defaults to `""`.
@@ -426,7 +426,7 @@ for d in dataset.list_documents(keywords="rag", offset=0, limit=12):
 DataSet.delete_documents(ids: list[str] = None)
 ```
 
-Deletes specified documents or all documents from the current knowledge base.
+Deletes specified documents or all documents from the current dataset.
 
 ### Returns
 
@@ -651,7 +651,7 @@ Updates the current chunk.
 
 - `"content"`: `str` Content of the chunk.
 - `"important_keywords"`: `list[str]` A list of key terms to attach to the chunk.
-- `"available"`: `int` The chunk's availability status in the knowledge base.
+- `"available"`: `int` The chunk's availability status in the dataset.
   - `0`: Unavailable
   - `1`: Available
 
@@ -690,7 +690,7 @@ The user query or query keywords. Defaults to `""`.
 
 #### datasets: `list[str]`, *Required*
 
-The knowledge bases to search from.
+The datasets to search from.
 
 #### document: `list[str]`
 
@@ -793,7 +793,7 @@ Base64 encoding of the avatar. Defaults to `""`.
 
 #### knowledgebases: `list[str]` 
 
-The IDs of the associated knowledge bases. Defaults to `[""]`.
+The IDs of the associated datasets. Defaults to `[""]`.
 
 #### llm
 
@@ -823,10 +823,10 @@ Instructions for the LLM to follow.  A `Prompt` object contains the following at
 - `"top_n"`: `int` Not all the chunks whose similarity score is above the 'similarity threshold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
 - `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
 - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
-- `"empty_response"`: `str` If nothing is retrieved in the knowledge base for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
+- `"empty_response"`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
 - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
 - `"show_quote`: `bool` Indicates whether the source of text should be displayed Defaults to `True`.
-- `"prompt"`: `str` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
+- `"prompt"`: `str` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
       {knowledge}
       The above is the knowledge base.`.
@@ -865,7 +865,7 @@ Updates the current chat assistant.
 
 - `"name"`: `str` The name of the chat assistant to update.
 - `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
-- `"knowledgebases"`: `list[str]` Knowledge bases to update.
+- `"knowledgebases"`: `list[str]` datasets to update.
 - `"llm"`: `dict` The LLM settings:
   - `"model_name"`, `str` The chat model name.
   - `"temperature"`, `float` Controls the randomness of the model's predictions.  
@@ -879,7 +879,7 @@ Updates the current chat assistant.
   - `"top_n"`: `int` Not all the chunks whose similarity score is above the 'similarity threshold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
   - `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
   - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
-  - `"empty_response"`: `str` If nothing is retrieved in the knowledge base for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
+  - `"empty_response"`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
   - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `bool` Indicates whether the source of text should be displayed Defaults to `True`.
   - `"prompt"`: `str` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
@@ -1117,7 +1117,7 @@ A list of `Chunk` objects representing references to the message, each containin
 - `position` `list[str]`  
   The location information of the chunk within the referenced document.
 - `knowledgebase_id` `str`  
-  The ID of the knowledge base to which the referenced document belongs.
+  The ID of the dataset to which the referenced document belongs.
 - `similarity` `float`
   A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity.
 - `vector_similarity` `float`  
