@@ -22,10 +22,10 @@ const BackendServiceApi = ({ show }: { show(): void }) => {
       <Flex gap={8} align="center">
         <b>{t('backendServiceApi')}</b>
         <Paragraph
-          copyable={{ text: `${location.origin}/v1/api/` }}
+          copyable={{ text: `${location.origin}/api/v1/` }}
           className={styles.apiLinkText}
         >
-          {location.origin}/v1/api/
+          {location.origin}/api/v1/
         </Paragraph>
       </Flex>
     </Card>
