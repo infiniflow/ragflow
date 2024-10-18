@@ -497,7 +497,7 @@ DataSet.async_cancel_parse_documents(document_ids:list[str])-> None
 
 #### document_ids: `list[str]`
 
-The IDs of the documents to parse.
+The IDs of the documents to stop parsing.
 
 ### Returns
 
