@@ -422,17 +422,21 @@ export const useUploadAndParseDocument = (uploadMethod: string) => {
       conversationId: string;
       fileList: UploadFile[];
     }) => {
-      const formData = new FormData();
-      formData.append('conversation_id', conversationId);
-      fileList.forEach((file: UploadFile) => {
-        formData.append('file', file as any);
-      });
-      if (uploadMethod === 'upload_and_parse') {
-        const data = await kbService.upload_and_parse(formData);
+      try {
+        const formData = new FormData();
+        formData.append('conversation_id', conversationId);
+        fileList.forEach((file: UploadFile) => {
+          formData.append('file', file as any);
+        });
+        if (uploadMethod === 'upload_and_parse') {
+          const data = await kbService.upload_and_parse(formData);
+          return data?.data;
+        }
+        const data = await chatService.uploadAndParseExternal(formData);
         return data?.data;
+      } catch (error) {
+        console.log('🚀 ~ useUploadAndParseDocument ~ error:', error);
       }
-      const data = await chatService.uploadAndParseExternal(formData);
-      return data?.data;
     },
   });
 
