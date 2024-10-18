@@ -88,20 +88,20 @@ def upload(dataset_id, tenant_id):
 def update_doc(tenant_id, dataset_id, document_id):
     req = request.json
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(retmsg='You do not own the dataset.')
+        return get_error_data_result(retmsg="You don't own the dataset.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
-        return get_error_data_result(retmsg='The dataset not own the document.')
+        return get_error_data_result(retmsg="The dataset doesn't own the document.")
     doc = doc[0]
     if "chunk_count" in req:
         if req["chunk_count"] != doc.chunk_num:
-            return get_error_data_result(retmsg="Can't change chunk_count.")
+            return get_error_data_result(retmsg="Can't change `chunk_count`.")
     if "token_count" in req:
         if req["token_count"] != doc.token_num:
-            return get_error_data_result(retmsg="Can't change token_count.")
+            return get_error_data_result(retmsg="Can't change `token_count`.")
     if "progress" in req:
         if req['progress'] != doc.progress:
-            return get_error_data_result(retmsg="Can't change progress.")
+            return get_error_data_result(retmsg="Can't change `progress`.")
 
     if "name" in req and req["name"] != doc.name:
         if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
@@ -121,8 +121,8 @@ def update_doc(tenant_id, dataset_id, document_id):
             FileService.update_by_id(file.id, {"name": req["name"]})
     if "parser_config" in req:
         DocumentService.update_parser_config(doc.id, req["parser_config"])
-    if "parser_method" in req:
-        if doc.parser_id.lower() == req["parser_method"].lower():
+    if "chunk_method" in req:
+        if doc.parser_id.lower() == req["chunk_method"].lower():
                 return get_result()
 
         if doc.type == FileType.VISUAL or re.search(
@@ -130,7 +130,7 @@ def update_doc(tenant_id, dataset_id, document_id):
             return get_error_data_result(retmsg="Not supported yet!")
 
         e = DocumentService.update_by_id(doc.id,
-                                         {"parser_id": req["parser_method"], "progress": 0, "progress_msg": "",
+                                         {"parser_id": req["chunk_method"], "progress": 0, "progress_msg": "",
                                           "run": TaskStatus.UNSTART.value})
         if not e:
             return get_error_data_result(retmsg="Document not found!")
@@ -196,7 +196,7 @@ def list_docs(dataset_id, tenant_id):
             "chunk_num": "chunk_count",
             "kb_id": "knowledgebase_id",
             "token_num": "token_count",
-            "parser_id": "parser_method"
+            "parser_id": "chunk_method"
         }
         renamed_doc = {}
         for key, value in doc.items():
@@ -213,7 +213,7 @@ def delete(tenant_id,dataset_id):
         return get_error_data_result(retmsg=f"You don't own the dataset {dataset_id}. ")
     req = request.json
     if not req.get("ids"):
-        return get_error_data_result(retmsg="ids is required")
+        return get_error_data_result(retmsg="`ids` is required")
     doc_ids = req["ids"]
     root_folder = FileService.get_root_folder(tenant_id)
     pf_id = root_folder["id"]
@@ -457,7 +457,7 @@ def rm_chunk(tenant_id,dataset_id,document_id):
 
 @manager.route('/dataset/<dataset_id>/document/<document_id>/chunk/<chunk_id>', methods=['PUT'])
 @token_required
-def set(tenant_id,dataset_id,document_id,chunk_id):
+def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
     try:
         res = ELASTICSEARCH.get(
         chunk_id, search.index_name(
@@ -519,9 +519,15 @@ def retrieval_test(tenant_id):
     req = request.json
     if not req.get("datasets"):
         return get_error_data_result("`datasets` is required.")
-    kb_id = req["datasets"]
-    if isinstance(kb_id, str): kb_id = [kb_id]
-    for id in kb_id:
+    kb_ids = req["datasets"]
+    kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    embd_nms = list(set([kb.embd_id for kb in kbs]))
+    if len(embd_nms) != 1:
+        return get_result(
+            retmsg='Knowledge bases use different embedding models or does not exist."',
+            retcode=RetCode.AUTHENTICATION_ERROR)
+    if isinstance(kb_ids, str): kb_ids = [kb_ids]
+    for id in kb_ids:
         if not KnowledgebaseService.query(id=id,tenant_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     if "question" not in req:
@@ -538,7 +544,7 @@ def retrieval_test(tenant_id):
     else:
         highlight = True
     try:
-        e, kb = KnowledgebaseService.get_by_id(kb_id[0])
+        e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(retmsg="Knowledgebase not found!")
         embd_mdl = TenantLLMService.model_instance(
@@ -554,7 +560,7 @@ def retrieval_test(tenant_id):
             question += keyword_extraction(chat_mdl, question)
 
         retr = retrievaler if kb.parser_id != ParserType.KG else kg_retrievaler
-        ranks = retr.retrieval(question, embd_mdl, kb.tenant_id, kb_id, page, size,
+        ranks = retr.retrieval(question, embd_mdl, kb.tenant_id, kb_ids, page, size,
                                similarity_threshold, vector_similarity_weight, top,
                                doc_ids, rerank_mdl=rerank_mdl, highlight=highlight)
         for c in ranks["chunks"]:
@@ -580,6 +586,6 @@ def retrieval_test(tenant_id):
         return get_result(data=ranks)
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return get_result(retmsg=f'No chunk found! Check the chunk statu    s please!',
+            return get_result(retmsg=f'No chunk found! Check the chunk status please!',
                                    retcode=RetCode.DATA_ERROR)
         return server_error_response(e)

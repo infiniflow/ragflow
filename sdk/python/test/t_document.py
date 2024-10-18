@@ -35,7 +35,7 @@ class TestDocument(TestSdk):
     def test_update_document_with_success(self):
         """
         Test updating a document with success.
-        Update name or parser_method are supported
+        Update name or chunk_method are supported
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         ds = rag.list_datasets(name="God")
@@ -43,7 +43,7 @@ class TestDocument(TestSdk):
         doc = ds.list_documents()
         doc = doc[0]
         if isinstance(doc, Document):
-            res = doc.update({"parser_method":"manual","name":"manual.txt"})
+            res = doc.update({"chunk_method":"manual","name":"manual.txt"})
             assert res is None, f"Failed to update document, error: {res}"
         else:
             assert False, f"Failed to get document, error: {doc}"

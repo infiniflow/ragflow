@@ -39,7 +39,7 @@ def create(tenant_id,chat_id):
         "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
     }
     if not conv.get("name"):
-        return get_error_data_result(retmsg="Name can not be empty.")
+        return get_error_data_result(retmsg="`name` can not be empty.")
     ConversationService.save(**conv)
     e, conv = ConversationService.get_by_id(conv["id"])
     if not e:
@@ -62,11 +62,11 @@ def update(tenant_id,chat_id,session_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(retmsg="You do not own the session")
     if "message" in req or "messages" in req:
-        return get_error_data_result(retmsg="Message can not be change")
+        return get_error_data_result(retmsg="`message` can not be change")
     if "reference" in req:
-        return get_error_data_result(retmsg="Reference can not be change")
+        return get_error_data_result(retmsg="`reference` can not be change")
     if "name" in req and not req.get("name"):
-        return get_error_data_result(retmsg="Name can not be empty.")
+        return get_error_data_result(retmsg="`name` can not be empty.")
     if not ConversationService.update_by_id(conv_id, req):
         return get_error_data_result(retmsg="Session updates error")
     return get_result()
@@ -87,7 +87,7 @@ def completion(tenant_id,chat_id):
             "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
         }
         if not conv.get("name"):
-            return get_error_data_result(retmsg="Name can not be empty.")
+            return get_error_data_result(retmsg="`name` can not be empty.")
         ConversationService.save(**conv)
         e, conv = ConversationService.get_by_id(conv["id"])
         session_id=conv.id

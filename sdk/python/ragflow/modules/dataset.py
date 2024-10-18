@@ -27,7 +27,7 @@ class DataSet(Base):
         self.permission = "me"
         self.document_count = 0
         self.chunk_count = 0
-        self.parse_method = "naive"
+        self.chunk_method = "naive"
         self.parser_config = None
         for k in list(res_dict.keys()):
             if k not in self.__dict__:
