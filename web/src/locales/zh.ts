@@ -28,6 +28,7 @@ export default {
       preview: '预览',
       move: '移动',
       warn: '提醒',
+      action: '操作',
     },
     login: {
       login: '登录',
@@ -559,6 +560,14 @@ export default {
         '请首先在 <b>设置 > 模型提供商</b> 中添加嵌入模型和 LLM。',
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
+      add: '添加',
+      updateDate: '更新日期',
+      role: '角色',
+      invite: '邀请',
+      agree: '同意',
+      refuse: '拒绝',
+      teamMembers: '团队成员',
+      joinedTeams: '加入的团队',
     },
     message: {
       registered: '注册成功',

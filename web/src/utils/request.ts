@@ -135,3 +135,15 @@ request.interceptors.response.use(async (response: any, options) => {
 });
 
 export default request;
+
+export const get = (url: string) => {
+  return request.get(url);
+};
+
+export const post = (url: string, body: any) => {
+  return request.post(url, { data: body });
+};
+
+export const drop = () => {};
+
+export const put = () => {};

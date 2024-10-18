@@ -12,6 +12,15 @@ export default {
   tenant_info: `${api_host}/user/tenant_info`,
   set_tenant_info: `${api_host}/user/set_tenant_info`,
 
+  // team
+  addTenantUser: (tenantId: string) => `${api_host}/tenant/${tenantId}/user`,
+  listTenantUser: (tenantId: string) =>
+    `${api_host}/tenant/${tenantId}/user/list`,
+  deleteTenantUser: (tenantId: string, userId: string) =>
+    `${api_host}/tenant/${tenantId}/user/${userId}`,
+  listTenant: `${api_host}/tenant/list`,
+  agreeTenant: (tenantId: string) => `${api_host}/tenant/agree/${tenantId}`,
+
   // llm model
   factories_list: `${api_host}/llm/factories`,
   llm_list: `${api_host}/llm/list`,
