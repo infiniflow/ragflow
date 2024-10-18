@@ -37,7 +37,7 @@ Creates a dataset.
 # "name": name is required and can't be duplicated.
 # "tenant_id": tenant_id must not be provided.
 # "embedding_model": embedding_model must not be provided.
-# "navie" means general.
+# "naive" means general.
 curl --request POST \
   --url http://{address}/api/v1/dataset \
   --header 'Content-Type: application/json' \
@@ -236,7 +236,7 @@ Updates a dataset by its id.
 # "chunk_count": If you update chunk_count, it can't be changed.
 # "document_count": If you update document_count, it can't be changed.
 # "parse_method": If you update parse_method, chunk_count must be 0. 
-# "navie" means general.
+# "naive" means general.
 curl --request PUT \
   --url http://{address}/api/v1/dataset/{dataset_id} \
   --header 'Content-Type: application/json' \
@@ -247,7 +247,7 @@ curl --request PUT \
   "embedding_model": "BAAI/bge-zh-v1.5",
   "chunk_count": 0,
   "document_count": 0,
-  "parse_method": "navie"
+  "parse_method": "naive"
 }'
 ```
 

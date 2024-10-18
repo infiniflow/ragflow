@@ -244,7 +244,6 @@ Uploads documents to the current dataset.
 A list of dictionaries representing the documents to upload, each containing the following keys:
 
 - `"display_name"`: (Optional) The file name to display in the dataset.  
-  Ensure that each file name has a suffix.
 - `"blob"`: (Optional) The binary content of the file to upload.
 
 ### Returns
@@ -256,7 +255,7 @@ A list of dictionaries representing the documents to upload, each containing the
 
 ```python
 dataset = rag_object.create_dataset(name="kb_name")
-dataset.upload_documents([{"display_name": "1.txt", "blob": "blob_1"}, {"display_name": "2.pdf", "blog": "blob_2"}])
+dataset.upload_documents([{"display_name": "1.txt", "blob": "<BINARY_CONTENT_OF_THE_DOC>"}, {"display_name": "2.pdf", "blob": "<BINARY_CONTENT_OF_THE_DOC>"}])
 ```
 
 ---
@@ -289,7 +288,7 @@ Updates configurations for the current document.
   - `"laws"`: Laws
   - `"presentation"`: Presentation
   - `"picture"`: Picture
-  - `"one"`:One
+  - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
   - `"email"`: Email
 
@@ -323,7 +322,7 @@ Downloads the current document from RAGFlow.
 
 ### Returns
 
-The downloaded document in Bytes.
+The downloaded document in bytes.
 
 ### Examples
 
@@ -357,7 +356,7 @@ The ID of the document to retrieve. Defaults to `None`.
 
 #### keywords
 
-The keywords. Defaults to `None`.
+The keywords to match document titles. Defaults to `None`.
 
 #### offset
 
