@@ -260,7 +260,8 @@ def setting_user():
             update_dict["password"] = generate_password_hash(decrypt(new_password))
 
     for k in request_data.keys():
-        if k in ["password", "new_password"]:
+        if k in ["password", "new_password", "email", "status", "is_superuser", "login_channel", "is_anonymous",
+                 "is_active", "is_authenticated", "last_login_time"]:
             continue
         update_dict[k] = request_data[k]
 

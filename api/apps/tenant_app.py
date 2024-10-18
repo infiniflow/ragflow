@@ -60,7 +60,7 @@ def create(tenant_id):
         role=UserTenantRole.INVITE,
         status=StatusEnum.VALID.value)
 
-    usr = list(usrs.dicts())[0]
+    usr = usrs[0].to_dict()
     usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
 
     return get_json_result(data=usr)
@@ -88,7 +88,7 @@ def tenant_list():
         return server_error_response(e)
 
 
-@manager.route("/agree/<tenant_id>", methods=["GET"])
+@manager.route("/agree/<tenant_id>", methods=["PUT"])
 @login_required
 def agree(tenant_id):
     try:
