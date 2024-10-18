@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 from api.db import StatusEnum, TenantPermission
-from api.db.db_models import Knowledgebase, DB, Tenant, User
+from api.db.db_models import Knowledgebase, DB, Tenant, User, UserTenant
 from api.db.services.common_service import CommonService
 
 
@@ -182,3 +182,25 @@ class KnowledgebaseService(CommonService):
         kbs = kbs.paginate(page_number, items_per_page)
 
         return list(kbs.dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def accessible(cls, kb_id, user_id):
+        docs = cls.model.select(
+            cls.model.id).join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
+            ).where(cls.model.id == kb_id, UserTenant.user_id == user_id).paginate(0, 1)
+        docs = docs.dicts()
+        if not docs:
+            return False
+        return True
+
+    @classmethod
+    @DB.connection_context()
+    def accessible4deletion(cls, kb_id, user_id):
+        docs = cls.model.select(
+            cls.model.id).where(cls.model.id == kb_id, cls.model.created_by == user_id).paginate(0, 1)
+        docs = docs.dicts()
+        if not docs:
+            return False
+        return True
+
