@@ -209,9 +209,17 @@ def list_docs():
 
 
 @manager.route('/infos', methods=['POST'])
+@login_required
 def docinfos():
     req = request.json
     doc_ids = req["doc_ids"]
+    for doc_id in doc_ids:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_json_result(
+                data=False,
+                retmsg='No authorization.',
+                retcode=RetCode.AUTHENTICATION_ERROR
+            )
     docs = DocumentService.get_by_ids(doc_ids)
     return get_json_result(data=list(docs.dicts()))
 
@@ -242,10 +250,16 @@ def thumbnails():
 def change_status():
     req = request.json
     if str(req["status"]) not in ["0", "1"]:
-        get_json_result(
+        return get_json_result(
             data=False,
             retmsg='"Status" must be either 0 or 1!',
             retcode=RetCode.ARGUMENT_ERROR)
+
+    if not DocumentService.accessible(req["doc_id"], current_user.id):
+        return get_json_result(
+            data=False,
+            retmsg='No authorization.',
+            retcode=RetCode.AUTHENTICATION_ERROR)
 
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
@@ -285,6 +299,15 @@ def rm():
     req = request.json
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str): doc_ids = [doc_ids]
+
+    for doc_id in doc_ids:
+        if not DocumentService.accessible4deletion(doc_id, current_user.id):
+            return get_json_result(
+                data=False,
+                retmsg='No authorization.',
+                retcode=RetCode.AUTHENTICATION_ERROR
+            )
+
     root_folder = FileService.get_root_folder(current_user.id)
     pf_id = root_folder["id"]
     FileService.init_knowledgebase_docs(pf_id, current_user.id)
@@ -323,6 +346,13 @@ def rm():
 @validate_request("doc_ids", "run")
 def run():
     req = request.json
+    for doc_id in req["doc_ids"]:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_json_result(
+                data=False,
+                retmsg='No authorization.',
+                retcode=RetCode.AUTHENTICATION_ERROR
+            )
     try:
         for id in req["doc_ids"]:
             info = {"run": str(req["run"]), "progress": 0}
@@ -356,6 +386,12 @@ def run():
 @validate_request("doc_id", "name")
 def rename():
     req = request.json
+    if not DocumentService.accessible(req["doc_id"], current_user.id):
+        return get_json_result(
+            data=False,
+            retmsg='No authorization.',
+            retcode=RetCode.AUTHENTICATION_ERROR
+        )
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
@@ -416,6 +452,13 @@ def get(doc_id):
 @validate_request("doc_id", "parser_id")
 def change_parser():
     req = request.json
+
+    if not DocumentService.accessible(req["doc_id"], current_user.id):
+        return get_json_result(
+            data=False,
+            retmsg='No authorization.',
+            retcode=RetCode.AUTHENTICATION_ERROR
+        )
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:

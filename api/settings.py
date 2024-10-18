@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+from datetime import date
 from enum import IntEnum, Enum
 from api.utils.file_utils import get_project_base_directory
 from api.utils.log_utils import LoggerFactory, getLogger
@@ -143,9 +144,8 @@ HTTP_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
 
 SECRET_KEY = get_base_config(
     RAG_FLOW_SERVICE_NAME,
-    {}).get(
-        "secret_key",
-    "infiniflow")
+    {}).get("secret_key", str(date.today()))
+
 TOKEN_EXPIRE_IN = get_base_config(
     RAG_FLOW_SERVICE_NAME, {}).get(
         "token_expires_in", 3600)
