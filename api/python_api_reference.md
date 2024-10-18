@@ -243,7 +243,7 @@ Uploads documents to the current dataset.
 
 A list of dictionaries representing the documents to upload, each containing the following keys:
 
-- `"display_name"`: (Optional) The file name to display in the knowlege base.  
+- `"display_name"`: (Optional) The file name to display in the dataset.  
   Ensure that each file name has a suffix.
 - `"blob"`: (Optional) The binary content of the file to upload.
 
@@ -347,7 +347,7 @@ print(doc)
 Dataset.list_documents(id:str =None, keywords: str=None, offset: int=0, limit:int = 1024,order_by:str = "create_time", desc: bool = True) -> list[Document]
 ```
 
-Retrieves a list of documents from the current knowlege base.
+Retrieves a list of documents from the current dataset.
 
 ### Parameters
 
