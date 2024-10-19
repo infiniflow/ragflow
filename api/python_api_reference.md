@@ -538,7 +538,7 @@ The IDs of the documents for which parsing should be stopped. See `Document.id`.
 ### Examples
 
 ```python
-rag_object = RAGFlow(API_KEY, HOST_ADDRESS)
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.create_dataset(name="dataset_name")
 documents = [
     {'name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
