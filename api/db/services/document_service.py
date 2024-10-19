@@ -38,7 +38,7 @@ from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search, rag_tokenizer
 
 from api.db import FileType, TaskStatus, ParserType, LLMType
-from api.db.db_models import DB, Knowledgebase, Tenant, Task
+from api.db.db_models import DB, Knowledgebase, Tenant, Task, UserTenant
 from api.db.db_models import Document
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -262,6 +262,33 @@ class DocumentService(CommonService):
         if not docs:
             return
         return docs[0]["tenant_id"]
+
+    @classmethod
+    @DB.connection_context()
+    def accessible(cls, doc_id, user_id):
+        docs = cls.model.select(
+            cls.model.id).join(
+            Knowledgebase, on=(
+                    Knowledgebase.id == cls.model.kb_id)
+            ).join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
+            ).where(cls.model.id == doc_id, UserTenant.user_id == user_id).paginate(0, 1)
+        docs = docs.dicts()
+        if not docs:
+            return False
+        return True
+
+    @classmethod
+    @DB.connection_context()
+    def accessible4deletion(cls, doc_id, user_id):
+        docs = cls.model.select(
+            cls.model.id).join(
+            Knowledgebase, on=(
+                    Knowledgebase.id == cls.model.kb_id)
+            ).where(cls.model.id == doc_id, Knowledgebase.created_by == user_id).paginate(0, 1)
+        docs = docs.dicts()
+        if not docs:
+            return False
+        return True
 
     @classmethod
     @DB.connection_context()

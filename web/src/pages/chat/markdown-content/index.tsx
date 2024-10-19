@@ -118,7 +118,11 @@ const MarkdownContent = ({
             {documentId && (
               <Flex gap={'small'}>
                 {fileThumbnail ? (
-                  <img src={fileThumbnail} alt="" />
+                  <img
+                    src={fileThumbnail}
+                    alt=""
+                    className={styles.fileThumbnail}
+                  />
                 ) : (
                   <SvgIcon
                     name={`file-icon/${fileExtension}`}

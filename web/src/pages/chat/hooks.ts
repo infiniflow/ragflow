@@ -582,14 +582,18 @@ export const useSendButtonDisabled = (value: string) => {
 export const useCreateConversationBeforeUploadDocument = () => {
   const { setConversation } = useSetConversation();
   const { dialogId } = useGetChatSearchParams();
+  const { getConversationIsNew } = useSetChatRouteParams();
 
   const createConversationBeforeUploadDocument = useCallback(
     async (message: string) => {
-      const data = await setConversation(message, true);
+      const isNew = getConversationIsNew();
+      if (isNew === 'true') {
+        const data = await setConversation(message, true);
 
-      return data;
+        return data;
+      }
     },
-    [setConversation],
+    [setConversation, getConversationIsNew],
   );
 
   return {
