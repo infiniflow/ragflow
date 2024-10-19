@@ -59,13 +59,13 @@ The language setting of the dataset to create. Available options:
 
 #### permission
 
-Specifies who can operate on the dataset to create. You can set it only to `"me"` for now.
+Specifies who can access the dataset to create. You can set it only to `"me"` for now.
 
 #### chunk_method, `str`
 
-The default parsing method of the dataset to create. Available options:
+The chunking method of the dataset to create. Available options:
 
-- `"naive"`: General
+- `"naive"`: General (default)
 - `"manual`: Manual
 - `"qa"`: Q&A
 - `"table"`: Table
@@ -80,7 +80,7 @@ The default parsing method of the dataset to create. Available options:
 
 #### parser_config
 
-The default parser configuration of the dataset. A `ParserConfig` object contains the following attributes:
+The parser configuration of the dataset. A `ParserConfig` object contains the following attributes:
 
 - `chunk_token_count`: Defaults to `128`.
 - `layout_recognize`: Defaults to `True`.
@@ -116,8 +116,6 @@ Deletes specified datasets or all datasets in the system.
 #### ids: `list[str]`
 
 The IDs of the datasets to delete. Defaults to `None`. If not specified, all datasets in the system will be deleted.
-
-See `DataSet.id`.
 
 ### Returns
 
@@ -211,12 +209,12 @@ Updates configurations for the current dataset.
 
 #### update_message: `dict[str, str|int]`, *Required*
 
-A dictionary representing the attributes to update, with the following three keys:
+A dictionary representing the attributes to update, with the following keys:
 
 - `"name"`: `str` The name of the dataset to update.
-- `"embedding_model"`: `str` The default embedding model name to update.
+- `"embedding_model"`: `str` The embedding model name to update.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
-- `"chunk_method"`: `str` The default parsing method for the dataset. Available options:
+- `"chunk_method"`: `str` The chunking method for the dataset. Available options:
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -296,7 +294,7 @@ Updates configurations for the current document.
 
 #### update_message: `dict[str, str|dict[]]`, *Required*
 
-A dictionary representing the attributes to update, with the following three keys:
+A dictionary representing the attributes to update, with the following keys:
 
 - `"name"`: `str` The name of the document to update.
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document:
@@ -452,15 +450,13 @@ for doc in dataset.list_documents(keywords="rag", offset=0, limit=12):
 DataSet.delete_documents(ids: list[str] = None)
 ```
 
-Deletes specified documents or all documents from the current dataset.
+Deletes documents by ID.
 
 ### Parameters
 
 #### ids: `list[list]`
 
-The IDs of the documents to delete. Defaults to `None`. If not specified, all documents in the dataset will be deleted. 
-
-See `Document.id`.
+The IDs of the documents to delete. Defaults to `None`. If not specified, all documents in the dataset will be deleted.
 
 ### Returns
 
@@ -490,7 +486,7 @@ DataSet.async_parse_documents(document_ids:list[str]) -> None
 
 #### document_ids: `list[str]`, *Required*
 
-The IDs of the documents to parse. See `Document.id`.
+The IDs of the documents to parse.
 
 ### Returns
 
@@ -528,7 +524,7 @@ DataSet.async_cancel_parse_documents(document_ids:list[str])-> None
 
 #### document_ids: `list[str]`, *Required*
 
-The IDs of the documents for which parsing should be stopped. See `Document.id`.
+The IDs of the documents for which parsing should be stopped.
 
 ### Returns
 
@@ -643,7 +639,7 @@ chunk = doc.add_chunk(content="xxxxxxx")
 Document.delete_chunks(chunk_ids: list[str])
 ```
 
-Deletes specified chunks or all chunks of the current document.
+Deletes chunks by ID.
 
 ### Parameters
 
@@ -684,7 +680,7 @@ Updates content or configurations for the current chunk.
 
 #### update_message: `dict[str, str|list[str]|int]` *Required*
 
-A dictionary representing the attributes to update, with the following three keys:
+A dictionary representing the attributes to update, with the following keys:
 
 - `"content"`: `str` Content of the chunk.
 - `"important_keywords"`: `list[str]` A list of key terms to attach to the chunk.
@@ -952,7 +948,7 @@ assistant.update({"name": "Stefan", "llm": {"temperature": 0.8}, "prompt": {"top
 RAGFlow.delete_chats(ids: list[str] = None)
 ```
 
-Deletes specified chat assistants or all chat assistants in the system.
+Deletes chat assistants by ID.
 
 ### Parameters
 
@@ -1074,7 +1070,7 @@ assistant = assistant[0]
 session = assistant.create_session()
 ```
 
-## Update session name
+## Update session
 
 ```python
 Session.update(update_message: dict)
@@ -1265,7 +1261,7 @@ for session in assistant.list_sessions():
 Chat.delete_sessions(ids:list[str] = None)
 ```
 
-Deletes specified sessions or all sessions associated with the current chat assistant.
+Deletes sessions by ID.
 
 ### Parameters
 
