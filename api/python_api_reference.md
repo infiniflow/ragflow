@@ -902,7 +902,7 @@ Updates configurations for the current chat assistant.
 
 #### update_message: `dict[str, str|list[str]|dict[]]`, *Required*
 
-A dictionary representing the attributes to update, with the following three keys:
+A dictionary representing the attributes to update, with the following keys:
 
 - `"name"`: `str` The name of the chat assistant to update.
 - `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
