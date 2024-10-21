@@ -328,12 +328,14 @@ def knowledge_graph():
                 def repeat_deal(content_json, node_dict):
                     if 'id' in content_json:
                         if content_json['id'] in node_dict:
+                            node_name = content_json['id']
                             content_json['id'] += f"({node_dict[content_json['id']]})"
-                            node_dict[content_json['id']] += 1
+                            node_dict[node_name] += 1
                         else:
                             node_dict[content_json['id']] = 1
                     if 'children' in content_json and content_json['children']:
-                        repeat_deal(content_json['children'], node_dict)
+                        for item in content_json['children']:
+                            repeat_deal(item, node_dict)
 
                 repeat_deal(content_json, node_dict)
                 pass
