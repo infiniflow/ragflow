@@ -33,7 +33,8 @@ access_logger = getLogger("access")
 database_logger = getLogger("database")
 chat_logger = getLogger("chat")
 
-from rag.utils.es_conn import ELASTICSEARCH
+from rag.utils.es_conn import ESConnection
+#from rag.utils.infinity_conn import InfinityConnection
 from rag.nlp import search
 from graphrag import search as kg_search
 from api.utils import get_base_config, decrypt_database_config
@@ -205,8 +206,9 @@ AUTHENTICATION_DEFAULT_TIMEOUT = 7 * 24 * 60 * 60  # s
 PRIVILEGE_COMMAND_WHITELIST = []
 CHECK_NODES_IDENTITY = False
 
-retrievaler = search.Dealer(ELASTICSEARCH)
-kg_retrievaler = kg_search.KGSearch(ELASTICSEARCH)
+docStoreConn = ESConnection()
+retrievaler = search.Dealer(docStoreConn)
+kg_retrievaler = kg_search.KGSearch(docStoreConn)
 
 
 class CustomEnum(Enum):

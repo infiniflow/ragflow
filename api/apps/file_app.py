@@ -18,7 +18,6 @@ import pathlib
 import re
 
 import flask
-from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
@@ -32,8 +31,6 @@ from api.db.services.file_service import FileService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
-from rag.nlp import search
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
