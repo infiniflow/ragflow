@@ -2,9 +2,13 @@
 
 **THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
 
+---
+
 :::tip NOTE
 Dataset Management
 :::
+
+---
 
 ## Create dataset
 
@@ -55,11 +59,24 @@ The language setting of the dataset to create. Available options:
 
 #### permission
 
-Specifies who can operate on the dataset. You can set it only to `"me"` for now.
+Specifies who can access the dataset to create. You can set it only to `"me"` for now.
 
 #### chunk_method, `str`
 
-The default parsing method of the knwoledge . Defaults to `"naive"`.
+The chunking method of the dataset to create. Available options:
+
+- `"naive"`: General (default)
+- `"manual`: Manual
+- `"qa"`: Q&A
+- `"table"`: Table
+- `"paper"`: Paper
+- `"book"`: Book
+- `"laws"`: Laws
+- `"presentation"`: Presentation
+- `"picture"`: Picture
+- `"one"`:One
+- `"knowledge_graph"`: Knowledge Graph
+- `"email"`: Email
 
 #### parser_config
 
@@ -67,7 +84,7 @@ The parser configuration of the dataset. A `ParserConfig` object contains the fo
 
 - `chunk_token_count`: Defaults to `128`.
 - `layout_recognize`: Defaults to `True`.
-- `delimiter`: Defaults to `'\n!?。；！？'`.
+- `delimiter`: Defaults to `"\n!?。；！？"`.
 - `task_page_size`: Defaults to `12`.
 
 ### Returns
@@ -81,7 +98,7 @@ The parser configuration of the dataset. A `ParserConfig` object contains the fo
 from ragflow import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag_object.create_dataset(name="kb_1")
+dataset = rag_object.create_dataset(name="kb_1")
 ```
 
 ---
@@ -92,13 +109,13 @@ ds = rag_object.create_dataset(name="kb_1")
 RAGFlow.delete_datasets(ids: list[str] = None)
 ```
 
-Deletes datasets by name or ID.
+Deletes specified datasets or all datasets in the system.
 
 ### Parameters
 
-#### ids
+#### ids: `list[str]`
 
-The IDs of the datasets to delete.
+The IDs of the datasets to delete. Defaults to `None`. If not specified, all datasets in the system will be deleted.
 
 ### Returns
 
@@ -108,7 +125,7 @@ The IDs of the datasets to delete.
 ### Examples
 
 ```python
-rag.delete_datasets(ids=["id_1","id_2"])
+rag_object.delete_datasets(ids=["id_1","id_2"])
 ```
 
 ---
@@ -132,15 +149,18 @@ Retrieves a list of datasets.
 
 #### page: `int`
 
-The current page number to retrieve from the paginated results. Defaults to `1`.
+Specifies the page on which the datasets will be displayed. Defaults to `1`.
 
 #### page_size: `int`
 
-The number of records on each page. Defaults to `1024`.
+The number of datasets on each page. Defaults to `1024`.
 
-#### order_by: `str`
+#### orderby: `str`
 
-The field by which the records should be sorted. This specifies the attribute or column used to order the results. Defaults to `"create_time"`.
+The field by which datasets should be sorted. Available options:
+
+- `"create_time"` (default)
+- `"update_time"`
 
 #### desc: `bool`
 
@@ -148,15 +168,15 @@ Indicates whether the retrieved datasets should be sorted in descending order. D
 
 #### id: `str`
 
-The id of the dataset to be got. Defaults to `None`.
+The ID of the dataset to retrieve. Defaults to `None`.
 
 #### name: `str`
 
-The name of the dataset to be got. Defaults to `None`.
+The name of the dataset to retrieve. Defaults to `None`.
 
 ### Returns
 
-- Success: A list of `DataSet` objects representing the retrieved datasets.
+- Success: A list of `DataSet` objects.
 - Failure: `Exception`.
 
 ### Examples
@@ -164,8 +184,8 @@ The name of the dataset to be got. Defaults to `None`.
 #### List all datasets
 
 ```python
-for ds in rag_object.list_datasets():
-    print(ds)
+for dataset in rag_object.list_datasets():
+    print(dataset)
 ```
 
 #### Retrieve a dataset by ID
@@ -183,16 +203,18 @@ print(dataset[0])
 DataSet.update(update_message: dict)
 ```
 
-Updates the current dataset.
+Updates configurations for the current dataset.
 
 ### Parameters
 
 #### update_message: `dict[str, str|int]`, *Required*
 
+A dictionary representing the attributes to update, with the following keys:
+
 - `"name"`: `str` The name of the dataset to update.
-- `"embedding_model"`: `str` The embedding model for generating vector embeddings.
+- `"embedding_model"`: `str` The embedding model name to update.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
-- `"chunk_method"`: `str` The default parsing method for the dataset.
+- `"chunk_method"`: `str` The chunking method for the dataset. Available options:
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -216,8 +238,8 @@ Updates the current dataset.
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-dataset = rag.list_datasets(name="kb_name")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.list_datasets(name="kb_name")
 dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
 ```
 
@@ -239,7 +261,7 @@ Uploads documents to the current dataset.
 
 ### Parameters
 
-#### document_list
+#### document_list: `list[dict]`, *Required*
 
 A list of dictionaries representing the documents to upload, each containing the following keys:
 
@@ -272,6 +294,8 @@ Updates configurations for the current document.
 
 #### update_message: `dict[str, str|dict[]]`, *Required*
 
+A dictionary representing the attributes to update, with the following keys:
+
 - `"name"`: `str` The name of the document to update.
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document:
   - `"chunk_token_count"`: Defaults to `128`.
@@ -302,9 +326,9 @@ Updates configurations for the current document.
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-dataset=rag.list_datasets(id='id')
-dataset=dataset[0]
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.list_datasets(id='id')
+dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
 doc.update([{"parser_config": {"chunk_token_count": 256}}, {"chunk_method": "manual"}])
@@ -318,7 +342,7 @@ doc.update([{"parser_config": {"chunk_token_count": 256}}, {"chunk_method": "man
 Document.download() -> bytes
 ```
 
-Downloads the current document from RAGFlow.
+Downloads the current document.
 
 ### Returns
 
@@ -350,30 +374,30 @@ Retrieves a list of documents from the current dataset.
 
 ### Parameters
 
-#### id
+#### id: `str`
 
 The ID of the document to retrieve. Defaults to `None`.
 
-#### keywords
+#### keywords: `str`
 
-The keywords to match document titles. Defaults to `None`.
+The keywords used to match document titles. Defaults to `None`.
 
-#### offset
+#### offset: `int`
 
-The beginning number of records for paging. Defaults to `0`.
+The starting index for the documents to retrieve. Typically used in confunction with `limit`. Defaults to `0`.
 
-#### limit
+#### limit: `int`
 
-Records number to return, `-1` means all of them. Records number to return, `-1` means all of them.
+The maximum number of documents to retrieve. Defaults to `1024`. A value of `-1` indicates that all documents should be returned.
 
-#### orderby
+#### orderby: `str`
 
-The field by which the documents should be sorted. Available options:
+The field by which documents should be sorted. Available options:
 
-- `"create_time"` (Default)
+- `"create_time"` (default)
 - `"update_time"`
 
-#### desc
+#### desc: `bool`
 
 Indicates whether the retrieved documents should be sorted in descending order. Defaults to `True`.
 
@@ -384,37 +408,38 @@ Indicates whether the retrieved documents should be sorted in descending order. 
 
 A `Document` object contains the following attributes:
 
-- `id` Id of the retrieved document. Defaults to `""`.
-- `thumbnail` Thumbnail image of the retrieved document. Defaults to `""`.
-- `knowledgebase_id` Dataset ID related to the document. Defaults to `""`.
-- `chunk_method` Method used to parse the document. Defaults to `""`.
-- `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `None`.
-- `source_type`: Source type of the document. Defaults to `""`.
-- `type`: Type or category of the document. Defaults to `""`.
-- `created_by`: `str` Creator of the document. Defaults to `""`.
-- `name` Name or title of the document. Defaults to `""`.
-- `size`: `int` Size of the document in bytes or some other unit. Defaults to `0`.
-- `token_count`: `int` Number of tokens in the document. Defaults to `""`.
-- `chunk_count`: `int` Number of chunks the document is split into. Defaults to `0`.
-- `progress`: `float` Current processing progress as a percentage. Defaults to `0.0`.
-- `progress_msg`: `str` Message indicating current progress status. Defaults to `""`.
-- `process_begin_at`: `datetime` Start time of the document processing. Defaults to `None`.
-- `process_duation`: `float` Duration of the processing in seconds or minutes. Defaults to `0.0`.
+- `id`: The document ID. Defaults to `""`.
+- `name`: The document name. Defaults to `""`.
+- `thumbnail`: The thumbnail image of the document. Defaults to `None`.
+- `knowledgebase_id`: The dataset ID associated with the document. Defaults to `None`.
+- `chunk_method` The chunk method name. Defaults to `""`. ?????naive??????
+- `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `{"pages": [[1, 1000000]]}`.
+- `source_type`: The source type of the document. Defaults to `"local"`.
+- `type`: Type or category of the document???????????. Defaults to `""`.
+- `created_by`: `str` The creator of the document. Defaults to `""`.
+- `size`: `int` The document size in bytes. Defaults to `0`.
+- `token_count`: `int` The number of tokens in the document. Defaults to `0`.
+- `chunk_count`: `int` The number of chunks in the document. Defaults to `0`.
+- `progress`: `float` The current processing progress as a percentage. Defaults to `0.0`.
+- `progress_msg`: `str` A message indicating the current progress status. Defaults to `""`.
+- `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
+- `process_duation`: `float` Duration of the processing in seconds or minutes.??????? Defaults to `0.0`.
+- `run`: `str` ?????????????????? Defaults to `"0"`.
+- `status`: `str` ??????????????????? Defaults to `"1"`.
 
 ### Examples
 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-dataset = rag.create_dataset(name="kb_1")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.create_dataset(name="kb_1")
 
 filename1 = "~/ragflow.txt"
-blob=open(filename1 , "rb").read()
-list_files=[{"name":filename1,"blob":blob}]
-dataset.upload_documents(list_files)
-for d in dataset.list_documents(keywords="rag", offset=0, limit=12):
-    print(d)
+blob = open(filename1 , "rb").read()
+dataset.upload_documents([{"name":filename1,"blob":blob}])
+for doc in dataset.list_documents(keywords="rag", offset=0, limit=12):
+    print(doc)
 ```
 
 ---
@@ -425,7 +450,13 @@ for d in dataset.list_documents(keywords="rag", offset=0, limit=12):
 DataSet.delete_documents(ids: list[str] = None)
 ```
 
-Deletes specified documents or all documents from the current dataset.
+Deletes documents by ID.
+
+### Parameters
+
+#### ids: `list[list]`
+
+The IDs of the documents to delete. Defaults to `None`. If not specified, all documents in the dataset will be deleted.
 
 ### Returns
 
@@ -437,10 +468,10 @@ Deletes specified documents or all documents from the current dataset.
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.list_datasets(name="kb_1")
-ds = ds[0]
-ds.delete_documents(ids=["id_1","id_2"])
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.list_datasets(name="kb_1")
+dataset = dataset[0]
+dataset.delete_documents(ids=["id_1","id_2"])
 ```
 
 ---
@@ -451,37 +482,36 @@ ds.delete_documents(ids=["id_1","id_2"])
 DataSet.async_parse_documents(document_ids:list[str]) -> None
 ```
 
+Parses documents in the current dataset.
+
 ### Parameters
 
-#### document_ids: `list[str]`
+#### document_ids: `list[str]`, *Required*
 
 The IDs of the documents to parse.
 
 ### Returns
 
-- Success: No value is returned.
+- Success: No value is returned.????????????????????
 - Failure: `Exception`
 
 ### Examples
 
 ```python
-#documents parse and cancel
-rag = RAGFlow(API_KEY, HOST_ADDRESS)
-ds = rag.create_dataset(name="dataset_name")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.create_dataset(name="dataset_name")
 documents = [
     {'name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
     {'name': 'test2.txt', 'blob': open('./test_data/test2.txt',"rb").read()},
     {'name': 'test3.txt', 'blob': open('./test_data/test3.txt',"rb").read()}
 ]
-ds.upload_documents(documents)
-documents=ds.list_documents(keywords="test")
-ids=[]
+dataset.upload_documents(documents)
+documents = dataset.list_documents(keywords="test")
+ids = []
 for document in documents:
     ids.append(document.id)
-ds.async_parse_documents(ids)
-print("Async bulk parsing initiated")
-ds.async_cancel_parse_documents(ids)
-print("Async bulk parsing cancelled")
+dataset.async_parse_documents(ids)
+print("Async bulk parsing initiated.")
 ```
 
 ---
@@ -492,11 +522,13 @@ print("Async bulk parsing cancelled")
 DataSet.async_cancel_parse_documents(document_ids:list[str])-> None
 ```
 
+Stops parsing specified documents.
+
 ### Parameters
 
-#### document_ids: `list[str]`
+#### document_ids: `list[str]`, *Required*
 
-The IDs of the documents to stop parsing.
+The IDs of the documents for which parsing should be stopped.
 
 ### Returns
 
@@ -506,23 +538,75 @@ The IDs of the documents to stop parsing.
 ### Examples
 
 ```python
-#documents parse and cancel
-rag = RAGFlow(API_KEY, HOST_ADDRESS)
-ds = rag.create_dataset(name="dataset_name")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.create_dataset(name="dataset_name")
 documents = [
     {'name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
     {'name': 'test2.txt', 'blob': open('./test_data/test2.txt',"rb").read()},
     {'name': 'test3.txt', 'blob': open('./test_data/test3.txt',"rb").read()}
 ]
-ds.upload_documents(documents)
-documents=ds.list_documents(keywords="test")
-ids=[]
+dataset.upload_documents(documents)
+documents = dataset.list_documents(keywords="test")
+ids = []
 for document in documents:
     ids.append(document.id)
-ds.async_parse_documents(ids)
-print("Async bulk parsing initiated")
-ds.async_cancel_parse_documents(ids)
-print("Async bulk parsing cancelled")
+dataset.async_parse_documents(ids)
+print("Async bulk parsing initiated.")
+dataset.async_cancel_parse_documents(ids)
+print("Async bulk parsing cancelled.")
+```
+
+---
+
+## Add chunk
+
+```python
+Document.add_chunk(content:str) -> Chunk ?????????????????????
+```
+
+Adds a chunk to the current document.
+
+### Parameters
+
+#### content: `str`, *Required*
+
+The text content of the chunk.
+
+#### important_keywords: `list[str]`  ??????????????????????
+
+The key terms or phrases to tag with the chunk.
+
+### Returns
+
+- Success: A `Chunk` object.
+- Failure: `Exception`.
+
+A `Chunk` object contains the following attributes:
+
+- `id`: `str` 
+- `content`: `str` Content of the chunk.
+- `important_keywords`: `list[str]` A list of key terms or phrases to tag with the chunk.
+- `create_time`: `str` The time when the chunk was created (added to the document).
+- `create_timestamp`: `float` The timestamp representing the creation time of the chunk, expressed in seconds since January 1, 1970.
+- `knowledgebase_id`: `str` The ID of the associated dataset.
+- `document_name`: `str` The name of the associated document.
+- `document_id`: `str` The ID of the associated document.
+- `available`: `int`???? The chunk's availability status in the dataset. Value options:
+  - `0`: Unavailable
+  - `1`: Available
+
+
+### Examples
+
+```python
+from ragflow import RAGFlow
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.list_datasets(id="123")
+dtaset = dataset[0]
+doc = dataset.list_documents(id="wdfxb5t547d")
+doc = doc[0]
+chunk = doc.add_chunk(content="xxxxxxx")
 ```
 
 ---
@@ -533,19 +617,21 @@ print("Async bulk parsing cancelled")
 Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id : str = None) -> list[Chunk]
 ```
 
+Retrieves a list of chunks from the current document.
+
 ### Parameters
 
-#### keywords  
+#### keywords: `str`  
   
-List chunks whose name has the given keywords. Defaults to `None`
+The keywords used to match chunk content. Defaults to `None`
 
-#### offset 
+#### offset: `int`
 
-The beginning number of records for paging. Defaults to `1`
+The starting index for the chunks to retrieve. Defaults to `1`??????
 
 #### limit  
 
-Records number to return.  Default: `30`
+The maximum number of chunks to retrieve.  Default: `30`?????????
 
 #### id
 
@@ -553,67 +639,37 @@ The ID of the chunk to retrieve. Default: `None`
 
 ### Returns
 
-list[chunk]
+- Success: A list of `Chunk` objects.
+- Failure: `Exception`.
 
 ### Examples
 
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.list_datasets("123")
-ds = ds[0]
-ds.async_parse_documents(["wdfxb5t547d"])
-for c in doc.list_chunks(keywords="rag", offset=0, limit=12):
-    print(c)
-```
-
-## Add chunk
-
-```python
-Document.add_chunk(content:str) -> Chunk
-```
-
-### Parameters
-
-#### content: *Required*
-
-The main text or information of the chunk.
-
-#### important_keywords :`list[str]`
-
-List the key terms or phrases that are significant or central to the chunk's content.
-
-### Returns
-
-chunk
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-dataset = rag.list_datasets(id="123")
-dtaset = dataset[0]
-doc = dataset.list_documents(id="wdfxb5t547d")
-doc = doc[0]
-chunk = doc.add_chunk(content="xxxxxxx")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.list_datasets("123")
+dataset = dataset[0]
+dataset.async_parse_documents(["wdfxb5t547d"])
+for chunk in doc.list_chunks(keywords="rag", offset=0, limit=12):
+    print(chunk)
 ```
 
 ---
 
-## Delete chunk
+## Delete chunks
 
 ```python
 Document.delete_chunks(chunk_ids: list[str])
 ```
 
+Deletes chunks by ID.
+
 ### Parameters
 
-#### chunk_ids:`list[str]`
+#### chunk_ids: `list[str]`
 
-A list of chunk_id.
+The IDs of the chunks to delete. Defaults to `None`. If not specified, all chunks of the current document will be deleted.
 
 ### Returns
 
@@ -625,10 +681,10 @@ A list of chunk_id.
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag.list_datasets(id="123")
-ds = ds[0]
-doc = ds.list_documents(id="wdfxb5t547d")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.list_datasets(id="123")
+dataset = dataset[0]
+doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
 chunk = doc.add_chunk(content="xxxxxxx")
 doc.delete_chunks(["id_1","id_2"])
@@ -642,15 +698,17 @@ doc.delete_chunks(["id_1","id_2"])
 Chunk.update(update_message: dict)
 ```
 
-Updates the current chunk.
+Updates content or configurations for the current chunk.
 
 ### Parameters
 
 #### update_message: `dict[str, str|list[str]|int]` *Required*
 
+A dictionary representing the attributes to update, with the following keys:
+
 - `"content"`: `str` Content of the chunk.
-- `"important_keywords"`: `list[str]` A list of key terms to attach to the chunk.
-- `"available"`: `int` The chunk's availability status in the dataset.
+- `"important_keywords"`: `list[str]` A list of key terms or phrases to tag with the chunk.
+- `"available"`: `int` The chunk's availability status in the dataset. Value options:
   - `0`: Unavailable
   - `1`: Available
 
@@ -681,13 +739,15 @@ chunk.update({"content":"sdfx..."})
 RAGFlow.retrieve(question:str="", datasets:list[str]=None, document=list[str]=None, offset:int=1, limit:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
 ```
 
+???????
+
 ### Parameters
 
 #### question: `str` *Required*
 
 The user query or query keywords. Defaults to `""`.
 
-#### datasets: `list[str]`, *Required*
+#### datasets: `list[str]`, *Required*?????
 
 The datasets to search from.
 
@@ -697,11 +757,11 @@ The documents to search from. `None` means no limitation. Defaults to `None`.
 
 #### offset: `int`
 
-The beginning point of retrieved chunks. Defaults to `0`.
+The starting index for the documents to retrieve. Defaults to `0`??????.
 
 #### limit: `int`
 
-The maximum number of chunks to return. Defaults to `6`.
+The maximum number of chunks to retrieve. Defaults to `6`.???????????????
 
 #### Similarity_threshold: `float`
 
@@ -715,18 +775,18 @@ The weight of vector cosine similarity. Defaults to `0.3`. If x represents the v
 
 The number of chunks engaged in vector cosine computaton. Defaults to `1024`.
 
-#### rerank_id
+#### rerank_id: `str`
 
-The ID of the rerank model.  Defaults to `None`.
+The ID of the rerank model. Defaults to `None`.
 
-#### keyword
+#### keyword: `bool`
 
 Indicates whether keyword-based matching is enabled:
 
 - `True`: Enabled.
-- `False`: Disabled.
+- `False`: Disabled (default).
 
-#### highlight:`bool`
+#### highlight: `bool`
 
 Specifying whether to enable highlighting of matched terms in the results (True) or not (False).
 
@@ -741,16 +801,16 @@ Specifying whether to enable highlighting of matched terms in the results (True)
 from ragflow import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-ds = rag_object.list_datasets(name="ragflow")
-ds = ds[0]
+dataset = rag_object.list_datasets(name="ragflow")
+dataset = dataset[0]
 name = 'ragflow_test.txt'
 path = './test_data/ragflow_test.txt'
-rag_object.create_document(ds, name=name, blob=open(path, "rb").read())
-doc = ds.list_documents(name=name)
+rag_object.create_document(dataset, name=name, blob=open(path, "rb").read())
+doc = dataset.list_documents(name=name)
 doc = doc[0]
-ds.async_parse_documents([doc.id])
+dataset.async_parse_documents([doc.id])
 for c in rag_object.retrieve(question="What's ragflow?", 
-             datasets=[ds.id], documents=[doc.id], 
+             datasets=[dataset.id], documents=[doc.id], 
              offset=1, limit=30, similarity_threshold=0.2, 
              vector_similarity_weight=0.3,
              top_k=1024
@@ -763,6 +823,8 @@ for c in rag_object.retrieve(question="What's ragflow?",
 :::tip API GROUPING
 Chat Assistant Management
 :::
+
+---
 
 ## Create chat assistant
 
@@ -782,11 +844,11 @@ Creates a chat assistant.
 
 The following shows the attributes of a `Chat` object:
 
-#### name: *Required*
+#### name: `str`, *Required*????????
 
 The name of the chat assistant. Defaults to `"assistant"`.
 
-#### avatar
+#### avatar: `str`
 
 Base64 encoding of the avatar. Defaults to `""`.
 
@@ -794,7 +856,7 @@ Base64 encoding of the avatar. Defaults to `""`.
 
 The IDs of the associated datasets. Defaults to `[""]`.
 
-#### llm
+#### llm: `Chat.LLM`
 
 The llm of the created chat. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.
 
@@ -813,7 +875,7 @@ An `LLM` object contains the following attributes:
 - `max_token`, `int`  
   This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.
 
-#### Prompt
+#### prompt: `Chat.Prompt`
 
 Instructions for the LLM to follow.  A `Prompt` object contains the following attributes:
 
@@ -840,31 +902,33 @@ Instructions for the LLM to follow.  A `Prompt` object contains the following at
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-kbs = rag.list_datasets(name="kb_1")
-list_kb=[]
-for kb in kbs:
-    list_kb.append(kb.id)
-assi = rag.create_chat("Miss R", knowledgebases=list_kb)
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+datasets = rag_object.list_datasets(name="kb_1")
+dataset_ids = []
+for dataset in datasets:
+    dataset_ids.append(dataset.id)
+assistant = rag_object.create_chat("Miss R", knowledgebases=dataset_ids)
 ```
 
 ---
 
-## Update chat
+## Update chat assistant
 
 ```python
 Chat.update(update_message: dict)
 ```
 
-Updates the current chat assistant.
+Updates configurations for the current chat assistant.
 
 ### Parameters
 
-#### update_message: `dict[str, Any]`, *Required*
+#### update_message: `dict[str, str|list[str]|dict[]]`, *Required*
+
+A dictionary representing the attributes to update, with the following keys:
 
 - `"name"`: `str` The name of the chat assistant to update.
 - `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
-- `"knowledgebases"`: `list[str]` datasets to update.
+- `"knowledgebases"`: `list[str]` The datasets to update.
 - `"llm"`: `dict` The LLM settings:
   - `"model_name"`, `str` The chat model name.
   - `"temperature"`, `float` Controls the randomness of the model's predictions.  
@@ -896,27 +960,27 @@ Updates the current chat assistant.
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-knowledge_base = rag.list_datasets(name="kb_1")
-assistant = rag.create_chat("Miss R", knowledgebases=knowledge_base)
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+datasets = rag_object.list_datasets(name="kb_1")
+assistant = rag_object.create_chat("Miss R", knowledgebases=datasets)
 assistant.update({"name": "Stefan", "llm": {"temperature": 0.8}, "prompt": {"top_n": 8}})
 ```
 
 ---
 
-## Delete chats
-
-Deletes specified chat assistants.
+## Delete chat assistants
 
 ```python
 RAGFlow.delete_chats(ids: list[str] = None)
 ```
 
+Deletes chat assistants by ID.
+
 ### Parameters
 
-#### ids
+#### ids: `list[str]`
 
-IDs of the chat assistants to delete. If not specified, all chat assistants will be deleted.
+The IDs of the chat assistants to delete. Defaults to `None`. If not specified, all chat assistants in the system will be deleted.
 
 ### Returns
 
@@ -928,13 +992,13 @@ IDs of the chat assistants to delete. If not specified, all chat assistants will
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-rag.delete_chats(ids=["id_1","id_2"])
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.delete_chats(ids=["id_1","id_2"])
 ```
 
 ---
 
-## List chats
+## List chat assistants
 
 ```python
 RAGFlow.list_chats(
@@ -951,29 +1015,32 @@ Retrieves a list of chat assistants.
 
 ### Parameters
 
-#### page
+#### page: `int`
 
-Specifies the page on which the records will be displayed. Defaults to `1`.
+Specifies the page on which the chat assistants will be displayed. Defaults to `1`.
 
-#### page_size
+#### page_size: `int`
 
-The number of records on each page. Defaults to `1024`.
+The number of chat assistants on each page. Defaults to `1024`.
 
-#### order_by
+#### orderby: `str`
 
-The attribute by which the results are sorted. Defaults to `"create_time"`.
+The attribute by which the results are sorted. Available options:
 
-#### desc
+- `"create_time"` (default)
+- `"update_time"`
+
+#### desc: `bool`
 
 Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `True`.
 
-#### id: `string`  
+#### id: `str`  
 
-The ID of the chat to retrieve. Defaults to `None`.
+The ID of the chat assistant to retrieve. Defaults to `None`.
 
-#### name: `string`  
+#### name: `str`  
 
-The name of the chat to retrieve. Defaults to `None`.
+The name of the chat assistant to retrieve. Defaults to `None`.
 
 ### Returns
 
@@ -985,16 +1052,18 @@ The name of the chat to retrieve. Defaults to `None`.
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-for assistant in rag.list_chats():
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+for assistant in rag_object.list_chats():
     print(assistant)
 ```
 
 ---
 
 :::tip API GROUPING
-Chat-session APIs
+Chat Session APIs
 :::
+
+---
 
 ## Create session
 
@@ -1006,7 +1075,7 @@ Creates a chat session.
 
 ### Parameters
 
-#### name
+#### name: `str`
 
 The name of the chat session to create.
 
@@ -1024,11 +1093,13 @@ The name of the chat session to create.
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assistant = rag.list_chats(name="Miss R")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+assistant = rag_object.list_chats(name="Miss R")
 assistant = assistant[0]
 session = assistant.create_session()
 ```
+
+---
 
 ## Update session
 
@@ -1036,11 +1107,13 @@ session = assistant.create_session()
 Session.update(update_message: dict)
 ```
 
-Updates the current session.
+Updates the current session name.
 
 ### Parameters
 
 #### update_message: `dict[str, Any]`, *Required*
+
+A dictionary representing the attributes to update, with only one key:
 
 - `"name"`: `str` The name of the session to update.
 
@@ -1054,11 +1127,106 @@ Updates the current session.
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assistant = rag.list_chats(name="Miss R")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+assistant = rag_object.list_chats(name="Miss R")
 assistant = assistant[0]
 session = assistant.create_session("session_name")
 session.update({"name": "updated_name"})
+```
+
+---
+
+## List sessions
+
+```python
+Chat.list_sessions(
+    page: int = 1, 
+    page_size: int = 1024, 
+    orderby: str = "create_time", 
+    desc: bool = True,
+    id: str = None,
+    name: str = None
+) -> list[Session]
+```
+
+Lists sessions associated with the current chat assistant.
+
+### Parameters
+
+#### page: `int`
+
+Specifies the page on which the sessions will be displayed. Defaults to `1`.
+
+#### page_size: `int`
+
+The number of sessions on each page. Defaults to `1024`.
+
+#### orderby: `str`
+
+The field by which sessions should be sorted. Available options:
+
+- `"create_time"` (default)
+- `"update_time"`
+
+#### desc: `bool`
+
+Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `True`.
+
+#### id: `str`
+
+The ID of the chat session to retrieve. Defaults to `None`.
+
+#### name: `str`
+
+The name of the chat session to retrieve. Defaults to `None`.
+
+### Returns
+
+- Success: A list of `Session` objects associated with the current chat assistant.
+- Failure: `Exception`.
+
+### Examples
+
+```python
+from ragflow import RAGFlow
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+assistant = rag_object.list_chats(name="Miss R")
+assistant = assistant[0]
+for session in assistant.list_sessions():
+    print(session)
+```
+
+---
+
+## Delete sessions
+
+```python
+Chat.delete_sessions(ids:list[str] = None)
+```
+
+Deletes sessions by ID.
+
+### Parameters
+
+#### ids: `list[str]`
+
+The IDs of the sessions to delete. Defaults to `None`. If not specified, all sessions associated with the current chat assistant will be deleted.
+
+### Returns
+
+- Success: No value is returned.
+- Failure: `Exception`
+
+### Examples
+
+```python
+from ragflow import RAGFlow
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+assistant = rag_object.list_chats(name="Miss R")
+assistant = assistant[0]
+assistant.delete_sessions(ids=["id_1","id_2"])
 ```
 
 ---
@@ -1073,11 +1241,11 @@ Asks a question to start a conversation.
 
 ### Parameters
 
-#### question *Required*
+#### question: `str` *Required*
 
-The question to start an AI chat. Defaults to `None`.
+The question to start an AI chat.
 
-#### stream
+#### stream: `str`
 
 Indicates whether to output responses in a streaming way:
 
@@ -1130,8 +1298,8 @@ A list of `Chunk` objects representing references to the message, each containin
 ```python
 from ragflow import RAGFlow
 
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assistant = rag.list_chats(name="Miss R")
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+assistant = rag_object.list_chats(name="Miss R")
 assistant = assistant[0]
 session = assistant.create_session()    
 
@@ -1146,99 +1314,4 @@ while True:
     for ans in session.ask(question, stream=True):
         print(answer.content[len(cont):], end='', flush=True)
         cont = answer.content
-```
-
----
-
-## List sessions
-
-```python
-Chat.list_sessions(
-    page: int = 1, 
-    page_size: int = 1024, 
-    orderby: str = "create_time", 
-    desc: bool = True,
-    id: str = None,
-    name: str = None
-) -> list[Session]
-```
-
-Lists sessions associated with the current chat assistant.
-
-### Parameters
-
-#### page
-
-Specifies the page on which records will be displayed. Defaults to `1`.
-
-#### page_size
-
-The number of records on each page. Defaults to `1024`.
-
-#### orderby
-
-The field by which the sessions should be sorted. Available options:
-
-- `"create_time"` (Default)
-- `"update_time"`
-
-#### desc
-
-Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `True`.
-
-#### id
-
-The ID of the chat session to retrieve. Defaults to `None`.
-
-#### name
-
-The name of the chat to retrieve. Defaults to `None`.
-
-### Returns
-
-- Success: A list of `Session` objects associated with the current chat assistant.
-- Failure: `Exception`.
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assistant = rag.list_chats(name="Miss R")
-assistant = assistant[0]
-for session in assistant.list_sessions():
-    print(session)
-```
-
----
-
-## Delete sessions
-
-```python
-Chat.delete_sessions(ids:list[str] = None)
-```
-
-Deletes specified sessions or all sessions associated with the current chat assistant.
-
-### Parameters
-
-#### ids
-
-IDs of the sessions to delete. If not specified, all sessions associated with the current chat assistant will be deleted.
-
-### Returns
-
-- Success: No value is returned.
-- Failure: `Exception`
-
-### Examples
-
-```python
-from ragflow import RAGFlow
-
-rag = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assistant = rag.list_chats(name="Miss R")
-assistant = assistant[0]
-assistant.delete_sessions(ids=["id_1","id_2"])
 ```
