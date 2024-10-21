@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 from concurrent.futures import ThreadPoolExecutor
 import json
 from functools import reduce
@@ -64,7 +65,8 @@ def build_knowledge_graph_chunks(tenant_id: str, chunks: List[str], callback, en
     texts, graphs = [], []
     cnt = 0
     threads = []
-    exe = ThreadPoolExecutor(max_workers=50)
+    max_workers = int(os.environ.get('GRAPH_EXTRACTOR_MAX_WORKERS', 50))
+    exe = ThreadPoolExecutor(max_workers=max_workers)
     for i in range(len(chunks)):
         tkn_cnt = num_tokens_from_string(chunks[i])
         if cnt+tkn_cnt >= left_token_count and texts:
