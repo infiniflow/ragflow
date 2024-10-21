@@ -505,6 +505,10 @@ export const initialNoteValues = {
   text: '',
 };
 
+export const initialCrawlerValues = {
+  extract_type: 'markdown',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },

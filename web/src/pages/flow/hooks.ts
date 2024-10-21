@@ -41,6 +41,7 @@ import {
   initialBingValues,
   initialCategorizeValues,
   initialConcentratorValues,
+  initialCrawlerValues,
   initialDeepLValues,
   initialDuckValues,
   initialExeSqlValues,
@@ -129,6 +130,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Concentrator]: initialConcentratorValues,
       [Operator.TuShare]: initialTuShareValues,
       [Operator.Note]: initialNoteValues,
+      [Operator.Crawler]: initialCrawlerValues,
     };
   }, [llmId]);
 
