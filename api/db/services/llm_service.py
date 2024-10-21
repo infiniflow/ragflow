@@ -250,7 +250,7 @@ class LLMBundle(object):
                 if not TenantLLMService.increase_usage(
                     self.tenant_id, self.llm_type, chunk, self.llm_name):
                         database_logger.error(
-                            "Can't update token usage for {}/TTS used_tokens: {}".format(self.tenant_id, used_tokens))
+                            "Can't update token usage for {}/TTS".format(self.tenant_id))
                 return
             yield chunk     
 
