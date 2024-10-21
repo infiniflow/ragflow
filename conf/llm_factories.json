@@ -191,6 +191,12 @@
                     "model_type": "image2text"
                 },
                 {
+                    "llm_name": "glm-4-9b",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "embedding-2",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 512,
