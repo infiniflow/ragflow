@@ -268,6 +268,6 @@ class LLMBundle(object):
                 if not TenantLLMService.increase_usage(
                         self.tenant_id, self.llm_type, txt, self.llm_name):
                     database_logger.error(
-                        "Can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, txt))
+                        "Can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
                 return
             yield txt
