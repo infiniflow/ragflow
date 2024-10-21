@@ -73,6 +73,3 @@ class Chat(Base):
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
-
-    def get_prologue(self):
-        return self.prompt.opener

@@ -25,28 +25,38 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
-from api.utils.api_utils import get_result, token_required,get_error_data_result
+from api.utils.api_utils import get_result, token_required, get_error_data_result, valid
+
 
 @manager.route('/dataset', methods=['POST'])
 @token_required
 def create(tenant_id):
     req = request.json
     e, t = TenantService.get_by_id(tenant_id)
+    permission = req.get("permission")
+    language = req.get("language")
+    chunk_method = req.get("chunk_method")
+    valid_permission = ("me", "team")
+    valid_language =("Chinese", "English")
+    valid_chunk_method = ("naive","manual","qa","table","paper","book","laws","presentation","picture","one","knowledge_graph","email")
+    check_validation=valid(permission,valid_permission,language,valid_language,chunk_method,valid_chunk_method)
+    if check_validation:
+        return check_validation
     if "tenant_id" in req or "embedding_model" in req:
         return get_error_data_result(
-            retmsg="Tenant_id or embedding_model must not be provided")
+            retmsg="`tenant_id` or `embedding_model` must not be provided")
     chunk_count=req.get("chunk_count")
     document_count=req.get("document_count")
     if chunk_count or document_count:
-        return get_error_data_result(retmsg="chunk_count or document_count must be 0 or not be provided")
+        return get_error_data_result(retmsg="`chunk_count` or `document_count` must be 0 or not be provided")
     if "name" not in req:
         return get_error_data_result(
-            retmsg="Name is not empty!")
+            retmsg="`name` is not empty!")
     req['id'] = get_uuid()
     req["name"] = req["name"].strip()
     if req["name"] == "":
         return get_error_data_result(
-            retmsg="Name is not empty string!")
+            retmsg="`name` is not empty string!")
     if KnowledgebaseService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(
             retmsg="Duplicated knowledgebase name in creating dataset.")
@@ -55,7 +65,7 @@ def create(tenant_id):
     key_mapping = {
         "chunk_num": "chunk_count",
         "doc_num": "document_count",
-        "parser_id": "parse_method",
+        "parser_id": "chunk_method",
         "embd_id": "embedding_model"
     }
     mapped_keys = {new_key: req[old_key] for new_key, old_key in key_mapping.items() if old_key in req}
@@ -90,7 +100,7 @@ def delete(tenant_id):
         File2DocumentService.delete_by_document_id(doc.id)
     if not KnowledgebaseService.delete_by_id(id):
         return get_error_data_result(
-            retmsg="Delete dataset error.(Database serror)")
+            retmsg="Delete dataset error.(Database error)")
     return get_result(retcode=RetCode.SUCCESS)
 
 @manager.route('/dataset/<dataset_id>', methods=['PUT'])
@@ -103,30 +113,39 @@ def update(tenant_id,dataset_id):
     invalid_keys = {"id", "embd_id", "chunk_num", "doc_num", "parser_id"}
     if any(key in req for key in invalid_keys):
         return get_error_data_result(retmsg="The input parameters are invalid.")
+    permission = req.get("permission")
+    language = req.get("language")
+    chunk_method = req.get("chunk_method")
+    valid_permission = ("me", "team")
+    valid_language =("Chinese", "English")
+    valid_chunk_method = ("naive","manual","qa","table","paper","book","laws","presentation","picture","one","knowledge_graph","email")
+    check_validation=valid(permission,valid_permission,language,valid_language,chunk_method,valid_chunk_method)
+    if check_validation:
+        return check_validation
     if "tenant_id" in req:
         if req["tenant_id"] != tenant_id:
             return get_error_data_result(
-                retmsg="Can't change tenant_id.")
+                retmsg="Can't change `tenant_id`.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if "chunk_count" in req:
         if req["chunk_count"] != kb.chunk_num:
             return get_error_data_result(
-                retmsg="Can't change chunk_count.")
+                retmsg="Can't change `chunk_count`.")
         req.pop("chunk_count")
     if "document_count" in req:
         if req['document_count'] != kb.doc_num:
             return get_error_data_result(
-                retmsg="Can't change document_count.")
+                retmsg="Can't change `document_count`.")
         req.pop("document_count")
-    if "parse_method" in req:
-        if kb.chunk_num != 0 and req['parse_method'] != kb.parser_id:
+    if "chunk_method" in req:
+        if kb.chunk_num != 0 and req['chunk_method'] != kb.parser_id:
             return get_error_data_result(
-                retmsg="If chunk count is not 0, parse method is not changable.")
-        req['parser_id'] = req.pop('parse_method')
+                retmsg="If `chunk_count` is not 0, `chunk_method` is not changeable.")
+        req['parser_id'] = req.pop('chunk_method')
     if "embedding_model" in req:
-        if kb.chunk_num != 0 and req['parse_method'] != kb.parser_id:
+        if kb.chunk_num != 0 and req['embedding_model'] != kb.embd_id:
             return get_error_data_result(
-                retmsg="If chunk count is not 0, parse method is not changable.")
+                retmsg="If `chunk_count` is not 0, `embedding_method` is not changeable.")
         req['embd_id'] = req.pop('embedding_model')
     if "name" in req:
         req["name"] = req["name"].strip()
@@ -162,7 +181,7 @@ def list(tenant_id):
         key_mapping = {
             "chunk_num": "chunk_count",
             "doc_num": "document_count",
-            "parser_id": "parse_method",
+            "parser_id": "chunk_method",
             "embd_id": "embedding_model"
         }
         renamed_data = {}

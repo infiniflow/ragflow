@@ -22,7 +22,7 @@ class Base(object):
         res = self.rag.post(path, json, stream=stream,files=files)
         return res
 
-    def get(self, path, params):
+    def get(self, path, params=None):
         res = self.rag.get(path, params)
         return res
 
