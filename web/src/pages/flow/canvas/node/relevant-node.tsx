@@ -1,28 +1,35 @@
-import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import lowerFirst from 'lodash/lowerFirst';
-import pick from 'lodash/pick';
+import { PropsWithChildren } from 'react';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { Operator, operatorMap } from '../../constant';
+import { Operator } from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import NodeDropdown from './dropdown';
-
-import CategorizeHandle from './categorize-handle';
-import styles from './index.less';
+import HandleIcon, { RightHandleStyle } from './handle-icon';
 import NodePopover from './popover';
 
+import { get } from 'lodash';
+import styles from './index.less';
+
+const SourceHandle = ({ children }: PropsWithChildren) => {
+  return (
+    <Flex align="center" gap={6}>
+      <HandleIcon></HandleIcon>
+      <span className={styles.relevantSourceLabel}>{children}</span>
+    </Flex>
+  );
+};
+
 export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
-  const style = operatorMap[data.label as Operator];
-  const { t } = useTranslate('flow');
+  const yes = get(data, 'form.yes');
+  const no = get(data, 'form.no');
   return (
     <NodePopover nodeId={id}>
       <section
         className={classNames(styles.logicNode, {
           [styles.selectedNode]: selected,
         })}
-        style={pick(style, ['backgroundColor', 'width', 'height', 'color'])}
       >
         <Handle
           type="target"
@@ -32,43 +39,42 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
           id={'a'}
         ></Handle>
         <Handle
-          type="target"
-          position={Position.Top}
+          type="source"
+          position={Position.Right}
           isConnectable
           className={styles.handle}
-          id={'b'}
+          id={'yes'}
+          style={{ ...RightHandleStyle, top: 60 }}
         ></Handle>
         <Handle
-          type="target"
-          position={Position.Bottom}
+          type="source"
+          position={Position.Right}
           isConnectable
           className={styles.handle}
-          id={'c'}
+          id={'no'}
+          style={{ ...RightHandleStyle, top: 110 }}
         ></Handle>
-        <CategorizeHandle top={20} right={6} id={'yes'}></CategorizeHandle>
-        <CategorizeHandle top={80} right={6} id={'no'}></CategorizeHandle>
-        <Flex vertical align="center" justify="center" gap={0}>
-          <Flex flex={1}>
-            <OperatorIcon
-              name={data.label as Operator}
-              fontSize={style.iconFontSize}
-            ></OperatorIcon>
+        <Flex
+          align="center"
+          justify={'space-between'}
+          gap={0}
+          flex={1}
+          className={styles.nodeHeader}
+        >
+          <OperatorIcon name={data.label as Operator}></OperatorIcon>
+          <span className={styles.nodeTitle}>{data.name}</span>
+          <NodeDropdown id={id}></NodeDropdown>
+        </Flex>
+        <Flex vertical gap={10}>
+          <Flex vertical>
+            <div>Yes</div>
+            <div className={styles.nodeText}>{yes}</div>
           </Flex>
-          <Flex flex={1}>
-            <span
-              className={styles.type}
-              style={{ fontSize: style.fontSize ?? 14 }}
-            >
-              {t(lowerFirst(data.label))}
-            </span>
-          </Flex>
-          <Flex flex={1}>
-            <NodeDropdown id={id}></NodeDropdown>
+          <Flex vertical>
+            <div>No</div>
+            <div className={styles.nodeText}>{no}</div>
           </Flex>
         </Flex>
-        <section className={styles.bottomBox}>
-          <div className={styles.nodeName}>{data.name}</div>
-        </section>
       </section>
     </NodePopover>
   );

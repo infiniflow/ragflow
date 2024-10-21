@@ -1,20 +1,27 @@
-import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import lowerFirst from 'lodash/lowerFirst';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { Operator, SwitchElseTo, operatorMap } from '../../constant';
+import { Operator, SwitchElseTo } from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import CategorizeHandle from './categorize-handle';
 import NodeDropdown from './dropdown';
+import { RightHandleStyle } from './handle-icon';
 import { useBuildCategorizeHandlePositions } from './hooks';
 import styles from './index.less';
 import NodePopover from './popover';
 
+const getConditionKey = (idx: number, length: number) => {
+  if (idx === 0) {
+    return 'If';
+  } else if (idx === length - 1) {
+    return 'Else';
+  }
+
+  return 'ElseIf';
+};
+
 export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
-  const style = operatorMap[data.label as Operator];
-  const { t } = useTranslate('flow');
   const { positions } = useBuildCategorizeHandlePositions({ data, id });
   const operatorName = data.label;
 
@@ -24,10 +31,6 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
         className={classNames(styles.logicNode, {
           [styles.selectedNode]: selected,
         })}
-        style={{
-          backgroundColor: style.backgroundColor,
-          color: style.color,
-        }}
       >
         <Handle
           type="target"
@@ -36,47 +39,63 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
           className={styles.handle}
           id={'a'}
         ></Handle>
-        <Handle
-          type="target"
-          position={Position.Top}
-          isConnectable
-          className={styles.handle}
-          id={'b'}
-        ></Handle>
-        <Handle
-          type="target"
-          position={Position.Bottom}
-          isConnectable
-          className={styles.handle}
-          id={'c'}
-        ></Handle>
+
         {operatorName === Operator.Switch && (
           <CategorizeHandle top={50} right={-4} id={SwitchElseTo}>
             To
           </CategorizeHandle>
         )}
-        {positions.map((position, idx) => {
+        {/* {positions.map((position) => {
           return (
-            <CategorizeHandle
-              top={position.top}
-              right={position.right}
-              key={idx}
+            <Handle
+              key={position.text}
               id={position.text}
-              idx={idx}
-            ></CategorizeHandle>
+              type="source"
+              position={Position.Right}
+              isConnectable
+              className={styles.handle}
+              style={{ ...RightHandleStyle, top: position.top }}
+            ></Handle>
           );
-        })}
-        <Flex vertical align="center" justify="center" gap={6}>
+        })} */}
+        <Flex
+          align="center"
+          justify={'space-between'}
+          gap={6}
+          flex={1}
+          className={styles.nodeHeader}
+        >
           <OperatorIcon
             name={data.label as Operator}
             fontSize={24}
           ></OperatorIcon>
-          <span className={styles.type}>{t(lowerFirst(data.label))}</span>
+          <span className={styles.nodeTitle}>{data.name}</span>
           <NodeDropdown id={id}></NodeDropdown>
         </Flex>
-        <section className={styles.bottomBox}>
-          <div className={styles.nodeName}>{data.name}</div>
-        </section>
+        <Flex vertical gap={10}>
+          {positions.map((position, idx) => {
+            return (
+              <>
+                <Flex vertical>
+                  <Flex justify={'space-between'}>
+                    <span>{position.text}</span>
+                    <span>{getConditionKey(idx, positions.length)}</span>
+                  </Flex>
+                  <div className={styles.nodeText}>yes</div>
+                </Flex>
+                <Handle
+                  key={position.text}
+                  id={position.text}
+                  type="source"
+                  position={Position.Right}
+                  isConnectable
+                  className={styles.handle}
+                  style={{ ...RightHandleStyle, top: position.top }}
+                ></Handle>
+              </>
+            );
+          })}
+        </Flex>
       </section>
     </NodePopover>
   );
