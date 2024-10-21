@@ -25,6 +25,7 @@ import roman_numbers as r
 from word2number import w2n
 from cn2an import cn2an
 from PIL import Image
+import json
 
 all_codecs = [
     'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
@@ -51,12 +52,12 @@ def find_codec(blob):
         try:
             blob[:1024].decode(c)
             return c
-        except Exception as e:
+        except Exception:
             pass
         try:
             blob.decode(c)
             return c
-        except Exception as e:
+        except Exception:
             pass
 
     return "utf-8"
@@ -241,7 +242,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
                 d["image"], poss = pdf_parser.crop(ck, need_position=True)
                 add_positions(d, poss)
                 ck = pdf_parser.remove_tag(ck)
-            except NotImplementedError as e:
+            except NotImplementedError:
                 pass
         tokenize(d, ck, eng)
         res.append(d)
@@ -289,13 +290,16 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
 def add_positions(d, poss):
     if not poss:
         return
-    d["page_num_int"] = []
-    d["position_int"] = []
-    d["top_int"] = []
+    page_num_int = []
+    position_int = []
+    top_int = []
     for pn, left, right, top, bottom in poss:
-        d["page_num_int"].append(int(pn + 1))
-        d["top_int"].append(int(top))
-        d["position_int"].append((int(pn + 1), int(left), int(right), int(top), int(bottom)))
+        page_num_int.append(int(pn + 1))
+        top_int.append(int(top))
+        position_int.append((int(pn + 1), int(left), int(right), int(top), int(bottom)))
+    d["page_num_int"] = json.dumps(page_num_int)
+    d["position_int"] = json.dumps(position_int)
+    d["top_int"] = json.dumps(top_int)
 
 
 def remove_contents_table(sections, eng=False):

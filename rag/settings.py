@@ -25,9 +25,9 @@ RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 SUBPROCESS_STD_LOG_NAME = "std.log"
 
 ES = get_base_config("es", {})
+INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
 AZURE = get_base_config("azure", {})
 S3 = get_base_config("s3", {})
-INFINITY = get_base_config("infinity", {"uri": "127.0.0.1:23817"})
 MINIO = decrypt_database_config(name="minio")
 try:
     REDIS = decrypt_database_config(name="redis")

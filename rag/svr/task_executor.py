@@ -39,7 +39,6 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
 from api.db.services.file2document_service import File2DocumentService
 from api.settings import retrievaler, docStoreConn
-from api.utils.file_utils import get_project_base_directory
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, knowledge_graph, email
 from rag.nlp import search, rag_tokenizer
@@ -124,7 +123,7 @@ def collect():
         return pd.DataFrame()
     tasks = TaskService.get_tasks(msg["id"])
     if not tasks:
-        cron_logger.warn("{} empty task!".format(msg["id"]))
+        cron_logger.warning("{} empty task!".format(msg["id"]))
         return []
 
     tasks = pd.DataFrame(tasks)
@@ -185,7 +184,7 @@ def build(row):
     docs = []
     doc = {
         "doc_id": row["doc_id"],
-        "kb_id": [str(row["kb_id"])]
+        "kb_id": str(row["kb_id"])
     }
     el = 0
     for ck in cks:
@@ -243,12 +242,9 @@ def build(row):
     return docs
 
 
-def init_kb(row):
+def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    if docStoreConn.indexExist(idxnm):
-        return
-    return docStoreConn.createIdx(idxnm, json.load(
-        open(os.path.join(get_project_base_directory(), "conf", "mapping.json"), "r")))
+    return docStoreConn.createIdx(idxnm, row["kb_id"], vector_size)
 
 
 def embedding(docs, mdl, parser_config=None, callback=None):
@@ -286,15 +282,18 @@ def embedding(docs, mdl, parser_config=None, callback=None):
              cnts) if len(tts) == len(cnts) else cnts
 
     assert len(vects) == len(docs)
+    vector_size = 0
     for i, d in enumerate(docs):
         v = vects[i].tolist()
+        vector_size = len(v)
         d["q_%d_vec" % len(v)] = v
-    return tk_count
+    return tk_count, vector_size
 
 
 def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     vts, _ = embd_mdl.encode(["ok"])
-    vctr_nm = "q_%d_vec" % len(vts[0])
+    vector_size = len(vts[0])
+    vctr_nm = "q_%d_vec" % vector_size
     chunks = []
     for d in retrievaler.chunk_list(row["doc_id"], row["tenant_id"], fields=["content_with_weight", vctr_nm]):
         chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
@@ -330,7 +329,7 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
         res.append(d)
         tk_count += num_tokens_from_string(content)
-    return res, tk_count
+    return res, tk_count, vector_size
 
 
 def main():
@@ -350,7 +349,7 @@ def main():
         if r.get("task_type", "") == "raptor":
             try:
                 chat_mdl = LLMBundle(r["tenant_id"], LLMType.CHAT, llm_name=r["llm_id"], lang=r["language"])
-                cks, tk_count = run_raptor(r, chat_mdl, embd_mdl, callback)
+                cks, tk_count, vector_size = run_raptor(r, chat_mdl, embd_mdl, callback)
             except Exception as e:
                 callback(-1, msg=str(e))
                 cron_logger.error(str(e))
@@ -371,7 +370,7 @@ def main():
                     len(cks))
             st = timer()
             try:
-                tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
+                tk_count, vector_size = embedding(cks, embd_mdl, r["parser_config"], callback)
             except Exception as e:
                 callback(-1, "Embedding error:{}".format(str(e)))
                 cron_logger.error(str(e))
@@ -379,24 +378,24 @@ def main():
             cron_logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
             callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer() - st))
 
-        init_kb(r)
+        init_kb(r, vector_size)
         chunk_count = len(set([c["_id"] for c in cks]))
         st = timer()
         es_r = ""
         es_bulk_size = 4
         for b in range(0, len(cks), es_bulk_size):
-            es_r = docStoreConn.upsertBulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]))
+            es_r = docStoreConn.upsertBulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]), r["kb_id"])
             if b % 128 == 0:
                 callback(prog=0.8 + 0.1 * (b + 1) / len(cks), msg="")
 
         cron_logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
         if es_r:
             callback(-1, "Insert chunk error, detail info please check ragflow-logs/api/cron_logger.log. Please also check ES status!")
-            docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]))
+            docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]), r["kb_id"])
             cron_logger.error(str(es_r))
         else:
             if TaskService.do_cancel(r["id"]):
-                docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]))
+                docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]), r["kb_id"])
                 continue
             callback(1., "Done!")
             DocumentService.increment_chunk_num(

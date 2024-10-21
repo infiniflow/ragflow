@@ -14,7 +14,7 @@ from rag import settings
 from rag.utils import singleton
 from api.utils.file_utils import get_project_base_directory
 import polars as pl
-from rag.utils.data_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
+from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 from . import rmSpace
 
@@ -60,7 +60,9 @@ class ESConnection(DocStoreConnection):
     """
     Table operations
     """
-    def createIdx(self, indexName: str):
+    def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
+        if self.indexExist(indexName):
+            return True
         try:
             from elasticsearch.client import IndicesClient
             return IndicesClient(self.es).create(index=indexName,
@@ -69,13 +71,13 @@ class ESConnection(DocStoreConnection):
         except Exception as e:
             doc_store_logger.error("ES create index error %s ----%s" % (indexName, str(e)))
 
-    def deleteIdx(self, indexName: str):
+    def deleteIdx(self, indexName: str, knowledgebaseId: str):
         try:
             return self.es.indices.delete(indexName, allow_no_indices=True)
         except Exception as e:
             doc_store_logger.error("ES delete index error %s ----%s" % (indexName, str(e)))
-        
-    def indexExist(self, indexName: str) -> bool:
+
+    def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
         s = Index(indexName, self.es)
         for i in range(3):
             try:
@@ -85,11 +87,11 @@ class ESConnection(DocStoreConnection):
                 if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
                     continue
         return False
-        
+
     """
     CRUD operations
     """
-    def search(self, selectFields: list[str], highlightFields: list[str], condition: dict, matchExprs: list[MatchExpr], orderBy: OrderByExpr, offset: int, limit: int, indexName: str) -> list[dict] | pl.DataFrame:
+    def search(self, selectFields: list[str], highlightFields: list[str], condition: dict, matchExprs: list[MatchExpr], orderBy: OrderByExpr, offset: int, limit: int, indexName: str, knowledgebaseIds: list[str]) -> list[dict] | pl.DataFrame:
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
         """
@@ -176,11 +178,11 @@ class ESConnection(DocStoreConnection):
         doc_store_logger.error("ES search timeout for 3 times!")
         raise Exception("ES search timeout.")
 
-    def get(self, docId: str, indexName: str) -> dict:
+    def get(self, chunkId: str, indexName: str, knowledgebaseId: str) -> dict:
         for i in range(3):
             try:
                 res = self.es.get(index=(indexName),
-                                     id=docId)
+                                     id=chunkId)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 return res
@@ -189,14 +191,14 @@ class ESConnection(DocStoreConnection):
                     "ES get exception: " +
                     str(e) +
                     "【Q】：" +
-                    docId)
+                    chunkId)
                 if str(e).find("Timeout") > 0:
                     continue
                 raise e
         doc_store_logger.error("ES search timeout for 3 times!")
         raise Exception("ES search timeout.")
 
-    def upsertBulk(self, documents: list[dict], indexName: str):
+    def upsertBulk(self, documents: list[dict], indexName: str, knowledgebaseId: str):
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         acts = []
         for d in documents:
@@ -221,14 +223,14 @@ class ESConnection(DocStoreConnection):
                                    ":" + str(it["update"]["error"]))
                 return res
             except Exception as e:
-                doc_store_logger.warn("Fail to bulk: " + str(e))
+                doc_store_logger.warning("Fail to bulk: " + str(e))
                 if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
                     time.sleep(3)
                     continue
                 self.conn()
         return res
 
-    def update(self, condition: dict, newValue: dict, indexName: str):
+    def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str):
         if 'id' not in condition:
             raise Exception("Condition must contain id.")
         doc = copy.deepcopy(condition)
@@ -246,7 +248,7 @@ class ESConnection(DocStoreConnection):
                     continue
         return False
 
-    def delete(self, condition: dict, indexName: str):
+    def delete(self, condition: dict, indexName: str, knowledgebaseId: str):
         qry = None
         if "_id" in condition:
             chunk_ids = condition["_id"]
@@ -271,7 +273,7 @@ class ESConnection(DocStoreConnection):
                     refresh=True)
                 return True
             except Exception as e:
-                doc_store_logger.warn("Fail to delete: " + str(filter) + str(e))
+                doc_store_logger.warning("Fail to delete: " + str(filter) + str(e))
                 if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
                     time.sleep(3)
                     continue
@@ -337,7 +339,8 @@ class ESConnection(DocStoreConnection):
             for t in re.split(r"[.?!;\n]", txt):
                 for w in keywords:
                     t = re.sub(r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])"%re.escape(w), r"\1<em>\2</em>\3", t, flags=re.IGNORECASE|re.MULTILINE)
-                if not re.search(r"<em>[^<>]+</em>", t, flags=re.IGNORECASE|re.MULTILINE): continue
+                if not re.search(r"<em>[^<>]+</em>", t, flags=re.IGNORECASE|re.MULTILINE):
+                    continue
                 txts.append(t)
             ans[d["_id"]] = "...".join(txts) if txts else "...".join([a for a in list(hlts.items())[0][1]])
 

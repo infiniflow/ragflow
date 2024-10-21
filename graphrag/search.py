@@ -18,7 +18,7 @@ from copy import deepcopy
 from typing import Dict
 
 import pandas as pd
-from rag.utils.data_store_conn import OrderByExpr, FusionExpr
+from rag.utils.doc_store_conn import OrderByExpr, FusionExpr
 
 from rag.nlp.search import Dealer
 

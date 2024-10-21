@@ -148,21 +148,21 @@ class DocStoreConnection(ABC):
     """
 
     @abstractmethod
-    def createIdx(self, vectorSize: int, indexName: str):
+    def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
         """
         Create an index with given name
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def deleteIdx(self, indexName: str):
+    def deleteIdx(self, indexName: str, knowledgebaseId: str):
         """
         Delete an index with given name
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def indexExist(self, indexName: str) -> bool:
+    def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
         """
         Check if an index with given name exists
         """
@@ -174,7 +174,7 @@ class DocStoreConnection(ABC):
 
     @abstractmethod
     def search(
-        self, selectFields: list[str], highlight: list[str], condition: dict, matchExprs: list[MatchExpr], orderBy: OrderByExpr, offset: int, limit: int, indexName: str
+        self, selectFields: list[str], highlight: list[str], condition: dict, matchExprs: list[MatchExpr], orderBy: OrderByExpr, offset: int, limit: int, indexName: str, knowledgebaseIds: list[str]
     ) -> list[dict] | pl.DataFrame:
         """
         Search with given conjunctive equivalent filtering condition and return all fields of matched documents
@@ -182,28 +182,28 @@ class DocStoreConnection(ABC):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def get(self, docId: str, indexName: str) -> dict | pl.DataFrame:
+    def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | pl.DataFrame:
         """
-        Get single doc with given doc_id
+        Get single chunk with given id
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def upsertBulk(self, rows: list[dict], idexName: str):
+    def upsertBulk(self, rows: list[dict], indexName: str, knowledgebaseId: str):
         """
         Update or insert a bulk of rows
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def update(self, condition: dict, newValue: dict, indexName: str):
+    def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str):
         """
         Update rows with given conjunctive equivalent filtering condition
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def delete(self, condition: dict, indexName: str):
+    def delete(self, condition: dict, indexName: str, knowledgebaseId: str):
         """
         Delete rows with given conjunctive equivalent filtering condition
         """

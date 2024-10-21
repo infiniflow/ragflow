@@ -17,7 +17,7 @@
 import json
 import re
 import logging
-from rag.utils.data_store_conn import MatchTextExpr
+from rag.utils.doc_store_conn import MatchTextExpr
 
 from rag.nlp import rag_tokenizer, term_weight, synonym
 

@@ -23,7 +23,7 @@ from rag.settings import doc_store_logger
 from rag.utils import rmSpace
 from rag.nlp import rag_tokenizer, query
 import numpy as np
-from rag.utils.data_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
+from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
 
 
 def index_name(uid): return f"ragflow_{uid}"
@@ -62,7 +62,7 @@ class Dealer:
                 condition[key] = req[key]
         return condition
 
-    def search(self, req, idxnm: str, emb_mdl: str, highlight = False):
+    def search(self, req, idxnm: str, kb_id: str, emb_mdl = None, highlight = False):
         qst = req.get("question", "")
         matchText, keywords = self.qryr.question(qst, min_match=0.3)
         filters = self.get_filters(req)
@@ -90,7 +90,7 @@ class Dealer:
 
         highlightFields = ["content_ltks", "title_tks"] if highlight else []
 
-        res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr], orderBy, offset, limit, idxnm)
+        res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr], orderBy, offset, limit, idxnm, [kb_id])
         total=self.dataStore.getTotal(res)
 
         doc_store_logger.info(f"TOTAL: {total}")

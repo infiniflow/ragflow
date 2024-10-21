@@ -1,3 +1,5 @@
+import re
+from typing import List, Dict
 import infinity
 from infinity.common import ConflictType
 from infinity.index import IndexInfo, IndexType
@@ -6,14 +8,13 @@ from rag import settings
 from rag.settings import doc_store_logger
 from rag.utils import singleton
 import polars as pl
+from . import rmSpace
 
-from rag.utils.data_store_conn import (
+from rag.utils.doc_store_conn import (
     DocStoreConnection,
     MatchExpr,
     MatchTextExpr,
     MatchDenseExpr,
-    MatchSparseExpr,
-    MatchTensorExpr,
     FusionExpr,
     OrderByExpr,
 )
@@ -28,16 +29,17 @@ def equivalent_condition_to_str(condition: dict) -> str:
             inCond = list()
             for item in v:
                 if isinstance(item, str):
-                    inCond.append(f'{k}="{v}"', k, v)
+                    inCond.append(f"'{v}'", v)
                 else:
-                    inCond.append(f'{k}={str(v)}', k, v)
+                    inCond.append({str(v)})
             if inCond:
-                strInCond = f'({" OR ".join(inCond)})'
+                strInCond = ', '.join(inCond)
+                strInCond = f'{k} IN ({strInCond})'
                 cond.append(strInCond)
         elif isinstance(v, str):
-            cond.append(f'{k}="{v}"', k, v)
+            cond.append(f"{k}='{v}'")
         else:
-            cond.append(f"{k}={str(v)}", k, v)
+            cond.append(f"{k}={str(v)}")
     return " AND ".join(cond)
 
 
@@ -49,7 +51,7 @@ class InfinityConnection(DocStoreConnection):
         if ":" in infinity_uri:
             host, port = infinity_uri.split(":")
             infinity_uri = infinity.common.NetworkAddress(host, int(port))
-        self.inf = ConnectionPool(infinity_uri)
+        self.connPool = ConnectionPool(infinity_uri)
         doc_store_logger.info(f"Connected to infinity {infinity_uri}.")
 
     """
@@ -67,16 +69,18 @@ class InfinityConnection(DocStoreConnection):
     Table operations
     """
 
-    def createIdx(self, vectorSize: int, indexName: str):
-        inf_conn = self.inf.get_conn()
+    def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
+        table_name = f'{indexName}_{knowledgebaseId}'
+        inf_conn = self.connPool.get_conn()
         inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
+        vector_name = f'q_{vectorSize}_vec'
         inf_table = inf_db.create_table(
-            indexName,
+            table_name,
             {
-                "_id": {
+                "chunk_id": {
                     "type": "varchar",
                     "default": "",
-                },  # ES has this meta field as the primary key for every index
+                },  # ES `_id` for each ES document
                 "doc_id": {"type": "varchar", "default": ""},
                 "kb_id": {"type": "varchar", "default": ""},
                 "create_time": {"type": "varchar", "default": ""},
@@ -94,10 +98,10 @@ class InfinityConnection(DocStoreConnection):
                 },  # The raw chunk text
                 "content_ltks": {"type": "varchar", "default": ""},
                 "content_sm_ltks": {"type": "varchar", "default": ""},
-                "q_vec": {"type": f"vector,{vectorSize},float"},
-                "page_num_int": {"type": "varchar", "default": 0},
-                "top_int": {"type": "varchar", "default": 0},
-                "position_int": {"type": "varchar", "default": 0},
+                vector_name: {"type": f"vector,{vectorSize},float"},
+                "page_num_int": {"type": "varchar", "default": ""},
+                "top_int": {"type": "varchar", "default": ""},
+                "position_int": {"type": "varchar", "default": ""},
                 "weight_int": {"type": "integer", "default": 0},
                 "weight_flt": {"type": "float", "default": 0.0},
                 "rank_int": {"type": "integer", "default": 0},
@@ -108,7 +112,7 @@ class InfinityConnection(DocStoreConnection):
         inf_table.create_index(
             "q_vec_idx",
             IndexInfo(
-                "q_vec",
+                vector_name,
                 IndexType.Hnsw,
                 {
                     "M": "16",
@@ -149,19 +153,22 @@ class InfinityConnection(DocStoreConnection):
             IndexInfo("content_sm_ltks", IndexType.FullText, {"ANALYZER": "standard"}),
             ConflictType.Ignore,
         )
-        self.inf.release_conn(inf_conn)
+        self.connPool.release_conn(inf_conn)
 
-    def deleteIdx(self, indexName: str):
-        inf_conn = self.inf.get_conn()
-        db = inf_conn.get_database(self.dbName)
-        db.drop_table(indexName, ConflictType.Ignore)
-        self.inf.release_conn(inf_conn)
+    def deleteIdx(self, indexName: str, knowledgebaseId: str):
+        table_name = f'{indexName}_{knowledgebaseId}'
+        inf_conn = self.connPool.get_conn()
+        db_instance = inf_conn.get_database(self.dbName)
+        db_instance.drop_table(table_name, ConflictType.Ignore)
+        self.connPool.release_conn(inf_conn)
 
-    def indexExist(self, indexName: str) -> bool:
+    def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
+        table_name = f'{indexName}_{knowledgebaseId}'
         try:
-            inf_conn = self.inf.get_conn()
-            _ = inf_conn.get_table(self.dbName, indexName)
-            self.inf.release_conn(inf_conn)
+            inf_conn = self.connPool.get_conn()
+            db_instance = inf_conn.get_database(self.dbName)
+            _ = db_instance.get_table(table_name)
+            self.connPool.release_conn(inf_conn)
             return True
         except Exception as e:
             doc_store_logger.error("INFINITY indexExist: " + str(e))
@@ -172,84 +179,180 @@ class InfinityConnection(DocStoreConnection):
     """
 
     def search(
-        self, selectFields: list[str], condition: dict, matchExprs: list[MatchExpr], orderBy: OrderByExpr, offset: int, limit: int, indexName: str
+        self, selectFields: list[str], highlightFields: list[str], condition: dict, matchExprs: list[MatchExpr], orderBy: OrderByExpr, offset: int, limit: int, indexName: str, knowledgebaseIds: list[str]
     ) -> list[dict] | pl.DataFrame:
         """
-        TODO: convert result to dict?
+        TODO: Infinity doesn't provide highlight
         """
-        inf_conn = self.inf.get_conn()
-        table_instance = inf_conn.get_table(self.dbName, indexName)
-        builder = table_instance.output(selectFields)
-        if condition:
-            builder = builder.filter(equivalent_condition_to_str(condition))
-        for matchExpr in matchExprs:
-            if isinstance(matchExpr, MatchTextExpr):
-                builder = builder.match_text(
-                    matchExpr.fields,
-                    matchExpr.matching_text,
-                    matchExpr.topn,
-                    matchExpr.extra_options,
-                )
-            elif isinstance(matchExpr, MatchDenseExpr):
-                builder = builder.match_dense(
-                    matchExpr.vector_column_name,
-                    matchExpr.embedding_data,
-                    matchExpr.embedding_data_type,
-                    matchExpr.distance_type,
-                    matchExpr.topn,
-                    matchExpr.knn_params,
-                )
-            elif isinstance(matchExpr, MatchSparseExpr):
-                builder = builder.match_sparse(
-                    matchExpr.vector_column_name,
-                    matchExpr.sparse_data,
-                    matchExpr.distance_type,
-                    matchExpr.topn,
-                    matchExpr.opt_params,
-                )
-            elif isinstance(matchExpr, MatchTensorExpr):
-                builder = builder.match_tensor(
-                    matchExpr.column_name,
-                    matchExpr.query_data,
-                    matchExpr.query_data_type,
-                    matchExpr.topn,
-                    matchExpr.extra_option,
-                )
-            elif isinstance(matchExpr, FusionExpr):
-                builder = builder.fusion(
-                    matchExpr.method, matchExpr.topn, matchExpr.fusion_params
-                )
-        builder.offset(offset).limit(limit)
-        res = builder.to_pl()
-        self.inf.release_conn(inf_conn)
+        inf_conn = self.connPool.get_conn()
+        db_instance = inf_conn.get_database(self.dbName)
+        df_list = list()
+        for knowledgebaseId in knowledgebaseIds:
+            table_name = f'{indexName}_{knowledgebaseId}'
+            table_instance = db_instance.get_table(table_name)
+            if 'chunk_id' not in selectFields:
+                selectFields.append('chunk_id')
+            builder = table_instance.output(selectFields)
+            filter_cond = ''
+            filter_fulltext = ''
+            if condition:
+                filter_cond = equivalent_condition_to_str(condition)
+            for matchExpr in matchExprs:
+                if isinstance(matchExpr, MatchTextExpr):
+                    if len(filter_cond)!=0 and 'filter' not in matchExpr.extra_options:
+                        matchExpr.extra_options.update({'filter': f'"{filter_cond}"'})
+                    filter_fulltext = f'MatchText({matchExpr.fields}, {matchExpr.matching_text})'
+                    if len(filter_cond)!=0:
+                        filter_fulltext = f'({filter_cond}) AND {filter_fulltext}'
+                    minimum_should_match = "0%"
+                    if "minimum_should_match" in matchExpr.extra_options:
+                        minimum_should_match = str(int(matchExpr.extra_options["minimum_should_match"] * 100)) + "%"
+                        matchExpr.extra_options.update({'minimum_should_match': {minimum_should_match}})
+                    builder = builder.match_text(
+                        matchExpr.fields,
+                        matchExpr.matching_text,
+                        matchExpr.topn,
+                        matchExpr.extra_options,
+                    )
+                elif isinstance(matchExpr, MatchDenseExpr):
+                    if len(filter_cond)!=0 and 'filter' not in matchExpr.extra_options:
+                        matchExpr.extra_options.update({'filter': f'"{filter_fulltext}"'})
+                    builder = builder.match_dense(
+                        matchExpr.vector_column_name,
+                        matchExpr.embedding_data,
+                        matchExpr.embedding_data_type,
+                        matchExpr.distance_type,
+                        matchExpr.topn,
+                        matchExpr.extra_options,
+                    )
+                elif isinstance(matchExpr, FusionExpr):
+                    builder = builder.fusion(
+                        matchExpr.method, matchExpr.topn, matchExpr.fusion_params
+                    )
+            order_by_expr_list = list()
+            for order_field in orderBy.fields:
+                order_by_expr_list.append((order_field[0], order_field[1]==0))
+            builder.sort(order_by_expr_list)
+            builder.offset(offset).limit(limit)
+            kb_res = builder.to_pl()
+            df_list.append(kb_res)
+        self.connPool.release_conn(inf_conn)
+        res = pl.concat(df_list)
         return res
 
-    def get(self, docId: str, indexName: str) -> dict | pl.DataFrame:
-        inf_conn = self.inf.get_conn()
-        table_instance = inf_conn.get_table(self.dbName, indexName)
-        res = table_instance.output(["*"]).filter(f"doc_id = '{docId}'").to_pl()
-        self.inf.release(inf_conn)
+    def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | pl.DataFrame:
+        inf_conn = self.connPool.get_conn()
+        db_instance = inf_conn.get_database(self.dbName)
+        df_list = list()
+        for knowledgebaseId in knowledgebaseIds:
+            table_name = f'{indexName}_{knowledgebaseId}'
+            table_instance = db_instance.get_table(table_name)
+            kb_res = table_instance.output(["*"]).filter(f"chunk_id = '{chunkId}'").to_pl()
+            df_list.append(kb_res)
+        self.connPool.release(inf_conn)
+        res = pl.concat(df_list)
         return res
 
-    def upsertBulk(self, documents: list[dict], indexName: str):
-        ids = [f"_id={d['_id']}" for d in documents]
-        del_filter = " OR ".join(ids)
-        inf_conn = self.inf.get_conn()
-        table_instance = inf_conn.get_table(self.dbName, indexName)
-        table_instance.delete(del_filter)
+    def upsertBulk(self, documents: list[dict], indexName: str, knowledgebaseId: str):
+        inf_conn = self.connPool.get_conn()
+        db_instance = inf_conn.get_database(self.dbName)
+        table_name = f'{indexName}_{knowledgebaseId}'
+        table_instance = db_instance.get_table(table_name)
+        for d in documents:
+            if '_id' in d:
+                d["chunk_id"] = d["_id"]
+                del d["_id"]
+        ids = [f"'{d["chunk_id"]}'" for d in documents]
+        str_ids = ', '.join(ids)
+        str_filter = f'chunk_id IN ({str_ids})'
+        table_instance.delete(str_filter)
         table_instance.insert(documents)
-        self.inf.release_conn(inf_conn)
+        self.connPool.release_conn(inf_conn)
 
-    def update(self, condition: dict, newValue: dict, indexName: str):
-        inf_conn = self.inf.get_conn()
-        table_instance = inf_conn.get_table(self.dbName, indexName)
+    def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str):
+        inf_conn = self.connPool.get_conn()
+        db_instance = inf_conn.get_database(self.dbName)
+        table_name = f'{indexName}_{knowledgebaseId}'
+        table_instance = db_instance.get_table(table_name)
         filter = equivalent_condition_to_str(condition)
         table_instance.update(filter, newValue)
-        self.inf.release_conn(inf_conn)
+        self.connPool.release_conn(inf_conn)
 
-    def delete(self, condition: dict, indexName: str):
-        inf_conn = self.inf.get_conn()
-        table_instance = inf_conn.get_table(self.dbName, indexName)
+    def delete(self, condition: dict, indexName: str, knowledgebaseId: str):
+        inf_conn = self.connPool.get_conn()
+        db_instance = inf_conn.get_database(self.dbName)
+        table_name = f'{indexName}_{knowledgebaseId}'
         filter = equivalent_condition_to_str(condition)
+        try:
+            table_instance = db_instance.get_table(table_name)
+        except Exception:
+            doc_store_logger.warning(f"Skipped deleting `{filter}` from table {table_name} since the table doesn't exist.")
+            return
         table_instance.delete(filter)
-        self.inf.release_conn(inf_conn)
+        self.connPool.release_conn(inf_conn)
+
+
+    """
+    Helper functions for search result
+    """
+    def getTotal(self, res):
+        return len(res)
+
+    def getChunkIds(self, res):
+        return res["chunk_id"]
+
+    def getFields(self, res, fields: List[str]) -> Dict[str, dict]:
+        res_fields = {}
+        if not fields:
+            return {}
+        num_rows = len(res)
+        column_id = res["chunk_id"]
+        for i in range(num_rows):
+            chunk_id = column_id[i]
+            m = {"id": chunk_id}
+            for fieldnm in fields:
+                if fieldnm not in res:
+                    m[fieldnm] = None
+                    continue
+                v = res[fieldnm][i]
+                if isinstance(v, list):
+                    m[fieldnm] = "\t".join([str(vv) if not isinstance(
+                        vv, list) else "\t".join([str(vvv) for vvv in vv]) for vv in v])
+                    continue
+                if not isinstance(v, str):
+                    v = str(v)
+                if fieldnm.find("tks") > 0:
+                    v = rmSpace(v)
+                m[fieldnm] = v
+            res_fields[chunk_id] = m
+        return res_fields
+
+    def getHighlight(self, res, keywords: List[str], fieldnm: str):
+        ans = {}
+        num_rows = len(res)
+        column_id = res["chunk_id"]
+        for i in range(num_rows):
+            chunk_id = column_id[i]
+            txt = res[fieldnm][i]
+            txt = re.sub(r"[\r\n]", " ", txt, flags=re.IGNORECASE|re.MULTILINE)
+            txts = []
+            for t in re.split(r"[.?!;\n]", txt):
+                for w in keywords:
+                    t = re.sub(r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])"%re.escape(w), r"\1<em>\2</em>\3", t, flags=re.IGNORECASE|re.MULTILINE)
+                if not re.search(r"<em>[^<>]+</em>", t, flags=re.IGNORECASE|re.MULTILINE):
+                    continue
+                txts.append(t)
+            ans[chunk_id] = "...".join(txts)
+        return ans
+
+    def getAggregation(self, res, fieldnm: str):
+        """
+        TODO: Infinity doesn't provide aggregation
+        """
+        return list()
+
+    """
+    SQL
+    """
+    def sql(sql: str, fetch_size: int, format: str):
+        raise NotImplementedError("Not implemented")

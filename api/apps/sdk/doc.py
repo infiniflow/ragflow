@@ -167,7 +167,7 @@ def update_doc(tenant_id, dataset_id, document_id):
             tenant_id = DocumentService.get_tenant_id(req["id"])
             if not tenant_id:
                 return get_error_data_result(retmsg="Tenant not found!")
-            docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id))
+            docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     return get_result()
 
@@ -298,7 +298,7 @@ def parse(tenant_id,dataset_id):
         info["token_num"] = 0
         DocumentService.update_by_id(id, info)
         # if str(req["run"]) == TaskStatus.CANCEL.value:
-        docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id))
+        docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
@@ -325,7 +325,7 @@ def stop_parsing(tenant_id,dataset_id):
         DocumentService.update_by_id(id, info)
         # if str(req["run"]) == TaskStatus.CANCEL.value:
         tenant_id = DocumentService.get_tenant_id(id)
-        docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id))
+        docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
     return get_result()
 
 
@@ -346,7 +346,7 @@ def list_chunks(tenant_id,dataset_id,document_id):
     query = {
         "doc_ids": [doc_id], "page": page, "size": size, "question": question, "sort": True
     }
-    sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
+    sres = retrievaler.search(query, search.index_name(tenant_id), dataset_id, highlight=True)
     res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
     origin_chunks = []
     sign = 0
@@ -433,7 +433,7 @@ def add_chunk(tenant_id,dataset_id,document_id):
     v, c = embd_mdl.encode([doc.name, req["content"]])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
-    docStoreConn.upsert([d], search.index_name(tenant_id))
+    docStoreConn.upsert([d], search.index_name(tenant_id), dataset_id)
 
     DocumentService.increment_chunk_num(
         doc.id, doc.kb_id, c, 1, 0)
@@ -476,7 +476,7 @@ def rm_chunk(tenant_id,dataset_id,document_id):
     for chunk_id in req.get("chunk_ids"):
         if chunk_id not in sres.ids:
             return get_error_data_result(f"Chunk {chunk_id} not found")
-    if not docStoreConn.delete({"_id": req["chunk_ids"]}, search.index_name(tenant_id)):
+    if not docStoreConn.delete({"_id": req["chunk_ids"]}, search.index_name(tenant_id), dataset_id):
         return get_error_data_result(retmsg="Index updating failure")
     deleted_chunk_ids = req["chunk_ids"]
     chunk_number = len(deleted_chunk_ids)
@@ -489,7 +489,7 @@ def rm_chunk(tenant_id,dataset_id,document_id):
 @token_required
 def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
     try:
-        res = docStoreConn.get(chunk_id, search.index_name(tenant_id))
+        res = docStoreConn.get(chunk_id, search.index_name(tenant_id), dataset_id)
     except Exception:
         return get_error_data_result(f"Can't find this chunk {chunk_id}")
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -536,7 +536,7 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
     v, c = embd_mdl.encode([doc.name, d["content_with_weight"]])
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
-    docStoreConn.upsert([d], search.index_name(tenant_id))
+    docStoreConn.upsert([d], search.index_name(tenant_id), dataset_id)
     return get_result()
 
 
