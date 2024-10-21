@@ -415,7 +415,7 @@ A `Document` object contains the following attributes:
 - `chunk_method` The chunk method name. Defaults to `""`. ?????naive??????
 - `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `{"pages": [[1, 1000000]]}`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
-- `type`: Type or category of the document???????????. Defaults to `""`.
+- `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
 - `created_by`: `str` The creator of the document. Defaults to `""`.
 - `size`: `int` The document size in bytes. Defaults to `0`.
 - `token_count`: `int` The number of tokens in the document. Defaults to `0`.
@@ -423,9 +423,14 @@ A `Document` object contains the following attributes:
 - `progress`: `float` The current processing progress as a percentage. Defaults to `0.0`.
 - `progress_msg`: `str` A message indicating the current progress status. Defaults to `""`.
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
-- `process_duation`: `float` Duration of the processing in seconds or minutes.??????? Defaults to `0.0`.
-- `run`: `str` ?????????????????? Defaults to `"0"`.
-- `status`: `str` ??????????????????? Defaults to `"1"`.
+- `process_duation`: `float` Duration of the processing in seconds. Defaults to `0.0`.
+- `run`: `str` The document's processing status:
+  - `"0"`: UNSTART (default)
+  - `"1"`: RUNNING
+  - `"2"`: CANCEL
+  - `"3"`: DONE
+  - `"4"`: FAIL
+- `status`: `str` Reserved for future use.
 
 ### Examples
 
@@ -492,7 +497,7 @@ The IDs of the documents to parse.
 
 ### Returns
 
-- Success: No value is returned.????????????????????
+- Success: No value is returned.
 - Failure: `Exception`
 
 ### Examples
