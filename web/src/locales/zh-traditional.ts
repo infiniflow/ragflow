@@ -676,18 +676,21 @@ export default {
       messageHistoryWindowSizeTip:
         'LLM需要查看的對話記錄的視窗大小。越大越好。但要注意LLM的最大內容長度。',
       wikipedia: '維基百科',
+      pubMed: 'PubMed',
+      pubMedDescription:
+        '此元件用於從 https://pubmed.ncbi.nlm.nih.gov/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要適應的搜尋結果的數量。電子郵件是必填欄位。',
       email: '信箱',
       emailTip:
         '此元件用於從 https://pubmed.ncbi.nlm.nih.gov/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要適應的搜尋結果的數量。電子郵件是必填欄位。',
       arXiv: 'ArXiv',
-      arXivTip:
+      arXivDescription:
         '此元件用於從 https://arxiv.org/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要適應的搜尋結果的數量。',
       sortBy: '排序方式',
       submittedDate: '提交日期',
       lastUpdatedDate: '最後更新日期',
       relevance: '關聯',
       google: 'Google',
-      googleTip:
+      googleDescription:
         '此元件用於從https://www.google.com/取得搜尋結果。通常，它作為知識庫的補充。 Top N 和 SerpApi API 金鑰指定您需要調整的搜尋結果數量。',
       bing: 'Bing',
       bingTip:

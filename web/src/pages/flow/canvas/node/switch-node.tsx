@@ -86,7 +86,7 @@ export function SwitchNode({ id, data, selected }: NodeProps<NodeData>) {
               <div key={idx}>
                 <Flex vertical>
                   <Flex justify={'space-between'}>
-                    <span>{position.text}</span>
+                    <span>{idx < positions.length - 1 && position.text}</span>
                     <span>{getConditionKey(idx, positions.length)}</span>
                   </Flex>
                   {position.condition && (

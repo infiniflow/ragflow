@@ -696,18 +696,21 @@ export default {
       messageHistoryWindowSizeTip:
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大内容长度。',
       wikipedia: '维基百科',
-      email: '邮箱',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+      email: '邮箱',
+      pubMed: 'PubMed',
+      pubMedDescription:
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
       arXiv: 'ArXiv',
-      arXivTip:
+      arXivDescription:
         '此组件用于从 https://arxiv.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。',
       sortBy: '排序方式',
       submittedDate: '提交日期',
       lastUpdatedDate: '最后更新日期',
       relevance: '关联',
       google: 'Google',
-      googleTip:
+      googleDescription:
         '此组件用于从https://www.google.com/获取搜索结果。通常，它作为知识库的补充。Top N 和 SerpApi API 密钥指定您需要调整的搜索结果数量。',
       bing: 'Bing',
       bingTip:

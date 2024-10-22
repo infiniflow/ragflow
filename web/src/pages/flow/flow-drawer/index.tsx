@@ -36,6 +36,8 @@ import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
 
+import { CloseOutlined } from '@ant-design/icons';
+import { lowerFirst } from 'lodash';
 import styles from './index.less';
 
 interface IProps {
@@ -99,18 +101,24 @@ const FlowDrawer = ({
   return (
     <Drawer
       title={
-        <Flex gap={'middle'} align="center">
-          <OperatorIcon name={operatorName}></OperatorIcon>
-          <Flex align="center" gap={'small'} flex={1}>
-            <label htmlFor="" className={styles.title}>
-              {t('title')}
-            </label>
-            <Input
-              value={name}
-              onBlur={handleNameBlur}
-              onChange={handleNameChange}
-            ></Input>
+        <Flex vertical>
+          <Flex gap={'middle'} align="center">
+            <OperatorIcon name={operatorName}></OperatorIcon>
+            <Flex align="center" gap={'small'} flex={1}>
+              <label htmlFor="" className={styles.title}>
+                {t('title')}
+              </label>
+              <Input
+                value={name}
+                onBlur={handleNameBlur}
+                onChange={handleNameChange}
+              ></Input>
+            </Flex>
+            <CloseOutlined onClick={hideModal} />
           </Flex>
+          <span className={styles.operatorDescription}>
+            {t(`${lowerFirst(operatorName)}Description`)}
+          </span>
         </Flex>
       }
       placement="right"
@@ -119,6 +127,7 @@ const FlowDrawer = ({
       getContainer={false}
       mask={false}
       width={470}
+      closeIcon={null}
     >
       <section className={styles.formWrapper}>
         {visible && (

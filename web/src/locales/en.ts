@@ -724,18 +724,20 @@ The above is the content you need to summarize.`,
         'The  window size of conversation history that needed to be seen by LLM. The larger the better. But be careful with the maximum content length of LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
+      pubMedDescription:
+        'This component is used to get search result from https://pubmed.ncbi.nlm.nih.gov/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt. E-mail is a required field.',
       email: 'Email',
       emailTip:
         'This component is used to get search result from https://pubmed.ncbi.nlm.nih.gov/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt. E-mail is a required field.',
       arXiv: 'ArXiv',
-      arXivTip:
+      arXivDescription:
         'This component is used to get search result from https://arxiv.org/. Typically, it performs as a supplement to knowledgebases. Top N specifies the number of search results you need to adapt.',
       sortBy: 'Sort by',
       submittedDate: 'Submitted date',
       lastUpdatedDate: 'Last updated date',
       relevance: 'Relevance',
       google: 'Google',
-      googleTip:
+      googleDescription:
         'This component is used to get search result fromhttps://www.google.com/ . Typically, it performs as a supplement to knowledgebases. Top N and SerpApi API key specifies the number of search results you need to adapt.',
       bing: 'Bing',
       bingTip:

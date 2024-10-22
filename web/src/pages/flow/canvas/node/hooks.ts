@@ -1,8 +1,12 @@
 import get from 'lodash/get';
 import { useEffect, useMemo } from 'react';
 import { useUpdateNodeInternals } from 'reactflow';
-import { Operator, SwitchElseTo } from '../../constant';
-import { ISwitchCondition, NodeData } from '../../interface';
+import { SwitchElseTo } from '../../constant';
+import {
+  ICategorizeItemResult,
+  ISwitchCondition,
+  NodeData,
+} from '../../interface';
 import { generateSwitchHandleText } from '../../utils';
 
 export const useBuildCategorizeHandlePositions = ({
@@ -12,27 +16,29 @@ export const useBuildCategorizeHandlePositions = ({
   id: string;
   data: NodeData;
 }) => {
-  const operatorName = data.label as Operator;
   const updateNodeInternals = useUpdateNodeInternals();
 
-  const categoryData = useMemo(() => {
-    if (operatorName === Operator.Categorize) {
-      return get(data, `form.category_description`, {});
-    } else if (operatorName === Operator.Switch) {
-      return get(data, 'form.conditions', []);
-    }
-    return {};
-  }, [data, operatorName]);
+  const categoryData: ICategorizeItemResult = useMemo(() => {
+    return get(data, `form.category_description`, {});
+  }, [data]);
 
   const positions = useMemo(() => {
-    return Object.keys(categoryData).map((x, idx) => {
-      let text = x;
-      if (operatorName === Operator.Switch) {
-        text = generateSwitchHandleText(idx);
-      }
-      return { text, idx, top: 44 + (idx + 1) * 16 };
+    const list: Array<{
+      text: string;
+      top: number;
+      idx: number;
+    }> = [];
+
+    Object.keys(categoryData).forEach((x, idx) => {
+      list.push({
+        text: x,
+        idx,
+        top: idx === 0 ? 58 : list[idx - 1].top + 8 + 22,
+      });
     });
-  }, [categoryData, operatorName]);
+
+    return list;
+  }, [categoryData]);
 
   useEffect(() => {
     updateNodeInternals(id);

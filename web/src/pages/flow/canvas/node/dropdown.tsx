@@ -38,7 +38,7 @@ const NodeDropdown = ({ id, iconFontColor }: IProps) => {
 
   return (
     <OperateDropdown
-      iconFontSize={14}
+      iconFontSize={22}
       height={14}
       deleteItem={deleteNode}
       items={items}

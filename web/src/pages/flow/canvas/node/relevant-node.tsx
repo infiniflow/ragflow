@@ -1,25 +1,15 @@
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import { PropsWithChildren } from 'react';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { Operator } from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import NodeDropdown from './dropdown';
-import HandleIcon, { RightHandleStyle } from './handle-icon';
+import { RightHandleStyle } from './handle-icon';
 import NodePopover from './popover';
 
 import { get } from 'lodash';
 import styles from './index.less';
-
-const SourceHandle = ({ children }: PropsWithChildren) => {
-  return (
-    <Flex align="center" gap={6}>
-      <HandleIcon></HandleIcon>
-      <span className={styles.relevantSourceLabel}>{children}</span>
-    </Flex>
-  );
-};
 
 export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
   const yes = get(data, 'form.yes');
@@ -44,7 +34,7 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
           isConnectable
           className={styles.handle}
           id={'yes'}
-          style={{ ...RightHandleStyle, top: 60 }}
+          style={{ ...RightHandleStyle, top: 59 }}
         ></Handle>
         <Handle
           type="source"
@@ -52,7 +42,7 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
           isConnectable
           className={styles.handle}
           id={'no'}
-          style={{ ...RightHandleStyle, top: 110 }}
+          style={{ ...RightHandleStyle, top: 112 }}
         ></Handle>
         <Flex
           align="center"
@@ -67,11 +57,11 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
         </Flex>
         <Flex vertical gap={10}>
           <Flex vertical>
-            <div>Yes</div>
+            <div className={styles.relevantLabel}>Yes</div>
             <div className={styles.nodeText}>{yes}</div>
           </Flex>
           <Flex vertical>
-            <div>No</div>
+            <div className={styles.relevantLabel}>No</div>
             <div className={styles.nodeText}>{no}</div>
           </Flex>
         </Flex>
