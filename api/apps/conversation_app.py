@@ -26,7 +26,6 @@ from api.db.services.dialog_service import DialogService, ConversationService, c
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle, TenantService, TenantLLMService
 from api.settings import RetCode, retrievaler
-from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from graphrag.mind_map_extractor import MindMapExtractor
@@ -187,6 +186,7 @@ def completion():
                     yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans}, ensure_ascii=False) + "\n\n"
                 ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
+                traceback.print_exc()
                 yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                            ensure_ascii=False) + "\n\n"
