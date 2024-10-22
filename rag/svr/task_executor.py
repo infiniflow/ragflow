@@ -139,7 +139,7 @@ def get_storage_binary(bucket, name):
     return STORAGE_IMPL.get(bucket, name)
 
 
-def build(row, chat_mdl=None):
+def build(row):
     if row["size"] > DOC_MAXIMUM_SIZE:
         set_progress(row["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
                                              (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
@@ -201,11 +201,13 @@ def build(row, chat_mdl=None):
         d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
 
         if row["parser_config"].get("auto_keywords", 0):
+            chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
             d["important_kwd"] = keyword_extraction(chat_mdl, ck["content_with_weight"],
                                                     row["parser_config"]["auto_keywords"]).split(",")
             d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
 
         if row["parser_config"].get("auto_questions", 0):
+            chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
             qst = question_proposal(chat_mdl, ck["content_with_weight"], row["parser_config"]["auto_keywords"])
             ck["content_with_weight"] = f"Question: \n{qst}\n\nAnswer:\n" + ck["content_with_weight"]
             qst = rag_tokenizer.tokenize(qst)
@@ -354,7 +356,7 @@ def main():
                 continue
         else:
             st = timer()
-            cks = build(r, chat_mdl)
+            cks = build(r)
             cron_logger.info("Build chunks({}): {}".format(r["name"], timer() - st))
             if cks is None:
                 continue
