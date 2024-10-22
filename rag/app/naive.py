@@ -168,8 +168,12 @@ class Markdown(MarkdownParser):
                 sections.append((sec[:int(len(sec) / 2)], ""))
                 sections.append((sec[int(len(sec) / 2):], ""))
             else:
-                sections.append((sec, ""))
-        print(tables)
+                if sections and sections[-1][0].strip().find("#") == 0:
+                    sec_, _ = sections.pop(-1)
+                    sections.append((sec_+"\n"+sec, ""))
+                else:
+                    sections.append((sec, ""))
+
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         return sections, tbls
