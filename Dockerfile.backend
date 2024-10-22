@@ -1,0 +1,110 @@
+# base image
+FROM python:3.12-slim AS base
+
+ENV LIGHTEN=0
+
+# if you located in China, you can use aliyun mirror to speed up
+RUN sed -i 's@deb.debian.org@mirrors.aliyun.com@g' /etc/apt/sources.list.d/debian.sources
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
+
+WORKDIR /ragflow
+
+RUN pip install --no-cache-dir poetry
+
+ENV PYTHONDONTWRITEBYTECODE=1 LD_LIBRARY_PATH=usr/lib/x86_64-linux-gnu/openmpi/lib:$LD_LIBRARY_PATH
+
+# Configure Poetry
+ENV POETRY_CACHE_DIR=/tmp/poetry_cache
+ENV POETRY_NO_INTERACTION=1
+ENV POETRY_VIRTUALENVS_IN_PROJECT=true
+ENV POETRY_VIRTUALENVS_CREATE=true
+ENV POETRY_REQUESTS_TIMEOUT=15
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libicu-dev
+
+FROM base AS packages
+
+# if you located in China, you can use aliyun mirror to speed up
+RUN poetry config repositories.cust-pypi https://mirrors.aliyun.com/pypi/simple/
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc g++ unzip
+
+# Install Python dependencies
+COPY pyproject.toml poetry.toml poetry.lock ./
+
+# if you located in China, you can use aliyun mirror to speed up
+RUN poetry source add aliyun https://mirrors.aliyun.com/pypi/simple/
+
+RUN poetry lock
+RUN if [ "$LIGHTEN" -eq 0 ]; then \
+        poetry install --sync --no-cache --no-root --with=full; \
+    else \
+        poetry install --sync --no-cache --no-root; \
+    fi
+
+# Download nltk data
+#RUN python3 -m nltk.downloader wordnet punkt punkt_tab
+
+# production stage
+FROM base AS production
+
+ENV FLASK_APP=app.py
+ENV EDITION=SELF_HOSTED
+ENV DEPLOY_ENV=PRODUCTION
+ENV PYTHONPATH=/app/
+ENV HF_ENDPOINT=https://hf-mirror.com
+
+EXPOSE 9380
+EXPOSE 5678
+
+# set timezone
+ENV TZ=UTC
+
+WORKDIR /ragflow
+
+RUN apt-get update \
+    # For opencv
+    && apt-get install -y --no-install-recommends libglib2.0-0 libsm6 libxext6 libxrender-dev libgl1-mesa-dev \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python environment and packages
+ENV VIRTUAL_ENV=/ragflow/.venv
+COPY --from=packages ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+# Copy nltk data downloaded via download_deps.py
+COPY nltk_data /root/nltk_data
+
+# Copy source code
+ADD ./api ./api
+ADD ./conf ./conf
+ADD ./deepdoc ./deepdoc
+ADD ./rag ./rag
+ADD ./agent ./agent
+ADD ./graphrag ./graphrag
+
+# Copy models downloaded via download_deps.py
+RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN --mount=type=bind,source=huggingface.co,target=/huggingface.co \
+    tar --exclude='.*' -cf - \
+        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+        /huggingface.co/InfiniFlow/deepdoc \
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
+RUN --mount=type=bind,source=huggingface.co,target=/huggingface.co \
+    tar -cf - \
+        /huggingface.co/BAAI/bge-large-zh-v1.5 \
+        /huggingface.co/BAAI/bge-reranker-v2-m3 \
+        /huggingface.co/maidalun1020/bce-embedding-base_v1 \
+        /huggingface.co/maidalun1020/bce-reranker-base_v1 \
+        | tar -xf - --strip-components=2 -C /root/.ragflow
+
+# Copy entrypoint
+ADD docker/entrypoint-component.sh ./entrypoint.sh
+ADD docker/.env ./.env
+RUN chmod +x ./entrypoint.sh
+
+
+ENTRYPOINT ["/bin/bash", "./entrypoint.sh"]
