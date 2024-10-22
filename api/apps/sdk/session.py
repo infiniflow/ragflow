@@ -199,7 +199,7 @@ def list(chat_id,tenant_id):
                                 "content": chunk["content_with_weight"],
                                 "document_id": chunk["doc_id"],
                                 "document_name": chunk["docnm_kwd"],
-                                "knowledgebase_id": chunk["kb_id"],
+                                "dataset_id": chunk["kb_id"],
                                 "image_id": chunk["img_id"],
                                 "similarity": chunk["similarity"],
                                 "vector_similarity": chunk["vector_similarity"],
