@@ -4,6 +4,7 @@ import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
 import { ReactComponent as ConcentratorIcon } from '@/assets/svg/concentrator.svg';
+import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
 import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
@@ -73,6 +74,7 @@ export enum Operator {
   Concentrator = 'Concentrator',
   TuShare = 'TuShare',
   Note = 'Note',
+  Crawler = 'Crawler',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -110,6 +112,7 @@ export const operatorIconMap = {
   [Operator.Concentrator]: ConcentratorIcon,
   [Operator.TuShare]: TuShareIcon,
   [Operator.Note]: NoteIcon,
+  [Operator.Crawler]: CrawlerIcon,
 };
 
 export const operatorMap: Record<
@@ -233,6 +236,9 @@ export const operatorMap: Record<
   },
   [Operator.TuShare]: { backgroundColor: '#f8cfa0' },
   [Operator.Note]: { backgroundColor: '#f8cfa0' },
+  [Operator.Crawler]: {
+    backgroundColor: '#dee0e2',
+  },
 };
 
 export const componentMenuList = [
@@ -322,6 +328,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.TuShare,
+  },
+  {
+    name: Operator.Crawler,
   },
 ];
 
@@ -496,6 +505,10 @@ export const initialNoteValues = {
   text: '',
 };
 
+export const initialCrawlerValues = {
+  extract_type: 'markdown',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -572,6 +585,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Jin10]: [Operator.Begin],
   [Operator.Concentrator]: [Operator.Begin],
   [Operator.TuShare]: [Operator.Begin],
+  [Operator.Crawler]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -605,6 +619,7 @@ export const NodeMap = {
   [Operator.Jin10]: 'ragNode',
   [Operator.TuShare]: 'ragNode',
   [Operator.Note]: 'noteNode',
+  [Operator.Crawler]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -2791,3 +2806,4 @@ export const TuShareSrcOptions = [
   'fenghuang',
   'jinrongjie',
 ];
+export const CrawlerResultOptions = ['markdown', 'html', 'content'];

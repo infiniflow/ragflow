@@ -1,7 +1,4 @@
-import time
-
-from PIL.ImageFile import raise_oserror
-
+import json
 from .base import Base
 from .chunk import Chunk
 from typing import List
@@ -13,7 +10,7 @@ class Document(Base):
         self.name = ""
         self.thumbnail = None
         self.knowledgebase_id = None
-        self.parser_method = ""
+        self.chunk_method = ""
         self.parser_config = {"pages": [[1, 1000000]]}
         self.source_type = "local"
         self.type = ""
@@ -31,6 +28,23 @@ class Document(Base):
             if k not in self.__dict__:
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
+
+
+    def update(self, update_message: dict):
+        res = self.put(f'/dataset/{self.knowledgebase_id}/info/{self.id}',
+                       update_message)
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+
+    def download(self):
+        res = self.get(f"/dataset/{self.knowledgebase_id}/document/{self.id}")
+        try:
+            res = res.json()
+            raise Exception(res.get("message"))
+        except json.JSONDecodeError:
+            return res.content
+
 
     def list_chunks(self,offset=0, limit=30, keywords="", id:str=None):
         data={"document_id": self.id,"keywords": keywords,"offset":offset,"limit":limit,"id":id}

@@ -24,11 +24,11 @@ from .modules.document import Document
 
 
 class RAGFlow:
-    def __init__(self, user_key, base_url, version='v1'):
+    def __init__(self, api_key, base_url, version='v1'):
         """
         api_url: http://<host_address>/api/v1
         """
-        self.user_key = user_key
+        self.user_key = api_key
         self.api_url = f"{base_url}/api/{version}"
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
@@ -50,7 +50,7 @@ class RAGFlow:
 
     def create_dataset(self, name: str, avatar: str = "", description: str = "", language: str = "English",
                        permission: str = "me",
-                       document_count: int = 0, chunk_count: int = 0, parse_method: str = "naive",
+                       document_count: int = 0, chunk_count: int = 0, chunk_method: str = "naive",
                        parser_config: DataSet.ParserConfig = None) -> DataSet:
         if parser_config is None:
             parser_config = DataSet.ParserConfig(self, {"chunk_token_count": 128, "layout_recognize": True,
@@ -59,7 +59,7 @@ class RAGFlow:
         res = self.post("/dataset",
                         {"name": name, "avatar": avatar, "description": description, "language": language,
                          "permission": permission,
-                         "document_count": document_count, "chunk_count": chunk_count, "parse_method": parse_method,
+                         "document_count": document_count, "chunk_count": chunk_count, "chunk_method": chunk_method,
                          "parser_config": parser_config
                          }
                         )
@@ -93,7 +93,7 @@ class RAGFlow:
             return result_list
         raise Exception(res["message"])
 
-    def create_chat(self, name: str = "assistant", avatar: str = "path", knowledgebases: List[DataSet] = [],
+    def create_chat(self, name: str, avatar: str = "", knowledgebases: List[DataSet] = [],
                          llm: Chat.LLM = None, prompt: Chat.Prompt = None) -> Chat:
         datasets = []
         for dataset in knowledgebases:

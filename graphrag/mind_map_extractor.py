@@ -16,6 +16,7 @@
 
 import collections
 import logging
+import os
 import re
 import logging
 import traceback
@@ -89,7 +90,8 @@ class MindMapExtractor:
             prompt_variables = {}
 
         try:
-            exe = ThreadPoolExecutor(max_workers=12)
+            max_workers = int(os.environ.get('MINDMAP_EXTRACTOR_MAX_WORKERS', 12))
+            exe = ThreadPoolExecutor(max_workers=max_workers)
             threads = []
             token_count = max(self._llm.max_length * 0.8, self._llm.max_length-512)
             texts = []
