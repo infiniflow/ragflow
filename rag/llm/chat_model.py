@@ -67,6 +67,7 @@ class Base(ABC):
                 if not resp.choices[0].delta.content:
                     resp.choices[0].delta.content = ""
                 ans += resp.choices[0].delta.content
+
                 total_tokens += 1
                 if not hasattr(resp, "usage") or not resp.usage:
                     total_tokens = (
