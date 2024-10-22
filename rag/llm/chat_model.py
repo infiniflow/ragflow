@@ -73,7 +73,7 @@ class Base(ABC):
                             + num_tokens_from_string(resp.choices[0].delta.content)
                     )
                     if not hasattr(resp, "usage") or not resp.usage
-                    else resp.usage.get("total_tokens", total_tokens)
+                    else dict(resp.usage).get('total_tokens', total_tokens)
                 )
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
