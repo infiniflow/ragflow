@@ -366,7 +366,7 @@ print(doc)
 ## List documents
 
 ```python
-Dataset.list_documents(id:str =None, keywords: str=None, offset: int=0, limit:int = 1024,order_by:str = "create_time", desc: bool = True) -> list[Document]
+Dataset.list_documents(id:str =None, keywords: str=None, offset: int=1, limit:int = 1024,order_by:str = "create_time", desc: bool = True) -> list[Document]
 ```
 
 Lists documents in the current dataset.
@@ -383,7 +383,7 @@ The keywords used to match document titles. Defaults to `None`.
 
 #### offset: `int`
 
-The starting index for the documents to retrieve. Typically used in confunction with `limit`. Defaults to `0`.
+The starting index for the documents to retrieve. Typically used in conjunction with `limit`. Defaults to `0`.
 
 #### limit: `int`
 
@@ -424,11 +424,11 @@ A `Document` object contains the following attributes:
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
 - `process_duation`: `float` Duration of the processing in seconds. Defaults to `0.0`.
 - `run`: `str` The document's processing status:
-  - `"0"`: UNSTART (default)  ?????????
-  - `"1"`: RUNNING
-  - `"2"`: CANCEL
-  - `"3"`: DONE
-  - `"4"`: FAIL
+  - `"UNSTART"`  (default) 
+  - `"RUNNING"` 
+  - `"CANCEL"` 
+  - `"DONE"` 
+  - `"FAIL"` 
 - `status`: `str` Reserved for future use.
 
 ### Examples
@@ -626,7 +626,7 @@ Lists chunks in the current document.
 ### Parameters
 
 #### keywords: `str`
-  
+
 The keywords used to match chunk content. Defaults to `None`
 
 #### offset: `int`

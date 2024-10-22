@@ -415,7 +415,8 @@ curl --request POST \
      --url http://{address}/api/v1/dataset/{dataset_id}/document \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \     
-     --form 'file=@./test.txt'
+     --form 'file=@./test1.txt' \
+     --form 'file=@./test2.pdf'
 ```
 
 #### Request parameters
@@ -423,7 +424,7 @@ curl --request POST \
 - `"dataset_id"`: (*Path parameter*)  
   The ID of the dataset to which the documents will be uploaded.
 - `"file"`: (*Body parameter*)  
-  The document???? to upload.
+  The document to upload.
 
 ### Response
 
@@ -474,7 +475,7 @@ curl --request PUT \
   --data '{
   "name": "manual.txt", 
   "chunk_method": "manual", 
-  "parser_config": {"chunk_token_count": 128, "delimiter": "\n!?。；！？", "layout_recognize": true, "task_page_size": 12}
+  "parser_config": {"chunk_token_count": 128}
   }'
 
 ```
@@ -483,7 +484,7 @@ curl --request PUT \
 
 - `"name"`: (*Body parameter*), `string`
 - `"chunk_method"`: (*Body parameter*), `string`  
-  The parsing method to apply to the document.  
+  The parsing method to apply to the document:  
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -496,16 +497,12 @@ curl --request PUT \
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
   - `"email"`: Email
-- 
-
-### Returns  
-
-- `"parser_config"`: (*Body parameter*)  
-  Configuration object for the parser.  
-  - If the value is `None`, a dictionary with default values will be generated.
-
-- `"name"`: (*Body parameter*)  
-  Name or title of the document.  
+- `"parser_config"`: (*Body parameter*), `dict[string, Any]`
+  The parsing configuration for the document:  
+  - `"chunk_token_count"`: Defaults to `128`.
+  - `"layout_recognize"`: Defaults to `True`.
+  - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+  - `"task_page_size"`: Defaults to `12`.
 
 ### Response
 
@@ -522,7 +519,7 @@ An error response includes a JSON object like the following:
 ```json
 {
     "code": 102,
-    "message": "The dataset not own the document."
+    "message": "The dataset does not have the document."
 }
 ```
 
@@ -541,7 +538,7 @@ Downloads a document from a specified dataset.
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Output:
-  - '{FILE_NAME}'
+  - `'{FILE_NAME}'`
 
 #### Request example
 
@@ -554,10 +551,10 @@ curl --request GET \
 
 #### Request parameters
 
-- `"dataset_id"`: (*PATH parameter*)
+- `"dataset_id"`: (*Path parameter*)
   The dataset ID.
-- `"documents_id"`: (*PATH parameter*)  
-  The document ID of the file.
+- `"documents_id"`: (*Path parameter*)  
+  The ID of the document to download.
 
 ### Response
 
@@ -602,20 +599,22 @@ curl --request GET \
 
 #### Request parameters
 
-- `"dataset_id"`: (*PATH parameter*)  
-  The dataset id
-- `offset`: (*Filter parameter*)  
-  The beginning number of records for paging.
-- `keywords`: (*Filter parameter*)  
-  The keywords matches the search key workds;
-- `limit`: (*Filter parameter*)  
-  Records number to return.
-- `orderby`: (*Filter parameter*)  
-  The field by which the records should be sorted. This specifies the attribute or column used to order the results.
-- `desc`: (*Filter parameter*)  
-  A boolean flag indicating whether the sorting should be in descending order.
-- `id`: (*Filter parameter*)  
-  The ID of the document to retrieve.
+- `"dataset_id"`: (*Path parameter*)  
+  The dataset ID.
+- `"keywords"`: (*Filter parameter*), `string`  
+  The keywords used to match document titles. Defaults to `None`.
+- `"offset"`: (*Filter parameter*), `integer`  
+  The starting index for the documents to retrieve. Typically used in conjunction with `limit`. Defaults to `1`.
+- `"limit"`: (*Filter parameter*), `integer`  
+  The maximum number of documents to retrieve. Defaults to `1024`.
+- `"orderby"`: (*Filter parameter*), `string`  
+  The field by which documents should be sorted. Available options:
+  - `"create_time"` (default)
+  - `"update_time"`
+- `"desc"`: (*Filter parameter*), `bool`  
+  Indicates whether the retrieved documents should be sorted in descending order. Defaults to `True`.
+- `"document_id"`: (*Filter parameter*)  
+  The ID of the document to retrieve. Defaults to `None`.
 
 ### Response
 
@@ -675,7 +674,7 @@ An error response includes a JSON object like the following:
 
 ## Delete documents
 
-**DELETE** `/api/v1/dataset/{dataset_id}/document `
+**DELETE** `/api/v1/dataset/{dataset_id}/document`
 
 Deletes documents by ID.
 
@@ -687,7 +686,7 @@ Deletes documents by ID.
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `ids`: `list[string]`
+  - `"ids"`: `list[string]`
 
 #### Request example
 
@@ -703,7 +702,7 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"ids"`: (*Body parameter*)
+- `"ids"`: (*Body parameter*), `list[string]`
   The IDs of the documents to delete.
 
 ### Response
@@ -736,12 +735,12 @@ Parses documents in a specified dataset.
 ### Request
 
 - Method: POST
-- URL: `/api/v1/dataset/{dataset_id}/chunk `
+- URL: `/api/v1/dataset/{dataset_id}/chunk`
 - Headers:
   - `'content-Type: application/json'`
   - 'Authorization: Bearer {YOUR_API_KEY}'
 - Body:
-  - `document_ids`: `list[string]`
+  - `"document_ids"`: `list[string]`
 
 #### Request example
 
@@ -756,7 +755,7 @@ curl --request POST \
 #### Request parameters
 
 - `"dataset_id"`: (*Path parameter*)
-- `"document_ids"`:(*Body parameter*)  
+- `"document_ids"`: (*Body parameter*)  
   The ids of the documents to parse.
 
 ### Response
@@ -794,7 +793,7 @@ Stops parsing specified documents.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `document_ids`: `list[string]`
+  - `"document_ids"`: `list[string]`
 
 #### Request example
 
@@ -809,7 +808,7 @@ curl --request DELETE \
 #### Request parameters
 
 - `"dataset_id"`: (*Path parameter*)
-- `"document_ids"`:(*Body parameter*)  
+- `"document_ids"`: (*Body parameter*)  
   The IDs of the documents to parse.
 
 ### Response
@@ -848,8 +847,8 @@ Adds a chunk to a specified document in a specified dataset.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `content`: string
-  - `important_keywords`: `list[string]`
+  - `"content"`: string
+  - `"important_keywords"`: `list[string]`
 
 #### Request example
 
@@ -865,9 +864,9 @@ curl --request POST \
 
 #### Request parameters
 
-- `content`:(*Body parameter*)  
+- `"content"`: (*Body parameter*)  
   Contains the main text or information of the chunk.
-- `important_keywords`(*Body parameter*)  
+- `"important_keywords`(*Body parameter*)  
   List the key terms or phrases that are significant or central to the chunk's content.
 
 ### Response
@@ -1009,7 +1008,7 @@ Deletes chunks by ID.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `chunk_ids`: `list[string]`
+  - `"chunk_ids"`: `list[string]`
 
 #### Request example
 
@@ -1025,7 +1024,7 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"chunk_ids"`:(*Body parameter*)  
+- `"chunk_ids"`: (*Body parameter*)  
   The chunks of the document to delete.
 
 ### Response
@@ -1063,9 +1062,9 @@ Updates content or configurations for a specified chunk.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `content`: `string`
-  - `important_keywords`: `string`
-  - `available`: `integer`
+  - `"content"`: `string`
+  - `"important_keywords"`: `string`
+  - `"available"`: `integer`
 
 #### Request example
 
@@ -1082,11 +1081,11 @@ curl --request PUT \
 
 #### Request parameters
 
-- `"content"`:(*Body parameter*)  
+- `"content"`: (*Body parameter*)  
   Contains the main text or information of the chunk.
-- `"important_keywords"`:(*Body parameter*)  
+- `"important_keywords"`: (*Body parameter*)  
   Lists the key terms or phrases that are significant or central to the chunk's content.
-- `"available"`:(*Body parameter*)  
+- `"available"`: (*Body parameter*)  
    Indicating the availability status, 0 means unavailable and 1 means available.
 
 ### Response
@@ -1124,17 +1123,17 @@ Retrieves chunks from specified datasets.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `question`: `string`  
-  - `datasets`: `list[string]`  
-  - `documents`: `list[string]`
-  - `offset`: int  
-  - `limit`: int  
-  - `similarity_threshold`: float  
-  - `vector_similarity_weight`: float  
-  - `top_k`: int  
-  - `rerank_id`: string  
-  - `keyword`: bool  
-  - `highlight`: bool
+  - `"question"`: `string`  
+  - `"datasets"`: `list[string]`  
+  - `"documents"`: `list[string]`
+  - `"offset"`: int  
+  - `"limit"`: int  
+  - `"similarity_threshold"`: float  
+  - `"vector_similarity_weight"`: float  
+  - `"top_k"`: int  
+  - `"rerank_id"`: string  
+  - `"keyword"`: bool  
+  - `"highlight"`: bool
 
 #### Request example
 
@@ -1271,11 +1270,10 @@ Creates a chat assistant.
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
-  - `"knowledgebases"`: `List[DataSet]`
+  - `"knowledgebases"`: `list[DataSet]`
   - `"id"`: `string`
   - `"llm"`: `LLM`
   - `"prompt"`: `Prompt`
-
 
 #### Request example
 
@@ -1555,7 +1553,7 @@ Deletes chat assistants by ID.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `ids`: list[string]
+  - `"ids"`: `list[string]`
 
 #### Request example
 
@@ -1749,7 +1747,7 @@ Create a chat session.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - name: `string`
+  - `"name"`: `string`
 
 #### Request example
 
@@ -1844,7 +1842,7 @@ Update a chat session
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `name`: string
+  - `"name`: string
 
 #### Request example
 ```bash
@@ -1860,7 +1858,7 @@ curl --request PUT \
 
 #### Request Parameter
 
-- `name`: (*Body Parameter)  
+- `"name`: (*Body Parameter)  
   The name of the created session.  
   - `None`
 
@@ -1984,7 +1982,7 @@ Deletes sessions by ID.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `ids`: list[string]
+  - `"ids"`: `list[string]`
 
 #### Request example
 
@@ -2001,7 +1999,7 @@ curl --request DELETE \
 
 #### Request Parameters
 
-- `ids`: (*Body Parameter*)  
+- `"ids"`: (*Body Parameter*)  
   IDs of the sessions to delete.
   - `None`
 
@@ -2040,9 +2038,9 @@ Asks a question to start a conversation.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `question`: `string`
-  - `stream`: `bool`
-  - `session_id`: `string`
+  - `"question"`: `string`
+  - `"stream"`: `bool`
+  - `"session_id"`: `string`
 
 #### Request example
 
@@ -2059,14 +2057,14 @@ curl --request POST \
 
 #### Request Parameters
 
-- `question`:(*Body Parameter*)  
+- `"question"`: (*Body Parameter*)  
   The question you want to ask.  
   - question is required.
   `None`
-- `stream`: (*Body Parameter*)  
+- `"stream"`: (*Body Parameter*)  
   The approach of streaming text generation.  
   `False`
-- `session_id`: (*Body Parameter*)  
+- `"session_id"`: (*Body Parameter*)  
   The ID of session. If not provided, a new session will be generated.
 
 ### Response
