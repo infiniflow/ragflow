@@ -17,10 +17,9 @@ RAGFlow.create_dataset(
     name: str,
     avatar: str = "",
     description: str = "",
+    embedding_model: str = "BAAI/bge-zh-v1.5",
     language: str = "English",
     permission: str = "me", 
-    document_count: int = 0,
-    chunk_count: int = 0,
     chunk_method: str = "naive",
     parser_config: DataSet.ParserConfig = None
 ) -> DataSet
@@ -143,7 +142,7 @@ RAGFlow.list_datasets(
 ) -> list[DataSet]
 ```
 
-Retrieves a list of datasets.
+Lists datasets.
 
 ### Parameters
 
@@ -296,7 +295,7 @@ Updates configurations for the current document.
 
 A dictionary representing the attributes to update, with the following keys:
 
-- `"name"`: `str` The name of the document to update.
+- `"display_name"`: `str` The name of the document to update.
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document:
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `True`.
@@ -370,7 +369,7 @@ print(doc)
 Dataset.list_documents(id:str =None, keywords: str=None, offset: int=0, limit:int = 1024,order_by:str = "create_time", desc: bool = True) -> list[Document]
 ```
 
-Retrieves a list of documents from the current dataset.
+Lists documents in the current dataset.
 
 ### Parameters
 
@@ -388,7 +387,7 @@ The starting index for the documents to retrieve. Typically used in confunction 
 
 #### limit: `int`
 
-The maximum number of documents to retrieve. Defaults to `1024`. A value of `-1` indicates that all documents should be returned.
+The maximum number of documents to retrieve. Defaults to `1024`.
 
 #### orderby: `str`
 
@@ -412,7 +411,7 @@ A `Document` object contains the following attributes:
 - `name`: The document name. Defaults to `""`.
 - `thumbnail`: The thumbnail image of the document. Defaults to `None`.
 - `knowledgebase_id`: The dataset ID associated with the document. Defaults to `None`.
-- `chunk_method` The chunk method name. Defaults to `""`. ?????naive??????
+- `chunk_method` The chunk method name. Defaults to `"naive"`.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `{"pages": [[1, 1000000]]}`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
 - `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
@@ -425,7 +424,7 @@ A `Document` object contains the following attributes:
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
 - `process_duation`: `float` Duration of the processing in seconds. Defaults to `0.0`.
 - `run`: `str` The document's processing status:
-  - `"0"`: UNSTART (default)
+  - `"0"`: UNSTART (default)  ?????????
   - `"1"`: RUNNING
   - `"2"`: CANCEL
   - `"3"`: DONE
@@ -506,9 +505,9 @@ The IDs of the documents to parse.
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.create_dataset(name="dataset_name")
 documents = [
-    {'name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
-    {'name': 'test2.txt', 'blob': open('./test_data/test2.txt',"rb").read()},
-    {'name': 'test3.txt', 'blob': open('./test_data/test3.txt',"rb").read()}
+    {'display_name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
+    {'display_name': 'test2.txt', 'blob': open('./test_data/test2.txt',"rb").read()},
+    {'display_name': 'test3.txt', 'blob': open('./test_data/test3.txt',"rb").read()}
 ]
 dataset.upload_documents(documents)
 documents = dataset.list_documents(keywords="test")
@@ -546,9 +545,9 @@ The IDs of the documents for which parsing should be stopped.
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.create_dataset(name="dataset_name")
 documents = [
-    {'name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
-    {'name': 'test2.txt', 'blob': open('./test_data/test2.txt',"rb").read()},
-    {'name': 'test3.txt', 'blob': open('./test_data/test3.txt',"rb").read()}
+    {'display_name': 'test1.txt', 'blob': open('./test_data/test1.txt',"rb").read()},
+    {'display_name': 'test2.txt', 'blob': open('./test_data/test2.txt',"rb").read()},
+    {'display_name': 'test3.txt', 'blob': open('./test_data/test3.txt',"rb").read()}
 ]
 dataset.upload_documents(documents)
 documents = dataset.list_documents(keywords="test")
@@ -566,7 +565,7 @@ print("Async bulk parsing cancelled.")
 ## Add chunk
 
 ```python
-Document.add_chunk(content:str) -> Chunk ?????????????????????
+Document.add_chunk(content:str, important_keywords:list[str] = []) -> Chunk
 ```
 
 Adds a chunk to the current document.
@@ -577,7 +576,7 @@ Adds a chunk to the current document.
 
 The text content of the chunk.
 
-#### important_keywords: `list[str]`  ??????????????????????
+#### important_keywords: `list[str]`
 
 The key terms or phrases to tag with the chunk.
 
@@ -588,7 +587,7 @@ The key terms or phrases to tag with the chunk.
 
 A `Chunk` object contains the following attributes:
 
-- `id`: `str` 
+- `id`: `str`
 - `content`: `str` Content of the chunk.
 - `important_keywords`: `list[str]` A list of key terms or phrases to tag with the chunk.
 - `create_time`: `str` The time when the chunk was created (added to the document).
@@ -596,9 +595,9 @@ A `Chunk` object contains the following attributes:
 - `knowledgebase_id`: `str` The ID of the associated dataset.
 - `document_name`: `str` The name of the associated document.
 - `document_id`: `str` The ID of the associated document.
-- `available`: `int`???? The chunk's availability status in the dataset. Value options:
-  - `0`: Unavailable
-  - `1`: Available
+- `available`: `bool` The chunk's availability status in the dataset. Value options:
+  - `False`: Unavailable
+  - `True`: Available
 
 
 ### Examples
@@ -619,26 +618,26 @@ chunk = doc.add_chunk(content="xxxxxxx")
 ## List chunks
 
 ```python
-Document.list_chunks(keywords: str = None, offset: int = 0, limit: int = -1, id : str = None) -> list[Chunk]
+Document.list_chunks(keywords: str = None, offset: int = 1, limit: int = 1024, id : str = None) -> list[Chunk]
 ```
 
-Retrieves a list of chunks from the current document.
+Lists chunks in the current document.
 
 ### Parameters
 
-#### keywords: `str`  
+#### keywords: `str`
   
 The keywords used to match chunk content. Defaults to `None`
 
 #### offset: `int`
 
-The starting index for the chunks to retrieve. Defaults to `1`??????
+The starting index for the chunks to retrieve. Defaults to `1`.
 
-#### limit  
+#### limit: `int`
 
-The maximum number of chunks to retrieve.  Default: `30`?????????
+The maximum number of chunks to retrieve.  Default: `1024`
 
-#### id
+#### id: `str`
 
 The ID of the chunk to retrieve. Default: `None`
 
@@ -713,9 +712,9 @@ A dictionary representing the attributes to update, with the following keys:
 
 - `"content"`: `str` Content of the chunk.
 - `"important_keywords"`: `list[str]` A list of key terms or phrases to tag with the chunk.
-- `"available"`: `int` The chunk's availability status in the dataset. Value options:
-  - `0`: Unavailable
-  - `1`: Available
+- `"available"`: `bool` The chunk's availability status in the dataset. Value options:
+  - `False`: Unavailable
+  - `True`: Available
 
 ### Returns
 
@@ -741,10 +740,10 @@ chunk.update({"content":"sdfx..."})
 ## Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", datasets:list[str]=None, document=list[str]=None, offset:int=1, limit:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", datasets:list[str]=None, document=list[str]=None, offset:int=1, limit:int=1024, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
 ```
 
-???????
+Retrieves chunks from specified datasets.
 
 ### Parameters
 
@@ -752,21 +751,21 @@ RAGFlow.retrieve(question:str="", datasets:list[str]=None, document=list[str]=No
 
 The user query or query keywords. Defaults to `""`.
 
-#### datasets: `list[str]`, *Required*?????
+#### datasets: `list[str]`, *Required*
 
 The datasets to search from.
 
 #### document: `list[str]`
 
-The documents to search from. `None` means no limitation. Defaults to `None`.
+The documents to search from. Defaults to `None`.
 
 #### offset: `int`
 
-The starting index for the documents to retrieve. Defaults to `0`??????.
+The starting index for the documents to retrieve. Defaults to `1`.
 
 #### limit: `int`
 
-The maximum number of chunks to retrieve. Defaults to `6`.???????????????
+The maximum number of chunks to retrieve. Defaults to `1024`.
 
 #### Similarity_threshold: `float`
 
@@ -786,14 +785,17 @@ The ID of the rerank model. Defaults to `None`.
 
 #### keyword: `bool`
 
-Indicates whether keyword-based matching is enabled:
+Indicates whether to enable keyword-based matching:
 
-- `True`: Enabled.
-- `False`: Disabled (default).
+- `True`: Enable keyword-based matching.
+- `False`: Disable keyword-based matching (default).
 
 #### highlight: `bool`
 
-Specifying whether to enable highlighting of matched terms in the results (True) or not (False).
+Specifying whether to enable highlighting of matched terms in the results:
+
+- `True`: Enable highlighting of matched terms.
+- `False`: Disable highlighting of matched terms (default).
 
 ### Returns
 
@@ -849,15 +851,15 @@ Creates a chat assistant.
 
 The following shows the attributes of a `Chat` object:
 
-#### name: `str`, *Required*????????
+#### name: `str`, *Required*
 
-The name of the chat assistant. Defaults to `"assistant"`.
+The name of the chat assistant..
 
 #### avatar: `str`
 
 Base64 encoding of the avatar. Defaults to `""`.
 
-#### knowledgebases: `list[str]` 
+#### knowledgebases: `list[str]`
 
 The IDs of the associated datasets. Defaults to `[""]`.
 
@@ -1016,7 +1018,7 @@ RAGFlow.list_chats(
 ) -> list[Chat]
 ```
 
-Retrieves a list of chat assistants.
+Lists chat assistants.
 
 ### Parameters
 
