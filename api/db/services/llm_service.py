@@ -133,7 +133,8 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in Seq2txtModel:
                 return
             return Seq2txtModel[model_config["llm_factory"]](
-                model_config["api_key"], model_config["llm_name"], lang,
+                key=model_config["api_key"], model_name=model_config["llm_name"],
+                lang=lang,
                 base_url=model_config["api_base"]
             )
         if llm_type == LLMType.TTS:
