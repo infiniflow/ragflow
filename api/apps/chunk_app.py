@@ -21,8 +21,9 @@ from flask import request
 from flask_login import login_required, current_user
 from elasticsearch_dsl import Q
 
+from api.db.services.dialog_service import keyword_extraction
 from rag.app.qa import rmPrefix, beAdoc
-from rag.nlp import search, rag_tokenizer, keyword_extraction
+from rag.nlp import search, rag_tokenizer
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
