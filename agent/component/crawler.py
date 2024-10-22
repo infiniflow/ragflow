@@ -18,6 +18,7 @@ import asyncio
 from crawl4ai import AsyncWebCrawler
 from agent.component.base import ComponentBase, ComponentParamBase
 
+
 class CrawlerParam(ComponentParamBase):
     """
     Define the Crawler component parameters.
@@ -25,9 +26,11 @@ class CrawlerParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
+        self.proxy = None
+        self.extract_type = "markdown"
     
     def check(self):
-        return True
+        self.check_valid_value(self.extract_type, "Type of content from the crawler", ['html', 'markdown', 'content'])
 
 
 class Crawler(ComponentBase, ABC):
@@ -46,7 +49,6 @@ class Crawler(ComponentBase, ABC):
         except Exception as e:
             return Crawler.be_output(f"An unexpected error occurred: {str(e)}")
 
-
     async def get_web(self, url):
         proxy = self._param.proxy if self._param.proxy else None
         async with AsyncWebCrawler(verbose=True, proxy=proxy) as crawler:
@@ -55,16 +57,13 @@ class Crawler(ComponentBase, ABC):
                 bypass_cache=True
             )
             
-            match self._param.extract_type:
-                case 'html':
-                    return result.cleaned_html
-                case 'markdown':
-                    return result.markdown
-                case 'content':
-                    return result.extracted_content
-                case _:
-                    return result.markdown
-                # print(result.markdown)
+            if self._param.extract_type == 'html':
+                return result.cleaned_html
+            elif self._param.extract_type == 'markdown':
+                return result.markdown
+            elif self._param.extract_type == 'content':
+                result.extracted_content
+            return result.markdown
             
 
 
