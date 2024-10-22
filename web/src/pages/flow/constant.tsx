@@ -611,7 +611,7 @@ export const NodeMap = {
   [Operator.BaiduFanyi]: 'ragNode',
   [Operator.QWeather]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
-  [Operator.Switch]: 'categorizeNode',
+  [Operator.Switch]: 'switchNode',
   [Operator.Concentrator]: 'logicNode',
   [Operator.WenCai]: 'ragNode',
   [Operator.AkShare]: 'ragNode',

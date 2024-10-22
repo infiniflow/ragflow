@@ -25,6 +25,7 @@ import { CategorizeNode } from './node/categorize-node';
 import { LogicNode } from './node/logic-node';
 import NoteNode from './node/note-node';
 import { RelevantNode } from './node/relevant-node';
+import { SwitchNode } from './node/switch-node';
 
 const nodeTypes = {
   ragNode: RagNode,
@@ -33,6 +34,7 @@ const nodeTypes = {
   relevantNode: RelevantNode,
   logicNode: LogicNode,
   noteNode: NoteNode,
+  switchNode: SwitchNode,
 };
 
 const edgeTypes = {
