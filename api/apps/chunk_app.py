@@ -320,24 +320,7 @@ def knowledge_graph():
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]
         try:
-            content_json = json.loads(sres.field[id]["content_with_weight"])
-            if ty == 'mind_map':
-                # 重复id处理
-                node_dict = {}
-
-                def repeat_deal(content_json, node_dict):
-                    if 'id' in content_json:
-                        if content_json['id'] in node_dict:
-                            content_json['id'] += f"({node_dict[content_json['id']]})"
-                            node_dict[content_json['id']] += 1
-                        else:
-                            node_dict[content_json['id']] = 1
-                    if 'children' in content_json and content_json['children']:
-                        repeat_deal(content_json['children'], node_dict)
-
-                repeat_deal(content_json, node_dict)
-                pass
-            obj[ty] = content_json
+            obj[ty] = json.loads(sres.field[id]["content_with_weight"])
         except Exception as e:
             print(traceback.format_exc(), flush=True)
 
