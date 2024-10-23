@@ -17,11 +17,12 @@ import {
 } from 'antd';
 import omit from 'lodash/omit';
 import React, { useEffect, useMemo } from 'react';
-import { useFetchParserListOnMount } from './hooks';
+import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
 
 import { useTranslate } from '@/hooks/common-hooks';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { AutoKeywordsItem, AutoQuestionsItem } from '../auto-keywords-item';
 import Delimiter from '../delimiter';
 import EntityTypesItem from '../entity-types-item';
 import ExcelToHtml from '../excel-to-html';
@@ -107,6 +108,8 @@ const ChunkMethodModal: React.FC<IProps> = ({
 
   const showExcelToHtml =
     selectedTag === 'naive' && documentExtension === 'xlsx';
+
+  const showAutoKeywords = useShowAutoKeywords();
 
   const afterClose = () => {
     form.resetFields();
@@ -281,6 +284,12 @@ const ChunkMethodModal: React.FC<IProps> = ({
               max={selectedTag === 'knowledge_graph' ? 8192 * 2 : 2048}
             ></MaxTokenNumber>
             <Delimiter></Delimiter>
+          </>
+        )}
+        {showAutoKeywords(selectedTag) && (
+          <>
+            <AutoKeywordsItem></AutoKeywordsItem>
+            <AutoQuestionsItem></AutoQuestionsItem>
           </>
         )}
         {showExcelToHtml && <ExcelToHtml></ExcelToHtml>}

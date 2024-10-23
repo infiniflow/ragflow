@@ -67,14 +67,16 @@ class Base(ABC):
                 if not resp.choices[0].delta.content:
                     resp.choices[0].delta.content = ""
                 ans += resp.choices[0].delta.content
-                total_tokens = (
-                    (
-                            total_tokens
-                            + num_tokens_from_string(resp.choices[0].delta.content)
-                    )
-                    if not hasattr(resp, "usage") or not resp.usage
-                    else resp.usage.get("total_tokens", total_tokens)
-                )
+
+                if not hasattr(resp, "usage") or not resp.usage:
+                    total_tokens = (
+                                total_tokens
+                                + num_tokens_from_string(resp.choices[0].delta.content)
+                        )
+                elif isinstance(resp.usage, dict):
+                    total_tokens = resp.usage.get("total_tokens", total_tokens)
+                else: total_tokens = resp.usage.total_tokens
+
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                         [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"

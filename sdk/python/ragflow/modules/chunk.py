@@ -8,10 +8,10 @@ class Chunk(Base):
         self.important_keywords = []
         self.create_time = ""
         self.create_timestamp = 0.0
-        self.knowledgebase_id = None
+        self.dataset_id = None
         self.document_name = ""
         self.document_id = ""
-        self.available = 1
+        self.available = True
         for k in list(res_dict.keys()):
             if k not in self.__dict__:
                 res_dict.pop(k)
@@ -19,7 +19,7 @@ class Chunk(Base):
 
 
     def update(self,update_message:dict):
-        res = self.put(f"/dataset/{self.knowledgebase_id}/document/{self.document_id}/chunk/{self.id}",update_message)
+        res = self.put(f"/dataset/{self.dataset_id}/document/{self.document_id}/chunk/{self.id}",update_message)
         res = res.json()
         if res.get("code") != 0 :
             raise Exception(res["message"])

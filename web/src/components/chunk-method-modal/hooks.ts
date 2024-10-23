@@ -1,7 +1,7 @@
 import { useHandleChunkMethodSelectChange } from '@/hooks/logic-hooks';
 import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { FormInstance } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const ParserListMap = new Map([
   [
@@ -117,4 +117,14 @@ export const useFetchParserListOnMount = (
   };
 
   return { parserList: nextParserList, handleChange, selectedTag };
+};
+
+const hideAutoKeywords = ['qa', 'table', 'resume', 'knowledge_graph'];
+
+export const useShowAutoKeywords = () => {
+  const showAutoKeywords = useCallback((selectedTag: string) => {
+    return hideAutoKeywords.every((x) => selectedTag !== x);
+  }, []);
+
+  return showAutoKeywords;
 };

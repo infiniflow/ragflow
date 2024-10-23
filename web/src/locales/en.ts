@@ -154,6 +154,10 @@ export default {
       delimiter: `Delimiter`,
       html4excel: 'Excel to HTML',
       html4excelTip: `Excel will be parsed into HTML table or not. If it's FALSE, every row in Excel will be formed as a chunk.`,
+      autoKeywords: 'Auto keywords',
+      autoKeywordsTip: `Extract N keywords for every chunk to boost their rank score while querying such keywords. Extra tokens will be comsumed for LLM that you set in 'System model settings'. You can check the result in the chunk list.`,
+      autoQuestions: 'Auto questions',
+      autoQuestionsTip: `Extract N questions for every chunk to boost their rank score while querying such questions. Extra tokens will be comsumed for LLM that you set in 'System model settings'. You can check the result in the chunk list. This function will not destroy the entire chunking process if errors occur except adding empty result to the original chunk.`,
     },
     knowledgeConfiguration: {
       titleDescription:
