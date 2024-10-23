@@ -393,6 +393,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
             if sum_question:
                 res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng))
         return res
+
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
         qai_list, tbls = docx_parser(filename, binary,

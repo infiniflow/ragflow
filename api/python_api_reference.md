@@ -424,11 +424,11 @@ A `Document` object contains the following attributes:
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
 - `process_duation`: `float` Duration of the processing in seconds. Defaults to `0.0`.
 - `run`: `str` The document's processing status:
-  - `"UNSTART"`  (default) 
-  - `"RUNNING"` 
-  - `"CANCEL"` 
-  - `"DONE"` 
-  - `"FAIL"` 
+  - `"UNSTART"`  (default)
+  - `"RUNNING"`
+  - `"CANCEL"`
+  - `"DONE"`
+  - `"FAIL"`
 - `status`: `str` Reserved for future use.
 
 ### Examples

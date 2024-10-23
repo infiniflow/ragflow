@@ -87,7 +87,7 @@ class AzureSeq2txt(Base):
 
 
 class XinferenceSeq2txt(Base):
-    def __init__(self,key,model_name="whisper-small",**kwargs):
+    def __init__(self, key, model_name="whisper-small", **kwargs):
         self.base_url = kwargs.get('base_url', None)
         self.model_name = model_name
         self.key = key
