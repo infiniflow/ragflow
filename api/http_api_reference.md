@@ -103,7 +103,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -141,7 +141,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -189,7 +189,7 @@ curl --request DELETE \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -197,7 +197,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -266,7 +266,7 @@ curl --request PUT \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -274,7 +274,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -330,7 +330,7 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -373,7 +373,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -426,7 +426,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -434,7 +434,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -504,7 +504,7 @@ curl --request PUT \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -512,7 +512,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -562,7 +562,7 @@ A successful response includes a text object like the following:
 test_2.
 ```????????????????
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -616,7 +616,7 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -659,7 +659,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -705,7 +705,7 @@ curl --request DELETE \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -713,7 +713,7 @@ A successful response includes a JSON object like the following:
 }.
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -759,7 +759,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -767,7 +767,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -813,7 +813,7 @@ curl --request DELETE \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -821,7 +821,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -871,7 +871,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -892,7 +892,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -941,7 +941,7 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -985,7 +985,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1031,7 +1031,7 @@ curl --request DELETE \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1039,7 +1039,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1094,7 +1094,7 @@ curl --request PUT \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1102,7 +1102,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1188,7 +1188,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1227,7 +1227,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1341,7 +1341,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1411,7 +1411,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1496,7 +1496,7 @@ curl --request PUT \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1504,7 +1504,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1552,7 +1552,7 @@ curl --request DELETE \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1560,7 +1560,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1611,7 +1611,7 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1690,7 +1690,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1735,7 +1735,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1758,7 +1758,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1804,7 +1804,7 @@ curl --request PUT \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1812,7 +1812,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1863,7 +1863,7 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1888,7 +1888,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1935,7 +1935,7 @@ curl --request DELETE \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1943,7 +1943,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1980,7 +1980,7 @@ curl --request POST \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_API_KEY}' \
   --data-binary '{
-    "question":  "你好!",
+    "question":  "Hello!",
     "stream": true
   }'
 ```
@@ -1998,7 +1998,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 data: {
@@ -2100,7 +2100,7 @@ data:{
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
