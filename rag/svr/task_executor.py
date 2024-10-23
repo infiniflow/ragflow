@@ -199,23 +199,6 @@ def build(row):
         d["_id"] = md5.hexdigest()
         d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
-
-        if row["parser_config"].get("auto_keywords", 0):
-            chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
-            d["important_kwd"] = keyword_extraction(chat_mdl, ck["content_with_weight"],
-                                                    row["parser_config"]["auto_keywords"]).split(",")
-            d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
-
-        if row["parser_config"].get("auto_questions", 0):
-            chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
-            qst = question_proposal(chat_mdl, ck["content_with_weight"], row["parser_config"]["auto_keywords"])
-            ck["content_with_weight"] = f"Question: \n{qst}\n\nAnswer:\n" + ck["content_with_weight"]
-            qst = rag_tokenizer.tokenize(qst)
-            if "content_ltks" in ck:
-                ck["content_ltks"] += " " + qst
-            if "content_sm_ltks" in ck:
-                ck["content_sm_ltks"] += " " + rag_tokenizer.fine_grained_tokenize(qst)
-
         if not d.get("image"):
             docs.append(d)
             continue
@@ -238,6 +221,26 @@ def build(row):
         del d["image"]
         docs.append(d)
     cron_logger.info("MINIO PUT({}):{}".format(row["name"], el))
+
+    if row["parser_config"].get("auto_keywords", 0):
+        callback(msg="Start to generate keywords for every chunk ...")
+        chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
+        for d in docs:
+            d["important_kwd"] = keyword_extraction(chat_mdl, d["content_with_weight"],
+                                                    row["parser_config"]["auto_keywords"]).split(",")
+            d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
+
+    if row["parser_config"].get("auto_questions", 0):
+        callback(msg="Start to generate questions for every chunk ...")
+        chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
+        for d in docs:
+            qst = question_proposal(chat_mdl, d["content_with_weight"], row["parser_config"]["auto_questions"])
+            d["content_with_weight"] = f"Question: \n{qst}\n\nAnswer:\n" + d["content_with_weight"]
+            qst = rag_tokenizer.tokenize(qst)
+            if "content_ltks" in d:
+                d["content_ltks"] += " " + qst
+            if "content_sm_ltks" in d:
+                d["content_sm_ltks"] += " " + rag_tokenizer.fine_grained_tokenize(qst)
 
     return docs
 
