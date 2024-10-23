@@ -1,48 +1,37 @@
+#
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
 import pathlib
-import re
 import datetime
-import json
-import traceback
 
-from botocore.docs.method import document_model_driven_method
-from flask import request
-from flask_login import login_required, current_user
-from elasticsearch_dsl import Q
-from pygments import highlight
-from sphinx.addnodes import document
-
+from api.db.services.dialog_service import keyword_extraction
 from rag.app.qa import rmPrefix, beAdoc
-from rag.nlp import search, rag_tokenizer, keyword_extraction
-from rag.utils.es_conn import ELASTICSEARCH
-from rag.utils import rmSpace
+from rag.nlp import rag_tokenizer
 from api.db import LLMType, ParserType
-from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService
-from api.db.services.user_service import UserTenantService
-from api.utils.api_utils import server_error_response, get_error_data_result, validate_request
-from api.db.services.document_service import DocumentService
-from api.settings import RetCode, retrievaler, kg_retrievaler
-from api.utils.api_utils import get_result
+from api.settings import kg_retrievaler
 import hashlib
 import re
-from api.utils.api_utils import get_result, token_required, get_error_data_result
-
-from api.db.db_models import Task, File
-
+from api.utils.api_utils import token_required
+from api.db.db_models import Task
 from api.db.services.task_service import TaskService, queue_tasks
-from api.db.services.user_service import TenantService, UserTenantService
-
-from api.utils.api_utils import server_error_response, get_error_data_result, validate_request
-
-from api.utils.api_utils import get_result, get_result, get_error_data_result
-
-from functools import partial
+from api.utils.api_utils import server_error_response
+from api.utils.api_utils import get_result, get_error_data_result
 from io import BytesIO
-import os
 from elasticsearch_dsl import Q
 from flask import request, send_file
-from flask_login import login_required
-
 from api.db import FileSource, TaskStatus, FileType
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService
@@ -50,12 +39,15 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.settings import RetCode, retrievaler
-from api.utils.api_utils import construct_json_result, construct_error_response,get_parser_config
-from rag.app import book, laws, manual, naive, one, paper, presentation, qa, resume, table, picture, audio, email
+from api.utils.api_utils import construct_json_result,get_parser_config
 from rag.nlp import search
 from rag.utils import rmSpace
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
+
+MAXIMUM_OF_UPLOADING_FILES = 256
+
+MAXIMUM_OF_UPLOADING_FILES = 256
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
