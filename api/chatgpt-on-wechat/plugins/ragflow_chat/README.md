@@ -1,119 +1,58 @@
-```markdown
-# RAGFlow Chat Integration Plugin (`ragflow_chat`)
+RAGFlow Chat Plugin for ChatGPT-on-WeChat
+=========================================
 
-## Overview
+This folder contains the source code for the `ragflow_chat` plugin, which extends the core functionality of the RAGFlow API to support conversational interactions using Retrieval-Augmented Generation (RAG). This plugin integrates seamlessly with the [ChatGPT-on-WeChat](https://github.com/zhayujie/chatgpt-on-wechat) project, enabling WeChat and other platforms to leverage the knowledge retrieval capabilities provided by RAGFlow in chat interactions.
 
-This folder contains the source code for the `ragflow_chat` plugin, which extends the core functionality of the RAGFlow API to support conversational interactions using Retrieval-Augmented Generation (RAG). It is designed to facilitate chatbot-style dialogues by combining a knowledge base with external language model API calls.
+### Features
+* **Conversational Interactions**: Combine WeChat's conversational interface with powerful RAG (Retrieval-Augmented Generation) capabilities.
+* **Knowledge-Based Responses**: Enrich conversations by retrieving relevant data from external knowledge sources and incorporating them into chat responses.
+* **Multi-Platform Support**: Works across WeChat, WeCom, and various other platforms supported by the ChatGPT-on-WeChat framework.
 
-## Features
+### Plugin vs. ChatGPT-on-WeChat Configurations
+**Note**: There are two distinct configuration files used in this setup—one for the ChatGPT-on-WeChat core project and another specific to the `ragflow_chat` plugin. It is important to configure both correctly to ensure smooth integration.
 
-- **Conversational Interaction**: Supports user input in natural language and responds with answers based on RAG.
-- **Knowledge Base Integration**: Leverages a RAG-based approach to search and retrieve relevant information from predefined knowledge bases.
-- **Session Management**: Each conversation is tracked with a session ID, allowing for multi-turn dialogue handling.
-- **API Key Authorization**: Requires an API key to access RAGFlow's services.
+#### ChatGPT-on-WeChat Root Configuration (`config.json`)
+This file is located in the root directory of the [ChatGPT-on-WeChat](https://github.com/zhayujie/chatgpt-on-wechat) project and is responsible for defining the communication channels and overall behavior. For example, it handles the configuration for WeChat, WeCom, and other services like Feishu and DingTalk.
 
-## Folder Structure
-
-```bash
-ragflow/
-  └── api/
-      └── ragflow_chat/
-          ├── ragflow_chat.py         # Main plugin logic.
-          ├── config.json             # Configuration file for API keys and endpoints.
-          ├── requirements.txt        # Dependencies for the plugin.
-          └── README.md               # Documentation for the plugin.
-```
-
-## Installation
-
-1. **Install Dependencies**: 
-   Make sure all dependencies are installed by running:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configure API Keys**: 
-   Edit the `config.json` file to include your RAGFlow and external API keys:
-   ```json
-   {
-       "api_key": "YOUR_RAGFLOW_API_KEY",
-       "host_address": "127.0.0.1:280"
-   }
-   ```
-
-3. **Run the Plugin**:
-   You can execute the plugin within your RAGFlow environment by calling the `ragflow_chat.py` script:
-   ```bash
-   python ragflow_chat.py
-   ```
-
-## Usage
-
-### Create a New Conversation
-
-You can initiate a new conversation with the following API request:
-
-```bash
-POST /api/ragflow_chat/new_conversation
-```
-
-**Request Example**:
+Example `config.json` (for WeChat channel):
 ```json
 {
-    "user_id": "unique_user_id"
+  "channel_type": "wechatmp",
+  "wechatmp_app_id": "YOUR_APP_ID",
+  "wechatmp_app_secret": "YOUR_APP_SECRET",
+  "wechatmp_token": "YOUR_TOKEN",
+  "wechatmp_port": 80,
+  ...
 }
 ```
 
-### Send a Message
+This file can also be modified to support other communication platforms, such as:
+- **Personal WeChat** (`channel_type: wx`)
+- **WeChat Public Account** (`wechatmp` or `wechatmp_service`)
+- **WeChat Work (WeCom)** (`wechatcom_app`)
+- **Feishu** (`feishu`)
+- **DingTalk** (`dingtalk`)
 
-To send a message to an ongoing conversation, use the following request:
+For detailed configuration options, see the official [LinkAI documentation](https://docs.link-ai.tech/cow/multi-platform/wechat-mp).
 
-```bash
-POST /api/ragflow_chat/send_message
-```
+#### RAGFlow Chat Plugin Configuration (`plugins/ragflow_chat/config.json`)
+This configuration is specific to the `ragflow_chat` plugin and is used to set up communication with the RAGFlow server. Ensure that your RAGFlow server is running, and update the plugin's `config.json` file with your server details:
 
-**Request Example**:
+Example `config.json` (for `ragflow_chat`):
 ```json
 {
-    "conversation_id": "existing_conversation_id",
-    "message": {
-        "role": "user",
-        "content": "What is the capital of France?"
-    }
+  "ragflow_api_key": "YOUR_API_KEY",
+  "ragflow_host": "127.0.0.1:80"
 }
 ```
 
-**Response Example**:
-```json
-{
-    "data": {
-        "answer": "The capital of France is Paris.",
-        "reference": []
-    },
-    "retcode": 0,
-    "retmsg": "success"
-}
-```
+This file must be configured to point to your RAGFlow instance, with the `ragflow_api_key` and `ragflow_host` fields set appropriately. The `ragflow_host` is typically your server's address and port number, and the `ragflow_api_key` is obtained from your RAGFlow API setup.
 
-### Configuration
+### Requirements
+Before you can use this plugin, ensure the following are in place:
 
-All necessary configurations for the API key, endpoints, and session management are stored in the `config.json` file. Ensure that your API keys are up to date and that the host address points to the correct RAGFlow instance.
+1. You have installed and configured [ChatGPT-on-WeChat](https://github.com/zhayujie/chatgpt-on-wechat).
+2. You have deployed and are running the [RAGFlow](https://github.com/jina-ai/ragflow) server or a quick setup through [LinkAI Tech](https://docs.link-ai.tech/cow/quick-start).
+   
+Make sure both `config.json` files (ChatGPT-on-WeChat and RAGFlow Chat Plugin) are correctly set up as per the examples above.
 
-## Contribution
-
-We welcome contributions! Please feel free to open issues or submit pull requests. When submitting code, ensure all changes are thoroughly tested.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-```
-
-### 主要部分解释：
-- **Overview**：介绍插件的核心功能，说明这是一个基于RAG（检索增强生成）的聊天插件。
-- **Folder Structure**：展示项目的文件结构，帮助用户理解各文件的作用。
-- **Installation**：安装步骤，包括如何安装依赖和配置API Key。
-- **Usage**：提供简单的API用法示例，说明如何开始会话和发送消息。
-- **Contribution**：邀请其他开发者贡献代码或提出问题。
-- **License**：列出项目的许可信息，建议使用MIT License或其他常见的开源许可证。
-
-这种README文件清晰简洁，能够帮助开发者快速上手你的插件项目。
