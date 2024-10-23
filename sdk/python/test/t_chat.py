@@ -1,4 +1,5 @@
 from ragflow import RAGFlow, Chat
+from xgboost.testing import datasets
 
 from common import API_KEY, HOST_ADDRESS
 from test_sdkbase import TestSdk
@@ -11,7 +12,7 @@ class TestChat(TestSdk):
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         kb = rag.create_dataset(name="test_create_chat")
-        chat = rag.create_chat("test_create", knowledgebases=[kb])
+        chat = rag.create_chat("test_create", datasets=[kb])
         if isinstance(chat, Chat):
             assert chat.name == "test_create", "Name does not match."
         else:
@@ -23,7 +24,7 @@ class TestChat(TestSdk):
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         kb = rag.create_dataset(name="test_update_chat")
-        chat = rag.create_chat("test_update", knowledgebases=[kb])
+        chat = rag.create_chat("test_update", datasets=[kb])
         if isinstance(chat, Chat):
             assert chat.name == "test_update", "Name does not match."
             res=chat.update({"name":"new_chat"})
@@ -37,7 +38,7 @@ class TestChat(TestSdk):
         """
         rag = RAGFlow(API_KEY, HOST_ADDRESS)
         kb = rag.create_dataset(name="test_delete_chat")
-        chat = rag.create_chat("test_delete", knowledgebases=[kb])
+        chat = rag.create_chat("test_delete", datasets=[kb])
         if isinstance(chat, Chat):
             assert chat.name == "test_delete", "Name does not match."
             res = rag.delete_chats(ids=[chat.id])
