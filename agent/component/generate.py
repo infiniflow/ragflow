@@ -108,7 +108,7 @@ class Generate(ComponentBase):
             if "content" not in out.columns:
                 kwargs[para["key"]] = "Nothing"
             else:
-                kwargs[para["key"]] = "  - " + "\n  - ".join(out["content"])
+                kwargs[para["key"]] = "  - "+"\n - ".join([o if isinstance(o, str) else str(o) for o in out["content"]])
 
         kwargs["input"] = input
         for n, v in kwargs.items():
