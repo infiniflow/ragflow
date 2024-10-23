@@ -337,7 +337,7 @@ def valid(permission,valid_permission,language,valid_language,chunk_method,valid
 
 def valid_parameter(parameter,valid_values):
     if parameter and parameter not in valid_values:
-       return get_error_data_result(f"{parameter}  not in {valid_values}")
+       return get_error_data_result(f"{parameter} is not in {valid_values}")
 
 def get_parser_config(chunk_method,parser_config):
     if parser_config:
