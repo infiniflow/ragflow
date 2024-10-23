@@ -1,6 +1,5 @@
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import pick from 'lodash/pick';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
@@ -24,9 +23,6 @@ export function RagNode({
         className={classNames(styles.ragNode, {
           [styles.selectedNode]: selected,
         })}
-        style={{
-          ...pick(style, ['color']),
-        }}
       >
         <Handle
           id="c"
@@ -49,6 +45,7 @@ export function RagNode({
             name={data.label as Operator}
             fontSize={style?.iconFontSize ?? 16}
             width={style?.iconWidth}
+            color={operatorMap[data.label as Operator].color}
           ></OperatorIcon>
           <div className={styles.nodeTitle}>{data.name}</div>
           <NodeDropdown

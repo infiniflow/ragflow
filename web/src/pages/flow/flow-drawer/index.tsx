@@ -3,7 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
-import { Operator } from '../constant';
+import { Operator, operatorMap } from '../constant';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -103,7 +103,10 @@ const FlowDrawer = ({
       title={
         <Flex vertical>
           <Flex gap={'middle'} align="center">
-            <OperatorIcon name={operatorName}></OperatorIcon>
+            <OperatorIcon
+              name={operatorName}
+              color={operatorMap[operatorName]?.color}
+            ></OperatorIcon>
             <Flex align="center" gap={'small'} flex={1}>
               <label htmlFor="" className={styles.title}>
                 {t('title')}

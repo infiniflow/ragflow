@@ -53,7 +53,10 @@ export function LogicNode({
           justify={'space-between'}
           gap={ZeroGapOperators.some((x) => x === data.label) ? 0 : 6}
         >
-          <OperatorIcon name={data.label as Operator}></OperatorIcon>
+          <OperatorIcon
+            name={data.label as Operator}
+            color={operatorMap[data.label as Operator].color}
+          ></OperatorIcon>
           <span className={styles.nodeTitle}>{data.name}</span>
           <NodeDropdown
             id={id}

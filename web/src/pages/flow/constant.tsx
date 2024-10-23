@@ -2,6 +2,7 @@ import { ReactComponent as AkShareIcon } from '@/assets/svg/akshare.svg';
 import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
 import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
+import { ReactComponent as BeginIcon } from '@/assets/svg/begin.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
 import { ReactComponent as ConcentratorIcon } from '@/assets/svg/concentrator.svg';
 import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
@@ -39,7 +40,6 @@ import {
   MessageOutlined,
   RocketOutlined,
   SendOutlined,
-  SlidersOutlined,
 } from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
 
@@ -85,7 +85,7 @@ export const operatorIconMap = {
   [Operator.Retrieval]: RocketOutlined,
   [Operator.Generate]: MergeCellsOutlined,
   [Operator.Answer]: SendOutlined,
-  [Operator.Begin]: SlidersOutlined,
+  [Operator.Begin]: BeginIcon,
   [Operator.Categorize]: DatabaseOutlined,
   [Operator.Message]: MessageOutlined,
   [Operator.Relevant]: BranchesOutlined,
@@ -142,7 +142,7 @@ export const operatorMap: Record<
   },
   [Operator.Answer]: {
     backgroundColor: '#f4816d',
-    color: 'white',
+    color: '#f4816d',
   },
   [Operator.Begin]: {
     backgroundColor: '#4f51d6',
@@ -157,7 +157,7 @@ export const operatorMap: Record<
   },
   [Operator.Relevant]: {
     backgroundColor: '#9fd94d',
-    color: 'white',
+    color: '#8ef005',
     width: 70,
     height: 70,
     fontSize: 12,
@@ -165,7 +165,7 @@ export const operatorMap: Record<
   },
   [Operator.RewriteQuestion]: {
     backgroundColor: '#f8c7f8',
-    color: 'white',
+    color: '#f32bf3',
     width: 70,
     height: 70,
     fontSize: 12,
@@ -175,7 +175,7 @@ export const operatorMap: Record<
     width: 70,
     height: 70,
     backgroundColor: '#0f0e0f',
-    color: '#e1dcdc',
+    color: '#0f0e0f',
     fontSize: 12,
     iconWidth: 16,
     // iconFontSize: 16,
@@ -221,14 +221,14 @@ export const operatorMap: Record<
   [Operator.BaiduFanyi]: { backgroundColor: '#e5f2d3' },
   [Operator.QWeather]: { backgroundColor: '#a4bbf3' },
   [Operator.ExeSQL]: { backgroundColor: '#b9efe8' },
-  [Operator.Switch]: { backgroundColor: '#dbaff6' },
+  [Operator.Switch]: { backgroundColor: '#dbaff6', color: '#dbaff6' },
   [Operator.WenCai]: { backgroundColor: '#faac5b' },
   [Operator.AkShare]: { backgroundColor: '#8085f5' },
   [Operator.YahooFinance]: { backgroundColor: '#b474ff' },
   [Operator.Jin10]: { backgroundColor: '#a0b9f8' },
   [Operator.Concentrator]: {
     backgroundColor: '#32d2a3',
-    color: 'white',
+    color: '#32d2a3',
     width: 70,
     height: 70,
     fontSize: 10,

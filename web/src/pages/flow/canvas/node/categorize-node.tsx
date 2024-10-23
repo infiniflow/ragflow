@@ -1,7 +1,7 @@
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { Operator } from '../../constant';
+import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import NodeDropdown from './dropdown';
@@ -38,6 +38,7 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
           <OperatorIcon
             name={data.label as Operator}
             fontSize={24}
+            color={operatorMap[data.label as Operator].color}
           ></OperatorIcon>
           <span className={styles.nodeTitle}>{data.name}</span>
           <NodeDropdown id={id}></NodeDropdown>

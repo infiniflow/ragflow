@@ -1,12 +1,15 @@
+import { Flex } from 'antd';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { Handle, NodeProps, Position } from 'reactflow';
+import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
+import OperatorIcon from '../../operator-icon';
 import { RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 
 // TODO: do not allow other nodes to connect to this node
-export function BeginNode({ selected }: NodeProps<NodeData>) {
+export function BeginNode({ selected, data }: NodeProps<NodeData>) {
   const { t } = useTranslation();
 
   return (
@@ -15,7 +18,7 @@ export function BeginNode({ selected }: NodeProps<NodeData>) {
         [styles.selectedNode]: selected,
       })}
       style={{
-        width: 80,
+        width: 100,
       }}
     >
       <Handle
@@ -26,7 +29,14 @@ export function BeginNode({ selected }: NodeProps<NodeData>) {
         style={RightHandleStyle}
       ></Handle>
 
-      <div className={styles.nodeTitle}>{t(`flow.begin`)}</div>
+      <Flex align="center" justify={'space-between'} gap={6}>
+        <OperatorIcon
+          name={data.label as Operator}
+          fontSize={24}
+          color={operatorMap[data.label as Operator].color}
+        ></OperatorIcon>
+        <div className={styles.nodeTitle}>{t(`flow.begin`)}</div>
+      </Flex>
     </section>
   );
 }

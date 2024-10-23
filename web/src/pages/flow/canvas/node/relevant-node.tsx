@@ -1,7 +1,7 @@
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { Operator } from '../../constant';
+import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import NodeDropdown from './dropdown';
@@ -51,7 +51,10 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
           flex={1}
           className={styles.nodeHeader}
         >
-          <OperatorIcon name={data.label as Operator}></OperatorIcon>
+          <OperatorIcon
+            name={data.label as Operator}
+            color={operatorMap[data.label as Operator].color}
+          ></OperatorIcon>
           <span className={styles.nodeTitle}>{data.name}</span>
           <NodeDropdown id={id}></NodeDropdown>
         </Flex>
