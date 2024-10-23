@@ -495,7 +495,7 @@ curl --request PUT \
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
   - `"email"`: Email
-- `"parser_config"`: (*Body parameter*), `dict[string, Any]`
+- `"parser_config"`: (*Body parameter*), `object`
   The parsing configuration for the document:  
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `True`.
