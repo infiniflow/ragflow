@@ -51,6 +51,8 @@ class RAGFlow:
     def create_dataset(self, name: str, avatar: str = "", description: str = "", language: str = "English",
                        permission: str = "me",chunk_method: str = "naive",
                        parser_config: DataSet.ParserConfig = None) -> DataSet:
+        if parser_config:
+            parser_config = parser_config.to_json()
         res = self.post("/dataset",
                         {"name": name, "avatar": avatar, "description": description, "language": language,
                          "permission": permission, "chunk_method": chunk_method,
@@ -91,7 +93,7 @@ class RAGFlow:
                          llm: Chat.LLM = None, prompt: Chat.Prompt = None) -> Chat:
         dataset_list = []
         for dataset in datasets:
-            dataset_list.append(dataset.to_json())
+            dataset_list.append(dataset.id)
 
         if llm is None:
             llm = Chat.LLM(self, {"model_name": None,

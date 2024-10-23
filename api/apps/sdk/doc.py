@@ -44,6 +44,7 @@ from rag.nlp import search
 from rag.utils import rmSpace
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
+import os
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
