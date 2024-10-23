@@ -344,6 +344,9 @@ class SILICONFLOWRerank(Base):
             self.base_url, json=payload, headers=self.headers
         ).json()
         rank = np.zeros(len(texts), dtype=float)
+        if "results" not in response:
+            return rank, 0
+
         for d in response["results"]:
             rank[d["index"]] = d["relevance_score"]
         return (

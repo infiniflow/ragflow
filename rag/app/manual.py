@@ -67,9 +67,11 @@ class Pdf(PdfParser):
         return [(b["text"], b.get("layout_no", ""), self.get_position(b, zoomin))
                 for i, b in enumerate(self.boxes)], tbls
 
+
 class Docx(DocxParser):
     def __init__(self):
         pass
+
     def get_picture(self, document, paragraph):
         img = paragraph._element.xpath('.//pic:pic')
         if not img:
@@ -80,6 +82,7 @@ class Docx(DocxParser):
         image = related_part.image
         image = Image.open(BytesIO(image.blob))
         return image
+
     def concat_img(self, img1, img2):
         if img1 and not img2:
             return img1
@@ -159,6 +162,7 @@ class Docx(DocxParser):
             html += "</table>"
             tbls.append(((None, html), ""))
         return ti_list, tbls
+
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
@@ -244,6 +248,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         res = tokenize_table(tbls, doc, eng)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         return res
+
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary,
@@ -258,8 +263,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     else:
         raise NotImplementedError("file type not supported yet(pdf and docx supported)")
     
-
-
 
 if __name__ == "__main__":
     import sys

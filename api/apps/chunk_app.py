@@ -21,8 +21,9 @@ from flask import request
 from flask_login import login_required, current_user
 from elasticsearch_dsl import Q
 
+from api.db.services.dialog_service import keyword_extraction
 from rag.app.qa import rmPrefix, beAdoc
-from rag.nlp import search, rag_tokenizer, keyword_extraction
+from rag.nlp import search, rag_tokenizer
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
@@ -319,9 +320,28 @@ def knowledge_graph():
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]
         try:
-            obj[ty] = json.loads(sres.field[id]["content_with_weight"])
+            content_json = json.loads(sres.field[id]["content_with_weight"])
         except Exception as e:
-            print(traceback.format_exc(), flush=True)
+            continue
+
+        if ty == 'mind_map':
+            node_dict = {}
+
+            def repeat_deal(content_json, node_dict):
+                if 'id' in content_json:
+                    if content_json['id'] in node_dict:
+                        node_name = content_json['id']
+                        content_json['id'] += f"({node_dict[content_json['id']]})"
+                        node_dict[node_name] += 1
+                    else:
+                        node_dict[content_json['id']] = 1
+                if 'children' in content_json and content_json['children']:
+                    for item in content_json['children']:
+                        repeat_deal(item, node_dict)
+
+            repeat_deal(content_json, node_dict)
+
+        obj[ty] = content_json
 
     return get_json_result(data=obj)
 
