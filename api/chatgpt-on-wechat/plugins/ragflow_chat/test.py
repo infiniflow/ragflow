@@ -2,8 +2,8 @@ import requests
 import json
 
 # 配置参数
-api_key = "ragflow-hhNjA5MDIwNzc0YzExZWY4MWEyMDI0Mm"
-host_address = "127.0.0.1:280"
+api_key = "ragflow-***"
+host_address = "127.0.0.1:80"
 user_id = "test_user"
 user_input = "你好"
 
