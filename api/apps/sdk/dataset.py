@@ -15,8 +15,6 @@
 #
 
 from flask import request
-from transformers.models.pop2piano.convert_pop2piano_weights_to_hf import model
-
 from api.db import StatusEnum, FileSource
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService
