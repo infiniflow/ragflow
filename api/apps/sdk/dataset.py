@@ -37,9 +37,9 @@ def create(tenant_id):
     language = req.get("language")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
-    valid_permission = {"me", "team"}
-    valid_language ={"Chinese", "English"}
-    valid_chunk_method = {"naive","manual","qa","table","paper","book","laws","presentation","picture","one","knowledge_graph","email"}
+    valid_permission = ["me", "team"]
+    valid_language =["Chinese", "English"]
+    valid_chunk_method = ["naive","manual","qa","table","paper","book","laws","presentation","picture","one","knowledge_graph","email"]
     check_validation=valid(permission,valid_permission,language,valid_language,chunk_method,valid_chunk_method)
     if check_validation:
         return check_validation
@@ -47,10 +47,8 @@ def create(tenant_id):
     if "tenant_id" in req:
         return get_error_data_result(
             retmsg="`tenant_id` must not be provided")
-    chunk_count=req.get("chunk_count")
-    document_count=req.get("document_count")
-    if chunk_count or document_count:
-        return get_error_data_result(retmsg="`chunk_count` or `document_count` must be 0 or not be provided")
+    if "chunk_count" in req or "document_count" in req:
+        return get_error_data_result(retmsg="`chunk_count` or `document_count` must not be provided")
     if "name" not in req:
         return get_error_data_result(
             retmsg="`name` is not empty!")
@@ -123,10 +121,10 @@ def update(tenant_id,dataset_id):
     language = req.get("language")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
-    valid_permission = {"me", "team"}
-    valid_language = {"Chinese", "English"}
-    valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one",
-                          "knowledge_graph", "email"}
+    valid_permission = ["me", "team"]
+    valid_language = ["Chinese", "English"]
+    valid_chunk_method = ["naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one",
+                          "knowledge_graph", "email"]
     check_validation = valid(permission, valid_permission, language, valid_language, chunk_method, valid_chunk_method)
     if check_validation:
         return check_validation

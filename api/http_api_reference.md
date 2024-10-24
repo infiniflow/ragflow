@@ -46,8 +46,6 @@ curl --request POST \
   --header 'Authorization: Bearer {YOUR_API_KEY}' \
   --data '{
   "name": "test",
-  "chunk_count": 0,
-  "document_count": 0,
   "chunk_method": "naive"
 }'
 ```
@@ -105,7 +103,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -143,7 +141,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -191,7 +189,7 @@ curl --request DELETE \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -199,7 +197,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -268,7 +266,7 @@ curl --request PUT \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -276,7 +274,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -326,13 +324,13 @@ curl --request GET \
 - `"desc"`: (*Path parameter*)  
   Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `True`.
 - `"id"`: (*Path parameter*)  
-  The ID of the dataset to retrieve. Defaults to `None`.
+  The ID of the dataset to retrieve.
 - `"name"`: (*Path parameter*)  
-  The name of the dataset to retrieve. Defaults to `None`.
+  The name of the dataset to retrieve.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -375,7 +373,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -428,7 +426,7 @@ curl --request POST \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -436,7 +434,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -463,7 +461,7 @@ Updates configurations for a specified document.
 - Body:
   - `"name"`:`string`
   - `"chunk_method"`:`string`
-  - `"parser_config"`:`dict`
+  - `"parser_config"`:`object`
 
 #### Request example
 
@@ -497,7 +495,7 @@ curl --request PUT \
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
   - `"email"`: Email
-- `"parser_config"`: (*Body parameter*), `dict[string, Any]`
+- `"parser_config"`: (*Body parameter*), `object`
   The parsing configuration for the document:  
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `True`.
@@ -506,7 +504,7 @@ curl --request PUT \
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -514,7 +512,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -538,7 +536,7 @@ Downloads a document from a specified dataset.
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Output:
-  - `'{FILE_NAME}'`
+  - `'{PATH_TO_THE_FILE}'`
 
 #### Request example
 
@@ -558,13 +556,13 @@ curl --request GET \
 
 ### Response
 
-The successful response includes a text object like the following:
+Success:
 
 ```text
 test_2.
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -602,7 +600,7 @@ curl --request GET \
 - `"dataset_id"`: (*Path parameter*)  
   The dataset ID.
 - `"keywords"`: (*Filter parameter*), `string`  
-  The keywords used to match document titles. Defaults to `None`.
+  The keywords used to match document titles.
 - `"offset"`: (*Filter parameter*), `integer`  
   The starting index for the documents to retrieve. Typically used in conjunction with `limit`. Defaults to `1`.
 - `"limit"`: (*Filter parameter*), `integer`  
@@ -611,14 +609,14 @@ curl --request GET \
   The field by which documents should be sorted. Available options:
   - `"create_time"` (default)
   - `"update_time"`
-- `"desc"`: (*Filter parameter*), `bool`  
+- `"desc"`: (*Filter parameter*), `boolean`  
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `True`.
 - `"document_id"`: (*Filter parameter*)  
-  The ID of the document to retrieve. Defaults to `None`.
+  The ID of the document to retrieve.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -661,7 +659,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -703,11 +701,11 @@ curl --request DELETE \
 #### Request parameters
 
 - `"ids"`: (*Body parameter*), `list[string]`
-  The IDs of the documents to delete.
+  The IDs of the documents to delete. If not specified, all documents in the dataset will be deleted.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -715,7 +713,7 @@ A successful response includes a JSON object like the following:
 }.
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -754,13 +752,14 @@ curl --request POST \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)
-- `"document_ids"`: (*Body parameter*)  
-  The ids of the documents to parse.
+- `"dataset_id"`: (*Path parameter*)  
+  The dataset ID.
+- `"document_ids"`: (*Body parameter*), `list[string]`  
+  The IDs of the documents to parse.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -768,7 +767,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -807,13 +806,14 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)
+- `"dataset_id"`: (*Path parameter*)  
+  The dataset ID
 - `"document_ids"`: (*Body parameter*)  
-  The IDs of the documents to parse.
+  The IDs of the documents for which the parsing should be stopped.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -821,7 +821,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -847,7 +847,7 @@ Adds a chunk to a specified document in a specified dataset.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
-  - `"content"`: string
+  - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
 
 #### Request example
@@ -858,20 +858,20 @@ curl --request POST \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_API_KEY}' \
   --data '{
-    "content": "ragflow content"
+    "content": "<SOME_CHUNK_CONTENT_HERE>"
 }'
 ```
 
 #### Request parameters
 
-- `"content"`: (*Body parameter*)  
-  Contains the main text or information of the chunk.
+- `"content"`: (*Body parameter*), `string`, *Required*  
+  The text content of the chunk.
 - `"important_keywords`(*Body parameter*)  
-  List the key terms or phrases that are significant or central to the chunk's content.
+  The key terms or phrases to tag with the chunk.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -892,7 +892,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -926,20 +926,22 @@ curl --request GET \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)
-- `"document_id"`: (*Path parameter*)
-- `"offset"`(*Filter parameter*)  
-  The beginning number of records for paging.
-- `"keywords"`(*Filter parameter*)  
-  List chunks whose name has the given keywords.
-- `"limit"`(*Filter parameter*)  
-  Records number to return.
-- `"id"`(*Filter parameter*)  
-  The ID of chunk to retrieve.
+- `"dataset_id"`: (*Path parameter*)  
+  The dataset ID.
+- `"document_id"`: (*Path parameter*)  
+  The document ID.
+- `"keywords"`(*Filter parameter*), `string`  
+  The keywords used to match chunk content. Defaults to `None`
+- `"offset"`(*Filter parameter*), `string`  
+  The starting index for the chunks to retrieve. Defaults to `1`.
+- `"limit"`(*Filter parameter*), `integer`  
+  The maximum number of chunks to retrieve.  Default: `1024`
+- `"id"`(*Filter parameter*), `string`  
+  The ID of the chunk to retrieve. Default: `None`
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -983,7 +985,7 @@ A successful response includes a JSON object like the following:
 }
 ```
   
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1025,11 +1027,11 @@ curl --request DELETE \
 #### Request parameters
 
 - `"chunk_ids"`: (*Body parameter*)  
-  The chunks of the document to delete.
+  The IDs of the chunks to delete. If not specified, all chunks of the current document will be deleted.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1037,7 +1039,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1081,16 +1083,18 @@ curl --request PUT \
 
 #### Request parameters
 
-- `"content"`: (*Body parameter*)  
-  Contains the main text or information of the chunk.
-- `"important_keywords"`: (*Body parameter*)  
-  Lists the key terms or phrases that are significant or central to the chunk's content.
-- `"available"`: (*Body parameter*)  
-   Indicating the availability status, 0 means unavailable and 1 means available.
+- `"content"`: (*Body parameter*), `string`  
+  The text content of the chunk.
+- `"important_keywords"`: (*Body parameter*), `list[string]`  
+  A list of key terms or phrases to tag with the chunk.
+- `"available"`: (*Body parameter*) `boolean`  
+  The chunk's availability status in the dataset. Value options:  
+  - `False`: Unavailable
+  - `True`: Available
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1098,7 +1102,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1126,14 +1130,14 @@ Retrieves chunks from specified datasets.
   - `"question"`: `string`  
   - `"datasets"`: `list[string]`  
   - `"documents"`: `list[string]`
-  - `"offset"`: int  
-  - `"limit"`: int  
-  - `"similarity_threshold"`: float  
-  - `"vector_similarity_weight"`: float  
-  - `"top_k"`: int  
-  - `"rerank_id"`: string  
-  - `"keyword"`: bool  
-  - `"highlight"`: bool
+  - `"offset"`: `integer`  
+  - `"limit"`: `integer`  
+  - `"similarity_threshold"`: `float`  
+  - `"vector_similarity_weight"`: `float`  
+  - `"top_k"`: `integer`  
+  - `"rerank_id"`: `string`  
+  - `"keyword"`: `boolean`  
+  - `"highlight"`: `boolean`
 
 #### Request example
 
@@ -1155,50 +1159,36 @@ curl --request POST \
 
 #### Request parameter
 
-- `"question"`: (*Body parameter*)  
-  User's question, search keywords  
-  `""`
-- `"datasets"`: (*Body parameter*)  
-  The scope of datasets  
-  `None`
-- `"documents"`: (*Body parameter*)  
-  The scope of document. `None` means no limitation  
-  `None`
-- `"offset"`: (*Body parameter*)  
-  The beginning point of retrieved records  
-  `1`
-
+- `"question"`: (*Body parameter*), `string`, *Required*  
+  The user query or query keywords. Defaults to `""`.
+- `"datasets"`: (*Body parameter*) `list[string]`, *Required*  
+  The IDs of the datasets to search from.
+- `"documents"`: (*Body parameter*), `list[string]`  
+  The IDs of the documents to search from.
+- `"offset"`: (*Body parameter*), `integer`  
+  The starting index for the documents to retrieve. Defaults to `1`.
 - `"limit"`: (*Body parameter*)  
-  The maximum number of records needed to return  
-  `30`
-
+  The maximum number of chunks to retrieve. Defaults to `1024`.
 - `"similarity_threshold"`: (*Body parameter*)  
-  The minimum similarity score  
-  `0.2`
-
+  The minimum similarity score. Defaults to `0.2`.
 - `"vector_similarity_weight"`: (*Body parameter*)  
-  The weight of vector cosine similarity, `1 - x` is the term similarity weight  
-  `0.3`
-
+  The weight of vector cosine similarity. Defaults to `0.3`. If x represents the vector cosine similarity, then (1 - x) is the term similarity weight.
 - `"top_k"`: (*Body parameter*)  
-  Number of records engaged in vector cosine computation  
-  `1024`
-
+  The number of chunks engaged in vector cosine computaton. Defaults to `1024`.
 - `"rerank_id"`: (*Body parameter*)  
-  ID of the rerank model  
-  `None`
-
-- `"keyword"`: (*Body parameter*)  
-  Whether keyword-based matching is enabled  
-  `False`
-
-- `"highlight"`: (*Body parameter*)  
-  Whether to enable highlighting of matched terms in the results  
-  `False`
+  The ID of the rerank model.
+- `"keyword"`: (*Body parameter*), `boolean`  
+  Indicates whether to enable keyword-based matching:  
+  - `True`: Enable keyword-based matching.
+  - `False`: Disable keyword-based matching (default).
+- `"highlight"`: (*Body parameter*), `boolean`  
+  Specifies whether to enable highlighting of matched terms in the results:  
+  - `True`: Enable highlighting of matched terms.
+  - `False`: Disable highlighting of matched terms (default).
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1237,7 +1227,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1270,10 +1260,9 @@ Creates a chat assistant.
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
-  - `"knowledgebases"`: `list[DataSet]`
-  - `"id"`: `string`
-  - `"llm"`: `LLM`
-  - `"prompt"`: `Prompt`
+  - `"knowledgebases"`: `list[string]`
+  - `"llm"`: `object`
+  - `"prompt"`: `object`
 
 #### Request example
 
@@ -1312,101 +1301,47 @@ curl --request POST \
 
 #### Request parameters
 
-- `"name"`: (*Body parameter*)  
-  The name of the created chat.  
-  - `"assistant"`
-
+- `"name"`: (*Body parameter*), `string`, *Required*  
+  The name of the chat assistant.
 - `"avatar"`: (*Body parameter*)  
-  The icon of the created chat.  
-  - `"path"`
-
+  Base64 encoding of the avatar. Defaults to `""`.
 - `"knowledgebases"`: (*Body parameter*)  
-  Select knowledgebases associated.  
-  - `["kb1"]`
-
-- `"id"`: (*Body parameter*)  
-  The id of the created chat.  
-  - `""`
-
-- `"llm"`: (*Body parameter*)  
-  The LLM of the created chat.  
-  - If the value is `None`, a dictionary with default values will be generated.
-
-- `"prompt"`: (*Body parameter*)  
-  The prompt of the created chat.  
-  - If the value is `None`, a dictionary with default values will be generated.
-
----
-
-##### Chat.LLM parameters
-
-- `"model_name"`: (*Body parameter*)  
-  Large language chat model.  
-  - If it is `None`, it will return the user's default model.
-
-- `"temperature"`: (*Body parameter*)  
-  Controls the randomness of predictions by the model. A lower temperature makes the model more confident, while a higher temperature makes it more creative and diverse.  
-  - `0.1`
-
-- `"top_p"`: (*Body parameter*)  
-  Also known as "nucleus sampling," it focuses on the most likely words, cutting off the less probable ones.  
-  - `0.3`
-
-- `"presence_penalty"`: (*Body parameter*)  
-  Discourages the model from repeating the same information by penalizing repeated content.  
-  - `0.4`
-
-- `"frequency_penalty"`: (*Body parameter*)  
-  Reduces the model’s tendency to repeat words frequently.  
-  - `0.7`
-
-- `"max_tokens"`: (*Body parameter*)  
-  Sets the maximum length of the model’s output, measured in tokens (words or pieces of words).  
-  - `512`
-
----
-
-##### Chat.Prompt parameters
-
-- `"similarity_threshold"`: (*Body parameter*)  
-  Filters out chunks with similarity below this threshold.  
-  - `0.2`
-
-- `"keywords_similarity_weight"`: (*Body parameter*)  
-  Weighted keywords similarity and vector cosine similarity; the sum of weights is 1.0.  
-  - `0.7`
-
-- `"top_n"`: (*Body parameter*)  
-  Only the top N chunks above the similarity threshold will be fed to LLMs.  
-  - `8`
-
-- `"variables"`: (*Body parameter*)  
-  Variables help with different chat strategies by filling in the 'System' part of the prompt.  
-  - `[{"key": "knowledge", "optional": True}]`
-
-- `"rerank_model"`: (*Body parameter*)  
-  If empty, it uses vector cosine similarity; otherwise, it uses rerank score.  
-  - `""`
-
-- `"empty_response"`: (*Body parameter*)  
-  If nothing is retrieved, this will be used as the response. Leave blank if LLM should provide its own opinion.  
-  - `None`
-
-- `"opener"`: (*Body parameter*)  
-  The welcome message for clients.  
-  - `"Hi! I'm your assistant, what can I do for you?"`
-
-- `"show_quote"`: (*Body parameter*)  
-  Indicates whether the source of the original text should be displayed.  
-  - `True`
-
-- `"prompt"`: (*Body parameter*)  
-  Instructions for LLM to follow when answering questions, such as character design or answer length.  
-  - `"You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence 'The answer you are looking for is not found in the knowledge base!' Answers need to consider chat history. Here is the knowledge base: {knowledge} The above is the knowledge base."`
+  The IDs of the associated datasets. Defaults to `[""]`.
+- `"llm"`: (*Body parameter*), `object`  
+  The LLM settings for the chat assistant to create. When the value is `None`, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
+  - `"model_name"`, `string`  
+    The chat model name. If it is `None`, the user's default chat model will be returned.  
+  - `"temperature"`: `float`  
+    Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+  - `"top_p"`: `float`  
+    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
+  - `"presence_penalty"`: `float`  
+    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
+  - `"frequency penalty"`: `float`  
+    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+  - `"max_token"`: `integer`  
+    The maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.  
+- `"prompt"`: (*Body parameter*), `object`  
+  Instructions for the LLM to follow.  A `prompt` object contains the following attributes:  
+  - `"similarity_threshold"`: `float` RAGFlow uses a hybrid of weighted keyword similarity and vector cosine similarity during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
+  - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
+  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
+  - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
+    - `"knowledge"` is a reserved variable, which will be replaced with the retrieved chunks.
+    - All the variables in 'System' should be curly bracketed.
+    - The default value is `[{"key": "knowledge", "optional": True}]`
+  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+  - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
+  - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
+  - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `True`.
+  - `"prompt"`: `string` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
+      Here is the knowledge base:
+      {knowledge}
+      The above is the knowledge base.`
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1476,7 +1411,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1500,7 +1435,12 @@ Updates configurations for a specified chat assistant.
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
-- Body: (Refer to the "Create chat" for the complete structure of the request body.)
+- Body:
+  - `"name"`: `string`
+  - `"avatar"`: `string`
+  - `"knowledgebases"`: `list[string]`
+  - `"llm"`: `object`
+  - `"prompt"`: `object`
   
 #### Request example
 
@@ -1516,11 +1456,47 @@ curl --request PUT \
 
 #### Parameters
 
-Refer to the "Create chat" for the complete structure of the request parameters.
+- `"name"`: (*Body parameter*), `string`, *Required*  
+  The name of the chat assistant.
+- `"avatar"`: (*Body parameter*)  
+  Base64 encoding of the avatar. Defaults to `""`.
+- `"knowledgebases"`: (*Body parameter*)  
+  The IDs of the associated datasets. Defaults to `[""]`.
+- `"llm"`: (*Body parameter*), `object`  
+  The LLM settings for the chat assistant to create. When the value is `None`, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
+  - `"model_name"`, `string`  
+    The chat model name. If it is `None`, the user's default chat model will be returned.  
+  - `"temperature"`: `float`  
+    Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+  - `"top_p"`: `float`  
+    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
+  - `"presence_penalty"`: `float`  
+    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
+  - `"frequency penalty"`: `float`  
+    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+  - `"max_token"`: `integer`  
+    The maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.  
+- `"prompt"`: (*Body parameter*), `object`  
+  Instructions for the LLM to follow.  A `prompt` object contains the following attributes:  
+  - `"similarity_threshold"`: `float` RAGFlow uses a hybrid of weighted keyword similarity and vector cosine similarity during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
+  - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
+  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
+  - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
+    - `"knowledge"` is a reserved variable, which will be replaced with the retrieved chunks.
+    - All the variables in 'System' should be curly bracketed.
+    - The default value is `[{"key": "knowledge", "optional": True}]`
+  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+  - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
+  - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
+  - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `True`.
+  - `"prompt"`: `string` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
+      Here is the knowledge base:
+      {knowledge}
+      The above is the knowledge base.`
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1528,7 +1504,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1571,13 +1547,12 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"ids"`: (*Body parameter*)  
-  IDs of the chats to delete.  
-  - `None`
+- `"ids"`: (*Body parameter*), `list[string]`  
+  The IDs of the chat assistants to delete. If not specified, all chat assistants in the system will be deleted.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1585,7 +1560,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1619,33 +1594,24 @@ curl --request GET \
 
 #### Request parameters
 
-- `"page"`: (*Path parameter*)  
-  The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
-  - `1`
-
-- `"page_size"`: (*Path parameter*)  
-  The number of records to retrieve per page. This controls how many records will be included in each page.  
-  - `1024`
-
-- `"orderby"`: (*Path parameter*)  
-  The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
-  - `"create_time"`
-
-- `"desc"`: (*Path parameter*)  
-  A boolean flag indicating whether the sorting should be in descending order.  
-  - `True`
-
-- `"id"`: (*Path parameter*)  
-  The ID of the chat to retrieve.  
-  - `None`
-
-- `"name"`: (*Path parameter*)  
-  The name of the chat to retrieve.  
-  - `None`
+- `"page"`: (*Path parameter*), `integer`  
+  Specifies the page on which the chat assistants will be displayed. Defaults to `1`.
+- `"page_size"`: (*Path parameter*), `integer`  
+  The number of chat assistants on each page. Defaults to `1024`.
+- `"orderby"`: (*Path parameter*), `string`  
+  The attribute by which the results are sorted. Available options:
+  - `"create_time"` (default)
+  - `"update_time"`
+- `"desc"`: (*Path parameter*), `boolean`  
+  Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `True`.
+- `"id"`: (*Path parameter*), `string`  
+  The ID of the chat assistant to retrieve.
+- `"name"`: (*Path parameter*), `string`  
+  The name of the chat assistant to retrieve.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1724,7 +1690,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1733,11 +1699,11 @@ An error response includes a JSON object like the following:
 }
 ```
 
-## Create chat session
+## Create session
 
 **POST** `/api/v1/chat/{chat_id}/session`
 
-Create a chat session.
+Creates a chat session.
 
 ### Request
 
@@ -1763,29 +1729,13 @@ curl --request POST \
 
 #### Request parameters
 
-- `"id"`: (*Body parameter*)  
-  The ID of the created session used to identify different sessions.  
-  - `None`  
-  - `id` cannot be provided when creating.
-
-- `"name"`: (*Body parameter*)  
-  The name of the created session.  
-  - `"New session"`
-
-- `"messages"`: (*Body parameter*)  
-  The messages of the created session.  
-  - `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`  
-  - `messages` cannot be provided when creating.
-
-- `"chat_id"`: (*Path parameter*)  
-  The ID of the associated chat.  
-  - `""`  
-  - `chat_id` cannot be changed.
+- `"name"`: (*Body parameter*), `string`  
+  The name of the chat session to create.
 
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1808,7 +1758,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1819,16 +1769,7 @@ An error response includes a JSON object like the following:
 
 ---
 
-:::tip API GROUPING
-Chat Session APIs
-:::
-
----
-
-=========MISSING CREATE SESSION API!==============
-
----
-## Update a chat session
+## Update session
 
 **PUT** `/api/v1/chat/{chat_id}/session/{session_id}`
 
@@ -1858,13 +1799,12 @@ curl --request PUT \
 
 #### Request Parameter
 
-- `"name`: (*Body Parameter)  
-  The name of the created session.  
-  - `None`
+- `"name`: (*Body Parameter), `string`  
+  The name of the session to update.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1872,7 +1812,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1885,9 +1825,9 @@ An error response includes a JSON object like the following:
 
 ## List sessions
 
-**GET** `/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+**GET** `/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
 
-Lists sessions associated with a specified????????????? chat assistant.
+Lists sessions associated with a specified chat assistant.
 
 ### Request
 
@@ -1906,33 +1846,24 @@ curl --request GET \
 
 #### Request Parameters
 
-- `"page"`: (*Path parameter*)  
-  The current page number to retrieve from the paginated data. This parameter determines which set of records will be fetched.  
-  - `1`
-
-- `"page_size"`: (*Path parameter*)  
-  The number of records to retrieve per page. This controls how many records will be included in each page.  
-  - `1024`
-
-- `"orderby"`: (*Path parameter*)  
-  The field by which the records should be sorted. This specifies the attribute or column used to order the results.  
-  - `"create_time"`
-
-- `"desc"`: (*Path parameter*)  
-  A boolean flag indicating whether the sorting should be in descending order.  
-  - `True`
-
-- `"id"`: (*Path parameter*)  
-  The ID of the session to retrieve.  
-  - `None`
-
-- `"name"`: (*Path parameter*)  
-  The name of the session to retrieve.  
-  - `None`
+- `"page"`: (*Path parameter*), `integer`  
+  Specifies the page on which the sessions will be displayed. Defaults to `1`.
+- `"page_size"`: (*Path parameter*), `integer`  
+  The number of sessions on each page. Defaults to `1024`.
+- `"orderby"`: (*Path parameter*), `string`  
+  The field by which sessions should be sorted. Available options:  
+  - `"create_time"` (default)
+  - `"update_time"`
+- `"desc"`: (*Path parameter*), `boolean`  
+  Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `True`.
+- `"id"`: (*Path parameter*), `string`  
+  The ID of the chat session to retrieve.
+- `"name"`: (*Path parameter*) `string`  
+  The name of the chat session to retrieve.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -1957,7 +1888,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -1999,13 +1930,12 @@ curl --request DELETE \
 
 #### Request Parameters
 
-- `"ids"`: (*Body Parameter*)  
-  IDs of the sessions to delete.
-  - `None`
+- `"ids"`: (*Body Parameter*), `list[string]`  
+  The IDs of the sessions to delete. If not specified, all sessions associated with the current chat assistant will be deleted.
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 {
@@ -2013,7 +1943,7 @@ A successful response includes a JSON object like the following:
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {
@@ -2024,7 +1954,7 @@ An error response includes a JSON object like the following:
 
 ---
 
-## Chat with a chat session???
+## Converse
 
 **POST** `/api/v1/chat/{chat_id}/completion`
 
@@ -2039,7 +1969,7 @@ Asks a question to start a conversation.
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
   - `"question"`: `string`
-  - `"stream"`: `bool`
+  - `"stream"`: `boolean`
   - `"session_id"`: `string`
 
 #### Request example
@@ -2050,26 +1980,25 @@ curl --request POST \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer {YOUR_API_KEY}' \
   --data-binary '{
-    "question":  "你好!",
+    "question":  "Hello!",
     "stream": true
   }'
 ```
 
 #### Request Parameters
 
-- `"question"`: (*Body Parameter*)  
-  The question you want to ask.  
-  - question is required.
-  `None`
-- `"stream"`: (*Body Parameter*)  
-  The approach of streaming text generation.  
-  `False`
+- `"question"`: (*Body Parameter*), `string` *Required*  
+  The question to start an AI chat.
+- `"stream"`: (*Body Parameter*), `string`  
+  Indicates whether to output responses in a streaming way:
+  - `True`: Enable streaming.
+  - `False`: (Default) Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
-  The ID of session. If not provided, a new session will be generated.
+  The ID of session. If not provided, a new session will be generated.???????????????
 
 ### Response
 
-A successful response includes a JSON object like the following:
+Success:
 
 ```json
 data: {
@@ -2171,7 +2100,7 @@ data:{
 }
 ```
 
-An error response includes a JSON object like the following:
+Failure:
 
 ```json
 {

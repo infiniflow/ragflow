@@ -587,9 +587,9 @@ The key terms or phrases to tag with the chunk.
 
 A `Chunk` object contains the following attributes:
 
-- `id`: `str`
-- `content`: `str` Content of the chunk.
-- `important_keywords`: `list[str]` A list of key terms or phrases to tag with the chunk.
+- `id`: `str`: The chunk ID.
+- `content`: `str` The text content of the chunk.
+- `important_keywords`: `list[str]` A list of key terms or phrases tagged with the chunk.
 - `create_time`: `str` The time when the chunk was created (added to the document).
 - `create_timestamp`: `float` The timestamp representing the creation time of the chunk, expressed in seconds since January 1, 1970.
 - `knowledgebase_id`: `str` The ID of the associated dataset.
@@ -710,7 +710,7 @@ Updates content or configurations for the current chunk.
 
 A dictionary representing the attributes to update, with the following keys:
 
-- `"content"`: `str` Content of the chunk.
+- `"content"`: `str` The text content of the chunk.
 - `"important_keywords"`: `list[str]` A list of key terms or phrases to tag with the chunk.
 - `"available"`: `bool` The chunk's availability status in the dataset. Value options:
   - `False`: Unavailable
@@ -753,11 +753,11 @@ The user query or query keywords. Defaults to `""`.
 
 #### datasets: `list[str]`, *Required*
 
-The datasets to search from.
+The IDs of the datasets to search from.
 
 #### document: `list[str]`
 
-The documents to search from. Defaults to `None`.
+The IDs of the documents to search from. Defaults to `None`.
 
 #### offset: `int`
 
@@ -771,7 +771,7 @@ The maximum number of chunks to retrieve. Defaults to `1024`.
 
 The minimum similarity score. Defaults to `0.2`.
 
-#### similarity_threshold_weight: `float`
+#### vector_similarity_weight: `float`
 
 The weight of vector cosine similarity. Defaults to `0.3`. If x represents the vector cosine similarity, then (1 - x) is the term similarity weight.
 
@@ -792,7 +792,7 @@ Indicates whether to enable keyword-based matching:
 
 #### highlight: `bool`
 
-Specifying whether to enable highlighting of matched terms in the results:
+Specifies whether to enable highlighting of matched terms in the results:
 
 - `True`: Enable highlighting of matched terms.
 - `False`: Disable highlighting of matched terms (default).
@@ -849,11 +849,9 @@ Creates a chat assistant.
 
 ### Parameters
 
-The following shows the attributes of a `Chat` object:
-
 #### name: `str`, *Required*
 
-The name of the chat assistant..
+The name of the chat assistant.
 
 #### avatar: `str`
 
@@ -865,39 +863,41 @@ The IDs of the associated datasets. Defaults to `[""]`.
 
 #### llm: `Chat.LLM`
 
-The llm of the created chat. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default.
+The LLM settings for the chat assistant to create. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default. An `LLM` object contains the following attributes:
 
-An `LLM` object contains the following attributes:
-
-- `model_name`, `str`  
+- `model_name`: `str`  
   The chat model name. If it is `None`, the user's default chat model will be returned.  
-- `temperature`, `float`  
-  Controls the randomness of the model's predictions. A lower temperature increases the model's conficence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
-- `top_p`, `float`  
+- `temperature`: `float`  
+  Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+- `top_p`: `float`  
   Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-- `presence_penalty`, `float`  
+- `presence_penalty`: `float`  
   This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
-- `frequency penalty`, `float`  
+- `frequency penalty`: `float`  
   Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
-- `max_token`, `int`  
-  This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.
+- `max_token`: `int`  
+  The maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.
 
 #### prompt: `Chat.Prompt`
 
 Instructions for the LLM to follow.  A `Prompt` object contains the following attributes:
 
-- `"similarity_threshold"`: `float` A similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out. Defaults to `0.2`.
-- `"keywords_similarity_weight"`: `float` It's weighted keywords similarity and vector cosine similarity or rerank score (0~1). Defaults to `0.7`.
-- `"top_n"`: `int` Not all the chunks whose similarity score is above the 'similarity threshold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
-- `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
-- `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
-- `"empty_response"`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
-- `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-- `"show_quote`: `bool` Indicates whether the source of text should be displayed Defaults to `True`.
-- `"prompt"`: `str` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
+- `similarity_threshold`: `float` RAGFlow uses a hybrid of weighted keyword similarity and vector cosine similarity during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
+- `keywords_similarity_weight`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
+- `top_n`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
+- `variables`: `list[dict[]]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:
+  - `knowledge` is a reserved variable, which will be replaced with the retrieved chunks. 
+  - All the variables in 'System' should be curly bracketed. 
+  - The default value is `[{"key": "knowledge", "optional": True}]`
+
+- `rerank_model`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+- `empty_response`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank. Defaults to `None`.
+- `opener`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
+- `show_quote`: `bool` Indicates whether the source of text should be displayed. Defaults to `True`.
+- `prompt`: `str` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
       {knowledge}
-      The above is the knowledge base.`.
+      The above is the knowledge base.`
 
 ### Returns
 
@@ -942,11 +942,11 @@ A dictionary representing the attributes to update, with the following keys:
   - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
   - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
   - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
-  - `"max_token"`, `int` This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).
+  - `"max_token"`, `int` The maximum length of the model’s output, measured in the number of tokens (words or pieces of words).
 - `"prompt"` : Instructions for the LLM to follow.
-  - `"similarity_threshold"`: `float` A score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out. Defaults to `0.2`.
-  - `"keywords_similarity_weight"`: `float` It's weighted keywords similarity and vector cosine similarity or rerank score (0~1). Defaults to `0.7`.
-  - `"top_n"`: `int` Not all the chunks whose similarity score is above the 'similarity threshold' will be feed to LLMs. LLM can only see these 'Top N' chunks. Defaults to `8`.
+  - `"similarity_threshold"`: `float` RAGFlow uses a hybrid of weighted keyword similarity and vector cosine similarity during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
+  - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
+  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
   - `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
   - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
   - `"empty_response"`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
