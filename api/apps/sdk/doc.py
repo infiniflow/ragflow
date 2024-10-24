@@ -39,11 +39,16 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.settings import RetCode, retrievaler
-from api.utils.api_utils import construct_json_result
+from api.utils.api_utils import construct_json_result,get_parser_config
 from rag.nlp import search
 from rag.utils import rmSpace
 from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
+import os
+
+MAXIMUM_OF_UPLOADING_FILES = 256
+
+MAXIMUM_OF_UPLOADING_FILES = 256
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
@@ -61,14 +66,41 @@ def upload(dataset_id, tenant_id):
         if file_obj.filename == '':
             return get_result(
                 retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
+    # total size
+    total_size = 0
+    for file_obj in file_objs:
+        file_obj.seek(0, os.SEEK_END)
+        total_size += file_obj.tell()
+        file_obj.seek(0)
+    MAX_TOTAL_FILE_SIZE=10*1024*1024
+    if total_size > MAX_TOTAL_FILE_SIZE:
+        return get_result(
+            retmsg=f'Total file size exceeds 10MB limit! ({total_size / (1024 * 1024):.2f} MB)',
+            retcode=RetCode.ARGUMENT_ERROR)
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        raise LookupError(f"Can't find the knowledgebase with ID {dataset_id}!")
-    err, _ = FileService.upload_document(kb, file_objs, tenant_id)
+        raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
+    err, files= FileService.upload_document(kb, file_objs, tenant_id)
     if err:
         return get_result(
             retmsg="\n".join(err), retcode=RetCode.SERVER_ERROR)
-    return get_result()
+    # rename key's name
+    renamed_doc_list = []
+    for file in files:
+        doc = file[0]
+        key_mapping = {
+            "chunk_num": "chunk_count",
+            "kb_id": "dataset_id",
+            "token_num": "token_count",
+            "parser_id": "chunk_method"
+        }
+        renamed_doc = {}
+        for key, value in doc.items():
+            new_key = key_mapping.get(key, key)
+            renamed_doc[new_key] = value
+        renamed_doc["run"] = "UNSTART"
+        renamed_doc_list.append(renamed_doc)
+    return get_result(data=renamed_doc_list)
 
 
 @manager.route('/dataset/<dataset_id>/info/<document_id>', methods=['PUT'])
@@ -97,7 +129,7 @@ def update_doc(tenant_id, dataset_id, document_id):
         for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
             if d.name == req["name"]:
                 return get_error_data_result(
-                    retmsg="Duplicated document name in the same knowledgebase.")
+                    retmsg="Duplicated document name in the same dataset.")
         if not DocumentService.update_by_id(
                 document_id, {"name": req["name"]}):
             return get_error_data_result(
@@ -110,6 +142,9 @@ def update_doc(tenant_id, dataset_id, document_id):
     if "parser_config" in req:
         DocumentService.update_parser_config(doc.id, req["parser_config"])
     if "chunk_method" in req:
+        valid_chunk_method = {"naive","manual","qa","table","paper","book","laws","presentation","picture","one","knowledge_graph","email"}
+        if req.get("chunk_method") not in valid_chunk_method:
+            return get_error_data_result(f"`chunk_method` {req['chunk_method']} doesn't exist")
         if doc.parser_id.lower() == req["chunk_method"].lower():
                 return get_result()
 
@@ -122,6 +157,7 @@ def update_doc(tenant_id, dataset_id, document_id):
                                           "run": TaskStatus.UNSTART.value})
         if not e:
             return get_error_data_result(retmsg="Document not found!")
+        req["parser_config"] = get_parser_config(req["chunk_method"], req.get("parser_config"))
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1,
                                                     doc.process_duation * -1)
@@ -182,12 +218,21 @@ def list_docs(dataset_id, tenant_id):
     for doc in docs:
         key_mapping = {
             "chunk_num": "chunk_count",
-            "kb_id": "knowledgebase_id",
+            "kb_id": "dataset_id",
             "token_num": "token_count",
             "parser_id": "chunk_method"
         }
+        run_mapping = {
+         "0" :"UNSTART",
+         "1":"RUNNING",
+         "2":"CANCEL",
+         "3":"DONE",
+         "4":"FAIL"
+        }
         renamed_doc = {}
         for key, value in doc.items():
+            if key =="run":
+                renamed_doc["run"]=run_mapping.get(str(value))
             new_key = key_mapping.get(key, key)
             renamed_doc[new_key] = value
         renamed_doc_list.append(renamed_doc)
@@ -353,9 +398,10 @@ def list_chunks(tenant_id,dataset_id,document_id):
     return get_result(data=res)
 
 
+
 @manager.route('/dataset/<dataset_id>/document/<document_id>/chunk', methods=['POST'])
 @token_required
-def create(tenant_id,dataset_id,document_id):
+def add_chunk(tenant_id,dataset_id,document_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(retmsg=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
@@ -441,6 +487,7 @@ def rm_chunk(tenant_id,dataset_id,document_id):
     return get_result()
 
 
+
 @manager.route('/dataset/<dataset_id>/document/<document_id>/chunk/<chunk_id>', methods=['PUT'])
 @token_required
 def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
@@ -470,12 +517,12 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
     d["content_ltks"] = rag_tokenizer.tokenize(d["content_with_weight"])
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     if "important_keywords" in req:
-        if type(req["important_keywords"]) != list:
-            return get_error_data_result("`important_keywords` is required to be a list")
+        if not isinstance(req["important_keywords"],list):
+            return get_error_data_result("`important_keywords` should be a list")
         d["important_kwd"] = req.get("important_keywords")
         d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_keywords"]))
     if "available" in req:
-        d["available_int"] = req["available"]
+        d["available_int"] = int(req["available"])
     embd_id = DocumentService.get_embd_id(document_id)
     embd_mdl = TenantLLMService.model_instance(
         tenant_id, LLMType.EMBEDDING.value, embd_id)
@@ -498,6 +545,7 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
     return get_result()
 
 
+
 @manager.route('/retrieval', methods=['POST'])
 @token_required
 def retrieval_test(tenant_id):
@@ -505,6 +553,8 @@ def retrieval_test(tenant_id):
     if not req.get("datasets"):
         return get_error_data_result("`datasets` is required.")
     kb_ids = req["datasets"]
+    if not isinstance(kb_ids,list):
+        return get_error_data_result("`datasets` should be a list")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embd_nms = list(set([kb.embd_id for kb in kbs]))
     if len(embd_nms) != 1:
@@ -518,9 +568,15 @@ def retrieval_test(tenant_id):
     if "question" not in req:
         return get_error_data_result("`question` is required.")
     page = int(req.get("offset", 1))
-    size = int(req.get("limit", 30))
+    size = int(req.get("limit", 1024))
     question = req["question"]
     doc_ids = req.get("documents", [])
+    if not isinstance(req.get("documents"),list):
+        return get_error_data_result("`documents` should be a list")
+    doc_ids_list=KnowledgebaseService.list_documents_by_ids(kb_ids)
+    for doc_id in doc_ids:
+        if doc_id not in doc_ids_list:
+            return get_error_data_result(f"You don't own the document {doc_id}")
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
@@ -531,7 +587,7 @@ def retrieval_test(tenant_id):
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
-            return get_error_data_result(retmsg="Knowledgebase not found!")
+            return get_error_data_result(retmsg="Dataset not found!")
         embd_mdl = TenantLLMService.model_instance(
             kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 

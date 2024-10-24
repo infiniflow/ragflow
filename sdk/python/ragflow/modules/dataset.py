@@ -10,10 +10,6 @@ from .base import Base
 class DataSet(Base):
     class ParserConfig(Base):
         def __init__(self, rag, res_dict):
-            self.chunk_token_count = 128
-            self.layout_recognize = True
-            self.delimiter = '\n!?。；！？'
-            self.task_page_size = 12
             super().__init__(rag, res_dict)
 
     def __init__(self, rag, res_dict):
@@ -43,11 +39,16 @@ class DataSet(Base):
 
     def upload_documents(self,document_list: List[dict]):
         url = f"/dataset/{self.id}/document"
-        files = [("file",(ele["name"],ele["blob"])) for ele in document_list]
+        files = [("file",(ele["displayed_name"],ele["blob"])) for ele in document_list]
         res = self.post(path=url,json=None,files=files)
         res = res.json()
-        if res.get("code") != 0:
-            raise Exception(res.get("message"))
+        if res.get("code") == 0:
+            doc_list=[]
+            for doc in res["data"]:
+                document = Document(self.rag,doc)
+                doc_list.append(document)
+            return doc_list
+        raise Exception(res.get("message"))
 
     def list_documents(self, id: str = None, keywords: str = None, offset: int =1, limit: int = 1024, orderby: str = "create_time", desc: bool = True):
         res = self.get(f"/dataset/{self.id}/info",params={"id": id,"keywords": keywords,"offset": offset,"limit": limit,"orderby": orderby,"desc": desc})

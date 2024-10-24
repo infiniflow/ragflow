@@ -14,12 +14,22 @@
 #  limitations under the License.
 #
 from api.db import StatusEnum, TenantPermission
-from api.db.db_models import Knowledgebase, DB, Tenant, User, UserTenant
+from api.db.db_models import Knowledgebase, DB, Tenant, User, UserTenant,Document
 from api.db.services.common_service import CommonService
 
 
 class KnowledgebaseService(CommonService):
     model = Knowledgebase
+
+    @classmethod
+    @DB.connection_context()
+    def list_documents_by_ids(cls,kb_ids):
+        doc_ids=cls.model.select(Document.id.alias("document_id")).join(Document,on=(cls.model.id == Document.kb_id)).where(
+            cls.model.id.in_(kb_ids)
+        )
+        doc_ids =list(doc_ids.dicts())
+        doc_ids = [doc["document_id"] for doc in doc_ids]
+        return doc_ids
 
     @classmethod
     @DB.connection_context()
