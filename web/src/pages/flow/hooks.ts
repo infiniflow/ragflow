@@ -448,11 +448,16 @@ export const useValidateConnection = () => {
   return isValidConnection;
 };
 
-export const useHandleNodeNameChange = (node?: Node) => {
+export const useHandleNodeNameChange = ({
+  id,
+  data,
+}: {
+  id?: string;
+  data: any;
+}) => {
   const [name, setName] = useState<string>('');
   const { updateNodeName, nodes } = useGraphStore((state) => state);
-  const previousName = node?.data.name;
-  const id = node?.id;
+  const previousName = data?.name;
 
   const handleNameBlur = useCallback(() => {
     const existsSameName = nodes.some((x) => x.data.name === name);

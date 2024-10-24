@@ -1,5 +1,7 @@
+import LLMLabel from '@/components/llm-select/llm-label';
 import { Flex } from 'antd';
 import classNames from 'classnames';
+import { get } from 'lodash';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { NodeData } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
@@ -30,10 +32,13 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
           id={id}
           name={data.name}
           label={data.label}
-          className={classNames({ [styles.nodeHeader]: positions.length })}
+          className={styles.nodeHeader}
         ></NodeHeader>
 
         <Flex vertical gap={8}>
+          <div className={styles.nodeText}>
+            <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
+          </div>
           {positions.map((position, idx) => {
             return (
               <div key={idx}>

@@ -3,19 +3,6 @@ import { useCallback, useMemo } from 'react';
 import { Operator, RestrictedUpstreamMap } from './constant';
 import useGraphStore from './store';
 
-const ExcludedNodesMap = {
-  // exclude some nodes downstream of the classification node
-  [Operator.Categorize]: [
-    Operator.Categorize,
-    Operator.Answer,
-    Operator.Begin,
-    Operator.Relevant,
-  ],
-  [Operator.Relevant]: [Operator.Begin, Operator.Answer, Operator.Relevant],
-  [Operator.Generate]: [Operator.Begin],
-  [Operator.Switch]: [Operator.Begin],
-};
-
 export const useBuildFormSelectOptions = (
   operatorName: Operator,
   selfId?: string, // exclude the current node
@@ -24,8 +11,10 @@ export const useBuildFormSelectOptions = (
 
   const buildCategorizeToOptions = useCallback(
     (toList: string[]) => {
-      const excludedNodes: Operator[] =
-        RestrictedUpstreamMap[operatorName] ?? [];
+      const excludedNodes: Operator[] = [
+        Operator.Note,
+        ...(RestrictedUpstreamMap[operatorName] ?? []),
+      ];
       return nodes
         .filter(
           (x) =>

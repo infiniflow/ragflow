@@ -89,15 +89,35 @@
 
 .noteNode {
   .commonNode();
-  width: 140px;
-  padding: 4px 6px 6px;
+  min-width: 140px;
+  width: auto;
+  height: 100%;
+  padding: 0;
   border-radius: 10px;
-  background-color: #dbf8f4;
+  min-height: 128px;
   .noteTitle {
+    background-color: #edfcff;
     font-size: 12px;
+    padding: 6px 6px 4px;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
   }
   .noteForm {
     margin-top: 4px;
+    height: calc(100% - 50px);
+  }
+  .noteName {
+    padding: 0px 4px;
+  }
+  .noteTextarea {
+    resize: none;
+    border: 0;
+    border-radius: 0;
+    height: 100%;
+    &:focus {
+      border: none;
+      box-shadow: none;
+    }
   }
 }
 

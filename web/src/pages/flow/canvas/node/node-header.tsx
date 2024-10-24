@@ -13,7 +13,7 @@ interface IProps {
   className?: string;
 }
 
-const NodeHeader = ({ label, id, name, gap, className }: IProps) => {
+const NodeHeader = ({ label, id, name, gap = 4, className }: IProps) => {
   return (
     <Flex
       flex={1}

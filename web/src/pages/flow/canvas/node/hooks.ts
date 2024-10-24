@@ -33,7 +33,7 @@ export const useBuildCategorizeHandlePositions = ({
       list.push({
         text: x,
         idx,
-        top: idx === 0 ? 58 : list[idx - 1].top + 8 + 22,
+        top: idx === 0 ? 98 : list[idx - 1].top + 8 + 26,
       });
     });
 

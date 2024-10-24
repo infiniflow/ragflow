@@ -76,7 +76,7 @@ const FormMap = {
   [Operator.Crawler]: CrawlerForm,
 };
 
-const EmptyContent = () => <div>empty</div>;
+const EmptyContent = () => <div></div>;
 
 const FlowDrawer = ({
   visible,
@@ -86,8 +86,10 @@ const FlowDrawer = ({
   const operatorName: Operator = node?.data.label;
   const OperatorForm = FormMap[operatorName] ?? EmptyContent;
   const [form] = Form.useForm();
-  const { name, handleNameBlur, handleNameChange } =
-    useHandleNodeNameChange(node);
+  const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
+    id: node?.id,
+    data: node?.data,
+  });
   const { t } = useTranslate('flow');
 
   const { handleValuesChange } = useHandleFormValuesChange(node?.id);
