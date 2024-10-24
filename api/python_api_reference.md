@@ -114,7 +114,7 @@ Deletes datasets by ID.
 
 #### ids: `list[str]`, *Required*
 
-The IDs of the datasets to delete. Defaults to `None`. If not specified, all datasets will be deleted.
+The IDs of the datasets to delete. Defaults to `None`. If it is not specified, all datasets will be deleted.
 
 ### Returns
 
@@ -460,7 +460,7 @@ Deletes documents by ID.
 
 #### ids: `list[list]`
 
-The IDs of the documents to delete. Defaults to `None`. If not specified, all documents in the dataset will be deleted.
+The IDs of the documents to delete. Defaults to `None`. If it is not specified, all documents in the dataset will be deleted.
 
 ### Returns
 
@@ -673,7 +673,7 @@ Deletes chunks by ID.
 
 #### chunk_ids: `list[str]`
 
-The IDs of the chunks to delete. Defaults to `None`. If not specified, all chunks of the current document will be deleted.
+The IDs of the chunks to delete. Defaults to `None`. If it is not specified, all chunks of the current document will be deleted.
 
 ### Returns
 
@@ -990,7 +990,7 @@ Deletes chat assistants by ID.
 
 #### ids: `list[str]`
 
-The IDs of the chat assistants to delete. Defaults to `None`. If not specified, all chat assistants in the system will be deleted.
+The IDs of the chat assistants to delete. Defaults to `None`. If it is ot specified, all chat assistants in the system will be deleted.
 
 ### Returns
 
@@ -1221,7 +1221,7 @@ Deletes sessions by ID.
 
 #### ids: `list[str]`
 
-The IDs of the sessions to delete. Defaults to `None`. If not specified, all sessions associated with the current chat assistant will be deleted.
+The IDs of the sessions to delete. Defaults to `None`. If it is not specified, all sessions associated with the current chat assistant will be deleted.
 
 ### Returns
 
