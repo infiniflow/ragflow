@@ -25,12 +25,13 @@ RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 SUBPROCESS_STD_LOG_NAME = "std.log"
 
 ES = get_base_config("es", {})
+INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
 AZURE = get_base_config("azure", {})
 S3 = get_base_config("s3", {})
 MINIO = decrypt_database_config(name="minio")
 try:
     REDIS = decrypt_database_config(name="redis")
-except Exception as e:
+except Exception:
     REDIS = {}
     pass
 DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
@@ -44,7 +45,7 @@ LoggerFactory.set_directory(
 # {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
 LoggerFactory.LEVEL = 30
 
-es_logger = getLogger("es")
+doc_store_logger = getLogger("doc_store")
 minio_logger = getLogger("minio")
 s3_logger = getLogger("s3")
 azure_logger = getLogger("azure")
@@ -53,7 +54,7 @@ chunk_logger = getLogger("chunk_logger")
 database_logger = getLogger("database")
 
 formatter = logging.Formatter("%(asctime)-15s %(levelname)-8s (%(process)d) %(message)s")
-for logger in [es_logger, minio_logger, s3_logger, azure_logger, cron_logger, chunk_logger, database_logger]:
+for logger in [doc_store_logger, minio_logger, s3_logger, azure_logger, cron_logger, chunk_logger, database_logger]:
     logger.setLevel(logging.INFO)
     for handler in logger.handlers:
         handler.setFormatter(fmt=formatter)

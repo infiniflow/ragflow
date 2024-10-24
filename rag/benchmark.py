@@ -13,16 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
 import os
 from collections import defaultdict
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.settings import retrievaler
+from api.settings import retrievaler, docStoreConn
 from api.utils import get_uuid
 from rag.nlp import tokenize, search
-from rag.utils.es_conn import ELASTICSEARCH
 from ranx import evaluate
 import pandas as pd
 from tqdm import tqdm
@@ -31,6 +29,7 @@ from tqdm import tqdm
 class Benchmark:
     def __init__(self, kb_id):
         e, kb = KnowledgebaseService.get_by_id(kb_id)
+        self.kb_id = kb_id
         self.similarity_threshold = kb.similarity_threshold
         self.vector_similarity_weight = kb.vector_similarity_weight
         self.embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id, lang=kb.language)
@@ -83,11 +82,11 @@ class Benchmark:
                     qrels[query][d["id"]] = int(rel)
                 if len(docs) >= 32:
                     docs = self.embedding(docs)
-                    ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+                    docStoreConn.upsertBulk(docs, search.index_name(index_name), self.kb_id)
                     docs = []
 
         docs = self.embedding(docs)
-        ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+        docStoreConn.upsertBulk(docs, search.index_name(index_name), self.kb_id)
         return qrels, texts
 
     def trivia_qa_index(self, file_path, index_name):
@@ -110,11 +109,12 @@ class Benchmark:
                     qrels[query][d["id"]] = int(rel)
                 if len(docs) >= 32:
                     docs = self.embedding(docs)
-                    ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+                    docStoreConn.upsertBulk(docs, search.index_name(index_name), self.kb_id)
+
                     docs = []
 
         docs = self.embedding(docs)
-        ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+        docStoreConn.upsertBulk(docs, search.index_name(index_name), self.kb_id)
         return qrels, texts
 
     def miracl_index(self, file_path, corpus_path, index_name):
@@ -155,11 +155,12 @@ class Benchmark:
                 qrels[query][d["id"]] = int(rel)
                 if len(docs) >= 32:
                     docs = self.embedding(docs)
-                    ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+                    docStoreConn.upsertBulk(docs, search.index_name(index_name), self.kb_id)
+
                     docs = []
 
         docs = self.embedding(docs)
-        ELASTICSEARCH.bulk(docs, search.index_name(index_name))
+        docStoreConn.upsertBulk(docs, search.index_name(index_name), self.kb_id)
 
         return qrels, texts
 

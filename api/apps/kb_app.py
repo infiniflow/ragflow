@@ -72,7 +72,7 @@ def update():
         if not KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"]):
             return get_json_result(
-                data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
+                data=False, retmsg='Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
         if not e:
@@ -110,7 +110,7 @@ def detail():
                 break
         else:
             return get_json_result(
-                data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.',
+                data=False, retmsg='Only owner of knowledgebase authorized for this operation.',
                 retcode=RetCode.OPERATING_ERROR)
         kb = KnowledgebaseService.get_detail(kb_id)
         if not kb:
@@ -153,7 +153,7 @@ def rm():
                 created_by=current_user.id, id=req["kb_id"])
         if not kbs:
             return get_json_result(
-                data=False, retmsg=f'Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
+                data=False, retmsg='Only owner of knowledgebase authorized for this operation.', retcode=RetCode.OPERATING_ERROR)
 
         for doc in DocumentService.query(kb_id=req["kb_id"]):
             if not DocumentService.remove_document(doc, kbs[0].tenant_id):
