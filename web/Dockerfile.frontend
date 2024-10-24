@@ -1,0 +1,49 @@
+# base image
+FROM node:18.20.2-alpine3.19 AS base
+LABEL maintainer="chongchuanbing@gmail.com"
+
+# if you located in China, you can use aliyun mirror to speed up
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+
+RUN npm config set registry https://registry.npmmirror.com
+
+RUN apk add --no-cache tzdata
+
+
+# install packages
+FROM base AS packages
+
+WORKDIR /app/web
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY package.json .
+
+RUN npm i --force
+
+# build resources
+FROM base AS builder
+
+WORKDIR /app/web
+COPY --from=packages /app/web/ .
+COPY . .
+
+RUN npm config set registry https://registry.npmmirror.com
+
+RUN npm run build
+
+
+FROM nginx:1.27.0-alpine3.19 as production
+
+ENV APP_API_URL=http://127.0.0.1:9380
+
+# set timezone
+ENV TZ=UTC
+RUN ln -s /usr/share/zoneinfo/${TZ} /etc/localtime \
+    && echo ${TZ} > /etc/timezone
+
+WORKDIR /app/web
+COPY --from=builder /app/web/public ./public
+COPY --from=builder /app/web/dist ./dist
+
+EXPOSE 3000

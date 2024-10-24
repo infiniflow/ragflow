@@ -1,0 +1,29 @@
+# Please do not directly edit this file. Instead, modify the .env variables related to NGINX configuration.
+
+server {
+    listen ${NGINX_PORT};
+    server_name ${NGINX_SERVER_NAME};
+
+    gzip on;
+    gzip_min_length 1k;
+    gzip_comp_level 9;
+    gzip_types text/plain application/javascript application/x-javascript text/css application/xml text/javascript application/x-httpd-php image/jpeg image/gif image/png;
+    gzip_vary on;
+    gzip_disable "MSIE [1-6]\.";
+
+    location /v1 {
+        proxy_pass http://ragflow-api:9380;
+        include proxy.conf;
+    }
+
+    location / {
+      proxy_pass http://ragflow-web:80/;
+      include proxy.conf;
+    }
+
+    # placeholder for acme challenge location
+    ${ACME_CHALLENGE_LOCATION}
+
+    # placeholder for https config defined in https.conf.template
+    ${HTTPS_CONFIG}
+}
