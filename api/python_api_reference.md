@@ -105,16 +105,16 @@ dataset = rag_object.create_dataset(name="kb_1")
 ## Delete datasets
 
 ```python
-RAGFlow.delete_datasets(ids: list[str])
+RAGFlow.delete_datasets(ids: list[str] = None)
 ```
 
-Deletes specified datasets or all datasets in the system.
+Deletes datasets by ID.
 
 ### Parameters
 
 #### ids: `list[str]`, *Required*
 
-The IDs of the datasets to delete.
+The IDs of the datasets to delete. Defaults to `None`. If it is not specified, all datasets will be deleted.
 
 ### Returns
 
@@ -460,7 +460,7 @@ Deletes documents by ID.
 
 #### ids: `list[list]`
 
-The IDs of the documents to delete. Defaults to `None`. If not specified, all documents in the dataset will be deleted.
+The IDs of the documents to delete. Defaults to `None`. If it is not specified, all documents in the dataset will be deleted.
 
 ### Returns
 
@@ -597,7 +597,7 @@ A `Chunk` object contains the following attributes:
 - `document_id`: `str` The ID of the associated document.
 - `available`: `bool` The chunk's availability status in the dataset. Value options:
   - `False`: Unavailable
-  - `True`: Available
+  - `True`: Available (default)
 
 
 ### Examples
@@ -673,7 +673,7 @@ Deletes chunks by ID.
 
 #### chunk_ids: `list[str]`
 
-The IDs of the chunks to delete. Defaults to `None`. If not specified, all chunks of the current document will be deleted.
+The IDs of the chunks to delete. Defaults to `None`. If it is not specified, all chunks of the current document will be deleted.
 
 ### Returns
 
@@ -714,7 +714,7 @@ A dictionary representing the attributes to update, with the following keys:
 - `"important_keywords"`: `list[str]` A list of key terms or phrases to tag with the chunk.
 - `"available"`: `bool` The chunk's availability status in the dataset. Value options:
   - `False`: Unavailable
-  - `True`: Available
+  - `True`: Available (default)
 
 ### Returns
 
@@ -866,7 +866,7 @@ The IDs of the associated datasets. Defaults to `[""]`.
 The LLM settings for the chat assistant to create. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default. An `LLM` object contains the following attributes:
 
 - `model_name`: `str`  
-  The chat model name. If it is `None`, the user's default chat model will be returned.  
+  The chat model name. If it is `None`, the user's default chat model will be used.  
 - `temperature`: `float`  
   Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
 - `top_p`: `float`  
@@ -886,10 +886,9 @@ Instructions for the LLM to follow.  A `Prompt` object contains the following at
 - `keywords_similarity_weight`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
 - `top_n`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
 - `variables`: `list[dict[]]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:
-  - `knowledge` is a reserved variable, which will be replaced with the retrieved chunks. 
-  - All the variables in 'System' should be curly bracketed. 
-  - The default value is `[{"key": "knowledge", "optional": True}]`
-
+  - `knowledge` is a reserved variable, which represents the retrieved chunks.
+  - All the variables in 'System' should be curly bracketed.
+  - The default value is `[{"key": "knowledge", "optional": True}]`.
 - `rerank_model`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
 - `empty_response`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank. Defaults to `None`.
 - `opener`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
@@ -947,7 +946,10 @@ A dictionary representing the attributes to update, with the following keys:
   - `"similarity_threshold"`: `float` RAGFlow uses a hybrid of weighted keyword similarity and vector cosine similarity during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
   - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
-  - `"variables"`: `list[dict[]]` If you use dialog APIs, the variables might help you chat with your clients with different strategies. The variables are used to fill in the 'System' part in prompt in order to give LLM a hint. The 'knowledge' is a very special variable which will be filled-in with the retrieved chunks. All the variables in 'System' should be curly bracketed. Defaults to `[{"key": "knowledge", "optional": True}]`
+  - `"variables"`: `list[dict[]]`  This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:
+    - `knowledge` is a reserved variable, which represents the retrieved chunks.
+    - All the variables in 'System' should be curly bracketed.
+    - The default value is `[{"key": "knowledge", "optional": True}]`.
   - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
   - `"empty_response"`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
   - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
@@ -988,7 +990,7 @@ Deletes chat assistants by ID.
 
 #### ids: `list[str]`
 
-The IDs of the chat assistants to delete. Defaults to `None`. If not specified, all chat assistants in the system will be deleted.
+The IDs of the chat assistants to delete. Defaults to `None`. If it is ot specified, all chat assistants in the system will be deleted.
 
 ### Returns
 
@@ -1219,7 +1221,7 @@ Deletes sessions by ID.
 
 #### ids: `list[str]`
 
-The IDs of the sessions to delete. Defaults to `None`. If not specified, all sessions associated with the current chat assistant will be deleted.
+The IDs of the sessions to delete. Defaults to `None`. If it is not specified, all sessions associated with the current chat assistant will be deleted.
 
 ### Returns
 
@@ -1253,7 +1255,7 @@ Asks a question to start a conversation.
 
 The question to start an AI chat.
 
-#### stream: `str`
+#### stream: `bool`
 
 Indicates whether to output responses in a streaming way:
 

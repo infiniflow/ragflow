@@ -59,10 +59,10 @@ curl --request POST \
   - Case-insensitive.
 
 - `"avatar"`: (*Body parameter*), `string`  
-    Base64 encoding of the avatar. Defaults to `""`.
+    Base64 encoding of the avatar.
 
 - `"description"`: (*Body parameter*), `string`  
-  A brief description of the dataset to create. Defaults to `""`.
+  A brief description of the dataset to create.
 
 - `"language"`: (*Body parameter*), `string`  
   The language setting of the dataset to create. Available options:  
@@ -177,8 +177,8 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`, *Required*
-  The IDs of the datasets to delete.
+- `"ids"`: (*Body parameter*), `list[string]`
+  The IDs of the datasets to delete. If it is not specified, all datasets will be deleted.
 
 ### Response
 
@@ -404,10 +404,10 @@ curl --request POST \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)  
   The ID of the dataset to which the documents will be uploaded.
-- `"file"`: (*Body parameter*)  
-  The document to upload.
+- `'file'`: (*Body parameter*)  
+  A document to upload.
 
 ### Response
 
@@ -489,6 +489,10 @@ curl --request PUT \
 
 #### Request parameters
 
+- `dataset_id`: (*Path parameter*)  
+  The ID of the associated dataset.
+- `document_id`: (*Path parameter*)  
+  The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
@@ -558,9 +562,9 @@ curl --request GET \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID.
-- `"documents_id"`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `documents_id`: (*Path parameter*)  
   The ID of the document to download.
 
 ### Response
@@ -600,27 +604,27 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/dataset/{dataset_id}/info?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id} \
+     --url http://{address}/api/v1/dataset/{dataset_id}/info?keywords={keywords}&offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&id={document_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID.
-- `"keywords"`: (*Filter parameter*), `string`  
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `keywords`: (*Filter parameter*), `string`  
   The keywords used to match document titles.
-- `"offset"`: (*Filter parameter*), `integer`  
+- `offset`: (*Filter parameter*), `integer`  
   The starting index for the documents to retrieve. Typically used in conjunction with `limit`. Defaults to `1`.
-- `"limit"`: (*Filter parameter*), `integer`  
+- `limit`: (*Filter parameter*), `integer`  
   The maximum number of documents to retrieve. Defaults to `1024`.
-- `"orderby"`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`  
   The field by which documents should be sorted. Available options:
-  - `"create_time"` (default)
-  - `"update_time"`
-- `"desc"`: (*Filter parameter*), `boolean`  
+  - `create_time` (default)
+  - `update_time`
+- `desc`: (*Filter parameter*), `boolean`  
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
-- `"id"`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`  
   The ID of the document to retrieve.
 
 ### Response
@@ -710,10 +714,10 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID.
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
 - `"ids"`: (*Body parameter*), `list[string]`
-  The IDs of the documents to delete. If not specified, all documents in the dataset will be deleted.
+  The IDs of the documents to delete. If it is not specified, all documents in the specified dataset will be deleted.
 
 ### Response
 
@@ -767,7 +771,7 @@ curl --request POST \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)  
   The dataset ID.
 - `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
   The IDs of the documents to parse.
@@ -824,9 +828,9 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID
-- `"document_ids"`: (*Body parameter*)  
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
   The IDs of the documents for which the parsing should be stopped.
 
 ### Response
@@ -882,9 +886,13 @@ curl --request POST \
 
 #### Request parameters
 
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `document_ids`: (*Path parameter*)  
+  The associated document ID.
 - `"content"`: (*Body parameter*), `string`, *Required*  
   The text content of the chunk.
-- `"important_keywords`(*Body parameter*)  
+- `"important_keywords`(*Body parameter*), `list[string]`  
   The key terms or phrases to tag with the chunk.
 
 ### Response
@@ -944,18 +952,18 @@ curl --request GET \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID.
-- `"document_id"`: (*Path parameter*)  
-  The document ID.
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `document_ids`: (*Path parameter*)  
+  The associated document ID.
 - `"keywords"`(*Filter parameter*), `string`  
-  The keywords used to match chunk content. Defaults to `None`
+  The keywords used to match chunk content.
 - `"offset"`(*Filter parameter*), `string`  
   The starting index for the chunks to retrieve. Defaults to `1`.
 - `"limit"`(*Filter parameter*), `integer`  
   The maximum number of chunks to retrieve.  Default: `1024`
 - `"id"`(*Filter parameter*), `string`  
-  The ID of the chunk to retrieve. Default: `None`
+  The ID of the chunk to retrieve.
 
 ### Response
 
@@ -1059,8 +1067,12 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"chunk_ids"`: (*Body parameter*)  
-  The IDs of the chunks to delete. If not specified, all chunks of the current document will be deleted.
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `document_ids`: (*Path parameter*)  
+  The associated document ID.
+- `"chunk_ids"`: (*Body parameter*), `list[string]`  
+  The IDs of the chunks to delete. If it is not specified, all chunks of the specified document will be deleted.
 
 ### Response
 
@@ -1117,13 +1129,19 @@ curl --request PUT \
 
 #### Request parameters
 
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `document_ids`: (*Path parameter*)  
+  The associated document ID.
+- `chunk_id`: (*Path parameter*)  
+  The ID of the chunk to update.
 - `"content"`: (*Body parameter*), `string`  
   The text content of the chunk.
 - `"important_keywords"`: (*Body parameter*), `list[string]`  
   A list of key terms or phrases to tag with the chunk.
 - `"available"`: (*Body parameter*) `boolean`  
   The chunk's availability status in the dataset. Value options:  
-  - `true`: Available
+  - `true`: Available (default)
   - `false`: Unavailable
 
 ### Response
@@ -1191,7 +1209,7 @@ curl --request POST \
 #### Request parameter
 
 - `"question"`: (*Body parameter*), `string`, *Required*  
-  The user query or query keywords. Defaults to `""`.
+  The user query or query keywords.
 - `"dataset_ids"`: (*Body parameter*) `list[string]`, *Required*  
   The IDs of the datasets to search from.
 - `"document_ids"`: (*Body parameter*), `list[string]`  
@@ -1312,14 +1330,14 @@ curl --request POST \
 
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The name of the chat assistant.
-- `"avatar"`: (*Body parameter*)  
-  Base64 encoding of the avatar. Defaults to `""`.
-- `"dataset_ids"`: (*Body parameter*)  
-  The IDs of the associated datasets. Defaults to `[""]`.
+- `"avatar"`: (*Body parameter*), `string`  
+  Base64 encoding of the avatar.
+- `"dataset_ids"`: (*Body parameter*), `list[string]`  
+  The IDs of the associated datasets.
 - `"llm"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. When the value is `None`, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
+  The LLM settings for the chat assistant to create. If it is not explicitly set, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
   - `"model_name"`, `string`  
-    The chat model name. If it is `None`, the user's default chat model will be returned.  
+    The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
   - `"top_p"`: `float`  
@@ -1336,10 +1354,10 @@ curl --request POST \
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
   - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
   - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
-    - `"knowledge"` is a reserved variable, which will be replaced with the retrieved chunks.
+    - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
-    - The default value is `[{"key": "knowledge", "optional": true}]`
-  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+    - The default value is `[{"key": "knowledge", "optional": true}]`.
+  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
@@ -1450,14 +1468,14 @@ curl --request PUT \
   The ID of the chat assistant to update.
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The name of the chat assistant.
-- `"avatar"`: (*Body parameter*)  
-  Base64 encoding of the avatar. Defaults to `""`.
-- `"dataset_ids"`: (*Body parameter*)  
-  The IDs of the associated datasets. Defaults to `[""]`.
+- `"avatar"`: (*Body parameter*), `string`  
+  Base64 encoding of the avatar.
+- `"dataset_ids"`: (*Body parameter*), `list[string]`  
+  The IDs of the associated datasets.
 - `"llm"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. When the value is `None`, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
+  The LLM settings for the chat assistant to create. If it is not explicitly set, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
   - `"model_name"`, `string`  
-    The chat model name. If it is `None`, the user's default chat model will be returned.  
+    The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
   - `"top_p"`: `float`  
@@ -1474,10 +1492,10 @@ curl --request PUT \
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
   - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
   - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
-    - `"knowledge"` is a reserved variable, which will be replaced with the retrieved chunks.
+    - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
     - The default value is `[{"key": "knowledge", "optional": true}]`
-  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
@@ -1539,7 +1557,7 @@ curl --request DELETE \
 #### Request parameters
 
 - `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the chat assistants to delete. If not specified, all chat assistants in the system will be deleted.
+  The IDs of the chat assistants to delete. If it is not specified, all chat assistants in the system will be deleted.
 
 ### Response
 
@@ -1562,7 +1580,7 @@ Failure:
 
 ---
 
-## List chats
+## List chat assistants
 
 **GET** `/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id}`
 
@@ -1591,8 +1609,8 @@ curl --request GET \
   The number of chat assistants on each page. Defaults to `1024`.
 - `orderby`: (*Path parameter*), `string`  
   The attribute by which the results are sorted. Available options:
-  - `"create_time"` (default)
-  - `"update_time"`
+  - `create_time` (default)
+  - `update_time`
 - `"desc"`: (*Path parameter*), `boolean`  
   Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
 - `id`: (*Path parameter*), `string`  
@@ -1767,7 +1785,7 @@ curl --request PUT \
   The ID of the associated chat assistant.
 - `session_id`: (*Path parameter*)  
   The ID of the session to update.
-- `"name`: (*Body Parameter), `string`  
+- `"name"`: (*Body Parameter), `string`  
   The name of the session to update.
 
 ### Response
@@ -1785,7 +1803,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name can not be empty."
+    "message": "Name cannot be empty."
 }
 ```
 
@@ -1816,19 +1834,19 @@ curl --request GET \
 
 - `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
-- `"page"`: (*Path parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`  
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
-- `"page_size"`: (*Path parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`  
   The number of sessions on each page. Defaults to `1024`.
-- `"orderby"`: (*Path parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`  
   The field by which sessions should be sorted. Available options:  
-  - `"create_time"` (default)
-  - `"update_time"`
-- `"desc"`: (*Path parameter*), `boolean`  
+  - `create_time` (default)
+  - `update_time`
+- `desc`: (*Filter parameter*), `boolean`  
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `"name"`: (*Path parameter*) `string`  
+- `name`: (*Filter parameter*) `string`  
   The name of the chat session to retrieve.
-- `"id"`: (*Path parameter*), `string`  
+- `id`: (*Filter parameter*), `string`  
   The ID of the chat session to retrieve.
 
 ### Response
@@ -1904,7 +1922,7 @@ curl --request DELETE \
 - `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
 - `"ids"`: (*Body Parameter*), `list[string]`  
-  The IDs of the sessions to delete. If not specified, all sessions associated with the current chat assistant will be deleted.
+  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified chat assistant will be deleted.
 
 ### Response
 
@@ -1965,12 +1983,12 @@ curl --request POST \
   The ID of the associated chat assistant.
 - `"question"`: (*Body Parameter*), `string` *Required*  
   The question to start an AI chat.
-- `"stream"`: (*Body Parameter*), `string`  
+- `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming.
   - `false`: (Default) Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
-  The ID of session. If not provided, a new session will be generated.
+  The ID of session. If it is not provided, a new session will be generated.
 
 ### Response
 
