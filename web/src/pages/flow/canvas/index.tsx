@@ -22,6 +22,7 @@ import styles from './index.less';
 import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { GenerateNode } from './node/generate-node';
 import { LogicNode } from './node/logic-node';
 import NoteNode from './node/note-node';
 import { RelevantNode } from './node/relevant-node';
@@ -35,6 +36,7 @@ const nodeTypes = {
   logicNode: LogicNode,
   noteNode: NoteNode,
   switchNode: SwitchNode,
+  generateNode: GenerateNode,
 };
 
 const edgeTypes = {

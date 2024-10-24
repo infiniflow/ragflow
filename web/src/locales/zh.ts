@@ -688,7 +688,7 @@ export default {
       keywordExtract: '关键词',
       keywordExtractDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
       baidu: '百度',
-      baiduDescription: `此元件用於取得www.baidu.com的搜尋結果。通常作為知識庫的補充。 Top N指定您需要適配的搜尋結果數。`,
+      baiduDescription: `此组件用于从 www.baidu.com 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。',

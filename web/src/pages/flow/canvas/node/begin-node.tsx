@@ -29,7 +29,7 @@ export function BeginNode({ selected, data }: NodeProps<NodeData>) {
         style={RightHandleStyle}
       ></Handle>
 
-      <Flex align="center" justify={'space-between'} gap={6}>
+      <Flex align="center" justify={'space-around'}>
         <OperatorIcon
           name={data.label as Operator}
           fontSize={24}

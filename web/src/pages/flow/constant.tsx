@@ -592,7 +592,7 @@ export const NodeMap = {
   [Operator.Begin]: 'beginNode',
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'logicNode',
-  [Operator.Generate]: 'logicNode',
+  [Operator.Generate]: 'generateNode',
   [Operator.Answer]: 'logicNode',
   [Operator.Message]: 'logicNode',
   [Operator.Relevant]: 'relevantNode',
