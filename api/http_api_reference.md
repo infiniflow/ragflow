@@ -1881,7 +1881,7 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`  
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `name`: (*Path parameter*) `string`  
+- `name`: (*Filter parameter*) `string`  
   The name of the chat session to retrieve.
 - `id`: (*Filter parameter*), `string`  
   The ID of the chat session to retrieve.
