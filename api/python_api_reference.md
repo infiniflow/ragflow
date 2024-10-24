@@ -105,16 +105,16 @@ dataset = rag_object.create_dataset(name="kb_1")
 ## Delete datasets
 
 ```python
-RAGFlow.delete_datasets(ids: list[str] = None)
+RAGFlow.delete_datasets(ids: list[str])
 ```
 
 Deletes specified datasets or all datasets in the system.
 
 ### Parameters
 
-#### ids: `list[str]`
+#### ids: `list[str]`, *Required*
 
-The IDs of the datasets to delete. Defaults to `None`. If not specified, all datasets in the system will be deleted.
+The IDs of the datasets to delete.
 
 ### Returns
 
@@ -410,7 +410,7 @@ A `Document` object contains the following attributes:
 - `id`: The document ID. Defaults to `""`.
 - `name`: The document name. Defaults to `""`.
 - `thumbnail`: The thumbnail image of the document. Defaults to `None`.
-- `knowledgebase_id`: The dataset ID associated with the document. Defaults to `None`.
+- `dataset_id`: The dataset ID associated with the document. Defaults to `None`.
 - `chunk_method` The chunk method name. Defaults to `"naive"`.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `{"pages": [[1, 1000000]]}`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
@@ -592,7 +592,7 @@ A `Chunk` object contains the following attributes:
 - `important_keywords`: `list[str]` A list of key terms or phrases tagged with the chunk.
 - `create_time`: `str` The time when the chunk was created (added to the document).
 - `create_timestamp`: `float` The timestamp representing the creation time of the chunk, expressed in seconds since January 1, 1970.
-- `knowledgebase_id`: `str` The ID of the associated dataset.
+- `dataset_id`: `str` The ID of the associated dataset.
 - `document_name`: `str` The name of the associated document.
 - `document_id`: `str` The ID of the associated document.
 - `available`: `bool` The chunk's availability status in the dataset. Value options:
@@ -740,7 +740,7 @@ chunk.update({"content":"sdfx..."})
 ## Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", datasets:list[str]=None, document=list[str]=None, offset:int=1, limit:int=1024, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, offset:int=1, limit:int=1024, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.
@@ -751,11 +751,11 @@ Retrieves chunks from specified datasets.
 
 The user query or query keywords. Defaults to `""`.
 
-#### datasets: `list[str]`, *Required*
+#### dataset_ids: `list[str]`, *Required*
 
 The IDs of the datasets to search from.
 
-#### document: `list[str]`
+#### document_ids: `list[str]`
 
 The IDs of the documents to search from. Defaults to `None`.
 
@@ -817,7 +817,7 @@ doc = dataset.list_documents(name=name)
 doc = doc[0]
 dataset.async_parse_documents([doc.id])
 for c in rag_object.retrieve(question="What's ragflow?", 
-             datasets=[dataset.id], documents=[doc.id], 
+             dataset_ids=[dataset.id], document_ids=[doc.id], 
              offset=1, limit=30, similarity_threshold=0.2, 
              vector_similarity_weight=0.3,
              top_k=1024
@@ -839,7 +839,7 @@ Chat Assistant Management
 RAGFlow.create_chat(
     name: str, 
     avatar: str = "", 
-    knowledgebases: list[str] = [], 
+    dataset_ids: list[str] = [], 
     llm: Chat.LLM = None, 
     prompt: Chat.Prompt = None
 ) -> Chat
@@ -857,7 +857,7 @@ The name of the chat assistant.
 
 Base64 encoding of the avatar. Defaults to `""`.
 
-#### knowledgebases: `list[str]`
+#### dataset_ids: `list[str]`
 
 The IDs of the associated datasets. Defaults to `[""]`.
 
@@ -914,7 +914,7 @@ datasets = rag_object.list_datasets(name="kb_1")
 dataset_ids = []
 for dataset in datasets:
     dataset_ids.append(dataset.id)
-assistant = rag_object.create_chat("Miss R", knowledgebases=dataset_ids)
+assistant = rag_object.create_chat("Miss R", dataset_ids=dataset_ids)
 ```
 
 ---
@@ -935,7 +935,7 @@ A dictionary representing the attributes to update, with the following keys:
 
 - `"name"`: `str` The name of the chat assistant to update.
 - `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
-- `"knowledgebases"`: `list[str]` The datasets to update.
+- `"dataset_ids"`: `list[str]` The datasets to update.
 - `"llm"`: `dict` The LLM settings:
   - `"model_name"`, `str` The chat model name.
   - `"temperature"`, `float` Controls the randomness of the model's predictions.  
@@ -969,7 +969,8 @@ from ragflow import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 datasets = rag_object.list_datasets(name="kb_1")
-assistant = rag_object.create_chat("Miss R", knowledgebases=datasets)
+dataset_id = datasets[0].id
+assistant = rag_object.create_chat("Miss R", dataset_ids=[dataset_id])
 assistant.update({"name": "Stefan", "llm": {"temperature": 0.8}, "prompt": {"top_n": 8}})
 ```
 
@@ -1238,7 +1239,7 @@ assistant.delete_sessions(ids=["id_1","id_2"])
 
 ---
 
-## Chat
+## Converse
 
 ```python
 Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
@@ -1290,7 +1291,7 @@ A list of `Chunk` objects representing references to the message, each containin
   The name of the referenced document.
 - `position` `list[str]`  
   The location information of the chunk within the referenced document.
-- `knowledgebase_id` `str`  
+- `dataset_id` `str`  
   The ID of the dataset to which the referenced document belongs.
 - `similarity` `float`
   A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity.
