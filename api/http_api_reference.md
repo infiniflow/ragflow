@@ -37,17 +37,15 @@ Creates a dataset.
 #### Request example
 
 ```bash
-# "name": name is required and can't be duplicated.
-# "embedding_model": embedding_model must not be provided.
-# "naive" means general.
 curl --request POST \
-  --url http://{address}/api/v1/dataset \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-  "name": "test",
-  "chunk_method": "naive"
-}'
+     --url http://{address}/api/v1/dataset \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "name": "test",
+          "chunk_method": "naive"
+     }'
 ```
 
 #### Request parameters
@@ -97,7 +95,7 @@ curl --request POST \
 - `"parser_config"`: (*Body parameter*)  
   The configuration settings for the dataset parser. A `ParserConfig` object contains the following attributes:
   - `"chunk_token_count"`: Defaults to `128`.
-  - `"layout_recognize"`: Defaults to `True`.
+  - `"layout_recognize"`: Defaults to `true`.
   - `"delimiter"`: Defaults to `"\n!?。；！？"`.
   - `"task_page_size"`: Defaults to `12`.
 
@@ -168,24 +166,20 @@ Deletes datasets by ID.
   - Body:
     - `"ids"`: `list[string]`
 
-
 #### Request example
 
 ```bash
-# Either id or name must be provided, but not both.
 curl --request DELETE \
-  --url http://{address}/api/v1/dataset \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-  "ids": ["test_1", "test_2"]
-  }'
+     --url http://{address}/api/v1/dataset \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '{"ids": ["test_1", "test_2"]}'
 ```
 
 #### Request parameters
 
-- `"ids"`: (*Body parameter*)
-  The IDs of the datasets to delete. Defaults to `""`. If not specified, all datasets in the system will be deleted.
+- `"ids"`: (*Body parameter*), `list[string]`, *Required*
+  The IDs of the datasets to delete.
 
 ### Response
 
@@ -221,34 +215,33 @@ Updates configurations for a specified dataset.
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
-  - Body:
-    - `"name"`: `string`
-    - `"embedding_model"`: `string`
-    - `"chunk_method"`: `enum<string>`
+- Body:
+  - `"name"`: `string`
+  - `"embedding_model"`: `string`
+  - `"chunk_method"`: `enum<string>`
 
 #### Request example
 
 ```bash
-# "id":  id is required.
-# "name": If you update name, it can't be duplicated.
-# "embedding_model": If you update embedding_model, it can't be changed.
-# "parse_method": If you update parse_method, chunk_count must be 0. 
-# "naive" means general.
 curl --request PUT \
-  --url http://{address}/api/v1/dataset/{dataset_id} \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-  "name": "test",
-  "embedding_model": "BAAI/bge-zh-v1.5",
-  "parse_method": "naive"
-}'
+     --url http://{address}/api/v1/dataset/{dataset_id} \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "name": "test",
+          "embedding_model": "BAAI/bge-zh-v1.5",
+          "chunk_method": "naive"
+     }'
 ```
 
 #### Request parameters
 
-- `"name"`: `string` The name of the dataset to update.
-- `"embedding_model"`: `string` The embedding model name to update.
+- `dataset_id`: (*Path parameter*)  
+  The ID of the dataset to update.
+- `"name"`: `string`  
+  The name of the dataset to update.
+- `"embedding_model"`: `string` The embedding model name to update.  
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
 - `"chunk_method"`: `enum<string>` The chunking method for the dataset. Available options:
   - `"naive"`: General
@@ -298,35 +291,30 @@ Lists datasets.
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 
-
 #### Request example
 
 ```bash
-# If no page parameter is passed, the default is 1
-# If no page_size parameter is passed, the default is 1024
-# If no order_by parameter is passed, the default is "create_time"
-# If no desc parameter is passed, the default is True
 curl --request GET \
-  --url http://{address}/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
-  --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --url http://{address}/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
 #### Request parameters
 
-- `"page"`: (*Path parameter*)  
+- `page`: (*Path parameter*)  
   Specifies the page on which the datasets will be displayed. Defaults to `1`.
-- `"page_size"`: (*Path parameter*)  
+- `page_size`: (*Path parameter*)  
   The number of datasets on each page. Defaults to `1024`.
-- `"orderby"`: (*Path parameter*)  
+- `orderby`: (*Path parameter*)  
   The field by which datasets should be sorted. Available options:
-  - `"create_time"` (default)
-  - `"update_time"`
-- `"desc"`: (*Path parameter*)  
-  Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `True`.
-- `"id"`: (*Path parameter*)  
-  The ID of the dataset to retrieve.
-- `"name"`: (*Path parameter*)  
+  - `create_time` (default)
+  - `update_time`
+- `desc`: (*Path parameter*)  
+  Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `true`.
+- `name`: (*Path parameter*)  
   The name of the dataset to retrieve.
+- `id`: (*Path parameter*)  
+  The ID of the dataset to retrieve.
 
 ### Response
 
@@ -467,14 +455,15 @@ Updates configurations for a specified document.
 
 ```bash
 curl --request PUT \
-  --url http://{address}/api/v1/dataset/{dataset_id}/info/{document_id} \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --header 'Content-Type: application/json' \
-  --data '{
-  "name": "manual.txt", 
-  "chunk_method": "manual", 
-  "parser_config": {"chunk_token_count": 128}
-  }'
+     --url http://{address}/api/v1/dataset/{dataset_id}/info/{document_id} \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Content-Type: application/json' \
+     --data '
+     {
+          "name": "manual.txt", 
+          "chunk_method": "manual", 
+          "parser_config": {"chunk_token_count": 128}
+     }'
 
 ```
 
@@ -498,7 +487,7 @@ curl --request PUT \
 - `"parser_config"`: (*Body parameter*), `object`
   The parsing configuration for the document:  
   - `"chunk_token_count"`: Defaults to `128`.
-  - `"layout_recognize"`: Defaults to `True`.
+  - `"layout_recognize"`: Defaults to `true`.
   - `"delimiter"`: Defaults to `"\n!?。；！？"`.
   - `"task_page_size"`: Defaults to `12`.
 
@@ -542,14 +531,14 @@ Downloads a document from a specified dataset.
 
 ```bash
 curl --request GET \
-  --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id} \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --output ./ragflow.txt
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id} \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --output ./ragflow.txt
 ```
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)
+- `"dataset_id"`: (*Path parameter*)  
   The dataset ID.
 - `"documents_id"`: (*Path parameter*)  
   The ID of the document to download.
@@ -582,7 +571,7 @@ Lists documents in a specified dataset.
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/info?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name`
+- URL: `/api/v1/dataset/{dataset_id}/info?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -591,8 +580,8 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-  --url http://{address}/api/v1/dataset/{dataset_id}/info?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id} \
-  --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --url http://{address}/api/v1/dataset/{dataset_id}/info?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id} \
+     --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
 #### Request parameters
@@ -610,8 +599,8 @@ curl --request GET \
   - `"create_time"` (default)
   - `"update_time"`
 - `"desc"`: (*Filter parameter*), `boolean`  
-  Indicates whether the retrieved documents should be sorted in descending order. Defaults to `True`.
-- `"document_id"`: (*Filter parameter*)  
+  Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
+- `"id"`: (*Filter parameter*), `string`  
   The ID of the document to retrieve.
 
 ### Response
@@ -690,16 +679,19 @@ Deletes documents by ID.
 
 ```bash
 curl --request DELETE \
-  --url http://{address}/api/v1/dataset/{dataset_id}/document \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: {YOUR_API_KEY}' \
-  --data '{
-  "ids": ["id_1","id_2"]
-  }'
+     --url http://{address}/api/v1/dataset/{dataset_id}/document \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: {YOUR_API_KEY}' \
+     --data '
+     {
+          "ids": ["id_1","id_2"]
+     }'
 ```
 
 #### Request parameters
 
+- `"dataset_id"`: (*Path parameter*)  
+  The dataset ID.
 - `"ids"`: (*Body parameter*), `list[string]`
   The IDs of the documents to delete. If not specified, all documents in the dataset will be deleted.
 
@@ -744,17 +736,20 @@ Parses documents in a specified dataset.
 
 ```bash
 curl --request POST \
-    --url http://{address}/api/v1/dataset/{dataset_id}/chunk \
-    --header 'Content-Type: application/json' \
-    --header 'Authorization: Bearer {YOUR_API_KEY}' \
-    --data '{"document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]}'
+     --url http://{address}/api/v1/dataset/{dataset_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]
+     }'
 ```
 
 #### Request parameters
 
 - `"dataset_id"`: (*Path parameter*)  
   The dataset ID.
-- `"document_ids"`: (*Body parameter*), `list[string]`  
+- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
   The IDs of the documents to parse.
 
 ### Response
@@ -798,10 +793,13 @@ Stops parsing specified documents.
 
 ```bash
 curl --request DELETE \
-   --url http://{address}/api/v1/dataset/{dataset_id}/chunk \
-   --header 'Content-Type: application/json' \
-   --header 'Authorization: Bearer {YOUR_API_KEY}' \
-   --data '{"document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]}'
+     --url http://{address}/api/v1/dataset/{dataset_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]
+     }'
 ```
 
 #### Request parameters
@@ -832,7 +830,6 @@ Failure:
 
 ---
 
-
 ## Add chunks
 
 **POST** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
@@ -854,12 +851,13 @@ Adds a chunk to a specified document in a specified dataset.
 
 ```bash
 curl --request POST \
-  --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-    "content": "<SOME_CHUNK_CONTENT_HERE>"
-}'
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "content": "<SOME_CHUNK_CONTENT_HERE>"
+     }'
 ```
 
 #### Request parameters
@@ -920,8 +918,8 @@ Lists chunks in a specified document.
 
 ```bash
 curl --request GET \
-  --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={id} \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' 
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={id} \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' 
 ```
 
 #### Request parameters
@@ -1016,12 +1014,13 @@ Deletes chunks by ID.
 
 ```bash
 curl --request DELETE \
-  --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-  "chunk_ids": ["test_1", "test_2"]
-  }'
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "chunk_ids": ["test_1", "test_2"]
+     }'
 ```
 
 #### Request parameters
@@ -1072,13 +1071,14 @@ Updates content or configurations for a specified chunk.
 
 ```bash
 curl --request PUT \
-  --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk/{chunk_id} \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: {YOUR_API_KEY}' \
-  --data '{   
-    "content": "ragflow123",  
-    "important_keywords": [],   
-}'
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk/{chunk_id} \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: {YOUR_API_KEY}' \
+     --data '
+     {   
+          "content": "ragflow123",  
+          "important_keywords": [],   
+     }'
 ```
 
 #### Request parameters
@@ -1089,8 +1089,8 @@ curl --request PUT \
   A list of key terms or phrases to tag with the chunk.
 - `"available"`: (*Body parameter*) `boolean`  
   The chunk's availability status in the dataset. Value options:  
-  - `False`: Unavailable
-  - `True`: Available
+  - `true`: Available
+  - `false`: Unavailable
 
 ### Response
 
@@ -1128,8 +1128,8 @@ Retrieves chunks from specified datasets.
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Body:
   - `"question"`: `string`  
-  - `"datasets"`: `list[string]`  
-  - `"documents"`: `list[string]`
+  - `"dataset_ids"`: `list[string]`  
+  - `"document_ids"`: `list[string]`
   - `"offset"`: `integer`  
   - `"limit"`: `integer`  
   - `"similarity_threshold"`: `float`  
@@ -1143,27 +1143,24 @@ Retrieves chunks from specified datasets.
 
 ```bash
 curl --request POST \
-  --url http://{address}/api/v1/retrieval \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: {YOUR_API_KEY}' \
-  --data '{
-    "question": "What is advantage of ragflow?",
-    "datasets": [
-        "b2a62730759d11ef987d0242ac120004"
-    ],
-    "documents": [
-        "77df9ef4759a11ef8bdd0242ac120004"
-    ]
-}'
+     --url http://{address}/api/v1/retrieval \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: {YOUR_API_KEY}' \
+     --data '
+     {
+          "question": "What is advantage of ragflow?",
+          "dataset_ids": ["b2a62730759d11ef987d0242ac120004"],
+          "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"]
+     }'
 ```
 
 #### Request parameter
 
 - `"question"`: (*Body parameter*), `string`, *Required*  
   The user query or query keywords. Defaults to `""`.
-- `"datasets"`: (*Body parameter*) `list[string]`, *Required*  
+- `"dataset_ids"`: (*Body parameter*) `list[string]`, *Required*  
   The IDs of the datasets to search from.
-- `"documents"`: (*Body parameter*), `list[string]`  
+- `"document_ids"`: (*Body parameter*), `list[string]`  
   The IDs of the documents to search from.
 - `"offset"`: (*Body parameter*), `integer`  
   The starting index for the documents to retrieve. Defaults to `1`.
@@ -1179,12 +1176,12 @@ curl --request POST \
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`  
   Indicates whether to enable keyword-based matching:  
-  - `True`: Enable keyword-based matching.
-  - `False`: Disable keyword-based matching (default).
+  - `true`: Enable keyword-based matching.
+  - `false`: Disable keyword-based matching (default).
 - `"highlight"`: (*Body parameter*), `boolean`  
   Specifies whether to enable highlighting of matched terms in the results:  
-  - `True`: Enable highlighting of matched terms.
-  - `False`: Disable highlighting of matched terms (default).
+  - `true`: Enable highlighting of matched terms.
+  - `false`: Disable highlighting of matched terms (default).
 
 ### Response
 
@@ -1260,7 +1257,7 @@ Creates a chat assistant.
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
-  - `"knowledgebases"`: `list[string]`
+  - `"dataset_ids"`: `list[string]`
   - `"llm"`: `object`
   - `"prompt"`: `object`
 
@@ -1271,8 +1268,8 @@ curl --request POST \
      --url http://{address}/api/v1/chat \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
-     --data-binary '{
-   "knowledgebases": [
+     --data '{
+   "dataset_ids": [
     {
       "avatar": null,
       "chunk_count": 0,
@@ -1305,7 +1302,7 @@ curl --request POST \
   The name of the chat assistant.
 - `"avatar"`: (*Body parameter*)  
   Base64 encoding of the avatar. Defaults to `""`.
-- `"knowledgebases"`: (*Body parameter*)  
+- `"dataset_ids"`: (*Body parameter*)  
   The IDs of the associated datasets. Defaults to `[""]`.
 - `"llm"`: (*Body parameter*), `object`  
   The LLM settings for the chat assistant to create. When the value is `None`, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
@@ -1329,11 +1326,11 @@ curl --request POST \
   - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
     - `"knowledge"` is a reserved variable, which will be replaced with the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
-    - The default value is `[{"key": "knowledge", "optional": True}]`
+    - The default value is `[{"key": "knowledge", "optional": true}]`
   - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-  - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `True`.
+  - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
   - `"prompt"`: `string` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
       {knowledge}
@@ -1438,7 +1435,7 @@ Updates configurations for a specified chat assistant.
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
-  - `"knowledgebases"`: `list[string]`
+  - `"dataset_ids"`: `list[string]`
   - `"llm"`: `object`
   - `"prompt"`: `object`
   
@@ -1446,21 +1443,24 @@ Updates configurations for a specified chat assistant.
 
 ```bash
 curl --request PUT \
-  --url http://{address}/api/v1/chat/{chat_id} \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-    "name":"Test"
-}'
+     --url http://{address}/api/v1/chat/{chat_id} \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "name":"Test"
+     }'
 ```
 
 #### Parameters
 
+- `chat_id`: (*Path parameter*)  
+  The ID of the chat assistant to update.
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The name of the chat assistant.
 - `"avatar"`: (*Body parameter*)  
   Base64 encoding of the avatar. Defaults to `""`.
-- `"knowledgebases"`: (*Body parameter*)  
+- `"dataset_ids"`: (*Body parameter*)  
   The IDs of the associated datasets. Defaults to `[""]`.
 - `"llm"`: (*Body parameter*), `object`  
   The LLM settings for the chat assistant to create. When the value is `None`, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
@@ -1484,11 +1484,11 @@ curl --request PUT \
   - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
     - `"knowledge"` is a reserved variable, which will be replaced with the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
-    - The default value is `[{"key": "knowledge", "optional": True}]`
+    - The default value is `[{"key": "knowledge", "optional": true}]`
   - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-  - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `True`.
+  - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
   - `"prompt"`: `string` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
       {knowledge}
@@ -1534,15 +1534,14 @@ Deletes chat assistants by ID.
 #### Request example
 
 ```bash
-# Either id or name must be provided, but not both.
 curl --request DELETE \
-  --url http://{address}/api/v1/chat \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-  "ids": ["test_1", "test_2"]
-  }'
-}'
+     --url http://{address}/api/v1/chat \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "ids": ["test_1", "test_2"]
+     }'
 ```
 
 #### Request parameters
@@ -1588,25 +1587,25 @@ Lists chat assistants.
 
 ```bash
 curl --request GET \
-  --url http://{address}/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
-  --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --url http://{address}/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
 #### Request parameters
 
-- `"page"`: (*Path parameter*), `integer`  
+- `page`: (*Path parameter*), `integer`  
   Specifies the page on which the chat assistants will be displayed. Defaults to `1`.
-- `"page_size"`: (*Path parameter*), `integer`  
+- `page_size`: (*Path parameter*), `integer`  
   The number of chat assistants on each page. Defaults to `1024`.
-- `"orderby"`: (*Path parameter*), `string`  
+- `orderby`: (*Path parameter*), `string`  
   The attribute by which the results are sorted. Available options:
   - `"create_time"` (default)
   - `"update_time"`
 - `"desc"`: (*Path parameter*), `boolean`  
-  Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `True`.
-- `"id"`: (*Path parameter*), `string`  
+  Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
+- `id`: (*Path parameter*), `string`  
   The ID of the chat assistant to retrieve.
-- `"name"`: (*Path parameter*), `string`  
+- `name`: (*Path parameter*), `string`  
   The name of the chat assistant to retrieve.
 
 ### Response
@@ -1719,19 +1718,21 @@ Creates a chat session.
 
 ```bash
 curl --request POST \
-  --url http://{address}/api/v1/chat/{chat_id}/session \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-    "name": "new session"
-  }'
+     --url http://{address}/api/v1/chat/{chat_id}/session \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "name": "new session"
+     }'
 ```
 
 #### Request parameters
 
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
 - `"name"`: (*Body parameter*), `string`  
   The name of the chat session to create.
-
 
 ### Response
 
@@ -1773,7 +1774,7 @@ Failure:
 
 **PUT** `/api/v1/chat/{chat_id}/session/{session_id}`
 
-Update a chat session
+Updates a chat session.
 
 ### Request
 
@@ -1788,17 +1789,21 @@ Update a chat session
 #### Request example
 ```bash
 curl --request PUT \
-  --url http://{address}/api/v1/chat/{chat_id}/session/{session_id} \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data '{
-    "name": "Updated session"
-  }'
-
+     --url http://{address}/api/v1/chat/{chat_id}/session/{session_id} \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data '
+     {
+          "name": "Updated session"
+     }'
 ```
 
 #### Request Parameter
 
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)  
+  The ID of the session to update.
 - `"name`: (*Body Parameter), `string`  
   The name of the session to update.
 
@@ -1840,12 +1845,14 @@ Lists sessions associated with a specified chat assistant.
 
 ```bash
 curl --request GET \
-  --url http://{address}/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
-  --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --url http://{address}/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id} \
+     --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
 #### Request Parameters
 
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
 - `"page"`: (*Path parameter*), `integer`  
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
 - `"page_size"`: (*Path parameter*), `integer`  
@@ -1855,11 +1862,11 @@ curl --request GET \
   - `"create_time"` (default)
   - `"update_time"`
 - `"desc"`: (*Path parameter*), `boolean`  
-  Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `True`.
-- `"id"`: (*Path parameter*), `string`  
-  The ID of the chat session to retrieve.
+  Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
 - `"name"`: (*Path parameter*) `string`  
   The name of the chat session to retrieve.
+- `"id"`: (*Path parameter*), `string`  
+  The ID of the chat session to retrieve.
 
 ### Response
 
@@ -1920,16 +1927,19 @@ Deletes sessions by ID.
 ```bash
 # Either id or name must be provided, but not both.
 curl --request DELETE \
---url http://{address}/api/v1/chat/{chat_id}/session \
---header 'Content-Type: application/json' \
---header 'Authorization: Bear {YOUR_API_KEY}' \
-  --data '{
-  "ids": ["test_1", "test_2"]
-  }'
+     --url http://{address}/api/v1/chat/{chat_id}/session \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bear {YOUR_API_KEY}' \
+     --data '
+     {
+          "ids": ["test_1", "test_2"]
+     }'
 ```
 
 #### Request Parameters
 
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
 - `"ids"`: (*Body Parameter*), `list[string]`  
   The IDs of the sessions to delete. If not specified, all sessions associated with the current chat assistant will be deleted.
 
@@ -1976,25 +1986,28 @@ Asks a question to start a conversation.
 
 ```bash
 curl --request POST \
-  --url http://{address} /api/v1/chat/{chat_id}/completion \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer {YOUR_API_KEY}' \
-  --data-binary '{
-    "question":  "Hello!",
-    "stream": true
-  }'
+     --url http://{address} /api/v1/chat/{chat_id}/completion \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --data-binary '
+     {
+          "question": "Hello!",
+          "stream": true
+     }'
 ```
 
 #### Request Parameters
 
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
 - `"question"`: (*Body Parameter*), `string` *Required*  
   The question to start an AI chat.
 - `"stream"`: (*Body Parameter*), `string`  
   Indicates whether to output responses in a streaming way:
-  - `True`: Enable streaming.
-  - `False`: (Default) Disable streaming.
+  - `true`: Enable streaming.
+  - `false`: (Default) Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
-  The ID of session. If not provided, a new session will be generated.???????????????
+  The ID of session. If not provided, a new session will be generated.
 
 ### Response
 
