@@ -61,10 +61,10 @@ curl --request POST \
   - Case-insensitive.
 
 - `"avatar"`: (*Body parameter*), `string`  
-    Base64 encoding of the avatar. Defaults to `""`.
+    Base64 encoding of the avatar.
 
 - `"description"`: (*Body parameter*), `string`  
-  A brief description of the dataset to create. Defaults to `""`.
+  A brief description of the dataset to create.
 
 - `"language"`: (*Body parameter*), `string`  
   The language setting of the dataset to create. Available options:  
@@ -1175,7 +1175,7 @@ curl --request POST \
 #### Request parameter
 
 - `"question"`: (*Body parameter*), `string`, *Required*  
-  The user query or query keywords. Defaults to `""`.
+  The user query or query keywords.
 - `"dataset_ids"`: (*Body parameter*) `list[string]`, *Required*  
   The IDs of the datasets to search from.
 - `"document_ids"`: (*Body parameter*), `list[string]`  
@@ -1503,7 +1503,7 @@ curl --request PUT \
     - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
     - The default value is `[{"key": "knowledge", "optional": true}]`
-  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
