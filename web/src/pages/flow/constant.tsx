@@ -591,10 +591,10 @@ export const RestrictedUpstreamMap = {
 export const NodeMap = {
   [Operator.Begin]: 'beginNode',
   [Operator.Categorize]: 'categorizeNode',
-  [Operator.Retrieval]: 'logicNode',
+  [Operator.Retrieval]: 'retrievalNode',
   [Operator.Generate]: 'generateNode',
   [Operator.Answer]: 'logicNode',
-  [Operator.Message]: 'logicNode',
+  [Operator.Message]: 'messageNode',
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'logicNode',
   [Operator.KeywordExtract]: 'logicNode',

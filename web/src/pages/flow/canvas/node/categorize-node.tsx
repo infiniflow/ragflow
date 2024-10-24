@@ -1,13 +1,11 @@
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
-import OperatorIcon from '../../operator-icon';
-import NodeDropdown from './dropdown';
 import { RightHandleStyle } from './handle-icon';
 import { useBuildCategorizeHandlePositions } from './hooks';
 import styles from './index.less';
+import NodeHeader from './node-header';
 import NodePopover from './popover';
 
 export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
@@ -28,21 +26,13 @@ export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
           id={'a'}
         ></Handle>
 
-        <Flex
-          align="center"
-          justify={'space-between'}
-          gap={6}
-          flex={1}
-          className={styles.nodeHeader}
-        >
-          <OperatorIcon
-            name={data.label as Operator}
-            fontSize={24}
-            color={operatorMap[data.label as Operator].color}
-          ></OperatorIcon>
-          <span className={styles.nodeTitle}>{data.name}</span>
-          <NodeDropdown id={id}></NodeDropdown>
-        </Flex>
+        <NodeHeader
+          id={id}
+          name={data.name}
+          label={data.label}
+          className={classNames({ [styles.nodeHeader]: positions.length })}
+        ></NodeHeader>
+
         <Flex vertical gap={8}>
           {positions.map((position, idx) => {
             return (

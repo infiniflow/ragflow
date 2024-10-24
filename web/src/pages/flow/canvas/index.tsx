@@ -24,8 +24,10 @@ import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { GenerateNode } from './node/generate-node';
 import { LogicNode } from './node/logic-node';
+import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
 import { RelevantNode } from './node/relevant-node';
+import { RetrievalNode } from './node/retrieval-node';
 import { SwitchNode } from './node/switch-node';
 
 const nodeTypes = {
@@ -37,6 +39,8 @@ const nodeTypes = {
   noteNode: NoteNode,
   switchNode: SwitchNode,
   generateNode: GenerateNode,
+  retrievalNode: RetrievalNode,
+  messageNode: MessageNode,
 };
 
 const edgeTypes = {

@@ -1,15 +1,13 @@
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
-import OperatorIcon from '../../operator-icon';
-import NodeDropdown from './dropdown';
 import { RightHandleStyle } from './handle-icon';
 import NodePopover from './popover';
 
 import { get } from 'lodash';
 import styles from './index.less';
+import NodeHeader from './node-header';
 
 export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
   const yes = get(data, 'form.yes');
@@ -44,20 +42,13 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
           id={'no'}
           style={{ ...RightHandleStyle, top: 112 }}
         ></Handle>
-        <Flex
-          align="center"
-          justify={'space-between'}
-          gap={0}
-          flex={1}
+        <NodeHeader
+          id={id}
+          name={data.name}
+          label={data.label}
           className={styles.nodeHeader}
-        >
-          <OperatorIcon
-            name={data.label as Operator}
-            color={operatorMap[data.label as Operator].color}
-          ></OperatorIcon>
-          <span className={styles.nodeTitle}>{data.name}</span>
-          <NodeDropdown id={id}></NodeDropdown>
-        </Flex>
+        ></NodeHeader>
+
         <Flex vertical gap={10}>
           <Flex vertical>
             <div className={styles.relevantLabel}>Yes</div>
