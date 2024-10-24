@@ -64,8 +64,8 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_datasets(self, ids: List[str] = None, names: List[str] = None):
-        res = self.delete("/dataset",{"ids": ids, "names": names})
+    def delete_datasets(self, ids: List[str]):
+        res = self.delete("/dataset",{"ids": ids})
         res=res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
@@ -89,11 +89,11 @@ class RAGFlow:
             return result_list
         raise Exception(res["message"])
 
-    def create_chat(self, name: str, avatar: str = "", datasets: List[DataSet] = [],
+    def create_chat(self, name: str, avatar: str = "", dataset_ids: List[str] = [],
                          llm: Chat.LLM = None, prompt: Chat.Prompt = None) -> Chat:
         dataset_list = []
-        for dataset in datasets:
-            dataset_list.append(dataset.id)
+        for id in dataset_ids:
+            dataset_list.append(id)
 
         if llm is None:
             llm = Chat.LLM(self, {"model_name": None,
@@ -126,7 +126,7 @@ class RAGFlow:
 
         temp_dict = {"name": name,
                      "avatar": avatar,
-                     "datasets": dataset_list,
+                     "dataset_ids": dataset_list,
                      "llm": llm.to_json(),
                      "prompt": prompt.to_json()}
         res = self.post("/chat", temp_dict)
@@ -154,7 +154,9 @@ class RAGFlow:
         raise Exception(res["message"])
 
 
-    def retrieve(self, datasets,documents,question="", offset=1, limit=1024, similarity_threshold=0.2,vector_similarity_weight=0.3,top_k=1024,rerank_id:str=None,keyword:bool=False,):
+    def retrieve(self, dataset_ids, document_ids=None, question="", offset=1, limit=1024, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id:str=None, keyword:bool=False, ):
+            if document_ids is None:
+                document_ids = []
             data_json ={
                 "offset": offset,
                 "limit": limit,
@@ -164,10 +166,9 @@ class RAGFlow:
                 "rerank_id": rerank_id,
                 "keyword": keyword,
                 "question": question,
-                "datasets": datasets,
-                "documents": documents
+                "datasets": dataset_ids,
+                "documents": document_ids
             }
-
             # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
             res = self.post(f'/retrieval',json=data_json)
             res = res.json()

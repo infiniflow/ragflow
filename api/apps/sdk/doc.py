@@ -550,33 +550,32 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
 @token_required
 def retrieval_test(tenant_id):
     req = request.json
-    if not req.get("datasets"):
+    if not req.get("dataset_ids"):
         return get_error_data_result("`datasets` is required.")
-    kb_ids = req["datasets"]
+    kb_ids = req["dataset_ids"]
     if not isinstance(kb_ids,list):
         return get_error_data_result("`datasets` should be a list")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([kb.embd_id for kb in kbs]))
-    if len(embd_nms) != 1:
-        return get_result(
-            retmsg='Knowledge bases use different embedding models or does not exist."',
-            retcode=RetCode.AUTHENTICATION_ERROR)
-    if isinstance(kb_ids, str): kb_ids = [kb_ids]
     for id in kb_ids:
         if not KnowledgebaseService.query(id=id,tenant_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
+    embd_nms = list(set([kb.embd_id for kb in kbs]))
+    if len(embd_nms) != 1:
+        return get_result(
+            retmsg='Datasets use different embedding models."',
+            retcode=RetCode.AUTHENTICATION_ERROR)
     if "question" not in req:
         return get_error_data_result("`question` is required.")
     page = int(req.get("offset", 1))
     size = int(req.get("limit", 1024))
     question = req["question"]
-    doc_ids = req.get("documents", [])
-    if not isinstance(req.get("documents"),list):
+    doc_ids = req.get("document_ids", [])
+    if not isinstance(doc_ids,list):
         return get_error_data_result("`documents` should be a list")
     doc_ids_list=KnowledgebaseService.list_documents_by_ids(kb_ids)
     for doc_id in doc_ids:
         if doc_id not in doc_ids_list:
-            return get_error_data_result(f"You don't own the document {doc_id}")
+            return get_error_data_result(f"The datasets don't own the document {doc_id}")
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
