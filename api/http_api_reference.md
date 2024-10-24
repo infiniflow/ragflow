@@ -536,7 +536,7 @@ Downloads a document from a specified dataset.
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Output:
-  - `'{FILE_NAME}'`????????
+  - `'{PATH_TO_THE_FILE}'`
 
 #### Request example
 
@@ -556,11 +556,11 @@ curl --request GET \
 
 ### Response
 
-A successful response includes a text object like the following:
+Success:
 
 ```text
 test_2.
-```????????????????
+```
 
 Failure:
 
@@ -1954,7 +1954,7 @@ Failure:
 
 ---
 
-## Chat
+## Converse
 
 **POST** `/api/v1/chat/{chat_id}/completion`
 
