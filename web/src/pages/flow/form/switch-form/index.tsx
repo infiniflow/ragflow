@@ -13,6 +13,8 @@ import { useBuildComponentIdSelectOptions } from '../../hooks';
 import { IOperatorForm, ISwitchForm } from '../../interface';
 import { getOtherFieldValues } from '../../utils';
 
+import styles from './index.less';
+
 const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
   const { t } = useTranslation();
   const buildCategorizeToOptions = useBuildFormSelectOptions(
@@ -61,6 +63,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                   size="small"
                   title={`Case ${field.name + 1}`}
                   key={field.key}
+                  className={styles.caseCard}
                   extra={
                     <CloseOutlined
                       onClick={() => {
@@ -111,6 +114,8 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                               key={subField.key}
                               title={null}
                               size="small"
+                              className={styles.conditionCard}
+                              bordered
                               extra={
                                 <CloseOutlined
                                   onClick={() => {
@@ -146,7 +151,6 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                             </Card>
                           ))}
                           <Button
-                            type="dashed"
                             onClick={() => {
                               form?.setFieldValue(
                                 ['conditions', field.name, 'logical_operator'],
@@ -157,6 +161,7 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                               });
                             }}
                             block
+                            className={styles.addButton}
                           >
                             + Add Condition
                           </Button>
@@ -168,14 +173,18 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
               );
             })}
 
-            <Button type="dashed" onClick={() => add()} block>
+            <Button onClick={() => add()} block className={styles.addButton}>
               + Add Case
             </Button>
           </div>
         )}
       </Form.List>
       <Divider />
-      <Form.Item label={'ELSE'} name={[SwitchElseTo]}>
+      <Form.Item
+        label={'ELSE'}
+        name={[SwitchElseTo]}
+        className={styles.elseCase}
+      >
         <Select
           allowClear
           options={buildCategorizeToOptions(getSelectedConditionTos())}

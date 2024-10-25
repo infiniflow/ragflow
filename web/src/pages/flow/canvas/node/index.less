@@ -34,6 +34,9 @@
   }
 }
 
+@lightBackgroundColor: rgba(150, 150, 150, 0.1);
+@darkBackgroundColor: rgba(150, 150, 150, 0.2);
+
 .selectedNode {
   border: 1.5px solid rgb(59, 118, 244);
 }
@@ -124,7 +127,7 @@
 .nodeText {
   padding-inline: 0.4em;
   padding-block: 0.2em 0.1em;
-  background: rgba(150, 150, 150, 0.1);
+  background: @lightBackgroundColor;
   border-radius: 3px;
   min-height: 22px;
   .textEllipsis();
@@ -147,22 +150,23 @@
 .conditionBlock {
   border-radius: 4px;
   padding: 6px;
-  background: rgba(150, 150, 150, 0.1);
+  background: @lightBackgroundColor;
 }
 
 .conditionLine {
   border-radius: 4px;
   padding: 0 4px;
-  background: rgba(150, 150, 150, 0.2);
+  background: @darkBackgroundColor;
   .textEllipsis();
 }
 
 .conditionKey {
-  max-width: 120px;
+  flex: 1;
 }
 
 .conditionOperator {
   padding: 0 2px;
+  text-align: center;
 }
 
 .relevantLabel {
