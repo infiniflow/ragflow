@@ -5,7 +5,7 @@
 
 ---
 
-:::tip NOTE
+:::tip API GROUPING
 Dataset Management
 :::
 
@@ -32,7 +32,7 @@ Creates a dataset.
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
-  - `"parser_config"`: `Dataset.ParserConfig`
+  - `"parser_config"`: `object`
 
 #### Request example
 
@@ -86,11 +86,11 @@ curl --request POST \
   - `"laws"`: Laws
   - `"presentation"`: Presentation
   - `"picture"`: Picture
-  - `"one"`:One
+  - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
   - `"email"`: Email
 
-- `"parser_config"`: (*Body parameter*)  
+- `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. A `ParserConfig` object contains the following attributes:
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `true`.
@@ -237,8 +237,8 @@ curl --request PUT \
 - `dataset_id`: (*Path parameter*)  
   The ID of the dataset to update.
 - `"name"`: `string`  
-  The name of the dataset to update.
-- `"embedding_model"`: `string` The embedding model name to update.  
+  The revised name of the dataset.
+- `"embedding_model"`: `string` The updated embedding model name.  
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
 - `"chunk_method"`: `enum<string>` The chunking method for the dataset. Available options:
   - `"naive"`: General
@@ -572,7 +572,7 @@ curl --request GET \
 Success:
 
 ```text
-This is a test to verify the file download functionality.
+This is a test to verify the file download feature.
 ```
 
 Failure:
@@ -938,7 +938,7 @@ Lists chunks in a specified document.
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={id}`
+- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id}`
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 
@@ -946,7 +946,7 @@ Lists chunks in a specified document.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={id} \
+     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}' 
 ```
 
@@ -956,13 +956,13 @@ curl --request GET \
   The associated dataset ID.
 - `document_ids`: (*Path parameter*)  
   The associated document ID.
-- `"keywords"`(*Filter parameter*), `string`  
+- `keywords`(*Filter parameter*), `string`  
   The keywords used to match chunk content.
-- `"offset"`(*Filter parameter*), `string`  
+- `offset`(*Filter parameter*), `string`  
   The starting index for the chunks to retrieve. Defaults to `1`.
-- `"limit"`(*Filter parameter*), `integer`  
+- `limit`(*Filter parameter*), `integer`  
   The maximum number of chunks to retrieve.  Default: `1024`
-- `"id"`(*Filter parameter*), `string`  
+- `id`(*Filter parameter*), `string`  
   The ID of the chunk to retrieve.
 
 ### Response
@@ -1210,21 +1210,21 @@ curl --request POST \
 
 - `"question"`: (*Body parameter*), `string`, *Required*  
   The user query or query keywords.
-- `"dataset_ids"`: (*Body parameter*) `list[string]`, *Required*  
-  The IDs of the datasets to search from.
+- `"dataset_ids"`: (*Body parameter*) `list[string]`  
+  The IDs of the datasets to search. If you do not set this argument, ensure that you set `"document_ids"`.
 - `"document_ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the documents to search from.
+  The IDs of the documents to search. Ensure that all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `"dataset_ids"`.
 - `"offset"`: (*Body parameter*), `integer`  
   The starting index for the documents to retrieve. Defaults to `1`.
 - `"limit"`: (*Body parameter*)  
   The maximum number of chunks to retrieve. Defaults to `1024`.
 - `"similarity_threshold"`: (*Body parameter*)  
   The minimum similarity score. Defaults to `0.2`.
-- `"vector_similarity_weight"`: (*Body parameter*)  
+- `"vector_similarity_weight"`: (*Body parameter*), `weight`  
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the vector cosine similarity, then (1 - x) is the term similarity weight.
-- `"top_k"`: (*Body parameter*)  
+- `"top_k"`: (*Body parameter*), `integer`  
   The number of chunks engaged in vector cosine computaton. Defaults to `1024`.
-- `"rerank_id"`: (*Body parameter*)  
+- `"rerank_id"`: (*Body parameter*), `integer`  
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`  
   Indicates whether to enable keyword-based matching:  
@@ -1335,7 +1335,7 @@ curl --request POST \
 - `"dataset_ids"`: (*Body parameter*), `list[string]`  
   The IDs of the associated datasets.
 - `"llm"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. If it is not explicitly set, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
+  The LLM settings for the chat assistant to create. If it is not explicitly set, a JSON object with the following values will be generated as the default. An `llm` JSON object contains the following attributes:  
   - `"model_name"`, `string`  
     The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
@@ -1349,7 +1349,7 @@ curl --request POST \
   - `"max_token"`: `integer`  
     The maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.  
 - `"prompt"`: (*Body parameter*), `object`  
-  Instructions for the LLM to follow.  A `prompt` object contains the following attributes:  
+  Instructions for the LLM to follow. If it is not explicitly set, a JSON object with the following values will be generated as the default. A `prompt` JSON object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow uses a hybrid of weighted keyword similarity and vector cosine similarity during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
   - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
@@ -1467,7 +1467,7 @@ curl --request PUT \
 - `chat_id`: (*Path parameter*)  
   The ID of the chat assistant to update.
 - `"name"`: (*Body parameter*), `string`, *Required*  
-  The name of the chat assistant.
+  The revised name of the chat assistant.
 - `"avatar"`: (*Body parameter*), `string`  
   Base64 encoding of the avatar.
 - `"dataset_ids"`: (*Body parameter*), `list[string]`  
@@ -1603,19 +1603,19 @@ curl --request GET \
 
 #### Request parameters
 
-- `page`: (*Path parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`  
   Specifies the page on which the chat assistants will be displayed. Defaults to `1`.
-- `page_size`: (*Path parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`  
   The number of chat assistants on each page. Defaults to `1024`.
-- `orderby`: (*Path parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`  
   The attribute by which the results are sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `"desc"`: (*Path parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`  
   Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
-- `id`: (*Path parameter*), `string`  
+- `id`: (*Filter parameter*), `string`  
   The ID of the chat assistant to retrieve.
-- `name`: (*Path parameter*), `string`  
+- `name`: (*Filter parameter*), `string`  
   The name of the chat assistant to retrieve.
 
 ### Response
@@ -1775,7 +1775,7 @@ curl --request PUT \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
      {
-          "name": "Updated session"
+          "name": "<REVISED_SESSION_NAME_HERE>"
      }'
 ```
 
@@ -1786,7 +1786,7 @@ curl --request PUT \
 - `session_id`: (*Path parameter*)  
   The ID of the session to update.
 - `"name"`: (*Body Parameter), `string`  
-  The name of the session to update.
+  The revised name of the session.
 
 ### Response
 
@@ -1818,7 +1818,7 @@ Lists sessions associated with a specified chat assistant.
 ### Request
 
 - Method: GET
-- URL: `/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+- URL: `/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 
@@ -1949,7 +1949,7 @@ Failure:
 
 **POST** `/api/v1/chat/{chat_id}/completion`
 
-Asks a question to start a conversation.
+Asks a question to start an AI-powered conversation.
 
 ### Request
 
@@ -1972,7 +1972,7 @@ curl --request POST \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data-binary '
      {
-          "question": "Hello!",
+          "question": "What is RAGFlow?",
           "stream": true
      }'
 ```
@@ -1982,11 +1982,11 @@ curl --request POST \
 - `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
 - `"question"`: (*Body Parameter*), `string` *Required*  
-  The question to start an AI chat.
+  The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming.
-  - `false`: (Default) Disable streaming.
+  - `false`: Disable streaming (default).
 - `"session_id"`: (*Body Parameter*)  
   The ID of session. If it is not provided, a new session will be generated.
 

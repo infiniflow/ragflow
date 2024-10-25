@@ -73,7 +73,7 @@ The chunking method of the dataset to create. Available options:
 - `"laws"`: Laws
 - `"presentation"`: Presentation
 - `"picture"`: Picture
-- `"one"`:One
+- `"one"`: One
 - `"knowledge_graph"`: Knowledge Graph
 - `"email"`: Email
 
@@ -210,8 +210,8 @@ Updates configurations for the current dataset.
 
 A dictionary representing the attributes to update, with the following keys:
 
-- `"name"`: `str` The name of the dataset to update.
-- `"embedding_model"`: `str` The embedding model name to update.
+- `"name"`: `str` The revised name of the dataset.
+- `"embedding_model"`: `str` The updated embedding model name.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
 - `"chunk_method"`: `str` The chunking method for the dataset. Available options:
   - `"naive"`: General
@@ -223,7 +223,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"laws"`: Laws
   - `"presentation"`: Presentation
   - `"picture"`: Picture
-  - `"one"`:One
+  - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
   - `"email"`: Email
 
@@ -753,11 +753,11 @@ The user query or query keywords. Defaults to `""`.
 
 #### dataset_ids: `list[str]`, *Required*
 
-The IDs of the datasets to search from.
+The IDs of the datasets to search. Defaults to `None`. If you do not set this argument, ensure that you set `document_ids`.
 
 #### document_ids: `list[str]`
 
-The IDs of the documents to search from. Defaults to `None`.
+The IDs of the documents to search. Defaults to `None`. You must ensure all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `dataset_ids`.
 
 #### offset: `int`
 
@@ -932,7 +932,7 @@ Updates configurations for the current chat assistant.
 
 A dictionary representing the attributes to update, with the following keys:
 
-- `"name"`: `str` The name of the chat assistant to update.
+- `"name"`: `str` The revised name of the chat assistant.
 - `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
 - `"dataset_ids"`: `list[str]` The datasets to update.
 - `"llm"`: `dict` The LLM settings:
@@ -1117,7 +1117,7 @@ session = assistant.create_session()
 Session.update(update_message: dict)
 ```
 
-Updates the current session name.
+Updates the current session.
 
 ### Parameters
 
@@ -1125,7 +1125,7 @@ Updates the current session name.
 
 A dictionary representing the attributes to update, with only one key:
 
-- `"name"`: `str` The name of the session to update.
+- `"name"`: `str` The revised name of the session.
 
 ### Returns
 
@@ -1247,7 +1247,7 @@ assistant.delete_sessions(ids=["id_1","id_2"])
 Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
 ```
 
-Asks a question to start a conversation.
+Asks a question to start an AI-powered conversation.
 
 ### Parameters
 
@@ -1260,7 +1260,7 @@ The question to start an AI chat.
 Indicates whether to output responses in a streaming way:
 
 - `True`: Enable streaming.
-- `False`: (Default) Disable streaming.
+- `False`: Disable streaming (default).
 
 ### Returns
 

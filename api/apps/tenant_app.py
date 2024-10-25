@@ -57,6 +57,7 @@ def create(tenant_id):
         id=get_uuid(),
         user_id=user_id,
         tenant_id=tenant_id,
+        invited_by=current_user.id,
         role=UserTenantRole.INVITE,
         status=StatusEnum.VALID.value)
 
