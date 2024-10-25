@@ -122,7 +122,6 @@
 }
 
 .nodeText {
-  margin: 0 0.2em;
   padding-inline: 0.4em;
   padding-block: 0.2em 0.1em;
   background: rgba(150, 150, 150, 0.1);
@@ -177,4 +176,16 @@
 .messageNodeContainer {
   overflow-y: auto;
   max-height: 300px;
+}
+
+.generateParameters {
+  padding-top: 8px;
+  label {
+    flex: 2;
+    .textEllipsis();
+  }
+  .parameterValue {
+    flex: 3;
+    .conditionLine;
+  }
 }

@@ -644,6 +644,7 @@ const ExcludedNodes = [
   Operator.Relevant,
   Operator.Begin,
   Operator.Answer,
+  Operator.Note,
 ];
 
 export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
@@ -659,4 +660,16 @@ export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
   }, [nodes, nodeId]);
 
   return options;
+};
+
+export const useGetComponentLabelByValue = (nodeId: string) => {
+  const options = useBuildComponentIdSelectOptions(nodeId);
+
+  const getLabel = useCallback(
+    (val?: string) => {
+      return options.find((x) => x.value === val)?.label;
+    },
+    [options],
+  );
+  return getLabel;
 };

@@ -1,6 +1,7 @@
 import { Divider, Flex } from 'antd';
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
+import { useGetComponentLabelByValue } from '../../hooks';
 import { ISwitchCondition, NodeData } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
 import { useBuildSwitchHandlePositions } from './hooks';
@@ -18,8 +19,15 @@ const getConditionKey = (idx: number, length: number) => {
   return 'ElseIf';
 };
 
-const ConditionBlock = ({ condition }: { condition: ISwitchCondition }) => {
+const ConditionBlock = ({
+  condition,
+  nodeId,
+}: {
+  condition: ISwitchCondition;
+  nodeId: string;
+}) => {
   const items = condition?.items ?? [];
+  const getLabel = useGetComponentLabelByValue(nodeId);
   return (
     <Flex vertical className={styles.conditionBlock}>
       {items.map((x, idx) => (
@@ -28,7 +36,7 @@ const ConditionBlock = ({ condition }: { condition: ISwitchCondition }) => {
             <div
               className={classNames(styles.conditionLine, styles.conditionKey)}
             >
-              {x?.cpn_id}
+              {getLabel(x?.cpn_id)}
             </div>
             <span className={styles.conditionOperator}>{x?.operator}</span>
             <Flex flex={1} className={styles.conditionLine}>
@@ -80,6 +88,7 @@ export function SwitchNode({ id, data, selected }: NodeProps<NodeData>) {
                   </Flex>
                   {position.condition && (
                     <ConditionBlock
+                      nodeId={id}
                       condition={position.condition}
                     ></ConditionBlock>
                   )}
