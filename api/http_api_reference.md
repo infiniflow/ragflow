@@ -31,7 +31,7 @@ Creates a dataset.
   - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
-  - `"parse_method"`: `string`
+  - `"chunk_method"`: `string`
   - `"parser_config"`: `Dataset.ParserConfig`
 
 #### Request example
@@ -41,11 +41,9 @@ curl --request POST \
      --url http://{address}/api/v1/dataset \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
-     --data '
-     {
-          "name": "test",
-          "chunk_method": "naive"
-     }'
+     --data '{
+      "name": "test_1"
+      }'
 ```
 
 #### Request parameters
@@ -61,10 +59,10 @@ curl --request POST \
   - Case-insensitive.
 
 - `"avatar"`: (*Body parameter*), `string`  
-    Base64 encoding of the avatar. Defaults to `""`.
+    Base64 encoding of the avatar.
 
 - `"description"`: (*Body parameter*), `string`  
-  A brief description of the dataset to create. Defaults to `""`.
+  A brief description of the dataset to create.
 
 - `"language"`: (*Body parameter*), `string`  
   The language setting of the dataset to create. Available options:  
@@ -109,31 +107,32 @@ Success:
     "data": {
         "avatar": null,
         "chunk_count": 0,
-        "create_date": "Thu, 10 Oct 2024 05:57:37 GMT",
-        "create_time": 1728539857641,
+        "chunk_method": "naive",
+        "create_date": "Thu, 24 Oct 2024 09:14:07 GMT",
+        "create_time": 1729761247434,
         "created_by": "69736c5e723611efb51b0242ac120007",
         "description": null,
         "document_count": 0,
         "embedding_model": "BAAI/bge-large-zh-v1.5",
-        "id": "8d73076886cc11ef8c270242ac120006",
+        "id": "527fa74891e811ef9c650242ac120006",
         "language": "English",
         "name": "test_1",
-        "parse_method": "naive",
         "parser_config": {
-            "pages": [
-                [
-                    1,
-                    1000000
-                ]
-            ]
+            "chunk_token_num": 128,
+            "delimiter": "\\n!?;。；！？",
+            "html4excel": false,
+            "layout_recognize": true,
+            "raptor": {
+                "user_raptor": false
+            }
         },
         "permission": "me",
         "similarity_threshold": 0.2,
         "status": "1",
         "tenant_id": "69736c5e723611efb51b0242ac120007",
         "token_num": 0,
-        "update_date": "Thu, 10 Oct 2024 05:57:37 GMT",
-        "update_time": 1728539857641,
+        "update_date": "Thu, 24 Oct 2024 09:14:07 GMT",
+        "update_time": 1729761247434,
         "vector_similarity_weight": 0.3
     }
 }
@@ -178,8 +177,8 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`, *Required*
-  The IDs of the datasets to delete.
+- `"ids"`: (*Body parameter*), `list[string]`
+  The IDs of the datasets to delete. If it is not specified, all datasets will be deleted.
 
 ### Response
 
@@ -229,9 +228,7 @@ curl --request PUT \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
      {
-          "name": "test",
-          "embedding_model": "BAAI/bge-zh-v1.5",
-          "chunk_method": "naive"
+          "name": "updated_dataset",
      }'
 ```
 
@@ -336,7 +333,7 @@ Success:
             "id": "6e211ee0723611efa10a0242ac120007",
             "language": "English",
             "name": "mysql",
-            "parse_method": "knowledge_graph",
+            "chunk_method": "knowledge_graph",
             "parser_config": {
                 "chunk_token_num": 8192,
                 "delimiter": "\\n!?;。；！？",
@@ -407,10 +404,10 @@ curl --request POST \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)  
   The ID of the dataset to which the documents will be uploaded.
-- `"file"`: (*Body parameter*)  
-  The document to upload.
+- `'file'`: (*Body parameter*)  
+  A document to upload.
 
 ### Response
 
@@ -418,7 +415,30 @@ Success:
 
 ```json
 {
-    "code": 0 
+    "code": 0,
+    "data": [
+        {
+            "chunk_method": "naive",
+            "created_by": "69736c5e723611efb51b0242ac120007",
+            "dataset_id": "527fa74891e811ef9c650242ac120006",
+            "id": "b330ec2e91ec11efbc510242ac120004",
+            "location": "1.txt",
+            "name": "1.txt",
+            "parser_config": {
+                "chunk_token_num": 128,
+                "delimiter": "\\n!?;。；！？",
+                "html4excel": false,
+                "layout_recognize": true,
+                "raptor": {
+                    "user_raptor": false
+                }
+            },
+            "run": "UNSTART",
+            "size": 17966,
+            "thumbnail": "",
+            "type": "doc"
+        }
+    ]
 }
 ```
 
@@ -469,6 +489,10 @@ curl --request PUT \
 
 #### Request parameters
 
+- `dataset_id`: (*Path parameter*)  
+  The ID of the associated dataset.
+- `document_id`: (*Path parameter*)  
+  The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
@@ -538,9 +562,9 @@ curl --request GET \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID.
-- `"documents_id"`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `documents_id`: (*Path parameter*)  
   The ID of the document to download.
 
 ### Response
@@ -548,7 +572,7 @@ curl --request GET \
 Success:
 
 ```text
-test_2.
+This is a test to verify the file download functionality.
 ```
 
 Failure:
@@ -580,27 +604,27 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/dataset/{dataset_id}/info?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id} \
+     --url http://{address}/api/v1/dataset/{dataset_id}/info?keywords={keywords}&offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&id={document_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID.
-- `"keywords"`: (*Filter parameter*), `string`  
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `keywords`: (*Filter parameter*), `string`  
   The keywords used to match document titles.
-- `"offset"`: (*Filter parameter*), `integer`  
+- `offset`: (*Filter parameter*), `integer`  
   The starting index for the documents to retrieve. Typically used in conjunction with `limit`. Defaults to `1`.
-- `"limit"`: (*Filter parameter*), `integer`  
+- `limit`: (*Filter parameter*), `integer`  
   The maximum number of documents to retrieve. Defaults to `1024`.
-- `"orderby"`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`  
   The field by which documents should be sorted. Available options:
-  - `"create_time"` (default)
-  - `"update_time"`
-- `"desc"`: (*Filter parameter*), `boolean`  
+  - `create_time` (default)
+  - `update_time`
+- `desc`: (*Filter parameter*), `boolean`  
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
-- `"id"`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`  
   The ID of the document to retrieve.
 
 ### Response
@@ -690,10 +714,10 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID.
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
 - `"ids"`: (*Body parameter*), `list[string]`
-  The IDs of the documents to delete. If not specified, all documents in the dataset will be deleted.
+  The IDs of the documents to delete. If it is not specified, all documents in the specified dataset will be deleted.
 
 ### Response
 
@@ -747,7 +771,7 @@ curl --request POST \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)  
   The dataset ID.
 - `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
   The IDs of the documents to parse.
@@ -804,9 +828,9 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID
-- `"document_ids"`: (*Body parameter*)  
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
   The IDs of the documents for which the parsing should be stopped.
 
 ### Response
@@ -862,9 +886,13 @@ curl --request POST \
 
 #### Request parameters
 
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `document_ids`: (*Path parameter*)  
+  The associated document ID.
 - `"content"`: (*Body parameter*), `string`, *Required*  
   The text content of the chunk.
-- `"important_keywords`(*Body parameter*)  
+- `"important_keywords`(*Body parameter*), `list[string]`  
   The key terms or phrases to tag with the chunk.
 
 ### Response
@@ -924,18 +952,18 @@ curl --request GET \
 
 #### Request parameters
 
-- `"dataset_id"`: (*Path parameter*)  
-  The dataset ID.
-- `"document_id"`: (*Path parameter*)  
-  The document ID.
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `document_ids`: (*Path parameter*)  
+  The associated document ID.
 - `"keywords"`(*Filter parameter*), `string`  
-  The keywords used to match chunk content. Defaults to `None`
+  The keywords used to match chunk content.
 - `"offset"`(*Filter parameter*), `string`  
   The starting index for the chunks to retrieve. Defaults to `1`.
 - `"limit"`(*Filter parameter*), `integer`  
   The maximum number of chunks to retrieve.  Default: `1024`
 - `"id"`(*Filter parameter*), `string`  
-  The ID of the chunk to retrieve. Default: `None`
+  The ID of the chunk to retrieve.
 
 ### Response
 
@@ -945,40 +973,54 @@ Success:
 {
     "code": 0,
     "data": {
-        "chunks": [],
-        "doc": {
-            "chunk_num": 0,
-            "create_date": "Sun, 29 Sep 2024 03:47:29 GMT",
-            "create_time": 1727581649216,
-            "created_by": "69736c5e723611efb51b0242ac120007",
-            "id": "8cb781ec7e1511ef98ac0242ac120006",
-            "kb_id": "c7ee74067a2c11efb21c0242ac120006",
-            "location": "sunny_tomorrow.txt",
-            "name": "sunny_tomorrow.txt",
-            "parser_config": {
-                "pages": [
-                    [
-                        1,
-                        1000000
-                    ]
+        "chunks": [
+            {
+                "available_int": 1,
+                "content": "This is a test content.",
+                "docnm_kwd": "1.txt",
+                "document_id": "b330ec2e91ec11efbc510242ac120004",
+                "id": "b48c170e90f70af998485c1065490726",
+                "image_id": "",
+                "important_keywords": "",
+                "positions": [
+                    ""
                 ]
+            }
+        ],
+        "doc": {
+            "chunk_count": 1,
+            "chunk_method": "naive",
+            "create_date": "Thu, 24 Oct 2024 09:45:27 GMT",
+            "create_time": 1729763127646,
+            "created_by": "69736c5e723611efb51b0242ac120007",
+            "dataset_id": "527fa74891e811ef9c650242ac120006",
+            "id": "b330ec2e91ec11efbc510242ac120004",
+            "location": "1.txt",
+            "name": "1.txt",
+            "parser_config": {
+                "chunk_token_num": 128,
+                "delimiter": "\\n!?;。；！？",
+                "html4excel": false,
+                "layout_recognize": true,
+                "raptor": {
+                    "user_raptor": false
+                }
             },
-            "parser_id": "naive",
-            "process_begin_at": "Tue, 15 Oct 2024 10:23:51 GMT",
-            "process_duation": 1435.37,
-            "progress": 0.0370833,
-            "progress_msg": "\nTask has been received.",
-            "run": "1",
-            "size": 24,
+            "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
+            "process_duation": 0.54213,
+            "progress": 0.0,
+            "progress_msg": "Task dispatched...",
+            "run": "2",
+            "size": 17966,
             "source_type": "local",
             "status": "1",
-            "thumbnail": null,
-            "token_num": 0,
+            "thumbnail": "",
+            "token_count": 8,
             "type": "doc",
-            "update_date": "Tue, 15 Oct 2024 10:47:46 GMT",
-            "update_time": 1728989266371
+            "update_date": "Thu, 24 Oct 2024 11:03:15 GMT",
+            "update_time": 1729767795721
         },
-        "total": 0
+        "total": 1
     }
 }
 ```
@@ -1025,8 +1067,12 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"chunk_ids"`: (*Body parameter*)  
-  The IDs of the chunks to delete. If not specified, all chunks of the current document will be deleted.
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `document_ids`: (*Path parameter*)  
+  The associated document ID.
+- `"chunk_ids"`: (*Body parameter*), `list[string]`  
+  The IDs of the chunks to delete. If it is not specified, all chunks of the specified document will be deleted.
 
 ### Response
 
@@ -1083,13 +1129,19 @@ curl --request PUT \
 
 #### Request parameters
 
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `document_ids`: (*Path parameter*)  
+  The associated document ID.
+- `chunk_id`: (*Path parameter*)  
+  The ID of the chunk to update.
 - `"content"`: (*Body parameter*), `string`  
   The text content of the chunk.
 - `"important_keywords"`: (*Body parameter*), `list[string]`  
   A list of key terms or phrases to tag with the chunk.
 - `"available"`: (*Body parameter*) `boolean`  
   The chunk's availability status in the dataset. Value options:  
-  - `true`: Available
+  - `true`: Available (default)
   - `false`: Unavailable
 
 ### Response
@@ -1157,7 +1209,7 @@ curl --request POST \
 #### Request parameter
 
 - `"question"`: (*Body parameter*), `string`, *Required*  
-  The user query or query keywords. Defaults to `""`.
+  The user query or query keywords.
 - `"dataset_ids"`: (*Body parameter*) `list[string]`, *Required*  
   The IDs of the datasets to search from.
 - `"document_ids"`: (*Body parameter*), `list[string]`  
@@ -1269,29 +1321,7 @@ curl --request POST \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
      --data '{
-   "dataset_ids": [
-    {
-      "avatar": null,
-      "chunk_count": 0,
-      "description": null,
-      "document_count": 0,
-      "embedding_model": "",
-      "id": "0b2cbc8c877f11ef89070242ac120005",
-      "language": "English",
-      "name": "Test_assistant",
-      "parse_method": "naive",
-      "parser_config": {
-        "pages": [
-          [
-            1,
-            1000000
-          ]
-        ]
-      },
-      "permission": "me",
-      "tenant_id": "4fb0cd625f9311efba4a0242ac120006"
-    }
-  ],
+    "dataset_ids": ["0b2cbc8c877f11ef89070242ac120005"],
     "name":"new_chat_1"
 }'
 ```
@@ -1300,14 +1330,14 @@ curl --request POST \
 
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The name of the chat assistant.
-- `"avatar"`: (*Body parameter*)  
-  Base64 encoding of the avatar. Defaults to `""`.
-- `"dataset_ids"`: (*Body parameter*)  
-  The IDs of the associated datasets. Defaults to `[""]`.
+- `"avatar"`: (*Body parameter*), `string`  
+  Base64 encoding of the avatar.
+- `"dataset_ids"`: (*Body parameter*), `list[string]`  
+  The IDs of the associated datasets.
 - `"llm"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. When the value is `None`, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
+  The LLM settings for the chat assistant to create. If it is not explicitly set, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
   - `"model_name"`, `string`  
-    The chat model name. If it is `None`, the user's default chat model will be returned.  
+    The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
   - `"top_p"`: `float`  
@@ -1324,10 +1354,10 @@ curl --request POST \
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
   - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
   - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
-    - `"knowledge"` is a reserved variable, which will be replaced with the retrieved chunks.
+    - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
-    - The default value is `[{"key": "knowledge", "optional": true}]`
-  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+    - The default value is `[{"key": "knowledge", "optional": true}]`.
+  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
@@ -1345,49 +1375,29 @@ Success:
     "code": 0,
     "data": {
         "avatar": "",
-        "create_date": "Fri, 11 Oct 2024 03:23:24 GMT",
-        "create_time": 1728617004635,
+        "create_date": "Thu, 24 Oct 2024 11:18:29 GMT",
+        "create_time": 1729768709023,
+        "dataset_ids": [
+            "527fa74891e811ef9c650242ac120006"
+        ],
         "description": "A helpful Assistant",
         "do_refer": "1",
-        "id": "2ca4b22e878011ef88fe0242ac120005",
-        "knowledgebases": [
-            {
-                "avatar": null,
-                "chunk_count": 0,
-                "description": null,
-                "document_count": 0,
-                "embedding_model": "",
-                "id": "0b2cbc8c877f11ef89070242ac120005",
-                "language": "English",
-                "name": "Test_assistant",
-                "parse_method": "naive",
-                "parser_config": {
-                    "pages": [
-                        [
-                            1,
-                            1000000
-                        ]
-                    ]
-                },
-                "permission": "me",
-                "tenant_id": "4fb0cd625f9311efba4a0242ac120006"
-            }
-        ],
+        "id": "b1f2f15691f911ef81180242ac120003",
         "language": "English",
         "llm": {
             "frequency_penalty": 0.7,
             "max_tokens": 512,
-            "model_name": "deepseek-chat___OpenAI-API@OpenAI-API-Compatible",
+            "model_name": "qwen-plus@Tongyi-Qianwen",
             "presence_penalty": 0.4,
             "temperature": 0.1,
             "top_p": 0.3
         },
-        "name": "new_chat_1",
+        "name": "12234",
         "prompt": {
-            "empty_response": "Sorry! 知识库中未找到相关内容！",
+            "empty_response": "Sorry! No relevant content was found in the knowledge base!",
             "keywords_similarity_weight": 0.3,
-            "opener": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
-            "prompt": "你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\n            以下是知识库：\n            {knowledge}\n            以上是知识库。",
+            "opener": "Hi! I'm your assistant, what can I do for you?",
+            "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.",
             "rerank_model": "",
             "similarity_threshold": 0.2,
             "top_n": 6,
@@ -1402,8 +1412,8 @@ Success:
         "status": "1",
         "tenant_id": "69736c5e723611efb51b0242ac120007",
         "top_k": 1024,
-        "update_date": "Fri, 11 Oct 2024 03:23:24 GMT",
-        "update_time": 1728617004635
+        "update_date": "Thu, 24 Oct 2024 11:18:29 GMT",
+        "update_time": 1729768709023
     }
 }
 ```
@@ -1458,14 +1468,14 @@ curl --request PUT \
   The ID of the chat assistant to update.
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The name of the chat assistant.
-- `"avatar"`: (*Body parameter*)  
-  Base64 encoding of the avatar. Defaults to `""`.
-- `"dataset_ids"`: (*Body parameter*)  
-  The IDs of the associated datasets. Defaults to `[""]`.
+- `"avatar"`: (*Body parameter*), `string`  
+  Base64 encoding of the avatar.
+- `"dataset_ids"`: (*Body parameter*), `list[string]`  
+  The IDs of the associated datasets.
 - `"llm"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. When the value is `None`, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
+  The LLM settings for the chat assistant to create. If it is not explicitly set, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
   - `"model_name"`, `string`  
-    The chat model name. If it is `None`, the user's default chat model will be returned.  
+    The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
   - `"top_p"`: `float`  
@@ -1482,10 +1492,10 @@ curl --request PUT \
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
   - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
   - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
-    - `"knowledge"` is a reserved variable, which will be replaced with the retrieved chunks.
+    - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
     - The default value is `[{"key": "knowledge", "optional": true}]`
-  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
@@ -1547,7 +1557,7 @@ curl --request DELETE \
 #### Request parameters
 
 - `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the chat assistants to delete. If not specified, all chat assistants in the system will be deleted.
+  The IDs of the chat assistants to delete. If it is not specified, all chat assistants in the system will be deleted.
 
 ### Response
 
@@ -1570,7 +1580,7 @@ Failure:
 
 ---
 
-## List chats
+## List chat assistants
 
 **GET** `/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id}`
 
@@ -1599,8 +1609,8 @@ curl --request GET \
   The number of chat assistants on each page. Defaults to `1024`.
 - `orderby`: (*Path parameter*), `string`  
   The attribute by which the results are sorted. Available options:
-  - `"create_time"` (default)
-  - `"update_time"`
+  - `create_time` (default)
+  - `update_time`
 - `"desc"`: (*Path parameter*), `boolean`  
   Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
 - `id`: (*Path parameter*), `string`  
@@ -1618,56 +1628,27 @@ Success:
     "data": [
         {
             "avatar": "",
-            "create_date": "Fri, 11 Oct 2024 03:23:24 GMT",
-            "create_time": 1728617004635,
+            "create_date": "Fri, 18 Oct 2024 06:20:06 GMT",
+            "create_time": 1729232406637,
             "description": "A helpful Assistant",
             "do_refer": "1",
-            "id": "2ca4b22e878011ef88fe0242ac120005",
-            "knowledgebases": [
-                {
-                    "avatar": "",
-                    "chunk_num": 0,
-                    "create_date": "Fri, 11 Oct 2024 03:15:18 GMT",
-                    "create_time": 1728616518986,
-                    "created_by": "69736c5e723611efb51b0242ac120007",
-                    "description": "",
-                    "doc_num": 0,
-                    "embd_id": "BAAI/bge-large-zh-v1.5",
-                    "id": "0b2cbc8c877f11ef89070242ac120005",
-                    "language": "English",
-                    "name": "test_delete_chat",
-                    "parser_config": {
-                        "chunk_token_count": 128,
-                        "delimiter": "\n!?。；！？",
-                        "layout_recognize": true,
-                        "task_page_size": 12
-                    },
-                    "parser_id": "naive",
-                    "permission": "me",
-                    "similarity_threshold": 0.2,
-                    "status": "1",
-                    "tenant_id": "69736c5e723611efb51b0242ac120007",
-                    "token_num": 0,
-                    "update_date": "Fri, 11 Oct 2024 04:01:31 GMT",
-                    "update_time": 1728619291228,
-                    "vector_similarity_weight": 0.3
-                }
-            ],
+            "id": "04d0d8e28d1911efa3630242ac120006",
+            "dataset_ids": ["527fa74891e811ef9c650242ac120006"],
             "language": "English",
             "llm": {
                 "frequency_penalty": 0.7,
                 "max_tokens": 512,
-                "model_name": "deepseek-chat___OpenAI-API@OpenAI-API-Compatible",
+                "model_name": "qwen-plus@Tongyi-Qianwen",
                 "presence_penalty": 0.4,
                 "temperature": 0.1,
                 "top_p": 0.3
             },
-            "name": "Test",
+            "name": "13243",
             "prompt": {
-                "empty_response": "Sorry! 知识库中未找到相关内容！",
+                "empty_response": "Sorry! No relevant content was found in the knowledge base!",
                 "keywords_similarity_weight": 0.3,
-                "opener": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
-                "prompt": "你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\n            以下是知识库：\n            {knowledge}\n            以上是知识库。",
+                "opener": "Hi! I'm your assistant, what can I do for you?",
+                "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.",
                 "rerank_model": "",
                 "similarity_threshold": 0.2,
                 "top_n": 6,
@@ -1682,8 +1663,8 @@ Success:
             "status": "1",
             "tenant_id": "69736c5e723611efb51b0242ac120007",
             "top_k": 1024,
-            "update_date": "Fri, 11 Oct 2024 03:47:58 GMT",
-            "update_time": 1728618478392
+            "update_date": "Fri, 18 Oct 2024 06:20:06 GMT",
+            "update_time": 1729232406638
         }
     ]
 }
@@ -1804,7 +1785,7 @@ curl --request PUT \
   The ID of the associated chat assistant.
 - `session_id`: (*Path parameter*)  
   The ID of the session to update.
-- `"name`: (*Body Parameter), `string`  
+- `"name"`: (*Body Parameter), `string`  
   The name of the session to update.
 
 ### Response
@@ -1822,7 +1803,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name can not be empty."
+    "message": "Name cannot be empty."
 }
 ```
 
@@ -1853,19 +1834,19 @@ curl --request GET \
 
 - `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
-- `"page"`: (*Path parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`  
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
-- `"page_size"`: (*Path parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`  
   The number of sessions on each page. Defaults to `1024`.
-- `"orderby"`: (*Path parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`  
   The field by which sessions should be sorted. Available options:  
-  - `"create_time"` (default)
-  - `"update_time"`
-- `"desc"`: (*Path parameter*), `boolean`  
+  - `create_time` (default)
+  - `update_time`
+- `desc`: (*Filter parameter*), `boolean`  
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `"name"`: (*Path parameter*) `string`  
+- `name`: (*Filter parameter*) `string`  
   The name of the chat session to retrieve.
-- `"id"`: (*Path parameter*), `string`  
+- `id`: (*Filter parameter*), `string`  
   The ID of the chat session to retrieve.
 
 ### Response
@@ -1941,7 +1922,7 @@ curl --request DELETE \
 - `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
 - `"ids"`: (*Body Parameter*), `list[string]`  
-  The IDs of the sessions to delete. If not specified, all sessions associated with the current chat assistant will be deleted.
+  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified chat assistant will be deleted.
 
 ### Response
 
@@ -2002,12 +1983,12 @@ curl --request POST \
   The ID of the associated chat assistant.
 - `"question"`: (*Body Parameter*), `string` *Required*  
   The question to start an AI chat.
-- `"stream"`: (*Body Parameter*), `string`  
+- `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming.
   - `false`: (Default) Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
-  The ID of session. If not provided, a new session will be generated.
+  The ID of session. If it is not provided, a new session will be generated.
 
 ### Response
 
@@ -2017,78 +1998,55 @@ Success:
 data: {
     "code": 0,
     "data": {
-        "answer": "您好！有什么具体的问题或者需要的帮助",
+        "answer": "I am an intelligent assistant designed to help you with your inquiries. I can provide",
         "reference": {},
         "audio_binary": null,
-        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+        "id": "d8e5ebb6-6b52-4fd1-bd02-35b52ba3acaa",
+        "session_id": "e14344d08d1a11efb6210242ac120004"
     }
 }
 
 data: {
     "code": 0,
     "data": {
-        "answer": "您好！有什么具体的问题或者需要的帮助可以告诉我吗？我在这里是为了帮助",
+        "answer": "I am an intelligent assistant designed to help you with your inquiries. I can provide information, answer questions, and assist with tasks based on the knowledge available to me",
         "reference": {},
         "audio_binary": null,
-        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+        "id": "d8e5ebb6-6b52-4fd1-bd02-35b52ba3acaa",
+        "session_id": "e14344d08d1a11efb6210242ac120004"
     }
 }
 
 data: {
     "code": 0,
     "data": {
-        "answer": "您好！有什么具体的问题或者需要的帮助可以告诉我吗？我在这里是为了帮助您的。如果您有任何疑问或是需要获取",
+        "answer": "I am an intelligent assistant designed to help you with your inquiries. I can provide information, answer questions, and assist with tasks based on the knowledge available to me. How can I assist you today?",
         "reference": {},
         "audio_binary": null,
-        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+        "id": "d8e5ebb6-6b52-4fd1-bd02-35b52ba3acaa",
+        "session_id": "e14344d08d1a11efb6210242ac120004"
     }
 }
 
 data: {
     "code": 0,
     "data": {
-        "answer": "您好！有什么具体的问题或者需要的帮助可以告诉我吗？我在这里是为了帮助您的。如果您有任何疑问或是需要获取某些信息，请随时提出。",
-        "reference": {},
-        "audio_binary": null,
-        "id": "31153052-7bac-4741-a513-ed07d853f29e"
-    }
-}
-
-data: {
-    "code": 0,
-    "data": {
-        "answer": "您好！有什么具体的问题或者需要的帮助可以告诉我吗 ##0$$？我在这里是为了帮助您的。如果您有任何疑问或是需要获取某些信息，请随时提出。",
+        "answer": "I am an intelligent assistant designed to help you with your inquiries. I can provide information, answer questions, and assist with tasks based on the knowledge available to me ##0$$. How can I assist you today?",
         "reference": {
-            "total": 19,
+            "total": 8,
             "chunks": [
                 {
-                    "chunk_id": "9d87f9d70a0d8a7565694a81fd4c5d5f",
-                    "content_ltks": "当所有知识库内容都与问题无关时 ,你的回答必须包括“知识库中未找到您要的答案!”这句话。回答需要考虑聊天历史。\r\n以下是知识库:\r\n{knowledg}\r\n以上是知识库\r\n\"\"\"\r\n 1\r\n 2\r\n 3\r\n 4\r\n 5\r\n 6\r\n总结\r\n通过上面的介绍,可以对开源的 ragflow有了一个大致的了解,与前面的有道qanyth整体流程还是比较类似的。 ",
-                    "content_with_weight": "当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\r\n    以下是知识库：\r\n    {knowledge}\r\n    以上是知识库\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n总结\r\n通过上面的介绍，可以对开源的 RagFlow 有了一个大致的了解，与前面的 有道 QAnything 整体流程还是比较类似的。",
-                    "doc_id": "5c5999ec7be811ef9cab0242ac120005",
-                    "docnm_kwd": "1.txt",
-                    "kb_id": "c7ee74067a2c11efb21c0242ac120006",
-                    "important_kwd": [],
-                    "img_id": "",
-                    "similarity": 0.38337178633282265,
-                    "vector_similarity": 0.3321336754679629,
-                    "term_similarity": 0.4053309767034769,
-                    "positions": [
-                        ""
-                    ]
-                },
-                {
                     "chunk_id": "895d34de762e674b43e8613c6fb54c6d",
-                    "content_ltks": "\r\n\r\n实际内容可能会超过大模型的输入token数量,因此在调用大模型前会调用api/db/servic/dialog_service.py文件中 messag_fit_in ()根据大模型可用的 token数量进行过滤。这部分与有道的 qanyth的实现大同小异,就不额外展开了。\r\n\r\n将检索的内容,历史聊天记录以及问题构造为 prompt ,即可作为大模型的输入了 ,默认的英文prompt如下所示:\r\n\r\n\"\"\"\r\nyou are an intellig assistant. pleas summar the content of the knowledg base to answer the question. pleas list thedata in the knowledg base and answer in detail. when all knowledg base content is irrelev to the question , your answer must includ the sentenc\"the answer you are lookfor isnot found in the knowledg base!\" answer needto consid chat history.\r\n here is the knowledg base:\r\n{ knowledg}\r\nthe abov is the knowledg base.\r\n\"\"\"\r\n1\r\n 2\r\n 3\r\n 4\r\n 5\r\n 6\r\n对应的中文prompt如下所示:\r\n\r\n\"\"\"\r\n你是一个智能助手,请总结知识库的内容来回答问题,请列举知识库中的数据详细回答。 ",
-                    "content_with_weight": "\r\n\r\n实际内容可能会超过大模型的输入 token 数量，因此在调用大模型前会调用 api/db/services/dialog_service.py 文件中 message_fit_in() 根据大模型可用的 token 数量进行过滤。这部分与有道的 QAnything 的实现大同小异，就不额外展开了。\r\n\r\n将检索的内容，历史聊天记录以及问题构造为 prompt，即可作为大模型的输入了，默认的英文 prompt 如下所示：\r\n\r\n\"\"\"\r\nYou are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n      Here is the knowledge base:\r\n      {knowledge}\r\n      The above is the knowledge base.\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n对应的中文 prompt 如下所示：\r\n\r\n\"\"\"\r\n你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。",
+                    "content_ltks": "xxxx\r\n\r\n\"\"\"\r\nyou are an intellig assistant. pleas summar the content of the knowledg base to answer the question. pleas list thedata in the knowledg base and answer in detail. when all knowledg base content is irrelev to the question , your answer must includ the sentenc\"the answer you are lookfor isnot found in the knowledg base!\" answer needto consid chat history.\r\n here is the knowledg base:\r\n{ knowledg}\r\nthe abov is the knowledg base.\r\n\"\"\"\r\n1\r\n 2\r\n 3\r\n 4\r\n 5\r\n 6\r\nxxxx ",
+                    "content_with_weight": "xxxx\r\n\r\n\"\"\"\r\nYou are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n      Here is the knowledge base:\r\n      {knowledge}\r\n      The above is the knowledge base.\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\nxxxx\r\n\r\n\"\"\"\r\nxxxx",
                     "doc_id": "5c5999ec7be811ef9cab0242ac120005",
                     "docnm_kwd": "1.txt",
                     "kb_id": "c7ee74067a2c11efb21c0242ac120006",
                     "important_kwd": [],
                     "img_id": "",
-                    "similarity": 0.2788204323926715,
-                    "vector_similarity": 0.35489427679953667,
-                    "term_similarity": 0.2462173562183008,
+                    "similarity": 0.4442746624416507,
+                    "vector_similarity": 0.3843936320913369,
+                    "term_similarity": 0.4699379611632138,
                     "positions": [
                         ""
                     ]
@@ -2098,12 +2056,13 @@ data: {
                 {
                     "doc_name": "1.txt",
                     "doc_id": "5c5999ec7be811ef9cab0242ac120005",
-                    "count": 2
+                    "count": 1
                 }
             ]
         },
-        "prompt": "你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\n            以下是知识库：\n            当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\r\n    以下是知识库：\r\n    {knowledge}\r\n    以上是知识库\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n总结\r\n通过上面的介绍，可以对开源的 RagFlow 有了一个大致的了解，与前面的 有道 QAnything 整体流程还是比较类似的。\n\n------\n\n\r\n\r\n实际内容可能会超过大模型的输入 token 数量，因此在调用大模型前会调用 api/db/services/dialog_service.py 文件中 message_fit_in() 根据大模型可用的 token 数量进行过滤。这部分与有道的 QAnything 的实现大同小异，就不额外展开了。\r\n\r\n将检索的内容，历史聊天记录以及问题构造为 prompt，即可作为大模型的输入了，默认的英文 prompt 如下所示：\r\n\r\n\"\"\"\r\nYou are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n      Here is the knowledge base:\r\n      {knowledge}\r\n      The above is the knowledge base.\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n对应的中文 prompt 如下所示：\r\n\r\n\"\"\"\r\n你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。\n            以上是知识库。\n\n### Query:\n你好，请问有什么问题需要我帮忙解答吗？\n\n### Elapsed\n  - Retrieval: 9131.1 ms\n  - LLM: 12802.6 ms",
-        "id": "31153052-7bac-4741-a513-ed07d853f29e"
+        "prompt": "xxxx\r\n\r\n\"\"\"\r\nYou are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n      Here is the knowledge base:\r\n      {knowledge}\r\n      The above is the knowledge base.\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\nxxxx\n\n### Query:\nwho are you,please answer me in English\n\n### Elapsed\n  - Retrieval: 332.2 ms\n  - LLM: 2972.1 ms",
+        "id": "d8e5ebb6-6b52-4fd1-bd02-35b52ba3acaa",
+        "session_id": "e14344d08d1a11efb6210242ac120004"
     }
 }
 
