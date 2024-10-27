@@ -91,7 +91,7 @@ curl --request POST \
   - `"email"`: Email
 
 - `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. A `ParserConfig` object contains the following attributes:
+  The configuration settings for the dataset parser, a JSON object containing the following attributes:
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `true`.
   - `"delimiter"`: Defaults to `"\n!?。；！？"`.
@@ -236,11 +236,13 @@ curl --request PUT \
 
 - `dataset_id`: (*Path parameter*)  
   The ID of the dataset to update.
-- `"name"`: `string`  
+- `"name"`: (*Body parameter*), `string`  
   The revised name of the dataset.
-- `"embedding_model"`: `string` The updated embedding model name.  
+- `"embedding_model"`: (*Body parameter*), `string`  
+  The updated embedding model name.  
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
-- `"chunk_method"`: `enum<string>` The chunking method for the dataset. Available options:
+- `"chunk_method"`: (*Body parameter*), `enum<string>`
+  The chunking method for the dataset. Available options:  
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -298,19 +300,19 @@ curl --request GET \
 
 #### Request parameters
 
-- `page`: (*Path parameter*)  
+- `page`: (*Filter parameter*)  
   Specifies the page on which the datasets will be displayed. Defaults to `1`.
-- `page_size`: (*Path parameter*)  
+- `page_size`: (*Filter parameter*)  
   The number of datasets on each page. Defaults to `1024`.
-- `orderby`: (*Path parameter*)  
+- `orderby`: (*Filter parameter*)  
   The field by which datasets should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Path parameter*)  
+- `desc`: (*Filter parameter*)  
   Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `true`.
-- `name`: (*Path parameter*)  
+- `name`: (*Filter parameter*)  
   The name of the dataset to retrieve.
-- `id`: (*Path parameter*)  
+- `id`: (*Filter parameter*)  
   The ID of the dataset to retrieve.
 
 ### Response
@@ -1220,7 +1222,7 @@ curl --request POST \
   The maximum number of chunks to retrieve. Defaults to `1024`.
 - `"similarity_threshold"`: (*Body parameter*)  
   The minimum similarity score. Defaults to `0.2`.
-- `"vector_similarity_weight"`: (*Body parameter*), `weight`  
+- `"vector_similarity_weight"`: (*Body parameter*), `float`  
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the vector cosine similarity, then (1 - x) is the term similarity weight.
 - `"top_k"`: (*Body parameter*), `integer`  
   The number of chunks engaged in vector cosine computaton. Defaults to `1024`.
