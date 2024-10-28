@@ -1,4 +1,5 @@
 import { Flex, Form, Input } from 'antd';
+import classNames from 'classnames';
 import { NodeProps, NodeResizeControl } from 'reactflow';
 import { NodeData } from '../../interface';
 import NodeDropdown from './dropdown';
@@ -50,7 +51,7 @@ function NoteNode({ data, id }: NodeProps<NodeData>) {
       <section className={styles.noteNode}>
         <Flex
           justify={'space-between'}
-          className={styles.noteTitle}
+          className={classNames(styles.noteTitle, 'note-drag-handle')}
           align="center"
           gap={6}
         >

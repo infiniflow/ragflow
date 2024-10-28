@@ -236,3 +236,7 @@ export const getOtherFieldValues = (
 export const generateSwitchHandleText = (idx: number) => {
   return `Case ${idx + 1}`;
 };
+
+export const getNodeDragHandle = (nodeType?: string) => {
+  return nodeType === Operator.Note ? '.note-drag-handle' : undefined;
+};

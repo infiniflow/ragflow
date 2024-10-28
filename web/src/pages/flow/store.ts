@@ -23,7 +23,7 @@ import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { Operator, SwitchElseTo } from './constant';
 import { NodeData } from './interface';
-import { getOperatorIndex, isEdgeEqual } from './utils';
+import { getNodeDragHandle, getOperatorIndex, isEdgeEqual } from './utils';
 
 export type RFState = {
   nodes: Node<NodeData>[];
@@ -241,6 +241,7 @@ const useGraphStore = create<RFState>()(
           dragging: false,
           id: `${node?.data?.label}:${humanId()}`,
           position,
+          dragHandle: getNodeDragHandle(node?.data?.label),
         });
       },
       deleteEdge: () => {

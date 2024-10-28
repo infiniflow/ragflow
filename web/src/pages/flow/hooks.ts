@@ -69,6 +69,7 @@ import useGraphStore, { RFState } from './store';
 import {
   buildDslComponentsByGraph,
   generateSwitchHandleText,
+  getNodeDragHandle,
   receiveMessageError,
   replaceIdWithText,
 } from './utils';
@@ -250,6 +251,7 @@ export const useHandleDrop = () => {
         },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
+        dragHandle: getNodeDragHandle(type),
       };
 
       addNode(newNode);
