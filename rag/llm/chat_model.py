@@ -780,10 +780,11 @@ class GeminiChat(Base):
                 ans += resp.text
                 yield ans
 
+            yield response._chunks[-1].usage_metadata.total_token_count
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
-        yield response._chunks[-1].usage_metadata.total_token_count
+        yield 0
 
 
 class GroqChat:

@@ -163,9 +163,6 @@ def update_doc(tenant_id, dataset_id, document_id):
                                                     doc.process_duation * -1)
             if not e:
                 return get_error_data_result(retmsg="Document not found!")
-            tenant_id = DocumentService.get_tenant_id(req["id"])
-            if not tenant_id:
-                return get_error_data_result(retmsg="Tenant not found!")
             ELASTICSEARCH.deleteByQuery(
                 Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
 
@@ -245,14 +242,22 @@ def delete(tenant_id,dataset_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(retmsg=f"You don't own the dataset {dataset_id}. ")
     req = request.json
-    if not req.get("ids"):
-        return get_error_data_result(retmsg="`ids` is required")
-    doc_ids = req["ids"]
+    if not req:
+        doc_ids=None
+    else:
+        doc_ids=req.get("ids")
+    if not doc_ids:
+        doc_list = []
+        docs=DocumentService.query(kb_id=dataset_id)
+        for doc in docs:
+            doc_list.append(doc.id)
+    else:
+        doc_list=doc_ids
     root_folder = FileService.get_root_folder(tenant_id)
     pf_id = root_folder["id"]
     FileService.init_knowledgebase_docs(pf_id, tenant_id)
     errors = ""
-    for doc_id in doc_ids:
+    for doc_id in doc_list:
         try:
             e, doc = DocumentService.get_by_id(doc_id)
             if not e:
@@ -290,8 +295,11 @@ def parse(tenant_id,dataset_id):
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
     for id in req["document_ids"]:
-        if not DocumentService.query(id=id,kb_id=dataset_id):
+        doc = DocumentService.query(id=id,kb_id=dataset_id)
+        if not doc:
             return get_error_data_result(retmsg=f"You don't own the document {id}.")
+        if doc[0].progress != 0.0:
+            return get_error_data_result("Can't stop parsing document with progress at 0 or 100")
         info = {"run": "1", "progress": 0}
         info["progress_msg"] = ""
         info["chunk_num"] = 0
@@ -349,7 +357,27 @@ def list_chunks(tenant_id,dataset_id,document_id):
         "doc_ids": [doc_id], "page": page, "size": size, "question": question, "sort": True
     }
     sres = retrievaler.search(query, search.index_name(tenant_id), highlight=True)
-    res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
+    key_mapping = {
+        "chunk_num": "chunk_count",
+        "kb_id": "dataset_id",
+        "token_num": "token_count",
+        "parser_id": "chunk_method"
+    }
+    run_mapping = {
+        "0": "UNSTART",
+        "1": "RUNNING",
+        "2": "CANCEL",
+        "3": "DONE",
+        "4": "FAIL"
+    }
+    doc=doc.to_dict()
+    renamed_doc = {}
+    for key, value in doc.items():
+        if key == "run":
+            renamed_doc["run"] = run_mapping.get(str(value))
+        new_key = key_mapping.get(key, key)
+        renamed_doc[new_key] = value
+    res = {"total": sres.total, "chunks": [], "doc": renamed_doc}
     origin_chunks = []
     sign = 0
     for id in sres.ids:
@@ -388,7 +416,7 @@ def list_chunks(tenant_id,dataset_id,document_id):
             "content_with_weight": "content",
             "doc_id": "document_id",
             "important_kwd": "important_keywords",
-            "img_id": "image_id",
+            "img_id": "image_id"
         }
         renamed_chunk = {}
         for key, value in chunk.items():
@@ -550,33 +578,32 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
 @token_required
 def retrieval_test(tenant_id):
     req = request.json
-    if not req.get("datasets"):
+    if not req.get("dataset_ids"):
         return get_error_data_result("`datasets` is required.")
-    kb_ids = req["datasets"]
+    kb_ids = req["dataset_ids"]
     if not isinstance(kb_ids,list):
         return get_error_data_result("`datasets` should be a list")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([kb.embd_id for kb in kbs]))
-    if len(embd_nms) != 1:
-        return get_result(
-            retmsg='Knowledge bases use different embedding models or does not exist."',
-            retcode=RetCode.AUTHENTICATION_ERROR)
-    if isinstance(kb_ids, str): kb_ids = [kb_ids]
     for id in kb_ids:
         if not KnowledgebaseService.query(id=id,tenant_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
+    embd_nms = list(set([kb.embd_id for kb in kbs]))
+    if len(embd_nms) != 1:
+        return get_result(
+            retmsg='Datasets use different embedding models."',
+            retcode=RetCode.AUTHENTICATION_ERROR)
     if "question" not in req:
         return get_error_data_result("`question` is required.")
     page = int(req.get("offset", 1))
     size = int(req.get("limit", 1024))
     question = req["question"]
-    doc_ids = req.get("documents", [])
-    if not isinstance(req.get("documents"),list):
+    doc_ids = req.get("document_ids", [])
+    if not isinstance(doc_ids,list):
         return get_error_data_result("`documents` should be a list")
     doc_ids_list=KnowledgebaseService.list_documents_by_ids(kb_ids)
     for doc_id in doc_ids:
         if doc_id not in doc_ids_list:
-            return get_error_data_result(f"You don't own the document {doc_id}")
+            return get_error_data_result(f"The datasets don't own the document {doc_id}")
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))

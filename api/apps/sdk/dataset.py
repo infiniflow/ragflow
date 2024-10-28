@@ -64,7 +64,12 @@ def create(tenant_id):
     if not req.get("embedding_model"):
         req['embedding_model'] = t.embd_id
     else:
-        if not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=req.get("embedding_model")):
+        valid_embedding_models=["BAAI/bge-large-zh-v1.5","BAAI/bge-base-en-v1.5","BAAI/bge-large-en-v1.5","BAAI/bge-small-en-v1.5",
+                                "BAAI/bge-small-zh-v1.5","jinaai/jina-embeddings-v2-base-en","jinaai/jina-embeddings-v2-small-en",
+                                "nomic-ai/nomic-embed-text-v1.5","sentence-transformers/all-MiniLM-L6-v2","text-embedding-v2",
+                                "text-embedding-v3","maidalun1020/bce-embedding-base_v1"]
+        if not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=req.get("embedding_model"))\
+                and req.get("embedding_model") not in valid_embedding_models:
             return get_error_data_result(f"`embedding_model` {req.get('embedding_model')} doesn't exist")
     key_mapping = {
         "chunk_num": "chunk_count",
@@ -133,6 +138,9 @@ def update(tenant_id,dataset_id):
             return get_error_data_result(
                 retmsg="Can't change `tenant_id`.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if "parser_config" in req:
+        print(kb.parser_config,flush=True)
+        req["parser_config"]=kb.parser_config.update(req["parser_config"])
     if "chunk_count" in req:
         if req["chunk_count"] != kb.chunk_num:
             return get_error_data_result(
@@ -153,10 +161,15 @@ def update(tenant_id,dataset_id):
     if "embedding_model" in req:
         if kb.chunk_num != 0 and req['embedding_model'] != kb.embd_id:
             return get_error_data_result(
-                retmsg="If `chunk_count` is not 0, `embedding_method` is not changeable.")
+                retmsg="If `chunk_count` is not 0, `embedding_model` is not changeable.")
         if not req.get("embedding_model"):
             return get_error_data_result("`embedding_model` can't be empty")
-        if not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=req.get("embedding_model")):
+        valid_embedding_models=["BAAI/bge-large-zh-v1.5","BAAI/bge-base-en-v1.5","BAAI/bge-large-en-v1.5","BAAI/bge-small-en-v1.5",
+                                "BAAI/bge-small-zh-v1.5","jinaai/jina-embeddings-v2-base-en","jinaai/jina-embeddings-v2-small-en",
+                                "nomic-ai/nomic-embed-text-v1.5","sentence-transformers/all-MiniLM-L6-v2","text-embedding-v2",
+                                "text-embedding-v3","maidalun1020/bce-embedding-base_v1"]
+        if not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=req.get("embedding_model"))\
+                and req.get("embedding_model") not in valid_embedding_models:
             return get_error_data_result(f"`embedding_model` {req.get('embedding_model')} doesn't exist")
         req['embd_id'] = req.pop('embedding_model')
     if "name" in req:

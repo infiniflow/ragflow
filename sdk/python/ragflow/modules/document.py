@@ -70,7 +70,7 @@ class Document(Base):
             return Chunk(self.rag,res["data"].get("chunk"))
         raise Exception(res.get("message"))
 
-    def delete_chunks(self,ids:List[str]):
+    def delete_chunks(self,ids:List[str] = None):
         res = self.rm(f"dataset/{self.dataset_id}/document/{self.id}/chunk",{"ids":ids})
         res = res.json()
         if res.get("code")!=0:

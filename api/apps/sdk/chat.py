@@ -30,9 +30,9 @@ from api.utils.api_utils import get_result
 @token_required
 def create(tenant_id):
     req=request.json
-    ids= req.get("datasets")
+    ids= req.get("dataset_ids")
     if not ids:
-        return get_error_data_result(retmsg="`datasets` is required")
+        return get_error_data_result(retmsg="`dataset_ids` is required")
     for kb_id in ids:
         kbs = KnowledgebaseService.query(id=kb_id,tenant_id=tenant_id)
         if not kbs:
@@ -138,7 +138,7 @@ def create(tenant_id):
     res["llm"] = res.pop("llm_setting")
     res["llm"]["model_name"] = res.pop("llm_id")
     del res["kb_ids"]
-    res["datasets"] = req["datasets"]
+    res["dataset_ids"] = req["dataset_ids"]
     res["avatar"] = res.pop("icon")
     return get_result(data=res)
 
@@ -148,8 +148,8 @@ def update(tenant_id,chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(retmsg='You do not own the chat')
     req =request.json
-    ids = req.get("datasets")
-    if "datasets" in req:
+    ids = req.get("dataset_ids")
+    if "dataset_ids" in req:
         if not ids:
             return get_error_data_result("`datasets` can't be empty")
         if ids:
@@ -214,8 +214,8 @@ def update(tenant_id,chat_id):
     # avatar
     if "avatar" in req:
         req["icon"] = req.pop("avatar")
-    if "datasets" in req:
-        req.pop("datasets")
+    if "dataset_ids" in req:
+        req.pop("dataset_ids")
     if not DialogService.update_by_id(chat_id, req):
         return get_error_data_result(retmsg="Chat not found!")
     return get_result()
