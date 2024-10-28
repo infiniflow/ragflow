@@ -43,7 +43,7 @@ class Chat(Base):
             super().__init__(rag, res_dict)
 
     def update(self, update_message: dict):
-        res = self.put(f'/chat/{self.id}',
+        res = self.put(f'/chats/{self.id}',
                         update_message)
         res = res.json()
         if res.get("code") != 0:
@@ -51,7 +51,7 @@ class Chat(Base):
 
 
     def create_session(self, name: str = "New session") -> Session:
-        res = self.post(f"/chat/{self.id}/session", {"name": name})
+        res = self.post(f"/chats/{self.id}/sessions", {"name": name})
         res = res.json()
         if res.get("code") == 0:
             return Session(self.rag, res['data'])
@@ -59,7 +59,7 @@ class Chat(Base):
 
     def list_sessions(self,page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
                       id: str = None, name: str = None) -> List[Session]:
-        res = self.get(f'/chat/{self.id}/session',{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name} )
+        res = self.get(f'/chats/{self.id}/sessions',{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name} )
         res = res.json()
         if res.get("code") == 0:
             result_list = []
@@ -69,7 +69,7 @@ class Chat(Base):
         raise Exception(res["message"])
 
     def delete_sessions(self,ids):
-        res = self.rm(f"/chat/{self.id}/session", {"ids": ids})
+        res = self.rm(f"/chats/{self.id}/sessions", {"ids": ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))

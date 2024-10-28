@@ -19,7 +19,7 @@ class Chunk(Base):
 
 
     def update(self,update_message:dict):
-        res = self.put(f"/dataset/{self.dataset_id}/document/{self.document_id}/chunk/{self.id}",update_message)
+        res = self.put(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}",update_message)
         res = res.json()
         if res.get("code") != 0 :
             raise Exception(res["message"])

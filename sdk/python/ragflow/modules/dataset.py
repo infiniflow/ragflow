@@ -31,14 +31,14 @@ class DataSet(Base):
         super().__init__(rag, res_dict)
 
     def update(self, update_message: dict):
-        res = self.put(f'/dataset/{self.id}',
+        res = self.put(f'/datasets/{self.id}',
                         update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
 
     def upload_documents(self,document_list: List[dict]):
-        url = f"/dataset/{self.id}/document"
+        url = f"/datasets/{self.id}/documents"
         files = [("file",(ele["displayed_name"],ele["blob"])) for ele in document_list]
         res = self.post(path=url,json=None,files=files)
         res = res.json()
@@ -51,7 +51,7 @@ class DataSet(Base):
         raise Exception(res.get("message"))
 
     def list_documents(self, id: str = None, keywords: str = None, offset: int =1, limit: int = 1024, orderby: str = "create_time", desc: bool = True):
-        res = self.get(f"/dataset/{self.id}/info",params={"id": id,"keywords": keywords,"offset": offset,"limit": limit,"orderby": orderby,"desc": desc})
+        res = self.get(f"/datasets/{self.id}/documents",params={"id": id,"keywords": keywords,"offset": offset,"limit": limit,"orderby": orderby,"desc": desc})
         res = res.json()
         documents = []
         if res.get("code") == 0:
@@ -61,19 +61,19 @@ class DataSet(Base):
         raise Exception(res["message"])
 
     def delete_documents(self,ids: List[str] = None):
-        res = self.rm(f"/dataset/{self.id}/document",{"ids":ids})
+        res = self.rm(f"/datasets/{self.id}/documents",{"ids":ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
 
     def async_parse_documents(self,document_ids):
-        res = self.post(f"/dataset/{self.id}/chunk",{"document_ids":document_ids})
+        res = self.post(f"/datasets/{self.id}/chunks",{"document_ids":document_ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
 
     def async_cancel_parse_documents(self,document_ids):
-        res = self.rm(f"/dataset/{self.id}/chunk",{"document_ids":document_ids})
+        res = self.rm(f"/datasets/{self.id}/chunks",{"document_ids":document_ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))

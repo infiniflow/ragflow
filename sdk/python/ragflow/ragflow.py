@@ -53,7 +53,7 @@ class RAGFlow:
                        parser_config: DataSet.ParserConfig = None) -> DataSet:
         if parser_config:
             parser_config = parser_config.to_json()
-        res = self.post("/dataset",
+        res = self.post("/datasets",
                         {"name": name, "avatar": avatar, "description": description, "language": language,
                          "permission": permission, "chunk_method": chunk_method,
                          "parser_config": parser_config
@@ -65,7 +65,7 @@ class RAGFlow:
         raise Exception(res["message"])
 
     def delete_datasets(self, ids: List[str]):
-        res = self.delete("/dataset",{"ids": ids})
+        res = self.delete("/datasets",{"ids": ids})
         res=res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
@@ -79,7 +79,7 @@ class RAGFlow:
     def list_datasets(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
                       id: str = None, name: str = None) -> \
             List[DataSet]:
-        res = self.get("/dataset",
+        res = self.get("/datasets",
                        {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
         result_list = []
@@ -129,14 +129,14 @@ class RAGFlow:
                      "dataset_ids": dataset_list,
                      "llm": llm.to_json(),
                      "prompt": prompt.to_json()}
-        res = self.post("/chat", temp_dict)
+        res = self.post("/chats", temp_dict)
         res = res.json()
         if res.get("code") == 0:
             return Chat(self, res["data"])
         raise Exception(res["message"])
 
     def delete_chats(self,ids: List[str] = None,names: List[str] = None ) -> bool:
-        res = self.delete('/chat',
+        res = self.delete('/chats',
                       {"ids":ids, "names":names})
         res = res.json()
         if res.get("code") != 0:
@@ -144,7 +144,7 @@ class RAGFlow:
 
     def list_chats(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
                       id: str = None, name: str = None) -> List[Chat]:
-        res = self.get("/chat",{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
+        res = self.get("/chats",{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
         result_list = []
         if res.get("code") == 0:

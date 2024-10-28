@@ -574,7 +574,7 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
 
 
 
-@manager.route('/retrievals', methods=['POST'])
+@manager.route('/retrieval', methods=['POST'])
 @token_required
 def retrieval_test(tenant_id):
     req = request.json
