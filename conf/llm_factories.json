@@ -266,6 +266,12 @@
                     "tags": "LLM,CHAT",
                     "max_tokens": 128000,
                     "model_type": "chat"
+                },
+                {
+                    "llm_name": "moonshot-v1-auto",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
                 }
             ]
         },
