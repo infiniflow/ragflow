@@ -51,6 +51,10 @@ export interface IGenerateParameter {
   component_id?: string;
 }
 
+export interface IInvokeVariable extends IGenerateParameter {
+  value?: string;
+}
+
 export type ICategorizeItemResult = Record<
   string,
   Omit<ICategorizeItem, 'name'>

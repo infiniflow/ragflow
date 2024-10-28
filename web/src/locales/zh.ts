@@ -29,6 +29,7 @@ export default {
       move: '移动',
       warn: '提醒',
       action: '操作',
+      s: '秒',
     },
     login: {
       login: '登录',
@@ -985,6 +986,13 @@ export default {
       note: '注释',
       noteDescription: '注释',
       notePlaceholder: '请输入注释',
+      invoke: 'Invoke',
+      invokeDescription:
+        '该组件可以调用远程端点调用。将其他组件的输出作为参数或设置常量参数来调用远程函数。',
+      url: 'Url',
+      method: '方法',
+      timeout: '超时',
+      headers: '请求头',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -20,6 +20,7 @@ import GenerateForm from '../form/generate-form';
 import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
+import InvokeForm from '../form/invoke-form';
 import Jin10Form from '../form/jin10-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
@@ -74,6 +75,9 @@ const FormMap = {
   [Operator.Jin10]: Jin10Form,
   [Operator.TuShare]: TuShareForm,
   [Operator.Crawler]: CrawlerForm,
+  [Operator.Invoke]: InvokeForm,
+  [Operator.Concentrator]: <></>,
+  [Operator.Note]: <></>,
 };
 
 const EmptyContent = () => <div></div>;

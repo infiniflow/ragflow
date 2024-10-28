@@ -49,6 +49,7 @@ import {
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
+  initialInvokeValues,
   initialJin10Values,
   initialKeywordExtractValues,
   initialMessageValues,
@@ -132,6 +133,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.TuShare]: initialTuShareValues,
       [Operator.Note]: initialNoteValues,
       [Operator.Crawler]: initialCrawlerValues,
+      [Operator.Invoke]: initialInvokeValues,
     };
   }, [llmId]);
 
