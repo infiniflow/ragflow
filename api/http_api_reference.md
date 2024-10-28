@@ -13,14 +13,14 @@ Dataset Management
 
 ## Create dataset
 
-**POST** `/api/v1/dataset`
+**POST** `/api/v1/datasets`
 
 Creates a dataset.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/dataset`
+- URL: `/api/v1/datasets`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -38,7 +38,7 @@ Creates a dataset.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/dataset \
+     --url http://{address}/api/v1/datasets \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '{
@@ -151,14 +151,14 @@ Failure:
 
 ## Delete datasets
 
-**DELETE** `/api/v1/dataset`
+**DELETE** `/api/v1/datasets`
 
 Deletes datasets by ID.
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/dataset`
+- URL: `/api/v1/datasets`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -169,7 +169,7 @@ Deletes datasets by ID.
 
 ```bash
 curl --request DELETE \
-     --url http://{address}/api/v1/dataset \
+     --url http://{address}/api/v1/datasets \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '{"ids": ["test_1", "test_2"]}'
@@ -203,14 +203,14 @@ Failure:
 
 ## Update dataset
 
-**PUT** `/api/v1/dataset/{dataset_id}`
+**PUT** `/api/v1/datasets/{dataset_id}`
 
 Updates configurations for a specified dataset.
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/dataset/{dataset_id}`
+- URL: `/api/v1/datasets/{dataset_id}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -223,7 +223,7 @@ Updates configurations for a specified dataset.
 
 ```bash
 curl --request PUT \
-     --url http://{address}/api/v1/dataset/{dataset_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -279,14 +279,14 @@ Failure:
 
 ## List datasets
 
-**GET** `/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 
 Lists datasets.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 
@@ -294,7 +294,7 @@ Lists datasets.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/dataset?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --url http://{address}/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
@@ -379,14 +379,14 @@ File Management within Dataset
 
 ## Upload documents
 
-**POST** `/api/v1/dataset/{dataset_id}/document`
+**POST** `/api/v1/datasets/{dataset_id}/documents`
 
 Uploads documents to a specified dataset.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/dataset/{dataset_id}/document`
+- URL: `/api/v1/datasets/{dataset_id}/documents`
 - Headers:
   - `'Content-Type: multipart/form-data'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -397,7 +397,7 @@ Uploads documents to a specified dataset.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/dataset/{dataset_id}/document \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \     
      --form 'file=@./test1.txt' \
@@ -457,14 +457,14 @@ Failure:
 
 ## Update document
 
-**PUT** `/api/v1/dataset/{dataset_id}/info/{document_id}`
+**PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 
 Updates configurations for a specified document.
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}`
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -477,7 +477,7 @@ Updates configurations for a specified document.
 
 ```bash
 curl --request PUT \
-     --url http://{address}/api/v1/dataset/{dataset_id}/info/{document_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/info/{document_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --header 'Content-Type: application/json' \
      --data '
@@ -540,14 +540,14 @@ Failure:
 
 ## Download document
 
-**GET** `/api/v1/dataset/{dataset_id}/document/{document_id}`
+**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 
 Downloads a document from a specified dataset.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}`
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 - Output:
@@ -557,7 +557,7 @@ Downloads a document from a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --output ./ragflow.txt
 ```
@@ -590,14 +590,14 @@ Failure:
 
 ## List documents
 
-**GET** `/api/v1/dataset/{dataset_id}/info?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}`
 
 Lists documents in a specified dataset.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/info?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -606,7 +606,7 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/dataset/{dataset_id}/info?keywords={keywords}&offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&id={document_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?keywords={keywords}&offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&id={document_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
@@ -687,14 +687,14 @@ Failure:
 
 ## Delete documents
 
-**DELETE** `/api/v1/dataset/{dataset_id}/document`
+**DELETE** `/api/v1/datasets/{dataset_id}/documents`
 
 Deletes documents by ID.
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/dataset/{dataset_id}/document`
+- URL: `/api/v1/datasets/{dataset_id}/documents`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -705,7 +705,7 @@ Deletes documents by ID.
 
 ```bash
 curl --request DELETE \
-     --url http://{address}/api/v1/dataset/{dataset_id}/document \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents \
      --header 'Content-Type: application/json' \
      --header 'Authorization: {YOUR_API_KEY}' \
      --data '
@@ -744,14 +744,14 @@ Failure:
 
 ## Parse documents
 
-**POST** `/api/v1/dataset/{dataset_id}/chunk`
+**POST** `/api/v1/datasets/{dataset_id}/chunks`
 
 Parses documents in a specified dataset.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/dataset/{dataset_id}/chunk`
+- URL: `/api/v1/datasets/{dataset_id}/chunks`
 - Headers:
   - `'content-Type: application/json'`
   - 'Authorization: Bearer {YOUR_API_KEY}'
@@ -762,7 +762,7 @@ Parses documents in a specified dataset.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/dataset/{dataset_id}/chunk \
+     --url http://{address}/api/v1/datasets/{dataset_id}/chunks \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -801,14 +801,14 @@ Failure:
 
 ## Stop parsing documents
 
-**DELETE** `/api/v1/dataset/{dataset_id}/chunk`
+**DELETE** `/api/v1/datasets/{dataset_id}/chunks`
 
 Stops parsing specified documents.
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/dataset/{dataset_id}/chunk`
+- URL: `/api/v1/datasets/{dataset_id}/chunks`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -819,7 +819,7 @@ Stops parsing specified documents.
 
 ```bash
 curl --request DELETE \
-     --url http://{address}/api/v1/dataset/{dataset_id}/chunk \
+     --url http://{address}/api/v1/datasets/{dataset_id}/chunks \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -858,14 +858,14 @@ Failure:
 
 ## Add chunks
 
-**POST** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+**POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 
 Adds a chunk to a specified document in a specified dataset.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -877,7 +877,7 @@ Adds a chunk to a specified document in a specified dataset.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -933,14 +933,14 @@ Failure:
 
 ## List chunks
 
-**GET** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={id}`
+**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&offset={offset}&limit={limit}&id={id}`
 
 Lists chunks in a specified document.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id}`
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id}`
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 
@@ -948,7 +948,7 @@ Lists chunks in a specified document.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}' 
 ```
 
@@ -1040,14 +1040,14 @@ Failure:
 
 ## Delete chunks
 
-**DELETE** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+**DELETE** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 
 Deletes chunks by ID.
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk`
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1058,7 +1058,7 @@ Deletes chunks by ID.
 
 ```bash
 curl --request DELETE \
-     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -1099,14 +1099,14 @@ Failure:
 
 ## Update chunk
 
-**PUT** `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk/{chunk_id}`
+**PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
 
 Updates content or configurations for a specified chunk.
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/dataset/{dataset_id}/document/{document_id}/chunk/{chunk_id}`
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1119,7 +1119,7 @@ Updates content or configurations for a specified chunk.
 
 ```bash
 curl --request PUT \
-     --url http://{address}/api/v1/dataset/{dataset_id}/document/{document_id}/chunk/{chunk_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: {YOUR_API_KEY}' \
      --data '
@@ -1169,14 +1169,14 @@ Failure:
 
 ## Retrieve chunks
 
-**GET** `/api/v1/retrieval`
+**GET** `/api/v1/retrievals`
 
 Retrieves chunks from specified datasets.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/retrieval`
+- URL: `/api/v1/retrievals`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1197,7 +1197,7 @@ Retrieves chunks from specified datasets.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/retrieval \
+     --url http://{address}/api/v1/retrievals \
      --header 'Content-Type: application/json' \
      --header 'Authorization: {YOUR_API_KEY}' \
      --data '
@@ -1223,7 +1223,7 @@ curl --request POST \
 - `"similarity_threshold"`: (*Body parameter*)  
   The minimum similarity score. Defaults to `0.2`.
 - `"vector_similarity_weight"`: (*Body parameter*), `float`  
-  The weight of vector cosine similarity. Defaults to `0.3`. If x represents the vector cosine similarity, then (1 - x) is the term similarity weight.
+  The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
 - `"top_k"`: (*Body parameter*), `integer`  
   The number of chunks engaged in vector cosine computaton. Defaults to `1024`.
 - `"rerank_id"`: (*Body parameter*), `integer`  
@@ -1297,14 +1297,14 @@ Chat Assistant Management
 
 ## Create chat assistant
 
-**POST** `/api/v1/chat`
+**POST** `/api/v1/chats`
 
 Creates a chat assistant.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/chat`
+- URL: `/api/v1/chats`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1319,7 +1319,7 @@ Creates a chat assistant.
 
 ```shell
 curl --request POST \
-     --url http://{address}/api/v1/chat \
+     --url http://{address}/api/v1/chats \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
      --data '{
@@ -1433,14 +1433,14 @@ Failure:
 
 ## Update chat assistant
 
-**PUT** `/api/v1/chat/{chat_id}`
+**PUT** `/api/v1/chats/{chat_id}`
 
 Updates configurations for a specified chat assistant.
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/chat/{chat_id}`
+- URL: `/api/v1/chats/{chat_id}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1455,7 +1455,7 @@ Updates configurations for a specified chat assistant.
 
 ```bash
 curl --request PUT \
-     --url http://{address}/api/v1/chat/{chat_id} \
+     --url http://{address}/api/v1/chats/{chat_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -1529,14 +1529,14 @@ Failure:
 
 ## Delete chat assistants
 
-**DELETE** `/api/v1/chat`
+**DELETE** `/api/v1/chats`
 
 Deletes chat assistants by ID.
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/chat`
+- URL: `/api/v1/chats`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1547,7 +1547,7 @@ Deletes chat assistants by ID.
 
 ```bash
 curl --request DELETE \
-     --url http://{address}/api/v1/chat \
+     --url http://{address}/api/v1/chats \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -1584,14 +1584,14 @@ Failure:
 
 ## List chat assistants
 
-**GET** `/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id}`
+**GET** `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id}`
 
 Lists chat assistants.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 
@@ -1599,7 +1599,7 @@ Lists chat assistants.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chat?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
@@ -1683,14 +1683,14 @@ Failure:
 
 ## Create session
 
-**POST** `/api/v1/chat/{chat_id}/session`
+**POST** `/api/v1/chats/{chat_id}/sessions`
 
 Creates a chat session.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/chat/{chat_id}/session`
+- URL: `/api/v1/chats/{chat_id}/sessions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1701,7 +1701,7 @@ Creates a chat session.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chat/{chat_id}/session \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -1755,14 +1755,14 @@ Failure:
 
 ## Update session
 
-**PUT** `/api/v1/chat/{chat_id}/session/{session_id}`
+**PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`
 
 Updates a chat session.
 
 ### Request
 
 - Method: PUT
-- URL: `/api/v1/chat/{chat_id}/session/{session_id}`
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1772,7 +1772,7 @@ Updates a chat session.
 #### Request example
 ```bash
 curl --request PUT \
-     --url http://{address}/api/v1/chat/{chat_id}/session/{session_id} \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data '
@@ -1813,14 +1813,14 @@ Failure:
 
 ## List sessions
 
-**GET** `/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
+**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
 
 Lists sessions associated with a specified chat assistant.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
+- URL: `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
 - Headers:
   - `'Authorization: Bearer {YOUR_API_KEY}'`
 
@@ -1828,7 +1828,7 @@ Lists sessions associated with a specified chat assistant.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chat/{chat_id}/session?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id} \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id} \
      --header 'Authorization: Bearer {YOUR_API_KEY}'
 ```
 
@@ -1891,14 +1891,14 @@ Failure:
 
 ## Delete sessions
 
-**DELETE** `/api/v1/chat/{chat_id}/session`
+**DELETE** `/api/v1/chats/{chat_id}/sessions`
 
 Deletes sessions by ID.
 
 ### Request
 
 - Method: DELETE
-- URL: `/api/v1/chat/{chat_id}/session`
+- URL: `/api/v1/chats/{chat_id}/sessions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1910,7 +1910,7 @@ Deletes sessions by ID.
 ```bash
 # Either id or name must be provided, but not both.
 curl --request DELETE \
-     --url http://{address}/api/v1/chat/{chat_id}/session \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bear {YOUR_API_KEY}' \
      --data '
@@ -1949,14 +1949,14 @@ Failure:
 
 ## Converse
 
-**POST** `/api/v1/chat/{chat_id}/completion`
+**POST** `/api/v1/chats/{chat_id}/completions`
 
 Asks a question to start an AI-powered conversation.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/chat/{chat_id}/completion`
+- URL: `/api/v1/chats/{chat_id}/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1969,7 +1969,7 @@ Asks a question to start an AI-powered conversation.
 
 ```bash
 curl --request POST \
-     --url http://{address} /api/v1/chat/{chat_id}/completion \
+     --url http://{address}/api/v1/chats/{chat_id}/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer {YOUR_API_KEY}' \
      --data-binary '
