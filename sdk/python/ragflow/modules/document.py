@@ -35,14 +35,14 @@ class Document(Base):
 
 
     def update(self, update_message: dict):
-        res = self.put(f'/dataset/{self.dataset_id}/info/{self.id}',
+        res = self.put(f'/datasets/{self.dataset_id}/documents/{self.id}',
                        update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
 
     def download(self):
-        res = self.get(f"/dataset/{self.dataset_id}/document/{self.id}")
+        res = self.get(f"/datasets/{self.dataset_id}/documents/{self.id}")
         try:
             res = res.json()
             raise Exception(res.get("message"))
@@ -52,7 +52,7 @@ class Document(Base):
 
     def list_chunks(self,offset=0, limit=30, keywords="", id:str=None):
         data={"document_id": self.id,"keywords": keywords,"offset":offset,"limit":limit,"id":id}
-        res = self.get(f'/dataset/{self.dataset_id}/document/{self.id}/chunk', data)
+        res = self.get(f'/datasets/{self.dataset_id}/documents/{self.id}/chunks', data)
         res = res.json()
         if res.get("code") == 0:
             chunks=[]
@@ -64,14 +64,14 @@ class Document(Base):
 
 
     def add_chunk(self, content: str,important_keywords:List[str]=[]):
-        res = self.post(f'/dataset/{self.dataset_id}/document/{self.id}/chunk', {"content":content,"important_keywords":important_keywords})
+        res = self.post(f'/datasets/{self.dataset_id}/documents/{self.id}/chunks', {"content":content,"important_keywords":important_keywords})
         res = res.json()
         if res.get("code") == 0:
             return Chunk(self.rag,res["data"].get("chunk"))
         raise Exception(res.get("message"))
 
     def delete_chunks(self,ids:List[str] = None):
-        res = self.rm(f"dataset/{self.dataset_id}/document/{self.id}/chunk",{"ids":ids})
+        res = self.rm(f"datasets/{self.dataset_id}/documents/{self.id}/chunks",{"ids":ids})
         res = res.json()
         if res.get("code")!=0:
             raise Exception(res.get("message"))
