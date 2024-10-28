@@ -14,14 +14,12 @@
 #  limitations under the License.
 #
 import json
-import traceback
 from abc import ABC
 from copy import deepcopy
 from functools import partial
 from agent.component import component_class
 from agent.component.base import ComponentBase
-from agent.settings import flow_logger, DEBUG
-
+from api.utils.log_utils import logger
 
 class Canvas(ABC):
     """
@@ -189,7 +187,7 @@ class Canvas(ABC):
                 if cpn.component_name == "Answer":
                     self.answer.append(c)
                 else:
-                    if DEBUG: print("RUN: ", c)
+                    logger.debug(f"Canvas.prepare2run: {c}")
                     cpids = cpn.get_dependent_components()
                     if any([c not in self.path[-1] for c in cpids]):
                         continue
@@ -199,7 +197,7 @@ class Canvas(ABC):
 
         prepare2run(self.components[self.path[-2][-1]]["downstream"])
         while 0 <= ran < len(self.path[-1]):
-            if DEBUG: print(ran, self.path)
+            logger.debug(f"Canvas.run: {ran} {self.path}")
             cpn_id = self.path[-1][ran]
             cpn = self.get_component(cpn_id)
             if not cpn["downstream"]: break
@@ -219,7 +217,7 @@ class Canvas(ABC):
                             self.get_component(p)["obj"].set_exception(e)
                             prepare2run([p])
                             break
-                    traceback.print_exc()
+                    logger.exception("Canvas.run got exception")
                     break
                 continue
 
@@ -231,7 +229,7 @@ class Canvas(ABC):
                         self.get_component(p)["obj"].set_exception(e)
                         prepare2run([p])
                         break
-                traceback.print_exc()
+                logger.exception("Canvas.run got exception")
                 break
 
         if self.answer:

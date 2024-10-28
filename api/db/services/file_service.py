@@ -28,6 +28,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
 from api.utils.file_utils import filename_type, thumbnail_img
 from rag.utils.storage_factory import STORAGE_IMPL
+from api.utils.log_utils import logger
 
 
 class FileService(CommonService):
@@ -272,8 +273,8 @@ class FileService(CommonService):
                 cls.delete_folder_by_pf_id(user_id, file.id)
             return cls.model.delete().where((cls.model.tenant_id == user_id)
                                             & (cls.model.id == folder_id)).execute(),
-        except Exception as e:
-            print(e)
+        except Exception:
+            logger.exception("delete_folder_by_pf_id")
             raise RuntimeError("Database error (File retrieval)!")
 
     @classmethod
@@ -321,8 +322,8 @@ class FileService(CommonService):
     def move_file(cls, file_ids, folder_id):
         try:
             cls.filter_update((cls.model.id << file_ids, ), { 'parent_id': folder_id })
-        except Exception as e:
-            print(e)
+        except Exception:
+            logger.exception("move_file")
             raise RuntimeError("Database error (File move)!")
 
     @classmethod

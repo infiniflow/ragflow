@@ -17,7 +17,6 @@ import hashlib
 import json
 import random
 import re
-import traceback
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
@@ -26,7 +25,7 @@ from io import BytesIO
 from peewee import fn
 
 from api.db.db_utils import bulk_insert_into_db
-from api.settings import stat_logger, docStoreConn
+from api.settings import docStoreConn
 from api.utils import current_timestamp, get_format_time, get_uuid
 from graphrag.mind_map_extractor import MindMapExtractor
 from rag.settings import SVR_QUEUE_NAME
@@ -40,6 +39,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db import StatusEnum
 from rag.utils.redis_conn import REDIS_CONN
+from api.utils.log_utils import logger
 
 
 class DocumentService(CommonService):
@@ -387,7 +387,7 @@ class DocumentService(CommonService):
                 cls.update_by_id(d["id"], info)
             except Exception as e:
                 if str(e).find("'0'") < 0:
-                    stat_logger.error("fetch task exception:" + str(e))
+                    logger.exception("fetch task exception")
 
     @classmethod
     @DB.connection_context()
@@ -544,7 +544,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                     "knowledge_graph_kwd": "mind_map"
                 })
             except Exception as e:
-                stat_logger.error("Mind map generation error:", traceback.format_exc())
+                logger.exception("Mind map generation error")
 
         vects = embedding(doc_id, [c["content_with_weight"] for c in cks])
         assert len(cks) == len(vects)

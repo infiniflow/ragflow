@@ -110,9 +110,8 @@ class RedisDB:
                 #pipeline.expire(queue, exp)
                 pipeline.execute()
                 return True
-            except Exception as e:
-                print(e)
-                logging.warning("[EXCEPTION]producer" + str(queue) + "||" + str(e))
+            except Exception:
+                logging.exception("producer" + str(queue) + " got exception")
         return False
 
     def queue_consumer(self, queue_name, group_name, consumer_name, msg_id=b">") -> Payload:
@@ -143,7 +142,7 @@ class RedisDB:
             if 'key' in str(e):
                 pass
             else:
-                logging.warning("[EXCEPTION]consumer: " + str(queue_name) + "||" + str(e))
+                logging.exception("consumer: " + str(queue_name) + " got exception")
         return None
 
     def get_unacked_for(self, consumer_name, queue_name, group_name):
@@ -160,7 +159,7 @@ class RedisDB:
         except Exception as e:
             if 'key' in str(e):
                 return
-            logging.warning("[EXCEPTION]xpending_range: " + consumer_name + "||" + str(e))
+            logging.exception("xpending_range: " + consumer_name + " got exception")
             self.__open__()
 
 REDIS_CONN = RedisDB()
