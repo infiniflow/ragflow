@@ -29,6 +29,7 @@ export default {
       move: '移動',
       warn: '提醒',
       action: '操作',
+      s: '秒',
     },
     login: {
       login: '登入',
@@ -965,6 +966,13 @@ export default {
       note: '註解',
       noteDescription: '註解',
       notePlaceholder: '請輸入註釋',
+      invoke: 'Invoke',
+      invokeDescription:
+        '此元件可以呼叫遠端端點呼叫。將其他元件的輸出作為參數或設定常數參數來呼叫遠端函數。',
+      url: '網址',
+      method: '方法',
+      timeout: '超時',
+      headers: '請求頭',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

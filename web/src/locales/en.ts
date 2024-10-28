@@ -29,6 +29,7 @@ export default {
       move: 'Move',
       warn: 'Warn',
       action: 'Action',
+      s: 'S',
     },
     login: {
       login: 'Sign in',
@@ -1016,6 +1017,13 @@ The above is the content you need to summarize.`,
       note: 'Note',
       noteDescription: 'Note',
       notePlaceholder: 'Please enter a note',
+      invoke: 'Invoke',
+      invokeDescription:
+        'This component can invoke remote end point call. Put the output of other components as parameters or set constant parameters to call remote functions.',
+      url: 'Url',
+      method: 'Method',
+      timeout: 'Timeout',
+      headers: 'Headers',
     },
     footer: {
       profile: 'All rights reserved @ React',

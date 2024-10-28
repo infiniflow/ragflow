@@ -12,6 +12,7 @@ import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
 import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
+import { ReactComponent as InvokeIcon } from '@/assets/svg/invoke-ai.svg';
 import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
@@ -75,6 +76,7 @@ export enum Operator {
   TuShare = 'TuShare',
   Note = 'Note',
   Crawler = 'Crawler',
+  Invoke = 'Invoke',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -113,6 +115,7 @@ export const operatorIconMap = {
   [Operator.TuShare]: TuShareIcon,
   [Operator.Note]: NoteIcon,
   [Operator.Crawler]: CrawlerIcon,
+  [Operator.Invoke]: InvokeIcon,
 };
 
 export const operatorMap: Record<
@@ -239,6 +242,9 @@ export const operatorMap: Record<
   [Operator.Crawler]: {
     backgroundColor: '#dee0e2',
   },
+  [Operator.Invoke]: {
+    backgroundColor: '#dee0e2',
+  },
 };
 
 export const componentMenuList = [
@@ -331,6 +337,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Crawler,
+  },
+  {
+    name: Operator.Invoke,
   },
 ];
 
@@ -509,6 +518,18 @@ export const initialCrawlerValues = {
   extract_type: 'markdown',
 };
 
+export const initialInvokeValues = {
+  url: 'http://',
+  method: 'GET',
+  timeout: 60,
+  headers: `{
+  "Accept": "*/*",
+  "Cache-Control": "no-cache",
+  "Connection": "keep-alive"
+}`,
+  proxy: 'http://',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -621,6 +642,7 @@ export const NodeMap = {
   [Operator.TuShare]: 'ragNode',
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
+  [Operator.Invoke]: 'ragNode',
 };
 
 export const LanguageOptions = [
