@@ -65,8 +65,8 @@
             "params": {
               "category_description": {
                 "1. weather": {
-                  "description": "Regarding the issues of small talk, companionship, sharing, and emotional intimacy",
-                  "examples": "What's your name?\nAre you female o male.\nWhat a bad day!\nTerrible day.\nHow are you today?\nDo you have boy friend?",
+                  "description": "Question is about weather.",
+                  "examples": "Will it rain tomorrow?\nIs it sunny next day?\nWhat is average temperature next week?",
                   "to": "QWeather:DeepKiwisTeach"
                 },
                 "2. finance": {
@@ -84,8 +84,8 @@
                   "to": "KeywordExtract:PurpleApplesKnow"
                 },
                 "5. chitchatting": {
-                  "description": "Question is about weather.",
-                  "examples": "Will it rain tomorrow?\nIs it sunny next day?\nWhat is average temperature next week?",
+                  "description": "Regarding the issues of small talk, companionship, sharing, and emotional intimacy.",
+                  "examples": "What's your name?\nAre you female o male.\nWhat a bad day!\nTerrible day.\nHow are you today?\nDo you have boy friend?",
                   "to": "Generate:FiveDragonsLay"
                 }
               },
@@ -617,8 +617,8 @@
               "form": {
                 "category_description": {
                   "1. weather": {
-                    "description": "Regarding the issues of small talk, companionship, sharing, and emotional intimacy",
-                    "examples": "What's your name?\nAre you female o male.\nWhat a bad day!\nTerrible day.\nHow are you today?\nDo you have boy friend?",
+                    "description": "Question is about weather.",
+                    "examples": "Will it rain tomorrow?\nIs it sunny next day?\nWhat is average temperature next week?",
                     "to": "QWeather:DeepKiwisTeach"
                   },
                   "2. finance": {
@@ -636,8 +636,8 @@
                     "to": "KeywordExtract:PurpleApplesKnow"
                   },
                   "5. chitchatting": {
-                    "description": "Question is about weather.",
-                    "examples": "Will it rain tomorrow?\nIs it sunny next day?\nWhat is average temperature next week?",
+                    "description": "Regarding the issues of small talk, companionship, sharing, and emotional intimacy.",
+                    "examples": "What's your name?\nAre you female o male.\nWhat a bad day!\nTerrible day.\nHow are you today?\nDo you have boy friend?",
                     "to": "Generate:FiveDragonsLay"
                   }
                 },
@@ -1467,16 +1467,16 @@
               "x": 667.6086950648928,
               "y": 320.04639793250567
             },
+            "resizing": false,
             "selected": false,
             "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 425
+            },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 425,
-            "style": {
-              "width": 425,
-              "height": 128
-            },
-            "resizing": false
+            "width": 425
           },
           {
             "data": {

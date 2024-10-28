@@ -24,14 +24,14 @@
             "params": {}
           },
           "downstream": [
-            "Categorize:EightyWavesEnd",
-            "Generate:YoungTrainsSee"
+            "Categorize:EightyWavesEnd"
           ],
           "upstream": [
             "Message:GoodBugsTurn",
             "Generate:HipWallsFollow",
             "Generate:FullBeersSit",
-            "begin"
+            "begin",
+            "Generate:YoungTrainsSee"
           ]
         },
         "Categorize:EightyWavesEnd": {
@@ -95,9 +95,10 @@
               "top_p": 0.3
             }
           },
-          "downstream": [],
+          "downstream": [
+            "answer:0"
+          ],
           "upstream": [
-            "answer:0",
             "Retrieval:WholeStarsDrive"
           ]
         },
@@ -374,7 +375,7 @@
               "name": "Search product info"
             },
             "dragging": false,
-            "height": 86,
+            "height": 44,
             "id": "Retrieval:WholeStarsDrive",
             "position": {
               "x": 674.4543037737495,
@@ -545,6 +546,7 @@
               "label": "Note",
               "name": "N: Interface"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
             "height": 157,
             "id": "Note:NeatEelsJam",
@@ -556,17 +558,16 @@
               "x": 264.90767475037154,
               "y": 38.182206466391165
             },
+            "resizing": false,
             "selected": false,
             "sourcePosition": "right",
+            "style": {
+              "height": 157,
+              "width": 218
+            },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 218,
-            "dragHandle": ".note-drag-handle",
-            "style": {
-              "width": 218,
-              "height": 157
-            },
-            "resizing": false
+            "width": 218
           },
           {
             "data": {
@@ -576,6 +577,7 @@
               "label": "Note",
               "name": "N: Product info"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
             "height": 146,
             "id": "Note:VastBusesStop",
@@ -596,8 +598,7 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 239,
-            "dragHandle": ".note-drag-handle"
+            "width": 239
           },
           {
             "data": {
@@ -607,6 +608,7 @@
               "label": "Note",
               "name": "N: What else?"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
             "height": 128,
             "id": "Note:YellowSlothsCall",
@@ -622,8 +624,7 @@
             "sourcePosition": "right",
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 269,
-            "dragHandle": ".note-drag-handle"
+            "width": 269
           },
           {
             "data": {
@@ -633,6 +634,7 @@
               "label": "Note",
               "name": "N: Casual & Soothe"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
             "height": 128,
             "id": "Note:MightyMealsBegin",
@@ -653,8 +655,7 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 330,
-            "dragHandle": ".note-drag-handle"
+            "width": 330
           },
           {
             "data": {
@@ -664,6 +665,7 @@
               "label": "Note",
               "name": "N: Search product info"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
             "height": 163,
             "id": "Note:PurpleReadersLike",
@@ -684,8 +686,7 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 271,
-            "dragHandle": ".note-drag-handle"
+            "width": 271
           },
           {
             "data": {
@@ -695,6 +696,7 @@
               "label": "Note",
               "name": "N: Refine Question"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
             "height": 128,
             "id": "Note:TidyJarsCarry",
@@ -710,8 +712,7 @@
             "sourcePosition": "right",
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 269,
-            "dragHandle": ".note-drag-handle"
+            "width": 269
           },
           {
             "data": {
@@ -721,6 +722,7 @@
               "label": "Note",
               "name": "N: Question cate"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
             "height": 128,
             "id": "Note:BigPawsThink",
@@ -736,8 +738,7 @@
             "sourcePosition": "right",
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 269,
-            "dragHandle": ".note-drag-handle"
+            "width": 269
           }
         ],
         "edges": [
@@ -752,19 +753,6 @@
             },
             "target": "Categorize:EightyWavesEnd",
             "targetHandle": "a",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-answer:0b-Generate:YoungTrainsSeec",
-            "markerEnd": "logo",
-            "source": "answer:0",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:YoungTrainsSee",
-            "targetHandle": "c",
             "type": "buttonEdge"
           },
           {
@@ -885,17 +873,30 @@
             "type": "buttonEdge"
           },
           {
-            "type": "buttonEdge",
+            "id": "reactflow__edge-begin-answer:0b",
             "markerEnd": "logo",
-            "style": {
-              "strokeWidth": 2,
-              "stroke": "rgb(202 197 245)"
-            },
             "source": "begin",
             "sourceHandle": null,
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
             "target": "answer:0",
             "targetHandle": "b",
-            "id": "reactflow__edge-begin-answer:0b"
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Generate:YoungTrainsSeec-answer:0b",
+            "markerEnd": "logo",
+            "source": "Generate:YoungTrainsSee",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "answer:0",
+            "targetHandle": "b",
+            "type": "buttonEdge"
           }
         ]
       },
