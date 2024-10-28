@@ -1169,14 +1169,14 @@ Failure:
 
 ## Retrieve chunks
 
-**GET** `/api/v1/retrievals`
+**GET** `/api/v1/retrieval`
 
 Retrieves chunks from specified datasets.
 
 ### Request
 
 - Method: POST
-- URL: `/api/v1/retrievals`
+- URL: `/api/v1/retrieval`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer {YOUR_API_KEY}'`
@@ -1197,7 +1197,7 @@ Retrieves chunks from specified datasets.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/retrievals \
+     --url http://{address}/api/v1/retrieval \
      --header 'Content-Type: application/json' \
      --header 'Authorization: {YOUR_API_KEY}' \
      --data '

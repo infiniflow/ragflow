@@ -46,14 +46,6 @@ from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
 import os
 
-MAXIMUM_OF_UPLOADING_FILES = 256
-
-MAXIMUM_OF_UPLOADING_FILES = 256
-
-MAXIMUM_OF_UPLOADING_FILES = 256
-
-MAXIMUM_OF_UPLOADING_FILES = 256
-
 
 @manager.route('/datasets/<dataset_id>/documents', methods=['POST'])
 @token_required
@@ -66,21 +58,11 @@ def upload(dataset_id, tenant_id):
         if file_obj.filename == '':
             return get_result(
                 retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
-    # total size
-    total_size = 0
-    for file_obj in file_objs:
-        file_obj.seek(0, os.SEEK_END)
-        total_size += file_obj.tell()
-        file_obj.seek(0)
-    MAX_TOTAL_FILE_SIZE=10*1024*1024
-    if total_size > MAX_TOTAL_FILE_SIZE:
-        return get_result(
-            retmsg=f'Total file size exceeds 10MB limit! ({total_size / (1024 * 1024):.2f} MB)',
-            retcode=RetCode.ARGUMENT_ERROR)
+
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
-    err, files= FileService.upload_document(kb, file_objs, tenant_id)
+    err, files = FileService.upload_document(kb, file_objs, tenant_id)
     if err:
         return get_result(
             retmsg="\n".join(err), retcode=RetCode.SERVER_ERROR)
@@ -574,7 +556,7 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
 
 
 
-@manager.route('/retrievals', methods=['POST'])
+@manager.route('/retrieval', methods=['POST'])
 @token_required
 def retrieval_test(tenant_id):
     req = request.json
