@@ -1,14 +1,9 @@
 import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
-import SvgIcon from '@/components/svg-icon';
+import { LlmIcon } from '@/components/svg-icon';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { LlmItem, useSelectLlmList } from '@/hooks/llm-hooks';
+import { CloseCircleOutlined, SettingOutlined } from '@ant-design/icons';
 import {
-  CloseCircleOutlined,
-  SettingOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
-import {
-  Avatar,
   Button,
   Card,
   Col,
@@ -31,7 +26,6 @@ import TencentCloudModal from './Tencent-modal';
 import ApiKeyModal from './api-key-modal';
 import AzureOpenAIModal from './azure-openai-modal';
 import BedrockModal from './bedrock-modal';
-import { IconMap } from './constant';
 import FishAudioModal from './fish-audio-modal';
 import GoogleModal from './google-modal';
 import {
@@ -57,16 +51,6 @@ import SparkModal from './spark-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
 import VolcEngineModal from './volcengine-modal';
 import YiyanModal from './yiyan-modal';
-
-const LlmIcon = ({ name }: { name: string }) => {
-  const icon = IconMap[name as keyof typeof IconMap];
-
-  return icon ? (
-    <SvgIcon name={`llm/${icon}`} width={48} height={48}></SvgIcon>
-  ) : (
-    <Avatar shape="square" size="large" icon={<UserOutlined />} />
-  );
-};
 
 const { Text } = Typography;
 interface IModelCardProps {

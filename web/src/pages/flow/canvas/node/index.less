@@ -3,22 +3,16 @@
     -6px 0 12px 0 rgba(179, 177, 177, 0.08),
     -3px 0 6px -4px rgba(0, 0, 0, 0.12),
     -6px 0 16px 6px rgba(0, 0, 0, 0.05);
+
+  padding: 10px;
+  border-radius: 10px;
+  background: white;
+  width: 200px;
 }
 
 .ragNode {
-  position: relative;
   .commonNode();
 
-  padding: 5px;
-  border-radius: 5px;
-  background: white;
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  display: flex;
-  // align-items: center;
-  // justify-self: center;
-  justify-content: center;
   .nodeName {
     font-size: 10px;
     color: black;
@@ -28,23 +22,10 @@
     color: #777;
     font-size: 12px;
   }
-  .type {
-    // font-size: 12px;
-  }
   .description {
     font-size: 10px;
   }
-  .bottomBox {
-    position: absolute;
-    bottom: -34px;
-    background: white;
-    padding: 2px 5px;
-    border-radius: 5px;
-    box-shadow:
-      -6px 0 12px 0 rgba(179, 177, 177, 0.08),
-      -3px 0 6px -4px rgba(0, 0, 0, 0.12),
-      -6px 0 16px 6px rgba(0, 0, 0, 0.05);
-  }
+
   .categorizeAnchorPointText {
     position: absolute;
     top: -4px;
@@ -53,14 +34,25 @@
   }
 }
 
+@lightBackgroundColor: rgba(150, 150, 150, 0.1);
+@darkBackgroundColor: rgba(150, 150, 150, 0.2);
+
 .selectedNode {
-  border: 1px solid rgb(59, 118, 244);
+  border: 1.5px solid rgb(59, 118, 244);
 }
 
 .handle {
   display: inline-flex;
-  text-align: center;
-  // align-items: center;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  background: rgb(59, 88, 253);
+  border: 1px solid white;
+  z-index: 1;
+  background-image: url('@/assets/svg/plus.svg');
+  background-size: cover;
+  background-position: center;
 }
 
 .jsonView {
@@ -71,19 +63,8 @@
 }
 
 .logicNode {
-  position: relative;
   .commonNode();
 
-  padding: 5px;
-  border-radius: 5px;
-  background: white;
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  display: flex;
-  // align-items: center;
-  // justify-self: center;
-  justify-content: center;
   .nodeName {
     font-size: 10px;
     color: black;
@@ -93,41 +74,122 @@
     color: #777;
     font-size: 12px;
   }
-  .type {
-    // font-size: 12px;
-  }
+
   .description {
     font-size: 10px;
   }
-  .bottomBox {
-    position: absolute;
-    bottom: -34px;
-    background: white;
-    padding: 2px 5px;
-    border-radius: 5px;
-    box-shadow:
-      -6px 0 12px 0 rgba(179, 177, 177, 0.08),
-      -3px 0 6px -4px rgba(0, 0, 0, 0.12),
-      -6px 0 16px 6px rgba(0, 0, 0, 0.05);
-  }
+
   .categorizeAnchorPointText {
     position: absolute;
     top: -4px;
     left: 8px;
     white-space: nowrap;
   }
+  .relevantSourceLabel {
+    font-size: 10px;
+  }
 }
 
 .noteNode {
   .commonNode();
-  width: 140px;
-  padding: 4px 6px 6px;
+  min-width: 140px;
+  width: auto;
+  height: 100%;
+  padding: 0;
   border-radius: 10px;
-  background-color: #dbf8f4;
+  min-height: 128px;
   .noteTitle {
+    background-color: #edfcff;
     font-size: 12px;
+    padding: 6px 6px 4px;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
   }
   .noteForm {
     margin-top: 4px;
+    height: calc(100% - 50px);
+  }
+  .noteName {
+    padding: 0px 4px;
+  }
+  .noteTextarea {
+    resize: none;
+    border: 0;
+    border-radius: 0;
+    height: 100%;
+    &:focus {
+      border: none;
+      box-shadow: none;
+    }
+  }
+}
+
+.nodeText {
+  padding-inline: 0.4em;
+  padding-block: 0.2em 0.1em;
+  background: @lightBackgroundColor;
+  border-radius: 3px;
+  min-height: 22px;
+  .textEllipsis();
+}
+
+.nodeTitle {
+  font-weight: 600;
+  text-align: center;
+  .textEllipsis();
+}
+
+.nodeHeader {
+  padding-bottom: 12px;
+}
+
+.zeroDivider {
+  margin: 0 !important;
+}
+
+.conditionBlock {
+  border-radius: 4px;
+  padding: 6px;
+  background: @lightBackgroundColor;
+}
+
+.conditionLine {
+  border-radius: 4px;
+  padding: 0 4px;
+  background: @darkBackgroundColor;
+  .textEllipsis();
+}
+
+.conditionKey {
+  flex: 1;
+}
+
+.conditionOperator {
+  padding: 0 2px;
+  text-align: center;
+}
+
+.relevantLabel {
+  text-align: right;
+}
+
+.knowledgeNodeName {
+  .textEllipsis();
+}
+
+.messageNodeContainer {
+  overflow-y: auto;
+  max-height: 300px;
+}
+
+.generateParameters {
+  padding-top: 8px;
+  label {
+    flex: 2;
+    .textEllipsis();
+  }
+  .parameterValue {
+    flex: 3;
+    .conditionLine;
   }
 }

@@ -90,6 +90,7 @@ const DynamicParameters = ({ nodeId }: IProps) => {
         components={components}
         rowClassName={() => styles.editableRow}
         scroll={{ x: true }}
+        bordered
       />
     </section>
   );

@@ -1,6 +1,14 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { CloseOutlined } from '@ant-design/icons';
-import { Button, Card, Form, FormListFieldData, Input, Select } from 'antd';
+import {
+  Button,
+  Card,
+  Flex,
+  Form,
+  FormListFieldData,
+  Input,
+  Select,
+} from 'antd';
 import { FormInstance } from 'antd/lib';
 import { humanId } from 'human-id';
 import trim from 'lodash/trim';
@@ -14,6 +22,8 @@ import {
 import { useUpdateNodeInternals } from 'reactflow';
 import { Operator } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
+
+import styles from './index.less';
 
 interface IProps {
   nodeId?: string;
@@ -105,13 +115,12 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
             if (nodeId) updateNodeInternals(nodeId);
           };
           return (
-            <div
-              style={{ display: 'flex', rowGap: 10, flexDirection: 'column' }}
-            >
+            <Flex gap={18} vertical>
               {fields.map((field) => (
                 <Card
                   size="small"
                   key={field.key}
+                  className={styles.caseCard}
                   extra={
                     <CloseOutlined
                       onClick={() => {
@@ -172,10 +181,15 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                 </Card>
               ))}
 
-              <Button type="dashed" onClick={handleAdd} block>
+              <Button
+                type="dashed"
+                onClick={handleAdd}
+                block
+                className={styles.addButton}
+              >
                 + {t('addItem')}
               </Button>
-            </div>
+            </Flex>
           );
         }}
       </Form.List>

@@ -3,7 +3,7 @@ import { Card, Divider, Flex, Layout, Tooltip } from 'antd';
 import classNames from 'classnames';
 import lowerFirst from 'lodash/lowerFirst';
 import React from 'react';
-import { Operator, componentMenuList } from '../constant';
+import { Operator, componentMenuList, operatorMap } from '../constant';
 import { useHandleDrag } from '../hooks';
 import OperatorIcon from '../operator-icon';
 import styles from './index.less';
@@ -53,7 +53,10 @@ const FlowSide = ({ setCollapsed, collapsed }: IProps) => {
                 onDragStart={handleDragStart(x.name)}
               >
                 <Flex align="center" gap={15}>
-                  <OperatorIcon name={x.name}></OperatorIcon>
+                  <OperatorIcon
+                    name={x.name}
+                    color={operatorMap[x.name].color}
+                  ></OperatorIcon>
                   <section>
                     <Tooltip title={t(`${lowerFirst(x.name)}Description`)}>
                       <b>{t(lowerFirst(x.name))}</b>

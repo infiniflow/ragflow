@@ -22,9 +22,15 @@ import styles from './index.less';
 import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { GenerateNode } from './node/generate-node';
+import { KeywordNode } from './node/keyword-node';
 import { LogicNode } from './node/logic-node';
+import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
 import { RelevantNode } from './node/relevant-node';
+import { RetrievalNode } from './node/retrieval-node';
+import { RewriteNode } from './node/rewrite-node';
+import { SwitchNode } from './node/switch-node';
 
 const nodeTypes = {
   ragNode: RagNode,
@@ -33,6 +39,12 @@ const nodeTypes = {
   relevantNode: RelevantNode,
   logicNode: LogicNode,
   noteNode: NoteNode,
+  switchNode: SwitchNode,
+  generateNode: GenerateNode,
+  retrievalNode: RetrievalNode,
+  messageNode: MessageNode,
+  rewriteNode: RewriteNode,
+  keywordNode: KeywordNode,
 };
 
 const edgeTypes = {

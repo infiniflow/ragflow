@@ -69,6 +69,7 @@ import useGraphStore, { RFState } from './store';
 import {
   buildDslComponentsByGraph,
   generateSwitchHandleText,
+  getNodeDragHandle,
   receiveMessageError,
   replaceIdWithText,
 } from './utils';
@@ -250,6 +251,7 @@ export const useHandleDrop = () => {
         },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
+        dragHandle: getNodeDragHandle(type),
       };
 
       addNode(newNode);
@@ -448,11 +450,16 @@ export const useValidateConnection = () => {
   return isValidConnection;
 };
 
-export const useHandleNodeNameChange = (node?: Node) => {
+export const useHandleNodeNameChange = ({
+  id,
+  data,
+}: {
+  id?: string;
+  data: any;
+}) => {
   const [name, setName] = useState<string>('');
   const { updateNodeName, nodes } = useGraphStore((state) => state);
-  const previousName = node?.data.name;
-  const id = node?.id;
+  const previousName = data?.name;
 
   const handleNameBlur = useCallback(() => {
     const existsSameName = nodes.some((x) => x.data.name === name);
@@ -639,6 +646,7 @@ const ExcludedNodes = [
   Operator.Relevant,
   Operator.Begin,
   Operator.Answer,
+  Operator.Note,
 ];
 
 export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
@@ -654,4 +662,16 @@ export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
   }, [nodes, nodeId]);
 
   return options;
+};
+
+export const useGetComponentLabelByValue = (nodeId: string) => {
+  const options = useBuildComponentIdSelectOptions(nodeId);
+
+  const getLabel = useCallback(
+    (val?: string) => {
+      return options.find((x) => x.value === val)?.label;
+    },
+    [options],
+  );
+  return getLabel;
 };

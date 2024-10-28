@@ -13,6 +13,8 @@ import { useBuildComponentIdSelectOptions } from '../../hooks';
 import { IOperatorForm, ISwitchForm } from '../../interface';
 import { getOtherFieldValues } from '../../utils';
 
+import styles from './index.less';
+
 const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
   const { t } = useTranslation();
   const buildCategorizeToOptions = useBuildFormSelectOptions(
@@ -55,112 +57,134 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
       <Form.List name="conditions">
         {(fields, { add, remove }) => (
           <div style={{ display: 'flex', rowGap: 16, flexDirection: 'column' }}>
-            {fields.map((field) => (
-              <Card
-                size="small"
-                title={`Case ${field.name + 1}`}
-                key={field.key}
-                extra={
-                  <CloseOutlined
-                    onClick={() => {
-                      remove(field.name);
-                    }}
-                  />
-                }
-              >
-                <Form.Item noStyle dependencies={[field.name, 'items']}>
-                  {({ getFieldValue }) =>
-                    getFieldValue(['conditions', field.name, 'items'])?.length >
-                      1 && (
-                      <Form.Item
-                        label={t('flow.logicalOperator')}
-                        name={[field.name, 'logical_operator']}
-                      >
-                        <Select options={switchLogicOperatorOptions} />
-                      </Form.Item>
-                    )
+            {fields.map((field) => {
+              return (
+                <Card
+                  size="small"
+                  title={`Case ${field.name + 1}`}
+                  key={field.key}
+                  className={styles.caseCard}
+                  extra={
+                    <CloseOutlined
+                      onClick={() => {
+                        remove(field.name);
+                      }}
+                    />
                   }
-                </Form.Item>
-                <Form.Item label={t('flow.to')} name={[field.name, 'to']}>
-                  <Select
-                    allowClear
-                    options={buildCategorizeToOptions([
-                      form?.getFieldValue(SwitchElseTo),
-                      ...getOtherFieldValues(form!, 'conditions', field, 'to'),
-                    ])}
-                  />
-                </Form.Item>
-                <Form.Item label="Condition">
-                  <Form.List name={[field.name, 'items']}>
-                    {(subFields, subOpt) => (
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          rowGap: 16,
-                        }}
-                      >
-                        {subFields.map((subField) => (
-                          <Card
-                            key={subField.key}
-                            title={null}
-                            size="small"
-                            extra={
-                              <CloseOutlined
-                                onClick={() => {
-                                  subOpt.remove(subField.name);
-                                }}
-                              />
-                            }
-                          >
-                            <Form.Item
-                              label={t('flow.componentId')}
-                              name={[subField.name, 'cpn_id']}
-                            >
-                              <Select
-                                placeholder={t('flow.componentId')}
-                                options={componentIdOptions}
-                              />
-                            </Form.Item>
-                            <Form.Item
-                              label={t('flow.operator')}
-                              name={[subField.name, 'operator']}
-                            >
-                              <Select
-                                placeholder={t('flow.operator')}
-                                options={switchOperatorOptions}
-                              />
-                            </Form.Item>
-                            <Form.Item
-                              label={t('flow.value')}
-                              name={[subField.name, 'value']}
-                            >
-                              <Input placeholder={t('flow.value')} />
-                            </Form.Item>
-                          </Card>
-                        ))}
-                        <Button
-                          type="dashed"
-                          onClick={() => subOpt.add()}
-                          block
+                >
+                  <Form.Item noStyle dependencies={[field.name, 'items']}>
+                    {({ getFieldValue }) =>
+                      getFieldValue(['conditions', field.name, 'items'])
+                        ?.length > 1 && (
+                        <Form.Item
+                          label={t('flow.logicalOperator')}
+                          name={[field.name, 'logical_operator']}
                         >
-                          + Add Condition
-                        </Button>
-                      </div>
-                    )}
-                  </Form.List>
-                </Form.Item>
-              </Card>
-            ))}
+                          <Select options={switchLogicOperatorOptions} />
+                        </Form.Item>
+                      )
+                    }
+                  </Form.Item>
+                  <Form.Item label={t('flow.to')} name={[field.name, 'to']}>
+                    <Select
+                      allowClear
+                      options={buildCategorizeToOptions([
+                        form?.getFieldValue(SwitchElseTo),
+                        ...getOtherFieldValues(
+                          form!,
+                          'conditions',
+                          field,
+                          'to',
+                        ),
+                      ])}
+                    />
+                  </Form.Item>
+                  <Form.Item label="Condition">
+                    <Form.List name={[field.name, 'items']}>
+                      {(subFields, subOpt) => (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            rowGap: 16,
+                          }}
+                        >
+                          {subFields.map((subField) => (
+                            <Card
+                              key={subField.key}
+                              title={null}
+                              size="small"
+                              className={styles.conditionCard}
+                              bordered
+                              extra={
+                                <CloseOutlined
+                                  onClick={() => {
+                                    subOpt.remove(subField.name);
+                                  }}
+                                />
+                              }
+                            >
+                              <Form.Item
+                                label={t('flow.componentId')}
+                                name={[subField.name, 'cpn_id']}
+                              >
+                                <Select
+                                  placeholder={t('flow.componentId')}
+                                  options={componentIdOptions}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                label={t('flow.operator')}
+                                name={[subField.name, 'operator']}
+                              >
+                                <Select
+                                  placeholder={t('flow.operator')}
+                                  options={switchOperatorOptions}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                label={t('flow.value')}
+                                name={[subField.name, 'value']}
+                              >
+                                <Input placeholder={t('flow.value')} />
+                              </Form.Item>
+                            </Card>
+                          ))}
+                          <Button
+                            onClick={() => {
+                              form?.setFieldValue(
+                                ['conditions', field.name, 'logical_operator'],
+                                SwitchLogicOperatorOptions[0],
+                              );
+                              subOpt.add({
+                                operator: SwitchOperatorOptions[0].value,
+                              });
+                            }}
+                            block
+                            className={styles.addButton}
+                          >
+                            + Add Condition
+                          </Button>
+                        </div>
+                      )}
+                    </Form.List>
+                  </Form.Item>
+                </Card>
+              );
+            })}
 
-            <Button type="dashed" onClick={() => add()} block>
+            <Button onClick={() => add()} block className={styles.addButton}>
               + Add Case
             </Button>
           </div>
         )}
       </Form.List>
       <Divider />
-      <Form.Item label={'ELSE'} name={[SwitchElseTo]}>
+      <Form.Item
+        label={'ELSE'}
+        name={[SwitchElseTo]}
+        className={styles.elseCase}
+      >
         <Select
           allowClear
           options={buildCategorizeToOptions(getSelectedConditionTos())}

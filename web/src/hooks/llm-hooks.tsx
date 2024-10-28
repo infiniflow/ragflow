@@ -1,3 +1,4 @@
+import { LlmIcon } from '@/components/svg-icon';
 import { LlmModelType } from '@/constants/knowledge';
 import { ResponseGetType } from '@/interfaces/database/base';
 import {
@@ -13,7 +14,7 @@ import {
 import userService from '@/services/user-service';
 import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { message } from 'antd';
+import { Flex, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -53,6 +54,14 @@ export const useSelectLlmOptions = () => {
   return embeddingModelOptions;
 };
 
+const getLLMIconName = (fid: string, llm_name: string) => {
+  if (fid === 'FastEmbed') {
+    return llm_name.split('/').at(0) ?? '';
+  }
+
+  return fid;
+};
+
 export const useSelectLlmOptionsByModelType = () => {
   const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
 
@@ -71,7 +80,17 @@ export const useSelectLlmOptionsByModelType = () => {
                 x.available,
             )
             .map((x) => ({
-              label: x.llm_name,
+              label: (
+                <Flex align="center" gap={6}>
+                  <LlmIcon
+                    name={getLLMIconName(x.fid, x.llm_name)}
+                    width={26}
+                    height={26}
+                    size={'small'}
+                  />
+                  <span>{x.llm_name}</span>
+                </Flex>
+              ),
               value: `${x.llm_name}@${x.fid}`,
               disabled: !x.available,
             })),

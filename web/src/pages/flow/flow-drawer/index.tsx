@@ -3,7 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
-import { Operator } from '../constant';
+import { Operator, operatorMap } from '../constant';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -36,6 +36,8 @@ import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
 
+import { CloseOutlined } from '@ant-design/icons';
+import { lowerFirst } from 'lodash';
 import styles from './index.less';
 
 interface IProps {
@@ -74,7 +76,7 @@ const FormMap = {
   [Operator.Crawler]: CrawlerForm,
 };
 
-const EmptyContent = () => <div>empty</div>;
+const EmptyContent = () => <div></div>;
 
 const FlowDrawer = ({
   visible,
@@ -84,8 +86,10 @@ const FlowDrawer = ({
   const operatorName: Operator = node?.data.label;
   const OperatorForm = FormMap[operatorName] ?? EmptyContent;
   const [form] = Form.useForm();
-  const { name, handleNameBlur, handleNameChange } =
-    useHandleNodeNameChange(node);
+  const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
+    id: node?.id,
+    data: node?.data,
+  });
   const { t } = useTranslate('flow');
 
   const { handleValuesChange } = useHandleFormValuesChange(node?.id);
@@ -99,18 +103,27 @@ const FlowDrawer = ({
   return (
     <Drawer
       title={
-        <Flex gap={'middle'} align="center">
-          <OperatorIcon name={operatorName}></OperatorIcon>
-          <Flex align="center" gap={'small'} flex={1}>
-            <label htmlFor="" className={styles.title}>
-              {t('title')}
-            </label>
-            <Input
-              value={name}
-              onBlur={handleNameBlur}
-              onChange={handleNameChange}
-            ></Input>
+        <Flex vertical>
+          <Flex gap={'middle'} align="center">
+            <OperatorIcon
+              name={operatorName}
+              color={operatorMap[operatorName]?.color}
+            ></OperatorIcon>
+            <Flex align="center" gap={'small'} flex={1}>
+              <label htmlFor="" className={styles.title}>
+                {t('title')}
+              </label>
+              <Input
+                value={name}
+                onBlur={handleNameBlur}
+                onChange={handleNameChange}
+              ></Input>
+            </Flex>
+            <CloseOutlined onClick={hideModal} />
           </Flex>
+          <span className={styles.operatorDescription}>
+            {t(`${lowerFirst(operatorName)}Description`)}
+          </span>
         </Flex>
       }
       placement="right"
@@ -119,6 +132,7 @@ const FlowDrawer = ({
       getContainer={false}
       mask={false}
       width={470}
+      closeIcon={null}
     >
       <section className={styles.formWrapper}>
         {visible && (
