@@ -1253,7 +1253,7 @@ Asks a question to start an AI-powered conversation.
 
 #### question: `str` *Required*
 
-The question to start an AI-powered chat.
+The question to start an AI-powered conversation.
 
 #### stream: `bool`
 
