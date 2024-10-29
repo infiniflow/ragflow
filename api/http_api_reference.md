@@ -94,8 +94,10 @@ curl --request POST \
   The configuration settings for the dataset parser, a JSON object containing the following attributes:
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `true`.
+  - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
   - `"delimiter"`: Defaults to `"\n!?。；！？"`.
   - `"task_page_size"`: Defaults to `12`. For PDF only.
+  - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
 
 ### Response
 
