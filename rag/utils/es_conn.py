@@ -221,12 +221,14 @@ class ESConnection:
 
         return False
 
-    def search(self, q, idxnm=None, src=False, timeout="2s"):
+    def search(self, q, idxnms=None, src=False, timeout="2s"):
         if not isinstance(q, dict):
             q = Search().query(q).to_dict()
+        if isinstance(idxnms, str):
+            idxnms = idxnms.split(",")
         for i in range(3):
             try:
-                res = self.es.search(index=(self.idxnm if not idxnm else idxnm),
+                res = self.es.search(index=(self.idxnm if not idxnms else idxnms),
                                      body=q,
                                      timeout=timeout,
                                      # search_type="dfs_query_then_fetch",

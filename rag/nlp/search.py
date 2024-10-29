@@ -79,7 +79,7 @@ class Dealer:
                     Q("bool", must_not=Q("range", available_int={"lt": 1})))
         return bqry
 
-    def search(self, req, idxnm, emb_mdl=None, highlight=False):
+    def search(self, req, idxnms, emb_mdl=None, highlight=False):
         qst = req.get("question", "")
         bqry, keywords = self.qryr.question(qst, min_match="30%")
         bqry = self._add_filters(bqry, req)
@@ -134,7 +134,7 @@ class Dealer:
                 del s["highlight"]
             q_vec = s["knn"]["query_vector"]
         es_logger.info("【Q】: {}".format(json.dumps(s)))
-        res = self.es.search(deepcopy(s), idxnm=idxnm, timeout="600s", src=src)
+        res = self.es.search(deepcopy(s), idxnms=idxnms, timeout="600s", src=src)
         es_logger.info("TOTAL: {}".format(self.es.getTotal(res)))
         if self.es.getTotal(res) == 0 and "knn" in s:
             bqry, _ = self.qryr.question(qst, min_match="10%")
@@ -144,7 +144,7 @@ class Dealer:
             s["query"] = bqry.to_dict()
             s["knn"]["filter"] = bqry.to_dict()
             s["knn"]["similarity"] = 0.17
-            res = self.es.search(s, idxnm=idxnm, timeout="600s", src=src)
+            res = self.es.search(s, idxnms=idxnms, timeout="600s", src=src)
             es_logger.info("【Q】: {}".format(json.dumps(s)))
 
         kwds = set([])
@@ -358,20 +358,26 @@ class Dealer:
                                            rag_tokenizer.tokenize(ans).split(" "),
                                            rag_tokenizer.tokenize(inst).split(" "))
 
-    def retrieval(self, question, embd_mdl, tenant_id, kb_ids, page, page_size, similarity_threshold=0.2,
+    def retrieval(self, question, embd_mdl, tenant_ids, kb_ids, page, page_size, similarity_threshold=0.2,
                   vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True, rerank_mdl=None, highlight=False):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
+
         RERANK_PAGE_LIMIT = 3
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": max(page_size*RERANK_PAGE_LIMIT, 128),
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
                "available_int": 1}
+
         if page > RERANK_PAGE_LIMIT:
             req["page"] = page
             req["size"] = page_size
-        sres = self.search(req, index_name(tenant_id), embd_mdl, highlight)
+
+        if isinstance(tenant_ids, str):
+            tenant_ids = tenant_ids.split(",")
+
+        sres = self.search(req, [index_name(tid) for tid in tenant_ids], embd_mdl, highlight)
         ranks["total"] = sres.total
 
         if page <= RERANK_PAGE_LIMIT:
@@ -467,7 +473,7 @@ class Dealer:
         s = Search()
         s = s.query(Q("match", doc_id=doc_id))[0:max_count]
         s = s.to_dict()
-        es_res = self.es.search(s, idxnm=index_name(tenant_id), timeout="600s", src=fields)
+        es_res = self.es.search(s, idxnms=index_name(tenant_id), timeout="600s", src=fields)
         res = []
         for index, chunk in enumerate(es_res['hits']['hits']):
             res.append({fld: chunk['_source'].get(fld) for fld in fields})
