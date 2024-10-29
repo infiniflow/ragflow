@@ -260,7 +260,7 @@ class Canvas(ABC):
 
     def get_history(self, window_size):
         convs = []
-        for role, obj in self.history[(window_size + 1) * -1:]:
+        for role, obj in self.history[window_size * -1:]:
             convs.append({"role": role, "content": (obj if role == "user" else
                     '\n'.join([str(s) for s in pd.DataFrame(obj)['content']]))})
         return convs
