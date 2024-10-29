@@ -95,7 +95,7 @@ curl --request POST \
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `true`.
   - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-  - `"task_page_size"`: Defaults to `12`.
+  - `"task_page_size"`: Defaults to `12`. For PDF only.
 
 ### Response
 
@@ -515,7 +515,7 @@ curl --request PUT \
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `true`.
   - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-  - `"task_page_size"`: Defaults to `12`.
+  - `"task_page_size"`: Defaults to `12`. For PDF only.
 
 ### Response
 

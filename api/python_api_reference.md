@@ -1253,7 +1253,7 @@ Asks a question to start an AI-powered conversation.
 
 #### question: `str` *Required*
 
-The question to start an AI chat.
+The question to start an AI-powered chat.
 
 #### stream: `bool`
 
@@ -1286,7 +1286,7 @@ A list of `Chunk` objects representing references to the message, each containin
 - `content` `str`  
   The content of the chunk.
 - `image_id` `str`  
-  The ID of the snapshot of the chunk.
+  The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
 - `document_id` `str`  
   The ID of the referenced document.
 - `document_name` `str`  
@@ -1295,8 +1295,8 @@ A list of `Chunk` objects representing references to the message, each containin
   The location information of the chunk within the referenced document.
 - `dataset_id` `str`  
   The ID of the dataset to which the referenced document belongs.
-- `similarity` `float`
-  A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity.
+- `similarity` `float`  
+  A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity. It is the weighted sum of `vector_similarity` and `term_similarity`.
 - `vector_similarity` `float`  
   A vector similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between vector embeddings.
 - `term_similarity` `float`  
