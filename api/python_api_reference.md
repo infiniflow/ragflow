@@ -1302,7 +1302,6 @@ A list of `Chunk` objects representing references to the message, each containin
 - `term_similarity` `float`  
   A keyword similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between keywords.
 
-
 ### Examples
 
 ```python

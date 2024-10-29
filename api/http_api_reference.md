@@ -1169,7 +1169,7 @@ Failure:
 
 ## Retrieve chunks
 
-**GET** `/api/v1/retrieval`
+**POST** `/api/v1/retrieval`
 
 Retrieves chunks from specified datasets.
 
