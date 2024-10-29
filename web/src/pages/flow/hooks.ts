@@ -647,7 +647,6 @@ const ExcludedNodes = [
   Operator.Categorize,
   Operator.Relevant,
   Operator.Begin,
-  Operator.Answer,
   Operator.Note,
 ];
 
