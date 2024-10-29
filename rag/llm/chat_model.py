@@ -109,6 +109,8 @@ class XinferenceChat(Base):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         super().__init__(key, model_name, base_url)
+
+
 class HuggingFaceChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
@@ -116,6 +118,7 @@ class HuggingFaceChat(Base):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         super().__init__(key, model_name, base_url)
+
 
 class DeepSeekChat(Base):
     def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1"):
@@ -1247,6 +1250,7 @@ class AnthropicChat(Base):
         if "max_tokens" not in gen_conf:
             gen_conf["max_tokens"] = 4096
 
+        ans = ""
         try:
             response = self.client.messages.create(
                 model=self.model_name,
