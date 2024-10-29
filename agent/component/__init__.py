@@ -29,6 +29,7 @@ from .jin10 import Jin10, Jin10Param
 from .tushare import TuShare, TuShareParam
 from .akshare import AkShare, AkShareParam
 from .crawler import Crawler, CrawlerParam
+from .invoke import Invoke, InvokeParam
 
 
 def component_class(class_name):

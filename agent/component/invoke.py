@@ -14,10 +14,10 @@
 #  limitations under the License.
 #
 import json
+import re
 from abc import ABC
-
 import requests
-
+from deepdoc.parser import HtmlParser
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -34,11 +34,13 @@ class InvokeParam(ComponentParamBase):
         self.variables = []
         self.url = ""
         self.timeout = 60
+        self.clean_html = False
 
     def check(self):
         self.check_valid_value(self.method.lower(), "Type of content from the crawler", ['get', 'post', 'put'])
         self.check_empty(self.url, "End point URL")
         self.check_positive_integer(self.timeout, "Timeout time in second")
+        self.check_boolean(self.clean_html, "Clean HTML")
 
 
 class Invoke(ComponentBase, ABC):
@@ -63,7 +65,7 @@ class Invoke(ComponentBase, ABC):
         if self._param.headers:
             headers = json.loads(self._param.headers)
         proxies = None
-        if self._param.proxy:
+        if re.sub(r"https?:?/?/?", "", self._param.proxy):
             proxies = {"http": self._param.proxy, "https": self._param.proxy}
 
         if method == 'get':
@@ -72,6 +74,10 @@ class Invoke(ComponentBase, ABC):
                                     headers=headers,
                                     proxies=proxies,
                                     timeout=self._param.timeout)
+            if self._param.clean_html:
+                sections = HtmlParser()(None, response.content)
+                return Invoke.be_output("\n".join(sections))
+
             return Invoke.be_output(response.text)
 
         if method == 'put':
@@ -80,5 +86,18 @@ class Invoke(ComponentBase, ABC):
                                     headers=headers,
                                     proxies=proxies,
                                     timeout=self._param.timeout)
+            if self._param.clean_html:
+                sections = HtmlParser()(None, response.content)
+                return Invoke.be_output("\n".join(sections))
+            return Invoke.be_output(response.text)
 
+        if method == 'post':
+            response = requests.post(url=url,
+                                    json=args,
+                                    headers=headers,
+                                    proxies=proxies,
+                                    timeout=self._param.timeout)
+            if self._param.clean_html:
+                sections = HtmlParser()(None, response.content)
+                return Invoke.be_output("\n".join(sections))
             return Invoke.be_output(response.text)
