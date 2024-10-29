@@ -29,13 +29,15 @@ export const useBuildCategorizeHandlePositions = ({
       idx: number;
     }> = [];
 
-    Object.keys(categoryData).forEach((x, idx) => {
-      list.push({
-        text: x,
-        idx,
-        top: idx === 0 ? 98 : list[idx - 1].top + 8 + 26,
+    Object.keys(categoryData)
+      .sort((a, b) => categoryData[a].index - categoryData[b].index)
+      .forEach((x, idx) => {
+        list.push({
+          text: x,
+          idx,
+          top: idx === 0 ? 98 : list[idx - 1].top + 8 + 26,
+        });
       });
-    });
 
     return list;
   }, [categoryData]);

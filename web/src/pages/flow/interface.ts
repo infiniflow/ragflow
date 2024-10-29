@@ -43,6 +43,7 @@ export interface ICategorizeItem {
   description?: string;
   examples?: string;
   to?: string;
+  index: number;
 }
 
 export interface IGenerateParameter {
