@@ -544,8 +544,7 @@ export default {
         '請輸入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 區域',
       GoogleRegionMessage: '請輸入 Google Cloud 區域',
-      modelProvidersWarn:
-        '請先在 <b>「設定」>「模型提供者」</b> 中新增嵌入模型和LLM。',
+      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「系統模型設定」中設定它們。`,
       add: '添加',
       updateDate: '更新日期',
       role: '角色',

@@ -608,6 +608,7 @@ export const RestrictedUpstreamMap = {
   [Operator.TuShare]: [Operator.Begin],
   [Operator.Crawler]: [Operator.Begin],
   [Operator.Note]: [],
+  [Operator.Invoke]: [Operator.Begin],
 };
 
 export const NodeMap = {

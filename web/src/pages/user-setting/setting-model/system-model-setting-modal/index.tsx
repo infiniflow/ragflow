@@ -26,7 +26,13 @@ const SystemModelSettingModal = ({
 
   const handleOk = async () => {
     const values = await form.validateFields();
-    onOk(values);
+    onOk({
+      ...values,
+      asr_id: values.asr_id ?? '',
+      embd_id: values.embd_id ?? '',
+      img2txt_id: values.img2txt_id ?? '',
+      llm_id: values.llm_id ?? '',
+    });
   };
 
   useEffect(() => {
@@ -52,21 +58,21 @@ const SystemModelSettingModal = ({
           name="llm_id"
           tooltip={t('chatModelTip')}
         >
-          <Select options={allOptions[LlmModelType.Chat]} />
+          <Select options={allOptions[LlmModelType.Chat]} allowClear />
         </Form.Item>
         <Form.Item
           label={t('embeddingModel')}
           name="embd_id"
           tooltip={t('embeddingModelTip')}
         >
-          <Select options={allOptions[LlmModelType.Embedding]} />
+          <Select options={allOptions[LlmModelType.Embedding]} allowClear />
         </Form.Item>
         <Form.Item
           label={t('img2txtModel')}
           name="img2txt_id"
           tooltip={t('img2txtModelTip')}
         >
-          <Select options={allOptions[LlmModelType.Image2text]} />
+          <Select options={allOptions[LlmModelType.Image2text]} allowClear />
         </Form.Item>
 
         <Form.Item
@@ -74,21 +80,21 @@ const SystemModelSettingModal = ({
           name="asr_id"
           tooltip={t('sequence2txtModelTip')}
         >
-          <Select options={allOptions[LlmModelType.Speech2text]} />
+          <Select options={allOptions[LlmModelType.Speech2text]} allowClear />
         </Form.Item>
         <Form.Item
           label={t('rerankModel')}
           name="rerank_id"
           tooltip={t('rerankModelTip')}
         >
-          <Select options={allOptions[LlmModelType.Rerank]} />
+          <Select options={allOptions[LlmModelType.Rerank]} allowClear />
         </Form.Item>
         <Form.Item
           label={t('ttsModel')}
           name="tts_id"
           tooltip={t('ttsModelTip')}
         >
-          <Select options={allOptions[LlmModelType.TTS]} />
+          <Select options={allOptions[LlmModelType.TTS]} allowClear />
         </Form.Item>
       </Form>
     </Modal>

@@ -21,6 +21,7 @@ import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { history } from 'umi';
 
 export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
   const { i18n } = useTranslation();
@@ -67,6 +68,9 @@ export const useFetchTenantInfo = (): ResponseGetType<ITenantInfo> => {
                 }}
               ></div>
             ),
+            onOk() {
+              history.push('/user-setting/model');
+            },
           });
         }
         data.chat_id = data.llm_id;
