@@ -64,7 +64,7 @@ def retrieval(tenant_id):
                 "content": c["content_ltks"],
                 "score": c["similarity"],
                 "title": c["docnm_kwd"],
-                "metadata": ""
+                "metadata": {}
             })
 
         return jsonify({"records": records})
