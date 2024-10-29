@@ -111,7 +111,15 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
       <Form.List name="items">
         {(fields, { add, remove }) => {
           const handleAdd = () => {
-            add({ name: humanId() });
+            const idx = form.getFieldValue([
+              'items',
+              fields.at(-1)?.name,
+              'index',
+            ]);
+            add({
+              name: humanId(),
+              index: fields.length === 0 ? 0 : idx + 1,
+            });
             if (nodeId) updateNodeInternals(nodeId);
           };
           return (
@@ -177,6 +185,9 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                         getOtherFieldValues(form, 'items', field, 'to'),
                       )}
                     />
+                  </Form.Item>
+                  <Form.Item hidden name={[field.name, 'index']}>
+                    <Input />
                   </Form.Item>
                 </Card>
               ))}
