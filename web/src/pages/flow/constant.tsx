@@ -528,6 +528,7 @@ export const initialInvokeValues = {
   "Connection": "keep-alive"
 }`,
   proxy: 'http://',
+  clean_html: false,
 };
 
 export const CategorizeAnchorPointPositions = [
@@ -643,7 +644,7 @@ export const NodeMap = {
   [Operator.TuShare]: 'ragNode',
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
-  [Operator.Invoke]: 'ragNode',
+  [Operator.Invoke]: 'invokeNode',
 };
 
 export const LanguageOptions = [

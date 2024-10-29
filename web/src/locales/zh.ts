@@ -992,6 +992,7 @@ export default {
       method: '方法',
       timeout: '超时',
       headers: '请求头',
+      cleanHtml: '清除 html',
     },
     footer: {
       profile: 'All rights reserved @ React',

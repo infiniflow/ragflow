@@ -23,6 +23,7 @@ import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { GenerateNode } from './node/generate-node';
+import { InvokeNode } from './node/invoke-node';
 import { KeywordNode } from './node/keyword-node';
 import { LogicNode } from './node/logic-node';
 import { MessageNode } from './node/message-node';
@@ -45,6 +46,7 @@ const nodeTypes = {
   messageNode: MessageNode,
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
+  invokeNode: InvokeNode,
 };
 
 const edgeTypes = {

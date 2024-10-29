@@ -972,6 +972,7 @@ export default {
       method: '方法',
       timeout: '超時',
       headers: '請求頭',
+      cleanHtml: '清除 html',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

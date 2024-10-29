@@ -1,5 +1,5 @@
 import Editor from '@monaco-editor/react';
-import { Form, Input, InputNumber, Select, Space } from 'antd';
+import { Form, Input, InputNumber, Select, Space, Switch } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useSetLlmSetting } from '../../hooks';
 import { IOperatorForm } from '../../interface';
@@ -62,6 +62,9 @@ const InvokeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         </Form.Item>
         <Form.Item name={'proxy'} label={t('flow.proxy')}>
           <Input />
+        </Form.Item>
+        <Form.Item name={'clean_html'} label={t('flow.cleanHtml')}>
+          <Switch />
         </Form.Item>
         <DynamicVariables nodeId={node?.id}></DynamicVariables>
       </Form>

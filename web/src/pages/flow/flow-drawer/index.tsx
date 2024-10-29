@@ -76,8 +76,8 @@ const FormMap = {
   [Operator.TuShare]: TuShareForm,
   [Operator.Crawler]: CrawlerForm,
   [Operator.Invoke]: InvokeForm,
-  [Operator.Concentrator]: <></>,
-  [Operator.Note]: <></>,
+  [Operator.Concentrator]: () => <></>,
+  [Operator.Note]: () => <></>,
 };
 
 const EmptyContent = () => <div></div>;
@@ -135,7 +135,7 @@ const FlowDrawer = ({
       open={visible}
       getContainer={false}
       mask={false}
-      width={470}
+      width={500}
       closeIcon={null}
     >
       <section className={styles.formWrapper}>
