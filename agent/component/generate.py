@@ -105,6 +105,9 @@ class Generate(ComponentBase):
         input = ("  - "+"\n  - ".join([c for c in retrieval_res["content"] if isinstance(c, str)])) if "content" in retrieval_res else ""
         for para in self._param.parameters:
             cpn = self._canvas.get_component(para["component_id"])["obj"]
+            if cpn.component_name.lower() == "answer":
+                kwargs[para["key"]] = self._canvas.get_history(1)[0]["content"]
+                continue
             _, out = cpn.output(allow_partial=False)
             if "content" not in out.columns:
                 kwargs[para["key"]] = "Nothing"
