@@ -94,8 +94,10 @@ curl --request POST \
   The configuration settings for the dataset parser, a JSON object containing the following attributes:
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `true`.
+  - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
   - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-  - `"task_page_size"`: Defaults to `12`.
+  - `"task_page_size"`: Defaults to `12`. For PDF only.
+  - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
 
 ### Response
 
@@ -177,7 +179,7 @@ curl --request DELETE \
 
 #### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`
+- `"ids"`: (*Body parameter*), `list[string]`  
   The IDs of the datasets to delete. If it is not specified, all datasets will be deleted.
 
 ### Response
@@ -241,7 +243,7 @@ curl --request PUT \
 - `"embedding_model"`: (*Body parameter*), `string`  
   The updated embedding model name.  
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
-- `"chunk_method"`: (*Body parameter*), `enum<string>`
+- `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method for the dataset. Available options:  
   - `"naive"`: General
   - `"manual`: Manual
@@ -510,12 +512,12 @@ curl --request PUT \
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
   - `"email"`: Email
-- `"parser_config"`: (*Body parameter*), `object`
+- `"parser_config"`: (*Body parameter*), `object`  
   The parsing configuration for the document:  
   - `"chunk_token_count"`: Defaults to `128`.
   - `"layout_recognize"`: Defaults to `true`.
   - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-  - `"task_page_size"`: Defaults to `12`.
+  - `"task_page_size"`: Defaults to `12`. For PDF only.
 
 ### Response
 
@@ -718,7 +720,7 @@ curl --request DELETE \
 
 - `dataset_id`: (*Path parameter*)  
   The associated dataset ID.
-- `"ids"`: (*Body parameter*), `list[string]`
+- `"ids"`: (*Body parameter*), `list[string]`  
   The IDs of the documents to delete. If it is not specified, all documents in the specified dataset will be deleted.
 
 ### Response
@@ -1169,7 +1171,7 @@ Failure:
 
 ## Retrieve chunks
 
-**GET** `/api/v1/retrieval`
+**POST** `/api/v1/retrieval`
 
 Retrieves chunks from specified datasets.
 
