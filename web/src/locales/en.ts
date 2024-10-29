@@ -1023,6 +1023,7 @@ The above is the content you need to summarize.`,
       method: 'Method',
       timeout: 'Timeout',
       headers: 'Headers',
+      cleanHtml: 'Clean html',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -38,7 +38,6 @@ const DynamicVariables = ({ nodeId }: IProps) => {
       title: t('key'),
       dataIndex: 'key',
       key: 'key',
-      // width: 40,
       onCell: (record: IInvokeVariable) => ({
         record,
         editable: true,
