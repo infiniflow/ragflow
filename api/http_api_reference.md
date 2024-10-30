@@ -88,6 +88,7 @@ curl --request POST \
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
+  - `"email"`: Email
 
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
@@ -100,7 +101,7 @@ curl --request POST \
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"table"` or `"one"`, `"parser_config"` is an empty JSON object.
+  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
   - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:  
     - `"chunk_token_count"`: Defaults to `128`.
     - `"delimiter"`: Defaults to `"\n!?。；！？"`.
@@ -517,6 +518,7 @@ curl --request PUT \
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
+  - `"email"`: Email
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
@@ -528,7 +530,7 @@ curl --request PUT \
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"table"` or `"one"`, `"parser_config"` is an empty JSON object.
+  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
   - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_count"`: Defaults to `128`.
     - `"delimiter"`: Defaults to `"\n!?。；！？"`.
