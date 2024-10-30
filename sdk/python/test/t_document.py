@@ -1,4 +1,4 @@
-from ragflow import RAGFlow, DataSet, Document, Chunk
+from ragflow_sdk import RAGFlow, DataSet, Document, Chunk
 
 HOST_ADDRESS = 'http://127.0.0.1:9380'
 

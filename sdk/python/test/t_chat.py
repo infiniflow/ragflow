@@ -1,4 +1,4 @@
-from ragflow import RAGFlow, Chat
+from ragflow_sdk import RAGFlow
 HOST_ADDRESS = 'http://127.0.0.1:9380'
 
 def test_create_chat_with_name(get_api_key_fixture):

@@ -1,6 +1,4 @@
-from typing import Optional, List
-
-from transformers.models.bloom.modeling_bloom import bloom_gelu_back
+from typing import List
 
 from .document import Document
 
