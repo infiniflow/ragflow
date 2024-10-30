@@ -1,5 +1,8 @@
-import Icon from '@ant-design/icons';
+import { IconMap } from '@/constants/setting';
+import Icon, { UserOutlined } from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
+import { Avatar } from 'antd';
+import { AvatarSize } from 'antd/es/avatar/AvatarContext';
 
 const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
   const list = requireContext.keys().map((key) => {
@@ -33,6 +36,26 @@ const SvgIcon = ({ name, width, height, ...restProps }: IProps) => {
       )}
       {...(restProps as any)}
     />
+  );
+};
+
+export const LlmIcon = ({
+  name,
+  height = 48,
+  width = 48,
+  size = 'large',
+}: {
+  name: string;
+  height?: number;
+  width?: number;
+  size?: AvatarSize;
+}) => {
+  const icon = IconMap[name as keyof typeof IconMap];
+
+  return icon ? (
+    <SvgIcon name={`llm/${icon}`} width={width} height={height}></SvgIcon>
+  ) : (
+    <Avatar shape="square" size={size} icon={<UserOutlined />} />
   );
 };
 

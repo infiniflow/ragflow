@@ -7,9 +7,10 @@ interface IProps {
   id?: string;
   value?: string;
   onChange?: (value: string) => void;
+  disabled?: boolean;
 }
 
-const LLMSelect = ({ id, value, onChange }: IProps) => {
+const LLMSelect = ({ id, value, onChange, disabled }: IProps) => {
   const modelOptions = useComposeLlmOptionsByModelTypes([
     LlmModelType.Chat,
     LlmModelType.Image2text,
@@ -38,6 +39,7 @@ const LLMSelect = ({ id, value, onChange }: IProps) => {
         id={id}
         value={value}
         onChange={onChange}
+        disabled={disabled}
       />
     </Popover>
   );

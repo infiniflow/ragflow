@@ -29,6 +29,7 @@ export default {
       move: '移动',
       warn: '提醒',
       action: '操作',
+      s: '秒',
     },
     login: {
       login: '登录',
@@ -403,7 +404,7 @@ export default {
       preview: '预览',
       embedded: '嵌入',
       serviceApiEndpoint: '服务API端点',
-      apiKey: 'API 键',
+      apiKey: 'API KEY',
       apiReference: 'API 文档',
       dateRange: '日期范围：',
       backendServiceApi: 'API 服务器',
@@ -437,7 +438,7 @@ export default {
       password: '密码',
       passwordDescription: '请输入您当前的密码以更改您的密码。',
       model: '模型提供商',
-      modelDescription: '在此设置模型参数和 API Key。',
+      modelDescription: '在此设置模型参数和 API KEY。',
       team: '团队',
       system: '系统',
       logout: '登出',
@@ -560,8 +561,7 @@ export default {
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
-      modelProvidersWarn:
-        '请首先在 <b>设置 > 模型提供商</b> 中添加嵌入模型和 LLM。',
+      modelProvidersWarn: `请先在<b>设置 > 模型提供程序</b>中添加嵌入模型和 LLM。然后在“系统模型设置”中设置它们。`,
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
@@ -688,7 +688,7 @@ export default {
       keywordExtract: '关键词',
       keywordExtractDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
       baidu: '百度',
-      baiduDescription: `此元件用於取得www.baidu.com的搜尋結果。通常作為知識庫的補充。 Top N指定您需要適配的搜尋結果數。`,
+      baiduDescription: `此组件用于从 www.baidu.com 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。',
@@ -700,23 +700,26 @@ export default {
       messageHistoryWindowSizeTip:
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大内容长度。',
       wikipedia: '维基百科',
-      email: '邮箱',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+      email: '邮箱',
+      pubMed: 'PubMed',
+      pubMedDescription:
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
       arXiv: 'ArXiv',
-      arXivTip:
+      arXivDescription:
         '此组件用于从 https://arxiv.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。',
       sortBy: '排序方式',
       submittedDate: '提交日期',
       lastUpdatedDate: '最后更新日期',
       relevance: '关联',
       google: 'Google',
-      googleTip:
+      googleDescription:
         '此组件用于从https://www.google.com/获取搜索结果。通常，它作为知识库的补充。Top N 和 SerpApi API 密钥指定您需要调整的搜索结果数量。',
       bing: 'Bing',
       bingTip:
         '此组件用于从 https://www.bing.com/ 获取搜索结果。通常，它作为知识库的补充。Top N 和 Bing Subscription-Key 指定您需要调整的搜索结果数量。',
-      apiKey: 'API Key',
+      apiKey: 'API KEY',
       country: '国家',
       language: '语言',
       googleScholar: '谷歌学术',
@@ -982,6 +985,14 @@ export default {
       note: '注释',
       noteDescription: '注释',
       notePlaceholder: '请输入注释',
+      invoke: 'Invoke',
+      invokeDescription:
+        '该组件可以调用远程端点调用。将其他组件的输出作为参数或设置常量参数来调用远程函数。',
+      url: 'Url',
+      method: '方法',
+      timeout: '超时',
+      headers: '请求头',
+      cleanHtml: '清除 html',
     },
     footer: {
       profile: 'All rights reserved @ React',

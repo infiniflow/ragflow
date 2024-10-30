@@ -1,25 +1,24 @@
-import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import lowerFirst from 'lodash/lowerFirst';
+import { useTranslation } from 'react-i18next';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { Operator, operatorMap } from '../../constant';
 import { NodeData } from '../../interface';
+import OperatorIcon from '../../operator-icon';
+import { RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 
 // TODO: do not allow other nodes to connect to this node
-export function BeginNode({ id, data, selected }: NodeProps<NodeData>) {
-  const { t } = useTranslate('flow');
+export function BeginNode({ selected, data }: NodeProps<NodeData>) {
+  const { t } = useTranslation();
+
   return (
     <section
       className={classNames(styles.ragNode, {
         [styles.selectedNode]: selected,
       })}
       style={{
-        backgroundColor: operatorMap[data.label as Operator].backgroundColor,
-        color: 'white',
-        width: 50,
-        height: 50,
+        width: 100,
       }}
     >
       <Handle
@@ -27,13 +26,17 @@ export function BeginNode({ id, data, selected }: NodeProps<NodeData>) {
         position={Position.Right}
         isConnectable
         className={styles.handle}
+        style={RightHandleStyle}
       ></Handle>
-      <Flex vertical align="center" justify="center" gap={6}>
-        <span className={styles.type}>{t(lowerFirst(data.label))}</span>
+
+      <Flex align="center" justify={'space-around'}>
+        <OperatorIcon
+          name={data.label as Operator}
+          fontSize={24}
+          color={operatorMap[data.label as Operator].color}
+        ></OperatorIcon>
+        <div className={styles.nodeTitle}>{t(`flow.begin`)}</div>
       </Flex>
-      <section className={styles.bottomBox}>
-        <div className={styles.nodeName}>{data.name}</div>
-      </section>
     </section>
   );
 }

@@ -15,7 +15,7 @@ class Session(Base):
         for message in self.messages:
             if "reference" in message:
                 message.pop("reference")
-        res = self.post(f"/chat/{self.chat_id}/completion",
+        res = self.post(f"/chats/{self.chat_id}/completions",
                         {"question": question, "stream": True,"session_id":self.id}, stream=stream)
         for line in res.iter_lines():
             line = line.decode("utf-8")
@@ -53,7 +53,7 @@ class Session(Base):
                     yield message
 
     def update(self,update_message):
-        res = self.put(f"/chat/{self.chat_id}/session/{self.id}",
+        res = self.put(f"/chats/{self.chat_id}/sessions/{self.id}",
                         update_message)
         res = res.json()
         if res.get("code") != 0:

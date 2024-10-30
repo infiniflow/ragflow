@@ -28,7 +28,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_result, token_required, get_error_data_result, valid,get_parser_config
 
 
-@manager.route('/dataset', methods=['POST'])
+@manager.route('/datasets', methods=['POST'])
 @token_required
 def create(tenant_id):
     req = request.json
@@ -88,7 +88,7 @@ def create(tenant_id):
         renamed_data[new_key] = value
     return get_result(data=renamed_data)
 
-@manager.route('/dataset', methods=['DELETE'])
+@manager.route('/datasets', methods=['DELETE'])
 @token_required
 def delete(tenant_id):
     req = request.json
@@ -112,7 +112,7 @@ def delete(tenant_id):
             retmsg="Delete dataset error.(Database error)")
     return get_result(retcode=RetCode.SUCCESS)
 
-@manager.route('/dataset/<dataset_id>', methods=['PUT'])
+@manager.route('/datasets/<dataset_id>', methods=['PUT'])
 @token_required
 def update(tenant_id,dataset_id):
     if not KnowledgebaseService.query(id=dataset_id,tenant_id=tenant_id):
@@ -183,7 +183,7 @@ def update(tenant_id,dataset_id):
         return get_error_data_result(retmsg="Update dataset error.(Database error)")
     return get_result(retcode=RetCode.SUCCESS)
 
-@manager.route('/dataset', methods=['GET'])
+@manager.route('/datasets', methods=['GET'])
 @token_required
 def list(tenant_id):
     id = request.args.get("id")

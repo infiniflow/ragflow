@@ -78,7 +78,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
   if (editable) {
     childNode = editing ? (
       <Form.Item
-        style={{ margin: 0, width: 100 }}
+        style={{ margin: 0, width: 70 }}
         name={dataIndex}
         rules={[
           {
@@ -95,7 +95,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
         // style={{ paddingRight: 24 }}
         onClick={toggleEdit}
       >
-        <Text ellipsis={{ tooltip: children }} style={{ width: 100 }}>
+        <Text ellipsis={{ tooltip: children }} style={{ width: 70 }}>
           {children}
         </Text>
       </div>

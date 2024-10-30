@@ -52,6 +52,6 @@ This file must be configured to point to your RAGFlow instance, with the `ragflo
 Before you can use this plugin, ensure the following are in place:
 
 1. You have installed and configured [ChatGPT-on-WeChat](https://github.com/zhayujie/chatgpt-on-wechat).
-2. You have deployed and are running the [RAGFlow](https://github.com/jina-ai/ragflow) server.
+2. You have deployed and are running the [RAGFlow](https://github.com/infiniflow/ragflow) server.
    
 Make sure both `config.json` files (ChatGPT-on-WeChat and RAGFlow Chat Plugin) are correctly set up as per the examples above.

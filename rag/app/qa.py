@@ -315,6 +315,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         for q, a in excel_parser(filename, binary, callback):
             res.append(beAdoc(deepcopy(doc), q, a, eng))
         return res
+
     elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
@@ -348,16 +349,16 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         return res
+
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
         qai_list, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=0, to_page=10000, callback=callback)
-        
-
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res
+
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)

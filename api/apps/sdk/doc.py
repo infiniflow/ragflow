@@ -46,16 +46,8 @@ from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
 import os
 
-MAXIMUM_OF_UPLOADING_FILES = 256
 
-MAXIMUM_OF_UPLOADING_FILES = 256
-
-MAXIMUM_OF_UPLOADING_FILES = 256
-
-MAXIMUM_OF_UPLOADING_FILES = 256
-
-
-@manager.route('/dataset/<dataset_id>/document', methods=['POST'])
+@manager.route('/datasets/<dataset_id>/documents', methods=['POST'])
 @token_required
 def upload(dataset_id, tenant_id):
     if 'file' not in request.files:
@@ -66,21 +58,11 @@ def upload(dataset_id, tenant_id):
         if file_obj.filename == '':
             return get_result(
                 retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
-    # total size
-    total_size = 0
-    for file_obj in file_objs:
-        file_obj.seek(0, os.SEEK_END)
-        total_size += file_obj.tell()
-        file_obj.seek(0)
-    MAX_TOTAL_FILE_SIZE=10*1024*1024
-    if total_size > MAX_TOTAL_FILE_SIZE:
-        return get_result(
-            retmsg=f'Total file size exceeds 10MB limit! ({total_size / (1024 * 1024):.2f} MB)',
-            retcode=RetCode.ARGUMENT_ERROR)
+
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
-    err, files= FileService.upload_document(kb, file_objs, tenant_id)
+    err, files = FileService.upload_document(kb, file_objs, tenant_id)
     if err:
         return get_result(
             retmsg="\n".join(err), retcode=RetCode.SERVER_ERROR)
@@ -103,7 +85,7 @@ def upload(dataset_id, tenant_id):
     return get_result(data=renamed_doc_list)
 
 
-@manager.route('/dataset/<dataset_id>/info/<document_id>', methods=['PUT'])
+@manager.route('/datasets/<dataset_id>/documents/<document_id>', methods=['PUT'])
 @token_required
 def update_doc(tenant_id, dataset_id, document_id):
     req = request.json
@@ -169,7 +151,7 @@ def update_doc(tenant_id, dataset_id, document_id):
     return get_result()
 
 
-@manager.route('/dataset/<dataset_id>/document/<document_id>', methods=['GET'])
+@manager.route('/datasets/<dataset_id>/documents/<document_id>', methods=['GET'])
 @token_required
 def download(tenant_id, dataset_id, document_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -192,7 +174,7 @@ def download(tenant_id, dataset_id, document_id):
     )
 
 
-@manager.route('/dataset/<dataset_id>/info', methods=['GET'])
+@manager.route('/datasets/<dataset_id>/documents', methods=['GET'])
 @token_required
 def list_docs(dataset_id, tenant_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -236,7 +218,7 @@ def list_docs(dataset_id, tenant_id):
     return get_result(data={"total": tol, "docs": renamed_doc_list})
 
 
-@manager.route('/dataset/<dataset_id>/document', methods=['DELETE'])
+@manager.route('/datasets/<dataset_id>/documents', methods=['DELETE'])
 @token_required
 def delete(tenant_id,dataset_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -286,7 +268,7 @@ def delete(tenant_id,dataset_id):
     return get_result()
 
 
-@manager.route('/dataset/<dataset_id>/chunk', methods=['POST'])
+@manager.route('/datasets/<dataset_id>/chunks', methods=['POST'])
 @token_required
 def parse(tenant_id,dataset_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -316,7 +298,7 @@ def parse(tenant_id,dataset_id):
         queue_tasks(doc, bucket, name)
     return get_result()
 
-@manager.route('/dataset/<dataset_id>/chunk', methods=['DELETE'])
+@manager.route('/datasets/<dataset_id>/chunks', methods=['DELETE'])
 @token_required
 def stop_parsing(tenant_id,dataset_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -339,7 +321,7 @@ def stop_parsing(tenant_id,dataset_id):
     return get_result()
 
 
-@manager.route('/dataset/<dataset_id>/document/<document_id>/chunk', methods=['GET'])
+@manager.route('/datasets/<dataset_id>/documents/<document_id>/chunks', methods=['GET'])
 @token_required
 def list_chunks(tenant_id,dataset_id,document_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -427,7 +409,7 @@ def list_chunks(tenant_id,dataset_id,document_id):
 
 
 
-@manager.route('/dataset/<dataset_id>/document/<document_id>/chunk', methods=['POST'])
+@manager.route('/datasets/<dataset_id>/documents/<document_id>/chunks', methods=['POST'])
 @token_required
 def add_chunk(tenant_id,dataset_id,document_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -488,7 +470,7 @@ def add_chunk(tenant_id,dataset_id,document_id):
     # return get_result(data={"chunk_id": chunk_id})
 
 
-@manager.route('dataset/<dataset_id>/document/<document_id>/chunk', methods=['DELETE'])
+@manager.route('datasets/<dataset_id>/documents/<document_id>/chunks', methods=['DELETE'])
 @token_required
 def rm_chunk(tenant_id,dataset_id,document_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -516,7 +498,7 @@ def rm_chunk(tenant_id,dataset_id,document_id):
 
 
 
-@manager.route('/dataset/<dataset_id>/document/<document_id>/chunk/<chunk_id>', methods=['PUT'])
+@manager.route('/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>', methods=['PUT'])
 @token_required
 def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
     try:

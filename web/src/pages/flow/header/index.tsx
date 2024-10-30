@@ -44,7 +44,7 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
           <Button type="primary" onClick={saveGraph}>
             <b>{t('save')}</b>
           </Button>
-          <Button type="primary" onClick={showOverviewModal}>
+          <Button type="primary" onClick={showOverviewModal} disabled>
             <b>{t('publish')}</b>
           </Button>
         </Space>

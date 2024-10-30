@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import re
+
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 from dashscope import Generation
@@ -107,6 +109,8 @@ class XinferenceChat(Base):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         super().__init__(key, model_name, base_url)
+
+
 class HuggingFaceChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
@@ -114,6 +118,7 @@ class HuggingFaceChat(Base):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         super().__init__(key, model_name, base_url)
+
 
 class DeepSeekChat(Base):
     def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1"):
@@ -275,8 +280,7 @@ class QWenChat(Base):
                             [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
                     yield ans
                 else:
-                    yield ans + "\n**ERROR**: " + resp.message if str(resp.message).find(
-                        "Access") < 0 else "Out of credit. Please set the API key in **settings > Model providers.**"
+                    yield ans + "\n**ERROR**: " + resp.message if not re.search(r" (key|quota)", str(resp.message).lower()) else "Out of credit. Please set the API key in **settings > Model providers.**"
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
@@ -1246,6 +1250,7 @@ class AnthropicChat(Base):
         if "max_tokens" not in gen_conf:
             gen_conf["max_tokens"] = 4096
 
+        ans = ""
         try:
             response = self.client.messages.create(
                 model=self.model_name,
