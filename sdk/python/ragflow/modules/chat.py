@@ -68,7 +68,7 @@ class Chat(Base):
             return result_list
         raise Exception(res["message"])
 
-    def delete_sessions(self,ids):
+    def delete_sessions(self,ids:List[str]=None):
         res = self.rm(f"/chats/{self.id}/sessions", {"ids": ids})
         res = res.json()
         if res.get("code") != 0:
