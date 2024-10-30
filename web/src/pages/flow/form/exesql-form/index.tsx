@@ -5,8 +5,9 @@ import { Button, Flex, Form, Input, InputNumber, Select } from 'antd';
 import { useCallback } from 'react';
 import { ExeSQLOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const ExeSQLForm = ({ onValuesChange, form }: IOperatorForm) => {
+const ExeSQLForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
   const { testDbConnect, loading } = useTestDbConnect();
 
@@ -18,12 +19,12 @@ const ExeSQLForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 7 }}
-      wrapperCol={{ span: 17 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <Form.Item
         label={t('dbType')}
         name={'db_type'}

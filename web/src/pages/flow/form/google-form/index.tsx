@@ -3,19 +3,20 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Select } from 'antd';
 import { GoogleCountryOptions, GoogleLanguageOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const GoogleForm = ({ onValuesChange, form }: IOperatorForm) => {
+const GoogleForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   return (
     <Form
       name="basic"
-      labelCol={{ span: 6 }}
-      wrapperCol={{ span: 18 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <TopNItem initialValue={10}></TopNItem>
       <Form.Item label={t('apiKey')} name={'api_key'}>
         <Input></Input>

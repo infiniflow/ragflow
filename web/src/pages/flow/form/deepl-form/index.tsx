@@ -4,20 +4,21 @@ import { Form, Select } from 'antd';
 import { DeepLSourceLangOptions, DeepLTargetLangOptions } from '../../constant';
 import { useBuildSortOptions } from '../../form-hooks';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const DeepLForm = ({ onValuesChange, form }: IOperatorForm) => {
+const DeepLForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
   const options = useBuildSortOptions();
 
   return (
     <Form
       name="basic"
-      labelCol={{ span: 8 }}
-      wrapperCol={{ span: 16 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <TopNItem initialValue={5}></TopNItem>
       <Form.Item label={t('authKey')} name={'auth_key'}>
         <Select options={options}></Select>

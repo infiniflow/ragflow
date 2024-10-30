@@ -30,6 +30,8 @@ export default {
       warn: '提醒',
       action: '操作',
       s: '秒',
+      pleaseSelect: '请选择',
+      pleaseInput: '请输入',
     },
     login: {
       login: '登录',
@@ -717,7 +719,7 @@ export default {
       googleDescription:
         '此组件用于从https://www.google.com/获取搜索结果。通常，它作为知识库的补充。Top N 和 SerpApi API 密钥指定您需要调整的搜索结果数量。',
       bing: 'Bing',
-      bingTip:
+      bingDescription:
         '此组件用于从 https://www.bing.com/ 获取搜索结果。通常，它作为知识库的补充。Top N 和 Bing Subscription-Key 指定您需要调整的搜索结果数量。',
       apiKey: 'API KEY',
       country: '国家',
@@ -993,6 +995,8 @@ export default {
       timeout: '超时',
       headers: '请求头',
       cleanHtml: '清除 html',
+      reference: '引用',
+      input: '输入',
     },
     footer: {
       profile: 'All rights reserved @ React',
