@@ -21,6 +21,7 @@ from pathlib import Path
 from flask import Blueprint, Flask
 from werkzeug.wrappers.request import Request
 from flask_cors import CORS
+from flasgger import Swagger
 
 from api.db import StatusEnum
 from api.db.db_models import close_connection
@@ -34,27 +35,62 @@ from api.settings import API_VERSION, access_logger
 from api.utils.api_utils import server_error_response
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
-__all__ = ['app']
+__all__ = ["app"]
 
 
-logger = logging.getLogger('flask.app')
+logger = logging.getLogger("flask.app")
 for h in access_logger.handlers:
     logger.addHandler(h)
 
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True,max_age=2592000)
+
+# Add this at the beginning of your file to configure Swagger UI
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": "apispec",
+            "route": "/apispec.json",
+            "rule_filter": lambda rule: True,  # Include all endpoints
+            "model_filter": lambda tag: True,  # Include all models
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/apidocs/",
+}
+
+swagger = Swagger(
+    app,
+    config=swagger_config,
+    template={
+        "swagger": "2.0",
+        "info": {
+            "title": "RAGFlow API",
+            "description": "",
+            "version": "1.0.0",
+        },
+        "securityDefinitions": {
+            "ApiKeyAuth": {"type": "apiKey", "name": "Authorization", "in": "header"}
+        },
+    },
+)
+
+CORS(app, supports_credentials=True, max_age=2592000)
 app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
 app.errorhandler(Exception)(server_error_response)
 
 
 ## convince for dev and debug
-#app.config["LOGIN_DISABLED"] = True
+# app.config["LOGIN_DISABLED"] = True
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
-app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
+app.config["MAX_CONTENT_LENGTH"] = int(
+    os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024)
+)
 
 Session(app)
 login_manager = LoginManager()
@@ -64,17 +100,23 @@ commands.register_commands(app)
 
 
 def search_pages_path(pages_dir):
-    app_path_list = [path for path in pages_dir.glob('*_app.py') if not path.name.startswith('.')]
-    api_path_list = [path for path in pages_dir.glob('*sdk/*.py') if not path.name.startswith('.')]
+    app_path_list = [
+        path for path in pages_dir.glob("*_app.py") if not path.name.startswith(".")
+    ]
+    api_path_list = [
+        path for path in pages_dir.glob("*sdk/*.py") if not path.name.startswith(".")
+    ]
     app_path_list.extend(api_path_list)
     return app_path_list
 
 
 def register_page(page_path):
-    path = f'{page_path}'
+    path = f"{page_path}"
 
-    page_name = page_path.stem.rstrip('_app')
-    module_name = '.'.join(page_path.parts[page_path.parts.index('api'):-1] + (page_name,))
+    page_name = page_path.stem.rstrip("_app")
+    module_name = ".".join(
+        page_path.parts[page_path.parts.index("api") : -1] + (page_name,)
+    )
 
     spec = spec_from_file_location(module_name, page_path)
     page = module_from_spec(spec)
@@ -82,8 +124,10 @@ def register_page(page_path):
     page.manager = Blueprint(page_name, module_name)
     sys.modules[module_name] = page
     spec.loader.exec_module(page)
-    page_name = getattr(page, 'page_name', page_name)
-    url_prefix = f'/api/{API_VERSION}' if "/sdk/" in path else f'/{API_VERSION}/{page_name}'
+    page_name = getattr(page, "page_name", page_name)
+    url_prefix = (
+        f"/api/{API_VERSION}" if "/sdk/" in path else f"/{API_VERSION}/{page_name}"
+    )
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
     return url_prefix
@@ -91,14 +135,12 @@ def register_page(page_path):
 
 pages_dir = [
     Path(__file__).parent,
-    Path(__file__).parent.parent / 'api' / 'apps',
-    Path(__file__).parent.parent / 'api' / 'apps' / 'sdk',
+    Path(__file__).parent.parent / "api" / "apps",
+    Path(__file__).parent.parent / "api" / "apps" / "sdk",
 ]
 
 client_urls_prefix = [
-    register_page(path)
-    for dir in pages_dir
-    for path in search_pages_path(dir)
+    register_page(path) for dir in pages_dir for path in search_pages_path(dir)
 ]
 
 
@@ -109,7 +151,9 @@ def load_user(web_request):
     if authorization:
         try:
             access_token = str(jwt.loads(authorization))
-            user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
+            user = UserService.query(
+                access_token=access_token, status=StatusEnum.VALID.value
+            )
             if user:
                 return user[0]
             else:
