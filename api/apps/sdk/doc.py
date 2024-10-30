@@ -509,9 +509,9 @@ def rm_chunk(tenant_id,dataset_id,document_id):
         if chunk_id not in sres.ids:
             return get_error_data_result(f"Chunk {chunk_id} not found")
     if not ELASTICSEARCH.deleteByQuery(
-            Q("ids", values=req["chunk_ids"]), search.index_name(tenant_id)):
+            Q("ids", values=chunk_list), search.index_name(tenant_id)):
         return get_error_data_result(retmsg="Index updating failure")
-    deleted_chunk_ids = req["chunk_ids"]
+    deleted_chunk_ids = chunk_list
     chunk_number = len(deleted_chunk_ids)
     DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, chunk_number, 0)
     return get_result()

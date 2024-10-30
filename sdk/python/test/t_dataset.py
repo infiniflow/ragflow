@@ -1,8 +1,9 @@
-from ragflow_sdk import RAGFlow
+import os
 import random
 import pytest
+from ragflow_sdk import RAGFlow
 
-HOST_ADDRESS = 'http://127.0.0.1:9380'
+HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
 
 def test_create_dataset_with_name(get_api_key_fixture):
     API_KEY = get_api_key_fixture
@@ -31,7 +32,7 @@ def test_create_dataset_with_invalid_parameter(get_api_key_fixture):
     chunk_method = "invalid_chunk_method"
     with pytest.raises(Exception) as exc_info:
         rag.create_dataset("test_create_dataset_with_name",chunk_method=chunk_method)
-    assert str(exc_info.value) == f"{chunk_method} is not in {valid_chunk_methods}"
+    assert str(exc_info.value) == f"'{chunk_method}' is not in {valid_chunk_methods}"
 
 
 def test_update_dataset_with_name(get_api_key_fixture):

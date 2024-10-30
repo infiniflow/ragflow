@@ -120,7 +120,7 @@ def delete(tenant_id):
         if not KnowledgebaseService.delete_by_id(id):
             return get_error_data_result(
                 retmsg="Delete dataset error.(Database error)")
-        return get_result(retcode=RetCode.SUCCESS)
+    return get_result(retcode=RetCode.SUCCESS)
 
 @manager.route('/datasets/<dataset_id>', methods=['PUT'])
 @token_required

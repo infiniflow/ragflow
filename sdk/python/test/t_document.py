@@ -1,6 +1,7 @@
+import os
 from ragflow_sdk import RAGFlow, DataSet, Document, Chunk
 
-HOST_ADDRESS = 'http://127.0.0.1:9380'
+HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
 
 
 def test_upload_document_with_success(get_api_key_fixture):
@@ -66,7 +67,7 @@ def test_download_document_with_success(get_api_key_fixture):
     # Check if the retrieved document is of type Document
     if isinstance(doc, Document):
         # Download the document content and save it to a file
-        with open("./ragflow.txt", "wb+") as file:
+        with open("ragflow.txt", "wb+") as file:
             file.write(doc.download())
             # Print the document object for debugging
         print(doc)
@@ -144,7 +145,7 @@ def test_parse_and_cancel_document(get_api_key_fixture):
 
     # Define the document name and path
     name3 = 'westworld.pdf'
-    path = './test_data/westworld.pdf'
+    path = 'test_data/westworld.pdf'
 
     # Create a document in the dataset using the file path
     ds.upload_documents({"name": name3, "blob": open(path, "rb").read()})
