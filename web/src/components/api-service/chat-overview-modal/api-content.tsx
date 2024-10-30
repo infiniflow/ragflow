@@ -1,8 +1,8 @@
 import HightLightMarkdown from '@/components/highlight-markdown';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { Button, Card, Flex, Space } from 'antd';
-// import apiDoc from '../../../../../docs/references/http_api_reference.md';
-import apiDoc from '@parent/docs/references/http_api_reference.md';
+// import apiDoc from '../../../../../api/http_api_reference.md';
+import apiDoc from '@parent/api/http_api_reference.md';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import EmbedModal from '../embed-modal';
 import { usePreviewChat, useShowEmbedModal } from '../hooks';
