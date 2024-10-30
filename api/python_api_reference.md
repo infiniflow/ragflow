@@ -75,12 +75,13 @@ The chunking method of the dataset to create. Available options:
 - `"picture"`: Picture
 - `"one"`: One
 - `"knowledge_graph"`: Knowledge Graph
+- `"email"`: Email
 
 #### parser_config
 
-The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `"chunk_method"`:
+The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
-- `"chunk_method"`=`"naive"`:  
+- `chunk_method`=`"naive"`:  
   `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
 - `chunk_method`=`"qa"`:  
   `{"raptor": {"user_raptor": False}}`
@@ -94,12 +95,16 @@ The parser configuration of the dataset. A `ParserConfig` object's attributes va
   `{"raptor": {"user_raptor": False}}`
 - `chunk_method`=`"laws"`:  
   `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"picture"`:  
+  `None`
 - `chunk_method`=`"presentation"`:  
   `{"raptor": {"user_raptor": False}}`
 - `chunk_method`=`"one"`:  
   `None`
 - `chunk_method`=`"knowledge-graph"`:  
   `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+- `chunk_method`=`"email"`:  
+  `None`
 
 ### Returns
 
@@ -322,6 +327,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
+  - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
   - `"chunk_method"`=`"naive"`:  
     `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
@@ -339,10 +345,14 @@ A dictionary representing the attributes to update, with the following keys:
     `{"raptor": {"user_raptor": False}}`
   - `chunk_method`=`"presentation"`:  
     `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"picture"`:  
+    `None`
   - `chunk_method`=`"one"`:  
     `None`
   - `chunk_method`=`"knowledge-graph"`:  
     `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+  - `chunk_method`=`"email"`:  
+    `None`
 
 ### Returns
 
@@ -475,10 +485,14 @@ A `Document` object contains the following attributes:
     `{"raptor": {"user_raptor": False}}`
   - `chunk_method`=`"presentation"`:  
     `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"picure"`:  
+    `None`
   - `chunk_method`=`"one"`:  
     `None`
   - `chunk_method`=`"knowledge-graph"`:  
     `{"chunk_token_num":128,"delimiter": "\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+  - `chunk_method`=`"email"`:  
+    `None`
 
 ### Examples
 
