@@ -75,16 +75,31 @@ The chunking method of the dataset to create. Available options:
 - `"picture"`: Picture
 - `"one"`: One
 - `"knowledge_graph"`: Knowledge Graph
-- `"email"`: Email
 
 #### parser_config
 
-The parser configuration of the dataset. A `ParserConfig` object contains the following attributes:
+The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `"chunk_method"`:
 
-- `chunk_token_count`: Defaults to `128`.
-- `layout_recognize`: Defaults to `True`.
-- `delimiter`: Defaults to `"\n!?。；！？"`.
-- `task_page_size`: Defaults to `12`.
+- `"chunk_method"`=`"naive"`:  
+  `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+- `chunk_method`=`"qa"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"manuel"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"table"`:  
+  `None`
+- `chunk_method`=`"paper"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"book"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"laws"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"presentation"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"one"`:  
+  `None`
+- `chunk_method`=`"knowledge-graph"`:  
+  `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
 
 ### Returns
 
@@ -225,7 +240,6 @@ A dictionary representing the attributes to update, with the following keys:
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
-  - `"email"`: Email
 
 ### Returns
 
@@ -296,11 +310,6 @@ Updates configurations for the current document.
 A dictionary representing the attributes to update, with the following keys:
 
 - `"display_name"`: `str` The name of the document to update.
-- `"parser_config"`: `dict[str, Any]` The parsing configuration for the document:
-  - `"chunk_token_count"`: Defaults to `128`.
-  - `"layout_recognize"`: Defaults to `True`.
-  - `"delimiter"`: Defaults to `'\n!?。；！？'`.
-  - `"task_page_size"`: Defaults to `12`.
 - `"chunk_method"`: `str` The parsing method to apply to the document.
   - `"naive"`: General
   - `"manual`: Manual
@@ -313,7 +322,27 @@ A dictionary representing the attributes to update, with the following keys:
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
-  - `"email"`: Email
+- `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
+  - `"chunk_method"`=`"naive"`:  
+    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+  - `chunk_method`=`"qa"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"manuel"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"table"`:  
+    `None`
+  - `chunk_method`=`"paper"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"book"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"laws"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"presentation"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"one"`:  
+    `None`
+  - `chunk_method`=`"knowledge-graph"`:  
+    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
 
 ### Returns
 
@@ -412,7 +441,6 @@ A `Document` object contains the following attributes:
 - `thumbnail`: The thumbnail image of the document. Defaults to `None`.
 - `dataset_id`: The dataset ID associated with the document. Defaults to `None`.
 - `chunk_method` The chunk method name. Defaults to `"naive"`.
-- `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `{"pages": [[1, 1000000]]}`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
 - `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
 - `created_by`: `str` The creator of the document. Defaults to `""`.
@@ -430,6 +458,27 @@ A `Document` object contains the following attributes:
   - `"DONE"`
   - `"FAIL"`
 - `status`: `str` Reserved for future use.
+- `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
+  - `chunk_method`=`"naive"`:  
+    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+  - `chunk_method`=`"qa"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"manuel"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"table"`:  
+    `None`
+  - `chunk_method`=`"paper"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"book"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"laws"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"presentation"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"one"`:  
+    `None`
+  - `chunk_method`=`"knowledge-graph"`:  
+    `{"chunk_token_num":128,"delimiter": "\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
 
 ### Examples
 
