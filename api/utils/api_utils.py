@@ -344,7 +344,7 @@ def get_parser_config(chunk_method,parser_config):
         return parser_config
     if not chunk_method:
         chunk_method = "naive"
-    key_mapping={"naive":{"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False,"layout_recognize": True, "raptor": {"user_raptor": False}},
+    key_mapping={"naive":{"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False,"layout_recognize": True, "raptor": {"use_raptor": False}},
                  "qa":{"raptor":{"use_raptor":False}},
                  "resume":None,
                  "manual":{"raptor":{"use_raptor":False}},
