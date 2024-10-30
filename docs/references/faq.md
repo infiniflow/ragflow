@@ -49,7 +49,7 @@ Currently, we only support x86 CPU and Nvidia GPU.
 
 ### 2. Do you offer an API for integration with third-party applications?
 
-The corresponding APIs are now available. See the [RAGFlow API Reference](./api.md) for more information.
+The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](./http_api_reference.md) or the [RAGFlow Python API Reference](./python_api_reference.md) for more information.
 
 ### 3. Do you support stream output?
 

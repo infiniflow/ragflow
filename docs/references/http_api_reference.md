@@ -1,7 +1,11 @@
+---
+sidebar_position: 0
+slug: /http_api_reference
+---
 
-# DRAFT! HTTP API Reference
+# HTTP API Reference
 
-**THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
+This document provides a complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/develop/acquire_ragflow_api_key.md).
 
 ---
 
