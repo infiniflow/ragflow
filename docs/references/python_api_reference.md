@@ -1,10 +1,15 @@
-# DRAFT Python API Reference
+---
+sidebar_position: 1
+slug: /python_api_reference
+---
 
-**THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
+# Python API Reference
+
+This document offers a complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/develop/acquire_ragflow_api_key.md).
 
 ---
 
-:::tip NOTE
+:::tip API GROUPING
 Dataset Management
 :::
 
