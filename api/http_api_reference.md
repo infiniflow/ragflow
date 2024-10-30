@@ -88,7 +88,7 @@ curl --request POST \
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
-  - `"Email"`: Email
+  - `"email"`: Email
 
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
