@@ -90,7 +90,7 @@ curl --request POST \
   - `"knowledge_graph"`: Knowledge Graph
 
 - `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. The attributes in this JSON object varies with the selected `"chunk_method"`:  
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_count"`: Defaults to `128`.
     - `"layout_recognize"`: Defaults to `true`.
@@ -518,7 +518,7 @@ curl --request PUT \
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph
 - `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. The attributes in this JSON object varies with the selected `"chunk_method"`:  
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_count"`: Defaults to `128`.
     - `"layout_recognize"`: Defaults to `true`.
