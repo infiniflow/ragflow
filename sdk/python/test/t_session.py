@@ -1,5 +1,4 @@
-from ragflow import RAGFlow,Session
-import time
+from ragflow_sdk import RAGFlow
 HOST_ADDRESS = 'http://127.0.0.1:9380'
 
 

@@ -1,4 +1,4 @@
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 import random
 import pytest
 
