@@ -41,8 +41,8 @@ def create(tenant_id):
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
     kbs = KnowledgebaseService.get_by_ids(ids)
-    embd_count = list(set(kb.embd_id for kb in kbs))
-    if embd_count != 1:
+    embd_count = list(set([kb.embd_id for kb in kbs]))
+    if len(embd_count) != 1:
         return get_result(retmsg='Datasets use different embedding models."',retcode=RetCode.AUTHENTICATION_ERROR)
     req["kb_ids"] = ids
     # llm
@@ -167,8 +167,8 @@ def update(tenant_id,chat_id):
                 if kb.chunk_num == 0:
                     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
             kbs = KnowledgebaseService.get_by_ids(ids)
-            embd_count=list(set(kb.embd_id for kb in kbs))
-            if embd_count != 1 :
+            embd_count=list(set([kb.embd_id for kb in kbs]))
+            if len(embd_count) != 1 :
                 return get_result(
                     retmsg='Datasets use different embedding models."',
                     retcode=RetCode.AUTHENTICATION_ERROR)
