@@ -20,7 +20,7 @@ Update the RAGFlow image and restart RAGFlow:
    RAGFLOW_IMAGE=infiniflow/ragflow:dev
    ```
 
-2. Update ragflow image and restart ragflow:
+2. Update RAGFlow image and restart RAGFlow:
 
    ```bash
    docker compose -f docker/docker-compose.yml pull
