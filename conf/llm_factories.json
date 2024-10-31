@@ -2122,6 +2122,12 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "yi-lightning",
+                    "tags": "LLM,CHAT,16k",
+                    "max_tokens": 16384,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "yi-large",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
