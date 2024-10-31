@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API Reference
 
-This document provides a complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/develop/acquire_ragflow_api_key.md).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/develop/acquire_ragflow_api_key.md).
 
 ---
 
@@ -1135,8 +1135,8 @@ Updates content or configurations for a specified chunk.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"content"`: `string`
-  - `"important_keywords"`: `string`
-  - `"available"`: `integer`
+  - `"important_keywords"`: `list[string]`
+  - `"available"`: `boolean`
 
 #### Request example
 
