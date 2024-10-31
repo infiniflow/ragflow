@@ -467,6 +467,7 @@ def add_chunk(tenant_id,dataset_id,document_id):
     DocumentService.increment_chunk_num(
         doc.id, doc.kb_id, c, 1, 0)
     d["chunk_id"] = chunk_id
+    d["kb_id"]=doc.kb_id
     # rename keys
     key_mapping = {
         "chunk_id": "id",
@@ -584,10 +585,10 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
 def retrieval_test(tenant_id):
     req = request.json
     if not req.get("dataset_ids"):
-        return get_error_data_result("`datasets` is required.")
+        return get_error_data_result("`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]
     if not isinstance(kb_ids,list):
-        return get_error_data_result("`datasets` should be a list")
+        return get_error_data_result("`dataset_ids` should be a list")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     for id in kb_ids:
         if not KnowledgebaseService.query(id=id,tenant_id=tenant_id):
