@@ -13,9 +13,9 @@ def test_parse_document_with_pdf(get_api_key_fixture):
     doc = docs[0]
     ds.async_parse_documents(document_ids=[doc.id])
     for n in range(100):
-        if doc.progress == 100:
+        if doc.progress == 1:
             break
-        sleep(5)
+        sleep(3)
     else:
         raise Exception("Run time ERROR: Document parsing did not complete in time.")
 
@@ -26,11 +26,11 @@ def test_parse_and_cancel_document(get_api_key_fixture):
     name = 'westworld.pdf'
     with open("test_data/westworld.pdf","rb") as file :
         blob = file.read()
-    docs=ds.upload_documents({"displayed_name": name, "blob": blob})
+    docs=ds.upload_documents([{"displayed_name": name, "blob": blob}])
     doc = docs[0]
     ds.async_parse_documents(document_ids=[doc.id])
     sleep(1)
-    if 0 < doc.progress < 100:
+    if 0 < doc.progress < 1:
         ds.async_cancel_parse_documents(document_ids=[doc.id])
 
 
@@ -49,10 +49,10 @@ def test_bulk_parse_documents(get_api_key_fixture):
     ids = [doc.id for doc in docs]
     ds.async_parse_documents(ids)
     for n in range(100):
-        all_completed = all(doc.progress == 100 for doc in docs)
+        all_completed = all(doc.progress == 1 for doc in docs)
         if all_completed:
             break
-        sleep(5)
+        sleep(3)
     else:
         raise Exception("Run time ERROR: Bulk document parsing did not complete in time.")
 
@@ -69,15 +69,15 @@ def test_list_chunks_with_success(get_api_key_fixture):
         {'displayed_name': f'chunk_{i}.txt', 'blob': chunk} for i, chunk in enumerate(chunks)
     ]
     '''
-    documents =[{"displayed_name":"test_list_chunks_with_success","blob":blob}]
+    documents =[{"displayed_name":"test_list_chunks_with_success.pdf","blob":blob}]
     docs = ds.upload_documents(documents)
     ids = [doc.id for doc in docs]
     ds.async_parse_documents(ids)
     for n in range(100):
-        all_completed = all(doc.progress == 100 for doc in docs)
+        all_completed = all(doc.progress == 1 for doc in docs)
         if all_completed:
             break
-        sleep(5)
+        sleep(3)
     else:
         raise Exception("Run time ERROR: Chunk document parsing did not complete in time.")
     doc = docs[0]
@@ -97,7 +97,7 @@ def test_add_chunk_with_success(get_api_key_fixture):
         {'displayed_name': f'chunk_{i}.txt', 'blob': chunk} for i, chunk in enumerate(chunks)
     ]
     '''
-    documents =[{"displayed_name":"test_list_chunks_with_success","blob":blob}]
+    documents =[{"displayed_name":"test_list_chunks_with_success.pdf","blob":blob}]
     docs = ds.upload_documents(documents)
     doc = docs[0]
     doc.add_chunk(content="This is a chunk addition test")
@@ -107,7 +107,7 @@ def test_delete_chunk_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_delete_chunk_with_success")
-    with open("test_data/westworld.pdf.txt", "rb") as file:
+    with open("test_data/westworld.pdf", "rb") as file:
         blob = file.read()
     '''
     # chunk_size = 1024 * 1024
@@ -116,7 +116,7 @@ def test_delete_chunk_with_success(get_api_key_fixture):
         {'displayed_name': f'chunk_{i}.txt', 'blob': chunk} for i, chunk in enumerate(chunks)
     ]
     '''
-    documents =[{"displayed_name":"test_list_chunks_with_success","blob":blob}]
+    documents =[{"displayed_name":"test_list_chunks_with_success.pdf","blob":blob}]
     docs = ds.upload_documents(documents)
     doc = docs[0]
     chunk = doc.add_chunk(content="This is a chunk addition test")
@@ -136,7 +136,7 @@ def test_update_chunk_content(get_api_key_fixture):
         {'displayed_name': f'chunk_{i}.txt', 'blob': chunk} for i, chunk in enumerate(chunks)
     ]
     '''
-    documents =[{"displayed_name":"test_list_chunks_with_success","blob":blob}]
+    documents =[{"displayed_name":"test_update_chunk_content_with_success.pdf","blob":blob}]
     docs = ds.upload_documents(documents)
     doc = docs[0]
     chunk = doc.add_chunk(content="This is a chunk addition test")
@@ -155,14 +155,14 @@ def test_update_chunk_available(get_api_key_fixture):
         {'displayed_name': f'chunk_{i}.txt', 'blob': chunk} for i, chunk in enumerate(chunks)
     ]
     '''
-    documents =[{"displayed_name":"test_list_chunks_with_success","blob":blob}]
+    documents =[{"displayed_name":"test_update_chunk_available_with_success.pdf","blob":blob}]
     docs = ds.upload_documents(documents)
     doc = docs[0]
     chunk = doc.add_chunk(content="This is a chunk addition test")
     chunk.update({"available":False})
 
 
-def test_retrieval_chunks(get_api_key_fixture):
+def test_retrieve_chunks(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="retrieval")
@@ -175,7 +175,7 @@ def test_retrieval_chunks(get_api_key_fixture):
         {'displayed_name': f'chunk_{i}.txt', 'blob': chunk} for i, chunk in enumerate(chunks)
     ]
     '''
-    documents =[{"displayed_name":"test_list_chunks_with_success","blob":blob}]
+    documents =[{"displayed_name":"test_retrieve_chunks.pdf","blob":blob}]
     docs = ds.upload_documents(documents)
     doc = docs[0]
     doc.add_chunk(content="This is a chunk addition test")

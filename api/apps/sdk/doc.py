@@ -324,8 +324,8 @@ def stop_parsing(tenant_id,dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(retmsg=f"You don't own the document {id}.")
-        if doc[0].progress == 100.0 or doc[0].progress == 0.0:
-            return get_error_data_result("Can't stop parsing document with progress at 0 or 100")
+        if int(doc[0].progress) == 1 or int(doc[0].progress) == 0:
+            return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
         info = {"run": "2", "progress": 0,"chunk_num":0}
         DocumentService.update_by_id(id, info)
         ELASTICSEARCH.deleteByQuery(
