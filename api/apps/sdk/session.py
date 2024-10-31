@@ -76,9 +76,6 @@ def update(tenant_id,chat_id,session_id):
 @token_required
 def completion(tenant_id,chat_id):
     req = request.json
-    # req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
-    #    {"role": "user", "content": "上海有吗？"}
-    # ]}
     if not req.get("session_id"):
         conv = {
             "id": get_uuid(),
