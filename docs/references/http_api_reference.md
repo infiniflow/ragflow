@@ -629,7 +629,7 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?keywords={keywords}&offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&id={document_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
