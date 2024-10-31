@@ -613,14 +613,14 @@ Failure:
 
 ## List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
 
 Lists documents in a specified dataset.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
