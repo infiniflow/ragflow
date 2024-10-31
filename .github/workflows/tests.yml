@@ -78,7 +78,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test && pytest t_dataset.py t_chat.py t_session.py
+          cd sdk/python && poetry install && source .venv/bin/activate && cd test && pytest t_*.py
 
       - name: Stop ragflow:dev
         if: always()  # always run this step even if previous steps failed
