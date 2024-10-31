@@ -60,7 +60,7 @@ def test_list_chunks_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_list_chunks_with_success")
-    with open("test_data/large_file.txt", "rb") as file:
+    with open("test_data/westworld.pdf", "rb") as file:
         blob = file.read()
     '''
     # chunk_size = 1024 * 1024
@@ -88,7 +88,7 @@ def test_add_chunk_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_add_chunk_with_success")
-    with open("test_data/large_file.txt", "rb") as file:
+    with open("test_data/westworld.pdf", "rb") as file:
         blob = file.read()
     '''
     # chunk_size = 1024 * 1024
@@ -107,7 +107,7 @@ def test_delete_chunk_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_delete_chunk_with_success")
-    with open("test_data/large_file.txt", "rb") as file:
+    with open("test_data/westworld.pdf.txt", "rb") as file:
         blob = file.read()
     '''
     # chunk_size = 1024 * 1024
@@ -127,7 +127,7 @@ def test_update_chunk_content(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_update_chunk_content_with_success")
-    with open("test_data/large_file.txt", "rb") as file:
+    with open("test_data/westworld.pdf", "rb") as file:
         blob = file.read()
     '''
     # chunk_size = 1024 * 1024
@@ -146,7 +146,7 @@ def test_update_chunk_available(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_update_chunk_available_with_success")
-    with open("test_data/large_file.txt", "rb") as file:
+    with open("test_data/westworld.pdf", "rb") as file:
         blob = file.read()
     '''
     # chunk_size = 1024 * 1024
@@ -166,7 +166,7 @@ def test_retrieval_chunks(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="retrieval")
-    with open("test_data/large_file.txt", "rb") as file:
+    with open("test_data/westworld.pdf", "rb") as file:
         blob = file.read()
     '''
     # chunk_size = 1024 * 1024
