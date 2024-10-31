@@ -613,14 +613,14 @@ Failure:
 
 ## List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
 
 Lists documents in a specified dataset.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -629,7 +629,7 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?keywords={keywords}&offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&id={document_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
