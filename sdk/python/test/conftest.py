@@ -1,11 +1,11 @@
-import pytest
-import requests
 import string
 import random
+import os
+import pytest
+import requests
 
 
-
-HOST_ADDRESS = 'http://127.0.0.1:9380'
+HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
 
 def generate_random_email():
     return 'user_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))+'@1.com'
