@@ -27,7 +27,7 @@ Creates a dataset.
 - URL: `/api/v1/datasets`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
@@ -44,7 +44,7 @@ Creates a dataset.
 curl --request POST \
      --url http://{address}/api/v1/datasets \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '{
       "name": "test_1"
       }'
@@ -175,7 +175,7 @@ Deletes datasets by ID.
 - URL: `/api/v1/datasets`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
   - Body:
     - `"ids"`: `list[string]`
 
@@ -185,7 +185,7 @@ Deletes datasets by ID.
 curl --request DELETE \
      --url http://{address}/api/v1/datasets \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '{"ids": ["test_1", "test_2"]}'
 ```
 
@@ -227,7 +227,7 @@ Updates configurations for a specified dataset.
 - URL: `/api/v1/datasets/{dataset_id}`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"name"`: `string`
   - `"embedding_model"`: `string`
@@ -239,7 +239,7 @@ Updates configurations for a specified dataset.
 curl --request PUT \
      --url http://{address}/api/v1/datasets/{dataset_id} \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "name": "updated_dataset",
@@ -301,14 +301,14 @@ Lists datasets.
 - Method: GET
 - URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 - Headers:
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 
 #### Request example
 
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
-     --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --header 'Authorization: Bearer <YOUR_API_KE>'
 ```
 
 #### Request parameters
@@ -402,7 +402,7 @@ Uploads documents to a specified dataset.
 - URL: `/api/v1/datasets/{dataset_id}/documents`
 - Headers:
   - `'Content-Type: multipart/form-data'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Form:
   - `'file=@{FILE_PATH}'`
 
@@ -412,7 +412,7 @@ Uploads documents to a specified dataset.
 curl --request POST \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents \
      --header 'Content-Type: multipart/form-data' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \     
+     --header 'Authorization: Bearer <YOUR_API_KE>' \     
      --form 'file=@./test1.txt' \
      --form 'file=@./test2.pdf'
 ```
@@ -480,7 +480,7 @@ Updates configurations for a specified document.
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"name"`:`string`
   - `"chunk_method"`:`string`
@@ -491,7 +491,7 @@ Updates configurations for a specified document.
 ```bash
 curl --request PUT \
      --url http://{address}/api/v1/datasets/{dataset_id}/info/{document_id} \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --header 'Content-Type: application/json' \
      --data '
      {
@@ -572,7 +572,7 @@ Downloads a document from a specified dataset.
 - Method: GET
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Output:
   - `'{PATH_TO_THE_FILE}'`
 
@@ -581,7 +581,7 @@ Downloads a document from a specified dataset.
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id} \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --output ./ragflow.txt
 ```
 
@@ -623,14 +623,14 @@ Lists documents in a specified dataset.
 - URL: `/api/v1/datasets/{dataset_id}/documents?keywords={keyword}&page={page}&page_size={limit}&orderby={orderby}&desc={desc}&name={name}`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 
 #### Request example
 
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents?keywords={keywords}&offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&id={document_id} \
-     --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --header 'Authorization: Bearer <YOUR_API_KE>'
 ```
 
 #### Request parameters
@@ -720,7 +720,7 @@ Deletes documents by ID.
 - URL: `/api/v1/datasets/{dataset_id}/documents`
 - Headers:
   - `'Content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"ids"`: `list[string]`
 
@@ -730,7 +730,7 @@ Deletes documents by ID.
 curl --request DELETE \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: {YOUR_API_KEY}' \
+     --header 'Authorization: <YOUR_API_KE>' \
      --data '
      {
           "ids": ["id_1","id_2"]
@@ -777,7 +777,7 @@ Parses documents in a specified dataset.
 - URL: `/api/v1/datasets/{dataset_id}/chunks`
 - Headers:
   - `'content-Type: application/json'`
-  - 'Authorization: Bearer {YOUR_API_KEY}'
+  - 'Authorization: Bearer <YOUR_API_KE>'
 - Body:
   - `"document_ids"`: `list[string]`
 
@@ -787,7 +787,7 @@ Parses documents in a specified dataset.
 curl --request POST \
      --url http://{address}/api/v1/datasets/{dataset_id}/chunks \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]
@@ -834,7 +834,7 @@ Stops parsing specified documents.
 - URL: `/api/v1/datasets/{dataset_id}/chunks`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"document_ids"`: `list[string]`
 
@@ -844,7 +844,7 @@ Stops parsing specified documents.
 curl --request DELETE \
      --url http://{address}/api/v1/datasets/{dataset_id}/chunks \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]
@@ -891,7 +891,7 @@ Adds a chunk to a specified document in a specified dataset.
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
@@ -902,7 +902,7 @@ Adds a chunk to a specified document in a specified dataset.
 curl --request POST \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "content": "<SOME_CHUNK_CONTENT_HERE>"
@@ -965,14 +965,14 @@ Lists chunks in a specified document.
 - Method: GET
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id}`
 - Headers:
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 
 #### Request example
 
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id} \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' 
+     --header 'Authorization: Bearer <YOUR_API_KE>' 
 ```
 
 #### Request parameters
@@ -1073,7 +1073,7 @@ Deletes chunks by ID.
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"chunk_ids"`: `list[string]`
 
@@ -1083,7 +1083,7 @@ Deletes chunks by ID.
 curl --request DELETE \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "chunk_ids": ["test_1", "test_2"]
@@ -1132,7 +1132,7 @@ Updates content or configurations for a specified chunk.
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `string`
@@ -1144,7 +1144,7 @@ Updates content or configurations for a specified chunk.
 curl --request PUT \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: {YOUR_API_KEY}' \
+     --header 'Authorization: <YOUR_API_KE>' \
      --data '
      {   
           "content": "ragflow123",  
@@ -1202,7 +1202,7 @@ Retrieves chunks from specified datasets.
 - URL: `/api/v1/retrieval`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"question"`: `string`  
   - `"dataset_ids"`: `list[string]`  
@@ -1222,7 +1222,7 @@ Retrieves chunks from specified datasets.
 curl --request POST \
      --url http://{address}/api/v1/retrieval \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: {YOUR_API_KEY}' \
+     --header 'Authorization: <YOUR_API_KE>' \
      --data '
      {
           "question": "What is advantage of ragflow?",
@@ -1330,7 +1330,7 @@ Creates a chat assistant.
 - URL: `/api/v1/chats`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
@@ -1344,7 +1344,7 @@ Creates a chat assistant.
 curl --request POST \
      --url http://{address}/api/v1/chats \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --header 'Authorization: Bearer <YOUR_API_KE>'
      --data '{
     "dataset_ids": ["0b2cbc8c877f11ef89070242ac120005"],
     "name":"new_chat_1"
@@ -1466,7 +1466,7 @@ Updates configurations for a specified chat assistant.
 - URL: `/api/v1/chats/{chat_id}`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
@@ -1480,7 +1480,7 @@ Updates configurations for a specified chat assistant.
 curl --request PUT \
      --url http://{address}/api/v1/chats/{chat_id} \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "name":"Test"
@@ -1562,7 +1562,7 @@ Deletes chat assistants by ID.
 - URL: `/api/v1/chats`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"ids"`: `list[string]`
 
@@ -1572,7 +1572,7 @@ Deletes chat assistants by ID.
 curl --request DELETE \
      --url http://{address}/api/v1/chats \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "ids": ["test_1", "test_2"]
@@ -1616,14 +1616,14 @@ Lists chat assistants.
 - Method: GET
 - URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
 - Headers:
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 
 #### Request example
 
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
-     --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --header 'Authorization: Bearer <YOUR_API_KE>'
 ```
 
 #### Request parameters
@@ -1716,7 +1716,7 @@ Creates a chat session.
 - URL: `/api/v1/chats/{chat_id}/sessions`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"name"`: `string`
 
@@ -1726,7 +1726,7 @@ Creates a chat session.
 curl --request POST \
      --url http://{address}/api/v1/chats/{chat_id}/sessions \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "name": "new session"
@@ -1788,7 +1788,7 @@ Updates a chat session.
 - URL: `/api/v1/chats/{chat_id}/sessions/{session_id}`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"name`: string
 
@@ -1797,7 +1797,7 @@ Updates a chat session.
 curl --request PUT \
      --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data '
      {
           "name": "<REVISED_SESSION_NAME_HERE>"
@@ -1845,14 +1845,14 @@ Lists sessions associated with a specified chat assistant.
 - Method: GET
 - URL: `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
 - Headers:
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 
 #### Request example
 
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id} \
-     --header 'Authorization: Bearer {YOUR_API_KEY}'
+     --header 'Authorization: Bearer <YOUR_API_KE>'
 ```
 
 #### Request Parameters
@@ -1924,7 +1924,7 @@ Deletes sessions by ID.
 - URL: `/api/v1/chats/{chat_id}/sessions`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"ids"`: `list[string]`
 
@@ -1935,7 +1935,7 @@ Deletes sessions by ID.
 curl --request DELETE \
      --url http://{address}/api/v1/chats/{chat_id}/sessions \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bear {YOUR_API_KEY}' \
+     --header 'Authorization: Bear <YOUR_API_KE>' \
      --data '
      {
           "ids": ["test_1", "test_2"]
@@ -1982,7 +1982,7 @@ Asks a question to start an AI-powered conversation.
 - URL: `/api/v1/chats/{chat_id}/completions`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer {YOUR_API_KEY}'`
+  - `'Authorization: Bearer <YOUR_API_KE>'`
 - Body:
   - `"question"`: `string`
   - `"stream"`: `boolean`
@@ -1994,7 +1994,7 @@ Asks a question to start an AI-powered conversation.
 curl --request POST \
      --url http://{address}/api/v1/chats/{chat_id}/completions \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer {YOUR_API_KEY}' \
+     --header 'Authorization: Bearer <YOUR_API_KE>' \
      --data-binary '
      {
           "question": "What is RAGFlow?",
