@@ -56,6 +56,8 @@ Hover over an intended chat assistant **>** **Edit** to show the chat configurat
 
 ## Integrate chat capabilities into your application
 
-RAGFlow also offers conversation APIs. Hover over your dialogue **>** **Chat Bot API** to integrate RAGFlow's chat capabilities into your application:
+RAGFlow also offers HTTP and Python APIs for you to integrate RAGFlow's capabilities into your applications. Read the following documents for more information:
 
-![chatbot api](https://github.com/infiniflow/ragflow/assets/93570324/fec23715-f9af-4ac2-81e5-942c5035c5e6)
+- [Acquire a RAGFlow API key](./guides/develop/acquire_ragflow_api_key.md)
+- [HTTP API reference](./references/http_api_reference.md)
+- [Python API reference](./references/python_api_reference.md)
