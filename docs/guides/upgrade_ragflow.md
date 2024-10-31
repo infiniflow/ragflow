@@ -7,8 +7,8 @@ slug: /upgrade_ragflow
 
 You can upgrade RAGFlow to dev version or the latest version:
 
-- Dev versions are executable files published nightly, incorporating our latest features and bug fixes.
-- The latest version is the most recent, officially published release. A key disction between the latest version and dev versions is that the latest version consistently features a incrementing release number.
+- A Dev version (Development version) is the latest, tested image.
+- The latest version is the most recent, officially published release.
 
 ## Upgrade RAGFlow to the dev version
 
