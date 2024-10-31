@@ -48,7 +48,7 @@ RUN --mount=type=cache,id=ragflow_builder_apt,target=/var/cache/apt,sharing=lock
     rm -rf /var/lib/apt/lists/*
 
 COPY web web
-COPY api api
+COPY docs docs
 RUN --mount=type=cache,id=ragflow_builder_npm,target=/root/.npm,sharing=locked \
     cd web && npm i --force && npm run build
 
