@@ -47,12 +47,13 @@
 デモをお試しください：[https://demo.ragflow.io](https://demo.ragflow.io)。
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/b083d173-dadc-4ea9-bdeb-180d7df514eb" width="1200"/>
+<img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
 </div>
 
 
 ## 🔥 最新情報
 
+- 2024-11-01 再現の精度を向上させるために、解析されたチャンクにキーワード抽出と関連質問の生成を追加しました。
 - 2024-09-29 マルチラウンドダイアログを最適化。
 - 2024-09-13 ナレッジベース Q&A の検索モードを追加しました。
 - 2024-09-09 エージェントに医療相談テンプレートを追加しました。

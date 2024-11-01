@@ -36,6 +36,7 @@ class ComponentParamBase(ABC):
     def __init__(self):
         self.output_var_name = "output"
         self.message_history_window_size = 22
+        self.query = []
 
     def set_name(self, name: str):
         self._name = name
@@ -436,6 +437,16 @@ class ComponentBase(ABC):
         setattr(self._param, self._param.output_var_name, v)
 
     def get_input(self):
+        if self._param.query:
+            outs = []
+            for q in self._param.query:
+                if q["value"]: outs.append(pd.DataFrame([{"content": q["value"]}]))
+                if q["component_id"]: outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
+            if outs:
+                df = pd.concat(outs, ignore_index=True)
+                if "content" in df: df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+                return df
+
         upstream_outs = []
         reversed_cpnts = []
         if len(self._canvas.path) > 1:

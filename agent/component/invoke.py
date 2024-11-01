@@ -51,6 +51,9 @@ class Invoke(ComponentBase, ABC):
         for para in self._param.variables:
             if para.get("component_id"):
                 cpn = self._canvas.get_component(para["component_id"])["obj"]
+                if cpn.component_name.lower() == "answer":
+                    args[para["key"]] = self._canvas.get_history(1)[0]["content"]
+                    continue
                 _, out = cpn.output(allow_partial=False)
                 args[para["key"]] = "\n".join(out["content"])
             else:
