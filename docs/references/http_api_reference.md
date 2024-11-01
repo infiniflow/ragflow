@@ -91,7 +91,8 @@ curl --request POST \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph
+  - `"knowledge_graph"`: Knowledge Graph  
+    Ensure that you have your LLM properly set in 
   - `"email"`: Email
 
 - `"parser_config"`: (*Body parameter*), `object`  
@@ -676,7 +677,7 @@ Success:
                     "layout_recognize": true,
                     "task_page_size": 12
                 },
-                "parser_method": "naive",
+                "chunk_method": "naive",
                 "process_begin_at": null,
                 "process_duation": 0.0,
                 "progress": 0.0,
