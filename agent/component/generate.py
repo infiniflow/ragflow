@@ -130,6 +130,7 @@ class Generate(ComponentBase):
 
         msg = self._canvas.get_history(self._param.message_history_window_size)
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
+        if len(msg) < 2: msg.append({"role": "user", "content": ""})
         ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
 
         if self._param.cite and "content_ltks" in retrieval_res.columns and "vector" in retrieval_res.columns:
@@ -149,6 +150,7 @@ class Generate(ComponentBase):
 
         msg = self._canvas.get_history(self._param.message_history_window_size)
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
+        if len(msg) < 2: msg.append({"role": "user", "content": ""})
         answer = ""
         for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
             res = {"content": ans, "reference": []}

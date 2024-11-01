@@ -49,12 +49,14 @@
 데모를 [https://demo.ragflow.io](https://demo.ragflow.io)에서 실행해 보세요.
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/b083d173-dadc-4ea9-bdeb-180d7df514eb" width="1200"/>
+<img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
 </div>
 
 
 ## 🔥 업데이트
 
+- 2024-11-01 파싱된 청크에 키워드 추출 및 관련 질문 생성을 추가하여 재현율을 향상시킵니다.
+  
 - 2024-09-29 다단계 대화를 최적화합니다.
   
 - 2024-09-13 지식베이스 Q&A 검색 모드를 추가합니다.

@@ -152,7 +152,8 @@
             "Generate:ToughLawsCheat",
             "Generate:KindCarrotsSit",
             "Generate:DirtyToolsTrain",
-            "Generate:FluffyPillowsGrow"
+            "Generate:FluffyPillowsGrow",
+            "Generate:ProudEarsWorry"
           ]
         },
         "Retrieval:ShaggyRadiosRetire": {
@@ -212,7 +213,9 @@
               "top_p": 0.3
             }
           },
-          "downstream": [],
+          "downstream": [
+            "Answer:TwentyMugsDeny"
+          ],
           "upstream": [
             "categorize:0"
           ]
@@ -331,9 +334,9 @@
               "message_history_window_size": 12,
               "parameters": [
                 {
+                  "component_id": "Retrieval:ColdEelsArrive",
                   "id": "5166a107-e859-4c71-99a2-3a216c775347",
-                  "key": "jd",
-                  "component_id": "Retrieval:ColdEelsArrive"
+                  "key": "jd"
                 }
               ],
               "presence_penalty": 0.4,
@@ -1266,9 +1269,9 @@
                 "parameter": "Precise",
                 "parameters": [
                   {
+                    "component_id": "Retrieval:ColdEelsArrive",
                     "id": "5166a107-e859-4c71-99a2-3a216c775347",
-                    "key": "jd",
-                    "component_id": "Retrieval:ColdEelsArrive"
+                    "key": "jd"
                   }
                 ],
                 "presencePenaltyEnabled": true,
@@ -1541,6 +1544,19 @@
             "target": "Answer:TwentyMugsDeny",
             "targetHandle": "c",
             "type": "buttonEdge"
+          },
+          {
+            "type": "buttonEdge",
+            "markerEnd": "logo",
+            "style": {
+              "strokeWidth": 2,
+              "stroke": "rgb(202 197 245)"
+            },
+            "source": "Generate:ProudEarsWorry",
+            "sourceHandle": "b",
+            "target": "Answer:TwentyMugsDeny",
+            "targetHandle": "c",
+            "id": "reactflow__edge-Generate:ProudEarsWorryb-Answer:TwentyMugsDenyc"
           }
         ]
       },

@@ -47,12 +47,13 @@
 请登录网址 [https://demo.ragflow.io](https://demo.ragflow.io) 试用 demo。
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/b083d173-dadc-4ea9-bdeb-180d7df514eb" width="1200"/>
+<img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
 </div>
 
 
 ## 🔥 近期更新
 
+- 2024-11-01 对解析后的chunk加入关键词抽取和相关问题生成以提高召回的准确度。
 - 2024-09-29 优化多轮对话.
 - 2024-09-13 增加知识库问答搜索模式。
 - 2024-09-09 在 Agent 中加入医疗问诊模板。
