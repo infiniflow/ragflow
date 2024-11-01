@@ -30,6 +30,8 @@ export default {
       warn: 'Warn',
       action: 'Action',
       s: 'S',
+      pleaseSelect: 'Please select',
+      pleaseInput: 'Please input',
     },
     login: {
       login: 'Sign in',
@@ -744,7 +746,7 @@ The above is the content you need to summarize.`,
       googleDescription:
         'This component is used to get search result fromhttps://www.google.com/ . Typically, it performs as a supplement to knowledgebases. Top N and SerpApi API key specifies the number of search results you need to adapt.',
       bing: 'Bing',
-      bingTip:
+      bingDescription:
         'This component is used to get search result from https://www.bing.com/. Typically, it performs as a supplement to knowledgebases. Top N and Bing Subscription-Key specifies the number of search results you need to adapt.',
       apiKey: 'API KEY',
       country: 'Country',
@@ -1024,6 +1026,8 @@ The above is the content you need to summarize.`,
       timeout: 'Timeout',
       headers: 'Headers',
       cleanHtml: 'Clean html',
+      reference: 'Reference',
+      input: 'Input',
     },
     footer: {
       profile: 'All rights reserved @ React',

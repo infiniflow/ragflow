@@ -1,5 +1,5 @@
 import { useTranslate } from '@/hooks/common-hooks';
-import { CloseOutlined } from '@ant-design/icons';
+import { CloseOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   Button,
   Card,
@@ -197,8 +197,9 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                 onClick={handleAdd}
                 block
                 className={styles.addButton}
+                icon={<PlusOutlined />}
               >
-                + {t('addItem')}
+                {t('addItem')}
               </Button>
             </Flex>
           );

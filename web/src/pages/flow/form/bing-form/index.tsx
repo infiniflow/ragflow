@@ -4,8 +4,9 @@ import { Form, Input, Select } from 'antd';
 import { useMemo } from 'react';
 import { BingCountryOptions, BingLanguageOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const BingForm = ({ onValuesChange, form }: IOperatorForm) => {
+const BingForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const options = useMemo(() => {
@@ -15,12 +16,12 @@ const BingForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 6 }}
-      wrapperCol={{ span: 18 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <TopNItem initialValue={10}></TopNItem>
       <Form.Item label={t('channel')} name={'channel'}>
         <Select options={options}></Select>

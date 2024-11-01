@@ -4,8 +4,9 @@ import { Form, Select } from 'antd';
 import { useMemo } from 'react';
 import { Channel } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const DuckDuckGoForm = ({ onValuesChange, form }: IOperatorForm) => {
+const DuckDuckGoForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const options = useMemo(() => {
@@ -15,12 +16,12 @@ const DuckDuckGoForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 6 }}
-      wrapperCol={{ span: 18 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <TopNItem initialValue={10}></TopNItem>
       <Form.Item
         label={t('channel')}

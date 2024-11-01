@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import { useCallback, useMemo } from 'react';
 import { TuShareSrcOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
 const DateTimePicker = ({
   onChange,
@@ -37,7 +38,7 @@ const DateTimePicker = ({
   );
 };
 
-const TuShareForm = ({ onValuesChange, form }: IOperatorForm) => {
+const TuShareForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const tuShareSrcOptions = useMemo(() => {
@@ -50,12 +51,12 @@ const TuShareForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 6 }}
-      wrapperCol={{ span: 18 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <Form.Item
         label={t('token')}
         name={'token'}

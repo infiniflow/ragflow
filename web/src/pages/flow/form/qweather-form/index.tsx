@@ -8,8 +8,9 @@ import {
   QWeatherUserTypeOptions,
 } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const QWeatherForm = ({ onValuesChange, form }: IOperatorForm) => {
+const QWeatherForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
   const qWeatherLangOptions = useMemo(() => {
     return QWeatherLangOptions.map((x) => ({
@@ -49,12 +50,12 @@ const QWeatherForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 6 }}
-      wrapperCol={{ span: 18 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <Form.Item label={t('webApiKey')} name={'web_apikey'}>
         <Input></Input>
       </Form.Item>
