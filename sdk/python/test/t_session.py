@@ -1,7 +1,5 @@
-import os
 from ragflow_sdk import RAGFlow
-
-HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
+from common import HOST_ADDRESS
 
 
 def test_create_session_with_success(get_api_key_fixture):

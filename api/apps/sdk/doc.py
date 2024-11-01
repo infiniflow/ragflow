@@ -194,8 +194,11 @@ def list_docs(dataset_id, tenant_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(retmsg=f"You don't own the dataset {dataset_id}. ")
     id = request.args.get("id")
+    name = request.args.get("name")
     if not DocumentService.query(id=id,kb_id=dataset_id):
         return get_error_data_result(retmsg=f"You don't own the document {id}.")
+    if not DocumentService.query(name=name,kb_id=dataset_id):
+        return get_error_data_result(retmsg=f"You don't own the document {name}.")
     offset = int(request.args.get("offset", 1))
     keywords = request.args.get("keywords","")
     limit = int(request.args.get("limit", 1024))
@@ -204,7 +207,7 @@ def list_docs(dataset_id, tenant_id):
         desc = False
     else:
         desc = True
-    docs, tol = DocumentService.get_list(dataset_id, offset, limit, orderby, desc, keywords, id)
+    docs, tol = DocumentService.get_list(dataset_id, offset, limit, orderby, desc, keywords, id,name)
 
     # rename key's name
     renamed_doc_list = []
@@ -321,8 +324,8 @@ def stop_parsing(tenant_id,dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(retmsg=f"You don't own the document {id}.")
-        if doc[0].progress == 100.0 or doc[0].progress == 0.0:
-            return get_error_data_result("Can't stop parsing document with progress at 0 or 100")
+        if int(doc[0].progress) == 1 or int(doc[0].progress) == 0:
+            return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
         info = {"run": "2", "progress": 0,"chunk_num":0}
         DocumentService.update_by_id(id, info)
         ELASTICSEARCH.deleteByQuery(
@@ -414,9 +417,9 @@ def list_chunks(tenant_id,dataset_id,document_id):
         for key, value in chunk.items():
             new_key = key_mapping.get(key, key)
             renamed_chunk[new_key] = value
-        if renamed_chunk["available"] == "0":
+        if renamed_chunk["available"] == 0:
             renamed_chunk["available"] = False
-        if renamed_chunk["available"] == "1":
+        if renamed_chunk["available"] == 1:
             renamed_chunk["available"] = True
         res["chunks"].append(renamed_chunk)
     return get_result(data=res)
@@ -464,6 +467,7 @@ def add_chunk(tenant_id,dataset_id,document_id):
     DocumentService.increment_chunk_num(
         doc.id, doc.kb_id, c, 1, 0)
     d["chunk_id"] = chunk_id
+    d["kb_id"]=doc.kb_id
     # rename keys
     key_mapping = {
         "chunk_id": "id",
@@ -581,10 +585,10 @@ def update_chunk(tenant_id,dataset_id,document_id,chunk_id):
 def retrieval_test(tenant_id):
     req = request.json
     if not req.get("dataset_ids"):
-        return get_error_data_result("`datasets` is required.")
+        return get_error_data_result("`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]
     if not isinstance(kb_ids,list):
-        return get_error_data_result("`datasets` should be a list")
+        return get_error_data_result("`dataset_ids` should be a list")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     for id in kb_ids:
         if not KnowledgebaseService.query(id=id,tenant_id=tenant_id):

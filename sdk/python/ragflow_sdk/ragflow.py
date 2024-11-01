@@ -166,7 +166,7 @@ class RAGFlow:
                 "rerank_id": rerank_id,
                 "keyword": keyword,
                 "question": question,
-                "datasets": dataset_ids,
+                "dataset_ids": dataset_ids,
                 "documents": document_ids
             }
             # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
