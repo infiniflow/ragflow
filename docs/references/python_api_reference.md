@@ -1,5 +1,5 @@
----
 sidebar_position: 1
+
 slug: /python_api_reference
 ---
 
@@ -79,7 +79,8 @@ The chunking method of the dataset to create. Available options:
 - `"presentation"`: Presentation
 - `"picture"`: Picture
 - `"one"`: One
-- `"knowledge_graph"`: Knowledge Graph
+- `"knowledge_graph"`: Knowledge Graph  
+  Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
 - `"email"`: Email
 
 #### parser_config
@@ -249,7 +250,8 @@ A dictionary representing the attributes to update, with the following keys:
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph
+  - `"knowledge_graph"`: Knowledge Graph  
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
 
 ### Returns
 
@@ -331,7 +333,8 @@ A dictionary representing the attributes to update, with the following keys:
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph
+  - `"knowledge_graph"`: Knowledge Graph  
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
   - `"chunk_method"`=`"naive"`:  
