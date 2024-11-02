@@ -104,6 +104,11 @@ RUN --mount=type=bind,source=huggingface.co,target=/huggingface.co \
 # Copy nltk data downloaded via download_deps.py
 COPY nltk_data /root/nltk_data
 
+# https://github.com/chrismattmann/tika-python
+# This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
+COPY tika-server-standard-3.0.0.jar tika-server-standard-3.0.0.jar.md5 ./
+ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard.jar"
+
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
