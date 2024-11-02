@@ -1,6 +1,6 @@
 import json
 
-import redis
+import valkey as redis
 import logging
 from rag import settings
 from rag.utils import singleton
@@ -40,7 +40,7 @@ class RedisDB:
                                      db=int(self.config.get("db", 1)),
                                      password=self.config.get("password"),
                                      decode_responses=True)
-        except Exception as e:
+        except Exception:
             logging.warning("Redis can't be connected.")
         return self.REDIS
 
