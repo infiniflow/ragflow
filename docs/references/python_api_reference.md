@@ -1,5 +1,5 @@
+---
 sidebar_position: 1
-
 slug: /python_api_reference
 ---
 
@@ -58,7 +58,7 @@ A brief description of the dataset to create. Defaults to `""`.
 
 The language setting of the dataset to create. Available options:
 
-- `"English"` (Default)
+- `"English"` (default)
 - `"Chinese"`
 
 #### permission

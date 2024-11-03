@@ -1,5 +1,5 @@
+---
 sidebar_position: 0
-
 slug: /http_api_reference
 ---
 
@@ -70,7 +70,7 @@ curl --request POST \
 
 - `"language"`: (*Body parameter*), `string`  
   The language setting of the dataset to create. Available options:  
-  - `"English"` (Default)
+  - `"English"` (default)
   - `"Chinese"`
 
 - `"embedding_model"`: (*Body parameter*), `string`  
