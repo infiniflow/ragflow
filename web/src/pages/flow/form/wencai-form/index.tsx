@@ -4,8 +4,9 @@ import { Form, Select } from 'antd';
 import { useMemo } from 'react';
 import { WenCaiQueryTypeOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const WenCaiForm = ({ onValuesChange, form }: IOperatorForm) => {
+const WenCaiForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const wenCaiQueryTypeOptions = useMemo(() => {
@@ -18,12 +19,12 @@ const WenCaiForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 6 }}
-      wrapperCol={{ span: 18 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <TopNItem initialValue={20} max={99}></TopNItem>
       <Form.Item label={t('queryType')} name={'query_type'}>
         <Select options={wenCaiQueryTypeOptions}></Select>

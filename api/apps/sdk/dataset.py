@@ -21,7 +21,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import TenantLLMService, LLMService
 from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
@@ -156,17 +156,24 @@ def create(tenant_id):
             "text-embedding-v3",
             "maidalun1020/bce-embedding-base_v1",
         ]
-        if (
-            not TenantLLMService.query(
-                tenant_id=tenant_id,
-                model_type="embedding",
-                llm_name=req.get("embedding_model"),
-            )
-            and req.get("embedding_model") not in valid_embedding_models
-        ):
+        embd_model = LLMService.query(
+            llm_name=req["embedding_model"], model_type="embedding"
+        )
+        if not embd_model:
             return get_error_data_result(
                 f"`embedding_model` {req.get('embedding_model')} doesn't exist"
             )
+        if embd_model:
+            if req[
+                "embedding_model"
+            ] not in valid_embedding_models and not TenantLLMService.query(
+                tenant_id=tenant_id,
+                model_type="embedding",
+                llm_name=req.get("embedding_model"),
+            ):
+                return get_error_data_result(
+                    f"`embedding_model` {req.get('embedding_model')} doesn't exist"
+                )
     key_mapping = {
         "chunk_num": "chunk_count",
         "doc_num": "document_count",
@@ -224,25 +231,36 @@ def delete(tenant_id):
           type: object
     """
     req = request.json
-    ids = req.get("ids")
+    if not req:
+        ids = None
+    else:
+        ids = req.get("ids")
     if not ids:
-        return get_error_data_result(retmsg="ids are required")
-    for id in ids:
+        id_list = []
+        kbs = KnowledgebaseService.query(tenant_id=tenant_id)
+        for kb in kbs:
+            id_list.append(kb.id)
+    else:
+        id_list = ids
+    for id in id_list:
         kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
         if not kbs:
             return get_error_data_result(retmsg=f"You don't own the dataset {id}")
-    for doc in DocumentService.query(kb_id=id):
-        if not DocumentService.remove_document(doc, tenant_id):
-            return get_error_data_result(
-                retmsg="Remove document error.(Database error)"
+        for doc in DocumentService.query(kb_id=id):
+            if not DocumentService.remove_document(doc, tenant_id):
+                return get_error_data_result(
+                    retmsg="Remove document error.(Database error)"
+                )
+            f2d = File2DocumentService.get_by_document_id(doc.id)
+            FileService.filter_delete(
+                [
+                    File.source_type == FileSource.KNOWLEDGEBASE,
+                    File.id == f2d[0].file_id,
+                ]
             )
-        f2d = File2DocumentService.get_by_document_id(doc.id)
-        FileService.filter_delete(
-            [File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id]
-        )
-        File2DocumentService.delete_by_document_id(doc.id)
-    if not KnowledgebaseService.delete_by_id(id):
-        return get_error_data_result(retmsg="Delete dataset error.(Database error)")
+            File2DocumentService.delete_by_document_id(doc.id)
+        if not KnowledgebaseService.delete_by_id(id):
+            return get_error_data_result(retmsg="Delete dataset error.(Database error)")
     return get_result(retcode=RetCode.SUCCESS)
 
 
@@ -341,8 +359,9 @@ def update(tenant_id, dataset_id):
             return get_error_data_result(retmsg="Can't change `tenant_id`.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if "parser_config" in req:
-        print(kb.parser_config, flush=True)
-        req["parser_config"] = kb.parser_config.update(req["parser_config"])
+        temp_dict = kb.parser_config
+        temp_dict.update(req["parser_config"])
+        req["parser_config"] = temp_dict
     if "chunk_count" in req:
         if req["chunk_count"] != kb.chunk_num:
             return get_error_data_result(retmsg="Can't change `chunk_count`.")
@@ -358,7 +377,8 @@ def update(tenant_id, dataset_id):
             )
         req["parser_id"] = req.pop("chunk_method")
         if req["parser_id"] != kb.parser_id:
-            req["parser_config"] = get_parser_config(chunk_method, parser_config)
+            if not req.get("parser_config"):
+                req["parser_config"] = get_parser_config(chunk_method, parser_config)
     if "embedding_model" in req:
         if kb.chunk_num != 0 and req["embedding_model"] != kb.embd_id:
             return get_error_data_result(
@@ -380,17 +400,24 @@ def update(tenant_id, dataset_id):
             "text-embedding-v3",
             "maidalun1020/bce-embedding-base_v1",
         ]
-        if (
-            not TenantLLMService.query(
-                tenant_id=tenant_id,
-                model_type="embedding",
-                llm_name=req.get("embedding_model"),
-            )
-            and req.get("embedding_model") not in valid_embedding_models
-        ):
+        embd_model = LLMService.query(
+            llm_name=req["embedding_model"], model_type="embedding"
+        )
+        if not embd_model:
             return get_error_data_result(
                 f"`embedding_model` {req.get('embedding_model')} doesn't exist"
             )
+        if embd_model:
+            if req[
+                "embedding_model"
+            ] not in valid_embedding_models and not TenantLLMService.query(
+                tenant_id=tenant_id,
+                model_type="embedding",
+                llm_name=req.get("embedding_model"),
+            ):
+                return get_error_data_result(
+                    f"`embedding_model` {req.get('embedding_model')} doesn't exist"
+                )
         req["embd_id"] = req.pop("embedding_model")
     if "name" in req:
         req["name"] = req["name"].strip()

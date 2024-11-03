@@ -49,7 +49,7 @@ Currently, we only support x86 CPU and Nvidia GPU.
 
 ### 2. Do you offer an API for integration with third-party applications?
 
-The corresponding APIs are now available. See the [RAGFlow API Reference](./api.md) for more information.
+The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](./http_api_reference.md) or the [RAGFlow Python API Reference](./python_api_reference.md) for more information.
 
 ### 3. Do you support stream output?
 
@@ -397,34 +397,5 @@ This error occurs because there are too many chunks matching your search criteri
 ![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
 
 ### 9. How to upgrade RAGFlow?
-   
-You can upgrade RAGFlow to either the dev version or the latest version:
 
-- Dev versions are for developers and contributors. They are published on a nightly basis and may crash because they are not fully tested. We cannot guarantee their validity and you are at your own risk trying out latest, untested features.
-- The latest version refers to the most recent, officially published release. It is stable and works best with regular users.
-
-
-To upgrade RAGFlow to the dev version:
-
-Update the RAGFlow image and restart RAGFlow:
-1. Update **ragflow/docker/.env** as follows:
-   ```bash
-   RAGFLOW_IMAGE=infiniflow/ragflow:dev
-   ```
-2. Update ragflow image and restart ragflow:
-   ```bash
-   docker compose -f docker/docker-compose.yml pull
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-   
-To upgrade RAGFlow to the latest version:
-
-1. Update **ragflow/docker/.env** as follows:
-   ```bash
-   RAGFLOW_IMAGE=infiniflow/ragflow:latest
-   ```
-2. Update the RAGFlow image and restart RAGFlow:
-   ```bash
-   docker compose -f docker/docker-compose.yml pull
-   docker compose -f docker/docker-compose.yml up -d
-   ```   
+See [Upgrade RAGFlow](../guides/upgrade_ragflow.md) for more information.

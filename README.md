@@ -19,7 +19,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.12.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.12.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.13.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.13.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -69,11 +69,12 @@ data.
 Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/b083d173-dadc-4ea9-bdeb-180d7df514eb" width="1200"/>
+<img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
 </div>
 
 ## 🔥 Latest Updates
 
+- 2024-11-01 Adds keyword extraction and related question generation to the parsed chunk to improve the accuracy of retrieval.
 - 2024-09-29 Optimizes multi-round conversations.
 - 2024-09-13 Adds search mode for knowledge base Q&A.
 - 2024-09-09 Adds a medical consultant agent template.
@@ -175,14 +176,14 @@ releases! 🌟
    ```
 
    > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFlow_IMAGE` variable in *
-       *docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`. After
+       *docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.13.0-slim`. After
        making this change, rerun the command above to initiate the download.
    > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the
        `RAGFlow_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change,
        rerun the command above to initiate the download.
    > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update
        the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example,
-       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`. After making this change, rerun the command above to initiate the
+       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.13.0`. After making this change, rerun the command above to initiate the
        download.
 
    > **NOTE:** A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size

@@ -1,6 +1,6 @@
 import importlib.metadata
 
-__version__ = importlib.metadata.version("ragflow")
+__version__ = importlib.metadata.version("ragflow_sdk")
 
 from .ragflow import RAGFlow
 from .modules.dataset import DataSet

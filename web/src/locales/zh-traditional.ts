@@ -30,6 +30,8 @@ export default {
       warn: '提醒',
       action: '操作',
       s: '秒',
+      pleaseSelect: '請選擇',
+      pleaseInput: '請輸入',
     },
     login: {
       login: '登入',
@@ -697,7 +699,7 @@ export default {
       googleDescription:
         '此元件用於從https://www.google.com/取得搜尋結果。通常，它作為知識庫的補充。 Top N 和 SerpApi API 金鑰指定您需要調整的搜尋結果數量。',
       bing: 'Bing',
-      bingTip:
+      bingDescription:
         '此元件用於從 https://www.bing.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 和 Bing Subscription-Key 指定您需要適配的搜尋結果數量。',
       apiKey: 'API KEY',
       country: '國家',
@@ -973,6 +975,8 @@ export default {
       timeout: '超時',
       headers: '請求頭',
       cleanHtml: '清除 html',
+      reference: '引用',
+      input: '輸入',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

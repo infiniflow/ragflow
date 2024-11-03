@@ -337,14 +337,14 @@ def valid(permission,valid_permission,language,valid_language,chunk_method,valid
 
 def valid_parameter(parameter,valid_values):
     if parameter and parameter not in valid_values:
-       return get_error_data_result(f"`{parameter}` is not in {valid_values}")
+       return get_error_data_result(f"'{parameter}' is not in {valid_values}")
 
 def get_parser_config(chunk_method,parser_config):
     if parser_config:
         return parser_config
     if not chunk_method:
         chunk_method = "naive"
-    key_mapping={"naive":{"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False,"layout_recognize": True, "raptor": {"user_raptor": False}},
+    key_mapping={"naive":{"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False,"layout_recognize": True, "raptor": {"use_raptor": False}},
                  "qa":{"raptor":{"use_raptor":False}},
                  "resume":None,
                  "manual":{"raptor":{"use_raptor":False}},
@@ -354,6 +354,8 @@ def get_parser_config(chunk_method,parser_config):
                  "laws":{"raptor":{"use_raptor":False}},
                  "presentation":{"raptor":{"use_raptor":False}},
                  "one":None,
-                 "knowledge_graph":{"chunk_token_num":8192,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}}
+                 "knowledge_graph":{"chunk_token_num":8192,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]},
+                 "email":None,
+                 "picture":None}
     parser_config=key_mapping[chunk_method]
     return parser_config

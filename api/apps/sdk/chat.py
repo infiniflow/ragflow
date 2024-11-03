@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 from flask import request
-
+from api.settings import RetCode
 from api.db import StatusEnum
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -40,6 +40,10 @@ def create(tenant_id):
         kb=kbs[0]
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+    kbs = KnowledgebaseService.get_by_ids(ids)
+    embd_count = list(set([kb.embd_id for kb in kbs]))
+    if len(embd_count) != 1:
+        return get_result(retmsg='Datasets use different embedding models."',retcode=RetCode.AUTHENTICATION_ERROR)
     req["kb_ids"] = ids
     # llm
     llm = req.get("llm")
@@ -149,6 +153,8 @@ def update(tenant_id,chat_id):
         return get_error_data_result(retmsg='You do not own the chat')
     req =request.json
     ids = req.get("dataset_ids")
+    if "show_quotation" in req:
+        req["do_refer"]=req.pop("show_quotation")
     if "dataset_ids" in req:
         if not ids:
             return get_error_data_result("`datasets` can't be empty")
@@ -160,6 +166,12 @@ def update(tenant_id,chat_id):
                 kb = kbs[0]
                 if kb.chunk_num == 0:
                     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+            kbs = KnowledgebaseService.get_by_ids(ids)
+            embd_count=list(set([kb.embd_id for kb in kbs]))
+            if len(embd_count) != 1 :
+                return get_result(
+                    retmsg='Datasets use different embedding models."',
+                    retcode=RetCode.AUTHENTICATION_ERROR)
             req["kb_ids"] = ids
     llm = req.get("llm")
     if llm:
@@ -225,10 +237,18 @@ def update(tenant_id,chat_id):
 @token_required
 def delete(tenant_id):
     req = request.json
-    ids = req.get("ids")
+    if not req:
+        ids=None
+    else:
+        ids=req.get("ids")
     if not ids:
-        return get_error_data_result(retmsg="`ids` are required")
-    for id in ids:
+        id_list = []
+        dias=DialogService.query(tenant_id=tenant_id,status=StatusEnum.VALID.value)
+        for dia in dias:
+            id_list.append(dia.id)
+    else:
+        id_list=ids
+    for id in id_list:
         if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
             return get_error_data_result(retmsg=f"You don't own the chat {id}")
         temp_dict = {"status": StatusEnum.INVALID.value}
@@ -260,7 +280,8 @@ def list_chat(tenant_id):
                    "quote": "show_quote",
                    "system": "prompt",
                    "rerank_id": "rerank_model",
-                   "vector_similarity_weight": "keywords_similarity_weight"}
+                   "vector_similarity_weight": "keywords_similarity_weight",
+                   "do_refer":"show_quotation"}
     key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id"]
     for res in chats:
         for key, value in res["prompt_config"].items():

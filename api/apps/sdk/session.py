@@ -76,9 +76,6 @@ def update(tenant_id,chat_id,session_id):
 @token_required
 def completion(tenant_id,chat_id):
     req = request.json
-    # req = {"conversation_id": "9aaaca4c11d311efa461fa163e197198", "messages": [
-    #    {"role": "user", "content": "上海有吗？"}
-    # ]}
     if not req.get("session_id"):
         conv = {
             "id": get_uuid(),
@@ -100,7 +97,7 @@ def completion(tenant_id,chat_id):
         return get_error_data_result(retmsg="Session does not exist")
     conv = conv[0]
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(retmsg="You do not own the session")
+        return get_error_data_result(retmsg="You do not own the chat")
     msg = []
     question = {
         "content": req.get("question"),
@@ -168,9 +165,6 @@ def list(chat_id,tenant_id):
         return get_error_data_result(retmsg=f"You don't own the assistant {chat_id}.")
     id = request.args.get("id")
     name = request.args.get("name")
-    session = ConversationService.query(id=id,name=name,dialog_id=chat_id)
-    if not session:
-        return get_error_data_result(retmsg="The session doesn't exist")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 1024))
     orderby = request.args.get("orderby", "create_time")
@@ -183,6 +177,10 @@ def list(chat_id,tenant_id):
         return get_result(data=[])
     for conv in convs:
         conv['messages'] = conv.pop("message")
+        infos = conv["messages"]
+        for info in infos:
+            if "prompt" in info:
+                info.pop("prompt")
         conv["chat"] = conv.pop("dialog_id")
         if conv["reference"]:
             messages = conv["messages"]
@@ -218,10 +216,20 @@ def list(chat_id,tenant_id):
 def delete(tenant_id,chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(retmsg="You don't own the chat")
-    ids = request.json.get("ids")
+    req = request.json
+    convs = ConversationService.query(dialog_id=chat_id)
+    if not req:
+        ids = None
+    else:
+        ids=req.get("ids")
+
     if not ids:
-        return get_error_data_result(retmsg="`ids` is required in deleting operation")
-    for id in ids:
+        conv_list = []
+        for conv in convs:
+            conv_list.append(conv.id)
+    else:
+        conv_list=ids
+    for id in conv_list:
         conv = ConversationService.query(id=id,dialog_id=chat_id)
         if not conv:
             return get_error_data_result(retmsg="The chat doesn't own the session")

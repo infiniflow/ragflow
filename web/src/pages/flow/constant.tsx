@@ -343,10 +343,15 @@ export const componentMenuList = [
   },
 ];
 
+const initialQueryBaseValues = {
+  query: [],
+};
+
 export const initialRetrievalValues = {
   similarity_threshold: 0.2,
   keywords_similarity_weight: 0.3,
   top_n: 8,
+  ...initialQueryBaseValues,
 };
 
 export const initialBeginValues = {
@@ -390,6 +395,7 @@ export const initialCategorizeValues = {
   ...initialLlmBaseValues,
   message_history_window_size: 1,
   category_description: {},
+  ...initialQueryBaseValues,
 };
 
 export const initialMessageValues = {
@@ -399,29 +405,35 @@ export const initialMessageValues = {
 export const initialKeywordExtractValues = {
   ...initialLlmBaseValues,
   top_n: 1,
+  ...initialQueryBaseValues,
 };
 export const initialDuckValues = {
   top_n: 10,
   channel: Channel.Text,
+  ...initialQueryBaseValues,
 };
 
 export const initialBaiduValues = {
   top_n: 10,
+  ...initialQueryBaseValues,
 };
 
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
+  ...initialQueryBaseValues,
 };
 
 export const initialPubMedValues = {
   top_n: 10,
   email: '',
+  ...initialQueryBaseValues,
 };
 
 export const initialArXivValues = {
   top_n: 10,
   sort_by: 'relevance',
+  ...initialQueryBaseValues,
 };
 
 export const initialGoogleValues = {
@@ -429,6 +441,7 @@ export const initialGoogleValues = {
   api_key: 'Xxx(get from https://serpapi.com/manage-api-key)',
   country: 'cn',
   language: 'en',
+  ...initialQueryBaseValues,
 };
 
 export const initialBingValues = {
@@ -438,12 +451,14 @@ export const initialBingValues = {
     '"YOUR_ACCESS_KEY"(get from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
   country: 'CH',
   language: 'en',
+  ...initialQueryBaseValues,
 };
 
 export const initialGoogleScholarValues = {
   top_n: 5,
   sort_by: 'relevance',
   patents: true,
+  ...initialQueryBaseValues,
 };
 
 export const initialDeepLValues = {
@@ -453,12 +468,14 @@ export const initialDeepLValues = {
 
 export const initialGithubValues = {
   top_n: 5,
+  ...initialQueryBaseValues,
 };
 
 export const initialBaiduFanyiValues = {
   appid: 'xxx',
   secret_key: 'xxx',
   trans_type: 'translate',
+  ...initialQueryBaseValues,
 };
 
 export const initialQWeatherValues = {
@@ -466,6 +483,7 @@ export const initialQWeatherValues = {
   type: 'weather',
   user_type: 'free',
   time_period: 'now',
+  ...initialQueryBaseValues,
 };
 
 export const initialExeSqlValues = {
@@ -477,13 +495,18 @@ export const initialExeSqlValues = {
   password: '',
   loop: 3,
   top_n: 30,
+  ...initialQueryBaseValues,
 };
 
 export const initialSwitchValues = { conditions: [] };
 
-export const initialWenCaiValues = { top_n: 20, query_type: 'stock' };
+export const initialWenCaiValues = {
+  top_n: 20,
+  query_type: 'stock',
+  ...initialQueryBaseValues,
+};
 
-export const initialAkShareValues = { top_n: 10 };
+export const initialAkShareValues = { top_n: 10, ...initialQueryBaseValues };
 
 export const initialYahooFinanceValues = {
   info: true,
@@ -492,6 +515,7 @@ export const initialYahooFinanceValues = {
   balance_sheet: false,
   cash_flow_statement: false,
   news: true,
+  ...initialQueryBaseValues,
 };
 
 export const initialJin10Values = {
@@ -500,6 +524,7 @@ export const initialJin10Values = {
   flash_type: '1',
   contain: '',
   filter: '',
+  ...initialQueryBaseValues,
 };
 
 export const initialConcentratorValues = {};
@@ -508,6 +533,7 @@ export const initialTuShareValues = {
   token: 'xxx',
   src: 'eastmoney',
   start_date: '2024-01-01 09:00:00',
+  ...initialQueryBaseValues,
 };
 
 export const initialNoteValues = {
@@ -516,6 +542,7 @@ export const initialNoteValues = {
 
 export const initialCrawlerValues = {
   extract_type: 'markdown',
+  ...initialQueryBaseValues,
 };
 
 export const initialInvokeValues = {

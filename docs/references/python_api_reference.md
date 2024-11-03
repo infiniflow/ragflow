@@ -1,10 +1,15 @@
-# DRAFT Python API Reference
+sidebar_position: 1
 
-**THE API REFERENCES BELOW ARE STILL UNDER DEVELOPMENT.**
+slug: /python_api_reference
+---
+
+# Python API Reference
+
+A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/develop/acquire_ragflow_api_key.md).
 
 ---
 
-:::tip NOTE
+:::tip API GROUPING
 Dataset Management
 :::
 
@@ -74,17 +79,38 @@ The chunking method of the dataset to create. Available options:
 - `"presentation"`: Presentation
 - `"picture"`: Picture
 - `"one"`: One
-- `"knowledge_graph"`: Knowledge Graph
+- `"knowledge_graph"`: Knowledge Graph  
+  Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
 - `"email"`: Email
 
 #### parser_config
 
-The parser configuration of the dataset. A `ParserConfig` object contains the following attributes:
+The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
-- `chunk_token_count`: Defaults to `128`.
-- `layout_recognize`: Defaults to `True`.
-- `delimiter`: Defaults to `"\n!?。；！？"`.
-- `task_page_size`: Defaults to `12`.
+- `chunk_method`=`"naive"`:  
+  `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+- `chunk_method`=`"qa"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"manuel"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"table"`:  
+  `None`
+- `chunk_method`=`"paper"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"book"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"laws"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"picture"`:  
+  `None`
+- `chunk_method`=`"presentation"`:  
+  `{"raptor": {"user_raptor": False}}`
+- `chunk_method`=`"one"`:  
+  `None`
+- `chunk_method`=`"knowledge-graph"`:  
+  `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+- `chunk_method`=`"email"`:  
+  `None`
 
 ### Returns
 
@@ -224,8 +250,8 @@ A dictionary representing the attributes to update, with the following keys:
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph
-  - `"email"`: Email
+  - `"knowledge_graph"`: Knowledge Graph  
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
 
 ### Returns
 
@@ -296,11 +322,6 @@ Updates configurations for the current document.
 A dictionary representing the attributes to update, with the following keys:
 
 - `"display_name"`: `str` The name of the document to update.
-- `"parser_config"`: `dict[str, Any]` The parsing configuration for the document:
-  - `"chunk_token_count"`: Defaults to `128`.
-  - `"layout_recognize"`: Defaults to `True`.
-  - `"delimiter"`: Defaults to `'\n!?。；！？'`.
-  - `"task_page_size"`: Defaults to `12`.
 - `"chunk_method"`: `str` The parsing method to apply to the document.
   - `"naive"`: General
   - `"manual`: Manual
@@ -312,8 +333,34 @@ A dictionary representing the attributes to update, with the following keys:
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph
+  - `"knowledge_graph"`: Knowledge Graph  
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
+- `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
+  - `"chunk_method"`=`"naive"`:  
+    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+  - `chunk_method`=`"qa"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"manuel"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"table"`:  
+    `None`
+  - `chunk_method`=`"paper"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"book"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"laws"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"presentation"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"picture"`:  
+    `None`
+  - `chunk_method`=`"one"`:  
+    `None`
+  - `chunk_method`=`"knowledge-graph"`:  
+    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+  - `chunk_method`=`"email"`:  
+    `None`
 
 ### Returns
 
@@ -412,7 +459,6 @@ A `Document` object contains the following attributes:
 - `thumbnail`: The thumbnail image of the document. Defaults to `None`.
 - `dataset_id`: The dataset ID associated with the document. Defaults to `None`.
 - `chunk_method` The chunk method name. Defaults to `"naive"`.
-- `parser_config`: `ParserConfig` Configuration object for the parser. Defaults to `{"pages": [[1, 1000000]]}`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
 - `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
 - `created_by`: `str` The creator of the document. Defaults to `""`.
@@ -430,6 +476,31 @@ A `Document` object contains the following attributes:
   - `"DONE"`
   - `"FAIL"`
 - `status`: `str` Reserved for future use.
+- `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
+  - `chunk_method`=`"naive"`:  
+    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+  - `chunk_method`=`"qa"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"manuel"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"table"`:  
+    `None`
+  - `chunk_method`=`"paper"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"book"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"laws"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"presentation"`:  
+    `{"raptor": {"user_raptor": False}}`
+  - `chunk_method`=`"picure"`:  
+    `None`
+  - `chunk_method`=`"one"`:  
+    `None`
+  - `chunk_method`=`"knowledge-graph"`:  
+    `{"chunk_token_num":128,"delimiter": "\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+  - `chunk_method`=`"email"`:  
+    `None`
 
 ### Examples
 
@@ -893,10 +964,7 @@ Instructions for the LLM to follow.  A `Prompt` object contains the following at
 - `empty_response`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank. Defaults to `None`.
 - `opener`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
 - `show_quote`: `bool` Indicates whether the source of text should be displayed. Defaults to `True`.
-- `prompt`: `str` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
-      Here is the knowledge base:
-      {knowledge}
-      The above is the knowledge base.`
+- `prompt`: `str` The prompt content.
 
 ### Returns
 
@@ -954,10 +1022,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"empty_response"`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
   - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `bool` Indicates whether the source of text should be displayed Defaults to `True`.
-  - `"prompt"`: `str` The prompt content. Defaults to `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
-      Here is the knowledge base:
-      {knowledge}
-      The above is the knowledge base.`.
+  - `"prompt"`: `str` The prompt content.
 
 ### Returns
 
