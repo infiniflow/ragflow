@@ -1,5 +1,6 @@
 ---
 sidebar_position: 0
+
 slug: /http_api_reference
 ---
 
@@ -615,14 +616,14 @@ Failure:
 
 ## List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
 
 Lists documents in a specified dataset.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -631,7 +632,7 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?offset={offset}&limit={limit}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -641,10 +642,10 @@ curl --request GET \
   The associated dataset ID.
 - `keywords`: (*Filter parameter*), `string`  
   The keywords used to match document titles.
-- `offset`: (*Filter parameter*), `integer`  
-  The starting index for the documents to retrieve. Typically used in conjunction with `limit`. Defaults to `1`.
-- `limit`: (*Filter parameter*), `integer`  
-  The maximum number of documents to retrieve. Defaults to `1024`.
+- `page`: (*Filter parameter*), `integer`
+  Specifies the page on which the documents will be displayed. Defaults to `1`.
+- `page_size`: (*Filter parameter*), `integer`  
+  The maximum number of documents on each page. Defaults to `1024`.
 - `orderby`: (*Filter parameter*), `string`  
   The field by which documents should be sorted. Available options:
   - `create_time` (default)
@@ -958,14 +959,14 @@ Failure:
 
 ## List chunks
 
-**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&offset={offset}&limit={limit}&id={id}`
+**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={id}`
 
 Lists chunks in a specified document.
 
 ### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id}`
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={chunk_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -973,7 +974,7 @@ Lists chunks in a specified document.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&offset={offset}&limit={limit}&id={chunk_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={chunk_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' 
 ```
 
@@ -985,10 +986,10 @@ curl --request GET \
   The associated document ID.
 - `keywords`(*Filter parameter*), `string`  
   The keywords used to match chunk content.
-- `offset`(*Filter parameter*), `string`  
-  The starting index for the chunks to retrieve. Defaults to `1`.
-- `limit`(*Filter parameter*), `integer`  
-  The maximum number of chunks to retrieve.  Default: `1024`
+- `page`(*Filter parameter*), `integer`  
+  Specifies the page on which the chunks will be displayed. Defaults to `1`.
+- `page_size`(*Filter parameter*), `integer`  
+  The maximum number of chunks on each page. Defaults to `1024`.
 - `id`(*Filter parameter*), `string`  
   The ID of the chunk to retrieve.
 
@@ -1209,8 +1210,8 @@ Retrieves chunks from specified datasets.
   - `"question"`: `string`  
   - `"dataset_ids"`: `list[string]`  
   - `"document_ids"`: `list[string]`
-  - `"offset"`: `integer`  
-  - `"limit"`: `integer`  
+  - `"page"`: `integer`  
+  - `"page_size"`: `integer`  
   - `"similarity_threshold"`: `float`  
   - `"vector_similarity_weight"`: `float`  
   - `"top_k"`: `integer`  
@@ -1241,10 +1242,10 @@ curl --request POST \
   The IDs of the datasets to search. If you do not set this argument, ensure that you set `"document_ids"`.
 - `"document_ids"`: (*Body parameter*), `list[string]`  
   The IDs of the documents to search. Ensure that all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `"dataset_ids"`.
-- `"offset"`: (*Body parameter*), `integer`  
-  The starting index for the documents to retrieve. Defaults to `1`.
-- `"limit"`: (*Body parameter*)  
-  The maximum number of chunks to retrieve. Defaults to `1024`.
+- `"page"`: (*Body parameter*), `integer`  
+  Specifies the page on which the chunks will be displayed. Defaults to `1`.
+- `"page_size"`: (*Body parameter*)  
+  The maximum number of chunks on each page. Defaults to `1024`.
 - `"similarity_threshold"`: (*Body parameter*)  
   The minimum similarity score. Defaults to `0.2`.
 - `"vector_similarity_weight"`: (*Body parameter*), `float`  
