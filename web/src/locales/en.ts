@@ -447,6 +447,7 @@ The above is the content you need to summarize.`,
       multiTurn: 'Multi-turn optimization',
       multiTurnTip:
         'In multi-round conversations, the query to the knowledge base is optimized. The large model will be called to consume additional tokens.',
+      howUseId: 'How to use chat ID?',
     },
     setting: {
       profile: 'Profile',
@@ -1031,6 +1032,7 @@ The above is the content you need to summarize.`,
       reference: 'Reference',
       input: 'Input',
       parameter: 'Parameter',
+      howUseId: 'How to use agent ID?',
     },
     footer: {
       profile: 'All rights reserved @ React',

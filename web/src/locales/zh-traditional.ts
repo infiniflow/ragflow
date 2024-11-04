@@ -416,6 +416,7 @@ export default {
       multiTurn: '多輪對話優化',
       multiTurnTip:
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
+      howUseId: '如何使用聊天ID？',
     },
     setting: {
       profile: '概述',
@@ -979,6 +980,7 @@ export default {
       reference: '引用',
       input: '輸入',
       parameter: '參數',
+      howUseId: '如何使用Agent ID？',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

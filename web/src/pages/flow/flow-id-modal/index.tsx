@@ -2,21 +2,19 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Modal, Typography } from 'antd';
 
+import { useParams } from 'umi';
 import styles from './index.less';
 
 const { Paragraph, Link } = Typography;
 
-const ChatIdModal = ({
-  visible,
-  hideModal,
-  id,
-}: IModalProps<any> & { id: string; name?: string; idKey: string }) => {
-  const { t } = useTranslate('chat');
+const FlowIdModal = ({ hideModal }: IModalProps<any>) => {
+  const { t } = useTranslate('flow');
+  const { id } = useParams();
 
   return (
     <Modal
-      title={t('overview')}
-      open={visible}
+      title={'Agent ID'}
+      open
       onCancel={hideModal}
       cancelButtonProps={{ style: { display: 'none' } }}
       onOk={hideModal}
@@ -26,7 +24,7 @@ const ChatIdModal = ({
         {id}
       </Paragraph>
       <Link
-        href="https://ragflow.io/docs/dev/http_api_reference#create-session"
+        href="https://ragflow.io/docs/dev/http_api_reference#create-agent-session"
         target="_blank"
       >
         {t('howUseId')}
@@ -35,4 +33,4 @@ const ChatIdModal = ({
   );
 };
 
-export default ChatIdModal;
+export default FlowIdModal;

@@ -4,6 +4,7 @@ import { useFetchFlow } from '@/hooks/flow-hooks';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { Button, Flex, Space } from 'antd';
 import { Link, useParams } from 'umi';
+import FlowIdModal from '../flow-id-modal';
 import { useSaveGraph, useSaveGraphBeforeOpeningDebugDrawer } from '../hooks';
 import styles from './index.less';
 
@@ -21,6 +22,7 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
     hideModal: hideOverviewModal,
     showModal: showOverviewModal,
   } = useSetModalState();
+  const { visible, hideModal, showModal } = useSetModalState();
   const { id } = useParams();
 
   return (
@@ -44,8 +46,11 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
           <Button type="primary" onClick={saveGraph}>
             <b>{t('save')}</b>
           </Button>
-          <Button type="primary" onClick={showOverviewModal} disabled>
+          {/* <Button type="primary" onClick={showOverviewModal} disabled>
             <b>{t('publish')}</b>
+          </Button> */}
+          <Button type="primary" onClick={showModal}>
+            <b>Agent ID</b>
           </Button>
         </Space>
       </Flex>
@@ -57,6 +62,7 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
           idKey="canvasId"
         ></ChatOverviewModal>
       )}
+      {visible && <FlowIdModal hideModal={hideModal}></FlowIdModal>}
     </>
   );
 };
