@@ -3,7 +3,7 @@ import { Form, Input, InputNumber, Select, Space, Switch } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useSetLlmSetting } from '../../hooks';
 import { IOperatorForm } from '../../interface';
-import DynamicVariables from './dynamic-variables';
+import DynamicVariablesForm from './dynamic-variables';
 
 enum Method {
   GET = 'GET',
@@ -63,10 +63,14 @@ const InvokeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         <Form.Item name={'proxy'} label={t('flow.proxy')}>
           <Input />
         </Form.Item>
-        <Form.Item name={'clean_html'} label={t('flow.cleanHtml')}>
+        <Form.Item
+          name={'clean_html'}
+          label={t('flow.cleanHtml')}
+          tooltip={t('flow.cleanHtmlTip')}
+        >
           <Switch />
         </Form.Item>
-        <DynamicVariables nodeId={node?.id}></DynamicVariables>
+        <DynamicVariablesForm nodeId={node?.id}></DynamicVariablesForm>
       </Form>
     </>
   );

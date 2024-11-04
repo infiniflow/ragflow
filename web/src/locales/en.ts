@@ -1025,9 +1025,12 @@ The above is the content you need to summarize.`,
       method: 'Method',
       timeout: 'Timeout',
       headers: 'Headers',
-      cleanHtml: 'Clean html',
+      cleanHtml: 'Clean HTML',
+      cleanHtmlTip:
+        'If the response is HTML formatted and only the primary content wanted, please toggle it on.',
       reference: 'Reference',
       input: 'Input',
+      parameter: 'Parameter',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -994,9 +994,11 @@ export default {
       method: '方法',
       timeout: '超时',
       headers: '请求头',
-      cleanHtml: '清除 html',
+      cleanHtml: '清除 HTML',
+      cleanHtmlTip: '如果响应是 HTML 格式且只需要主要内容，请将其打开。',
       reference: '引用',
       input: '输入',
+      parameter: '参数',
     },
     footer: {
       profile: 'All rights reserved @ React',
