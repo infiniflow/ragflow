@@ -48,7 +48,7 @@ jobs:
       - name: Build ragflow:dev-slim
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
-          cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb .
+          cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb  ${RUNNER_WORKSPACE_PREFIX}/tika-server*.jar* .
           sudo docker pull ubuntu:24.04
           sudo docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 
@@ -78,7 +78,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test && pytest t_dataset.py t_chat.py t_session.py
+          cd sdk/python && poetry install && source .venv/bin/activate && cd test && pytest t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
 
       - name: Stop ragflow:dev
         if: always()  # always run this step even if previous steps failed
