@@ -4,6 +4,7 @@
 Look into [.env](./.env), there're some important variables.
 
 ## MYSQL_PASSWORD
+
 The mysql password could be changed by this variable. But you need to change *mysql.password* in [service_conf.yaml](./service_conf.yaml) at the same time.
 
 

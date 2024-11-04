@@ -60,9 +60,10 @@ REQUEST_MAX_WAIT_SEC = 300
 USE_REGISTRY = get_base_config("use_registry")
 
 LLM = get_base_config("user_default_llm", {})
-LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
+LLM_FACTORY = LLM.get("factory", "")
 LLM_BASE_URL = LLM.get("base_url")
 
+CHAT_MDL = EMBEDDING_MDL = RERANK_MDL = ASR_MDL = IMAGE2TEXT_MDL = ""
 if not LIGHTEN:
     default_llm = {
         "Tongyi-Qianwen": {
@@ -122,13 +123,13 @@ if not LIGHTEN:
         }
     }
 
-    CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"]
-    EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"]
-    RERANK_MDL = default_llm["BAAI"]["rerank_model"]
-    ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
-    IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
-else:
-    CHAT_MDL = EMBEDDING_MDL = RERANK_MDL = ASR_MDL = IMAGE2TEXT_MDL = ""
+    if LLM_FACTORY:
+        CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"] + f"@{LLM_FACTORY}"
+        ASR_MDL = default_llm[LLM_FACTORY]["asr_model"] + f"@{LLM_FACTORY}"
+        IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"] + f"@{LLM_FACTORY}"
+    EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"] + "@BAAI"
+    RERANK_MDL = default_llm["BAAI"]["rerank_model"] + "@BAAI"
+
 
 API_KEY = LLM.get("api_key", "")
 PARSERS = LLM.get(
