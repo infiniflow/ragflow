@@ -116,6 +116,11 @@ const routes = [
     component: '@/pages/404',
     layout: false,
   },
+  {
+    path: '/demo',
+    component: '@/pages/demo',
+    layout: false,
+  },
 ];
 
 export default routes;

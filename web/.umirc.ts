@@ -19,7 +19,10 @@ export default defineConfig({
   history: {
     type: 'browser',
   },
-  plugins: ['@react-dev-inspector/umi4-plugin'],
+  plugins: [
+    '@react-dev-inspector/umi4-plugin',
+    '@umijs/plugins/dist/tailwindcss',
+  ],
   jsMinifier: 'terser',
   lessLoader: {
     modifyVars: {
@@ -38,9 +41,11 @@ export default defineConfig({
       // pathRewrite: { '^/v1': '/v1' },
     },
   ],
+
   chainWebpack(memo, args) {
     memo.module.rule('markdown').test(/\.md$/).type('asset/source');
 
     return memo;
   },
+  tailwindcss: {},
 });
