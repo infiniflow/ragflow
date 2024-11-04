@@ -68,7 +68,7 @@ class KGSearch(Dealer):
             s["knn"]["filter"] = bqry.to_dict()
             q_vec = s["knn"]["query_vector"]
 
-        ent_res = self.es.search(deepcopy(s), idxnm=idxnm, timeout="600s", src=src)
+        ent_res = self.es.search(deepcopy(s), idxnms=idxnm, timeout="600s", src=src)
         entities = [d["name_kwd"] for d in self.es.getSource(ent_res)]
         ent_ids = self.es.getDocIds(ent_res)
         if merge_into_first(ent_res, "-Entities-"):
@@ -81,7 +81,7 @@ class KGSearch(Dealer):
         s = Search()
         s = s.query(bqry)[0: 32]
         s = s.to_dict()
-        comm_res = self.es.search(deepcopy(s), idxnm=idxnm, timeout="600s", src=src)
+        comm_res = self.es.search(deepcopy(s), idxnms=idxnm, timeout="600s", src=src)
         comm_ids = self.es.getDocIds(comm_res)
         if merge_into_first(comm_res, "-Community Report-"):
             comm_ids = comm_ids[0:1]
@@ -92,7 +92,7 @@ class KGSearch(Dealer):
         s = Search()
         s = s.query(bqry)[0: 6]
         s = s.to_dict()
-        txt_res = self.es.search(deepcopy(s), idxnm=idxnm, timeout="600s", src=src)
+        txt_res = self.es.search(deepcopy(s), idxnms=idxnm, timeout="600s", src=src)
         txt_ids = self.es.getDocIds(txt_res)
         if merge_into_first(txt_res, "-Original Content-"):
             txt_ids = txt_ids[0:1]
