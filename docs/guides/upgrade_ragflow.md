@@ -18,7 +18,13 @@ You can upgrade RAGFlow to dev version or the latest version:
    RAGFLOW_IMAGE=infiniflow/ragflow:dev
    ```
 
-2. Update RAGFlow image and restart RAGFlow:
+2. Pull the latest code from inside Docker:
+
+   ```bash
+   git pull
+   ```
+
+3. Update RAGFlow image and restart RAGFlow:
 
    ```bash
    docker compose -f docker/docker-compose.yml pull
