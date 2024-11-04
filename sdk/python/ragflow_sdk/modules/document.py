@@ -50,8 +50,8 @@ class Document(Base):
             return res.content
 
 
-    def list_chunks(self,offset=0, limit=30, keywords="", id:str=None):
-        data={"document_id": self.id,"keywords": keywords,"offset":offset,"limit":limit,"id":id}
+    def list_chunks(self,page=1, page_size=30, keywords="", id:str=None):
+        data={"keywords": keywords,"page":page,"page_size":page_size,"id":id}
         res = self.get(f'/datasets/{self.dataset_id}/documents/{self.id}/chunks', data)
         res = res.json()
         if res.get("code") == 0:
@@ -71,7 +71,7 @@ class Document(Base):
         raise Exception(res.get("message"))
 
     def delete_chunks(self,ids:List[str] = None):
-        res = self.rm(f"datasets/{self.dataset_id}/documents/{self.id}/chunks",{"ids":ids})
+        res = self.rm(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks",{"chunk_ids":ids})
         res = res.json()
         if res.get("code")!=0:
             raise Exception(res.get("message"))

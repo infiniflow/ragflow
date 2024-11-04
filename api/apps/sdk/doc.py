@@ -458,16 +458,16 @@ def list_docs(dataset_id, tenant_id):
         return get_error_data_result(retmsg=f"You don't own the document {id}.")
     if not DocumentService.query(name=name, kb_id=dataset_id):
         return get_error_data_result(retmsg=f"You don't own the document {name}.")
-    offset = int(request.args.get("offset", 1))
+    page = int(request.args.get("page", 1))
     keywords = request.args.get("keywords", "")
-    limit = int(request.args.get("limit", 1024))
+    page_size = int(request.args.get("page_size", 1024))
     orderby = request.args.get("orderby", "create_time")
     if request.args.get("desc") == "False":
         desc = False
     else:
         desc = True
     docs, tol = DocumentService.get_list(
-        dataset_id, offset, limit, orderby, desc, keywords, id, name
+        dataset_id, page, page_size, orderby, desc, keywords, id, name
     )
 
     # rename key's name
@@ -802,8 +802,8 @@ def list_chunks(tenant_id, dataset_id, document_id):
     doc = doc[0]
     req = request.args
     doc_id = document_id
-    page = int(req.get("offset", 1))
-    size = int(req.get("limit", 30))
+    page = int(req.get("page", 1))
+    size = int(req.get("page_size", 30))
     question = req.get("keywords", "")
     query = {
         "doc_ids": [doc_id],
@@ -1003,7 +1003,6 @@ def add_chunk(tenant_id, dataset_id, document_id):
     embd_mdl = TenantLLMService.model_instance(
         tenant_id, LLMType.EMBEDDING.value, embd_id
     )
-    print(embd_mdl, flush=True)
     v, c = embd_mdl.encode([doc.name, req["content"]])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
@@ -1323,8 +1322,8 @@ def retrieval_test(tenant_id):
         )
     if "question" not in req:
         return get_error_data_result("`question` is required.")
-    page = int(req.get("offset", 1))
-    size = int(req.get("limit", 1024))
+    page = int(req.get("page", 1))
+    size = int(req.get("page_size", 1024))
     question = req["question"]
     doc_ids = req.get("document_ids", [])
     if not isinstance(doc_ids, list):

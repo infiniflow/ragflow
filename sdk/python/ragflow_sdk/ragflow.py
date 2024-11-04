@@ -154,12 +154,12 @@ class RAGFlow:
         raise Exception(res["message"])
 
 
-    def retrieve(self, dataset_ids, document_ids=None, question="", offset=1, limit=1024, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id:str=None, keyword:bool=False, ):
+    def retrieve(self, dataset_ids, document_ids=None, question="", page=1, page_size=1024, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id:str=None, keyword:bool=False, ):
             if document_ids is None:
                 document_ids = []
             data_json ={
-                "offset": offset,
-                "limit": limit,
+                "offset": page,
+                "limit": page_size,
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight,
                 "top_k": top_k,
