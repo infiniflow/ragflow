@@ -397,6 +397,10 @@ class ComponentBase(ABC):
         self._param = param
         self._param.check()
 
+    def get_dependent_components(self):
+        cpnts = [para["component_id"] for para in self._param.query]
+        return cpnts
+
     def run(self, history, **kwargs):
         flow_logger.info("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
                                                               json.dumps(kwargs, ensure_ascii=False)))
