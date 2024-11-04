@@ -8,7 +8,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.12,<3.13"
+python = ">=3.11,<3.13"
 datrie = "0.8.2"
 akshare = "^1.14.81"
 azure-storage-blob = "12.22.0"
@@ -114,6 +114,7 @@ graspologic = "^3.4.1"
 pymysql = "^1.1.1"
 mini-racer = "^0.12.4"
 pyicu = "^2.13.1"
+flasgger = "^0.9.7.1"
 
 
 [tool.poetry.group.full]

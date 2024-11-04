@@ -27,7 +27,11 @@ from api.apps import app
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from api.settings import (
-    HOST, HTTP_PORT, access_logger, database_logger, stat_logger,
+    HOST,
+    HTTP_PORT,
+    access_logger,
+    database_logger,
+    stat_logger,
 )
 from api import utils
 
@@ -45,27 +49,33 @@ def update_progress():
             stat_logger.error("update_progress exception:" + str(e))
 
 
-if __name__ == '__main__':
-    print(r"""
+if __name__ == "__main__":
+    print(
+        r"""
         ____   ___    ______ ______ __               
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 
-    """, flush=True)
-    stat_logger.info(
-        f'project base: {utils.file_utils.get_project_base_directory()}'
+    """,
+        flush=True,
     )
+    stat_logger.info(f"project base: {utils.file_utils.get_project_base_directory()}")
 
     # init db
     init_web_db()
     init_web_data()
     # init runtime config
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--version', default=False, help="rag flow version", action='store_true')
-    parser.add_argument('--debug', default=False, help="debug mode", action='store_true')
+    parser.add_argument(
+        "--version", default=False, help="rag flow version", action="store_true"
+    )
+    parser.add_argument(
+        "--debug", default=False, help="debug mode", action="store_true"
+    )
     args = parser.parse_args()
     if args.version:
         print(get_versions())
@@ -78,7 +88,7 @@ if __name__ == '__main__':
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=HOST, HTTP_PORT=HTTP_PORT)
 
-    peewee_logger = logging.getLogger('peewee')
+    peewee_logger = logging.getLogger("peewee")
     peewee_logger.propagate = False
     # rag_arch.common.log.ROpenHandler
     peewee_logger.addHandler(database_logger.handlers[0])
@@ -93,7 +103,14 @@ if __name__ == '__main__':
         werkzeug_logger = logging.getLogger("werkzeug")
         for h in access_logger.handlers:
             werkzeug_logger.addHandler(h)
-        run_simple(hostname=HOST, port=HTTP_PORT, application=app, threaded=True, use_reloader=RuntimeConfig.DEBUG, use_debugger=RuntimeConfig.DEBUG)
+        run_simple(
+            hostname=HOST,
+            port=HTTP_PORT,
+            application=app,
+            threaded=True,
+            use_reloader=RuntimeConfig.DEBUG,
+            use_debugger=RuntimeConfig.DEBUG,
+        )
     except Exception:
         traceback.print_exc()
         os.kill(os.getpid(), signal.SIGKILL)
