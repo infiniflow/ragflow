@@ -1,7 +1,7 @@
 import { EditableCell, EditableRow } from '@/components/editable-cell';
 import { useTranslate } from '@/hooks/common-hooks';
 import { DeleteOutlined } from '@ant-design/icons';
-import { Button, Flex, Input, Select, Table, TableProps } from 'antd';
+import { Button, Collapse, Flex, Input, Select, Table, TableProps } from 'antd';
 import { useBuildComponentIdSelectOptions } from '../../hooks';
 import { IInvokeVariable } from '../../interface';
 import { useHandleOperateParameters } from './hooks';
@@ -20,7 +20,7 @@ const components = {
   },
 };
 
-const DynamicVariables = ({ nodeId }: IProps) => {
+const DynamicVariablesForm = ({ nodeId }: IProps) => {
   const { t } = useTranslate('flow');
 
   const options = useBuildComponentIdSelectOptions(nodeId);
@@ -95,24 +95,35 @@ const DynamicVariables = ({ nodeId }: IProps) => {
   ];
 
   return (
-    <section>
-      <Flex justify="end">
-        <Button size="small" onClick={handleAdd}>
-          {t('add')}
-        </Button>
-      </Flex>
-      <Table
-        dataSource={dataSource}
-        columns={columns}
-        rowKey={'id'}
-        className={styles.variableTable}
-        components={components}
-        rowClassName={() => styles.editableRow}
-        scroll={{ x: true }}
-        bordered
-      />
-    </section>
+    <Collapse
+      className={styles.dynamicParameterVariable}
+      defaultActiveKey={['1']}
+      items={[
+        {
+          key: '1',
+          label: (
+            <Flex justify={'space-between'}>
+              <span className={styles.title}>{t('parameter')}</span>
+              <Button size="small" onClick={handleAdd}>
+                {t('add')}
+              </Button>
+            </Flex>
+          ),
+          children: (
+            <Table
+              dataSource={dataSource}
+              columns={columns}
+              rowKey={'id'}
+              components={components}
+              rowClassName={() => styles.editableRow}
+              scroll={{ x: true }}
+              bordered
+            />
+          ),
+        },
+      ]}
+    />
   );
 };
 
-export default DynamicVariables;
+export default DynamicVariablesForm;

@@ -1,5 +1,10 @@
 import get from 'lodash/get';
-import { ChangeEventHandler, useCallback, useMemo } from 'react';
+import {
+  ChangeEventHandler,
+  MouseEventHandler,
+  useCallback,
+  useMemo,
+} from 'react';
 import { v4 as uuid } from 'uuid';
 import { IGenerateParameter, IInvokeVariable } from '../../interface';
 import useGraphStore from '../../store';
@@ -50,19 +55,24 @@ export const useHandleOperateParameters = (nodeId: string) => {
     [updateNodeForm, nodeId, dataSource],
   );
 
-  const handleAdd = useCallback(() => {
-    updateNodeForm(nodeId, {
-      variables: [
-        ...dataSource,
-        {
-          id: uuid(),
-          key: '',
-          component_id: undefined,
-          value: '',
-        },
-      ],
-    });
-  }, [dataSource, nodeId, updateNodeForm]);
+  const handleAdd: MouseEventHandler = useCallback(
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      updateNodeForm(nodeId, {
+        variables: [
+          ...dataSource,
+          {
+            id: uuid(),
+            key: '',
+            component_id: undefined,
+            value: '',
+          },
+        ],
+      });
+    },
+    [dataSource, nodeId, updateNodeForm],
+  );
 
   const handleSave = (row: IGenerateParameter) => {
     const newData = [...dataSource];

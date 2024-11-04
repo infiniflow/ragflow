@@ -1,6 +1,3 @@
-.variableTable {
-  margin-top: 14px;
-}
 .editableRow {
   :global(.editable-cell) {
     position: relative;
@@ -17,5 +14,31 @@
       border: 1px solid #d9d9d9;
       border-radius: 2px;
     }
+  }
+}
+
+.dynamicParameterVariable {
+  background-color: #ebe9e9;
+  :global(.ant-collapse-content) {
+    background-color: #f6f6f6;
+  }
+  :global(.ant-collapse-content-box) {
+    padding: 0 !important;
+  }
+  margin-bottom: 20px;
+  .title {
+    font-weight: 600;
+    font-size: 16px;
+  }
+  .variableType {
+    width: 30%;
+  }
+  .variableValue {
+    flex: 1;
+  }
+
+  .addButton {
+    color: rgb(22, 119, 255);
+    font-weight: 600;
   }
 }

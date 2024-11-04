@@ -974,9 +974,11 @@ export default {
       method: '方法',
       timeout: '超時',
       headers: '請求頭',
-      cleanHtml: '清除 html',
+      cleanHtml: '清除 HTML',
+      cleanHtmlTip: '如果回應是 HTML 格式並且只需要主要內容，請將其開啟。',
       reference: '引用',
       input: '輸入',
+      parameter: '參數',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
