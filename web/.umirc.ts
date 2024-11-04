@@ -28,15 +28,16 @@ export default defineConfig({
   },
   devtool: 'source-map',
   copy: ['src/conf.json'],
-  proxy: {
-    '/v1': {
-      target: 'http://127.0.0.1:9456/',
+  proxy: [
+    {
+      context: ['/api', '/v1'],
+      target: 'http://127.0.0.1:9380/',
       changeOrigin: true,
       ws: true,
       logger: console,
       // pathRewrite: { '^/v1': '/v1' },
     },
-  },
+  ],
   chainWebpack(memo, args) {
     memo.module.rule('markdown').test(/\.md$/).type('asset/source');
 
