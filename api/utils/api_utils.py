@@ -97,19 +97,19 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
     return max(0, countdown)
 
 
-def get_data_error_result(retcode=RetCode.DATA_ERROR,
-                          retmsg='Sorry! Data missing!'):
+def get_data_error_result(code=RetCode.DATA_ERROR,
+                          message='Sorry! Data missing!'):
     import re
     result_dict = {
-        "retcode": retcode,
-        "retmsg": re.sub(
+        "code": code,
+        "message": re.sub(
             r"rag",
             "seceum",
-            retmsg,
+            message,
             flags=re.IGNORECASE)}
     response = {}
     for key, value in result_dict.items():
-        if value is None and key != "retcode":
+        if value is None and key != "code":
             continue
         else:
             response[key] = value
@@ -120,26 +120,26 @@ def server_error_response(e):
     stat_logger.exception(e)
     try:
         if e.code == 401:
-            return get_json_result(retcode=401, retmsg=repr(e))
+            return get_json_result(code=401, message=repr(e))
     except BaseException:
         pass
     if len(e.args) > 1:
         return get_json_result(
-            retcode=RetCode.EXCEPTION_ERROR, retmsg=repr(e.args[0]), data=e.args[1])
+            code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
     if repr(e).find("index_not_found_exception") >= 0:
-        return get_json_result(retcode=RetCode.EXCEPTION_ERROR,
-                               retmsg="No chunk found, please upload file and parse it.")
+        return get_json_result(code=RetCode.EXCEPTION_ERROR,
+                               message="No chunk found, please upload file and parse it.")
 
-    return get_json_result(retcode=RetCode.EXCEPTION_ERROR, retmsg=repr(e))
+    return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
-def error_response(response_code, retmsg=None):
-    if retmsg is None:
-        retmsg = HTTP_STATUS_CODES.get(response_code, 'Unknown Error')
+def error_response(response_code, message=None):
+    if message is None:
+        message = HTTP_STATUS_CODES.get(response_code, 'Unknown Error')
 
     return Response(json.dumps({
-        'retmsg': retmsg,
-        'retcode': response_code,
+        'message': message,
+        'code': response_code,
     }), status=response_code, mimetype='application/json')
 
 
@@ -171,7 +171,7 @@ def validate_request(*args, **kwargs):
                     error_string += "required argument values: {}".format(
                         ",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
                 return get_json_result(
-                    retcode=RetCode.ARGUMENT_ERROR, retmsg=error_string)
+                    code=RetCode.ARGUMENT_ERROR, message=error_string)
             return func(*_args, **_kwargs)
 
         return decorated_function
@@ -196,8 +196,8 @@ def send_file_in_mem(data, filename):
     return send_file(f, as_attachment=True, attachment_filename=filename)
 
 
-def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None):
-    response = {"retcode": retcode, "retmsg": retmsg, "data": data}
+def get_json_result(code=RetCode.SUCCESS, message='success', data=None):
+    response = {"code": code, "message": message, "data": data}
     return jsonify(response)
 
 def apikey_required(func):
@@ -207,7 +207,7 @@ def apikey_required(func):
         objs = APIToken.query(token=token)
         if not objs:
             return build_error_result(
-                error_msg='API-KEY is invalid!', retcode=RetCode.FORBIDDEN
+                message='API-KEY is invalid!', code=RetCode.FORBIDDEN
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)
@@ -215,19 +215,19 @@ def apikey_required(func):
     return decorated_function
 
 
-def build_error_result(retcode=RetCode.FORBIDDEN, error_msg='success'):
-    response = {"error_code": retcode, "error_msg": error_msg}
+def build_error_result(code=RetCode.FORBIDDEN, message='success'):
+    response = {"code": code, "message": message}
     response = jsonify(response)
-    response.status_code = retcode
+    response.status_code = code
     return response
 
 
-def construct_response(retcode=RetCode.SUCCESS,
-                       retmsg='success', data=None, auth=None):
-    result_dict = {"retcode": retcode, "retmsg": retmsg, "data": data}
+def construct_response(code=RetCode.SUCCESS,
+                       message='success', data=None, auth=None):
+    result_dict = {"code": code, "message": message, "data": data}
     response_dict = {}
     for key, value in result_dict.items():
-        if value is None and key != "retcode":
+        if value is None and key != "code":
             continue
         else:
             response_dict[key] = value
@@ -284,7 +284,7 @@ def token_required(func):
         objs = APIToken.query(token=token)
         if not objs:
             return get_json_result(
-                data=False, retmsg='Token is not valid!', retcode=RetCode.AUTHENTICATION_ERROR
+                data=False, message='Token is not valid!', code=RetCode.AUTHENTICATION_ERROR
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)
@@ -292,26 +292,26 @@ def token_required(func):
     return decorated_function
 
 
-def get_result(retcode=RetCode.SUCCESS, retmsg='error', data=None):
-    if retcode == 0:
+def get_result(code=RetCode.SUCCESS, message='error', data=None):
+    if code == 0:
         if data is not None:
-            response = {"code": retcode, "data": data}
+            response = {"code": code, "data": data}
         else:
-            response = {"code": retcode}
+            response = {"code": code}
     else:
-        response = {"code": retcode, "message": retmsg}
+        response = {"code": code, "message": message}
     return jsonify(response)
 
 
-def get_error_data_result(retmsg='Sorry! Data missing!', retcode=RetCode.DATA_ERROR,
+def get_error_data_result(message='Sorry! Data missing!', code=RetCode.DATA_ERROR,
                           ):
     import re
     result_dict = {
-        "code": retcode,
+        "code": code,
         "message": re.sub(
             r"rag",
             "seceum",
-            retmsg,
+            message,
             flags=re.IGNORECASE)}
     response = {}
     for key, value in result_dict.items():

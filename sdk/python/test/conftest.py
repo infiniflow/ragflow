@@ -25,16 +25,16 @@ def register():
     register_data = {"email":EMAIL,"nickname":name,"password":PASSWORD}
     res = requests.post(url=url,json=register_data)
     res = res.json()
-    if res.get("retcode") != 0:
-        raise Exception(res.get("retmsg"))
+    if res.get("code") != 0:
+        raise Exception(res.get("message"))
 
 def login():
     url = HOST_ADDRESS + "/v1/user/login"
     login_data = {"email":EMAIL,"password":PASSWORD}
     response=requests.post(url=url,json=login_data)
     res = response.json()
-    if res.get("retcode")!=0:
-        raise Exception(res.get("retmsg"))
+    if res.get("code")!=0:
+        raise Exception(res.get("message"))
     auth = response.headers["Authorization"]
     return auth
 
@@ -46,7 +46,7 @@ def get_api_key_fixture():
     auth = {"Authorization": auth}
     response = requests.post(url=url,headers=auth)
     res = response.json()
-    if res.get("retcode") != 0:
-        raise Exception(res.get("retmsg"))
+    if res.get("code") != 0:
+        raise Exception(res.get("message"))
     return res["data"].get("token")
 

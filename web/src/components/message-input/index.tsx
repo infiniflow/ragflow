@@ -53,8 +53,8 @@ const getFileIds = (fileList: UploadFile[]) => {
 };
 
 const isUploadSuccess = (file: UploadFile) => {
-  const retcode = get(file, 'response.retcode');
-  return typeof retcode === 'number' && retcode === 0;
+  const code = get(file, 'response.code');
+  return typeof code === 'number' && code === 0;
 };
 
 interface IProps {
@@ -116,7 +116,7 @@ const MessageInput = ({
       const creatingRet = await createConversationBeforeUploadDocument(
         file.name,
       );
-      if (creatingRet?.retcode === 0) {
+      if (creatingRet?.code === 0) {
         nextConversationId = creatingRet.data.id;
       }
     }
@@ -140,7 +140,7 @@ const MessageInput = ({
         originFileObj: file as any,
         response: ret,
         percent: 100,
-        status: ret?.retcode === 0 ? 'done' : 'error',
+        status: ret?.code === 0 ? 'done' : 'error',
       });
       return nextList;
     });

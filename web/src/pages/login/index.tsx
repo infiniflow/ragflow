@@ -33,20 +33,20 @@ const Login = () => {
       const rsaPassWord = rsaPsw(params.password) as string;
 
       if (title === 'login') {
-        const retcode = await login({
+        const code = await login({
           email: params.email,
           password: rsaPassWord,
         });
-        if (retcode === 0) {
+        if (code === 0) {
           navigate('/knowledge');
         }
       } else {
-        const retcode = await register({
+        const code = await register({
           nickname: params.nickname,
           email: params.email,
           password: rsaPassWord,
         });
-        if (retcode === 0) {
+        if (code === 0) {
           setTitle('login');
         }
       }

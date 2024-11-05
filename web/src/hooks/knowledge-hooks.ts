@@ -70,7 +70,7 @@ export const useCreateKnowledge = () => {
     mutationKey: ['createKnowledge'],
     mutationFn: async (params: { id?: string; name: string }) => {
       const { data = {} } = await kbService.createKb(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
         );
@@ -93,7 +93,7 @@ export const useDeleteKnowledge = () => {
     mutationKey: ['deleteKnowledge'],
     mutationFn: async (id: string) => {
       const { data } = await kbService.rmKb({ kb_id: id });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
         queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
       }
@@ -120,7 +120,7 @@ export const useUpdateKnowledge = () => {
         kb_id: knowledgeBaseId,
         ...params,
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
         queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeDetail'] });
       }
@@ -155,7 +155,7 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
         page,
         size: pageSize,
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         const res = data.data;
         return {
           chunks: res.chunks,

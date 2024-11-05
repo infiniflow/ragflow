@@ -27,7 +27,7 @@ export const useSaveKnowledge = () => {
         name,
       });
 
-      if (ret?.retcode === 0) {
+      if (ret?.code === 0) {
         hideModal();
         navigate(
           `/knowledge/${KnowledgeRouteKey.Configuration}?id=${ret.data.kb_id}`,

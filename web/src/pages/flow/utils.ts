@@ -144,7 +144,7 @@ export const buildDslComponentsByGraph = (
 };
 
 export const receiveMessageError = (res: any) =>
-  res && (res?.response.status !== 200 || res?.data?.retcode !== 0);
+  res && (res?.response.status !== 200 || res?.data?.code !== 0);
 
 // Replace the id in the object with text
 export const replaceIdWithText = (
