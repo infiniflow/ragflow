@@ -44,14 +44,14 @@ def create(tenant_id):
     req = request.json
     usrs = UserService.query(email=req["email"])
     if not usrs:
-        return get_data_error_result(retmsg="User not found.")
+        return get_data_error_result(message="User not found.")
 
     user_id = usrs[0].id
     user_tenants = UserTenantService.query(user_id=user_id, tenant_id=tenant_id)
     if user_tenants:
         if user_tenants[0].status == UserTenantRole.NORMAL.value:
-            return get_data_error_result(retmsg="This user is in the team already.")
-        return get_data_error_result(retmsg="Invitation notification is sent.")
+            return get_data_error_result(message="This user is in the team already.")
+        return get_data_error_result(message="Invitation notification is sent.")
 
     UserTenantService.save(
         id=get_uuid(),

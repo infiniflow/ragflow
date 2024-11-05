@@ -29,8 +29,6 @@ from api.utils.api_utils import (
     get_data_error_result,
     server_error_response,
     generate_confirmation_token,
-    request,
-    validate_request,
 )
 from api.versions import get_rag_version
 from rag.utils.es_conn import ELASTICSEARCH
@@ -209,7 +207,7 @@ def new_token():
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
-            return get_data_error_result(retmsg="Tenant not found!")
+            return get_data_error_result(message="Tenant not found!")
 
         tenant_id = tenants[0].tenant_id
         obj = {
@@ -222,7 +220,7 @@ def new_token():
         }
 
         if not APITokenService.save(**obj):
-            return get_data_error_result(retmsg="Fail to new a dialog!")
+            return get_data_error_result(message="Fail to new a dialog!")
 
         return get_json_result(data=obj)
     except Exception as e:
@@ -263,7 +261,7 @@ def token_list():
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
-            return get_data_error_result(retmsg="Tenant not found!")
+            return get_data_error_result(message="Tenant not found!")
 
         objs = APITokenService.query(tenant_id=tenants[0].tenant_id)
         return get_json_result(data=[o.to_dict() for o in objs])

@@ -37,7 +37,7 @@ def create(tenant_id,chat_id):
     req["dialog_id"] = chat_id
     dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
     if not dia:
-        return get_error_data_result(retmsg="You do not own the assistant.")
+        return get_error_data_result(message="You do not own the assistant.")
     conv = {
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
@@ -45,11 +45,11 @@ def create(tenant_id,chat_id):
         "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
     }
     if not conv.get("name"):
-        return get_error_data_result(retmsg="`name` can not be empty.")
+        return get_error_data_result(message="`name` can not be empty.")
     ConversationService.save(**conv)
     e, conv = ConversationService.get_by_id(conv["id"])
     if not e:
-        return get_error_data_result(retmsg="Fail to create a session!")
+        return get_error_data_result(message="Fail to create a session!")
     conv = conv.to_dict()
     conv['messages'] = conv.pop("message")
     conv["chat_id"] = conv.pop("dialog_id")
@@ -65,7 +65,7 @@ def create_agent_session(tenant_id, agent_id):
     if not e:
         return get_error_data_result("Agent not found.")
     if cvs.user_id != tenant_id:
-        return get_error_data_result(retmsg="You do not own the agent.")
+        return get_error_data_result(message="You do not own the agent.")
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -90,17 +90,17 @@ def update(tenant_id,chat_id,session_id):
     conv_id = session_id
     conv = ConversationService.query(id=conv_id,dialog_id=chat_id)
     if not conv:
-        return get_error_data_result(retmsg="Session does not exist")
+        return get_error_data_result(message="Session does not exist")
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(retmsg="You do not own the session")
+        return get_error_data_result(message="You do not own the session")
     if "message" in req or "messages" in req:
-        return get_error_data_result(retmsg="`message` can not be change")
+        return get_error_data_result(message="`message` can not be change")
     if "reference" in req:
-        return get_error_data_result(retmsg="`reference` can not be change")
+        return get_error_data_result(message="`reference` can not be change")
     if "name" in req and not req.get("name"):
-        return get_error_data_result(retmsg="`name` can not be empty.")
+        return get_error_data_result(message="`name` can not be empty.")
     if not ConversationService.update_by_id(conv_id, req):
-        return get_error_data_result(retmsg="Session updates error")
+        return get_error_data_result(message="Session updates error")
     return get_result()
 
 
@@ -116,20 +116,20 @@ def completion(tenant_id, chat_id):
             "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
         }
         if not conv.get("name"):
-            return get_error_data_result(retmsg="`name` can not be empty.")
+            return get_error_data_result(message="`name` can not be empty.")
         ConversationService.save(**conv)
         e, conv = ConversationService.get_by_id(conv["id"])
         session_id=conv.id
     else:
         session_id = req.get("session_id")
     if not req.get("question"):
-        return get_error_data_result(retmsg="Please input your question.")
+        return get_error_data_result(message="Please input your question.")
     conv = ConversationService.query(id=session_id,dialog_id=chat_id)
     if not conv:
-        return get_error_data_result(retmsg="Session does not exist")
+        return get_error_data_result(message="Session does not exist")
     conv = conv[0]
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(retmsg="You do not own the chat")
+        return get_error_data_result(message="You do not own the chat")
     msg = []
     question = {
         "content": req.get("question"),
@@ -199,7 +199,7 @@ def agent_completion(tenant_id, agent_id):
     if not e:
         return get_error_data_result("Agent not found.")
     if cvs.user_id != tenant_id:
-        return get_error_data_result(retmsg="You do not own the agent.")
+        return get_error_data_result(message="You do not own the agent.")
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
@@ -230,7 +230,7 @@ def agent_completion(tenant_id, agent_id):
         session_id = req.get("session_id")
         e, conv = API4ConversationService.get_by_id(req["session_id"])
         if not e:
-            return get_error_data_result(retmsg="Session not found!")
+            return get_error_data_result(message="Session not found!")
 
     if "quote" not in req: req["quote"] = False
     stream = req.get("stream", True)
@@ -280,7 +280,7 @@ def agent_completion(tenant_id, agent_id):
                     ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
                     fillin_conv(ans)
                     rename_field(ans)
-                    yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": ans},
+                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
                                                ensure_ascii=False) + "\n\n"
 
                 canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
@@ -289,10 +289,10 @@ def agent_completion(tenant_id, agent_id):
                 cvs.dsl = json.loads(str(canvas))
                 API4ConversationService.append_message(conv.id, conv.to_dict())
             except Exception as e:
-                yield "data:" + json.dumps({"retcode": 500, "retmsg": str(e),
+                yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                            ensure_ascii=False) + "\n\n"
-            yield "data:" + json.dumps({"retcode": 0, "retmsg": "", "data": True}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
         resp = Response(sse(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -318,7 +318,7 @@ def agent_completion(tenant_id, agent_id):
 @token_required
 def list(chat_id,tenant_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(retmsg=f"You don't own the assistant {chat_id}.")
+        return get_error_data_result(message=f"You don't own the assistant {chat_id}.")
     id = request.args.get("id")
     name = request.args.get("name")
     page_number = int(request.args.get("page", 1))
@@ -372,7 +372,7 @@ def list(chat_id,tenant_id):
 @token_required
 def delete(tenant_id,chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(retmsg="You don't own the chat")
+        return get_error_data_result(message="You don't own the chat")
     req = request.json
     convs = ConversationService.query(dialog_id=chat_id)
     if not req:
@@ -389,6 +389,6 @@ def delete(tenant_id,chat_id):
     for id in conv_list:
         conv = ConversationService.query(id=id,dialog_id=chat_id)
         if not conv:
-            return get_error_data_result(retmsg="The chat doesn't own the session")
+            return get_error_data_result(message="The chat doesn't own the session")
         ConversationService.delete_by_id(id)
     return get_result()

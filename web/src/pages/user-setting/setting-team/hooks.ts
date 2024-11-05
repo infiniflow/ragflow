@@ -17,8 +17,8 @@ export const useAddUser = () => {
 
   const handleAddUserOk = useCallback(
     async (email: string) => {
-      const retcode = await addTenantUser(email);
-      if (retcode === 0) {
+      const code = await addTenantUser(email);
+      if (code === 0) {
         hideAddingTenantModal();
       }
     },
@@ -40,8 +40,8 @@ export const useHandleDeleteUser = () => {
   const handleDeleteTenantUser = (userId: string) => () => {
     showDeleteConfirm({
       onOk: async () => {
-        const retcode = await deleteTenantUser({ userId });
-        if (retcode === 0) {
+        const code = await deleteTenantUser({ userId });
+        if (code === 0) {
         }
         return;
       },

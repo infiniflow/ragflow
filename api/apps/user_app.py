@@ -36,7 +36,7 @@ from api.utils import (
     current_timestamp,
     datetime_format,
 )
-from api.db import UserTenantRole, LLMType, FileType
+from api.db import UserTenantRole, FileType
 from api.settings import (
     RetCode,
     GITHUB_OAUTH,
@@ -90,7 +90,7 @@ def login():
     """
     if not request.json:
         return get_json_result(
-            data=False, retcode=RetCode.AUTHENTICATION_ERROR, retmsg="Unauthorized!"
+            data=False, code=RetCode.AUTHENTICATION_ERROR, message="Unauthorized!"
         )
 
     email = request.json.get("email", "")
@@ -98,8 +98,8 @@ def login():
     if not users:
         return get_json_result(
             data=False,
-            retcode=RetCode.AUTHENTICATION_ERROR,
-            retmsg=f"Email: {email} is not registered!",
+            code=RetCode.AUTHENTICATION_ERROR,
+            message=f"Email: {email} is not registered!",
         )
 
     password = request.json.get("password")
@@ -107,7 +107,7 @@ def login():
         password = decrypt(password)
     except BaseException:
         return get_json_result(
-            data=False, retcode=RetCode.SERVER_ERROR, retmsg="Fail to crypt password"
+            data=False, code=RetCode.SERVER_ERROR, message="Fail to crypt password"
         )
 
     user = UserService.query_user(email, password)
@@ -119,12 +119,12 @@ def login():
         user.update_date = (datetime_format(datetime.now()),)
         user.save()
         msg = "Welcome back!"
-        return construct_response(data=response_data, auth=user.get_id(), retmsg=msg)
+        return construct_response(data=response_data, auth=user.get_id(), message=msg)
     else:
         return get_json_result(
             data=False,
-            retcode=RetCode.AUTHENTICATION_ERROR,
-            retmsg="Email and password do not match!",
+            code=RetCode.AUTHENTICATION_ERROR,
+            message="Email and password do not match!",
         )
 
 
@@ -323,7 +323,7 @@ def user_info_from_feishu(access_token):
         "Authorization": f"Bearer {access_token}",
     }
     res = requests.get(
-        f"https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers
+        "https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers
     )
     user_info = res.json()["data"]
     user_info["email"] = None if user_info.get("email") == "" else user_info["email"]
@@ -409,8 +409,8 @@ def setting_user():
         ):
             return get_json_result(
                 data=False,
-                retcode=RetCode.AUTHENTICATION_ERROR,
-                retmsg="Password error!",
+                code=RetCode.AUTHENTICATION_ERROR,
+                message="Password error!",
             )
 
         if new_password:
@@ -438,7 +438,7 @@ def setting_user():
     except Exception as e:
         stat_logger.exception(e)
         return get_json_result(
-            data=False, retmsg="Update failure!", retcode=RetCode.EXCEPTION_ERROR
+            data=False, message="Update failure!", code=RetCode.EXCEPTION_ERROR
         )
 
 
@@ -474,21 +474,21 @@ def user_profile():
 def rollback_user_registration(user_id):
     try:
         UserService.delete_by_id(user_id)
-    except Exception as e:
+    except Exception:
         pass
     try:
         TenantService.delete_by_id(user_id)
-    except Exception as e:
+    except Exception:
         pass
     try:
         u = UserTenantService.query(tenant_id=user_id)
         if u:
             UserTenantService.delete_by_id(u[0].id)
-    except Exception as e:
+    except Exception:
         pass
     try:
         TenantLLM.delete().where(TenantLLM.tenant_id == user_id).execute()
-    except Exception as e:
+    except Exception:
         pass
 
 
@@ -581,16 +581,16 @@ def user_add():
     if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,5}$", email_address):
         return get_json_result(
             data=False,
-            retmsg=f"Invalid email address: {email_address}!",
-            retcode=RetCode.OPERATING_ERROR,
+            message=f"Invalid email address: {email_address}!",
+            code=RetCode.OPERATING_ERROR,
         )
 
     # Check if the email address is already used
     if UserService.query(email=email_address):
         return get_json_result(
             data=False,
-            retmsg=f"Email: {email_address} has already registered!",
-            retcode=RetCode.OPERATING_ERROR,
+            message=f"Email: {email_address} has already registered!",
+            code=RetCode.OPERATING_ERROR,
         )
 
     # Construct user info data
@@ -617,15 +617,15 @@ def user_add():
         return construct_response(
             data=user.to_json(),
             auth=user.get_id(),
-            retmsg=f"{nickname}, welcome aboard!",
+            message=f"{nickname}, welcome aboard!",
         )
     except Exception as e:
         rollback_user_registration(user_id)
         stat_logger.exception(e)
         return get_json_result(
             data=False,
-            retmsg=f"User registration failure, error: {str(e)}",
-            retcode=RetCode.EXCEPTION_ERROR,
+            message=f"User registration failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
         )
 
 
@@ -661,7 +661,7 @@ def tenant_info():
     try:
         tenants = TenantService.get_info_by(current_user.id)
         if not tenants:
-            return get_data_error_result(retmsg="Tenant not found!")
+            return get_data_error_result(message="Tenant not found!")
         return get_json_result(data=tenants[0])
     except Exception as e:
         return server_error_response(e)

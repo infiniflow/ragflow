@@ -248,8 +248,8 @@ export const useSpeechWithSse = (url: string = api.tts) => {
       });
       try {
         const res = await response.clone().json();
-        if (res?.retcode !== 0) {
-          message.error(res?.retmsg);
+        if (res?.code !== 0) {
+          message.error(res?.message);
         }
       } catch (error) {
         console.warn('🚀 ~ error:', error);

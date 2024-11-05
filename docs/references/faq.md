@@ -276,7 +276,7 @@ $ docker ps
 
 This is because you forgot to update the `vm.max_map_count` value in **/etc/sysctl.conf** and your change to this value was reset after a system reboot. 
 
-#### 4.10 `{"data":null,"retcode":100,"retmsg":"<NotFound '404: Not Found'>"}`
+#### 4.10 `{"data":null,"code":100,"message":"<NotFound '404: Not Found'>"}`
 
 Your IP address or port number may be incorrect. If you are using the default configurations, enter `http://<IP_OF_YOUR_MACHINE>` (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 

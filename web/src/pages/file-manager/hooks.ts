@@ -141,8 +141,8 @@ export const useHandleDeleteFile = (
   const handleRemoveFile = () => {
     showDeleteConfirm({
       onOk: async () => {
-        const retcode = await removeDocument({ fileIds, parentId });
-        if (retcode === 0) {
+        const code = await removeDocument({ fileIds, parentId });
+        if (code === 0) {
           setSelectedRowKeys([]);
         }
         return;

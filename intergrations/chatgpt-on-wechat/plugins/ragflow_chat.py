@@ -1,10 +1,8 @@
 import requests
-import json
-from bridge.context import Context, ContextType  # Import Context, ContextType
+from bridge.context import ContextType  # Import Context, ContextType
 from bridge.reply import Reply, ReplyType  # Import Reply, ReplyType
 from bridge import *
 from common.log import logger
-from config import conf
 from plugins import Plugin, register  # Import Plugin and register
 from plugins.event import Event, EventContext, EventAction  # Import event-related classes
 
@@ -68,12 +66,12 @@ class RAGFlowChat(Plugin):
                 logger.debug(f"[RAGFlowChat] New conversation response: {response.text}")
                 if response.status_code == 200:
                     data = response.json()
-                    if data.get("retcode") == 0:
+                    if data.get("code") == 0:
                         conversation_id = data["data"]["id"]
                         self.conversations[user_id] = conversation_id
                     else:
-                        logger.error(f"[RAGFlowChat] Failed to create conversation: {data.get('retmsg')}")
-                        return f"Sorry, unable to create a conversation: {data.get('retmsg')}"
+                        logger.error(f"[RAGFlowChat] Failed to create conversation: {data.get('message')}")
+                        return f"Sorry, unable to create a conversation: {data.get('message')}"
                 else:
                     logger.error(f"[RAGFlowChat] HTTP error when creating conversation: {response.status_code}")
                     return f"Sorry, unable to connect to RAGFlow API (create conversation). HTTP status code: {response.status_code}"
@@ -100,12 +98,12 @@ class RAGFlowChat(Plugin):
             logger.debug(f"[RAGFlowChat] Completion response: {response.text}")
             if response.status_code == 200:
                 data = response.json()
-                if data.get("retcode") == 0:
+                if data.get("code") == 0:
                     answer = data["data"]["answer"]
                     return answer
                 else:
-                    logger.error(f"[RAGFlowChat] Failed to get answer: {data.get('retmsg')}")
-                    return f"Sorry, unable to get a reply: {data.get('retmsg')}"
+                    logger.error(f"[RAGFlowChat] Failed to get answer: {data.get('message')}")
+                    return f"Sorry, unable to get a reply: {data.get('message')}"
             else:
                 logger.error(f"[RAGFlowChat] HTTP error when getting answer: {response.status_code}")
                 return f"Sorry, unable to connect to RAGFlow API (get reply). HTTP status code: {response.status_code}"

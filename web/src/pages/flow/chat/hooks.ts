@@ -151,7 +151,7 @@ export const useSendMessage = (
       const res = await send(params);
 
       if (receiveMessageError(res)) {
-        antMessage.error(res?.data?.retmsg);
+        antMessage.error(res?.data?.message);
 
         // cancel loading
         setValue(message.content);
@@ -227,7 +227,7 @@ export const useSendNextMessage = () => {
       const res = await send(params);
 
       if (receiveMessageError(res)) {
-        antMessage.error(res?.data?.retmsg);
+        antMessage.error(res?.data?.message);
 
         // cancel loading
         setValue(message.content);

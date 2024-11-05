@@ -109,21 +109,21 @@ request.interceptors.response.use(async (response: any, options) => {
 
   const data: ResponseType = await response.clone().json();
 
-  if (data.retcode === 401 || data.retcode === 401) {
+  if (data.code === 401 || data.code === 401) {
     notification.error({
-      message: data.retmsg,
-      description: data.retmsg,
+      message: data.message,
+      description: data.message,
       duration: 3,
     });
     authorizationUtil.removeAll();
     history.push('/login'); // Will not jump to the login page
-  } else if (data.retcode !== 0) {
-    if (data.retcode === 100) {
-      message.error(data.retmsg);
+  } else if (data.code !== 0) {
+    if (data.code === 100) {
+      message.error(data.message);
     } else {
       notification.error({
-        message: `${i18n.t('message.hint')} : ${data.retcode}`,
-        description: data.retmsg,
+        message: `${i18n.t('message.hint')} : ${data.code}`,
+        description: data.message,
         duration: 3,
       });
     }
