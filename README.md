@@ -74,7 +74,6 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2024-11-04 Upgrades [DLA](https://huggingface.co/InfiniFlow/deepdoc) (Document Layout Analyze) models in deepdoc. 
 - 2024-11-01 Adds keyword extraction and related question generation to the parsed chunk to improve the accuracy of retrieval.
 - 2024-09-13 Adds search mode for knowledge base Q&A.
 - 2024-09-09 Adds a medical consultant agent template.
