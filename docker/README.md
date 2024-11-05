@@ -1,81 +1,73 @@
+# README
 
-# Docker Environment Variable
+
+
+##  Docker environment variables
 
 Look into [.env](./.env), there're some important variables.
 
-## MYSQL_PASSWORD
+- `STACK_VERSION`  
+  The Elasticsearch version. Defaults to `8.11.3`
 
-The mysql password could be changed by this variable. But you need to change *mysql.password* in [service_conf.yaml](./service_conf.yaml) at the same time.
+- `ES_PORT`  
+  Port to expose Elasticsearch HTTP API to the host. Defaults to `1200`.
+
+- `ELASTIC_PASSWORD`  
+  The Elasticsearch password.
+
+- `MYSQL_PASSWORD`  
+  The MySQL password. When updated, you must also revise the `mysql.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
+
+- `MYSQL_PORT`  
+  The exported port number of MySQL Docker container, needed when you access the database from outside the docker containers.
+
+- `MINIO_USER`  
+  The MinIO username. When updated, you must also revise the `minio.user` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
+
+- `MINIO_PASSWORD`  
+  The MinIO password. When updated, you must also revise the `minio.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
 
 
-## MYSQL_PORT
-It refers to exported port number of mysql docker container, it's useful if you want to access the database outside the docker containers.
 
-## MINIO_USER
-It refers to user name of [Mino](https://github.com/minio/minio). The modification should be synchronous updating at minio.user of  [service_conf.yaml](./service_conf.yaml).
+- `SVR_HTTP_PORT`  
+  The port number on which RAGFlow's backend API server listens.
 
-## MINIO_PASSWORD
-It refers to user password of [Mino](https://github.com/minio/minio). The modification should be synchronous updating at minio.password of  [service_conf.yaml](./service_conf.yaml).
+- `RAGFLOW-IMAGE`  
+  The Docker image edition. Available options:  
+  - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models  
+  - `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models. See the 
+
+- `TIMEZONE`  
+  The local time zone.
 
 
-## SVR_HTTP_PORT
-It refers to The API server serving port.
+##  Service Configuration
 
+[service_conf.yaml](./service_conf.yaml) defines the system-level configuration for RAGFlow and is used by RAGFlow's *API server* and *task executor*.
 
-# Service Configuration
-[service_conf.yaml](./service_conf.yaml) is used by the *API server* and *task executor*. It's the most important configuration of the system.
+- `ragflow`
+  - `host`: The IP address of the API server.
+  - `port`: The serving port of API server.
 
-## ragflow
+- `mysql`
+  - `name`: The database name in MySQL used by RAGFlow.
+  - `user`: The database name in MySQL used by RAGFlow.
+  - `password`: The database password. When updated, you must also revise the `MYSQL_PASSWORD` variable in [.env](./.env) accordingly.
+  - `port`: The serving port of MySQL inside the container. When updated, you must also revise the `MYSQL_PORT` variable in [.env](./.env) accordingly.
+  - `max_connections`: The maximum database connection.
+  - `stale_timeout`: The timeout duration in seconds.
 
-### host
-The IP address used by the API server.
+- `minio`
+  - `user`: The MinIO username. When updated, you must also revise the `MINIO_USER` variable in [.env](./.env) accordingly.
+  - `password`: The MinIO password. When updated, you must also revise the `MINIO_PASSWORD` variable in [.env](./.env) accordingly.
+  - `host`: The serving IP and port inside the docker container. This is not updating until changing the minio part in [docker-compose.yml](./docker-compose.yml)
 
-### port
-The serving port of API server.
+- `user_default_llm`  
+  Newly signed-up users use LLM configured by this part; otherwise, you need to configure your own LLM on the *Settings* page.  
+  - `factory`: The LLM suppliers. "OpenAI"， "Tongyi-Qianwen", "ZHIPU-AI", "Moonshot", "DeepSeek", "Baichuan", and "VolcEngine" are supported.
+  - `api_key`: The API key for the specified LLM.
 
-## mysql
-
-### name
-The database name in mysql used by this system.
-
-### user
-The database user name.
-
-### password
-The database password. The modification should be synchronous updating at *MYSQL_PASSWORD* in [.env](./.env).
-
-### port
-The serving port of mysql inside the container. The modification should be synchronous updating at [docker-compose.yml](./docker-compose.yml)
-
-### max_connections
-The max database connection.
-
-### stale_timeout
-The timeout duration in seconds.
-
-## minio
-
-### user
-The username of minio. The modification should be synchronous updating at *MINIO_USER* in [.env](./.env).
-
-### password
-The password of minio. The modification should be synchronous updating at *MINIO_PASSWORD* in [.env](./.env).
-
-### host
-The serving IP and port inside the docker container. This is not updating until changing the minio part in [docker-compose.yml](./docker-compose.yml)
-
-## user_default_llm
-Newly signed-up users use LLM configured by this part. Otherwise, user need to configure his own LLM in *setting*.
-  
-### factory
-The LLM suppliers. "OpenAI"， "Tongyi-Qianwen", "ZHIPU-AI", "Moonshot", "DeepSeek", "Baichuan", and "VolcEngine" are supported.
-
-### api_key
-The corresponding API key of your assigned LLM vendor.
-
-## oauth
-This is OAuth configuration which allows your system using the third-party account to sign-up and sign-in to the system.
-
-### github
-Got to [Github](https://github.com/settings/developers), register new application, the *client_id* and *secret_key* will be given.
+- `oauth`  
+  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  
+  - `github`: Go to [Github](https://github.com/settings/developers), register a new application, the *client_id* and *secret_key* will be given.
 
