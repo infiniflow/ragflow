@@ -386,16 +386,16 @@ def list_docs(dataset_id, tenant_id):
         required: false
         description: Filter by document ID.
       - in: query
-        name: offset
+        name: page
         type: integer
         required: false
         default: 1
         description: Page number.
       - in: query
-        name: limit
+        name: page_size
         type: integer
         required: false
-        default: 1024
+        default: 30
         description: Number of items per page.
       - in: query
         name: orderby
@@ -741,13 +741,13 @@ def list_chunks(tenant_id, dataset_id, document_id):
         required: true
         description: ID of the document.
       - in: query
-        name: offset
+        name: page
         type: integer
         required: false
         default: 1
         description: Page number.
       - in: query
-        name: limit
+        name: page_size
         type: integer
         required: false
         default: 30
