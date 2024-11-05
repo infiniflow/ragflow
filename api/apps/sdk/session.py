@@ -60,7 +60,6 @@ def create(tenant_id,chat_id):
 @manager.route('/agents/<agent_id>/sessions', methods=['POST'])
 @token_required
 def create_agent_session(tenant_id, agent_id):
-    req = request.json
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -74,11 +73,13 @@ def create_agent_session(tenant_id, agent_id):
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
-        "user_id": req.get("user_id", ""),
+        "user_id": tenant_id,
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent"
     }
     API4ConversationService.save(**conv)
+    conv["agent_id"] = conv.pop("dialog_id")
+    conv["tenant_id"] = conv.pop("user_id")
     return get_result(data=conv)
 
 
@@ -150,6 +151,25 @@ def completion(tenant_id, chat_id):
     conv.reference.append({"chunks": [], "doc_aggs": []})
 
     def fillin_conv(ans):
+        reference = ans["reference"]
+        if "chunks" in reference:
+            chunks = reference.get("chunks")
+            chunk_list = []
+            for chunk in chunks:
+                new_chunk = {
+                    "id": chunk["chunk_id"],
+                    "content": chunk["content_with_weight"],
+                    "document_id": chunk["doc_id"],
+                    "document_name": chunk["docnm_kwd"],
+                    "dataset_id": chunk["kb_id"],
+                    "image_id": chunk["img_id"],
+                    "similarity": chunk["similarity"],
+                    "vector_similarity": chunk["vector_similarity"],
+                    "term_similarity": chunk["term_similarity"],
+                    "positions": chunk["positions"],
+                }
+                chunk_list.append(new_chunk)
+            reference["chunks"] = chunk_list
         nonlocal conv, message_id
         if not conv.reference:
             conv.reference.append(ans["reference"])
@@ -179,6 +199,7 @@ def completion(tenant_id, chat_id):
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+
         return resp
 
     else:
@@ -195,6 +216,7 @@ def completion(tenant_id, chat_id):
 @token_required
 def agent_completion(tenant_id, agent_id):
     req = request.json
+
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -202,25 +224,14 @@ def agent_completion(tenant_id, agent_id):
         return get_error_data_result(message="You do not own the agent.")
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
-
     canvas = Canvas(cvs.dsl, tenant_id)
-
-    msg = []
-    for m in req["messages"]:
-        if m["role"] == "system":
-            continue
-        if m["role"] == "assistant" and not msg:
-            continue
-        msg.append(m)
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
-    message_id = msg[-1]["id"]
 
     if not req.get("session_id"):
         session_id = get_uuid()
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
-            "user_id": req.get("user_id", ""),
+            "user_id": tenant_id,
             "message": [{"role": "assistant", "content": canvas.get_prologue()}],
             "source": "agent"
         }
@@ -232,10 +243,49 @@ def agent_completion(tenant_id, agent_id):
         if not e:
             return get_error_data_result(message="Session not found!")
 
+    messages = conv.message
+    question = req.get("question")
+    if not question:
+        return get_error_data_result("`question` is required.")
+    question={
+        "role":"user",
+        "content":question,
+        "id": str(uuid4())
+    }
+    messages.append(question)
+    msg = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
+        msg.append(m)
+    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    message_id = msg[-1]["id"]
+
     if "quote" not in req: req["quote"] = False
     stream = req.get("stream", True)
 
     def fillin_conv(ans):
+        reference = ans["reference"]
+        if "chunks" in reference:
+            chunks = reference.get("chunks")
+            chunk_list = []
+            for chunk in chunks:
+                new_chunk = {
+                    "id": chunk["chunk_id"],
+                    "content": chunk["content_with_weight"],
+                    "document_id": chunk["doc_id"],
+                    "document_name": chunk["docnm_kwd"],
+                    "dataset_id": chunk["kb_id"],
+                    "image_id": chunk["img_id"],
+                    "similarity": chunk["similarity"],
+                    "vector_similarity": chunk["vector_similarity"],
+                    "term_similarity": chunk["term_similarity"],
+                    "positions": chunk["positions"],
+                }
+                chunk_list.append(new_chunk)
+            reference["chunks"] = chunk_list
         nonlocal conv, message_id
         if not conv.reference:
             conv.reference.append(ans["reference"])
