@@ -60,7 +60,7 @@ REQUEST_MAX_WAIT_SEC = 300
 USE_REGISTRY = get_base_config("use_registry")
 
 LLM = get_base_config("user_default_llm", {})
-LLM_FACTORY = LLM.get("factory", "")
+LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
 LLM_BASE_URL = LLM.get("base_url")
 
 CHAT_MDL = EMBEDDING_MDL = RERANK_MDL = ASR_MDL = IMAGE2TEXT_MDL = ""

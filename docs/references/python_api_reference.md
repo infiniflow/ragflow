@@ -1,5 +1,5 @@
----
-sidebar_position: 1
+from Demos.mmapfile_demo import page_sizefrom Demos.mmapfile_demo import page_sizesidebar_position: 1
+
 slug: /python_api_reference
 ---
 
@@ -58,7 +58,7 @@ A brief description of the dataset to create. Defaults to `""`.
 
 The language setting of the dataset to create. Available options:
 
-- `"English"` (default)
+- `"English"` (Default)
 - `"Chinese"`
 
 #### permission
@@ -414,7 +414,7 @@ print(doc)
 ## List documents
 
 ```python
-Dataset.list_documents(id:str =None, keywords: str=None, offset: int=1, limit:int = 1024,order_by:str = "create_time", desc: bool = True) -> list[Document]
+Dataset.list_documents(id:str =None, keywords: str=None, page: int=1, page_size:int = 1024,order_by:str = "create_time", desc: bool = True) -> list[Document]
 ```
 
 Lists documents in the current dataset.
@@ -429,13 +429,13 @@ The ID of the document to retrieve. Defaults to `None`.
 
 The keywords used to match document titles. Defaults to `None`.
 
-#### offset: `int`
+#### page: `int`
 
-The starting index for the documents to retrieve. Typically used in conjunction with `limit`. Defaults to `0`.
+Specifies the page on which the documents will be displayed. Defaults to `1`.
 
-#### limit: `int`
+#### page_size: `int`
 
-The maximum number of documents to retrieve. Defaults to `1024`.
+The maximum number of documents on each page. Defaults to `1024`.
 
 #### orderby: `str`
 
@@ -514,7 +514,7 @@ dataset = rag_object.create_dataset(name="kb_1")
 filename1 = "~/ragflow.txt"
 blob = open(filename1 , "rb").read()
 dataset.upload_documents([{"name":filename1,"blob":blob}])
-for doc in dataset.list_documents(keywords="rag", offset=0, limit=12):
+for doc in dataset.list_documents(keywords="rag", page=0, page_size=12):
     print(doc)
 ```
 
@@ -690,7 +690,7 @@ chunk = doc.add_chunk(content="xxxxxxx")
 ## List chunks
 
 ```python
-Document.list_chunks(keywords: str = None, offset: int = 1, limit: int = 1024, id : str = None) -> list[Chunk]
+Document.list_chunks(keywords: str = None, page: int = 1, page_size: int = 1024, id : str = None) -> list[Chunk]
 ```
 
 Lists chunks in the current document.
@@ -701,13 +701,13 @@ Lists chunks in the current document.
 
 The keywords used to match chunk content. Defaults to `None`
 
-#### offset: `int`
+#### page: `int`
 
-The starting index for the chunks to retrieve. Defaults to `1`.
+Specifies the page on which the chunks will be displayed. Defaults to `1`.
 
-#### limit: `int`
+#### page_size: `int`
 
-The maximum number of chunks to retrieve.  Default: `1024`
+The maximum number of chunks on each page. Defaults to `1024`.
 
 #### id: `str`
 
@@ -727,7 +727,7 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 dataset = rag_object.list_datasets("123")
 dataset = dataset[0]
 dataset.async_parse_documents(["wdfxb5t547d"])
-for chunk in doc.list_chunks(keywords="rag", offset=0, limit=12):
+for chunk in doc.list_chunks(keywords="rag", page=0, page_size=12):
     print(chunk)
 ```
 
@@ -812,7 +812,7 @@ chunk.update({"content":"sdfx..."})
 ## Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, offset:int=1, limit:int=1024, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=1024, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.
@@ -831,11 +831,11 @@ The IDs of the datasets to search. Defaults to `None`. If you do not set this ar
 
 The IDs of the documents to search. Defaults to `None`. You must ensure all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `dataset_ids`.
 
-#### offset: `int`
+#### page: `int`
 
 The starting index for the documents to retrieve. Defaults to `1`.
 
-#### limit: `int`
+#### page_size: `int`
 
 The maximum number of chunks to retrieve. Defaults to `1024`.
 
@@ -890,7 +890,7 @@ doc = doc[0]
 dataset.async_parse_documents([doc.id])
 for c in rag_object.retrieve(question="What's ragflow?", 
              dataset_ids=[dataset.id], document_ids=[doc.id], 
-             offset=1, limit=30, similarity_threshold=0.2, 
+             page=1, page_size=30, similarity_threshold=0.2, 
              vector_similarity_weight=0.3,
              top_k=1024
              ):
