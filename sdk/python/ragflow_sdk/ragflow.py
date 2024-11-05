@@ -76,7 +76,7 @@ class RAGFlow:
             return _list[0]
         raise Exception("Dataset %s not found" % name)
 
-    def list_datasets(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
+    def list_datasets(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
                       id: str = None, name: str = None) -> \
             List[DataSet]:
         res = self.get("/datasets",
@@ -142,7 +142,7 @@ class RAGFlow:
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-    def list_chats(self, page: int = 1, page_size: int = 1024, orderby: str = "create_time", desc: bool = True,
+    def list_chats(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
                       id: str = None, name: str = None) -> List[Chat]:
         res = self.get("/chats",{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
@@ -154,12 +154,12 @@ class RAGFlow:
         raise Exception(res["message"])
 
 
-    def retrieve(self, dataset_ids, document_ids=None, question="", page=1, page_size=1024, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id:str=None, keyword:bool=False, ):
+    def retrieve(self, dataset_ids, document_ids=None, question="", page=1, page_size=30, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id:str=None, keyword:bool=False, ):
             if document_ids is None:
                 document_ids = []
             data_json ={
-                "offset": page,
-                "limit": page_size,
+                "page": page,
+                "page_size": page_size,
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight,
                 "top_k": top_k,

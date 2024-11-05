@@ -165,7 +165,7 @@ class EsQueryer:
             d = {}
             if isinstance(tks, str):
                 tks = tks.split(" ")
-            for t, c in self.tw.weights(tks):
+            for t, c in self.tw.weights(tks, preprocess=False):
                 if t not in d:
                     d[t] = 0
                 d[t] += c
@@ -177,9 +177,9 @@ class EsQueryer:
 
     def similarity(self, qtwt, dtwt):
         if isinstance(dtwt, type("")):
-            dtwt = {t: w for t, w in self.tw.weights(self.tw.split(dtwt))}
+            dtwt = {t: w for t, w in self.tw.weights(self.tw.split(dtwt), preprocess=False)}
         if isinstance(qtwt, type("")):
-            qtwt = {t: w for t, w in self.tw.weights(self.tw.split(qtwt))}
+            qtwt = {t: w for t, w in self.tw.weights(self.tw.split(qtwt), preprocess=False)}
         s = 1e-9
         for k, v in qtwt.items():
             if k in dtwt:

@@ -45,7 +45,7 @@ def test_list_documents_in_dataset_with_success(get_api_key_fixture):
     blob = b"Sample document content for test."
     document_infos = [{"displayed_name": "test.txt","blob":blob}]
     ds.upload_documents(document_infos)
-    ds.list_documents(keywords="test", page=0, page_size=12)
+    ds.list_documents(keywords="test", page=1, page_size=12)
 
 
 
