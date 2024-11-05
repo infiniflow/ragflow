@@ -68,31 +68,6 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_ids_by_offset(cls, joined_tenant_ids, user_id, offset, count, orderby, desc):
-        kbs = cls.model.select().where(
-            ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission ==
-                                                            TenantPermission.TEAM.value)) | (
-                     cls.model.tenant_id == user_id))
-            & (cls.model.status == StatusEnum.VALID.value)
-        )
-        if desc:
-            kbs = kbs.order_by(cls.model.getter_by(orderby).desc())
-        else:
-            kbs = kbs.order_by(cls.model.getter_by(orderby).asc())
-
-        kbs = list(kbs.dicts())
-
-        kbs_length = len(kbs)
-        if offset < 0 or offset > kbs_length:
-            raise IndexError("Offset is out of the valid range.")
-
-        if count == -1:
-            return kbs[offset:]
-
-        return kbs[offset:offset + count]
-
-    @classmethod
-    @DB.connection_context()
     def get_detail(cls, kb_id):
         fields = [
             cls.model.id,

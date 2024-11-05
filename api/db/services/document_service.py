@@ -97,35 +97,6 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def list_documents_in_dataset(cls, dataset_id, offset, count, order_by, descend, keywords):
-        if keywords:
-            docs = cls.model.select().where(
-                (cls.model.kb_id == dataset_id),
-                (fn.LOWER(cls.model.name).contains(keywords.lower()))
-            )
-        else:
-            docs = cls.model.select().where(cls.model.kb_id == dataset_id)
-
-        total = docs.count()
-
-        if descend == 'True':
-            docs = docs.order_by(cls.model.getter_by(order_by).desc())
-        if descend == 'False':
-            docs = docs.order_by(cls.model.getter_by(order_by).asc())
-
-        docs = list(docs.dicts())
-        docs_length = len(docs)
-
-        if offset < 0 or offset > docs_length:
-            raise IndexError("Offset is out of the valid range.")
-
-        if count == -1:
-            return docs[offset:], total
-
-        return docs[offset:offset + count], total
-
-    @classmethod
-    @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")
@@ -426,7 +397,7 @@ class DocumentService(CommonService):
         try:
             _, doc = DocumentService.get_by_id(doc_id)
             return doc.run == TaskStatus.CANCEL.value or doc.progress < 0
-        except Exception as e:
+        except Exception:
             pass
         return False
 
