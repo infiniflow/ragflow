@@ -322,7 +322,7 @@ def list(chat_id,tenant_id):
     id = request.args.get("id")
     name = request.args.get("name")
     page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 1024))
+    items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
