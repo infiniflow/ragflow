@@ -98,7 +98,7 @@ def set_api_key():
             break
 
     if msg:
-        return get_data_error_result(retmsg=msg)
+        return get_data_error_result(message=msg)
 
     llm_config = {
         "api_key": req["api_key"],
@@ -278,7 +278,7 @@ def add_llm():
         pass
 
     if msg:
-        return get_data_error_result(retmsg=msg)
+        return get_data_error_result(message=msg)
 
     if not TenantLLMService.filter_update(
             [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory, TenantLLM.llm_name == llm["llm_name"]], llm):

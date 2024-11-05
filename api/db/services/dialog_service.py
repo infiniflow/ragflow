@@ -162,6 +162,9 @@ def chat(dialog, messages, stream=True, **kwargs):
                 attachments.extend(m["doc_ids"])
 
     embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING, embd_nms[0])
+    if not embd_mdl:
+        raise LookupError("Embedding model(%s) not found" % embd_nms[0])
+
     if llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:

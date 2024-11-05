@@ -13,9 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-from elasticsearch_dsl import Q
 
-from api.db.db_models import File2Document
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
@@ -28,8 +26,6 @@ from api.db import FileType
 from api.db.services.document_service import DocumentService
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
-from rag.nlp import search
-from rag.utils.es_conn import ELASTICSEARCH
 
 
 @manager.route('/convert', methods=['POST'])
@@ -54,13 +50,13 @@ def convert():
                     doc_id = inform.document_id
                     e, doc = DocumentService.get_by_id(doc_id)
                     if not e:
-                        return get_data_error_result(retmsg="Document not found!")
+                        return get_data_error_result(message="Document not found!")
                     tenant_id = DocumentService.get_tenant_id(doc_id)
                     if not tenant_id:
-                        return get_data_error_result(retmsg="Tenant not found!")
+                        return get_data_error_result(message="Tenant not found!")
                     if not DocumentService.remove_document(doc, tenant_id):
                         return get_data_error_result(
-                            retmsg="Database error (Document removal)!")
+                            message="Database error (Document removal)!")
                 File2DocumentService.delete_by_file_id(id)
 
                 # insert
@@ -68,11 +64,11 @@ def convert():
                     e, kb = KnowledgebaseService.get_by_id(kb_id)
                     if not e:
                         return get_data_error_result(
-                            retmsg="Can't find this knowledgebase!")
+                            message="Can't find this knowledgebase!")
                     e, file = FileService.get_by_id(id)
                     if not e:
                         return get_data_error_result(
-                            retmsg="Can't find this file!")
+                            message="Can't find this file!")
 
                     doc = DocumentService.insert({
                         "id": get_uuid(),
@@ -104,26 +100,26 @@ def rm():
     file_ids = req["file_ids"]
     if not file_ids:
         return get_json_result(
-            data=False, retmsg='Lack of "Files ID"', retcode=RetCode.ARGUMENT_ERROR)
+            data=False, message='Lack of "Files ID"', code=RetCode.ARGUMENT_ERROR)
     try:
         for file_id in file_ids:
             informs = File2DocumentService.get_by_file_id(file_id)
             if not informs:
-                return get_data_error_result(retmsg="Inform not found!")
+                return get_data_error_result(message="Inform not found!")
             for inform in informs:
                 if not inform:
-                    return get_data_error_result(retmsg="Inform not found!")
+                    return get_data_error_result(message="Inform not found!")
                 File2DocumentService.delete_by_file_id(file_id)
                 doc_id = inform.document_id
                 e, doc = DocumentService.get_by_id(doc_id)
                 if not e:
-                    return get_data_error_result(retmsg="Document not found!")
+                    return get_data_error_result(message="Document not found!")
                 tenant_id = DocumentService.get_tenant_id(doc_id)
                 if not tenant_id:
-                    return get_data_error_result(retmsg="Tenant not found!")
+                    return get_data_error_result(message="Tenant not found!")
                 if not DocumentService.remove_document(doc, tenant_id):
                     return get_data_error_result(
-                        retmsg="Database error (Document removal)!")
+                        message="Database error (Document removal)!")
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

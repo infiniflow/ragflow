@@ -37,10 +37,10 @@ def retrieval(tenant_id):
 
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
-            return build_error_result(error_msg="Knowledgebase not found!", retcode=RetCode.NOT_FOUND)
+            return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
 
         if kb.tenant_id != tenant_id:
-            return build_error_result(error_msg="Knowledgebase not found!", retcode=RetCode.NOT_FOUND)
+            return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
@@ -71,7 +71,7 @@ def retrieval(tenant_id):
     except Exception as e:
         if str(e).find("not_found") > 0:
             return build_error_result(
-                error_msg=f'No chunk found! Check the chunk status please!',
-                retcode=RetCode.NOT_FOUND
+                message='No chunk found! Check the chunk status please!',
+                code=RetCode.NOT_FOUND
             )
-        return build_error_result(error_msg=str(e), retcode=RetCode.SERVER_ERROR)
+        return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)

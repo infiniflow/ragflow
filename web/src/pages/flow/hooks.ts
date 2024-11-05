@@ -497,15 +497,15 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { send } = useSendMessageWithSse(api.runCanvas);
   const handleRun = useCallback(async () => {
     const saveRet = await saveGraph();
-    if (saveRet?.retcode === 0) {
+    if (saveRet?.code === 0) {
       // Call the reset api before opening the run drawer each time
       const resetRet = await resetFlow();
       // After resetting, all previous messages will be cleared.
-      if (resetRet?.retcode === 0) {
+      if (resetRet?.code === 0) {
         // fetch prologue
         const sendRet = await send({ id });
         if (receiveMessageError(sendRet)) {
-          message.error(sendRet?.data?.retmsg);
+          message.error(sendRet?.data?.message);
         } else {
           refetch();
           show();

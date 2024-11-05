@@ -53,7 +53,7 @@ export const useSaveFlow = () => {
         // },
       });
 
-      if (ret?.retcode === 0) {
+      if (ret?.code === 0) {
         hideFlowSettingModal();
         navigate(`/flow/${ret.data.id}`);
       }

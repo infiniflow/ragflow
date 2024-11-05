@@ -30,7 +30,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   const { t } = useTranslation();
 
   useEffect(() => {
-    if (data?.retcode === 0) {
+    if (data?.code === 0) {
       const { content_with_weight, important_kwd = [] } = data.data;
       form.setFieldsValue({ content: content_with_weight });
       setKeywords(important_kwd);

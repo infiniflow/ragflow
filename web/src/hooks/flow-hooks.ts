@@ -131,7 +131,7 @@ export const useSetFlow = () => {
       avatar?: string;
     }) => {
       const { data = {} } = await flowService.setCanvas(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
         );
@@ -154,7 +154,7 @@ export const useDeleteFlow = () => {
     mutationKey: ['deleteFlow'],
     mutationFn: async (canvasIds: string[]) => {
       const { data } = await flowService.removeCanvas({ canvasIds });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
       }
       return data?.data ?? [];
@@ -173,7 +173,7 @@ export const useRunFlow = () => {
     mutationKey: ['runFlow'],
     mutationFn: async (params: { id: string; dsl: DSL }) => {
       const { data } = await flowService.runCanvas(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(i18n.t(`message.modified`));
       }
       return data?.data ?? {};
@@ -209,7 +209,7 @@ export const useTestDbConnect = () => {
     mutationKey: ['testDbConnect'],
     mutationFn: async (params: any) => {
       const ret = await flowService.testDbConnect(params);
-      if (ret?.data?.retcode === 0) {
+      if (ret?.data?.code === 0) {
         message.success(ret?.data?.data);
       } else {
         message.error(ret?.data?.data);

@@ -1,7 +1,6 @@
 from ragflow_sdk import RAGFlow
 from common import HOST_ADDRESS
 from time import sleep
-import pytest
 
 def test_parse_document_with_txt(get_api_key_fixture):
     API_KEY = get_api_key_fixture
@@ -61,7 +60,6 @@ def test_bulk_parse_documents(get_api_key_fixture):
         raise Exception("Run time ERROR: Bulk document parsing did not complete in time.")
     '''
 
-@pytest.mark.skip(reason="DocumentService.get_list() expects page and page_size")
 def test_list_chunks_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
@@ -111,7 +109,6 @@ def test_add_chunk_with_success(get_api_key_fixture):
     doc.add_chunk(content="This is a chunk addition test")
 
 
-@pytest.mark.skip(reason="docs[0] is None")
 def test_delete_chunk_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
@@ -125,7 +122,7 @@ def test_delete_chunk_with_success(get_api_key_fixture):
         {'displayed_name': f'chunk_{i}.txt', 'blob': chunk} for i, chunk in enumerate(chunks)
     ]
     '''
-    documents =[{"displayed_name":"test_list_chunks_with_success.txt","blob":blob}]
+    documents =[{"displayed_name":"test_delete_chunk_with_success.txt","blob":blob}]
     docs = ds.upload_documents(documents)
     doc = docs[0]
     chunk = doc.add_chunk(content="This is a chunk addition test")

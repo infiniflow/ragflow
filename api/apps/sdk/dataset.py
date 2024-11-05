@@ -121,22 +121,22 @@ def create(tenant_id):
         return check_validation
     req["parser_config"] = get_parser_config(chunk_method, parser_config)
     if "tenant_id" in req:
-        return get_error_data_result(retmsg="`tenant_id` must not be provided")
+        return get_error_data_result(message="`tenant_id` must not be provided")
     if "chunk_count" in req or "document_count" in req:
         return get_error_data_result(
-            retmsg="`chunk_count` or `document_count` must not be provided"
+            message="`chunk_count` or `document_count` must not be provided"
         )
     if "name" not in req:
-        return get_error_data_result(retmsg="`name` is not empty!")
+        return get_error_data_result(message="`name` is not empty!")
     req["id"] = get_uuid()
     req["name"] = req["name"].strip()
     if req["name"] == "":
-        return get_error_data_result(retmsg="`name` is not empty string!")
+        return get_error_data_result(message="`name` is not empty string!")
     if KnowledgebaseService.query(
         name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value
     ):
         return get_error_data_result(
-            retmsg="Duplicated dataset name in creating dataset."
+            message="Duplicated dataset name in creating dataset."
         )
     req["tenant_id"] = req["created_by"] = tenant_id
     if not req.get("embedding_model"):
@@ -187,7 +187,7 @@ def create(tenant_id):
     }
     req.update(mapped_keys)
     if not KnowledgebaseService.save(**req):
-        return get_error_data_result(retmsg="Create dataset error.(Database error)")
+        return get_error_data_result(message="Create dataset error.(Database error)")
     renamed_data = {}
     e, k = KnowledgebaseService.get_by_id(req["id"])
     for key, value in k.to_dict().items():
@@ -245,11 +245,11 @@ def delete(tenant_id):
     for id in id_list:
         kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
         if not kbs:
-            return get_error_data_result(retmsg=f"You don't own the dataset {id}")
+            return get_error_data_result(message=f"You don't own the dataset {id}")
         for doc in DocumentService.query(kb_id=id):
             if not DocumentService.remove_document(doc, tenant_id):
                 return get_error_data_result(
-                    retmsg="Remove document error.(Database error)"
+                    message="Remove document error.(Database error)"
                 )
             f2d = File2DocumentService.get_by_document_id(doc.id)
             FileService.filter_delete(
@@ -260,8 +260,8 @@ def delete(tenant_id):
             )
             File2DocumentService.delete_by_document_id(doc.id)
         if not KnowledgebaseService.delete_by_id(id):
-            return get_error_data_result(retmsg="Delete dataset error.(Database error)")
-    return get_result(retcode=RetCode.SUCCESS)
+            return get_error_data_result(message="Delete dataset error.(Database error)")
+    return get_result(code=RetCode.SUCCESS)
 
 
 @manager.route("/datasets/<dataset_id>", methods=["PUT"])
@@ -318,12 +318,12 @@ def update(tenant_id, dataset_id):
           type: object
     """
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(retmsg="You don't own the dataset")
+        return get_error_data_result(message="You don't own the dataset")
     req = request.json
     e, t = TenantService.get_by_id(tenant_id)
     invalid_keys = {"id", "embd_id", "chunk_num", "doc_num", "parser_id"}
     if any(key in req for key in invalid_keys):
-        return get_error_data_result(retmsg="The input parameters are invalid.")
+        return get_error_data_result(message="The input parameters are invalid.")
     permission = req.get("permission")
     language = req.get("language")
     chunk_method = req.get("chunk_method")
@@ -356,7 +356,7 @@ def update(tenant_id, dataset_id):
         return check_validation
     if "tenant_id" in req:
         if req["tenant_id"] != tenant_id:
-            return get_error_data_result(retmsg="Can't change `tenant_id`.")
+            return get_error_data_result(message="Can't change `tenant_id`.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if "parser_config" in req:
         temp_dict = kb.parser_config
@@ -364,16 +364,16 @@ def update(tenant_id, dataset_id):
         req["parser_config"] = temp_dict
     if "chunk_count" in req:
         if req["chunk_count"] != kb.chunk_num:
-            return get_error_data_result(retmsg="Can't change `chunk_count`.")
+            return get_error_data_result(message="Can't change `chunk_count`.")
         req.pop("chunk_count")
     if "document_count" in req:
         if req["document_count"] != kb.doc_num:
-            return get_error_data_result(retmsg="Can't change `document_count`.")
+            return get_error_data_result(message="Can't change `document_count`.")
         req.pop("document_count")
     if "chunk_method" in req:
         if kb.chunk_num != 0 and req["chunk_method"] != kb.parser_id:
             return get_error_data_result(
-                retmsg="If `chunk_count` is not 0, `chunk_method` is not changeable."
+                message="If `chunk_count` is not 0, `chunk_method` is not changeable."
             )
         req["parser_id"] = req.pop("chunk_method")
         if req["parser_id"] != kb.parser_id:
@@ -382,7 +382,7 @@ def update(tenant_id, dataset_id):
     if "embedding_model" in req:
         if kb.chunk_num != 0 and req["embedding_model"] != kb.embd_id:
             return get_error_data_result(
-                retmsg="If `chunk_count` is not 0, `embedding_model` is not changeable."
+                message="If `chunk_count` is not 0, `embedding_model` is not changeable."
             )
         if not req.get("embedding_model"):
             return get_error_data_result("`embedding_model` can't be empty")
@@ -431,11 +431,11 @@ def update(tenant_id, dataset_id):
             > 0
         ):
             return get_error_data_result(
-                retmsg="Duplicated dataset name in updating dataset."
+                message="Duplicated dataset name in updating dataset."
             )
     if not KnowledgebaseService.update_by_id(kb.id, req):
-        return get_error_data_result(retmsg="Update dataset error.(Database error)")
-    return get_result(retcode=RetCode.SUCCESS)
+        return get_error_data_result(message="Update dataset error.(Database error)")
+    return get_result(code=RetCode.SUCCESS)
 
 
 @manager.route("/datasets", methods=["GET"])
@@ -500,7 +500,7 @@ def list(tenant_id):
     name = request.args.get("name")
     kbs = KnowledgebaseService.query(id=id, name=name, status=1)
     if not kbs:
-        return get_error_data_result(retmsg="The dataset doesn't exist")
+        return get_error_data_result(message="The dataset doesn't exist")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 1024))
     orderby = request.args.get("orderby", "create_time")

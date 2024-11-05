@@ -69,7 +69,7 @@ export const useFetchNextDocumentList = () => {
         page_size: pagination.pageSize,
         page: pagination.current,
       });
-      if (ret.data.retcode === 0) {
+      if (ret.data.code === 0) {
         return ret.data.data;
       }
 
@@ -118,7 +118,7 @@ export const useSetNextDocumentStatus = () => {
         doc_id: documentId,
         status: Number(status),
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(i18n.t('message.modified'));
         queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
       }
@@ -149,11 +149,11 @@ export const useSaveNextDocumentName = () => {
         doc_id: documentId,
         name: name,
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(i18n.t('message.renamed'));
         queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -176,7 +176,7 @@ export const useCreateNextDocument = () => {
         name,
         kb_id: knowledgeId,
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         if (page === 1) {
           queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
         } else {
@@ -185,7 +185,7 @@ export const useCreateNextDocument = () => {
 
         message.success(i18n.t('message.created'));
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -215,12 +215,12 @@ export const useSetNextDocumentParser = () => {
         doc_id: documentId,
         parser_config: parserConfig,
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
 
         message.success(i18n.t('message.modified'));
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -246,12 +246,12 @@ export const useUploadNextDocument = () => {
 
       try {
         const ret = await kbService.document_upload(formData);
-        const retcode = get(ret, 'data.retcode');
-        if (retcode === 0) {
+        const code = get(ret, 'data.code');
+        if (code === 0) {
           message.success(i18n.t('message.uploaded'));
         }
 
-        if (retcode === 0 || retcode === 500) {
+        if (code === 0 || code === 500) {
           queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
         }
         return ret?.data;
@@ -281,12 +281,12 @@ export const useNextWebCrawl = () => {
       formData.append('kb_id', knowledgeId);
 
       const ret = await kbService.web_crawl(formData);
-      const retcode = get(ret, 'data.retcode');
-      if (retcode === 0) {
+      const code = get(ret, 'data.code');
+      if (code === 0) {
         message.success(i18n.t('message.uploaded'));
       }
 
-      return retcode;
+      return code;
     },
   });
 
@@ -317,13 +317,13 @@ export const useRunNextDocument = () => {
         doc_ids: documentIds,
         run,
       });
-      const retcode = get(ret, 'data.retcode');
-      if (retcode === 0) {
+      const code = get(ret, 'data.code');
+      if (code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
         message.success(i18n.t('message.operated'));
       }
 
-      return retcode;
+      return code;
     },
   });
 
@@ -338,7 +338,7 @@ export const useFetchDocumentInfosByIds = () => {
     initialData: [],
     queryFn: async () => {
       const { data } = await kbService.document_infos({ doc_ids: ids });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         return data.data;
       }
 
@@ -357,7 +357,7 @@ export const useFetchDocumentThumbnailsByIds = () => {
     initialData: {},
     queryFn: async () => {
       const { data } = await kbService.document_thumbnails({ doc_ids: ids });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         return data.data;
       }
       return {};
@@ -377,11 +377,11 @@ export const useRemoveNextDocument = () => {
     mutationKey: ['removeDocument'],
     mutationFn: async (documentIds: string | string[]) => {
       const { data } = await kbService.document_rm({ doc_id: documentIds });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(i18n.t('message.deleted'));
         queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -398,7 +398,7 @@ export const useDeleteDocument = () => {
     mutationKey: ['deleteDocument'],
     mutationFn: async (documentIds: string[]) => {
       const data = await kbService.document_delete({ doc_ids: documentIds });
-      // if (data.retcode === 0) {
+      // if (data.code === 0) {
       //   queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
       // }
       return data;

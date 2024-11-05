@@ -53,8 +53,8 @@
 
 ## 🔥 近期更新
 
+- 2024-11-04 升级deepdoc中的 [DLA](https://huggingface.co/InfiniFlow/deepdoc) （Document Layout Analyze）模型。
 - 2024-11-01 对解析后的chunk加入关键词抽取和相关问题生成以提高召回的准确度。
-- 2024-09-29 优化多轮对话.
 - 2024-09-13 增加知识库问答搜索模式。
 - 2024-09-09 在 Agent 中加入医疗问诊模板。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。

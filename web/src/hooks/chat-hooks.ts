@@ -99,7 +99,7 @@ export const useFetchNextDialogList = () => {
       console.log('🚀 ~ queryFn: ~ params:', params);
       const { data } = await chatService.listDialog();
 
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         const list: IDialog[] = data.data;
         if (list.length > 0) {
           if (list.every((x) => x.id !== dialogId)) {
@@ -128,7 +128,7 @@ export const useSetNextDialog = () => {
     mutationKey: ['setDialog'],
     mutationFn: async (params: IDialog) => {
       const { data } = await chatService.setDialog(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({
           exact: false,
           queryKey: ['fetchDialogList'],
@@ -141,7 +141,7 @@ export const useSetNextDialog = () => {
           i18n.t(`message.${params.dialog_id ? 'modified' : 'created'}`),
         );
       }
-      return data?.retcode;
+      return data?.code;
     },
   });
 
@@ -200,12 +200,12 @@ export const useRemoveNextDialog = () => {
     mutationKey: ['removeDialog'],
     mutationFn: async (dialogIds: string[]) => {
       const { data } = await chatService.removeDialog({ dialogIds });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchDialogList'] });
 
         message.success(i18n.t('message.deleted'));
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -231,7 +231,7 @@ export const useFetchNextConversationList = () => {
     enabled: !!dialogId,
     queryFn: async () => {
       const { data } = await chatService.listConversation({ dialogId });
-      if (data.retcode === 0 && data.data.length > 0) {
+      if (data.code === 0 && data.data.length > 0) {
         handleClickConversation(data.data[0].id, '');
       }
       return data?.data;
@@ -303,7 +303,7 @@ export const useUpdateNextConversation = () => {
           ? params.conversation_id
           : getConversationId(),
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
       }
       return data;
@@ -328,10 +328,10 @@ export const useRemoveNextConversation = () => {
         conversationIds,
         dialogId,
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -353,11 +353,11 @@ export const useDeleteMessage = () => {
         conversationId,
       });
 
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
       }
 
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -378,10 +378,10 @@ export const useFeedback = () => {
         ...params,
         conversationId,
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(i18n.t(`message.operated`));
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -402,7 +402,7 @@ export const useCreateNextToken = () => {
     mutationKey: ['createToken'],
     mutationFn: async (params: Record<string, any>) => {
       const { data } = await chatService.createToken(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchTokenList'] });
       }
       return data?.data ?? [];
@@ -445,7 +445,7 @@ export const useRemoveNextToken = () => {
       tokens: string[];
     }) => {
       const { data } = await chatService.removeToken(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchTokenList'] });
       }
       return data?.data ?? [];
