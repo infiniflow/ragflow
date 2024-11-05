@@ -1,6 +1,6 @@
-import HightLightMarkdown from '@/components/highlight-markdown';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import apiDoc from '@parent/docs/references/http_api_reference.md';
+import MarkdownPreview from '@uiw/react-markdown-preview';
 import { Button, Card, Flex, Space } from 'antd';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import EmbedModal from '../embed-modal';
@@ -41,7 +41,7 @@ const ApiContent = ({
             </Flex>
           </Card>
         )}
-        <HightLightMarkdown>{apiDoc}</HightLightMarkdown>
+        <MarkdownPreview source={apiDoc}></MarkdownPreview>
       </Flex>
       {apiKeyVisible && (
         <ChatApiKeyModal
