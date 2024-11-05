@@ -5,6 +5,11 @@ const routes = [
     layout: false,
   },
   {
+    path: '/login-next',
+    component: '@/pages/login-next',
+    layout: false,
+  },
+  {
     path: '/chat/share',
     component: '@/pages/chat/share',
     layout: false,
