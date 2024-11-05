@@ -1,6 +1,5 @@
 ---
-sidebar_position: 0
-
+sidebar_position: 1
 slug: /http_api_reference
 ---
 
@@ -93,7 +92,7 @@ curl --request POST \
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 
 - `"parser_config"`: (*Body parameter*), `object`  
@@ -269,7 +268,9 @@ curl --request PUT \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`:One
-  - `"knowledge_graph"`: Knowledge Graph
+  - `"email"`: Email
+  - `"knowledge_graph"`: Knowledge Graph  
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
 
 ### Response
 
@@ -318,7 +319,7 @@ curl --request GET \
 - `page`: (*Filter parameter*)  
   Specifies the page on which the datasets will be displayed. Defaults to `1`.
 - `page_size`: (*Filter parameter*)  
-  The number of datasets on each page. Defaults to `1024`.
+  The number of datasets on each page. Defaults to `30`.
 - `orderby`: (*Filter parameter*)  
   The field by which datasets should be sorted. Available options:
   - `create_time` (default)
@@ -524,7 +525,7 @@ curl --request PUT \
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
@@ -645,7 +646,7 @@ curl --request GET \
 - `page`: (*Filter parameter*), `integer`
   Specifies the page on which the documents will be displayed. Defaults to `1`.
 - `page_size`: (*Filter parameter*), `integer`  
-  The maximum number of documents on each page. Defaults to `1024`.
+  The maximum number of documents on each page. Defaults to `30`.
 - `orderby`: (*Filter parameter*), `string`  
   The field by which documents should be sorted. Available options:
   - `create_time` (default)
@@ -1245,7 +1246,7 @@ curl --request POST \
 - `"page"`: (*Body parameter*), `integer`  
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
 - `"page_size"`: (*Body parameter*)  
-  The maximum number of chunks on each page. Defaults to `1024`.
+  The maximum number of chunks on each page. Defaults to `30`.
 - `"similarity_threshold"`: (*Body parameter*)  
   The minimum similarity score. Defaults to `0.2`.
 - `"vector_similarity_weight"`: (*Body parameter*), `float`  
@@ -1628,7 +1629,7 @@ curl --request GET \
 - `page`: (*Filter parameter*), `integer`  
   Specifies the page on which the chat assistants will be displayed. Defaults to `1`.
 - `page_size`: (*Filter parameter*), `integer`  
-  The number of chat assistants on each page. Defaults to `1024`.
+  The number of chat assistants on each page. Defaults to `30`.
 - `orderby`: (*Filter parameter*), `string`  
   The attribute by which the results are sorted. Available options:
   - `create_time` (default)
@@ -1860,7 +1861,7 @@ curl --request GET \
 - `page`: (*Filter parameter*), `integer`  
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
 - `page_size`: (*Filter parameter*), `integer`  
-  The number of sessions on each page. Defaults to `1024`.
+  The number of sessions on each page. Defaults to `30`.
 - `orderby`: (*Filter parameter*), `string`  
   The field by which sessions should be sorted. Available options:  
   - `create_time` (default)
