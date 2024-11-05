@@ -2,6 +2,7 @@
 
 import { toast } from '@/components/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Form,
   FormControl,
@@ -99,6 +100,85 @@ export function SignUpForm() {
         />
         <Button type="submit" className="w-full">
           {t('signUp')}
+        </Button>
+      </form>
+    </Form>
+  );
+}
+
+export function SignInForm() {
+  const { t } = useTranslate('login');
+
+  const FormSchema = z.object({
+    email: z.string().email({
+      message: t('emailPlaceholder'),
+    }),
+    password: z.string({ required_error: t('passwordPlaceholder') }),
+  });
+
+  const form = useForm<z.infer<typeof FormSchema>>({
+    resolver: zodResolver(FormSchema),
+    defaultValues: {
+      email: '',
+    },
+  });
+
+  function onSubmit(data: z.infer<typeof FormSchema>) {
+    console.log('🚀 ~ onSubmit ~ data:', data);
+    toast({
+      title: 'You submitted the following values:',
+      description: (
+        <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
+          <code className="text-white">{JSON.stringify(data, null, 2)}</code>
+        </pre>
+      ),
+    });
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('emailLabel')}</FormLabel>
+              <FormControl>
+                <Input placeholder={t('emailPlaceholder')} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="password"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('passwordLabel')}</FormLabel>
+              <FormControl>
+                <Input
+                  type={'password'}
+                  placeholder={t('passwordPlaceholder')}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <div className="flex items-center space-x-2">
+          <Checkbox id="terms" />
+          <label
+            htmlFor="terms"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            {t('rememberMe')}
+          </label>
+        </div>
+        <Button type="submit" className="w-full">
+          {t('login')}
         </Button>
       </form>
     </Form>
