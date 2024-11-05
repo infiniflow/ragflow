@@ -386,16 +386,16 @@ def list_docs(dataset_id, tenant_id):
         required: false
         description: Filter by document ID.
       - in: query
-        name: offset
+        name: page
         type: integer
         required: false
         default: 1
         description: Page number.
       - in: query
-        name: limit
+        name: page_size
         type: integer
         required: false
-        default: 1024
+        default: 30
         description: Number of items per page.
       - in: query
         name: orderby
@@ -460,7 +460,7 @@ def list_docs(dataset_id, tenant_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
     page = int(request.args.get("page", 1))
     keywords = request.args.get("keywords", "")
-    page_size = int(request.args.get("page_size", 1024))
+    page_size = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
     if request.args.get("desc") == "False":
         desc = False
@@ -741,13 +741,13 @@ def list_chunks(tenant_id, dataset_id, document_id):
         required: true
         description: ID of the document.
       - in: query
-        name: offset
+        name: page
         type: integer
         required: false
         default: 1
         description: Page number.
       - in: query
-        name: limit
+        name: page_size
         type: integer
         required: false
         default: 30
@@ -1323,7 +1323,7 @@ def retrieval_test(tenant_id):
     if "question" not in req:
         return get_error_data_result("`question` is required.")
     page = int(req.get("page", 1))
-    size = int(req.get("page_size", 1024))
+    size = int(req.get("page_size", 30))
     question = req["question"]
     doc_ids = req.get("document_ids", [])
     if not isinstance(doc_ids, list):
