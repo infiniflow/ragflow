@@ -2058,7 +2058,7 @@ data:{
             "chunks": [
                 {
                     "id": "faf26c791128f2d5e821f822671063bd",
-                    "content": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n      Here is the knowledge base:\r\n      {knowledge}\r\n      The above is the knowledge base.\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n",
+                    "content": "xxxxxxxx",
                     "document_id": "dd58f58e888511ef89c90242ac120006",
                     "document_name": "1.txt",
                     "dataset_id": "8e83e57a884611ef9d760242ac120006",
@@ -2079,7 +2079,7 @@ data:{
                 }
             ]
         },
-        "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n      Here is the knowledge base:\n You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n      Here is the knowledge base:\r\n      {knowledge}\r\n      The above is the knowledge base.\r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n  The above is the knowledge base.\n\n### Query:\nwho are you\n\n### Elapsed\n  - Refine Question: 66.0 ms\n  - Keywords: 0.0 ms\n  - Retrieval: 1162.3 ms\n  - LLM: 4659.7 ms",
+        "prompt": "xxxxxxxxxxx",
         "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
         "session_id": "82b0ab2a9c1911ef9d870242ac120006"
     }
@@ -2103,7 +2103,7 @@ Failure:
 
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
-Creates a agent session.
+Creates an agent session.
 
 ### Request
 
