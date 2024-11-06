@@ -394,6 +394,7 @@ class VoyageRerank(Base):
             rank[r.index] = r.relevance_score
         return rank, res.total_tokens
 
+
 class QWenRerank(Base):
     def __init__(self, key, model_name='gte-rerank', base_url=None, **kwargs):
         import dashscope
