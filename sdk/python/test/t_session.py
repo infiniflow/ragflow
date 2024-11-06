@@ -36,7 +36,7 @@ def test_create_conversation_with_success(get_api_key_fixture):
     assistant = rag.create_chat("test_create_conversation", dataset_ids=[kb.id])
     session = assistant.create_session()
     question = "What is AI"
-    for ans in session.ask(question, stream=True):
+    for ans in session.ask(question):
         pass
     
     # assert not ans.content.startswith("**ERROR**"), "Please check this error."
