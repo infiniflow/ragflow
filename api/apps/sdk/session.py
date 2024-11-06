@@ -60,6 +60,7 @@ def create(tenant_id,chat_id):
 @manager.route('/agents/<agent_id>/sessions', methods=['POST'])
 @token_required
 def create_agent_session(tenant_id, agent_id):
+    req = request.json
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -73,13 +74,12 @@ def create_agent_session(tenant_id, agent_id):
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
-        "user_id": tenant_id,
+        "user_id": req.get("usr_id",""),
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent"
     }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
-    conv["tenant_id"] = conv.pop("user_id")
     return get_result(data=conv)
 
 
@@ -231,7 +231,7 @@ def agent_completion(tenant_id, agent_id):
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
-            "user_id": tenant_id,
+            "user_id": req.get("user_id",""),
             "message": [{"role": "assistant", "content": canvas.get_prologue()}],
             "source": "agent"
         }

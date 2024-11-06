@@ -1,5 +1,6 @@
 from .base import Base
 from .session import Session
+import requests
 
 class Agent(Base):
     def __init__(self,rag,res_dict):
@@ -48,10 +49,11 @@ class Agent(Base):
             self.reference = []
             super().__init__(rag,res_dict)
 
-    def create_session(self) -> Session:
-        res = self.post(f"/agents/{self.id}/sessions")
+    @staticmethod
+    def create_session(id,rag) -> Session:
+        res = requests.post(f"http://127.0.0.1:9380/api/v1/agents/{id}/sessions",headers={"Authorization": f"Bearer {rag.user_key}"},json={})
         res = res.json()
         if res.get("code") == 0:
-            return Session(self.rag,res.get("data"))
+            return Session(rag,res.get("data"))
         raise Exception(res.get("message"))
 
