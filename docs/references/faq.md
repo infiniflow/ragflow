@@ -5,6 +5,8 @@ slug: /faq
 
 # Frequently asked questions
 
+Queries regarding general usage, troubleshooting, features, performance, and more.
+
 ## General
 
 ### 1. What sets RAGFlow apart from other RAG products?
@@ -98,7 +100,7 @@ docker build -t infiniflow/ragflow:vX.Y.Z. --network host
 
 #### 2.1 Cannot access https://huggingface.co
  
-A *locally* deployed RAGflow downloads OCR and embedding modules from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails: 
+A *locally* deployed RAGflow downloads OCR and embedding modules from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
 
 ```
 FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
