@@ -7,7 +7,6 @@ import { RightHandleStyle } from './handle-icon';
 import { useBuildSwitchHandlePositions } from './hooks';
 import styles from './index.less';
 import NodeHeader from './node-header';
-import NodePopover from './popover';
 
 const getConditionKey = (idx: number, length: number) => {
   if (idx === 0 && length !== 1) {
@@ -58,55 +57,53 @@ export function SwitchNode({ id, data, selected }: NodeProps<NodeData>) {
   const { positions } = useBuildSwitchHandlePositions({ data, id });
 
   return (
-    <NodePopover nodeId={id}>
-      <section
-        className={classNames(styles.logicNode, {
-          [styles.selectedNode]: selected,
-        })}
-      >
-        <Handle
-          type="target"
-          position={Position.Left}
-          isConnectable
-          className={styles.handle}
-          id={'a'}
-        ></Handle>
-        <NodeHeader
-          id={id}
-          name={data.name}
-          label={data.label}
-          className={styles.nodeHeader}
-        ></NodeHeader>
-        <Flex vertical gap={10}>
-          {positions.map((position, idx) => {
-            return (
-              <div key={idx}>
-                <Flex vertical>
-                  <Flex justify={'space-between'}>
-                    <span>{idx < positions.length - 1 && position.text}</span>
-                    <span>{getConditionKey(idx, positions.length)}</span>
-                  </Flex>
-                  {position.condition && (
-                    <ConditionBlock
-                      nodeId={id}
-                      condition={position.condition}
-                    ></ConditionBlock>
-                  )}
+    <section
+      className={classNames(styles.logicNode, {
+        [styles.selectedNode]: selected,
+      })}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        isConnectable
+        className={styles.handle}
+        id={'a'}
+      ></Handle>
+      <NodeHeader
+        id={id}
+        name={data.name}
+        label={data.label}
+        className={styles.nodeHeader}
+      ></NodeHeader>
+      <Flex vertical gap={10}>
+        {positions.map((position, idx) => {
+          return (
+            <div key={idx}>
+              <Flex vertical>
+                <Flex justify={'space-between'}>
+                  <span>{idx < positions.length - 1 && position.text}</span>
+                  <span>{getConditionKey(idx, positions.length)}</span>
                 </Flex>
-                <Handle
-                  key={position.text}
-                  id={position.text}
-                  type="source"
-                  position={Position.Right}
-                  isConnectable
-                  className={styles.handle}
-                  style={{ ...RightHandleStyle, top: position.top }}
-                ></Handle>
-              </div>
-            );
-          })}
-        </Flex>
-      </section>
-    </NodePopover>
+                {position.condition && (
+                  <ConditionBlock
+                    nodeId={id}
+                    condition={position.condition}
+                  ></ConditionBlock>
+                )}
+              </Flex>
+              <Handle
+                key={position.text}
+                id={position.text}
+                type="source"
+                position={Position.Right}
+                isConnectable
+                className={styles.handle}
+                style={{ ...RightHandleStyle, top: position.top }}
+              ></Handle>
+            </div>
+          );
+        })}
+      </Flex>
+    </section>
   );
 }
