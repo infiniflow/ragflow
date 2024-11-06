@@ -524,7 +524,10 @@ export const useReplaceIdWithText = (output: unknown) => {
     return getNode(id)?.data.name;
   };
 
-  return replaceIdWithText(output, getNameById);
+  return {
+    replacedOutput: replaceIdWithText(output, getNameById),
+    getNameById,
+  };
 };
 
 /**

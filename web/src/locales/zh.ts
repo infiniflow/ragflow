@@ -999,8 +999,11 @@ export default {
       cleanHtmlTip: '如果响应是 HTML 格式且只需要主要内容，请将其打开。',
       reference: '引用',
       input: '输入',
+      output: '输出',
       parameter: '参数',
       howUseId: '如何使用Agent ID？',
+      content: '内容',
+      operationResults: '运行结果',
     },
     footer: {
       profile: 'All rights reserved @ React',
