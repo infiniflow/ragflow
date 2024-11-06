@@ -558,7 +558,7 @@ class CoHereEmbed(Base):
             input_type="search_query",
             embedding_types=["float"],
         )
-        return np.array([d for d in res.embeddings.float]), int(
+        return np.array(res.embeddings.float[0]), int(
             res.meta.billed_units.input_tokens
         )
 
