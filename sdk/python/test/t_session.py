@@ -1,5 +1,6 @@
-from ragflow_sdk import RAGFlow
+from ragflow_sdk import RAGFlow,Agent
 from common import HOST_ADDRESS
+import pytest
 
 
 def test_create_session_with_success(get_api_key_fixture):
@@ -35,7 +36,7 @@ def test_create_conversation_with_success(get_api_key_fixture):
     assistant = rag.create_chat("test_create_conversation", dataset_ids=[kb.id])
     session = assistant.create_session()
     question = "What is AI"
-    for ans in session.ask(question, stream=True):
+    for ans in session.ask(question):
         pass
     
     # assert not ans.content.startswith("**ERROR**"), "Please check this error."
@@ -57,6 +58,7 @@ def test_delete_sessions_with_success(get_api_key_fixture):
     assistant=rag.create_chat("test_delete_session", dataset_ids=[kb.id])
     session = assistant.create_session()
     assistant.delete_sessions(ids=[session.id])
+
 
 def test_update_session_with_name(get_api_key_fixture):
     API_KEY = get_api_key_fixture
@@ -93,3 +95,16 @@ def test_list_sessions_with_success(get_api_key_fixture):
     assistant.create_session("test_1")
     assistant.create_session("test_2")
     assistant.list_sessions()
+
+@pytest.mark.skip(reason="")
+def test_create_agent_session_with_success(get_api_key_fixture):
+    API_KEY = "ragflow-BkOGNhYjIyN2JiODExZWY5MzVhMDI0Mm"
+    rag = RAGFlow(API_KEY,HOST_ADDRESS)
+    Agent.create_session("2e45b5209c1011efa3e90242ac120006", rag)
+
+@pytest.mark.skip(reason="")
+def test_create_agent_conversation_with_success(get_api_key_fixture):
+    API_KEY = "ragflow-BkOGNhYjIyN2JiODExZWY5MzVhMDI0Mm"
+    rag = RAGFlow(API_KEY,HOST_ADDRESS)
+    session = Agent.create_session("2e45b5209c1011efa3e90242ac120006", rag)
+    session.ask("What is this job")
