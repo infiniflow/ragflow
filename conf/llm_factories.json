@@ -1299,7 +1299,7 @@
             "llm": []
         },
         {
-            "name": "cohere",
+            "name": "Cohere",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING, TEXT RE-RANK",
             "status": "1",

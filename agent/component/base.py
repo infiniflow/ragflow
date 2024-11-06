@@ -37,6 +37,7 @@ class ComponentParamBase(ABC):
         self.output_var_name = "output"
         self.message_history_window_size = 22
         self.query = []
+        self.inputs = []
 
     def set_name(self, name: str):
         self._name = name
@@ -444,8 +445,13 @@ class ComponentBase(ABC):
         if self._param.query:
             outs = []
             for q in self._param.query:
-                if q["value"]: outs.append(pd.DataFrame([{"content": q["value"]}]))
-                if q["component_id"]: outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
+                if q["component_id"]:
+                    outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
+                    self._param.inputs.append({"component_id": q["component_id"],
+                                               "content": "\n".join([str(d["content"]) for d in outs[-1].to_dict('records')])})
+                elif q["value"]:
+                    self._param.inputs.append({"component_id": None, "content": q["value"]})
+                    outs.append(pd.DataFrame([{"content": q["value"]}]))
             if outs:
                 df = pd.concat(outs, ignore_index=True)
                 if "content" in df: df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
@@ -463,31 +469,38 @@ class ComponentBase(ABC):
             if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
                 o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
                 if o is not None:
+                    o["component_id"] = u
                     upstream_outs.append(o)
                     continue
-            if u not in self._canvas.get_component(self._id)["upstream"]: continue
+            if self.component_name.lower()!="answer" and u not in self._canvas.get_component(self._id)["upstream"]: continue
             if self.component_name.lower().find("switch") < 0 \
                     and self.get_component_name(u) in ["relevant", "categorize"]:
                 continue
             if u.lower().find("answer") >= 0:
                 for r, c in self._canvas.history[::-1]:
                     if r == "user":
-                        upstream_outs.append(pd.DataFrame([{"content": c}]))
+                        upstream_outs.append(pd.DataFrame([{"content": c, "component_id": u}]))
                         break
                 break
             if self.component_name.lower().find("answer") >= 0 and self.get_component_name(u) in ["relevant"]:
                 continue
             o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
             if o is not None:
+                o["component_id"] = u
                 upstream_outs.append(o)
             break
 
-        if upstream_outs:
-            df = pd.concat(upstream_outs, ignore_index=True)
-            if "content" in df:
-                df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
-            return df
-        return pd.DataFrame(self._canvas.get_history(3)[-1:])
+        assert upstream_outs, "Can't inference the where the component input is."
+
+        df = pd.concat(upstream_outs, ignore_index=True)
+        if "content" in df:
+            df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+
+        self._param.inputs = []
+        for _,r in df.iterrows():
+            self._param.inputs.append({"component_id": r["component_id"], "content": r["content"]})
+
+        return df
 
     def get_stream_input(self):
         reversed_cpnts = []

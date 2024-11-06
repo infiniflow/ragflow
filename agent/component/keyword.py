@@ -50,14 +50,11 @@ class KeywordExtract(Generate, ABC):
     component_name = "KeywordExtract"
 
     def _run(self, history, **kwargs):
-        q = ""
-        for r, c in self._canvas.history[::-1]:
-            if r == "user":
-                q += c
-                break
+        query = self.get_input()
+        query = str(query["content"][0]) if "content" in query else ""
 
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": q}],
+        ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": query}],
                             self._param.gen_conf())
 
         ans = re.sub(r".*keyword:", "", ans).strip()
