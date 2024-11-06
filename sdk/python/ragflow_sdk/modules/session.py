@@ -9,14 +9,19 @@ class Session(Base):
         self.name = "New session"
         self.messages = [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
         self.chat_id = None
+        self.agent_id = None
+        for key,value in res_dict.items():
+            if key =="chat_id" and value is not None:
+                self.__session_type = "chat"
+            if key == "agent_id" and value is not None:
+                self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
-    def ask(self, question: str, stream: bool = False):
-        for message in self.messages:
-            if "reference" in message:
-                message.pop("reference")
-        res = self.post(f"/chats/{self.chat_id}/completions",
-                        {"question": question, "stream": True,"session_id":self.id}, stream=stream)
+    def ask(self, question):
+        if self.__session_type == "agent":
+            res=self._ask_agent(question)
+        elif self.__session_type == "chat":
+            res=self._ask_chat(question)
         for line in res.iter_lines():
             line = line.decode("utf-8")
             if line.startswith("{"):
@@ -33,24 +38,19 @@ class Session(Base):
                     }
                     if "chunks" in reference:
                         chunks = reference["chunks"]
-                        chunk_list = []
-                        for chunk in chunks:
-                            new_chunk = {
-                                "id": chunk["chunk_id"],
-                                "content": chunk["content_with_weight"],
-                                "document_id": chunk["doc_id"],
-                                "document_name": chunk["docnm_kwd"],
-                                "dataset_id": chunk["kb_id"],
-                                "image_id": chunk["img_id"],
-                                "similarity": chunk["similarity"],
-                                "vector_similarity": chunk["vector_similarity"],
-                                "term_similarity": chunk["term_similarity"],
-                                "positions": chunk["positions"],
-                            }
-                            chunk_list.append(new_chunk)
-                        temp_dict["reference"] = chunk_list
+                        temp_dict["reference"] = chunks
                     message = Message(self.rag, temp_dict)
                     yield message
+
+
+    def _ask_chat(self, question: str, stream: bool = False):
+        res = self.post(f"/chats/{self.chat_id}/completions",
+                        {"question": question, "stream": True,"session_id":self.id}, stream=stream)
+        return res
+    def _ask_agent(self,question:str,stream:bool=False):
+        res = self.post(f"/agents/{self.agent_id}/completions",
+                        {"question": question, "stream": True,"session_id":self.id}, stream=stream)
+        return res
 
     def update(self,update_message):
         res = self.put(f"/chats/{self.chat_id}/sessions/{self.id}",
@@ -67,19 +67,3 @@ class Message(Base):
         self.prompt = None
         self.id = None
         super().__init__(rag, res_dict)
-
-
-class Chunk(Base):
-    def __init__(self, rag, res_dict):
-        self.id = None
-        self.content = None
-        self.document_id = ""
-        self.document_name = ""
-        self.dataset_id = ""
-        self.image_id = ""
-        self.similarity = None
-        self.vector_similarity = None
-        self.term_similarity = None
-        self.positions = None
-        super().__init__(rag, res_dict)
-

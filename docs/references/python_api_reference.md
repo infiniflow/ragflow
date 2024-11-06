@@ -1387,6 +1387,117 @@ while True:
     
     cont = ""
     for ans in session.ask(question, stream=True):
-        print(answer.content[len(cont):], end='', flush=True)
-        cont = answer.content
+        print(ans.content[len(cont):], end='', flush=True)
+        cont = ans.content
+```
+---
+
+## Create agent session
+
+```python
+Agent.create_session(id,rag) -> Session
+```
+
+Creates a agemt session.
+
+### Returns
+
+- Success: A `Session` object containing the following attributes:
+  - `id`: `str` The auto-generated unique identifier of the created session.
+  - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
+  - `agnet_id`: `str` The ID of the associated agent assistant.
+- Failure: `Exception`
+
+### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+AGENT_ID = "AGENT_ID"
+session = create_session(AGENT_ID,rag_object)
+```
+---
+
+## Converse through agent
+
+```python
+Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
+```
+
+Asks a question to start an AI-powered conversation.
+
+### Parameters
+
+#### question: `str` *Required*
+
+The question to start an AI-powered conversation.
+
+#### stream: `bool`
+
+Indicates whether to output responses in a streaming way:
+
+- `True`: Enable streaming.
+- `False`: Disable streaming (default).
+
+### Returns
+
+- A `Message` object containing the response to the question if `stream` is set to `False`
+- An iterator containing multiple `message` objects (`iter[Message]`) if `stream` is set to `True`
+
+The following shows the attributes of a `Message` object:
+
+#### id: `str`
+
+The auto-generated message ID.
+
+#### content: `str`
+
+The content of the message. Defaults to `"Hi! I am your assistant, can I help you?"`.
+
+#### reference: `list[Chunk]`
+
+A list of `Chunk` objects representing references to the message, each containing the following attributes:
+
+- `id` `str`  
+  The chunk ID.
+- `content` `str`  
+  The content of the chunk.
+- `image_id` `str`  
+  The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
+- `document_id` `str`  
+  The ID of the referenced document.
+- `document_name` `str`  
+  The name of the referenced document.
+- `position` `list[str]`  
+  The location information of the chunk within the referenced document.
+- `dataset_id` `str`  
+  The ID of the dataset to which the referenced document belongs.
+- `similarity` `float`  
+  A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity. It is the weighted sum of `vector_similarity` and `term_similarity`.
+- `vector_similarity` `float`  
+  A vector similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between vector embeddings.
+- `term_similarity` `float`  
+  A keyword similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between keywords.
+
+### Examples
+
+```python
+from ragflow_sdk import RAGFlow,Agent
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+AGENT_id = "AGENT_ID"
+session = Agent.create_session(AGENT_id,rag_object)    
+
+print("\n==================== Miss R =====================\n")
+print("Hello. What can I do for you?")
+
+while True:
+    question = input("\n==================== User =====================\n> ")
+    print("\n==================== Miss R =====================\n")
+    
+    cont = ""
+    for ans in session.ask(question, stream=True):
+        print(ans.content[len(cont):], end='', flush=True)
+        cont = ans.content
 ```

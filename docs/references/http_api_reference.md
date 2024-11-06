@@ -2018,59 +2018,54 @@ curl --request POST \
 
 Success:
 
-```json
-data: {
+```text
+data:{
     "code": 0,
     "data": {
-        "answer": "I am an intelligent assistant designed to help you with your inquiries. I can provide",
+        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a",
         "reference": {},
         "audio_binary": null,
-        "id": "d8e5ebb6-6b52-4fd1-bd02-35b52ba3acaa",
-        "session_id": "e14344d08d1a11efb6210242ac120004"
+        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
+        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
     }
 }
-
-data: {
+data:{
     "code": 0,
     "data": {
-        "answer": "I am an intelligent assistant designed to help you with your inquiries. I can provide information, answer questions, and assist with tasks based on the knowledge available to me",
+        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base. My responses are based on the information available in the knowledge base and",
         "reference": {},
         "audio_binary": null,
-        "id": "d8e5ebb6-6b52-4fd1-bd02-35b52ba3acaa",
-        "session_id": "e14344d08d1a11efb6210242ac120004"
+        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
+        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
     }
 }
-
-data: {
+data:{
     "code": 0,
     "data": {
-        "answer": "I am an intelligent assistant designed to help you with your inquiries. I can provide information, answer questions, and assist with tasks based on the knowledge available to me. How can I assist you today?",
+        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base. My responses are based on the information available in the knowledge base and any relevant chat history.",
         "reference": {},
         "audio_binary": null,
-        "id": "d8e5ebb6-6b52-4fd1-bd02-35b52ba3acaa",
-        "session_id": "e14344d08d1a11efb6210242ac120004"
+        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
+        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
     }
 }
-
-data: {
+data:{
     "code": 0,
     "data": {
-        "answer": "I am an intelligent assistant designed to help you with your inquiries. I can provide information, answer questions, and assist with tasks based on the knowledge available to me ##0$$. How can I assist you today?",
+        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base ##0$$. My responses are based on the information available in the knowledge base and any relevant chat history.",
         "reference": {
-            "total": 8,
+            "total": 1,
             "chunks": [
                 {
-                    "chunk_id": "895d34de762e674b43e8613c6fb54c6d",
-                    "content_ltks": "xxxx\r\n\r\n\"\"\"\r\nyou are an intellig assistant. pleas summar the content of the knowledg base to answer the question. pleas list thedata in the knowledg base and answer in detail. when all knowledg base content is irrelev to the question , your answer must includ the sentenc\"the answer you are lookfor isnot found in the knowledg base!\" answer needto consid chat history.\r\n here is the knowledg base:\r\n{ knowledg}\r\nthe abov is the knowledg base.\r\n\"\"\"\r\n1\r\n 2\r\n 3\r\n 4\r\n 5\r\n 6\r\nxxxx ",
-                    "content_with_weight": "xxxx\r\n\r\n\"\"\"\r\nYou are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n ",
-                    "doc_id": "5c5999ec7be811ef9cab0242ac120005",
-                    "docnm_kwd": "1.txt",
-                    "kb_id": "c7ee74067a2c11efb21c0242ac120006",
-                    "important_kwd": [],
-                    "img_id": "",
-                    "similarity": 0.4442746624416507,
-                    "vector_similarity": 0.3843936320913369,
-                    "term_similarity": 0.4699379611632138,
+                    "id": "faf26c791128f2d5e821f822671063bd",
+                    "content": "xxxxxxxx",
+                    "document_id": "dd58f58e888511ef89c90242ac120006",
+                    "document_name": "1.txt",
+                    "dataset_id": "8e83e57a884611ef9d760242ac120006",
+                    "image_id": "",
+                    "similarity": 0.7,
+                    "vector_similarity": 0.0,
+                    "term_similarity": 1.0,
                     "positions": [
                         ""
                     ]
@@ -2079,17 +2074,16 @@ data: {
             "doc_aggs": [
                 {
                     "doc_name": "1.txt",
-                    "doc_id": "5c5999ec7be811ef9cab0242ac120005",
+                    "doc_id": "dd58f58e888511ef89c90242ac120006",
                     "count": 1
                 }
             ]
         },
-        "prompt": "xxxx\r\n\r\n\"\"\"\r\nYou are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\r\n \r\n\"\"\"\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\nxxxx\n\n### Query:\nwho are you,please answer me in English\n\n### Elapsed\n  - Retrieval: 332.2 ms\n  - LLM: 2972.1 ms",
-        "id": "d8e5ebb6-6b52-4fd1-bd02-35b52ba3acaa",
-        "session_id": "e14344d08d1a11efb6210242ac120004"
+        "prompt": "xxxxxxxxxxx",
+        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
+        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
     }
 }
-
 data:{
     "code": 0,
     "data": true
@@ -2102,5 +2096,245 @@ Failure:
 {
     "code": 102,
     "message": "Please input your question."
+}
+```
+
+## Create agent session
+
+**POST** `/api/v1/agents/{agent_id}/sessions`
+
+Creates an agent session.
+
+### Request
+
+- Method: POST
+- URL: `/api/v1/agents/{agent_id}/sessions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+
+#### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+     }'
+```
+
+#### Request parameters
+
+- `agent_id`: (*Path parameter*)
+  The ID of the associated agent assistant.
+
+### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "agent_id": "2e45b5209c1011efa3e90242ac120006",
+        "id": "7869e9e49c1711ef92840242ac120006",
+        "message": [
+            {
+                "content": "Hello! I am the HR responsible for recruitment at Infineon. I learned that you are an expert in this field, and I took the liberty of reaching out to you. There is an opportunity I would like to share with you. RAGFlow is currently looking for a senior engineer for your position. I was wondering if you might be interested?",
+                "role": "assistant"
+            }
+        ],
+        "source": "agent",
+        "user_id": ""
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Agent not found."
+}
+```
+
+
+
+## Converse through agent
+
+**POST** `/api/v1/agents/{agent_id}/completions`  
+#######  
+Asks a question to start an AI-powered conversation.
+
+### Request
+
+- Method: POST
+- URL: `/api/v1/agents/{agent_id}/completions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"question"`: `string`
+  - `"stream"`: `boolean`
+  - `"session_id"`: `string`
+
+#### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+          "question": "What is RAGFlow?",
+          "stream": true
+     }'
+```
+
+#### Request Parameters
+
+- `agent_id`: (*Path parameter*)  
+  The ID of the associated agent assistant.
+- `"question"`: (*Body Parameter*), `string` *Required*  
+  The question to start an AI-powered conversation.
+- `"stream"`: (*Body Parameter*), `boolean`  
+  Indicates whether to output responses in a streaming way:
+  - `true`: Enable streaming.
+  - `false`: Disable streaming (default).
+- `"session_id"`: (*Body Parameter*)  
+  The ID of session. If it is not provided, a new session will be generated.
+
+### Response
+
+Success:
+
+```text
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello!",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! How",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! How can",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! How can I",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! How can I assist",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! How can I assist you",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! How can I assist you today",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! How can I assist you today?",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! How can I assist you today?",
+        "reference": [],
+        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
+        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "`question` is required."
 }
 ```
