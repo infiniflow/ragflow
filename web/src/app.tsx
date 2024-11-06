@@ -13,6 +13,7 @@ import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
 import React, { ReactNode, useEffect, useState } from 'react';
+import { ThemeProvider } from './components/theme-provider';
 import storage from './utils/authorization-util';
 
 dayjs.extend(customParseFormat);
@@ -53,17 +54,19 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider
-        theme={{
-          token: {
-            fontFamily: 'Inter',
-          },
-        }}
-        locale={locale}
-      >
-        <App> {children}</App>
-      </ConfigProvider>
-      <ReactQueryDevtools buttonPosition={'top-left'} />
+      <ThemeProvider defaultTheme="light" storageKey="ragflow-ui-theme">
+        <ConfigProvider
+          theme={{
+            token: {
+              fontFamily: 'Inter',
+            },
+          }}
+          locale={locale}
+        >
+          <App> {children}</App>
+        </ConfigProvider>
+        <ReactQueryDevtools buttonPosition={'top-left'} />
+      </ThemeProvider>
     </QueryClientProvider>
   );
 };
