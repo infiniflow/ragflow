@@ -1,5 +1,5 @@
-from Demos.mmapfile_demo import page_sizefrom Demos.mmapfile_demo import page_sizesidebar_position: 1
-
+---
+sidebar_position: 2
 slug: /python_api_reference
 ---
 
@@ -58,7 +58,7 @@ A brief description of the dataset to create. Defaults to `""`.
 
 The language setting of the dataset to create. Available options:
 
-- `"English"` (Default)
+- `"English"` (default)
 - `"Chinese"`
 
 #### permission
@@ -80,7 +80,7 @@ The chunking method of the dataset to create. Available options:
 - `"picture"`: Picture
 - `"one"`: One
 - `"knowledge_graph"`: Knowledge Graph  
-  Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
+  Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
 - `"email"`: Email
 
 #### parser_config
@@ -160,7 +160,7 @@ rag_object.delete_datasets(ids=["id_1","id_2"])
 ```python
 RAGFlow.list_datasets(
     page: int = 1, 
-    page_size: int = 1024, 
+    page_size: int = 30, 
     orderby: str = "create_time", 
     desc: bool = True,
     id: str = None,
@@ -178,7 +178,7 @@ Specifies the page on which the datasets will be displayed. Defaults to `1`.
 
 #### page_size: `int`
 
-The number of datasets on each page. Defaults to `1024`.
+The number of datasets on each page. Defaults to `30`.
 
 #### orderby: `str`
 
@@ -250,8 +250,9 @@ A dictionary representing the attributes to update, with the following keys:
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
+  - `"email"`: Email
   - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
 
 ### Returns
 
@@ -334,7 +335,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"picture"`: Picture
   - `"one"`: One
   - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please note that Knowledge Graph consumes a large number of Tokens!
+    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
   - `"chunk_method"`=`"naive"`:  
@@ -413,7 +414,7 @@ print(doc)
 ## List documents
 
 ```python
-Dataset.list_documents(id:str =None, keywords: str=None, page: int=1, page_size:int = 1024,order_by:str = "create_time", desc: bool = True) -> list[Document]
+Dataset.list_documents(id:str =None, keywords: str=None, page: int=1, page_size:int = 30, order_by:str = "create_time", desc: bool = True) -> list[Document]
 ```
 
 Lists documents in the current dataset.
@@ -434,7 +435,7 @@ Specifies the page on which the documents will be displayed. Defaults to `1`.
 
 #### page_size: `int`
 
-The maximum number of documents on each page. Defaults to `1024`.
+The maximum number of documents on each page. Defaults to `30`.
 
 #### orderby: `str`
 
@@ -689,7 +690,7 @@ chunk = doc.add_chunk(content="xxxxxxx")
 ## List chunks
 
 ```python
-Document.list_chunks(keywords: str = None, page: int = 1, page_size: int = 1024, id : str = None) -> list[Chunk]
+Document.list_chunks(keywords: str = None, page: int = 1, page_size: int = 30, id : str = None) -> list[Chunk]
 ```
 
 Lists chunks in the current document.
@@ -706,7 +707,7 @@ Specifies the page on which the chunks will be displayed. Defaults to `1`.
 
 #### page_size: `int`
 
-The maximum number of chunks on each page. Defaults to `1024`.
+The maximum number of chunks on each page. Defaults to `30`.
 
 #### id: `str`
 
@@ -811,7 +812,7 @@ chunk.update({"content":"sdfx..."})
 ## Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=1024, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.
@@ -836,7 +837,7 @@ The starting index for the documents to retrieve. Defaults to `1`.
 
 #### page_size: `int`
 
-The maximum number of chunks to retrieve. Defaults to `1024`.
+The maximum number of chunks to retrieve. Defaults to `30`.
 
 #### Similarity_threshold: `float`
 
@@ -1078,7 +1079,7 @@ rag_object.delete_chats(ids=["id_1","id_2"])
 ```python
 RAGFlow.list_chats(
     page: int = 1, 
-    page_size: int = 1024, 
+    page_size: int = 30, 
     orderby: str = "create_time", 
     desc: bool = True,
     id: str = None,
@@ -1096,7 +1097,7 @@ Specifies the page on which the chat assistants will be displayed. Defaults to `
 
 #### page_size: `int`
 
-The number of chat assistants on each page. Defaults to `1024`.
+The number of chat assistants on each page. Defaults to `30`.
 
 #### orderby: `str`
 
@@ -1216,7 +1217,7 @@ session.update({"name": "updated_name"})
 ```python
 Chat.list_sessions(
     page: int = 1, 
-    page_size: int = 1024, 
+    page_size: int = 30, 
     orderby: str = "create_time", 
     desc: bool = True,
     id: str = None,
@@ -1234,7 +1235,7 @@ Specifies the page on which the sessions will be displayed. Defaults to `1`.
 
 #### page_size: `int`
 
-The number of sessions on each page. Defaults to `1024`.
+The number of sessions on each page. Defaults to `30`.
 
 #### orderby: `str`
 
