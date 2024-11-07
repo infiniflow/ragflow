@@ -5,33 +5,29 @@
 
 - 🐳 [Docker Compose](#-docker-compose)
 - 🐬 [Docker environment variables](#-docker-environment-variables)
-- 🔧 [Service configuration](#-service-configuration)
+- 🐋 [Service configuration](#-service-configuration)
 
 </details>
 
 ## 🐳 Docker Compose
 
 - **docker-compose.yml**
-- **docker-compose-gpu.yml**
 - **docker-compose-base.yml**
-- **docker-compose-admin-tool.yml**
-- **docker-compose-CN-oc9.yml**
-- **docker-compose-gpu-CN-oc9.yml**
 
 ## 🐬 Docker environment variables
 
 The [.env](./.env) file contains important environment variables for Docker.
 
-### Elasticsearch-specific
+### Elasticsearch
 
 - `STACK_VERSION`  
   The version of Elasticsearch. Defaults to `8.11.3`
 - `ES_PORT`  
-  The port use to expose the Elasticsearch service to the host machine, allowing external access to the service running **inside** the Docker container.  Defaults to `1200`.
+  The port used to expose the Elasticsearch service to the host machine, allowing external access to the service running **inside** the Docker container.  Defaults to `1200`.
 - `ELASTIC_PASSWORD`  
   The password for Elasticsearch. When updated, you must revise the `es.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
 
-### Kibana-specific
+### Kibana
 
 - `KIBANA_PORT`  
   The port used to expose the Kibana service to the host machine. Defaults to `6601`.
@@ -45,14 +41,14 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MEM_LIMIT`  
   The maximum amount of the memory that *a specific* Docker container can use while running. Defaults to `8073741824`.
 
-### MySQL-specific
+### MySQL
 
 - `MYSQL_PASSWORD`  
   The password for MySQL. When updated, you must revise the `mysql.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
 - `MYSQL_PORT`  
   The port used to expose the MySQL service to the host machine, allowing external access to the MySQL database running **inside** the Docker container. Defaults to `5455`.
 
-### MinIO-specific
+### MinIO
 
 - `MINIO_CONSOLE_PORT`  
   The port used to expose the MinIO console interface to the host machine, allowing external access to the web-based console running **inside** the Docker container. Defaults to `9001`
@@ -63,14 +59,14 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MINIO_PASSWORD`  
   The password for MinIO. When updated, you must revise the `minio.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
 
-### Redis-specific
+### Redis
 
 - `REDIS_PORT`  
   The port used to expose the Redis service to the host machine, allowing external access to the Redis service running **inside** the Docker container. Defaults to `6379`.
 - `REDIS_PASSWORD`  
   The password for Redis. When updated, you must revise the `redis.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
 
-### RAGFlow-specific
+### RAGFlow
 
 - `SVR_HTTP_PORT`  
   The port used to expose RAGFlow's API service (*both HTTP and Python*) to the host machine, allowing external access to the service running **inside** the Docker container.** Defaults to `9380`.
@@ -94,8 +90,9 @@ The [.env](./.env) file contains important environment variables for Docker.
       - `nomic-ai/nomic-embed-text-v1.5`
       - `sentence-transformers/all-MiniLM-L6-v2`
   
-  > [!TIP]
-  > If you cannot download the RAGFlow Docker image, try the following hub.docker.com mirrors.
+  > [!TIP]  
+  >
+  > If you cannot download the RAGFlow Docker image, try the following mirrors.
   > - For `dev-slim`:
   >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
   >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
@@ -108,17 +105,15 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `TIMEZONE`  
   The local time zone. Defaults to `'Asia/Shanghai'`.
 
-## 🔧 Service configuration
+## 🐋 Service configuration
 
 [service_conf.yaml](./service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
 
 - `ragflow`
-
   - `host`: The API server's IP address **inside** the Docker container. Defaults to `0.0.0.0`.
   - `port`: The API server's serving port **inside** the Docker container. Defaults to `9380`.
 
 - `mysql`
-
   - `name`: The MySQL database name. Defaults to `rag_flow`.
   - `user`: The username for MySQL.
   - `password`: The password for MySQL. When updated, you must revise the `MYSQL_PASSWORD` variable in [.env](./.env) accordingly.
@@ -127,7 +122,6 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `stale_timeout`: Timeout in seconds.
 
 - `minio`
-
   - `user`: The username for MinIO. When updated, you must revise the `MINIO_USER` variable in [.env](./.env) accordingly.
   - `password`: The password for MinIO. When updated, you must revise the `MINIO_PASSWORD` variable in [.env](./.env) accordingly.
   - `host`: The MinIO serving IP *and* port **inside** the Docker container. Defaults to `minio:9000`.
@@ -135,13 +129,13 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `user_default_llm`  
   The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml**.  
 
-  > [!TIP]
+  > [!TIP]  
+  >
   > If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.  
   - `factory`: The LLM supplier. Available options:
-    - `"Baichuan"`
+    - `"OpenAI"`
     - `"DeepSeek"`
     - `"Moonshot"`
-    - `"OpenAI"`
     - `"Tongyi-Qianwen"`
     - `"VolcEngine"`
     - `"ZHIPU-AI"`
