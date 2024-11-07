@@ -58,6 +58,6 @@ Hover over an intended chat assistant **>** **Edit** to show the chat configurat
 
 RAGFlow also offers HTTP and Python APIs for you to integrate RAGFlow's capabilities into your applications. Read the following documents for more information:
 
-- [Acquire a RAGFlow API key](./guides/develop/acquire_ragflow_api_key.md)
-- [HTTP API reference](./references/http_api_reference.md)
-- [Python API reference](./references/python_api_reference.md)
+- [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md)
+- [HTTP API reference](../references/http_api_reference.md)
+- [Python API reference](../references/python_api_reference.md)

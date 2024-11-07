@@ -1,32 +1,72 @@
 # README
 
+<details open>
+<summary></b>📕 Table of Contents</b></summary>
+
+- 🐳 [Docker Compose](#-docker-compose)
+- 🐬 [Docker environment variables](#-docker-environment-variables)
+- 🔧 [Service configuration](#-service-configuration)
+
+</details>
+
+## Docker Compose
+
+- **docker-compose.yml**
+- **docker-compose-gpu.yml**
+- docker-compose
+
 
 
 ##  Docker environment variables
 
-Look into [.env](./.env), there're some important variables.
+The [.env](./.env) file contains important environment variables for Docker.
+
+### Elasticsearch-specific
 
 - `STACK_VERSION`  
-  The Elasticsearch version. Defaults to `8.11.3`
+  The version of Elasticsearch. Defaults to `8.11.3`
 - `ES_PORT`  
   Port to expose Elasticsearch HTTP API to the host. Defaults to `1200`.
 - `ELASTIC_PASSWORD`  
-  The Elasticsearch password.
+  The Elasticsearch password. When updated, you must also revise the `es.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
+
+### Kibana-specific
+
+- `KIBANA_PORT`
+- 
+
+### MySQL-specific
+
 - `MYSQL_PASSWORD`  
-  The MySQL password. When updated, you must also revise the `mysql.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
+  The password for MySQL. When updated, you must also revise the `mysql.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
 - `MYSQL_PORT`  
-  The exported port number of MySQL Docker container, needed when you access the database from outside the Docker container.
+  The exported port number of MySQL Docker container, needed when you access the database from **outside** the Docker container. Defaults to `5455`.
+
+### MinIO-specific
+
+- `MINIO_CONSOLE_PORT`  
+
+  Defaults to `9001`
+
+- `MINIO_PORT`  
+
+  Defaults to `9000`.
+
 - `MINIO_USER`  
   The MinIO username. When updated, you must also revise the `minio.user` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
+
 - `MINIO_PASSWORD`  
   The MinIO password. When updated, you must also revise the `minio.password` entry in  [service_conf.yaml](./service_conf.yaml) accordingly.
+
+### RAGFlow-specific
+
 - `SVR_HTTP_PORT`  
-  The port number on which RAGFlow's backend API server listens.
-- `TIMEZONE`  
-  The local time zone.
+  The port number on which RAGFlow's API server listens. Defaults to `9380`.
+
 - `RAGFLOW-IMAGE`  
-  The Docker image edition. Available options:  
-  - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models  
+  The Docker image edition. Available editions:  
+
+  - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models.  
   - `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models including:
     - Embedded embedding models:
       - `BAAI/bge-large-zh-v1.5` 
@@ -43,37 +83,64 @@ Look into [.env](./.env), there're some important variables.
       - `nomic-ai/nomic-embed-text-v1.5`
       - `sentence-transformers/all-MiniLM-L6-v2`
 
+  > [!TIP]
+  >
+  > If you cannot download the RAGFlow Docker image, try the following hub.docker.com mirrors.
+  >
+  > - For `dev-slim`:
+  >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
+  >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
+  > - For `dev`:
+  >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
+  >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
 
-##  Service Configuration
+### Miscellaneous
 
-[service_conf.yaml](./service_conf.yaml) defines the system-level configuration for RAGFlow and is used by its API server and task executor.
+- `TIMEZONE`  
+  The local time zone. Defaults to `'Asia/Shanghai'`.
+
+
+##  Service configuration
+
+[service_conf.yaml](./service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
 
 - `ragflow`
   
-  - `host`: The IP address of the API server.
-  - `port`: The serving port of API server.
+  - `host`: The API server's IP address **inside** the Docker container. Defaults to `0.0.0.0`.
+  - `port`: The API server's serving port **inside** the Docker container. Defaults to `9380`.
   
 - `mysql`
   
-  - `name`: The database name in MySQL used by RAGFlow. Defaults to `rag_flow`.
-  - `user`: The MySQL user name.
+  - `name`: The MySQL database name. Defaults to `rag_flow`.
+  - `user`: The MySQL username.
   - `password`: The MySQL password. When updated, you must also revise the `MYSQL_PASSWORD` variable in [.env](./.env) accordingly.
-  - `port`: The serving port of MySQL inside the Docker container. When updated, you must also revise the `MYSQL_PORT` variable in [.env](./.env) accordingly.
-  - `max_connections`: The maximum database connection.
+  - `port`: The MySQL serving port **inside** the Docker container. Defaults to `3306`.
+  - `max_connections`: The maximum number of concurrent connections to the MySQL database. Defaults to `100`.
   - `stale_timeout`: Timeout in seconds.
   
 - `minio`
   
   - `user`: The MinIO username. When updated, you must also revise the `MINIO_USER` variable in [.env](./.env) accordingly.
   - `password`: The MinIO password. When updated, you must also revise the `MINIO_PASSWORD` variable in [.env](./.env) accordingly.
-  - `host`: The serving IP and port inside the docker container. This is not updated until changing the minio part in [docker-compose.yml](./docker-compose.yml)
+  - `host`: The MinIO serving IP *and* port **inside** the Docker container. Defaults to `minio:9000`.
   
 - `user_default_llm`   
   
-  The default LLM to use for a new RAGFlow user. It is disabled by default. If you have not set it here, you can configure the default LLM on the **Settings** page in the RAGFlow UI. Newly signed-up users use LLM configured by this part; otherwise, you need to configure your own LLM on the *Settings* page.  
+  The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml**.  
   
-  - `factory`: The LLM suppliers. "OpenAI"， "Tongyi-Qianwen", "ZHIPU-AI", "Moonshot", "DeepSeek", "Baichuan", and "VolcEngine" are supported.
-  - `api_key`: The API key for the specified LLM.
+  > [!TIP]
+  >
+  > If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.  
+  
+  - `factory`: The LLM supplier. Available options: 
+    - `"Baichuan"`
+    - `"DeepSeek"`
+    - `"Moonshot"`
+    - `"OpenAI"`
+    - `"Tongyi-Qianwen"`
+    - `"VolcEngine"`
+    - `"ZHIPU-AI"`
+  - `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
   
 - `oauth`  
   The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml**.
