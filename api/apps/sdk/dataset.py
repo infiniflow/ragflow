@@ -15,8 +15,6 @@
 #
 
 from flask import request
-from tencentcloud.gse.v20191112.models import JoinGameServerSessionBatchRequest
-
 from api.db import StatusEnum, FileSource
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService
