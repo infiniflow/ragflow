@@ -69,6 +69,7 @@ import { ICategorizeForm, IRelevantForm, ISwitchForm } from './interface';
 import useGraphStore, { RFState } from './store';
 import {
   buildDslComponentsByGraph,
+  generateNodeNamesWithIncreasingIndex,
   generateSwitchHandleText,
   getNodeDragHandle,
   receiveMessageError,
@@ -159,12 +160,13 @@ export const useHandleDrag = () => {
   return { handleDragStart };
 };
 
-const splitName = (name: string) => {
-  const names = name.split('_');
-  const type = names.at(0);
-  const index = Number(names.at(-1));
+export const useGetNodeName = () => {
+  const { t } = useTranslation();
 
-  return { type, index };
+  return (type: string) => {
+    const name = t(`flow.${lowerFirst(type)}`);
+    return name;
+  };
 };
 
 export const useHandleDrop = () => {
@@ -173,53 +175,12 @@ export const useHandleDrop = () => {
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<any, any>>();
   const initializeOperatorParams = useInitializeOperatorParams();
-  const { t } = useTranslation();
+  const getNodeName = useGetNodeName();
 
   const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
-
-  const generateNodeName = useCallback(
-    (type: string) => {
-      const name = t(`flow.${lowerFirst(type)}`);
-      const templateNameList = nodes
-        .filter((x) => {
-          const temporaryName = x.data.name;
-
-          const { type, index } = splitName(temporaryName);
-
-          return (
-            temporaryName.match(/_/g)?.length === 1 &&
-            type === name &&
-            !isNaN(index)
-          );
-        })
-        .map((x) => {
-          const temporaryName = x.data.name;
-          const { index } = splitName(temporaryName);
-
-          return {
-            idx: index,
-            name: temporaryName,
-          };
-        })
-        .sort((a, b) => a.idx - b.idx);
-
-      let index: number = 0;
-      for (let i = 0; i < templateNameList.length; i++) {
-        const idx = templateNameList[i]?.idx;
-        const nextIdx = templateNameList[i + 1]?.idx;
-        if (idx + 1 !== nextIdx) {
-          index = idx + 1;
-          break;
-        }
-      }
-
-      return `${name}_${index}`;
-    },
-    [t, nodes],
-  );
 
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
@@ -248,7 +209,7 @@ export const useHandleDrop = () => {
         },
         data: {
           label: `${type}`,
-          name: generateNodeName(type),
+          name: generateNodeNamesWithIncreasingIndex(getNodeName(type), nodes),
           form: initializeOperatorParams(type as Operator),
         },
         sourcePosition: Position.Right,
@@ -258,7 +219,7 @@ export const useHandleDrop = () => {
 
       addNode(newNode);
     },
-    [reactFlowInstance, addNode, initializeOperatorParams, generateNodeName],
+    [reactFlowInstance, getNodeName, nodes, initializeOperatorParams, addNode],
   );
 
   return { onDrop, onDragOver, setReactFlowInstance };

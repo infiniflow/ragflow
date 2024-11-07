@@ -9,13 +9,13 @@ import { NextNodePopover } from './popover';
 
 interface IProps {
   id: string;
-  label?: string;
-  name?: string;
+  label: string;
+  name: string;
   gap?: number;
   className?: string;
 }
 
-export function RunStatus({ id, name }: IProps) {
+export function RunStatus({ id, name }: Omit<IProps, 'label'>) {
   const { t } = useTranslate('flow');
   return (
     <section className="flex justify-end items-center pb-1 ">
@@ -44,7 +44,7 @@ const NodeHeader = ({ label, id, name, gap = 4, className }: IProps) => {
           color={operatorMap[label as Operator].color}
         ></OperatorIcon>
         <span className={styles.nodeTitle}>{name}</span>
-        <NodeDropdown id={id}></NodeDropdown>
+        <NodeDropdown id={id} label={label}></NodeDropdown>
       </Flex>
     </section>
   );
