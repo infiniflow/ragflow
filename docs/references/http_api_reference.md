@@ -734,7 +734,7 @@ Deletes documents by ID.
 curl --request DELETE \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: <YOUR_API_KEY>' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
           "ids": ["id_1","id_2"]
@@ -1148,7 +1148,7 @@ Updates content or configurations for a specified chunk.
 curl --request PUT \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: <YOUR_API_KEY>' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {   
           "content": "ragflow123",  
@@ -1226,7 +1226,7 @@ Retrieves chunks from specified datasets.
 curl --request POST \
      --url http://{address}/api/v1/retrieval \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: <YOUR_API_KEY>' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
           "question": "What is advantage of ragflow?",
@@ -1934,7 +1934,7 @@ Deletes sessions by ID.
 curl --request DELETE \
      --url http://{address}/api/v1/chats/{chat_id}/sessions \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bear <YOUR_API_KEY>' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
           "ids": ["test_1", "test_2"]
