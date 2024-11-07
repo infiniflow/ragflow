@@ -450,7 +450,7 @@ def list_docs(dataset_id, tenant_id):
                     type: string
                     description: Processing status.
     """
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     id = request.args.get("id")
     name = request.args.get("name")
@@ -537,7 +537,7 @@ def delete(tenant_id, dataset_id):
         schema:
           type: object
     """
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     req = request.json
     if not req:
@@ -629,7 +629,7 @@ def parse(tenant_id, dataset_id):
         schema:
           type: object
     """
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = request.json
     if not req.get("document_ids"):
@@ -698,7 +698,7 @@ def stop_parsing(tenant_id, dataset_id):
         schema:
           type: object
     """
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = request.json
     if not req.get("document_ids"):
@@ -792,7 +792,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
               type: object
               description: Document details.
     """
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
@@ -964,7 +964,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
                     type: string
                   description: Important keywords.
     """
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
@@ -1077,7 +1077,7 @@ def rm_chunk(tenant_id, dataset_id, document_id):
         schema:
           type: object
     """
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
@@ -1172,7 +1172,7 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         res = ELASTICSEARCH.get(chunk_id, search.index_name(tenant_id))
     except Exception:
         return get_error_data_result(f"Can't find this chunk {chunk_id}")
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
@@ -1312,7 +1312,7 @@ def retrieval_test(tenant_id):
         return get_error_data_result("`dataset_ids` should be a list")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     for id in kb_ids:
-        if not KnowledgebaseService.query(id=id, tenant_id=tenant_id):
+        if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     embd_nms = list(set([kb.embd_id for kb in kbs]))
     if len(embd_nms) != 1:

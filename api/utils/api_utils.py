@@ -280,7 +280,10 @@ def construct_error_response(e):
 def token_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        token = flask_request.headers.get('Authorization').split()[1]
+        authorization_list=flask_request.headers.get('Authorization').split()
+        if len(authorization_list) < 2:
+            return get_json_result(data=False,message="Please check your authorization format.")
+        token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
             return get_json_result(

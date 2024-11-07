@@ -490,6 +490,9 @@ def list(tenant_id):
     kbs = KnowledgebaseService.query(id=id, name=name, status=1)
     if not kbs:
         return get_error_data_result(message="The dataset doesn't exist")
+    for kb in kbs:
+        if not KnowledgebaseService.accessible(kb_id=kb.id,user_id=tenant_id):
+            return get_error_data_result(message=f"You don't own the dataset {kb.id}")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
