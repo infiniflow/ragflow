@@ -44,6 +44,7 @@ export const LanguageList = [
   'Chinese',
   'Traditional Chinese',
   'Indonesia',
+  'Spanish',
 ];
 
 export const LanguageMap = {
@@ -51,6 +52,7 @@ export const LanguageMap = {
   Chinese: '简体中文',
   'Traditional Chinese': '繁體中文',
   Indonesia: 'Indonesia',
+  Spanish: 'Español',
 };
 
 export const LanguageTranslationMap = {
@@ -58,6 +60,7 @@ export const LanguageTranslationMap = {
   Chinese: 'zh',
   'Traditional Chinese': 'zh-TRADITIONAL',
   Indonesia: 'id',
+  Spanish: 'es',
 };
 
 export const FileMimeTypeMap = {
