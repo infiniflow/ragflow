@@ -160,7 +160,7 @@ def create(tenant_id):
             llm_name=req["embedding_model"], model_type="embedding"
         )
         if embd_model:
-            if req["embedding_model"] not in valid_embedding_models:
+            if req["embedding_model"] not in valid_embedding_models and not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding",llm_name=req.get("embedding_model"),):
                 return get_error_data_result(f"`embedding_model` {req.get('embedding_model')} doesn't exist")
         if not embd_model:
             embd_model=TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=req.get("embedding_model"))
