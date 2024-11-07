@@ -30,7 +30,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### Kibana
 
 - `KIBANA_PORT`  
-  The port used to expose the Kibana service to the host machine. Defaults to `6601`.
+  The port used to expose the Kibana service to the host machine, allowing external access to the service running **inside** the Docker container. Defaults to `6601`.
 - `KIBANA_USER`  
   The username for Kibana. Defaults to `rag_flow`.
 - `KIBANA_PASSWORD`  
@@ -39,7 +39,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### Resource management
 
 - `MEM_LIMIT`  
-  The maximum amount of the memory that *a specific* Docker container can use while running. Defaults to `8073741824`.
+  The maximum amount of the memory, in bytes, that *a specific* Docker container can use while running. Defaults to `8073741824`.
 
 ### MySQL
 
@@ -93,7 +93,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 > [!TIP]  
 > If you cannot download the RAGFlow Docker image, try the following mirrors.
 > For `dev-slim`:  
-> 
+>
 > - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
 > - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
 > For `dev`:  
