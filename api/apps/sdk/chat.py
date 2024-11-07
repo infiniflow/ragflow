@@ -34,7 +34,7 @@ def create(tenant_id):
     if not ids:
         return get_error_data_result(message="`dataset_ids` is required")
     for kb_id in ids:
-        kbs = KnowledgebaseService.query(id=kb_id,tenant_id=tenant_id)
+        kbs = KnowledgebaseService.accessible(kb_id=kb_id,user_id=tenant_id)
         if not kbs:
             return get_error_data_result(f"You don't own the dataset {kb_id}")
         kb=kbs[0]
@@ -160,7 +160,7 @@ def update(tenant_id,chat_id):
             return get_error_data_result("`datasets` can't be empty")
         if ids:
             for kb_id in ids:
-                kbs = KnowledgebaseService.query(id=kb_id, tenant_id=tenant_id)
+                kbs = KnowledgebaseService.accessible(kb_id=chat_id, user_id=tenant_id)
                 if not kbs:
                     return get_error_data_result(f"You don't own the dataset {kb_id}")
                 kb = kbs[0]
@@ -260,7 +260,7 @@ def delete(tenant_id):
 def list_chat(tenant_id):
     id = request.args.get("id")
     name = request.args.get("name")
-    chat = DialogService.query(id=id,name=name,status=StatusEnum.VALID.value)
+    chat = DialogService.query(id=id,name=name,status=StatusEnum.VALID.value,tenant_id=tenant_id)
     if not chat:
         return get_error_data_result(message="The chat doesn't exist")
     page_number = int(request.args.get("page", 1))
