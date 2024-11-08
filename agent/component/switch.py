@@ -52,7 +52,7 @@ class Switch(ComponentBase, ABC):
             res = []
             for item in cond["items"]:
                 out = self._canvas.get_component(item["cpn_id"])["obj"].output()[1]
-                cpn_input = "" if "content" not in out.columns else " ".join(out["content"])
+                cpn_input = "" if "content" not in out.columns else " ".join([str(s) for s in out["content"]])
                 res.append(self.process_operator(cpn_input, item["operator"], item["value"]))
                 if cond["logical_operator"] != "and" and any(res):
                     return Switch.be_output(cond["to"])
