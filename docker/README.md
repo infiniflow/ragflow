@@ -108,6 +108,8 @@ The [.env](./.env) file contains important environment variables for Docker.
   The local time zone. Defaults to `'Asia/Shanghai'`.
 - `HF_ENDPOINT`  
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
+- `MACOS`  
+  Optimizations for MacOS. It is disabled by default. You can uncomment this line if your OS is MacOS.
 
 ## 🐋 Service configuration
 
