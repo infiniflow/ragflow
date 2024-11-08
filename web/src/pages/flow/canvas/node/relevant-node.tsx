@@ -5,12 +5,15 @@ import { NodeData } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
 
 import { get } from 'lodash';
+import { useReplaceIdWithName } from '../../hooks';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
 export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
   const yes = get(data, 'form.yes');
   const no = get(data, 'form.no');
+  const replaceIdWithName = useReplaceIdWithName();
+
   return (
     <section
       className={classNames(styles.logicNode, {
@@ -50,11 +53,11 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
       <Flex vertical gap={10}>
         <Flex vertical>
           <div className={styles.relevantLabel}>Yes</div>
-          <div className={styles.nodeText}>{yes}</div>
+          <div className={styles.nodeText}>{replaceIdWithName(yes)}</div>
         </Flex>
         <Flex vertical>
           <div className={styles.relevantLabel}>No</div>
-          <div className={styles.nodeText}>{no}</div>
+          <div className={styles.nodeText}>{replaceIdWithName(no)}</div>
         </Flex>
       </Flex>
     </section>

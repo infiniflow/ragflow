@@ -1036,6 +1036,7 @@ The above is the content you need to summarize.`,
       howUseId: 'How to use agent ID?',
       content: 'Content',
       operationResults: 'Operation Results',
+      autosave: 'Automatically saved',
     },
     footer: {
       profile: 'All rights reserved @ React',
