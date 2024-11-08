@@ -211,8 +211,8 @@ class Dealer:
                     continue
                 if not isinstance(v, type("")):
                     m[n] = str(m[n])
-                if n.find("tks") > 0:
-                    m[n] = rmSpace(m[n])
+                #if n.find("tks") > 0:
+                #    m[n] = rmSpace(m[n])
 
             if m:
                 res[d["id"]] = m
