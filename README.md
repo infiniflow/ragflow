@@ -148,7 +148,7 @@ releases! 🌟
    >
    > ```bash
    > # In this case, we set it to 262144:
-   > $ sudo sysctl -w vm.max_map_count=262144
+   > $ sudo systemctl -w vm.max_map_count=262144
    > ```
    >
    > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the
