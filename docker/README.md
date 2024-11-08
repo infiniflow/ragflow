@@ -109,7 +109,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `HF_ENDPOINT`  
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 - `MACOS`  
-  Optimizations for MacOS. It is disabled by default. You can uncomment this line if your OS is MacOS.
+  Optimizations for MacOS. It is disabled by default. You can uncomment this line if your OS is MacOS.
 
 ## 🐋 Service configuration
 
