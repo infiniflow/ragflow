@@ -19,7 +19,7 @@ es:
   password: 'infini_rag_flow'
 redis:
   db: 1
-  password: 'infini_rag_flow'
+  password: 'infini_rag_flow' 
   host: 'redis:6379'
 
 # postgres:
