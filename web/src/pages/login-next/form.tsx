@@ -31,6 +31,7 @@ export function SignUpForm() {
     }),
     nickname: z.string({ required_error: t('nicknamePlaceholder') }),
     password: z.string({ required_error: t('passwordPlaceholder') }),
+    agree: z.boolean({ required_error: t('passwordPlaceholder') }),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -95,6 +96,26 @@ export function SignUpForm() {
                 />
               </FormControl>
               <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="agree"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+              <div className="space-y-1 leading-none">
+                <FormLabel>
+                  I understand and agree to the Terms of Service and Privacy
+                  Policy.
+                </FormLabel>
+              </div>
             </FormItem>
           )}
         />
