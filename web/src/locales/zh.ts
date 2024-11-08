@@ -1004,7 +1004,7 @@ export default {
       howUseId: '如何使用Agent ID？',
       content: '内容',
       operationResults: '运行结果',
-      autosave: '已自动保存',
+      autosaved: '已自动保存',
     },
     footer: {
       profile: 'All rights reserved @ React',
