@@ -2,7 +2,7 @@
 FROM ubuntu:24.04 AS base
 USER root
 
-ARG ARCH=amd64
+ARG ARCH
 ENV LIGHTEN=0
 
 WORKDIR /ragflow
@@ -26,9 +26,9 @@ RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple &&
 
 # https://forum.aspose.com/t/aspose-slides-for-net-no-usable-version-of-libssl-found-with-linux-server/271344/13
 # aspose-slides on linux/arm64 is unavailable
-RUN --mount=type=bind,source=libssl1.1_1.1.1f-1ubuntu2_amd64.deb,target=/root/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
-    if [ "${ARCH}" = "amd64" ]; then \
-        dpkg -i /root/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
+RUN --mount=type=bind,source=libssl1.1_1.1.1f-1ubuntu2_${ARCH}.deb,target=/root/libssl1.1_1.1.1f-1ubuntu2_${ARCH}.deb \
+    if [ "${ARCH}" = "amd64" ] || [ "${ARCH}" = "arm64" ]; then \
+        dpkg -i /root/libssl1.1_1.1.1f-1ubuntu2_${ARCH}.deb; \
     fi
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
