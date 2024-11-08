@@ -656,7 +656,7 @@ export default {
       createFromTemplates: '從模板創建',
       retrieval: '知識檢索',
       generate: '生成回答',
-      answer: '人機交互',
+      answer: '對話',
       categorize: '問題分類',
       relevant: '是否相關',
       rewriteQuestion: '問題最佳化',
