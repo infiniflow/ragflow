@@ -289,3 +289,31 @@ export const generateNodeNamesWithIncreasingIndex = (
 
   return `${name}_${index}`;
 };
+
+export const duplicateNodeForm = (nodeData?: NodeData) => {
+  const form: Record<string, any> = { ...(nodeData?.form ?? {}) };
+
+  // Delete the downstream node corresponding to the to field of the Categorize operator
+  if (nodeData?.label === Operator.Categorize) {
+    form.category_description = Object.keys(form.category_description).reduce<
+      Record<string, Record<string, any>>
+    >((pre, cur) => {
+      pre[cur] = {
+        ...form.category_description[cur],
+        to: undefined,
+      };
+      return pre;
+    }, {});
+  }
+
+  // Delete the downstream nodes corresponding to the yes and no fields of the Relevant operator
+  if (nodeData?.label === Operator.Relevant) {
+    form.yes = undefined;
+    form.no = undefined;
+  }
+
+  return {
+    ...(nodeData ?? {}),
+    form,
+  };
+};

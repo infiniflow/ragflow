@@ -19,7 +19,9 @@ import {
 import { useFetchModelId, useSendMessageWithSse } from '@/hooks/logic-hooks';
 import { Variable } from '@/interfaces/database/chat';
 import api from '@/utils/api';
+import { useDebounceEffect } from 'ahooks';
 import { FormInstance, message } from 'antd';
+import dayjs from 'dayjs';
 import { humanId } from 'human-id';
 import { lowerFirst } from 'lodash';
 import trim from 'lodash/trim';
@@ -446,12 +448,21 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   return handleRun;
 };
 
-export const useReplaceIdWithText = (output: unknown) => {
+export const useReplaceIdWithName = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
-  const getNameById = (id?: string) => {
-    return getNode(id)?.data.name;
-  };
+  const replaceIdWithName = useCallback(
+    (id?: string) => {
+      return getNode(id)?.data.name;
+    },
+    [getNode],
+  );
+
+  return replaceIdWithName;
+};
+
+export const useReplaceIdWithText = (output: unknown) => {
+  const getNameById = useReplaceIdWithName();
 
   return {
     replacedOutput: replaceIdWithText(output, getNameById),
@@ -547,6 +558,7 @@ export const useWatchNodeFormDataChange = () => {
   );
 
   useEffect(() => {
+    console.info('xxx');
     nodes.forEach((node) => {
       const currentNode = getNode(node.id);
       const form = currentNode?.data.form ?? {};
@@ -667,4 +679,37 @@ export const useCopyPaste = () => {
       window.removeEventListener('paste', onPasteCapture);
     };
   }, [onPasteCapture]);
+};
+
+export const useWatchAgentChange = () => {
+  const [time, setTime] = useState<string>();
+  const nodes = useGraphStore((state) => state.nodes);
+  const edges = useGraphStore((state) => state.edges);
+  const { saveGraph } = useSaveGraph();
+  const { data: flowDetail } = useFetchFlow();
+
+  const setSaveTime = useCallback((updateTime: number) => {
+    setTime(dayjs(updateTime).format('YYYY-MM-DD HH:mm:ss'));
+  }, []);
+
+  useEffect(() => {
+    setSaveTime(flowDetail?.update_time);
+  }, [flowDetail, setSaveTime]);
+
+  const saveAgent = useCallback(async () => {
+    const ret = await saveGraph();
+    setSaveTime(ret.data.update_time);
+  }, [saveGraph, setSaveTime]);
+
+  useDebounceEffect(
+    () => {
+      saveAgent();
+    },
+    [nodes, edges],
+    {
+      wait: 1000 * 20,
+    },
+  );
+
+  return time;
 };

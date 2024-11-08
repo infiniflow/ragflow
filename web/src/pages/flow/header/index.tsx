@@ -5,7 +5,11 @@ import { ArrowLeftOutlined } from '@ant-design/icons';
 import { Button, Flex, Space } from 'antd';
 import { Link, useParams } from 'umi';
 import FlowIdModal from '../flow-id-modal';
-import { useSaveGraph, useSaveGraphBeforeOpeningDebugDrawer } from '../hooks';
+import {
+  useSaveGraph,
+  useSaveGraphBeforeOpeningDebugDrawer,
+  useWatchAgentChange,
+} from '../hooks';
 import styles from './index.less';
 
 interface IProps {
@@ -20,10 +24,11 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
   const {
     visible: overviewVisible,
     hideModal: hideOverviewModal,
-    showModal: showOverviewModal,
+    // showModal: showOverviewModal,
   } = useSetModalState();
   const { visible, hideModal, showModal } = useSetModalState();
   const { id } = useParams();
+  const time = useWatchAgentChange();
 
   return (
     <>
@@ -37,7 +42,10 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
           <Link to={`/flow`}>
             <ArrowLeftOutlined />
           </Link>
-          <h3>{data.title}</h3>
+          <div className="flex flex-col">
+            <span className="font-semibold text-[18px]">{data.title}</span>
+            <span className="font-normal text-sm">已自动保存 {time}</span>
+          </div>
         </Space>
         <Space size={'large'}>
           <Button onClick={handleRun}>
