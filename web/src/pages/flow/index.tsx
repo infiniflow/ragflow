@@ -5,7 +5,7 @@ import { ReactFlowProvider } from 'reactflow';
 import FlowCanvas from './canvas';
 import Sider from './flow-sider';
 import FlowHeader from './header';
-import { useFetchDataOnMount } from './hooks';
+import { useCopyPaste, useFetchDataOnMount } from './hooks';
 
 const { Content } = Layout;
 
@@ -18,6 +18,7 @@ function RagFlow() {
   } = useSetModalState();
 
   useFetchDataOnMount();
+  useCopyPaste();
 
   return (
     <Layout>

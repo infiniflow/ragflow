@@ -236,8 +236,8 @@ const useGraphStore = create<RFState>()(
         const { getNode, addNode, generateNodeName } = get();
         const node = getNode(id);
         const position = {
-          x: (node?.position?.x || 0) + 30,
-          y: (node?.position?.y || 0) + 20,
+          x: (node?.position?.x || 0) + 50,
+          y: (node?.position?.y || 0) + 50,
         };
 
         addNode({
