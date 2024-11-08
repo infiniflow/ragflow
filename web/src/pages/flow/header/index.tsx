@@ -44,7 +44,9 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
           </Link>
           <div className="flex flex-col">
             <span className="font-semibold text-[18px]">{data.title}</span>
-            <span className="font-normal text-sm">已自动保存 {time}</span>
+            <span className="font-normal text-sm">
+              {t('autosaved')} {time}
+            </span>
           </div>
         </Space>
         <Space size={'large'}>
