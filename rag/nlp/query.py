@@ -63,9 +63,9 @@ class EsQueryer:
             rag_tokenizer.tradi2simp(
                 rag_tokenizer.strQ2B(
                     txt.lower()))).strip()
-        txt = EsQueryer.rmWWW(txt)
 
         if not self.isChinese(txt):
+            txt = EsQueryer.rmWWW(txt)
             tks = rag_tokenizer.tokenize(txt).split(" ")
             tks_w = self.tw.weights(tks)
             tks_w = [(re.sub(r"[ \\\"'^]", "", tk), w) for tk, w in tks_w]
@@ -89,6 +89,7 @@ class EsQueryer:
                 return False
             return True
 
+        txt = EsQueryer.rmWWW(txt)
         qs, keywords = [], []
         for tt in self.tw.split(txt)[:256]:  # .split(" "):
             if not tt:
