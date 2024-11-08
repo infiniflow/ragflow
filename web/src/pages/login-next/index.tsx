@@ -3,13 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useTranslate } from '@/hooks/common-hooks';
 import { DiscordLogoIcon, GitHubLogoIcon } from '@radix-ui/react-icons';
+import { useSearchParams } from 'umi';
 import { SignInForm, SignUpForm, VerifyEmailForm } from './form';
+import { Step, useSwitchStep } from './hooks';
 
 function LoginFooter() {
   return (
-    <section className="pt-[30px]">
+    <section className="pt-4">
       <Separator />
-      <p className="text-center pt-[20px]">or continue with</p>
+      <p className="text-center pt-4">or continue with</p>
       <div className="flex gap-4 justify-center pt-[20px]">
         <GitHubLogoIcon className="w-8 h-8"></GitHubLogoIcon>
         <DiscordLogoIcon className="w-8 h-8"></DiscordLogoIcon>
@@ -21,6 +23,8 @@ function LoginFooter() {
 export function SignUpCard() {
   const { t } = useTranslate('login');
 
+  const { switchStep } = useSwitchStep(Step.SignIn);
+
   return (
     <Card className="w-[400px]">
       <CardHeader>
@@ -28,6 +32,11 @@ export function SignUpCard() {
       </CardHeader>
       <CardContent>
         <SignUpForm></SignUpForm>
+        <div className="text-center">
+          <Button variant={'link'} className="pt-6" onClick={switchStep}>
+            Already have an account? Log In
+          </Button>
+        </div>
         <LoginFooter></LoginFooter>
       </CardContent>
     </Card>
@@ -36,6 +45,7 @@ export function SignUpCard() {
 
 export function SignInCard() {
   const { t } = useTranslate('login');
+  const { switchStep } = useSwitchStep(Step.SignUp);
 
   return (
     <Card className="w-[400px]">
@@ -44,6 +54,13 @@ export function SignInCard() {
       </CardHeader>
       <CardContent>
         <SignInForm></SignInForm>
+        <Button
+          className="w-full mt-2"
+          onClick={switchStep}
+          variant={'secondary'}
+        >
+          {t('signUp')}
+        </Button>
       </CardContent>
     </Card>
   );
@@ -76,12 +93,17 @@ export function VerifyEmailCard() {
 }
 
 const Login = () => {
+  const [searchParams] = useSearchParams();
+  const step = Number((searchParams.get('step') ?? Step.SignIn) as Step);
+
   return (
-    <>
-      <SignUpCard></SignUpCard>
-      <SignInCard></SignInCard>
-      <VerifyEmailCard></VerifyEmailCard>
-    </>
+    <div className="w-full h-full flex items-center pl-[15%]">
+      <div className="inline-block">
+        {step === Step.SignIn && <SignInCard></SignInCard>}
+        {step === Step.SignUp && <SignUpCard></SignUpCard>}
+        {step === Step.VerifyEmail && <VerifyEmailCard></VerifyEmailCard>}
+      </div>
+    </div>
   );
 };
 
