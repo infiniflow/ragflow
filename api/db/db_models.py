@@ -840,7 +840,7 @@ class Task(DataBaseModel):
     doc_id = CharField(max_length=32, null=False, index=True)
     from_page = IntegerField(default=0)
 
-    to_page = IntegerField(default=-1)
+    to_page = IntegerField(default=100000000)
 
     begin_at = DateTimeField(null=True, index=True)
     process_duation = FloatField(default=0)
