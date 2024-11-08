@@ -1,24 +1,44 @@
-# README
+---
+sidebar_position: 1
+slug: /configurations
+---
 
-<details open>
-<summary></b>📗 Table of Contents</b></summary>
+# Configurations
 
-- 🐳 [Docker Compose](#-docker-compose)
-- 🐬 [Docker environment variables](#-docker-environment-variables)
-- 🐋 [Service configuration](#-service-configuration)
+Configurations for installing RAGFlow via Docker.
 
-</details>
+## Guidelines
 
-## 🐳 Docker Compose
+When it comes to system configurations, you will need to manage the following files:
+
+- [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env): Contains important environment variables for Docker.
+- [service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml): Configures the back-end services. It specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
+- [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml): The Docker Compose file for starting up the RAGFlow service.
+
+You must ensure that changes to the [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file are in line with what are in the [service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml) file.
+
+To update the default HTTP serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80`
+to `<YOUR_SERVING_PORT>:80`.
+
+:::tip NOTE
+Updates to the above configurations require a reboot of all containers to take effect:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
+
+:::
+
+## Docker Compose
 
 - **docker-compose.yml**  
   Sets up environment for RAGFlow and its dependencies.
 - **docker-compose-base.yml**  
   Sets up environment for RAGFlow's base services: Elasticsearch, MySQL, MinIO, and Redis.
 
-## 🐬 Docker environment variables
+## Docker environment variables
 
-The [.env](./.env) file contains important environment variables for Docker.
+The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file contains important environment variables for Docker.
 
 ### Elasticsearch
 
@@ -27,7 +47,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `ES_PORT`  
   The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
 - `ELASTIC_PASSWORD`  
-  The password for Elasticsearch. When updated, you must revise the `es.password` entry in [service_conf.yaml](./service_conf.yaml) accordingly.
+  The password for Elasticsearch. When updated, you must revise the `es.password` entry in [service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml) accordingly.
 
 ### Kibana
 
@@ -46,7 +66,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### MySQL
 
 - `MYSQL_PASSWORD`  
-  The password for MySQL. When updated, you must revise the `mysql.password` entry in [service_conf.yaml](./service_conf.yaml) accordingly.
+  The password for MySQL. When updated, you must revise the `mysql.password` entry in [service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml) accordingly.
 - `MYSQL_PORT`  
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
@@ -57,16 +77,16 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MINIO_PORT`  
   The port used to expose the MinIO API service to the host machine, allowing **external** access to the MinIO object storage service running inside the Docker container. Defaults to `9000`.
 - `MINIO_USER`  
-  The username for MinIO. When updated, you must revise the `minio.user` entry in [service_conf.yaml](./service_conf.yaml) accordingly.
+  The username for MinIO. When updated, you must revise the `minio.user` entry in [service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml) accordingly.
 - `MINIO_PASSWORD`  
-  The password for MinIO. When updated, you must revise the `minio.password` entry in [service_conf.yaml](./service_conf.yaml) accordingly.
+  The password for MinIO. When updated, you must revise the `minio.password` entry in [service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml) accordingly.
 
 ### Redis
 
 - `REDIS_PORT`  
   The port used to expose the Redis service to the host machine, allowing **external** access to the Redis service running inside the Docker container. Defaults to `6379`.
 - `REDIS_PASSWORD`  
-  The password for Redis. When updated, you must revise the `redis.password` entry in [service_conf.yaml](./service_conf.yaml) accordingly.
+  The password for Redis. When updated, you must revise the `redis.password` entry in [service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml) accordingly.
 
 ### RAGFlow
 
@@ -92,15 +112,16 @@ The [.env](./.env) file contains important environment variables for Docker.
       - `nomic-ai/nomic-embed-text-v1.5`
       - `sentence-transformers/all-MiniLM-L6-v2`
   
-> [!TIP]  
-> If you cannot download the RAGFlow Docker image, try the following mirrors.  
-> 
-> - For the `dev-slim` edition:  
->   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
->   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
-> - For the `dev` edition:  
->   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
->   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
+:::tip NOTE  
+If you cannot download the RAGFlow Docker image, try the following mirrors.  
+
+- For the `dev-slim` edition:  
+  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
+  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
+- For the `dev` edition:  
+  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
+  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
+:::
 
 ### Miscellaneous
 
@@ -111,9 +132,9 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MACOS`  
   Optimizations for MacOS. It is disabled by default. You can uncomment this line if your OS is MacOS.
 
-## 🐋 Service configuration
+## Service configuration
 
-[service_conf.yaml](./service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
+[service_conf.yaml](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
 
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
@@ -122,19 +143,19 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `mysql`
   - `name`: The MySQL database name. Defaults to `rag_flow`.
   - `user`: The username for MySQL.
-  - `password`: The password for MySQL. When updated, you must revise the `MYSQL_PASSWORD` variable in [.env](./.env) accordingly.
+  - `password`: The password for MySQL. When updated, you must revise the `MYSQL_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
   - `port`: The MySQL serving port inside the Docker container. Defaults to `3306`.
   - `max_connections`: The maximum number of concurrent connections to the MySQL database. Defaults to `100`.
   - `stale_timeout`: Timeout in seconds.
 
 - `minio`
-  - `user`: The username for MinIO. When updated, you must revise the `MINIO_USER` variable in [.env](./.env) accordingly.
-  - `password`: The password for MinIO. When updated, you must revise the `MINIO_PASSWORD` variable in [.env](./.env) accordingly.
+  - `user`: The username for MinIO. When updated, you must revise the `MINIO_USER` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
+  - `password`: The password for MinIO. When updated, you must revise the `MINIO_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
   - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
 - `oauth`  
   The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml**.
-  - `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings page](https://github.com/settings/developers) to obtain your client_id and secret_key.
+  - `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
 
 - `user_default_llm`  
   The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml**.  
@@ -147,5 +168,6 @@ The [.env](./.env) file contains important environment variables for Docker.
     - `"ZHIPU-AI"`
   - `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
 
-> [!TIP]  
-> If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
+:::tip NOTE  
+If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
+:::

@@ -232,8 +232,7 @@ When it comes to system configurations, you will need to manage the following fi
 - [docker-compose.yml](./docker/docker-compose.yml): The system relies
   on [docker-compose.yml](./docker/docker-compose.yml) to start up.
 
-You must ensure that changes to the [.env](./docker/.env) file are in line with what are in
-the [service_conf.yaml](./docker/service_conf.yaml) file.
+You must ensure that changes to the [.env](./docker/.env) file are in line with what are in the [service_conf.yaml](./docker/service_conf.yaml) file.
 
 > The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service
 > configurations, and you are REQUIRED to ensure that all environment settings listed in
