@@ -1,7 +1,7 @@
 # README
 
 <details open>
-<summary></b>📕 Table of Contents</b></summary>
+<summary></b>📗 Table of Contents</b></summary>
 
 - 🐳 [Docker Compose](#-docker-compose)
 - 🐬 [Docker environment variables](#-docker-environment-variables)
@@ -30,7 +30,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### Kibana
 
 - `KIBANA_PORT`  
-  The port used to expose the Kibana service to the host machine. Defaults to `6601`.
+  The port used to expose the Kibana service to the host machine, allowing external access to the service running **inside** the Docker container. Defaults to `6601`.
 - `KIBANA_USER`  
   The username for Kibana. Defaults to `rag_flow`.
 - `KIBANA_PASSWORD`  
@@ -39,7 +39,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### Resource management
 
 - `MEM_LIMIT`  
-  The maximum amount of the memory that *a specific* Docker container can use while running. Defaults to `8073741824`.
+  The maximum amount of the memory, in bytes, that *a specific* Docker container can use while running. Defaults to `8073741824`.
 
 ### MySQL
 
@@ -90,15 +90,16 @@ The [.env](./.env) file contains important environment variables for Docker.
       - `nomic-ai/nomic-embed-text-v1.5`
       - `sentence-transformers/all-MiniLM-L6-v2`
   
-  > [!TIP]  
-  >
-  > If you cannot download the RAGFlow Docker image, try the following mirrors.
-  > - For `dev-slim`:
-  >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
-  >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
-  > - For `dev`:
-  >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
-  >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
+> [!TIP]  
+> If you cannot download the RAGFlow Docker image, try the following mirrors.
+> For `dev-slim`:  
+>
+> - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
+> - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
+> For `dev`:  
+> 
+> - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
+> - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
 
 ### Miscellaneous
 
@@ -126,12 +127,12 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `password`: The password for MinIO. When updated, you must revise the `MINIO_PASSWORD` variable in [.env](./.env) accordingly.
   - `host`: The MinIO serving IP *and* port **inside** the Docker container. Defaults to `minio:9000`.
 
+- `oauth`  
+  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml**.
+  - `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings page](https://github.com/settings/developers) to obtain your client_id and secret_key.
+
 - `user_default_llm`  
   The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml**.  
-
-  > [!TIP]  
-  >
-  > If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.  
   - `factory`: The LLM supplier. Available options:
     - `"OpenAI"`
     - `"DeepSeek"`
@@ -140,6 +141,6 @@ The [.env](./.env) file contains important environment variables for Docker.
     - `"VolcEngine"`
     - `"ZHIPU-AI"`
   - `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
-- `oauth`  
-  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml**.
-  - `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings page](https://github.com/settings/developers) to obtain your client_id and secret_key.
+
+> [!TIP]  
+> If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
