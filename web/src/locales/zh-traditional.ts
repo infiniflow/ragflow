@@ -984,6 +984,7 @@ export default {
       howUseId: '如何使用Agent ID？',
       content: '內容',
       operationResults: '運行結果',
+      autosaved: '已自動儲存',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

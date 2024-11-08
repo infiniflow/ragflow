@@ -128,6 +128,9 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
         onSelectionChange={onSelectionChange}
         nodeOrigin={[0.5, 0]}
         isValidConnection={isValidConnection}
+        onChangeCapture={(...params) => {
+          console.info('onChangeCapture:', ...params);
+        }}
         onChange={(...params) => {
           console.info('params:', ...params);
         }}
@@ -140,18 +143,6 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
           },
         }}
         deleteKeyCode={['Delete', 'Backspace']}
-        onPaste={(...params) => {
-          console.info('onPaste:', ...params);
-        }}
-        onPasteCapture={(...params) => {
-          console.info('onPasteCapture:', ...params);
-        }}
-        onCopy={(...params) => {
-          console.info('onCopy:', ...params);
-        }}
-        onCopyCapture={(...params) => {
-          console.info('onCopyCapture:', ...params);
-        }}
       >
         <Background />
         <Controls />
