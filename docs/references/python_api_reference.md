@@ -1351,7 +1351,7 @@ A list of `Chunk` objects representing references to the message, each containin
   The chunk ID.
 - `content` `str`  
   The content of the chunk.
-- `image_id` `str`  
+- `img_id` `str`  
   The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
 - `document_id` `str`  
   The ID of the referenced document.

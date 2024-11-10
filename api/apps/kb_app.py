@@ -28,6 +28,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.settings import RetCode
 from api.utils.api_utils import get_json_result
+from api.settings import docStoreConn
+from rag.nlp import search
 
 
 @manager.route('/create', methods=['post'])
@@ -166,6 +168,9 @@ def rm():
         if not KnowledgebaseService.delete_by_id(req["kb_id"]):
             return get_data_error_result(
                 message="Database error (Knowledgebase removal)!")
+        tenants = UserTenantService.query(user_id=current_user.id)
+        for tenant in tenants:
+            docStoreConn.deleteIdx(search.index_name(tenant.tenant_id), req["kb_id"])
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

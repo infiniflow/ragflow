@@ -250,7 +250,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 
    `/etc/hosts` に以下の行を追加して、**docker/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:  
    ```
-   127.0.0.1       es01 mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis
    ```  
    **docker/service_conf.yaml** で mysql のポートを `5455` に、es のポートを `1200` に更新します（**docker/.env** に指定された通り）.
 
