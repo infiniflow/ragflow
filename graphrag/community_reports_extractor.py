@@ -80,6 +80,8 @@ class CommunityReportsExtractor:
                     token_count += num_tokens_from_string(text + response)
                     response = re.sub(r"^[^\{]*", "", response)
                     response = re.sub(r"[^\}]*$", "", response)
+                    response = re.sub(r"\{\{", "{", response)
+                    response = re.sub(r"\}\}", "}", response)
                     print(response)
                     response = json.loads(response)
                     if not dict_has_keys_with_types(response, [
