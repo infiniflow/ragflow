@@ -3,7 +3,7 @@ const { fontFamily } = require('tailwindcss/defaultTheme');
 /** @type {import('tailwindcss').Config} */
 
 module.exports = {
-  darkMode: ['class'],
+  darkMode: ['selector'],
   content: [
     './src/pages/**/*.tsx',
     './src/components/**/*.tsx',
@@ -51,6 +51,10 @@ module.exports = {
         card: {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
+        },
+        backgroundInverseStandard: {
+          DEFAULT: 'var(--background-inverse-standard)',
+          foreground: 'var(--background-inverse-standard-foreground)',
         },
       },
       borderRadius: {
