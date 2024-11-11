@@ -34,6 +34,9 @@
     --ring: 215 20.2% 65.1%;
 
     --radius: 0.5rem;
+
+    --background-inverse-standard: rgba(58, 56, 65, 0.15);
+    --background-inverse-standard-foreground: rgb(92, 81, 81);
   }
 
   .dark {
@@ -67,6 +70,9 @@
     --ring: 216 34% 17%;
 
     --radius: 0.5rem;
+
+    --background-inverse-standard: rgba(230, 227, 246, 0.15);
+    --background-inverse-standard-foreground: rgba(255, 255, 255, 1);
   }
 }
 
