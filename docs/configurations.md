@@ -134,37 +134,44 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
 
-- `ragflow`
-  - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-  - `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+### `ragflow`
 
-- `mysql`
-  - `name`: The MySQL database name. Defaults to `rag_flow`.
-  - `user`: The username for MySQL.
-  - `password`: The password for MySQL. When updated, you must revise the `MYSQL_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
-  - `port`: The MySQL serving port inside the Docker container. Defaults to `3306`.
-  - `max_connections`: The maximum number of concurrent connections to the MySQL database. Defaults to `100`.
-  - `stale_timeout`: Timeout in seconds.
+- `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
+- `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
-- `minio`
-  - `user`: The username for MinIO. When updated, you must revise the `MINIO_USER` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
-  - `password`: The password for MinIO. When updated, you must revise the `MINIO_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
-  - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
+### `mysql`
+  
+- `name`: The MySQL database name. Defaults to `rag_flow`.
+- `user`: The username for MySQL.
+- `password`: The password for MySQL. When updated, you must revise the `MYSQL_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
+- `port`: The MySQL serving port inside the Docker container. Defaults to `3306`.
+- `max_connections`: The maximum number of concurrent connections to the MySQL database. Defaults to `100`.
+- `stale_timeout`: Timeout in seconds.
 
-- `oauth`  
-  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
-  - `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
+### `minio`
+  
+- `user`: The username for MinIO. When updated, you must revise the `MINIO_USER` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
+- `password`: The password for MinIO. When updated, you must revise the `MINIO_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
+- `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
-- `user_default_llm`  
-  The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.  
-  - `factory`: The LLM supplier. Available options:
-    - `"OpenAI"`
-    - `"DeepSeek"`
-    - `"Moonshot"`
-    - `"Tongyi-Qianwen"`
-    - `"VolcEngine"`
-    - `"ZHIPU-AI"`
-  - `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
+### `oauth`  
+
+The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
+
+- `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
+
+### `user_default_llm`  
+
+The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.  
+
+- `factory`: The LLM supplier. Available options:
+  - `"OpenAI"`
+  - `"DeepSeek"`
+  - `"Moonshot"`
+  - `"Tongyi-Qianwen"`
+  - `"VolcEngine"`
+  - `"ZHIPU-AI"`
+- `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
 
 :::tip NOTE  
 If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.

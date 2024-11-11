@@ -157,14 +157,14 @@ export default {
       delimiter: `Delimiter`,
       html4excel: 'Excel to HTML',
       html4excelTip: `Excel will be parsed into HTML table or not. If it's FALSE, every row in Excel will be formed as a chunk.`,
-      autoKeywords: 'Auto keywords',
-      autoKeywordsTip: `Extract N keywords for every chunk to boost their rank score while querying such keywords. Extra tokens will be comsumed for LLM that you set in 'System model settings'. You can check the result in the chunk list.`,
-      autoQuestions: 'Auto questions',
-      autoQuestionsTip: `Extract N questions for every chunk to boost their rank score while querying such questions. Extra tokens will be comsumed for LLM that you set in 'System model settings'. You can check the result in the chunk list. This function will not destroy the entire chunking process if errors occur except adding empty result to the original chunk.`,
+      autoKeywords: 'Auto-keyword',
+      autoKeywordsTip: `Extract N keywords for each chunk to improve their ranking for queries containing those keywords. You can check or update the added keywords for a chunk from the chunk list. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
+      autoQuestions: 'Auto-question',
+      autoQuestionsTip: `Extract N questions for each chunk to improve their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
     },
     knowledgeConfiguration: {
       titleDescription:
-        'Update your knowledge base details especially parsing method here.',
+        'Update your knowledge base configurations here, particularly the chunk method.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
       description: 'Description',
@@ -176,13 +176,13 @@ export default {
       chunkTokenNumber: 'Chunk token number',
       chunkTokenNumberMessage: 'Chunk token number is required',
       embeddingModelTip:
-        "The embedding model used to embedding chunks. It's unchangable once the knowledgebase has chunks. You need to delete all the chunks if you want to change it.",
+        "The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, You must delete all chunks in the knowledge base.",
       permissionsTip:
-        "If the permission is 'Team', all the team member can manipulate the knowledgebase.",
+        "If set to 'Team', all team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
-        'It determine the token number of a chunk approximately.',
+        'It sets the token threshold for a chunk. A paragraph with fewer tokens than this threshold will be combined with the following paragraph until the token count exceeds the threshold, at which point a chunk is created.',
       chunkMethod: 'Chunk method',
-      chunkMethodTip: 'The instruction is at right.',
+      chunkMethodTip: 'Tips are on the right.',
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
@@ -192,11 +192,11 @@ export default {
       me: 'Only me',
       team: 'Team',
       cancel: 'Cancel',
-      methodTitle: 'Chunking Method Description',
+      methodTitle: 'Chunk method description',
       methodExamples: 'Examples',
       methodExamplesDescription:
-        'The following screenshots are presented to facilitate understanding.',
-      dialogueExamplesTitle: 'Dialogue Examples',
+        'The following screenshots are provided for clarity.',
+      dialogueExamplesTitle: 'Dialogue examples',
       methodEmpty:
         'This will display a visual explanation of the knowledge base categories',
       book: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -208,8 +208,7 @@ export default {
       The chunk granularity is consistent with 'ARTICLE', and all the upper level text will be included in the chunk.
       </p>`,
       manual: `<p>Only <b>PDF</b> is supported.</p><p>
-      We assume manual has hierarchical section structure. We use the lowest section titles as pivots to slice documents.
-      So, the figures and tables in the same section will not be sliced apart, and chunk size might be large.
+      We assume that the manual has a hierarchical section structure, using the lowest section titles as basic unit for chunking documents. Therefore, figures and tables in the same section will not be separated, which may result in larger chunk sizes.
       </p>`,
       naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
       <p>This method apply the naive ways to chunk files: </p>
@@ -292,7 +291,7 @@ Successive text will be sliced into pieces each of which is around 512 token num
 Mind the entiry type you need to specify.</p>`,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
-        'Recursive Abstractive Processing for Tree-Organized Retrieval, please refer to https://huggingface.co/papers/2401.18059',
+        'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information',
       prompt: 'Prompt',
       promptTip: 'LLM prompt used for summarization.',
       promptMessage: 'Prompt is required',

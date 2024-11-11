@@ -39,7 +39,7 @@ from api.utils.api_utils import get_json_result
 from rag.utils.storage_factory import STORAGE_IMPL
 from api.utils.file_utils import filename_type, thumbnail
 from api.utils.web_utils import html2pdf, is_valid_url
-from api.contants import IMG_BASE64_PREFIX
+from api.constants import IMG_BASE64_PREFIX
 
 
 @manager.route('/upload', methods=['POST'])
