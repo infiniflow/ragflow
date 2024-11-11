@@ -25,7 +25,7 @@ from cachetools import LRUCache, cached
 from ruamel.yaml import YAML
 
 from api.db import FileType
-from api.contants import IMG_BASE64_PREFIX
+from api.constants import IMG_BASE64_PREFIX
 
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
 RAG_BASE = os.getenv("RAG_BASE")
@@ -71,7 +71,7 @@ def get_home_cache_dir():
     dir = os.path.join(os.path.expanduser('~'), ".ragflow")
     try:
         os.mkdir(dir)
-    except OSError as error:
+    except OSError:
         pass
     return dir
 
@@ -193,7 +193,7 @@ def thumbnail_img(filename, blob):
                 presentation.slides[0].get_thumbnail(0.03, 0.03).save(
                     buffered, drawing.imaging.ImageFormat.png)
                 return buffered.getvalue()
-        except Exception as e:
+        except Exception:
             pass
     return None
 
