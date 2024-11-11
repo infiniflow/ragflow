@@ -215,7 +215,7 @@ releases! 🌟
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
    > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default
    HTTP serving port `80` can be omitted when using the default configurations.
-6. In [service_conf.yaml](./docker/service_conf.yaml), select the desired LLM factory in `user_default_llm` and update
+6. In [service_conf.yaml.template](./docker/service_conf.yaml.template), select the desired LLM factory in `user_default_llm` and update
    the `API_KEY` field with the corresponding API key.
 
    > See [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) for more information.
@@ -228,16 +228,11 @@ When it comes to system configurations, you will need to manage the following fi
 
 - [.env](./docker/.env): Keeps the fundamental setups for the system, such as `SVR_HTTP_PORT`, `MYSQL_PASSWORD`, and
   `MINIO_PASSWORD`.
-- [service_conf.yaml](./docker/service_conf.yaml): Configures the back-end services.
-- [docker-compose.yml](./docker/docker-compose.yml): The system relies
-  on [docker-compose.yml](./docker/docker-compose.yml) to start up.
-
-You must ensure that changes to the [.env](./docker/.env) file are in line with what are in the [service_conf.yaml](./docker/service_conf.yaml) file.
+- [service_conf.yaml.template](./docker/service_conf.yaml.template): Configures the back-end services. The environment variables in this file will be automatically populated when the Docker container starts. Any environment variables set within the Docker container will be available for use, allowing you to customize service behavior based on the deployment environment.
+- [docker-compose.yml](./docker/docker-compose.yml): The system relies on [docker-compose.yml](./docker/docker-compose.yml) to start up.
 
 > The [./docker/README](./docker/README.md) file provides a detailed description of the environment settings and service
-> configurations, and you are REQUIRED to ensure that all environment settings listed in
-> the [./docker/README](./docker/README.md) file are aligned with the corresponding configurations in
-> the [service_conf.yaml](./docker/service_conf.yaml) file.
+> configurations which can be used as `${ENV_VARS}` in the [service_conf.yaml.template](./docker/service_conf.yaml.template) file.
 
 To update the default HTTP serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80`
 to `<YOUR_SERVING_PORT>:80`.
@@ -292,11 +287,11 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:
+   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
    ```
    127.0.0.1       es01 mysql minio redis
    ```  
-   In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
+   In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
 
