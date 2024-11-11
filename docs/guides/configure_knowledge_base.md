@@ -52,13 +52,13 @@ RAGFlow offers multiple chunking template to facilitate chunking files of differ
 | Picture      |                                                              | JPEG, JPG, PNG, TIF, GIF                             |
 | One          | The entire document is chunked as one.                       | DOCX, EXCEL, PDF, TXT                                |
 
-You can also change the chunk template for a particular file on the **Datasets** page. 
+You can also change the chunk template for a particular file on the **Datasets** page.
 
 ![change chunk method](https://github.com/infiniflow/ragflow/assets/93570324/ac116353-2793-42b2-b181-65e7082bed42)
 
 ### Select embedding model
 
-An embedding model builds vector index on file chunks. Once you have chosen an embedding model and used it to parse a file, you are no longer allowed to change it. To switch to a different embedding model, you *must* delete all completed file chunks in the knowledge base. The obvious reason is that we must *ensure* that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are compared in the same embedding space). 
+An embedding model converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, You must delete all chunks in the knowledge base. The obvious reason is that we *must* ensure that files in a specific knowledge base are converted to embeddings using the *same* embedding model (ensure that they are compared in the same embedding space).
 
 The following embedding models can be deployed locally:
 

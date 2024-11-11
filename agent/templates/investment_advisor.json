@@ -1,7 +1,7 @@
 {
     "id": 8,
     "title": "Intelligent investment advisor",
-    "description": "An intelligent investment advisor that can answer your financial questions based on real-time domestic financial data and financial information.",
+    "description": "An intelligent investment advisor that answers your financial questions using real-time domestic financial data.",
     "canvas_type": "chatbot",
     "dsl": {
           "answer": [],
