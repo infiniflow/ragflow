@@ -1249,6 +1249,8 @@ class AnthropicChat(Base):
             self.system = system
         if "max_tokens" not in gen_conf:
             gen_conf["max_tokens"] = 4096
+        if "presence_penalty" in gen_conf: del gen_conf["presence_penalty"]
+        if "frequency_penalty" in gen_conf: del gen_conf["frequency_penalty"]
 
         ans = ""
         try:
@@ -1278,6 +1280,8 @@ class AnthropicChat(Base):
             self.system = system
         if "max_tokens" not in gen_conf:
             gen_conf["max_tokens"] = 4096
+        if "presence_penalty" in gen_conf: del gen_conf["presence_penalty"]
+        if "frequency_penalty" in gen_conf: del gen_conf["frequency_penalty"]
 
         ans = ""
         total_tokens = 0
@@ -1290,11 +1294,11 @@ class AnthropicChat(Base):
                 **gen_conf,
             )
             for res in response.iter_lines():
-                res = res.decode("utf-8")
-                if "content_block_delta" in res and "data" in res:
-                    text = json.loads(res[6:])["delta"]["text"]
+                if res.type == 'content_block_delta':
+                    text = res.delta.text
                     ans += text
                     total_tokens += num_tokens_from_string(text)
+                    yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
