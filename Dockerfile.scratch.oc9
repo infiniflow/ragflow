@@ -53,6 +53,7 @@ RUN conda run -n py11 python -m nltk.downloader wordnet
 ENV PYTHONPATH=/ragflow/
 ENV HF_ENDPOINT=https://hf-mirror.com
 
+COPY docker/service_conf.yaml.template ./docker/service_conf.yaml.template
 ADD docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
