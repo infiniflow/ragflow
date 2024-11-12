@@ -129,7 +129,7 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 ENV PYTHONPATH=/ragflow/
 
-COPY docker/service_conf.yaml.template ./docker/service_conf.yaml.template
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
