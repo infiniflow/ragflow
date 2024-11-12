@@ -31,7 +31,7 @@ from api.utils.api_utils import (
     generate_confirmation_token,
 )
 from api.versions import get_rag_version
-from rag.utils.es_conn import ELASTICSEARCH
+from api.settings import docStoreConn
 from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
@@ -98,10 +98,11 @@ def status():
     res = {}
     st = timer()
     try:
-        res["es"] = ELASTICSEARCH.health()
-        res["es"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
+        res["doc_store"] = docStoreConn.health()
+        res["doc_store"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
     except Exception as e:
-        res["es"] = {
+        res["doc_store"] = {
+            "type": "unknown",
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
             "error": str(e),

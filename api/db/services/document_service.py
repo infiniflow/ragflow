@@ -15,7 +15,6 @@
 #
 import hashlib
 import json
-import os
 import random
 import re
 import traceback
@@ -24,16 +23,13 @@ from copy import deepcopy
 from datetime import datetime
 from io import BytesIO
 
-from elasticsearch_dsl import Q
 from peewee import fn
 
 from api.db.db_utils import bulk_insert_into_db
-from api.settings import stat_logger
+from api.settings import stat_logger, docStoreConn
 from api.utils import current_timestamp, get_format_time, get_uuid
-from api.utils.file_utils import get_project_base_directory
 from graphrag.mind_map_extractor import MindMapExtractor
 from rag.settings import SVR_QUEUE_NAME
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search, rag_tokenizer
 
@@ -112,8 +108,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+        docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
         cls.clear_chunk_num(doc.id)
         return cls.delete_by_id(doc.id)
 
@@ -224,6 +219,15 @@ class DocumentService(CommonService):
         if not docs:
             return
         return docs[0]["tenant_id"]
+
+    @classmethod
+    @DB.connection_context()
+    def get_knowledgebase_id(cls, doc_id):
+        docs = cls.model.select(cls.model.kb_id).where(cls.model.id == doc_id)
+        docs = docs.dicts()
+        if not docs:
+            return
+        return docs[0]["kb_id"]
 
     @classmethod
     @DB.connection_context()
@@ -410,7 +414,7 @@ def queue_raptor_tasks(doc):
             "doc_id": doc["id"],
             "from_page": 0,
             "to_page": -1,
-            "progress_msg": "Start to do RAPTOR (Recursive Abstractive Processing For Tree-Organized Retrieval)."
+            "progress_msg": "Start to do RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval)."
         }
 
     task = new_task()
@@ -437,11 +441,6 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
-
-    idxnm = search.index_name(kb.tenant_id)
-    if not ELASTICSEARCH.indexExist(idxnm):
-        ELASTICSEARCH.createIdx(idxnm, json.load(
-            open(os.path.join(get_project_base_directory(), "conf", "mapping.json"), "r")))
 
     embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id, lang=kb.language)
 
@@ -486,7 +485,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             md5 = hashlib.md5()
             md5.update((ck["content_with_weight"] +
                         str(d["doc_id"])).encode("utf-8"))
-            d["_id"] = md5.hexdigest()
+            d["id"] = md5.hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             if not d.get("image"):
@@ -499,8 +498,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             else:
                 d["image"].save(output_buffer, format='JPEG')
 
-            STORAGE_IMPL.put(kb.id, d["_id"], output_buffer.getvalue())
-            d["img_id"] = "{}-{}".format(kb.id, d["_id"])
+            STORAGE_IMPL.put(kb.id, d["id"], output_buffer.getvalue())
+            d["img_id"] = "{}-{}".format(kb.id, d["id"])
             del d["image"]
             docs.append(d)
 
@@ -519,6 +518,9 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             chunk_counts[doc_id] += len(cnts[i:i + batch_size])
             token_counts[doc_id] += c
         return vects
+
+    idxnm = search.index_name(kb.tenant_id)
+    try_create_idx = True
 
     _, tenant = TenantService.get_by_id(kb.tenant_id)
     llm_bdl = LLMBundle(kb.tenant_id, LLMType.CHAT, tenant.llm_id)
@@ -550,7 +552,11 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             v = vects[i]
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
-            ELASTICSEARCH.bulk(cks[b:b + es_bulk_size], idxnm)
+            if try_create_idx:
+                if not docStoreConn.indexExist(idxnm, kb_id):
+                    docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
+                try_create_idx = False
+            docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)

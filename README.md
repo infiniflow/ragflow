@@ -8,7 +8,8 @@
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
   <a href="./README_ja.md">日本語</a> |
-  <a href="./README_ko.md">한국어</a>
+  <a href="./README_ko.md">한국어</a> |
+  <a href="./README_id.md">Bahasa Indonesia</a>
 </p>
 
 <p align="center">
@@ -284,7 +285,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
-   ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
+   ~/.local/bin/poetry install --sync --no-root --with=full # install RAGFlow dependent python modules
    ```
 
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
@@ -294,7 +295,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml** to `127.0.0.1`:
    ```
-   127.0.0.1       es01 mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis
    ```  
    In **docker/service_conf.yaml**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 

@@ -23,7 +23,7 @@ import { useDebounceEffect } from 'ahooks';
 import { FormInstance, message } from 'antd';
 import dayjs from 'dayjs';
 import { humanId } from 'human-id';
-import { lowerFirst } from 'lodash';
+import { get, lowerFirst } from 'lodash';
 import trim from 'lodash/trim';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
@@ -641,6 +641,8 @@ export const useCopyPaste = () => {
 
   const onCopyCapture = useCallback(
     (event: ClipboardEvent) => {
+      if (get(event, 'srcElement.tagName') !== 'BODY') return;
+
       event.preventDefault();
       const nodesStr = JSON.stringify(
         nodes.filter((n) => n.selected && n.data.label !== Operator.Begin),
@@ -653,11 +655,12 @@ export const useCopyPaste = () => {
 
   const onPasteCapture = useCallback(
     (event: ClipboardEvent) => {
-      event.preventDefault();
       const nodes = JSON.parse(
         event.clipboardData?.getData('agent:nodes') || '[]',
       ) as Node[] | undefined;
-      if (nodes) {
+
+      if (Array.isArray(nodes) && nodes.length) {
+        event.preventDefault();
         nodes.forEach((n) => {
           duplicateNode(n.id, n.data.label);
         });
@@ -681,7 +684,7 @@ export const useCopyPaste = () => {
   }, [onPasteCapture]);
 };
 
-export const useWatchAgentChange = () => {
+export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const [time, setTime] = useState<string>();
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
@@ -697,9 +700,11 @@ export const useWatchAgentChange = () => {
   }, [flowDetail, setSaveTime]);
 
   const saveAgent = useCallback(async () => {
-    const ret = await saveGraph();
-    setSaveTime(ret.data.update_time);
-  }, [saveGraph, setSaveTime]);
+    if (!chatDrawerVisible) {
+      const ret = await saveGraph();
+      setSaveTime(ret.data.update_time);
+    }
+  }, [chatDrawerVisible, saveGraph, setSaveTime]);
 
   useDebounceEffect(
     () => {

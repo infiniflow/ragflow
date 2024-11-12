@@ -126,6 +126,11 @@ const routes = [
     component: '@/pages/demo',
     layout: false,
   },
+  {
+    path: '/home',
+    layout: false,
+    component: '@/pages/home',
+  },
 ];
 
 export default routes;
