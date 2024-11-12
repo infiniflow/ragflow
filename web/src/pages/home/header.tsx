@@ -5,6 +5,7 @@ import { Segmented, SegmentedValue } from '@/components/ui/segmented ';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
 import {
+  ChevronDown,
   Cpu,
   Github,
   Library,
@@ -63,7 +64,7 @@ export function HomeHeader() {
   }, [navigate]);
 
   return (
-    <section className="px-[60px] py-[12px] flex justify-between">
+    <section className="px-[60px] py-[12px] flex justify-between items-center">
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
@@ -82,11 +83,17 @@ export function HomeHeader() {
           options={options}
           value={currentPath}
           onChange={handleChange}
+          className="bg-backgroundInverseStandard text-backgroundInverseStandard-foreground"
         ></Segmented>
       </div>
       <div className="flex items-center gap-4">
-        <Button variant="secondary">V 0.13.0</Button>
         <Container>
+          V 0.13.0
+          <Button variant="secondary" className="size-8">
+            <ChevronDown />
+          </Button>
+        </Container>
+        <Container className="px-3 py-2">
           <Avatar className="w-[30px] h-[30px]">
             <AvatarImage src="https://github.com/shadcn.png" />
             <AvatarFallback>CN</AvatarFallback>
