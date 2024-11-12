@@ -1379,7 +1379,7 @@ assistant = assistant[0]
 session = assistant.create_session()    
 
 print("\n==================== Miss R =====================\n")
-print(assistant.get_prologue())
+print("Hello. What can I do for you?")
 
 while True:
     question = input("\n==================== User =====================\n> ")
