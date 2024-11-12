@@ -18,7 +18,7 @@ RUN sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' 
 
 RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked \
     apt update && apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus default-jdk python3-pip pipx \
-    libasound2 libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget \
+    libasound2t64 libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget \
     && rm -rf /var/lib/apt/lists/* \
     wget -q -O chrome-linux64.zip https://bit.ly/chrome-linux64-121-0-6167-85 && \
     unzip chrome-linux64.zip && \
