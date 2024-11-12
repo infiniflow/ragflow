@@ -252,7 +252,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 
    在 `/etc/hosts` 中添加以下代码，将 **docker/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：  
    ```
-   127.0.0.1       es01 mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis
    ```  
    在文件 **docker/service_conf.yaml** 中，对照 **docker/.env** 的配置将 mysql 端口更新为 `5455`，es 端口更新为 `1200`。
 
