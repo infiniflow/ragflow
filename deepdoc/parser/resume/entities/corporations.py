@@ -11,10 +11,15 @@
 #  limitations under the License.
 #
 
-import re,json,os
+import re
+import json
+import os
 import pandas as pd
 from rag.nlp import rag_tokenizer
 from . import regions
+from api.utils.log_utils import logger
+
+
 current_file_path = os.path.dirname(os.path.abspath(__file__))
 GOODS = pd.read_csv(os.path.join(current_file_path, "res/corp_baike_len.csv"), sep="\t", header=0).fillna(0)
 GOODS["cid"] = GOODS["cid"].astype(str)
@@ -27,7 +32,7 @@ def baike(cid, default_v=0):
     global GOODS
     try:
         return GOODS.loc[str(cid), "len"]
-    except Exception as e:
+    except Exception:
         pass
     return default_v
 
@@ -65,7 +70,8 @@ def rmNoise(n):
 GOOD_CORP = set([corpNorm(rmNoise(c), False) for c in GOOD_CORP])
 for c,v in CORP_TAG.items():
     cc = corpNorm(rmNoise(c), False)
-    if not cc: print (c)
+    if not cc:
+        logger.info(c)
 CORP_TAG = {corpNorm(rmNoise(c), False):v for c,v in CORP_TAG.items()}
 
 def is_good(nm):

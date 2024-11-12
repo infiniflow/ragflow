@@ -17,6 +17,7 @@ from abc import ABC
 import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
 import yfinance as yf
+from api.utils.log_utils import logger
 
 
 class YahooFinanceParam(ComponentParamBase):
@@ -74,8 +75,8 @@ class YahooFinance(ComponentBase, ABC):
                     {"content": "quarterly cash flow statement:\n" + msft.quarterly_cashflow.to_markdown() + "\n"})
             if self._param.news:
                 yohoo_res.append({"content": "news:\n" + pd.DataFrame(msft.news).to_markdown() + "\n"})
-        except Exception as e:
-            print("**ERROR** " + str(e))
+        except Exception:
+            logger.exception("YahooFinance got exception")
 
         if not yohoo_res:
             return YahooFinance.be_output("")

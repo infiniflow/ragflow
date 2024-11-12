@@ -17,14 +17,14 @@ from abc import ABC
 import builtins
 import json
 import os
-from copy import deepcopy
 from functools import partial
-from typing import List, Dict, Tuple, Union
+from typing import Tuple, Union
 
 import pandas as pd
 
 from agent import settings
-from agent.settings import flow_logger, DEBUG
+from api.utils.log_utils import logger
+
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
@@ -361,13 +361,13 @@ class ComponentParamBase(ABC):
 
     def _warn_deprecated_param(self, param_name, descr):
         if self._deprecated_params_set.get(param_name):
-            flow_logger.warning(
+            logger.warning(
                 f"{descr} {param_name} is deprecated and ignored in this version."
             )
 
     def _warn_to_deprecate_param(self, param_name, descr, new_param):
         if self._deprecated_params_set.get(param_name):
-            flow_logger.warning(
+            logger.warning(
                 f"{descr} {param_name} will be deprecated in future release; "
                 f"please use {new_param} instead."
             )
@@ -403,7 +403,7 @@ class ComponentBase(ABC):
         return cpnts
 
     def run(self, history, **kwargs):
-        flow_logger.info("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
+        logger.info("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
                                                               json.dumps(kwargs, ensure_ascii=False)))
         try:
             res = self._run(history, **kwargs)
@@ -463,7 +463,7 @@ class ComponentBase(ABC):
             reversed_cpnts.extend(self._canvas.path[-2])
         reversed_cpnts.extend(self._canvas.path[-1])
 
-        if DEBUG: print(self.component_name, reversed_cpnts[::-1])
+        logger.debug(f"{self.component_name} {reversed_cpnts[::-1]}")
         for u in reversed_cpnts[::-1]:
             if self.get_component_name(u) in ["switch", "concentrator"]: continue
             if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":

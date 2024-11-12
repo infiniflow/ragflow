@@ -19,7 +19,7 @@ from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, \
     naive_merge_docx, tokenize_chunks_docx
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser, MarkdownParser, TxtParser
-from rag.settings import cron_logger
+from api.utils.log_utils import logger
 from rag.utils import num_tokens_from_string
 from PIL import Image
 from functools import reduce
@@ -41,18 +41,18 @@ class Docx(DocxParser):
         try:
             image_blob = related_part.image.blob
         except UnrecognizedImageError:
-            print("Unrecognized image format. Skipping image.")
+            logger.info("Unrecognized image format. Skipping image.")
             return None
         except UnexpectedEndOfFileError:
-            print("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
+            logger.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
             return None
         except InvalidImageStreamError:
-            print("The recognized image stream appears to be corrupted. Skipping image.")
+            logger.info("The recognized image stream appears to be corrupted. Skipping image.")
             return None
         try:
             image = Image.open(BytesIO(image_blob)).convert('RGB')
             return image
-        except Exception as e:
+        except Exception:
             return None
 
     def __clean(self, line):
@@ -133,7 +133,7 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished")
-        cron_logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
+        logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
@@ -147,7 +147,7 @@ class Pdf(PdfParser):
         self._concat_downward()
         # self._filter_forpages()
 
-        cron_logger.info("layouts: {}".format(timer() - start))
+        logger.info("layouts cost: {}s".format(timer() - start))
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], tbls
 
@@ -216,7 +216,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             return chunks
 
         res.extend(tokenize_chunks_docx(chunks, doc, eng, images))
-        cron_logger.info("naive_merge({}): {}".format(filename, timer() - st))
+        logger.info("naive_merge({}): {}".format(filename, timer() - st))
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -280,7 +280,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return chunks
 
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
-    cron_logger.info("naive_merge({}): {}".format(filename, timer() - st))
+    logger.info("naive_merge({}): {}".format(filename, timer() - st))
     return res
 
 

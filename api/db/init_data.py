@@ -30,6 +30,7 @@ from api.db.services.llm_service import LLMFactoriesService, LLMService, TenantL
 from api.db.services.user_service import TenantService, UserTenantService
 from api.settings import CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, LLM_FACTORY, API_KEY, LLM_BASE_URL
 from api.utils.file_utils import get_project_base_directory
+from api.utils.log_utils import logger
 
 
 def encode_to_base64(input_string):
@@ -69,36 +70,34 @@ def init_superuser():
              "api_key": API_KEY, "api_base": LLM_BASE_URL})
 
     if not UserService.save(**user_info):
-        print("\033[93m【ERROR】\033[0mcan't init admin.")
+        logger.info("can't init admin.")
         return
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
-    print(
-        "【INFO】Super user initialized. \033[93memail: admin@ragflow.io, password: admin\033[0m. Changing the password after logining is strongly recomanded.")
+    logger.info(
+        "Super user initialized. email: admin@ragflow.io, password: admin. Changing the password after logining is strongly recomanded.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[
                         {"role": "user", "content": "Hello!"}], gen_conf={})
     if msg.find("ERROR: ") == 0:
-        print(
-            "\33[91m【ERROR】\33[0m: ",
+        logger.error(
             "'{}' dosen't work. {}".format(
                 tenant["llm_id"],
                 msg))
     embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
     v, c = embd_mdl.encode(["Hello!"])
     if c == 0:
-        print(
-            "\33[91m【ERROR】\33[0m:",
-            " '{}' dosen't work!".format(
+        logger.error(
+            "'{}' dosen't work!".format(
                 tenant["embd_id"]))
 
 
 def init_llm_factory():
     try:
         LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
-    except Exception as e:
+    except Exception:
         pass
 
     factory_llm_infos = json.load(
@@ -111,14 +110,14 @@ def init_llm_factory():
         llm_infos = factory_llm_info.pop("llm")
         try:
             LLMFactoriesService.save(**factory_llm_info)
-        except Exception as e:
+        except Exception:
             pass
         LLMService.filter_delete([LLM.fid == factory_llm_info["name"]])
         for llm_info in llm_infos:
             llm_info["fid"] = factory_llm_info["name"]
             try:
                 LLMService.save(**llm_info)
-            except Exception as e:
+            except Exception:
                 pass
 
     LLMFactoriesService.filter_delete([LLMFactories.name == "Local"])
@@ -145,7 +144,7 @@ def init_llm_factory():
                 row = deepcopy(row)
                 row["llm_name"] = "text-embedding-3-large"
                 TenantLLMService.save(**row)
-            except Exception as e:
+            except Exception:
                 pass
             break
     for kb_id in KnowledgebaseService.get_all_ids():
@@ -169,9 +168,8 @@ def add_graph_templates():
                 CanvasTemplateService.save(**cnvs)
             except:
                 CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
-        except Exception as e:
-            print("Add graph templates error: ", e)
-            print("------------", flush=True)
+        except Exception:
+            logger.exception("Add graph templates error: ")
 
 
 def init_web_data():
@@ -182,7 +180,7 @@ def init_web_data():
     #    init_superuser()
 
     add_graph_templates()
-    print("init web data success:{}".format(time.time() - start_time))
+    logger.info("init web data success:{}".format(time.time() - start_time))
 
 
 if __name__ == '__main__':

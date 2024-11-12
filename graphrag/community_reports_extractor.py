@@ -6,11 +6,10 @@ Reference:
 """
 
 import json
-import logging
 import re
 import traceback
 from dataclasses import dataclass
-from typing import Any, List, Callable
+from typing import List, Callable
 import networkx as nx
 import pandas as pd
 from graphrag import leiden
@@ -20,8 +19,7 @@ from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, dict_has_keys_with_types
 from rag.utils import num_tokens_from_string
 from timeit import default_timer as timer
-
-log = logging.getLogger(__name__)
+from api.utils.log_utils import logger
 
 
 @dataclass
@@ -82,7 +80,7 @@ class CommunityReportsExtractor:
                     response = re.sub(r"[^\}]*$", "", response)
                     response = re.sub(r"\{\{", "{", response)
                     response = re.sub(r"\}\}", "}", response)
-                    print(response)
+                    logger.info(response)
                     response = json.loads(response)
                     if not dict_has_keys_with_types(response, [
                                 ("title", str),
@@ -94,7 +92,7 @@ class CommunityReportsExtractor:
                     response["weight"] = weight
                     response["entities"] = ents
                 except Exception as e:
-                    print("ERROR: ", traceback.format_exc())
+                    logger.exception("CommunityReportsExtractor got exception")
                     self._on_error(e, traceback.format_exc(), None)
                     continue
 
@@ -127,5 +125,4 @@ class CommunityReportsExtractor:
         report_sections = "\n\n".join(
             f"## {finding_summary(f)}\n\n{finding_explanation(f)}" for f in findings
         )
-     
         return f"# {title}\n\n{summary}\n\n{report_sections}"

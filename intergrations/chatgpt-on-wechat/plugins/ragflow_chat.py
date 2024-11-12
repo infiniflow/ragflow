@@ -2,7 +2,7 @@ import requests
 from bridge.context import ContextType  # Import Context, ContextType
 from bridge.reply import Reply, ReplyType  # Import Reply, ReplyType
 from bridge import *
-from common.log import logger
+from api.utils.log_utils import logger
 from plugins import Plugin, register  # Import Plugin and register
 from plugins.event import Event, EventContext, EventAction  # Import event-related classes
 
@@ -76,7 +76,7 @@ class RAGFlowChat(Plugin):
                     logger.error(f"[RAGFlowChat] HTTP error when creating conversation: {response.status_code}")
                     return f"Sorry, unable to connect to RAGFlow API (create conversation). HTTP status code: {response.status_code}"
             except Exception as e:
-                logger.exception(f"[RAGFlowChat] Exception when creating conversation: {e}")
+                logger.exception("[RAGFlowChat] Exception when creating conversation")
                 return f"Sorry, an internal error occurred: {str(e)}"
 
         # Step 2: Send the message and get a reply
@@ -108,5 +108,5 @@ class RAGFlowChat(Plugin):
                 logger.error(f"[RAGFlowChat] HTTP error when getting answer: {response.status_code}")
                 return f"Sorry, unable to connect to RAGFlow API (get reply). HTTP status code: {response.status_code}"
         except Exception as e:
-            logger.exception(f"[RAGFlowChat] Exception when getting answer: {e}")
+            logger.exception("[RAGFlowChat] Exception when getting answer")
             return f"Sorry, an internal error occurred: {str(e)}"
