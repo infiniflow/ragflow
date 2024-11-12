@@ -19,7 +19,7 @@ If you find your online LLM is not on the list, don't feel disheartened. The lis
 
 You have two options for configuring your model API key:
 
-- Configure it in **service_conf.yaml** before starting RAGFlow.
+- Configure it in **service_conf.yaml.template** before starting RAGFlow.
 - Configure it on the **Model Providers** page after logging into RAGFlow.
 
 ### Configure model API key before starting up RAGFlow
@@ -37,7 +37,7 @@ You have two options for configuring your model API key:
 ### Configure model API key after logging into RAGFlow
 
 :::caution WARNING
-After logging into RAGFlow, configuring your model API key through the **service_conf.yaml** file will no longer take effect.
+After logging into RAGFlow, configuring your model API key through the **service_conf.yaml.template** file will no longer take effect.
 :::
 
 After logging into RAGFlow, you can *only* configure API Key on the **Model Providers** page:
