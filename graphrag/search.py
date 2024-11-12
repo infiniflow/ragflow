@@ -15,95 +15,90 @@
 #
 import json
 from copy import deepcopy
+from typing import Dict
 
 import pandas as pd
-from elasticsearch_dsl import Q, Search
+from rag.utils.doc_store_conn import OrderByExpr, FusionExpr
 
 from rag.nlp.search import Dealer
 
 
 class KGSearch(Dealer):
-    def search(self, req, idxnm, emb_mdl=None, highlight=False):
-        def merge_into_first(sres, title=""):
-            df,texts = [],[]
-            for d in sres["hits"]["hits"]:
+    def search(self, req, idxnm, kb_ids, emb_mdl, highlight=False):
+        def merge_into_first(sres, title="") -> Dict[str, str]:
+            if not sres:
+                return {}
+            content_with_weight = ""
+            df, texts = [],[]
+            for d in sres.values():
                 try:
-                    df.append(json.loads(d["_source"]["content_with_weight"]))
-                except Exception as e:
-                    texts.append(d["_source"]["content_with_weight"])
-                    pass
-            if not df and not texts: return False
+                    df.append(json.loads(d["content_with_weight"]))
+                except Exception:
+                    texts.append(d["content_with_weight"])
             if df:
-                try:
-                    sres["hits"]["hits"][0]["_source"]["content_with_weight"] = title + "\n" + pd.DataFrame(df).to_csv()
-                except Exception as e:
-                    pass
+                content_with_weight = title + "\n" + pd.DataFrame(df).to_csv()
             else:
-                sres["hits"]["hits"][0]["_source"]["content_with_weight"] = title + "\n" + "\n".join(texts)
-            return True
+                content_with_weight = title + "\n" + "\n".join(texts)
+            first_id = ""
+            first_source = {}
+            for k, v in sres.items():
+                first_id = id
+                first_source = deepcopy(v)
+                break
+            first_source["content_with_weight"] = content_with_weight
+            first_id = next(iter(sres))
+            return {first_id: first_source}
 
+        qst = req.get("question", "")
+        matchText, keywords = self.qryr.question(qst, min_match=0.05)
+        condition = self.get_filters(req)
+
+        ## Entity retrieval
+        condition.update({"knowledge_graph_kwd": ["entity"]})
+        assert emb_mdl, "No embedding model selected"
+        matchDense = self.get_vector(qst, emb_mdl, 1024, req.get("similarity", 0.1))
+        q_vec = matchDense.embedding_data
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
-                                 "image_id", "doc_id", "q_512_vec", "q_768_vec", "position_int", "name_kwd",
+                                 "doc_id", f"q_{len(q_vec)}_vec", "position_list", "name_kwd",
                                  "q_1024_vec", "q_1536_vec", "available_int", "content_with_weight",
                                  "weight_int", "weight_flt", "rank_int"
                                  ])
 
-        qst = req.get("question", "")
-        binary_query, keywords = self.qryr.question(qst, min_match="5%")
-        binary_query = self._add_filters(binary_query, req)
+        fusionExpr = FusionExpr("weighted_sum", 32, {"weights": "0.5, 0.5"})
 
-        ## Entity retrieval
-        bqry = deepcopy(binary_query)
-        bqry.filter.append(Q("terms", knowledge_graph_kwd=["entity"]))
-        s = Search()
-        s = s.query(bqry)[0: 32]
-
-        s = s.to_dict()
-        q_vec = []
-        if req.get("vector"):
-            assert emb_mdl, "No embedding model selected"
-            s["knn"] = self._vector(
-                qst, emb_mdl, req.get(
-                    "similarity", 0.1), 1024)
-            s["knn"]["filter"] = bqry.to_dict()
-            q_vec = s["knn"]["query_vector"]
-
-        ent_res = self.es.search(deepcopy(s), idxnms=idxnm, timeout="600s", src=src)
-        entities = [d["name_kwd"] for d in self.es.getSource(ent_res)]
-        ent_ids = self.es.getDocIds(ent_res)
-        if merge_into_first(ent_res, "-Entities-"):
-            ent_ids = ent_ids[0:1]
+        ent_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 32, idxnm, kb_ids)
+        ent_res_fields = self.dataStore.getFields(ent_res, src)
+        entities = [d["name_kwd"] for d in ent_res_fields.values()]
+        ent_ids = self.dataStore.getChunkIds(ent_res)
+        ent_content = merge_into_first(ent_res_fields, "-Entities-")
+        if ent_content:
+            ent_ids = list(ent_content.keys())
 
         ## Community retrieval
-        bqry = deepcopy(binary_query)
-        bqry.filter.append(Q("terms", entities_kwd=entities))
-        bqry.filter.append(Q("terms", knowledge_graph_kwd=["community_report"]))
-        s = Search()
-        s = s.query(bqry)[0: 32]
-        s = s.to_dict()
-        comm_res = self.es.search(deepcopy(s), idxnms=idxnm, timeout="600s", src=src)
-        comm_ids = self.es.getDocIds(comm_res)
-        if merge_into_first(comm_res, "-Community Report-"):
-            comm_ids = comm_ids[0:1]
+        condition = self.get_filters(req)
+        condition.update({"entities_kwd": entities, "knowledge_graph_kwd": ["community_report"]})
+        comm_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 32, idxnm, kb_ids)
+        comm_res_fields = self.dataStore.getFields(comm_res, src)
+        comm_ids = self.dataStore.getChunkIds(comm_res)
+        comm_content = merge_into_first(comm_res_fields, "-Community Report-")
+        if comm_content:
+            comm_ids = list(comm_content.keys())
 
         ## Text content retrieval
-        bqry = deepcopy(binary_query)
-        bqry.filter.append(Q("terms", knowledge_graph_kwd=["text"]))
-        s = Search()
-        s = s.query(bqry)[0: 6]
-        s = s.to_dict()
-        txt_res = self.es.search(deepcopy(s), idxnms=idxnm, timeout="600s", src=src)
-        txt_ids = self.es.getDocIds(txt_res)
-        if merge_into_first(txt_res, "-Original Content-"):
-            txt_ids = txt_ids[0:1]
+        condition = self.get_filters(req)
+        condition.update({"knowledge_graph_kwd": ["text"]})
+        txt_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 6, idxnm, kb_ids)
+        txt_res_fields = self.dataStore.getFields(txt_res, src)
+        txt_ids = self.dataStore.getChunkIds(txt_res)
+        txt_content = merge_into_first(txt_res_fields, "-Original Content-")
+        if txt_content:
+            txt_ids = list(txt_content.keys())
 
         return self.SearchResult(
             total=len(ent_ids) + len(comm_ids) + len(txt_ids),
             ids=[*ent_ids, *comm_ids, *txt_ids],
             query_vector=q_vec,
-            aggregation=None,
             highlight=None,
-            field={**self.getFields(ent_res, src), **self.getFields(comm_res, src), **self.getFields(txt_res, src)},
+            field={**ent_content, **comm_content, **txt_content},
             keywords=[]
         )
-

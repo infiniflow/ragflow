@@ -74,7 +74,7 @@ class Excel(ExcelParser):
 def trans_datatime(s):
     try:
         return datetime_parse(s.strip()).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception as e:
+    except Exception:
         pass
 
 
@@ -112,7 +112,7 @@ def column_data_type(arr):
             continue
         try:
             arr[i] = trans[ty](str(arr[i]))
-        except Exception as e:
+        except Exception:
             arr[i] = None
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
@@ -182,7 +182,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
         "datetime": "_dt",
         "bool": "_kwd"}
     for df in dfs:
-        for n in ["id", "_id", "index", "idx"]:
+        for n in ["id", "index", "idx"]:
             if n in df.columns:
                 del df[n]
         clmns = df.columns.values
