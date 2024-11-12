@@ -529,13 +529,14 @@ def list_chunks():
             return get_json_result(
                 data=False, message="Can't find doc_name or doc_id"
             )
+        kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
 
-        res = retrievaler.chunk_list(doc_id=doc_id, tenant_id=tenant_id)
+        res = retrievaler.chunk_list(doc_id, tenant_id, kb_ids)
         res = [
             {
                 "content": res_item["content_with_weight"],
                 "doc_name": res_item["docnm_kwd"],
-                "img_id": res_item["img_id"]
+                "image_id": res_item["img_id"]
             } for res_item in res
         ]
 

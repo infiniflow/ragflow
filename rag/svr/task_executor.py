@@ -31,7 +31,6 @@ from timeit import default_timer as timer
 
 import numpy as np
 import pandas as pd
-from elasticsearch_dsl import Q
 
 from api.db import LLMType, ParserType
 from api.db.services.dialog_service import keyword_extraction, question_proposal
@@ -39,8 +38,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
 from api.db.services.file2document_service import File2DocumentService
-from api.settings import retrievaler
-from api.utils.file_utils import get_project_base_directory
+from api.settings import retrievaler, docStoreConn
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, knowledge_graph, email
 from rag.nlp import search, rag_tokenizer
@@ -48,7 +46,6 @@ from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as 
 from rag.settings import database_logger, SVR_QUEUE_NAME
 from rag.settings import cron_logger, DOC_MAXIMUM_SIZE
 from rag.utils import rmSpace, num_tokens_from_string
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.redis_conn import REDIS_CONN, Payload
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -126,7 +123,7 @@ def collect():
         return pd.DataFrame()
     tasks = TaskService.get_tasks(msg["id"])
     if not tasks:
-        cron_logger.warn("{} empty task!".format(msg["id"]))
+        cron_logger.warning("{} empty task!".format(msg["id"]))
         return []
 
     tasks = pd.DataFrame(tasks)
@@ -187,7 +184,7 @@ def build(row):
     docs = []
     doc = {
         "doc_id": row["doc_id"],
-        "kb_id": [str(row["kb_id"])]
+        "kb_id": str(row["kb_id"])
     }
     el = 0
     for ck in cks:
@@ -196,10 +193,14 @@ def build(row):
         md5 = hashlib.md5()
         md5.update((ck["content_with_weight"] +
                     str(d["doc_id"])).encode("utf-8"))
-        d["_id"] = md5.hexdigest()
+        d["id"] = md5.hexdigest()
         d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
         if not d.get("image"):
+            d["img_id"] = ""
+            d["page_num_list"] = json.dumps([])
+            d["position_list"] = json.dumps([])
+            d["top_list"] = json.dumps([])
             docs.append(d)
             continue
 
@@ -211,13 +212,13 @@ def build(row):
                 d["image"].save(output_buffer, format='JPEG')
 
             st = timer()
-            STORAGE_IMPL.put(row["kb_id"], d["_id"], output_buffer.getvalue())
+            STORAGE_IMPL.put(row["kb_id"], d["id"], output_buffer.getvalue())
             el += timer() - st
         except Exception as e:
             cron_logger.error(str(e))
             traceback.print_exc()
 
-        d["img_id"] = "{}-{}".format(row["kb_id"], d["_id"])
+        d["img_id"] = "{}-{}".format(row["kb_id"], d["id"])
         del d["image"]
         docs.append(d)
     cron_logger.info("MINIO PUT({}):{}".format(row["name"], el))
@@ -245,12 +246,9 @@ def build(row):
     return docs
 
 
-def init_kb(row):
+def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    if ELASTICSEARCH.indexExist(idxnm):
-        return
-    return ELASTICSEARCH.createIdx(idxnm, json.load(
-        open(os.path.join(get_project_base_directory(), "conf", "mapping.json"), "r")))
+    return docStoreConn.createIdx(idxnm, row["kb_id"], vector_size)
 
 
 def embedding(docs, mdl, parser_config=None, callback=None):
@@ -288,17 +286,20 @@ def embedding(docs, mdl, parser_config=None, callback=None):
              cnts) if len(tts) == len(cnts) else cnts
 
     assert len(vects) == len(docs)
+    vector_size = 0
     for i, d in enumerate(docs):
         v = vects[i].tolist()
+        vector_size = len(v)
         d["q_%d_vec" % len(v)] = v
-    return tk_count
+    return tk_count, vector_size
 
 
 def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     vts, _ = embd_mdl.encode(["ok"])
-    vctr_nm = "q_%d_vec" % len(vts[0])
+    vector_size = len(vts[0])
+    vctr_nm = "q_%d_vec" % vector_size
     chunks = []
-    for d in retrievaler.chunk_list(row["doc_id"], row["tenant_id"], fields=["content_with_weight", vctr_nm]):
+    for d in retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])], fields=["content_with_weight", vctr_nm]):
         chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
 
     raptor = Raptor(
@@ -323,7 +324,7 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         d = copy.deepcopy(doc)
         md5 = hashlib.md5()
         md5.update((content + str(d["doc_id"])).encode("utf-8"))
-        d["_id"] = md5.hexdigest()
+        d["id"] = md5.hexdigest()
         d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
         d[vctr_nm] = vctr.tolist()
@@ -332,7 +333,7 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
         res.append(d)
         tk_count += num_tokens_from_string(content)
-    return res, tk_count
+    return res, tk_count, vector_size
 
 
 def main():
@@ -352,7 +353,7 @@ def main():
         if r.get("task_type", "") == "raptor":
             try:
                 chat_mdl = LLMBundle(r["tenant_id"], LLMType.CHAT, llm_name=r["llm_id"], lang=r["language"])
-                cks, tk_count = run_raptor(r, chat_mdl, embd_mdl, callback)
+                cks, tk_count, vector_size = run_raptor(r, chat_mdl, embd_mdl, callback)
             except Exception as e:
                 callback(-1, msg=str(e))
                 cron_logger.error(str(e))
@@ -373,7 +374,7 @@ def main():
                     len(cks))
             st = timer()
             try:
-                tk_count = embedding(cks, embd_mdl, r["parser_config"], callback)
+                tk_count, vector_size = embedding(cks, embd_mdl, r["parser_config"], callback)
             except Exception as e:
                 callback(-1, "Embedding error:{}".format(str(e)))
                 cron_logger.error(str(e))
@@ -381,26 +382,25 @@ def main():
             cron_logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
             callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer() - st))
 
-        init_kb(r)
-        chunk_count = len(set([c["_id"] for c in cks]))
+        # cron_logger.info(f"task_executor init_kb index {search.index_name(r["tenant_id"])} embd_mdl {embd_mdl.llm_name} vector length {vector_size}")
+        init_kb(r, vector_size)
+        chunk_count = len(set([c["id"] for c in cks]))
         st = timer()
         es_r = ""
         es_bulk_size = 4
         for b in range(0, len(cks), es_bulk_size):
-            es_r = ELASTICSEARCH.bulk(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]))
+            es_r = docStoreConn.insert(cks[b:b + es_bulk_size], search.index_name(r["tenant_id"]), r["kb_id"])
             if b % 128 == 0:
                 callback(prog=0.8 + 0.1 * (b + 1) / len(cks), msg="")
 
         cron_logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
         if es_r:
             callback(-1, "Insert chunk error, detail info please check ragflow-logs/api/cron_logger.log. Please also check ES status!")
-            ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
-            cron_logger.error(str(es_r))
+            docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]), r["kb_id"])
+            cron_logger.error('Insert chunk error: ' + str(es_r))
         else:
             if TaskService.do_cancel(r["id"]):
-                ELASTICSEARCH.deleteByQuery(
-                    Q("match", doc_id=r["doc_id"]), idxnm=search.index_name(r["tenant_id"]))
+                docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]), r["kb_id"])
                 continue
             callback(1., "Done!")
             DocumentService.increment_chunk_num(
