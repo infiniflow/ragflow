@@ -126,10 +126,6 @@ def server_error_response(e):
     if len(e.args) > 1:
         return get_json_result(
             code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
-    if repr(e).find("index_not_found_exception") >= 0:
-        return get_json_result(code=RetCode.EXCEPTION_ERROR,
-                               message="No chunk found, please upload file and parse it.")
-
     return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
@@ -270,10 +266,6 @@ def construct_error_response(e):
         pass
     if len(e.args) > 1:
         return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
-    if repr(e).find("index_not_found_exception") >= 0:
-        return construct_json_result(code=RetCode.EXCEPTION_ERROR,
-                                     message="No chunk found, please upload file and parse it.")
-
     return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
@@ -295,7 +287,7 @@ def token_required(func):
     return decorated_function
 
 
-def get_result(code=RetCode.SUCCESS, message='error', data=None):
+def get_result(code=RetCode.SUCCESS, message="", data=None):
     if code == 0:
         if data is not None:
             response = {"code": code, "data": data}

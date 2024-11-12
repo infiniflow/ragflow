@@ -1280,7 +1280,7 @@ Success:
                 "document_keyword": "1.txt",
                 "highlight": "<em>ragflow</em> content",
                 "id": "d78435d142bd5cf6704da62c778795c5",
-                "img_id": "",
+                "image_id": "",
                 "important_keywords": [
                     ""
                 ],
