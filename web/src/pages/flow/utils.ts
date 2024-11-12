@@ -317,3 +317,7 @@ export const duplicateNodeForm = (nodeData?: NodeData) => {
     form,
   };
 };
+
+export const getDrawerWidth = () => {
+  return window.innerWidth > 1278 ? '40%' : 470;
+};

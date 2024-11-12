@@ -14,9 +14,10 @@ import styles from './index.less';
 
 interface IProps {
   showChatDrawer(): void;
+  chatDrawerVisible: boolean;
 }
 
-const FlowHeader = ({ showChatDrawer }: IProps) => {
+const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const { saveGraph } = useSaveGraph();
   const handleRun = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const { data } = useFetchFlow();
@@ -28,7 +29,7 @@ const FlowHeader = ({ showChatDrawer }: IProps) => {
   } = useSetModalState();
   const { visible, hideModal, showModal } = useSetModalState();
   const { id } = useParams();
-  const time = useWatchAgentChange();
+  const time = useWatchAgentChange(chatDrawerVisible);
 
   return (
     <>
