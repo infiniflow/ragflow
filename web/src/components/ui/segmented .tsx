@@ -25,9 +25,19 @@ export interface SegmentedProps
   motionName?: string;
 }
 
-export function Segmented({ options, value, onChange }: SegmentedProps) {
+export function Segmented({
+  options,
+  value,
+  onChange,
+  className,
+}: SegmentedProps) {
   return (
-    <div className="flex items-center rounded-sm p-1 gap-2 bg-zinc-200">
+    <div
+      className={cn(
+        'flex items-center rounded-sm p-1 gap-2 bg-zinc-200',
+        className,
+      )}
+    >
       {options.map((option) => {
         const isObject = typeof option === 'object';
         const actualValue = isObject ? option.value : option;
@@ -36,9 +46,9 @@ export function Segmented({ options, value, onChange }: SegmentedProps) {
           <div
             key={actualValue}
             className={cn(
-              'inline-flex items-center px-2 py-1 text-sm font-medium rounded-sm cursor-pointer',
+              'inline-flex items-center px-3 py-2 text-sm font-medium rounded-sm cursor-pointer',
 
-              { 'bg-indigo-400': value === actualValue },
+              { 'bg-backgroundCoreStandard': value === actualValue },
             )}
             onClick={() => onChange?.(actualValue)}
           >

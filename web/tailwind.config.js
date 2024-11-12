@@ -22,15 +22,15 @@ module.exports = {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
+        background: 'var(--background)',
         foreground: 'hsl(var(--foreground))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
         },
         secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
+          DEFAULT: 'var(--background-inverse-strong)',
+          foreground: 'var(--background-inverse-strong-foreground)',
         },
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
@@ -49,12 +49,20 @@ module.exports = {
           foreground: 'hsl(var(--popover-foreground))',
         },
         card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
+          DEFAULT: 'var(--background-inverse-standard)',
+          foreground: 'var(--background-inverse-standard-foreground)',
         },
         backgroundInverseStandard: {
           DEFAULT: 'var(--background-inverse-standard)',
           foreground: 'var(--background-inverse-standard-foreground)',
+        },
+        backgroundInverseWeak: {
+          DEFAULT: 'var(--background-inverse-weak)',
+          foreground: 'var(--background-inverse-weak-foreground)',
+        },
+        backgroundCoreStandard: {
+          DEFAULT: 'var(--background-core-standard)',
+          foreground: 'var(--background-core-standard-foreground)',
         },
       },
       borderRadius: {
