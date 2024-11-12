@@ -17,10 +17,10 @@
 import json
 import os
 import time
-import logging
 import re
 
 from api.utils.file_utils import get_project_base_directory
+from api.utils.log_utils import logger
 
 
 class Dealer:
@@ -32,15 +32,15 @@ class Dealer:
         path = os.path.join(get_project_base_directory(), "rag/res", "synonym.json")
         try:
             self.dictionary = json.load(open(path, 'r'))
-        except Exception as e:
-            logging.warn("Missing synonym.json")
+        except Exception:
+            logger.warn("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
-            logging.warning(
+            logger.warning(
                 "Realtime synonym is disabled, since no redis connection.")
         if not len(self.dictionary.keys()):
-            logging.warning(f"Fail to load synonym")
+            logger.warning("Fail to load synonym")
 
         self.redis = redis
         self.load()
@@ -64,7 +64,7 @@ class Dealer:
             d = json.loads(d)
             self.dictionary = d
         except Exception as e:
-            logging.error("Fail to load synonym!" + str(e))
+            logger.error("Fail to load synonym!" + str(e))
 
     def lookup(self, tk):
         self.lookup_num += 1

@@ -18,7 +18,7 @@ import re
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks
 from deepdoc.parser import HtmlParser, TxtParser
 from timeit import default_timer as timer
-from rag.settings import cron_logger
+from api.utils.log_utils import logger
 import io
 
 
@@ -86,7 +86,7 @@ def chunk(
     )
 
     main_res.extend(tokenize_chunks(chunks, doc, eng, None))
-    cron_logger.info("naive_merge({}): {}".format(filename, timer() - st))
+    logger.info("naive_merge({}): {}".format(filename, timer() - st))
     # get the attachment info
     for part in msg.iter_attachments():
         content_disposition = part.get("Content-Disposition")

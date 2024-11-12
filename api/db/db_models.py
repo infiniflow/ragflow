@@ -30,12 +30,9 @@ from peewee import (
 )
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 from api.db import SerializedType, ParserType
-from api.settings import DATABASE, stat_logger, SECRET_KEY, DATABASE_TYPE
-from api.utils.log_utils import getLogger
+from api.settings import DATABASE, SECRET_KEY, DATABASE_TYPE
 from api import utils
-
-LOGGER = getLogger()
-
+from api.utils.log_utils import logger
 
 def singleton(cls, *args, **kw):
     instances = {}
@@ -288,7 +285,7 @@ class BaseDataBase:
         database_config = DATABASE.copy()
         db_name = database_config.pop("name")
         self.database_connection = PooledDatabase[DATABASE_TYPE.upper()].value(db_name, **database_config)
-        stat_logger.info('init database on cluster mode successfully')
+        logger.info('init database on cluster mode successfully')
 
 class PostgresDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
@@ -396,7 +393,7 @@ def close_connection():
         if DB:
             DB.close_stale(age=30)
     except Exception as e:
-        LOGGER.exception(e)
+        logger.exception(e)
 
 
 class DataBaseModel(BaseModel):
@@ -412,15 +409,15 @@ def init_database_tables(alter_fields=[]):
     for name, obj in members:
         if obj != DataBaseModel and issubclass(obj, DataBaseModel):
             table_objs.append(obj)
-            LOGGER.info(f"start create table {obj.__name__}")
+            logger.info(f"start create table {obj.__name__}")
             try:
                 obj.create_table()
-                LOGGER.info(f"create table success: {obj.__name__}")
+                logger.info(f"create table success: {obj.__name__}")
             except Exception as e:
-                LOGGER.exception(e)
+                logger.exception(e)
                 create_failed_list.append(obj.__name__)
     if create_failed_list:
-        LOGGER.info(f"create tables failed: {create_failed_list}")
+        logger.info(f"create tables failed: {create_failed_list}")
         raise Exception(f"create tables failed: {create_failed_list}")
     migrate_db()
 

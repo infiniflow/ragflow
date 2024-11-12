@@ -25,6 +25,7 @@ from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 import requests
+from api.utils.log_utils import logger
 
 
 @manager.route('/factories', methods=['GET'])
@@ -89,7 +90,7 @@ def set_api_key():
                 if len(arr) == 0 or tc == 0:
                     raise Exception("Fail")
                 rerank_passed = True
-                print(f'passed model rerank{llm.llm_name}',flush=True)
+                logger.info(f'passed model rerank {llm.llm_name}')
             except Exception as e:
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
                     e)

@@ -19,7 +19,7 @@ from openpyxl import load_workbook
 from deepdoc.parser.utils import get_text
 from rag.nlp import is_english, random_choices, qbullets_category, add_positions, has_qbullet, docx_question_level
 from rag.nlp import rag_tokenizer, tokenize_table, concat_img
-from rag.settings import cron_logger
+from api.utils.log_utils import logger
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from docx import Document
 from PIL import Image
@@ -82,7 +82,7 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished")
-        cron_logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
+        logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
         start = timer()
         self._layouts_rec(zoomin, drop=False)
         callback(0.63, "Layout analysis finished.")
@@ -94,7 +94,7 @@ class Pdf(PdfParser):
         #self._naive_vertical_merge()
         # self._concat_downward()
         #self._filter_forpages()
-        cron_logger.info("layouts: {}".format(timer() - start))
+        logger.info("layouts: {}".format(timer() - start))
         sections = [b["text"] for b in self.boxes]
         bull_x0_list = []
         q_bull, reg = qbullets_category(sections)

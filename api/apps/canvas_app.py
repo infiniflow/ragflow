@@ -23,6 +23,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
+from api.utils.log_utils import logger
 
 
 @manager.route('/templates', methods=['GET'])
@@ -114,7 +115,7 @@ def run():
                 pass
             canvas.add_user_input(req["message"])
         answer = canvas.run(stream=stream)
-        print(canvas)
+        logger.info(canvas)
     except Exception as e:
         return server_error_response(e)
 

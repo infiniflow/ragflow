@@ -17,6 +17,7 @@ from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component import GenerateParam, Generate
+from api.utils.log_utils import logger
 
 
 class RewriteQuestionParam(GenerateParam):
@@ -104,7 +105,7 @@ class RewriteQuestion(Generate, ABC):
         self._canvas.history.pop()
         self._canvas.history.append(("user", ans))
 
-        print(ans, ":::::::::::::::::::::::::::::::::")
+        logger.info(ans)
         return RewriteQuestion.be_output(ans)
 
 
