@@ -200,43 +200,39 @@ export default {
       methodEmpty:
         'This will display a visual explanation of the knowledge base categories',
       book: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
-      Since a book is long and not all the parts are useful, if it's a PDF,
-      please setup the <i>page ranges</i> for every book in order eliminate negative effects and save computing time for analyzing.</p>`,
+      For each book in PDF, please set the <i>page ranges</i> to remove unwanted information and reduce analysis time.</p>`,
       laws: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
-      Legal documents have a very rigorous writing format. We use text feature to detect split point. 
+      Legal documents typically follow a rigorous writing format. We use text feature to identify split point. 
       </p><p>
-      The chunk granularity is consistent with 'ARTICLE', and all the upper level text will be included in the chunk.
+      The chunk has a granularity consistent with 'ARTICLE', ensuring all upper level text is included in the chunk.
       </p>`,
       manual: `<p>Only <b>PDF</b> is supported.</p><p>
       We assume that the manual has a hierarchical section structure, using the lowest section titles as basic unit for chunking documents. Therefore, figures and tables in the same section will not be separated, which may result in larger chunk sizes.
       </p>`,
       naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
-      <p>This method apply the naive ways to chunk files: </p>
+      <p>This method chunks files using the 'naive' way: </p>
       <p>
-      <li>Successive text will be sliced into pieces using vision detection model.</li>
-      <li>Next, these successive pieces are merge into chunks whose token number is no more than 'Token number'.</li></p>`,
+      <li>Use vision detection model to split the texts into smaller segments.</li>
+      <li>Then, combine adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</li></p>`,
       paper: `<p>Only <b>PDF</b> file is supported.</p><p>
-      If our model works well, the paper will be sliced by it's sections, like <i>abstract, 1.1, 1.2</i>, etc. </p><p>
-      The benefit of doing this is that LLM can better summarize the content of relevant sections in the paper, 
-      resulting in more comprehensive answers that help readers better understand the paper. 
-      The downside is that it increases the context of the LLM conversation and adds computational cost, 
-      so during the conversation, you can consider reducing the ‘<b>topN</b>’ setting.</p>`,
-      presentation: `<p>The supported file formats are <b>PDF</b>, <b>PPTX</b>.</p><p>
-      Every page will be treated as a chunk. And the thumbnail of every page will be stored.</p><p>
-      <i>All the PPT files you uploaded will be chunked by using this method automatically, setting-up for every PPT file is not necessary.</i></p>`,
+      Papers will be split by section, such as <i>abstract, 1.1, 1.2</i>. </p><p>
+      This approach enables the LLM to summarize the paper more effectively and provide more comprehensive, understandable responses. 
+      However, it also increases the context for AI conversations and adds to the computational cost for the LLM. So during a conversation, consider reducing the value of ‘<b>topN</b>’.</p>`,
+      presentation: `<p>Supported file formats are <b>PDF</b>, <b>PPTX</b>.</p><p>
+      Every page in the slides is treated as a chunk, with its thumbnail image stored.</p><p>
+      <i>This chunk method is automatically applied to all uploaded PPT files, so you do not need to specify it manually.</i></p>`,
       qa: `
       <p>
       This chunk method supports <b>EXCEL</b> and <b>CSV/TXT</b> file formats.
     </p>
     <li>
-      If the file is in <b>Excel</b> format, it should consist of two columns
+      If a file is in <b>Excel</b> format, it should contain two columns
       without headers: one for questions and the other for answers, with the
       question column preceding the answer column. Multiple sheets are
-      acceptable as long as the columns are correctly structured.
+      acceptable, provided the columns are properly structured.
     </li>
     <li>
-      If the file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB
-      used as the delimiter to separate questions and answers.
+      If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate questions and answers.
     </li>
     <p>
       <i>
@@ -245,25 +241,20 @@ export default {
       </i>
     </p>
       `,
-      resume: `<p>The supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.
+      resume: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.
       </p><p>
-      The résumé comes in a variety of formats, just like a person’s personality, but we often have to organize them into structured data that makes it easy to search.
-      </p><p>
-      Instead of chunking the résumé, we parse the résumé into structured data. As a HR, you can dump all the résumé you have, 
-      the you can list all the candidates that match the qualifications just by talk with <i>'RAGFlow'</i>.
+      Résumés of various forms are parsed and organized into structured data to facilitate candidate search for recruiters.
       </p>
       `,
-      table: `<p><b>EXCEL</b> and <b>CSV/TXT</b> format files are supported.</p><p>
-      Here're some tips:
+      table: `<p>Supported file formats are <b>EXCEL</b> and <b>CSV/TXT</b>.</p><p>
+      Here're some prerequisites and tips:
       <ul>
-    <li>For csv or txt file, the delimiter between columns is <em><b>TAB</b></em>.</li>
-    <li>The first line must be column headers.</li>
-    <li>Column headers must be meaningful terms in order to make our LLM understanding.
-    It's good to enumerate some synonyms using slash <i>'/'</i> to separate, and even better to
-    enumerate values using brackets like <i>'gender/sex(male, female)'</i>.<p>
-    Here are some examples for headers:<ol>
-        <li>supplier/vendor<b>'TAB'</b>color(yellow, red, brown)<b>'TAB'</b>gender/sex(male, female)<b>'TAB'</b>size(M,L,XL,XXL)</li>
-        <li>姓名/名字<b>'TAB'</b>电话/手机/微信<b>'TAB'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）</li>
+    <li>For CSV or TXT file, the delimiter between columns must be <em><b>TAB</b></em>.</li>
+    <li>The first row must be column headers.</li>
+    <li>Column headers must be meaningful terms to aid your LLM's understanding.
+    It is good practice to juxtapose synonyms separated by a slash <i>'/'</i> and to enumerate values using brackets, for example: <i>'Gender/Sex (male, female)'</i>.<p>
+    Here are some examples of headers:<ol>
+        <li>supplier/vendor<b>'TAB'</b>Color (Yellow, Blue, Brown)<b>'TAB'</b>Sex/Gender (male, female)<b>'TAB'</b>size (M, L, XL, XXL)</li>
         </ol>
         </p>
     </li>

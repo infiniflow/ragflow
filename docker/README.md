@@ -102,13 +102,19 @@ The [.env](./.env) file contains important environment variables for Docker.
 >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
 >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
 
-### Miscellaneous
+### Timezone
 
 - `TIMEZONE`  
   The local time zone. Defaults to `'Asia/Shanghai'`.
+
+### Hugging Face mirror site
+
 - `HF_ENDPOINT`  
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
-- `MACOS`  
+
+### MacOS
+
+- `MACOS`  
   Optimizations for MacOS. It is disabled by default. You can uncomment this line if your OS is MacOS.
 
 ## 🐋 Service configuration
