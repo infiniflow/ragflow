@@ -39,6 +39,7 @@ import OperatorIcon from '../operator-icon';
 
 import { CloseOutlined } from '@ant-design/icons';
 import { lowerFirst } from 'lodash';
+import { getDrawerWidth } from '../utils';
 import styles from './index.less';
 
 interface IProps {
@@ -135,7 +136,7 @@ const FlowDrawer = ({
       open={visible}
       getContainer={false}
       mask={false}
-      width={500}
+      width={getDrawerWidth()}
       closeIcon={null}
     >
       <section className={styles.formWrapper}>
