@@ -158,9 +158,9 @@ export default {
       html4excel: 'Excel to HTML',
       html4excelTip: `Excel will be parsed into HTML table or not. If it's FALSE, every row in Excel will be formed as a chunk.`,
       autoKeywords: 'Auto-keyword',
-      autoKeywordsTip: `Extract N keywords for each chunk to improve their ranking for queries containing those keywords. You can check or update the added keywords for a chunk from the chunk list. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
+      autoKeywordsTip: `Extract N keywords for each chunk to increase their ranking for queries containing those keywords. You can check or update the added keywords for a chunk from the chunk list. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
       autoQuestions: 'Auto-question',
-      autoQuestionsTip: `Extract N questions for each chunk to improve their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
+      autoQuestionsTip: `Extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -210,13 +210,13 @@ export default {
       We assume that the manual has a hierarchical section structure, using the lowest section titles as basic unit for chunking documents. Therefore, figures and tables in the same section will not be separated, which may result in larger chunk sizes.
       </p>`,
       naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
-      <p>This method chunks files using the 'naive' way: </p>
+      <p>This method chunks files using a 'naive' method: </p>
       <p>
       <li>Use vision detection model to split the texts into smaller segments.</li>
       <li>Then, combine adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</li></p>`,
       paper: `<p>Only <b>PDF</b> file is supported.</p><p>
       Papers will be split by section, such as <i>abstract, 1.1, 1.2</i>. </p><p>
-      This approach enables the LLM to summarize the paper more effectively and provide more comprehensive, understandable responses. 
+      This approach enables the LLM to summarize the paper more effectively and to provide more comprehensive, understandable responses. 
       However, it also increases the context for AI conversations and adds to the computational cost for the LLM. So during a conversation, consider reducing the value of ‘<b>topN</b>’.</p>`,
       presentation: `<p>Supported file formats are <b>PDF</b>, <b>PPTX</b>.</p><p>
       Every page in the slides is treated as a chunk, with its thumbnail image stored.</p><p>
@@ -261,25 +261,23 @@ export default {
     <li>Every row in table will be treated as a chunk.</li>
     </ul>`,
       picture: `
-    <p>Image files are supported. Video is coming soon.</p><p>
-    If the picture has text in it, OCR is applied to extract the text as its text description.
+    <p>Image files are supported, with video support coming soon.</p><p>
+    This method employs an OCR model to extract texts from images.
     </p><p>
-    If the text extracted by OCR is not enough, visual LLM is used to get the descriptions.
+    If the text extracted by the OCR model is deemed insufficient, a specified visual LLM will be used to provide a description of the image.
     </p>`,
       one: `
     <p>Supported file formats are <b>DOCX, EXCEL, PDF, TXT</b>.
     </p><p>
-    For a document, it will be treated as an entire chunk, no split at all.
+    This method treats each document in its entirety as a chunk.
     </p><p>
-    If you want to summarize something that needs all the context of an article and the selected LLM's context length covers the document length, you can try this method.
+    Applicable when you require the LLM to summarize the entire document, provided it can handle that amount of context length.
     </p>`,
       knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
 
-<p>After files being chunked, it uses chunks to extract knowledge graph and mind map of the entire document. This method apply the naive ways to chunk files:
-Successive text will be sliced into pieces each of which is around 512 token number.</p>
-<p>Next, chunks will be transmited to LLM to extract nodes and relationships of a knowledge graph, and a mind map.</p>
-
-Mind the entiry type you need to specify.</p>`,
+<p>This approach chunks files using the 'naive' method. It splits a document into segements and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</p>
+<p>The chunks are then fed to the LLM to extract nodes and relationships for a knowledge graph and a mind map.</p>
+<p>Ensure that you set the <b>Entity types</b>.</p>`,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information',

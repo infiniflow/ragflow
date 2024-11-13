@@ -107,8 +107,8 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
    ![update chunk](https://github.com/infiniflow/ragflow/assets/93570324/1d84b408-4e9f-46fd-9413-8c1059bf9c76)
 
-:::caution NOTE 
-You can add keywords to a file chunk to increase its relevance. This action increases its keyword weight and can improve its position in search list.  
+:::caution NOTE
+You can add keywords to a file chunk to increase its ranking for queries containing those keywords. This action increases its keyword weight and can improve its position in search list.  
 :::
 
 4. In Retrieval testing, ask a quick question in **Test text** to double check if your configurations work:
