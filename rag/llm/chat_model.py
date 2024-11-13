@@ -1260,7 +1260,7 @@ class AnthropicChat(Base):
                 system=self.system,
                 stream=False,
                 **gen_conf,
-            ).dict()
+            ).to_dict()
             ans = response["content"][0]["text"]
             if response["stop_reason"] == "max_tokens":
                 ans += (
