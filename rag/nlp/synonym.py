@@ -18,7 +18,7 @@ import json
 import os
 import time
 import re
-
+from nltk.corpus import wordnet
 from api.utils.file_utils import get_project_base_directory
 from api.utils.log_utils import logger
 
@@ -67,6 +67,10 @@ class Dealer:
             logger.error("Fail to load synonym!" + str(e))
 
     def lookup(self, tk):
+        if re.match(r"[a-z]+$", tk):
+            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets("love")]) - set([tk]))
+            return [t for t in res if t]
+
         self.lookup_num += 1
         self.load()
         res = self.dictionary.get(re.sub(r"[ \t]+", " ", tk.lower()), [])
