@@ -537,7 +537,7 @@ def parse():
         options.add_argument('--disable-dev-shm-usage')
         driver = Chrome(options=options)
         driver.get(url)
-        sections = RAGFlowHtmlParser()(driver.page_source)
+        sections = RAGFlowHtmlParser()("", binary=driver.page_source)
         return get_json_result(data="\n".join(sections))
 
     if 'file' not in request.files:

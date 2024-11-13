@@ -9,10 +9,10 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": False})
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": True})
     eng = lang.lower() == "english"
 
-    parser_config["layout_recognize"] = False
+    parser_config["layout_recognize"] = True
     sections = naive.chunk(filename, binary, from_page=from_page, to_page=to_page, section_only=True,
                            parser_config=parser_config, callback=callback)
     chunks = build_knowledge_graph_chunks(tenant_id, sections, callback,
