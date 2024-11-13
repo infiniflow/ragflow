@@ -557,3 +557,24 @@ export const useHandleChunkMethodSelectChange = (form: FormInstance) => {
 
   return handleChange;
 };
+
+// reset form fields when modal is form, closed
+export const useResetFormOnCloseModal = ({
+  form,
+  visible,
+}: {
+  form: FormInstance;
+  visible?: boolean;
+}) => {
+  const prevOpenRef = useRef<boolean>();
+  useEffect(() => {
+    prevOpenRef.current = visible;
+  }, [visible]);
+  const prevOpen = prevOpenRef.current;
+
+  useEffect(() => {
+    if (!visible && prevOpen) {
+      form.resetFields();
+    }
+  }, [form, prevOpen, visible]);
+};
