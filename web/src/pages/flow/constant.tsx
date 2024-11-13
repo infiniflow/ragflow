@@ -2859,3 +2859,23 @@ export const TuShareSrcOptions = [
   'jinrongjie',
 ];
 export const CrawlerResultOptions = ['markdown', 'html', 'content'];
+
+export enum BeginQueryType {
+  Line = 'line',
+  Paragraph = 'paragraph',
+  Options = 'options',
+  File = 'file',
+  Integer = 'integer',
+  Boolean = 'boolean',
+  Url = 'url',
+}
+
+export const BeginQueryTypeMap = {
+  [BeginQueryType.Line]: 'input',
+  [BeginQueryType.Paragraph]: 'textarea',
+  [BeginQueryType.Options]: 'select',
+  [BeginQueryType.File]: 'file',
+  [BeginQueryType.Integer]: 'inputnumber',
+  [BeginQueryType.Boolean]: 'switch',
+  [BeginQueryType.Url]: 'input',
+};
