@@ -1,6 +1,8 @@
 services:
   es01:
     container_name: ragflow-es-01
+    profiles:
+      - elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - esdata01:/usr/share/elasticsearch/data
@@ -30,31 +32,33 @@ services:
       - ragflow
     restart: on-failure
 
-  # infinity:
-  #   container_name: ragflow-infinity
-  #   image: infiniflow/infinity:v0.5.0-dev2
-  #   volumes:
-  #     - infinity_data:/var/infinity
-  #   ports:
-  #     - ${INFINITY_THRIFT_PORT}:23817
-  #     - ${INFINITY_HTTP_PORT}:23820
-  #     - ${INFINITY_PSQL_PORT}:5432
-  #   env_file: .env
-  #   environment:
-  #     - TZ=${TIMEZONE}
-  #   mem_limit: ${MEM_LIMIT}
-  #   ulimits:
-  #     nofile:
-  #       soft: 500000
-  #       hard: 500000
-  #   networks:
-  #     - ragflow
-  #   healthcheck:
-  #     test: ["CMD", "curl", "http://localhost:23820/admin/node/current"]
-  #     interval: 10s
-  #     timeout: 10s
-  #     retries: 120
-  #   restart: on-failure
+  infinity:
+    container_name: ragflow-infinity
+    profiles:
+      - infinity
+    image: infiniflow/infinity:v0.5.0-dev2
+    volumes:
+      - infinity_data:/var/infinity
+    ports:
+      - ${INFINITY_THRIFT_PORT}:23817
+      - ${INFINITY_HTTP_PORT}:23820
+      - ${INFINITY_PSQL_PORT}:5432
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 500000
+        hard: 500000
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "curl", "http://localhost:23820/admin/node/current"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    restart: on-failure
 
 
   mysql:
