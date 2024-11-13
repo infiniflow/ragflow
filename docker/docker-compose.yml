@@ -6,8 +6,6 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      es01:
-        condition: service_healthy
     image: ${RAGFLOW_IMAGE}
     container_name: ragflow-server
     ports:
