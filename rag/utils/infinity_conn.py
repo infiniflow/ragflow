@@ -1,13 +1,14 @@
 import os
 import re
 import json
+import time
 from typing import List, Dict
 import infinity
 from infinity.common import ConflictType, InfinityException
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
-from rag import settings
 from api.utils.log_utils import logger
+from rag import settings
 from rag.utils import singleton
 import polars as pl
 from polars.series.series import Series
@@ -54,8 +55,24 @@ class InfinityConnection(DocStoreConnection):
         if ":" in infinity_uri:
             host, port = infinity_uri.split(":")
             infinity_uri = infinity.common.NetworkAddress(host, int(port))
-        self.connPool = ConnectionPool(infinity_uri)
-        logger.info(f"Connected to infinity {infinity_uri}.")
+        self.connPool = None
+        logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
+        for _ in range(24):
+            try:
+                connPool = ConnectionPool(infinity_uri)
+                inf_conn = connPool.get_conn()
+                _ = inf_conn.show_current_node()
+                connPool.release_conn(inf_conn)
+                self.connPool = connPool
+                break
+            except Exception as e:
+                logger.warn(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
+                time.sleep(5)
+        if self.connPool is None:
+            msg = f"Infinity {infinity_uri} didn't become healthy in 120s."
+            logger.error(msg)
+            raise Exception(msg)
+        logger.info(f"Infinity {infinity_uri} is healthy.")
 
     """
     Database operations
@@ -151,8 +168,8 @@ class InfinityConnection(DocStoreConnection):
             _ = db_instance.get_table(table_name)
             self.connPool.release_conn(inf_conn)
             return True
-        except Exception:
-            logger.exception("INFINITY indexExist")
+        except Exception as e:
+            logger.warn(f"INFINITY indexExist {str(e)}")
         return False
 
     """
@@ -199,7 +216,7 @@ class InfinityConnection(DocStoreConnection):
                 )
                 if len(filter_cond) != 0:
                     filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
-                # doc_store_logger.info(f"filter_fulltext: {filter_fulltext}")
+                # logger.info(f"filter_fulltext: {filter_fulltext}")
                 minimum_should_match = "0%"
                 if "minimum_should_match" in matchExpr.extra_options:
                     minimum_should_match = (
@@ -312,7 +329,7 @@ class InfinityConnection(DocStoreConnection):
             for k, v in d.items():
                 if k.endswith("_kwd") and isinstance(v, list):
                     d[k] = " ".join(v)
-        ids = [f"{d['id']}" for d in documents]
+        ids = ["'{}'".format(d["id"]) for d in documents]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
@@ -321,7 +338,7 @@ class InfinityConnection(DocStoreConnection):
         # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(documents)
         self.connPool.release_conn(inf_conn)
-        doc_store_logger.info(f"inserted into {table_name} {str_ids}.")
+        logger.info(f"inserted into {table_name} {str_ids}.")
         return []
 
     def update(

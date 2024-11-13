@@ -4,7 +4,6 @@ import time
 import os
 from typing import List, Dict
 
-import elasticsearch
 import copy
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
@@ -17,14 +16,13 @@ import polars as pl
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 
-logger.info("Elasticsearch sdk version: "+str(elasticsearch.__version__))
-
 
 @singleton
 class ESConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
-        for _ in range(10):
+        logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
+        for _ in range(24):
             try:
                 self.es = Elasticsearch(
                     settings.ES["hosts"].split(","),
@@ -34,21 +32,27 @@ class ESConnection(DocStoreConnection):
                 )
                 if self.es:
                     self.info = self.es.info()
-                    logger.info("Connect to es.")
                     break
-            except Exception:
-                logger.exception("Fail to connect to es")
-                time.sleep(1)
+            except Exception as e:
+                logger.warn(f"{str(e)}. Waiting Elasticsearch {settings.ES['hosts']} to be healthy.")
+                time.sleep(5)
         if not self.es.ping():
-            raise Exception("Can't connect to ES cluster")
-        v = self.info.get("version", {"number": "5.6"})
+            msg = f"Elasticsearch {settings.ES['hosts']} didn't become healthy in 120s."
+            logger.error(msg)
+            raise Exception(msg)
+        v = self.info.get("version", {"number": "8.11.3"})
         v = v["number"].split(".")[0]
         if int(v) < 8:
-            raise Exception(f"ES version must be greater than or equal to 8, current version: {v}")
+            msg = f"Elasticsearch version must be greater than or equal to 8, current version: {v}"
+            logger.error(msg)
+            raise Exception(msg)
         fp_mapping = os.path.join(get_project_base_directory(), "conf", "mapping.json")
         if not os.path.exists(fp_mapping):
-            raise Exception(f"Mapping file not found at {fp_mapping}")
+            msg = f"Elasticsearch mapping file not found at {fp_mapping}"
+            logger.error(msg)
+            raise Exception(msg)
         self.mapping = json.load(open(fp_mapping, "r"))
+        logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
 
     """
     Database operations
