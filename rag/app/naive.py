@@ -10,6 +10,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from tika import parser
 from io import BytesIO
 from docx import Document
@@ -19,7 +20,6 @@ from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, \
     naive_merge_docx, tokenize_chunks_docx
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser, HtmlParser, JsonParser, MarkdownParser, TxtParser
-from api.utils.log_utils import logger
 from rag.utils import num_tokens_from_string
 from PIL import Image
 from functools import reduce
@@ -41,13 +41,13 @@ class Docx(DocxParser):
         try:
             image_blob = related_part.image.blob
         except UnrecognizedImageError:
-            logger.info("Unrecognized image format. Skipping image.")
+            logging.info("Unrecognized image format. Skipping image.")
             return None
         except UnexpectedEndOfFileError:
-            logger.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
+            logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
             return None
         except InvalidImageStreamError:
-            logger.info("The recognized image stream appears to be corrupted. Skipping image.")
+            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
             return None
         try:
             image = Image.open(BytesIO(image_blob)).convert('RGB')
@@ -133,7 +133,7 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished")
-        logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
+        logging.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
@@ -147,7 +147,7 @@ class Pdf(PdfParser):
         self._concat_downward()
         # self._filter_forpages()
 
-        logger.info("layouts cost: {}s".format(timer() - start))
+        logging.info("layouts cost: {}s".format(timer() - start))
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], tbls
 
@@ -216,7 +216,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             return chunks
 
         res.extend(tokenize_chunks_docx(chunks, doc, eng, images))
-        logger.info("naive_merge({}): {}".format(filename, timer() - st))
+        logging.info("naive_merge({}): {}".format(filename, timer() - st))
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -280,7 +280,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return chunks
 
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
-    logger.info("naive_merge({}): {}".format(filename, timer() - st))
+    logging.info("naive_merge({}): {}".format(filename, timer() - st))
     return res
 
 

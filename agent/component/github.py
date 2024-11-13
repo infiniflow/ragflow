@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import pandas as pd
 import requests
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.log_utils import logger
 
 
 class GitHubParam(ComponentParamBase):
@@ -57,5 +57,5 @@ class GitHub(ComponentBase, ABC):
             return GitHub.be_output("")
 
         df = pd.DataFrame(github_res)
-        logger.debug(f"df: {df}")
+        logging.debug(f"df: {df}")
         return df

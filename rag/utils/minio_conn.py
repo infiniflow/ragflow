@@ -1,9 +1,9 @@
+import logging
 import time
 from minio import Minio
 from io import BytesIO
 from rag import settings
 from rag.utils import singleton
-from api.utils.log_utils import logger
 
 
 @singleton
@@ -26,7 +26,7 @@ class RAGFlowMinio(object):
                               secure=False
                               )
         except Exception:
-            logger.exception(
+            logging.exception(
                 "Fail to connect %s " % settings.MINIO["host"])
 
     def __close__(self):
@@ -55,7 +55,7 @@ class RAGFlowMinio(object):
                                          )
                 return r
             except Exception:
-                logger.exception(f"Fail put {bucket}/{fnm}:")
+                logging.exception(f"Fail put {bucket}/{fnm}:")
                 self.__open__()
                 time.sleep(1)
 
@@ -63,7 +63,7 @@ class RAGFlowMinio(object):
         try:
             self.conn.remove_object(bucket, fnm)
         except Exception:
-            logger.exception(f"Fail put {bucket}/{fnm}:")
+            logging.exception(f"Fail put {bucket}/{fnm}:")
 
     def get(self, bucket, fnm):
         for _ in range(1):
@@ -71,7 +71,7 @@ class RAGFlowMinio(object):
                 r = self.conn.get_object(bucket, fnm)
                 return r.read()
             except Exception:
-                logger.exception(f"Fail put {bucket}/{fnm}:")
+                logging.exception(f"Fail put {bucket}/{fnm}:")
                 self.__open__()
                 time.sleep(1)
         return
@@ -81,7 +81,7 @@ class RAGFlowMinio(object):
             if self.conn.stat_object(bucket, fnm):return True
             return False
         except Exception:
-            logger.exception(f"Fail put {bucket}/{fnm}:")
+            logging.exception(f"Fail put {bucket}/{fnm}:")
         return False
 
 
@@ -90,7 +90,7 @@ class RAGFlowMinio(object):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
             except Exception:
-                logger.exception(f"Fail put {bucket}/{fnm}:")
+                logging.exception(f"Fail put {bucket}/{fnm}:")
                 self.__open__()
                 time.sleep(1)
         return

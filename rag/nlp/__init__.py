@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import random
 from collections import Counter
 
@@ -26,7 +27,6 @@ from word2number import w2n
 from cn2an import cn2an
 from PIL import Image
 import json
-from api.utils.log_utils import logger
 
 all_codecs = [
     'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
@@ -236,7 +236,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
     # wrap up as es documents
     for ck in chunks:
         if len(ck.strip()) == 0:continue
-        logger.debug("-- {}".format(ck))
+        logging.debug("-- {}".format(ck))
         d = copy.deepcopy(doc)
         if pdf_parser:
             try:
@@ -255,7 +255,7 @@ def tokenize_chunks_docx(chunks, doc, eng, images):
     # wrap up as es documents
     for ck, image in zip(chunks, images):
         if len(ck.strip()) == 0:continue
-        logger.debug("-- {}".format(ck))
+        logging.debug("-- {}".format(ck))
         d = copy.deepcopy(doc)
         d["image"] = image
         tokenize(d, ck, eng)
@@ -458,7 +458,7 @@ def hierarchical_merge(bull, sections, depth):
 
     for i in range(len(cks)):
         cks[i] = [sections[j] for j in cks[i][::-1]]
-        logger.info("\n* ".join(cks[i]))
+        logging.debug("\n* ".join(cks[i]))
 
     res = [[]]
     num = [0]

@@ -10,6 +10,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import base64
 import datetime
 import json
@@ -20,7 +21,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from rag.nlp import rag_tokenizer
 from deepdoc.parser.resume import refactor
 from deepdoc.parser.resume import step_one, step_two
-from api.utils.log_utils import logger
 from rag.utils import rmSpace
 
 forbidden_select_fields4resume = [
@@ -64,7 +64,7 @@ def remote_call(filename, binary):
             resume = step_two.parse(resume)
             return resume
         except Exception:
-            logger.exception("Resume parser error")
+            logging.exception("Resume parser error")
     return {}
 
 
@@ -86,7 +86,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         callback(-1, "Resume is not successfully parsed.")
         raise Exception("Resume parser remote call fail!")
     callback(0.6, "Done parsing. Chunking...")
-    logger.info("chunking resume: " + json.dumps(resume, ensure_ascii=False, indent=2))
+    logging.debug("chunking resume: " + json.dumps(resume, ensure_ascii=False, indent=2))
 
     field_map = {
         "name_kwd": "姓名/名字",
@@ -158,7 +158,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
             resume[n] = rag_tokenizer.fine_grained_tokenize(resume[n])
         doc[n] = resume[n]
 
-    logger.info("chunked resume to " + str(doc))
+    logging.debug("chunked resume to " + str(doc))
     KnowledgebaseService.update_parser_config(
         kwargs["kb_id"], {"field_map": field_map})
     return [doc]

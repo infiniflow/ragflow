@@ -13,12 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import pandas as pd
 import requests
 import re
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.log_utils import logger
 
 
 class BaiduParam(ComponentParamBase):
@@ -62,6 +62,6 @@ class Baidu(ComponentBase, ABC):
             return Baidu.be_output("")
 
         df = pd.DataFrame(baidu_res)
-        logger.debug(f"df: {str(df)}")
+        logging.debug(f"df: {str(df)}")
         return df
 

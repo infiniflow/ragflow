@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import hashlib
 import json
 import random
@@ -39,7 +40,6 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db import StatusEnum
 from rag.utils.redis_conn import REDIS_CONN
-from api.utils.log_utils import logger
 
 
 class DocumentService(CommonService):
@@ -387,7 +387,7 @@ class DocumentService(CommonService):
                 cls.update_by_id(d["id"], info)
             except Exception as e:
                 if str(e).find("'0'") < 0:
-                    logger.exception("fetch task exception")
+                    logging.exception("fetch task exception")
 
     @classmethod
     @DB.connection_context()
@@ -544,7 +544,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                     "knowledge_graph_kwd": "mind_map"
                 })
             except Exception as e:
-                logger.exception("Mind map generation error")
+                logging.exception("Mind map generation error")
 
         vects = embedding(doc_id, [c["content_with_weight"] for c in cks])
         assert len(cks) == len(vects)

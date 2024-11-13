@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import requests
 import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.log_utils import logger
 
 class BingParam(ComponentParamBase):
     """
@@ -80,5 +80,5 @@ class Bing(ComponentBase, ABC):
             return Bing.be_output("")
 
         df = pd.DataFrame(bing_res)
-        logger.debug(f"df: {str(df)}")
+        logging.debug(f"df: {str(df)}")
         return df

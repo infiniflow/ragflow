@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import json
@@ -7,7 +8,6 @@ import infinity
 from infinity.common import ConflictType, InfinityException
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
-from api.utils.log_utils import logger
 from rag import settings
 from rag.utils import singleton
 import polars as pl
@@ -56,7 +56,7 @@ class InfinityConnection(DocStoreConnection):
             host, port = infinity_uri.split(":")
             infinity_uri = infinity.common.NetworkAddress(host, int(port))
         self.connPool = None
-        logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
+        logging.info(f"Use Infinity {infinity_uri} as the doc engine.")
         for _ in range(24):
             try:
                 connPool = ConnectionPool(infinity_uri)
@@ -66,13 +66,13 @@ class InfinityConnection(DocStoreConnection):
                 self.connPool = connPool
                 break
             except Exception as e:
-                logger.warn(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
+                logging.warn(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
         if self.connPool is None:
             msg = f"Infinity {infinity_uri} didn't become healthy in 120s."
-            logger.error(msg)
+            logging.error(msg)
             raise Exception(msg)
-        logger.info(f"Infinity {infinity_uri} is healthy.")
+        logging.info(f"Infinity {infinity_uri} is healthy.")
 
     """
     Database operations
@@ -148,7 +148,7 @@ class InfinityConnection(DocStoreConnection):
                     )
                     break
         self.connPool.release_conn(inf_conn)
-        logger.info(
+        logging.info(
             f"INFINITY created table {table_name}, vector size {vectorSize}"
         )
 
@@ -158,7 +158,7 @@ class InfinityConnection(DocStoreConnection):
         db_instance = inf_conn.get_database(self.dbName)
         db_instance.drop_table(table_name, ConflictType.Ignore)
         self.connPool.release_conn(inf_conn)
-        logger.info(f"INFINITY dropped table {table_name}")
+        logging.info(f"INFINITY dropped table {table_name}")
 
     def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
         table_name = f"{indexName}_{knowledgebaseId}"
@@ -169,7 +169,7 @@ class InfinityConnection(DocStoreConnection):
             self.connPool.release_conn(inf_conn)
             return True
         except Exception as e:
-            logger.warn(f"INFINITY indexExist {str(e)}")
+            logging.warn(f"INFINITY indexExist {str(e)}")
         return False
 
     """
@@ -216,7 +216,7 @@ class InfinityConnection(DocStoreConnection):
                 )
                 if len(filter_cond) != 0:
                     filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
-                # logger.info(f"filter_fulltext: {filter_fulltext}")
+                logging.debug(f"filter_fulltext: {filter_fulltext}")
                 minimum_should_match = "0%"
                 if "minimum_should_match" in matchExpr.extra_options:
                     minimum_should_match = (
@@ -279,7 +279,7 @@ class InfinityConnection(DocStoreConnection):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = pl.concat(df_list)
-        logger.info("INFINITY search tables: " + str(table_list))
+        logging.debug("INFINITY search tables: " + str(table_list))
         return res
 
     def get(
@@ -334,18 +334,18 @@ class InfinityConnection(DocStoreConnection):
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
         # for doc in documents:
-        #     logger.info(f"insert position_list: {doc['position_list']}")
-        # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
+        #     logging.info(f"insert position_list: {doc['position_list']}")
+        # logging.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(documents)
         self.connPool.release_conn(inf_conn)
-        logger.info(f"inserted into {table_name} {str_ids}.")
+        logging.debug(f"inserted into {table_name} {str_ids}.")
         return []
 
     def update(
         self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str
     ) -> bool:
         # if 'position_list' in newValue:
-        #     logger.info(f"upsert position_list: {newValue['position_list']}")
+        #     logging.info(f"upsert position_list: {newValue['position_list']}")
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{indexName}_{knowledgebaseId}"
@@ -366,7 +366,7 @@ class InfinityConnection(DocStoreConnection):
         try:
             table_instance = db_instance.get_table(table_name)
         except Exception:
-            logger.warning(
+            logging.warning(
                 f"Skipped deleting `{filter}` from table {table_name} since the table doesn't exist."
             )
             return 0

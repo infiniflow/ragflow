@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from serpapi import GoogleSearch
 import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.log_utils import logger
 
 
 class GoogleParam(ComponentParamBase):
@@ -92,5 +92,5 @@ class Google(ComponentBase, ABC):
             return Google.be_output("")
 
         df = pd.DataFrame(google_res)
-        logger.debug(f"df: {df}")
+        logging.debug(f"df: {df}")
         return df

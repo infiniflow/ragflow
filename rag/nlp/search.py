@@ -14,12 +14,12 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 import json
 from typing import List, Optional, Dict, Union
 from dataclasses import dataclass
 
-from api.utils.log_utils import logger
 from rag.utils import rmSpace
 from rag.nlp import rag_tokenizer, query
 import numpy as np
@@ -83,7 +83,7 @@ class Dealer:
                 orderBy.desc("create_timestamp_flt")
             res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
             total=self.dataStore.getTotal(res)
-            logger.info("Dealer.search TOTAL: {}".format(total))
+            logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
             highlightFields = ["content_ltks", "title_tks"] if highlight else []
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
@@ -91,7 +91,7 @@ class Dealer:
                 matchExprs = [matchText]
                 res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids)
                 total=self.dataStore.getTotal(res)
-                logger.info("Dealer.search TOTAL: {}".format(total))
+                logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
                 matchDense = self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
@@ -102,7 +102,7 @@ class Dealer:
 
                 res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids)
                 total=self.dataStore.getTotal(res)
-                logger.info("Dealer.search TOTAL: {}".format(total))
+                logging.debug("Dealer.search TOTAL: {}".format(total))
 
                 # If result is empty, try again with lower min_match
                 if total == 0:
@@ -112,7 +112,7 @@ class Dealer:
                     matchDense.extra_options["similarity"] = 0.17
                     res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr], orderBy, offset, limit, idx_names, kb_ids)
                     total=self.dataStore.getTotal(res)
-                    logger.info("Dealer.search 2 TOTAL: {}".format(total))
+                    logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
                 kwds.add(k)
@@ -123,7 +123,7 @@ class Dealer:
                         continue
                     kwds.add(kk)
 
-        logger.info(f"TOTAL: {total}")
+        logging.debug(f"TOTAL: {total}")
         ids=self.dataStore.getChunkIds(res)
         keywords=list(kwds)
         highlight = self.dataStore.getHighlight(res, keywords, "content_with_weight")
@@ -180,7 +180,7 @@ class Dealer:
                 continue
             idx.append(i)
             pieces_.append(t)
-        logger.info("{} => {}".format(answer, pieces_))
+        logging.debug("{} => {}".format(answer, pieces_))
         if not pieces_:
             return answer, set([])
 
@@ -201,7 +201,7 @@ class Dealer:
                                                                 chunks_tks,
                                                                 tkweight, vtweight)
                 mx = np.max(sim) * 0.99
-                logger.info("{} SIM: {}".format(pieces_[i], mx))
+                logging.debug("{} SIM: {}".format(pieces_[i], mx))
                 if mx < thr:
                     continue
                 cites[idx[i]] = list(

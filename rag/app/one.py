@@ -10,6 +10,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from tika import parser
 from io import BytesIO
 import re
@@ -18,7 +19,6 @@ from deepdoc.parser.utils import get_text
 from rag.app import laws
 from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
-from api.utils.log_utils import logger
 
 
 class Pdf(PdfParser):
@@ -38,7 +38,7 @@ class Pdf(PdfParser):
         start = timer()
         self._layouts_rec(zoomin, drop=False)
         callback(0.63, "Layout analysis finished.")
-        logger.info("layouts cost: {}s".format(timer() - start))
+        logging.debug("layouts cost: {}s".format(timer() - start))
         self._table_transformer_job(zoomin)
         callback(0.65, "Table analysis finished.")
         self._text_merge()
