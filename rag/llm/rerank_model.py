@@ -65,12 +65,12 @@ class DefaultRerank(Base):
                 if not DefaultRerank._model:
                     try:
                         DefaultRerank._model = FlagReranker(
-                            os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                            os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z0-9]+/", "", model_name)),
                             use_fp16=torch.cuda.is_available())
                     except Exception:
                         model_dir = snapshot_download(repo_id=model_name,
                                                       local_dir=os.path.join(get_home_cache_dir(),
-                                                                             re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                                                                             re.sub(r"^[a-zA-Z0-9]+/", "", model_name)),
                                                       local_dir_use_symlinks=False)
                         DefaultRerank._model = FlagReranker(model_dir, use_fp16=torch.cuda.is_available())
         self._model = DefaultRerank._model
@@ -130,7 +130,7 @@ class YoudaoRerank(DefaultRerank):
                         logger.info("LOADING BCE...")
                         YoudaoRerank._model = RerankerModel(model_name_or_path=os.path.join(
                             get_home_cache_dir(),
-                            re.sub(r"^[a-zA-Z]+/", "", model_name)))
+                            re.sub(r"^[a-zA-Z0-9]+/", "", model_name)))
                     except Exception:
                         YoudaoRerank._model = RerankerModel(
                             model_name_or_path=model_name.replace(
