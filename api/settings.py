@@ -17,23 +17,8 @@ import os
 from datetime import date
 from enum import IntEnum, Enum
 from api.utils.file_utils import get_project_base_directory
-from api.utils.log_utils import LoggerFactory, getLogger
 import rag.utils.es_conn
 import rag.utils.infinity_conn
-
-# Logger
-LoggerFactory.set_directory(
-    os.path.join(
-        get_project_base_directory(),
-        "logs",
-        "api"))
-# {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
-LoggerFactory.LEVEL = 30
-
-stat_logger = getLogger("stat")
-access_logger = getLogger("access")
-database_logger = getLogger("database")
-chat_logger = getLogger("chat")
 
 import rag.utils
 from rag.nlp import search
@@ -46,8 +31,6 @@ SERVER_MODULE = "rag_flow_server.py"
 TEMP_DIRECTORY = os.path.join(get_project_base_directory(), "temp")
 RAG_FLOW_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
-
-SUBPROCESS_STD_LOG_NAME = "std.log"
 
 ERROR_REPORT = True
 ERROR_REPORT_WITH_PATH = False

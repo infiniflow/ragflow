@@ -7,7 +7,7 @@ from infinity.common import ConflictType, InfinityException
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from rag import settings
-from rag.settings import doc_store_logger
+from api.utils.log_utils import logger
 from rag.utils import singleton
 import polars as pl
 from polars.series.series import Series
@@ -21,7 +21,6 @@ from rag.utils.doc_store_conn import (
     FusionExpr,
     OrderByExpr,
 )
-
 
 def equivalent_condition_to_str(condition: dict) -> str:
     assert "_id" not in condition
@@ -56,7 +55,7 @@ class InfinityConnection(DocStoreConnection):
             host, port = infinity_uri.split(":")
             infinity_uri = infinity.common.NetworkAddress(host, int(port))
         self.connPool = ConnectionPool(infinity_uri)
-        doc_store_logger.info(f"Connected to infinity {infinity_uri}.")
+        logger.info(f"Connected to infinity {infinity_uri}.")
 
     """
     Database operations
@@ -71,7 +70,7 @@ class InfinityConnection(DocStoreConnection):
         TODO: Infinity-sdk provides health() to wrap `show global variables` and `show tables`
         """
         inf_conn = self.connPool.get_conn()
-        res = infinity.show_current_node()
+        res = inf_conn.show_current_node()
         self.connPool.release_conn(inf_conn)
         color = "green" if res.error_code == 0 else "red"
         res2 = {
@@ -132,7 +131,7 @@ class InfinityConnection(DocStoreConnection):
                     )
                     break
         self.connPool.release_conn(inf_conn)
-        doc_store_logger.info(
+        logger.info(
             f"INFINITY created table {table_name}, vector size {vectorSize}"
         )
 
@@ -142,7 +141,7 @@ class InfinityConnection(DocStoreConnection):
         db_instance = inf_conn.get_database(self.dbName)
         db_instance.drop_table(table_name, ConflictType.Ignore)
         self.connPool.release_conn(inf_conn)
-        doc_store_logger.info(f"INFINITY dropped table {table_name}")
+        logger.info(f"INFINITY dropped table {table_name}")
 
     def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
         table_name = f"{indexName}_{knowledgebaseId}"
@@ -152,8 +151,8 @@ class InfinityConnection(DocStoreConnection):
             _ = db_instance.get_table(table_name)
             self.connPool.release_conn(inf_conn)
             return True
-        except Exception as e:
-            doc_store_logger.error("INFINITY indexExist: " + str(e))
+        except Exception:
+            logger.exception("INFINITY indexExist")
         return False
 
     """
@@ -263,7 +262,7 @@ class InfinityConnection(DocStoreConnection):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = pl.concat(df_list)
-        doc_store_logger.info("INFINITY search tables: " + str(table_list))
+        logger.info("INFINITY search tables: " + str(table_list))
         return res
 
     def get(
@@ -318,8 +317,8 @@ class InfinityConnection(DocStoreConnection):
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
         # for doc in documents:
-        #     doc_store_logger.info(f"insert position_list: {doc['position_list']}")
-        # doc_store_logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
+        #     logger.info(f"insert position_list: {doc['position_list']}")
+        # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(documents)
         self.connPool.release_conn(inf_conn)
         doc_store_logger.info(f"inserted into {table_name} {str_ids}.")
@@ -329,7 +328,7 @@ class InfinityConnection(DocStoreConnection):
         self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str
     ) -> bool:
         # if 'position_list' in newValue:
-        #     doc_store_logger.info(f"update position_list: {newValue['position_list']}")
+        #     logger.info(f"upsert position_list: {newValue['position_list']}")
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{indexName}_{knowledgebaseId}"
@@ -350,7 +349,7 @@ class InfinityConnection(DocStoreConnection):
         try:
             table_instance = db_instance.get_table(table_name)
         except Exception:
-            doc_store_logger.warning(
+            logger.warning(
                 f"Skipped deleting `{filter}` from table {table_name} since the table doesn't exist."
             )
             return 0

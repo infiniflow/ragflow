@@ -18,7 +18,6 @@ import collections
 import logging
 import os
 import re
-import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -30,6 +29,7 @@ from rag.llm.chat_model import Base as CompletionLLM
 import markdown_to_json
 from functools import reduce
 from rag.utils import num_tokens_from_string
+from api.utils.log_utils import logger
 
 
 @dataclass
@@ -193,6 +193,6 @@ class MindMapExtractor:
         gen_conf = {"temperature": 0.5}
         response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         response = re.sub(r"```[^\n]*", "", response)
-        print(response)
-        print("---------------------------------------------------\n", self._todict(markdown_to_json.dictify(response)))
+        logger.info(response)
+        logger.info(self._todict(markdown_to_json.dictify(response)))
         return self._todict(markdown_to_json.dictify(response))

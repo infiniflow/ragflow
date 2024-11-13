@@ -16,9 +16,8 @@
 from abc import ABC
 import requests
 import pandas as pd
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
-
+from api.utils.log_utils import logger
 
 class BingParam(ComponentParamBase):
     """
@@ -81,5 +80,5 @@ class Bing(ComponentBase, ABC):
             return Bing.be_output("")
 
         df = pd.DataFrame(bing_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logger.debug(f"df: {str(df)}")
         return df

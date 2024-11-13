@@ -16,9 +16,8 @@
 from abc import ABC
 import arxiv
 import pandas as pd
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
-
+from api.utils.log_utils import logger
 
 class ArXivParam(ComponentParamBase):
     """
@@ -65,5 +64,5 @@ class ArXiv(ComponentBase, ABC):
             return ArXiv.be_output("")
 
         df = pd.DataFrame(arxiv_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logger.debug(f"df: {str(df)}")
         return df

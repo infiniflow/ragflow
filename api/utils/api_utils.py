@@ -35,11 +35,12 @@ from werkzeug.http import HTTP_STATUS_CODES
 from api.db.db_models import APIToken
 from api.settings import (
     REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC,
-    stat_logger, CLIENT_AUTHENTICATION, HTTP_APP_KEY, SECRET_KEY
+    CLIENT_AUTHENTICATION, HTTP_APP_KEY, SECRET_KEY
 )
 from api.settings import RetCode
 from api.utils import CustomJSONEncoder, get_uuid
 from api.utils import json_dumps
+from api.utils.log_utils import logger
 
 requests.models.complexjson.dumps = functools.partial(
     json.dumps, cls=CustomJSONEncoder)
@@ -117,7 +118,7 @@ def get_data_error_result(code=RetCode.DATA_ERROR,
 
 
 def server_error_response(e):
-    stat_logger.exception(e)
+    logger.exception(e)
     try:
         if e.code == 401:
             return get_json_result(code=401, message=repr(e))
@@ -258,7 +259,7 @@ def construct_json_result(code=RetCode.SUCCESS, message='success', data=None):
 
 
 def construct_error_response(e):
-    stat_logger.exception(e)
+    logger.exception(e)
     try:
         if e.code == 401:
             return construct_json_result(code=RetCode.UNAUTHORIZED, message=repr(e))

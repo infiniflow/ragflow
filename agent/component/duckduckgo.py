@@ -16,8 +16,8 @@
 from abc import ABC
 from duckduckgo_search import DDGS
 import pandas as pd
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.log_utils import logger
 
 
 class DuckDuckGoParam(ComponentParamBase):
@@ -62,5 +62,5 @@ class DuckDuckGo(ComponentBase, ABC):
             return DuckDuckGo.be_output("")
 
         df = pd.DataFrame(duck_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logger.debug("df: {df}")
         return df

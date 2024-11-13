@@ -19,18 +19,19 @@ import json
 import re
 from copy import deepcopy
 from timeit import default_timer as timer
-
-
+import datetime
+from datetime import timedelta
 from api.db import LLMType, ParserType,StatusEnum
 from api.db.db_models import Dialog, Conversation,DB
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
-from api.settings import chat_logger, retrievaler, kg_retrievaler
+from api.settings import retrievaler, kg_retrievaler
 from rag.app.resume import forbidden_select_fields4resume
 from rag.nlp.search import index_name
 from rag.utils import rmSpace, num_tokens_from_string, encoder
 from api.utils.file_utils import get_project_base_directory
+from api.utils.log_utils import logger
 
 
 class DialogService(CommonService):
@@ -177,7 +178,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
     # try to use sql if field mapping is good to go
     if field_map:
-        chat_logger.info("Use SQL to retrieval:{}".format(questions[-1]))
+        logger.info("Use SQL to retrieval:{}".format(questions[-1]))
         ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True))
         if ans:
             yield ans
@@ -219,7 +220,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                                         doc_ids=attachments,
                                         top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
-    chat_logger.info(
+    logger.info(
         "{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
     retrieval_tm = timer()
 
@@ -291,7 +292,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield decorate_answer(answer)
     else:
         answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
-        chat_logger.info("User: {}|Assistant: {}".format(
+        logger.info("User: {}|Assistant: {}".format(
             msg[-1]["content"], answer))
         res = decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
@@ -319,8 +320,7 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
         nonlocal sys_prompt, user_promt, question, tried_times
         sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_promt}], {
             "temperature": 0.06})
-        print(user_promt, sql)
-        chat_logger.info(f"“{question}”==>{user_promt} get SQL: {sql}")
+        logger.info(f"{question} ==> {user_promt} get SQL: {sql}")
         sql = re.sub(r"[\r\n]+", " ", sql.lower())
         sql = re.sub(r".*select ", "select ", sql.lower())
         sql = re.sub(r" +", " ", sql)
@@ -340,9 +340,7 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
                     flds.append(k)
                 sql = "select doc_id,docnm_kwd," + ",".join(flds) + sql[8:]
 
-        print(f"“{question}” get SQL(refined): {sql}")
-
-        chat_logger.info(f"“{question}” get SQL(refined): {sql}")
+        logger.info(f"{question} get SQL(refined): {sql}")
         tried_times += 1
         return retrievaler.sql_retrieval(sql, format="json"), sql
 
@@ -371,10 +369,9 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
             question, sql, tbl["error"]
         )
         tbl, sql = get_table()
-        chat_logger.info("TRY it again: {}".format(sql))
+        logger.info("TRY it again: {}".format(sql))
 
-    chat_logger.info("GET table: {}".format(tbl))
-    print(tbl)
+    logger.info("GET table: {}".format(tbl))
     if tbl.get("error") or len(tbl["rows"]) == 0:
         return None
 
@@ -404,7 +401,7 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
     rows = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|", "|", rows)
 
     if not docid_idx or not docnm_idx:
-        chat_logger.warning("SQL missing field: " + sql)
+        logger.warning("SQL missing field: " + sql)
         return {
             "answer": "\n".join([clmns, line, rows]),
             "reference": {"chunks": [], "doc_aggs": []},
@@ -529,9 +526,16 @@ def full_question(tenant_id, llm_id, messages):
         if m["role"] not in ["user", "assistant"]: continue
         conv.append("{}: {}".format(m["role"].upper(), m["content"]))
     conv = "\n".join(conv)
+    today = datetime.date.today().isoformat()
+    yesterday = (datetime.date.today() - timedelta(days=1)).isoformat()
+    tomorrow = (datetime.date.today() + timedelta(days=1)).isoformat()
     prompt = f"""
 Role: A helpful assistant
-Task: Generate a full user question that would follow the conversation.
+
+Task and steps: 
+    1. Generate a full user question that would follow the conversation.
+    2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
+    
 Requirements & Restrictions:
   - Text generated MUST be in the same language of the original user's question.
   - If the user's latest question is completely, don't do anything, just return the original question.
@@ -560,6 +564,14 @@ User: What's her full name?
 ###############
 Output: What's the full name of Donald Trump's mother Mary Trump?
 
+------------
+# Example 3
+## Conversation
+USER: What's the weather today in London?
+ASSISTANT:  Cloudy.
+USER: What's about tomorrow in Rochester?
+###############
+Output: What's the weather in Rochester on {tomorrow}?
 ######################
 
 # Real Data

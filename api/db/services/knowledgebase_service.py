@@ -191,6 +191,22 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_kb_by_id(cls, kb_id, user_id):
+        kbs = cls.model.select().join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
+            ).where(cls.model.id == kb_id, UserTenant.user_id == user_id).paginate(0, 1)
+        kbs = kbs.dicts()
+        return list(kbs)
+
+    @classmethod
+    @DB.connection_context()
+    def get_kb_by_name(cls, kb_name, user_id):
+        kbs = cls.model.select().join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
+            ).where(cls.model.name == kb_name, UserTenant.user_id == user_id).paginate(0, 1)
+        kbs = kbs.dicts()
+        return list(kbs)
+
+    @classmethod
+    @DB.connection_context()
     def accessible4deletion(cls, kb_id, user_id):
         docs = cls.model.select(
             cls.model.id).where(cls.model.id == kb_id, cls.model.created_by == user_id).paginate(0, 1)

@@ -25,6 +25,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.task_service import TaskService, queue_tasks
 from api.db.services.user_service import UserTenantService
+from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
 from api.db.services import duplicate_name
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -518,3 +519,32 @@ def upload_and_parse():
     doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, current_user.id)
 
     return get_json_result(data=doc_ids)
+
+
+@manager.route('/parse', methods=['POST'])
+@login_required
+def parse():
+    url = request.json.get("url")
+    if url:
+        if not is_valid_url(url):
+            return get_json_result(
+                data=False, message='The URL format is invalid', code=RetCode.ARGUMENT_ERROR)
+        from selenium.webdriver import Chrome, ChromeOptions
+        options = ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        driver = Chrome(options=options)
+        driver.get(url)
+        sections = RAGFlowHtmlParser()(driver.page_source)
+        return get_json_result(data="\n".join(sections))
+
+    if 'file' not in request.files:
+        return get_json_result(
+            data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
+
+    file_objs = request.files.getlist('file')
+    txt = FileService.parse_docs(file_objs, current_user.id)
+
+    return get_json_result(data=txt)

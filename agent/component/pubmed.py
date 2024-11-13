@@ -18,8 +18,8 @@ from Bio import Entrez
 import re
 import pandas as pd
 import xml.etree.ElementTree as ET
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.log_utils import logger
 
 
 class PubMedParam(ComponentParamBase):
@@ -65,5 +65,5 @@ class PubMed(ComponentBase, ABC):
             return PubMed.be_output("")
 
         df = pd.DataFrame(pubmed_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logger.debug(f"df: {df}")
         return df
