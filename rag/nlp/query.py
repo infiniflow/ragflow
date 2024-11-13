@@ -75,11 +75,20 @@ class FulltextQueryer:
         if not self.isChinese(txt):
             txt = FulltextQueryer.rmWWW(txt)
             tks = rag_tokenizer.tokenize(txt).split(" ")
-            tks_w = self.tw.weights(tks)
+            keywords = [t for t in tks if t]
+            tks_w = self.tw.weights(tks, preprocess=False)
             tks_w = [(re.sub(r"[ \\\"'^]", "", tk), w) for tk, w in tks_w]
             tks_w = [(re.sub(r"^[a-z0-9]$", "", tk), w) for tk, w in tks_w if tk]
             tks_w = [(re.sub(r"^[\+-]", "", tk), w) for tk, w in tks_w if tk]
-            q = ["{}^{:.4f}".format(tk, w) for tk, w in tks_w if tk]
+            syns = []
+            for tk, w in tks_w:
+                syn = self.syn.lookup(tk)
+                syn = rag_tokenizer.tokenize(" ".join(syn)).split(" ")
+                keywords.extend(syn)
+                syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn]
+                syns.append(" ".join(syn))
+
+            q = ["({}^{:.4f}".format(tk, w) + " %s)".format(syn) for (tk, w), syn in zip(tks_w, syns)]
             for i in range(1, len(tks_w)):
                 q.append(
                     '"%s %s"^%.4f'
@@ -94,7 +103,7 @@ class FulltextQueryer:
             query = " ".join(q)
             return MatchTextExpr(
                 self.query_fields, query, 100
-            ), tks
+            ), keywords
 
         def need_fine_grained_tokenize(tk):
             if len(tk) < 3:
