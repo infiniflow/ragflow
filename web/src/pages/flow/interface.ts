@@ -100,3 +100,12 @@ export type NodeData = {
 };
 
 export type IPosition = { top: number; right: number; idx: number };
+
+export interface BeginQuery {
+  key: string;
+  type: string;
+  value: string;
+  optional: boolean;
+  name: string;
+  options: (number | string | boolean)[];
+}

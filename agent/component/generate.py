@@ -63,7 +63,7 @@ class Generate(ComponentBase):
     component_name = "Generate"
 
     def get_dependent_components(self):
-        cpnts = [para["component_id"] for para in self._param.parameters]
+        cpnts = [para["component_id"] for para in self._param.parameters if para["component_id"].lower().find("answer") < 0]
         return cpnts
 
     def set_cite(self, retrieval_res, answer):
@@ -104,6 +104,18 @@ class Generate(ComponentBase):
         retrieval_res = []
         self._param.inputs = []
         for para in self._param.parameters:
+            if para["component_id"].split("@")[0].lower().find("begin") > 0:
+                cpn_id, key = para["component_id"].split("@")
+                for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
+                    if p["key"] == key:
+                        kwargs[para["key"]] = p["value"]
+                        self._param.inputs.append(
+                            {"component_id": para["component_id"], "content": kwargs[para["key"]]})
+                        break
+                else:
+                    assert False, f"Can't find parameter '{key}' for {cpn_id}"
+                continue
+
             cpn = self._canvas.get_component(para["component_id"])["obj"]
             if cpn.component_name.lower() == "answer":
                 kwargs[para["key"]] = self._canvas.get_history(1)[0]["content"]

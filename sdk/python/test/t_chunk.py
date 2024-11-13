@@ -126,6 +126,7 @@ def test_delete_chunk_with_success(get_api_key_fixture):
     docs = ds.upload_documents(documents)
     doc = docs[0]
     chunk = doc.add_chunk(content="This is a chunk addition test")
+    sleep(5)
     doc.delete_chunks([chunk.id])
 
 
@@ -146,6 +147,8 @@ def test_update_chunk_content(get_api_key_fixture):
     docs = ds.upload_documents(documents)
     doc = docs[0]
     chunk = doc.add_chunk(content="This is a chunk addition test")
+    # For ElasticSearch, the chunk is not searchable in shot time (~2s).
+    sleep(3)
     chunk.update({"content":"This is a updated content"})
 
 def test_update_chunk_available(get_api_key_fixture):
@@ -165,7 +168,9 @@ def test_update_chunk_available(get_api_key_fixture):
     docs = ds.upload_documents(documents)
     doc = docs[0]
     chunk = doc.add_chunk(content="This is a chunk addition test")
-    chunk.update({"available":False})
+    # For ElasticSearch, the chunk is not searchable in shot time (~2s).
+    sleep(3)
+    chunk.update({"available":0})
 
 
 def test_retrieve_chunks(get_api_key_fixture):

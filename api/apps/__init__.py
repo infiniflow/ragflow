@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import os
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
@@ -30,17 +29,13 @@ from api.utils import CustomJSONEncoder, commands
 
 from flask_session import Session
 from flask_login import LoginManager
-from api.settings import SECRET_KEY, stat_logger
-from api.settings import API_VERSION, access_logger
+from api.settings import SECRET_KEY
+from api.settings import API_VERSION
 from api.utils.api_utils import server_error_response
+from api.utils.log_utils import logger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 __all__ = ["app"]
-
-
-logger = logging.getLogger("flask.app")
-for h in access_logger.handlers:
-    logger.addHandler(h)
 
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
@@ -158,8 +153,8 @@ def load_user(web_request):
                 return user[0]
             else:
                 return None
-        except Exception as e:
-            stat_logger.exception(e)
+        except Exception:
+            logger.exception("load_user got exception")
             return None
     else:
         return None

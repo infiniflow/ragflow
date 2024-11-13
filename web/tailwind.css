@@ -34,10 +34,13 @@
     --ring: 215 20.2% 65.1%;
 
     --radius: 0.5rem;
+
+    --background-inverse-standard: rgba(58, 56, 65, 0.15);
+    --background-inverse-standard-foreground: rgb(92, 81, 81);
   }
 
   .dark {
-    --background: 224 71% 4%;
+    --background: rgba(11, 10, 18, 1);
     --foreground: 213 31% 91%;
 
     --muted: 223 47% 11%;
@@ -67,6 +70,18 @@
     --ring: 216 34% 17%;
 
     --radius: 0.5rem;
+
+    --background-inverse-standard: rgba(230, 227, 246, 0.15);
+    --background-inverse-standard-foreground: rgba(255, 255, 255, 1);
+
+    --background-inverse-weak: rgba(184, 181, 203, 0.15);
+    --background-inverse-weak-foreground: rgba(255, 255, 255, 1);
+
+    --background-core-standard: rgba(137, 126, 255, 1);
+    --background-core-standard-foreground: rgba(255, 255, 255, 1);
+
+    --background-inverse-strong: rgba(255, 255, 255, 0.15);
+    --background-inverse-strong-foreground: rgba(255, 255, 255, 1);
   }
 }
 

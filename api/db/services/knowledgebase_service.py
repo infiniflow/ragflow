@@ -68,6 +68,16 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_kb_ids(cls, tenant_id):
+        fields = [
+            cls.model.id,
+        ]
+        kbs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
+        kb_ids = [kb["id"] for kb in kbs]
+        return kb_ids
+
+    @classmethod
+    @DB.connection_context()
     def get_detail(cls, kb_id):
         fields = [
             cls.model.id,
@@ -178,6 +188,22 @@ class KnowledgebaseService(CommonService):
         if not docs:
             return False
         return True
+
+    @classmethod
+    @DB.connection_context()
+    def get_kb_by_id(cls, kb_id, user_id):
+        kbs = cls.model.select().join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
+            ).where(cls.model.id == kb_id, UserTenant.user_id == user_id).paginate(0, 1)
+        kbs = kbs.dicts()
+        return list(kbs)
+
+    @classmethod
+    @DB.connection_context()
+    def get_kb_by_name(cls, kb_name, user_id):
+        kbs = cls.model.select().join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
+            ).where(cls.model.name == kb_name, UserTenant.user_id == user_id).paginate(0, 1)
+        kbs = kbs.dicts()
+        return list(kbs)
 
     @classmethod
     @DB.connection_context()

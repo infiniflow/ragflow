@@ -53,8 +53,8 @@ from api.settings import (
 )
 from api.db.services.user_service import UserService, TenantService, UserTenantService
 from api.db.services.file_service import FileService
-from api.settings import stat_logger
 from api.utils.api_utils import get_json_result, construct_response
+from api.utils.log_utils import logger
 
 
 @manager.route("/login", methods=["POST", "GET"])
@@ -177,7 +177,7 @@ def github_callback():
             try:
                 avatar = download_img(user_info["avatar_url"])
             except Exception as e:
-                stat_logger.exception(e)
+                logger.exception(e)
                 avatar = ""
             users = user_register(
                 user_id,
@@ -202,7 +202,7 @@ def github_callback():
             return redirect("/?auth=%s" % user.get_id())
         except Exception as e:
             rollback_user_registration(user_id)
-            stat_logger.exception(e)
+            logger.exception(e)
             return redirect("/?error=%s" % str(e))
 
     # User has already registered, try to log in
@@ -279,7 +279,7 @@ def feishu_callback():
             try:
                 avatar = download_img(user_info["avatar_url"])
             except Exception as e:
-                stat_logger.exception(e)
+                logger.exception(e)
                 avatar = ""
             users = user_register(
                 user_id,
@@ -304,7 +304,7 @@ def feishu_callback():
             return redirect("/?auth=%s" % user.get_id())
         except Exception as e:
             rollback_user_registration(user_id)
-            stat_logger.exception(e)
+            logger.exception(e)
             return redirect("/?error=%s" % str(e))
 
     # User has already registered, try to log in
@@ -436,7 +436,7 @@ def setting_user():
         UserService.update_by_id(current_user.id, update_dict)
         return get_json_result(data=True)
     except Exception as e:
-        stat_logger.exception(e)
+        logger.exception(e)
         return get_json_result(
             data=False, message="Update failure!", code=RetCode.EXCEPTION_ERROR
         )
@@ -621,7 +621,7 @@ def user_add():
         )
     except Exception as e:
         rollback_user_registration(user_id)
-        stat_logger.exception(e)
+        logger.exception(e)
         return get_json_result(
             data=False,
             message=f"User registration failure, error: {str(e)}",

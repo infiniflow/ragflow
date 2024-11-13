@@ -50,8 +50,8 @@ class Document(Base):
             return res.content
 
 
-    def list_chunks(self,page=1, page_size=30, keywords="", id:str=None):
-        data={"keywords": keywords,"page":page,"page_size":page_size,"id":id}
+    def list_chunks(self,page=1, page_size=30, keywords=""):
+        data={"keywords": keywords,"page":page,"page_size":page_size}
         res = self.get(f'/datasets/{self.dataset_id}/documents/{self.id}/chunks', data)
         res = res.json()
         if res.get("code") == 0:

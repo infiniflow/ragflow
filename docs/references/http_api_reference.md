@@ -187,7 +187,9 @@ curl --request DELETE \
      --url http://{address}/api/v1/datasets \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --data '{"ids": ["test_1", "test_2"]}'
+     --data '{
+     "ids": ["test_1", "test_2"]
+     }'
 ```
 
 #### Request parameters
@@ -243,7 +245,7 @@ curl --request PUT \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "name": "updated_dataset",
+          "name": "updated_dataset"
      }'
 ```
 
@@ -1152,7 +1154,7 @@ curl --request PUT \
      --data '
      {   
           "content": "ragflow123",  
-          "important_keywords": [],   
+          "important_keywords": []  
      }'
 ```
 
@@ -1280,7 +1282,7 @@ Success:
                 "document_keyword": "1.txt",
                 "highlight": "<em>ragflow</em> content",
                 "id": "d78435d142bd5cf6704da62c778795c5",
-                "img_id": "",
+                "image_id": "",
                 "important_keywords": [
                     ""
                 ],

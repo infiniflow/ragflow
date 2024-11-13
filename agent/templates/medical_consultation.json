@@ -1,7 +1,7 @@
 {
   "id": 7,
   "title": "Medical consultation",
-  "description": "Medical Consultation Assistant, can provide you with some professional consultation suggestions for your reference. Please note that the content provided by the medical assistant is for reference only and may not be authentic or available. Knowledge Base Content Reference: <a href = 'https://huggingface.co/datasets/InfiniFlow/medical_QA/tree/main'> Medical Knowledge Base Reference</a>",
+  "description": "A consultant that offers medical suggestions using an internal QA dataset and PubMed search results. Note that this agent's answers are for reference only and may not be valid. The dataset can be found at https://huggingface.co/datasets/InfiniFlow/medical_QA/tree/main",
   "canvas_type": "chatbot",
    "dsl": {
       "answer": [],

@@ -13,14 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
 from abc import ABC
-from functools import partial
 import pandas as pd
 import requests
 import re
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.log_utils import logger
 
 
 class BaiduParam(ComponentParamBase):
@@ -64,6 +62,6 @@ class Baidu(ComponentBase, ABC):
             return Baidu.be_output("")
 
         df = pd.DataFrame(baidu_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logger.debug(f"df: {str(df)}")
         return df
 

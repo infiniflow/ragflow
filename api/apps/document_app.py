@@ -17,7 +17,6 @@ import pathlib
 import re
 
 import flask
-from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
@@ -26,15 +25,15 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.task_service import TaskService, queue_tasks
 from api.db.services.user_service import UserTenantService
+from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
-from rag.utils.es_conn import ELASTICSEARCH
 from api.db.services import duplicate_name
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.db import FileType, TaskStatus, ParserType, FileSource
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
-from api.settings import RetCode
+from api.settings import RetCode, docStoreConn
 from api.utils.api_utils import get_json_result
 from rag.utils.storage_factory import STORAGE_IMPL
 from api.utils.file_utils import filename_type, thumbnail
@@ -275,18 +274,8 @@ def change_status():
             return get_data_error_result(
                 message="Database error (Document update)!")
 
-        if str(req["status"]) == "0":
-            ELASTICSEARCH.updateScriptByQuery(Q("term", doc_id=req["doc_id"]),
-                                              scripts="ctx._source.available_int=0;",
-                                              idxnm=search.index_name(
-                                                  kb.tenant_id)
-                                              )
-        else:
-            ELASTICSEARCH.updateScriptByQuery(Q("term", doc_id=req["doc_id"]),
-                                              scripts="ctx._source.available_int=1;",
-                                              idxnm=search.index_name(
-                                                  kb.tenant_id)
-                                              )
+        status = int(req["status"])
+        docStoreConn.update({"doc_id": req["doc_id"]}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -365,8 +354,11 @@ def run():
             tenant_id = DocumentService.get_tenant_id(id)
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
-            ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=id), idxnm=search.index_name(tenant_id))
+            e, doc = DocumentService.get_by_id(id)
+            if not e:
+                return get_data_error_result(message="Document not found!")
+            if docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
             if str(req["run"]) == TaskStatus.RUNNING.value:
                 TaskService.filter_delete([Task.doc_id == id])
@@ -490,8 +482,8 @@ def change_parser():
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
-            ELASTICSEARCH.deleteByQuery(
-                Q("match", doc_id=doc.id), idxnm=search.index_name(tenant_id))
+            if docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
         return get_json_result(data=True)
     except Exception as e:
@@ -527,3 +519,32 @@ def upload_and_parse():
     doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, current_user.id)
 
     return get_json_result(data=doc_ids)
+
+
+@manager.route('/parse', methods=['POST'])
+@login_required
+def parse():
+    url = request.json.get("url")
+    if url:
+        if not is_valid_url(url):
+            return get_json_result(
+                data=False, message='The URL format is invalid', code=RetCode.ARGUMENT_ERROR)
+        from selenium.webdriver import Chrome, ChromeOptions
+        options = ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        driver = Chrome(options=options)
+        driver.get(url)
+        sections = RAGFlowHtmlParser()(driver.page_source)
+        return get_json_result(data="\n".join(sections))
+
+    if 'file' not in request.files:
+        return get_json_result(
+            data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
+
+    file_objs = request.files.getlist('file')
+    txt = FileService.parse_docs(file_objs, current_user.id)
+
+    return get_json_result(data=txt)

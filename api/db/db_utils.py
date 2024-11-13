@@ -22,12 +22,6 @@ from playhouse.pool import PooledMySQLDatabase
 from api.utils import current_timestamp, timestamp_to_date
 
 from api.db.db_models import DB, DataBaseModel
-from api.db.runtime_config import RuntimeConfig
-from api.utils.log_utils import getLogger
-from enum import Enum
-
-
-LOGGER = getLogger()
 
 
 @DB.connection_context()
