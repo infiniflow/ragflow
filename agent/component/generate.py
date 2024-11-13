@@ -63,7 +63,7 @@ class Generate(ComponentBase):
     component_name = "Generate"
 
     def get_dependent_components(self):
-        cpnts = [para["component_id"] for para in self._param.parameters]
+        cpnts = [para["component_id"] for para in self._param.parameters if para["component_id"].lower().find("answer") < 0]
         return cpnts
 
     def set_cite(self, retrieval_res, answer):

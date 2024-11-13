@@ -312,7 +312,7 @@ class InfinityConnection(DocStoreConnection):
             for k, v in d.items():
                 if k.endswith("_kwd") and isinstance(v, list):
                     d[k] = " ".join(v)
-        ids = [f"'{d["id"]}'" for d in documents]
+        ids = [f"{d['id']}" for d in documents]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
