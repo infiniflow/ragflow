@@ -22,6 +22,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.settings import retrievaler
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.log_utils import logger
 
 
 class RetrievalParam(ComponentParamBase):
@@ -80,7 +81,7 @@ class Retrieval(ComponentBase, ABC):
         df = pd.DataFrame(kbinfos["chunks"])
         df["content"] = df["content_with_weight"]
         del df["content_with_weight"]
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>\n", query, df)
+        logger.debug("{} {}".format(query, df))
         return df
 
 

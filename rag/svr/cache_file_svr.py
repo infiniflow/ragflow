@@ -13,20 +13,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
 import time
 import traceback
 
 from api.db.db_models import close_connection
 from api.db.services.task_service import TaskService
-from rag.settings import cron_logger
+from api.utils.log_utils import logger
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
 
 
 def collect():
     doc_locations = TaskService.get_ongoing_doc_name()
-    print(doc_locations)
+    logger.info(doc_locations)
     if len(doc_locations) == 0:
         time.sleep(1)
         return
@@ -35,7 +34,7 @@ def collect():
 def main():
     locations = collect()
     if not locations:return
-    print("TASKS:", len(locations))
+    logger.info(f"TASKS: {len(locations)}")
     for kb_id, loc in locations:
         try:
             if REDIS_CONN.is_alive():
@@ -44,7 +43,7 @@ def main():
                     if REDIS_CONN.exist(key):continue
                     file_bin = STORAGE_IMPL.get(kb_id, loc)
                     REDIS_CONN.transaction(key, file_bin, 12 * 60)
-                    cron_logger.info("CACHE: {}".format(loc))
+                    logger.info("CACHE: {}".format(loc))
                 except Exception as e:
                     traceback.print_stack(e)
         except Exception as e:

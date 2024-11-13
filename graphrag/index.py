@@ -28,6 +28,7 @@ from graphrag.graph_extractor import GraphExtractor, DEFAULT_ENTITY_TYPES
 from graphrag.mind_map_extractor import MindMapExtractor
 from rag.nlp import rag_tokenizer
 from rag.utils import num_tokens_from_string
+from api.utils.log_utils import logger
 
 
 def graph_merge(g1, g2):
@@ -94,7 +95,7 @@ def build_knowledge_graph_chunks(tenant_id: str, chunks: List[str], callback, en
     chunks = []
     for n, attr in graph.nodes(data=True):
         if attr.get("rank", 0) == 0:
-            print(f"Ignore entity: {n}")
+            logger.info(f"Ignore entity: {n}")
             continue
         chunk = {
             "name_kwd": n,
@@ -136,7 +137,7 @@ def build_knowledge_graph_chunks(tenant_id: str, chunks: List[str], callback, en
     mg = mindmap(_chunks).output
     if not len(mg.keys()): return chunks
 
-    print(json.dumps(mg, ensure_ascii=False, indent=2))
+    logger.info(json.dumps(mg, ensure_ascii=False, indent=2))
     chunks.append(
         {
             "content_with_weight": json.dumps(mg, ensure_ascii=False, indent=2),

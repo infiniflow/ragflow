@@ -32,6 +32,7 @@ from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai 
 import json
+from api.utils.log_utils import logger
 
 class Base(ABC):
     def __init__(self, key, model_name):
@@ -65,12 +66,12 @@ class DefaultEmbedding(Base):
                 import torch
                 if not DefaultEmbedding._model:
                     try:
-                        DefaultEmbedding._model = FlagModel(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                        DefaultEmbedding._model = FlagModel(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z0-9]+/", "", model_name)),
                                                             query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
                                                             use_fp16=torch.cuda.is_available())
-                    except Exception as e:
+                    except Exception:
                         model_dir = snapshot_download(repo_id="BAAI/bge-large-zh-v1.5",
-                                                      local_dir=os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z]+/", "", model_name)),
+                                                      local_dir=os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z0-9]+/", "", model_name)),
                                                       local_dir_use_symlinks=False)
                         DefaultEmbedding._model = FlagModel(model_dir,
                                                             query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
@@ -189,7 +190,7 @@ class QWenEmbed(Base):
             )
             return np.array(resp["output"]["embeddings"][0]
                             ["embedding"]), resp["usage"]["total_tokens"]
-        except Exception as e:
+        except Exception:
             raise Exception("Account abnormal. Please ensure it's on good standing to use QWen's "+self.model_name)
         return np.array([]), 0
 
@@ -296,11 +297,11 @@ class YoudaoEmbed(Base):
         if not LIGHTEN and not YoudaoEmbed._client:
             from BCEmbedding import EmbeddingModel as qanthing
             try:
-                print("LOADING BCE...")
+                logger.info("LOADING BCE...")
                 YoudaoEmbed._client = qanthing(model_name_or_path=os.path.join(
                     get_home_cache_dir(),
                     "bce-embedding-base_v1"))
-            except Exception as e:
+            except Exception:
                 YoudaoEmbed._client = qanthing(
                     model_name_or_path=model_name.replace(
                         "maidalun1020", "InfiniFlow"))

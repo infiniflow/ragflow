@@ -14,14 +14,13 @@ import base64
 import datetime
 import json
 import re
-
 import pandas as pd
 import requests
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from rag.nlp import rag_tokenizer
 from deepdoc.parser.resume import refactor
 from deepdoc.parser.resume import step_one, step_two
-from rag.settings import cron_logger
+from api.utils.log_utils import logger
 from rag.utils import rmSpace
 
 forbidden_select_fields4resume = [
@@ -64,8 +63,8 @@ def remote_call(filename, binary):
                                                       "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]))
             resume = step_two.parse(resume)
             return resume
-        except Exception as e:
-            cron_logger.error("Resume parser error: " + str(e))
+        except Exception:
+            logger.exception("Resume parser error")
     return {}
 
 
@@ -87,7 +86,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         callback(-1, "Resume is not successfully parsed.")
         raise Exception("Resume parser remote call fail!")
     callback(0.6, "Done parsing. Chunking...")
-    print(json.dumps(resume, ensure_ascii=False, indent=2))
+    logger.info("chunking resume: " + json.dumps(resume, ensure_ascii=False, indent=2))
 
     field_map = {
         "name_kwd": "姓名/名字",
@@ -159,7 +158,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
             resume[n] = rag_tokenizer.fine_grained_tokenize(resume[n])
         doc[n] = resume[n]
 
-    print(doc)
+    logger.info("chunked resume to " + str(doc))
     KnowledgebaseService.update_parser_config(
         kwargs["kb_id"], {"field_map": field_map})
     return [doc]

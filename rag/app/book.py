@@ -20,6 +20,7 @@ from rag.nlp import bullets_category, is_english,remove_contents_table, \
     tokenize_chunks
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
+from api.utils.log_utils import logger
 
 
 class Pdf(PdfParser):
@@ -38,7 +39,7 @@ class Pdf(PdfParser):
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.67, "Layout analysis finished")
-        print("layouts:", timer() - start)
+        logger.info("layouts: {}".format(timer() - start))
         self._table_transformer_job(zoomin)
         callback(0.68, "Table analysis finished")
         self._text_merge()

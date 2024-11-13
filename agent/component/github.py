@@ -16,8 +16,8 @@
 from abc import ABC
 import pandas as pd
 import requests
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.log_utils import logger
 
 
 class GitHubParam(ComponentParamBase):
@@ -57,5 +57,5 @@ class GitHub(ComponentBase, ABC):
             return GitHub.be_output("")
 
         df = pd.DataFrame(github_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logger.debug(f"df: {df}")
         return df

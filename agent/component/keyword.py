@@ -18,7 +18,7 @@ from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component import GenerateParam, Generate
-from agent.settings import DEBUG
+from api.utils.log_utils import logger
 
 
 class KeywordExtractParam(GenerateParam):
@@ -58,5 +58,5 @@ class KeywordExtract(Generate, ABC):
                             self._param.gen_conf())
 
         ans = re.sub(r".*keyword:", "", ans).strip()
-        if DEBUG: print(ans, ":::::::::::::::::::::::::::::::::")
+        logger.info(f"ans: {ans}")
         return KeywordExtract.be_output(ans)

@@ -17,7 +17,7 @@ from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component import GenerateParam, Generate
-from agent.settings import DEBUG
+from api.utils.log_utils import logger
 
 
 class CategorizeParam(GenerateParam):
@@ -34,7 +34,7 @@ class CategorizeParam(GenerateParam):
         super().check()
         self.check_empty(self.category_description, "[Categorize] Category examples")
         for k, v in self.category_description.items():
-            if not k: raise ValueError(f"[Categorize] Category name can not be empty!")
+            if not k: raise ValueError("[Categorize] Category name can not be empty!")
             if not v.get("to"): raise ValueError(f"[Categorize] 'To' of category {k} can not be empty!")
 
     def get_prompt(self):
@@ -77,7 +77,7 @@ class Categorize(Generate, ABC):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": input}],
                             self._param.gen_conf())
-        if DEBUG: print(ans, ":::::::::::::::::::::::::::::::::", input)
+        logger.debug(f"input: {input}, answer: {str(ans)}")
         for c in self._param.category_description.keys():
             if ans.lower().find(c.lower()) >= 0:
                 return Categorize.be_output(self._param.category_description[c]["to"])
