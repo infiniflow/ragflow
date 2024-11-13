@@ -2371,8 +2371,8 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "claude-instant-1.2",
-                    "tags": "LLM,CHAT,100k",
+                    "llm_name": "claude-3-5-sonnet-20241022",
+                    "tags": "LLM,CHAT,200k",
                     "max_tokens": 102400,
                     "model_type": "chat"
                 }
