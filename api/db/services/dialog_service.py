@@ -534,7 +534,7 @@ Role: A helpful assistant
 
 Task and steps: 
     1. Generate a full user question that would follow the conversation.
-    2. If the user's question involves relative time, you need to convert it into absolute time based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
+    2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
     
 Requirements & Restrictions:
   - Text generated MUST be in the same language of the original user's question.
