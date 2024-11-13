@@ -119,10 +119,10 @@ def run():
     except Exception as e:
         return server_error_response(e)
 
-    assert answer is not None, "Nothing. Is it over?"
+    assert answer is not None, "The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow."
 
     if stream:
-        assert isinstance(answer, partial), "Nothing. Is it over?"
+        assert isinstance(answer, partial), "The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow."
 
         def sse():
             nonlocal answer, cvs
