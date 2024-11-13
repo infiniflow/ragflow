@@ -191,7 +191,7 @@ AUTHENTICATION_DEFAULT_TIMEOUT = 7 * 24 * 60 * 60  # s
 PRIVILEGE_COMMAND_WHITELIST = []
 CHECK_NODES_IDENTITY = False
 
-if 'username' in get_base_config("es", {}):
+if 'hosts' in get_base_config("es", {}):
     docStoreConn = rag.utils.es_conn.ESConnection()
 else:
     docStoreConn = rag.utils.infinity_conn.InfinityConnection()
