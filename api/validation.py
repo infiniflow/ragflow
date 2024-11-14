@@ -15,6 +15,8 @@
 #
 
 import sys
+from multiprocessing import pool
+
 from api.utils.log_utils import logger
 
 
@@ -32,7 +34,16 @@ def python_version_validation():
 
 python_version_validation()
 
+
 # Download nltk data
-import nltk
-nltk.download('wordnet', halt_on_error=False, quiet=True)
-nltk.download('punkt_tab', halt_on_error=False, quiet=True)
+def download_nltk_data():
+    import nltk
+    nltk.download('wordnet', halt_on_error=False, quiet=True)
+    nltk.download('punkt_tab', halt_on_error=False, quiet=True)
+
+
+try:
+    thr = pool.apply_async(download_nltk_data)
+    binary = thr.get(timeout=60)
+except TimeoutError as e:
+    print('\x1b[6;37;41m WARNING \x1b[0m' + "Downloading NLTK data failure.", flush=True)
