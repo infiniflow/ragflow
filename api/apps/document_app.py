@@ -524,7 +524,7 @@ def upload_and_parse():
 @manager.route('/parse', methods=['POST'])
 @login_required
 def parse():
-    url = request.json.get("url")
+    url = request.json.get("url") if request.json else ""
     if url:
         if not is_valid_url(url):
             return get_json_result(
@@ -537,7 +537,7 @@ def parse():
         options.add_argument('--disable-dev-shm-usage')
         driver = Chrome(options=options)
         driver.get(url)
-        sections = RAGFlowHtmlParser()("", binary=driver.page_source)
+        sections = RAGFlowHtmlParser().parser_txt(driver.page_source)
         return get_json_result(data="\n".join(sections))
 
     if 'file' not in request.files:
