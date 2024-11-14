@@ -77,7 +77,9 @@ curl --request POST \
   The name of the embedding model to use. For example: `"BAAI/bge-zh-v1.5"`
 
 - `"permission"`: (*Body parameter*), `string`  
-  Specifies who can access the dataset to create. You can set it only to `"me"` for now.
+  Specifies who can access the dataset to create. Available options:  
+  - `"me"`: (Default) Only you can manage the dataset.
+  - `"team"`: All team members can manage the dataset.
 
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method of the dataset to create. Available options:  
@@ -1704,11 +1706,11 @@ Failure:
 }
 ```
 
-## Create session
+## Create session with chat assistant
 
 **POST** `/api/v1/chats/{chat_id}/sessions`
 
-Creates a chat session.
+Creates a session with a chat assistant.
 
 ### Request
 
@@ -1780,7 +1782,7 @@ Failure:
 
 **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`
 
-Updates a chat session.
+Updates a session of a specified chat assistant.
 
 ### Request
 
@@ -1917,7 +1919,7 @@ Failure:
 
 **DELETE** `/api/v1/chats/{chat_id}/sessions`
 
-Deletes sessions by ID.
+Deletes sessions of a chat assistant by ID.
 
 ### Request
 
@@ -1971,11 +1973,26 @@ Failure:
 
 ---
 
-## Converse
+## Converse with chat assistant
 
 **POST** `/api/v1/chats/{chat_id}/completions`
 
-Asks a question to start an AI-powered conversation.
+Asks a specified chat assistant a question to start an AI-powered conversation.
+
+:::tip NOTE
+
+- In streaming mode, not all responses include a reference, as this depends on the system's judgement.
+- In streaming mode, the last message is an empty message:
+
+  ```text
+  data:
+  {
+    "code": 0,
+    "data": true
+  }
+  ```
+
+:::
 
 ### Request
 
@@ -2007,7 +2024,7 @@ curl --request POST \
 
 - `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
-- `"question"`: (*Body Parameter*), `string` *Required*  
+- `"question"`: (*Body Parameter*), `string`, *Required*  
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:
@@ -2020,7 +2037,7 @@ curl --request POST \
 
 Success:
 
-```text
+```json
 data:{
     "code": 0,
     "data": {
@@ -2101,11 +2118,13 @@ Failure:
 }
 ```
 
-## Create agent session
+---
+
+## Create session with an agent
 
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
-Creates an agent session.
+Creates a session with an agent.
 
 ### Request
 
@@ -2129,7 +2148,7 @@ curl --request POST \
 
 #### Request parameters
 
-- `agent_id`: (*Path parameter*)
+- `agent_id`: (*Path parameter*)  
   The ID of the associated agent assistant.
 
 ### Response
@@ -2144,7 +2163,7 @@ Success:
         "id": "7869e9e49c1711ef92840242ac120006",
         "message": [
             {
-                "content": "Hello! I am the HR responsible for recruitment at Infineon. I learned that you are an expert in this field, and I took the liberty of reaching out to you. There is an opportunity I would like to share with you. RAGFlow is currently looking for a senior engineer for your position. I was wondering if you might be interested?",
+                "content": "Hello! I am a recruiter at InfiniFlow. I learned that you are an expert in the field, and took the liberty of reaching out to you. There is an opportunity I would like to share with you. RAGFlow is currently looking for a senior engineer for your position. I was wondering if you might be interested?",
                 "role": "assistant"
             }
         ],
@@ -2163,13 +2182,28 @@ Failure:
 }
 ```
 
+---
 
-
-## Converse through agent
+## Converse with agent
 
 **POST** `/api/v1/agents/{agent_id}/completions`  
-#######  
-Asks a question to start an AI-powered conversation.
+
+Asks a specified agent a question to start an AI-powered conversation.
+
+:::tip NOTE
+
+- In streaming mode, not all responses include a reference, as this depends on the system's judgement.
+- In streaming mode, the last message is an empty message:
+
+  ```text
+  data:
+  {
+    "code": 0,
+    "data": true
+  }
+  ```
+
+:::
 
 ### Request
 
@@ -2199,16 +2233,16 @@ curl --request POST \
 
 #### Request Parameters
 
-- `agent_id`: (*Path parameter*)  
+- `agent_id`: (*Path parameter*), `string`  
   The ID of the associated agent assistant.
-- `"question"`: (*Body Parameter*), `string` *Required*  
+- `"question"`: (*Body Parameter*), `string`, *Required*  
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`  
-  Indicates whether to output responses in a streaming way:
+  Indicates whether to output responses in a streaming way:  
   - `true`: Enable streaming.
   - `false`: Disable streaming (default).
 - `"session_id"`: (*Body Parameter*)  
-  The ID of session. If it is not provided, a new session will be generated.
+  The ID of the session. If it is not provided, a new session will be generated.
 
 ### Response
 
@@ -2227,7 +2261,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello",
         "reference": [],
@@ -2237,7 +2270,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello!",
         "reference": [],
@@ -2247,7 +2279,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello! How",
         "reference": [],
@@ -2257,7 +2288,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello! How can",
         "reference": [],
@@ -2267,7 +2297,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello! How can I",
         "reference": [],
@@ -2277,7 +2306,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello! How can I assist",
         "reference": [],
@@ -2287,7 +2315,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello! How can I assist you",
         "reference": [],
@@ -2297,7 +2324,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello! How can I assist you today",
         "reference": [],
@@ -2307,7 +2333,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello! How can I assist you today?",
         "reference": [],
@@ -2317,7 +2342,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": {
         "answer": "Hello! How can I assist you today?",
         "reference": [],
@@ -2327,7 +2351,6 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
     "data": true
 }
 ```
@@ -2340,3 +2363,5 @@ Failure:
     "message": "`question` is required."
 }
 ```
+
+---
