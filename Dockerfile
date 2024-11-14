@@ -75,8 +75,6 @@ RUN --mount=type=cache,id=ragflow_builder_poetry,target=/root/.cache/pypoetry,sh
         poetry install --no-root; \
     fi
 
-RUN bash update_version.sh
-
 # production stage
 FROM base AS production
 USER root
