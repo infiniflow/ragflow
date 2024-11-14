@@ -113,9 +113,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
 def collect():
     global CONSUMER_NAME, PAYLOAD
     try:
-        PAYLOAD = REDIS_CONN.get_unacked_for(CONSUMER_NAME, SVR_QUEUE_NAME, "rag_flow_svr_task_broker")
-        if not PAYLOAD:
-            PAYLOAD = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", CONSUMER_NAME)
+        PAYLOAD = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", CONSUMER_NAME)
+        
         if not PAYLOAD:
             time.sleep(1)
             return pd.DataFrame()
