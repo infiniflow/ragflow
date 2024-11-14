@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import base64
 import json
 import os
@@ -30,7 +31,6 @@ from api.db.services.llm_service import LLMFactoriesService, LLMService, TenantL
 from api.db.services.user_service import TenantService, UserTenantService
 from api.settings import CHAT_MDL, EMBEDDING_MDL, ASR_MDL, IMAGE2TEXT_MDL, PARSERS, LLM_FACTORY, API_KEY, LLM_BASE_URL
 from api.utils.file_utils import get_project_base_directory
-from api.utils.log_utils import logger
 
 
 def encode_to_base64(input_string):
@@ -70,26 +70,26 @@ def init_superuser():
              "api_key": API_KEY, "api_base": LLM_BASE_URL})
 
     if not UserService.save(**user_info):
-        logger.info("can't init admin.")
+        logging.error("can't init admin.")
         return
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
-    logger.info(
-        "Super user initialized. email: admin@ragflow.io, password: admin. Changing the password after logining is strongly recomanded.")
+    logging.info(
+        "Super user initialized. email: admin@ragflow.io, password: admin. Changing the password after login is strongly recommended.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[
                         {"role": "user", "content": "Hello!"}], gen_conf={})
     if msg.find("ERROR: ") == 0:
-        logger.error(
+        logging.error(
             "'{}' dosen't work. {}".format(
                 tenant["llm_id"],
                 msg))
     embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
     v, c = embd_mdl.encode(["Hello!"])
     if c == 0:
-        logger.error(
+        logging.error(
             "'{}' dosen't work!".format(
                 tenant["embd_id"]))
 
@@ -97,6 +97,8 @@ def init_superuser():
 def init_llm_factory():
     try:
         LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
+        LLMService.filter_delete([(LLM.fid == "cohere")])
+        LLMFactoriesService.filter_delete([LLMFactories.name == "cohere"])
     except Exception:
         pass
 
@@ -128,6 +130,7 @@ def init_llm_factory():
     LLMFactoriesService.filter_delete([LLMFactoriesService.model.name == "QAnything"])
     LLMService.filter_delete([LLMService.model.fid == "QAnything"])
     TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
+    TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "cohere"], {"llm_factory": "Cohere"})
     TenantService.filter_update([1 == 1], {
         "parser_ids": "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,knowledge_graph:Knowledge Graph,email:Email"})
     ## insert openai two embedding models to the current openai user.
@@ -169,7 +172,7 @@ def add_graph_templates():
             except:
                 CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
         except Exception:
-            logger.exception("Add graph templates error: ")
+            logging.exception("Add graph templates error: ")
 
 
 def init_web_data():
@@ -180,7 +183,7 @@ def init_web_data():
     #    init_superuser()
 
     add_graph_templates()
-    logger.info("init web data success:{}".format(time.time() - start_time))
+    logging.info("init web data success:{}".format(time.time() - start_time))
 
 
 if __name__ == '__main__':

@@ -6,8 +6,6 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      es01:
-        condition: service_healthy
     image: ${RAGFLOW_IMAGE}
     container_name: ragflow-server
     ports:
@@ -15,7 +13,6 @@ services:
       - 80:80
       - 443:443
     volumes:
-      - ./service_conf.yaml:/ragflow/conf/service_conf.yaml
       - ./ragflow-logs:/ragflow/logs
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
       - ./nginx/proxy.conf:/etc/nginx/proxy.conf

@@ -13,13 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from api.db.services.user_service import TenantService
 from rag.llm import EmbeddingModel, CvModel, ChatModel, RerankModel, Seq2txtModel, TTSModel
 from api.db import LLMType
 from api.db.db_models import DB
 from api.db.db_models import LLMFactories, LLM, TenantLLM
 from api.db.services.common_service import CommonService
-from api.utils.log_utils import logger
 
 
 class LLMFactoriesService(CommonService):
@@ -209,7 +209,7 @@ class LLMBundle(object):
         emd, used_tokens = self.mdl.encode(texts, batch_size)
         if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
-            logger.error(
+            logging.error(
                 "LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
         return emd, used_tokens
 
@@ -217,7 +217,7 @@ class LLMBundle(object):
         emd, used_tokens = self.mdl.encode_queries(query)
         if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
-            logger.error(
+            logging.error(
                 "LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
         return emd, used_tokens
 
@@ -225,7 +225,7 @@ class LLMBundle(object):
         sim, used_tokens = self.mdl.similarity(query, texts)
         if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
-            logger.error(
+            logging.error(
                 "LLMBundle.similarity can't update token usage for {}/RERANK used_tokens: {}".format(self.tenant_id, used_tokens))
         return sim, used_tokens
 
@@ -233,7 +233,7 @@ class LLMBundle(object):
         txt, used_tokens = self.mdl.describe(image, max_tokens)
         if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
-            logger.error(
+            logging.error(
                 "LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
         return txt
 
@@ -241,7 +241,7 @@ class LLMBundle(object):
         txt, used_tokens = self.mdl.transcription(audio)
         if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
-            logger.error(
+            logging.error(
                 "LLMBundle.transcription can't update token usage for {}/SEQUENCE2TXT used_tokens: {}".format(self.tenant_id, used_tokens))
         return txt
 
@@ -250,7 +250,7 @@ class LLMBundle(object):
             if isinstance(chunk,int):
                 if not TenantLLMService.increase_usage(
                     self.tenant_id, self.llm_type, chunk, self.llm_name):
-                        logger.error(
+                        logging.error(
                             "LLMBundle.tts can't update token usage for {}/TTS".format(self.tenant_id))
                 return
             yield chunk     
@@ -259,7 +259,7 @@ class LLMBundle(object):
         txt, used_tokens = self.mdl.chat(system, history, gen_conf)
         if isinstance(txt, int) and not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens, self.llm_name):
-            logger.error(
+            logging.error(
                 "LLMBundle.chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, used_tokens))
         return txt
 
@@ -268,7 +268,7 @@ class LLMBundle(object):
             if isinstance(txt, int):
                 if not TenantLLMService.increase_usage(
                         self.tenant_id, self.llm_type, txt, self.llm_name):
-                    logger.error(
+                    logging.error(
                         "LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
                 return
             yield txt

@@ -30,7 +30,7 @@ from api.utils.api_utils import (
     server_error_response,
     generate_confirmation_token,
 )
-from api.versions import get_rag_version
+from api.versions import get_ragflow_version
 from api.settings import docStoreConn
 from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
@@ -58,7 +58,7 @@ def version():
               type: string
               description: Version number.
     """
-    return get_json_result(data=get_rag_version())
+    return get_json_result(data=get_ragflow_version())
 
 
 @manager.route("/status", methods=["GET"])

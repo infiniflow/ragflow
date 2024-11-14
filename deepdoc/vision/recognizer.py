@@ -11,6 +11,7 @@
 #  limitations under the License.
 #
 
+import logging
 import os
 from copy import deepcopy
 
@@ -19,7 +20,6 @@ from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from .operators import *
-from api.utils.log_utils import logger
 
 
 class Recognizer(object):
@@ -440,7 +440,7 @@ class Recognizer(object):
             end_index = min((i + 1) * batch_size, len(imgs))
             batch_image_list = imgs[start_index:end_index]
             inputs = self.preprocess(batch_image_list)
-            logger.info("preprocess")
+            logging.debug("preprocess")
             for ins in inputs:
                 bb = self.postprocess(self.ort_sess.run(None, {k:v for k,v in ins.items() if k in self.input_names})[0], ins, thr)
                 res.append(bb)

@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import discord
 import requests
 import base64
 import asyncio
-from api.utils.log_utils import logger
 
 URL = '{YOUR_IP_ADDRESS:PORT}/v1/api/completion_aibotk' # Default: https://demo.ragflow.io/v1/api/completion_aibotk
 
@@ -37,7 +37,7 @@ client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
-    logger.info(f'We have logged in as {client.user}')
+    logging.info(f'We have logged in as {client.user}')
 
 
 @client.event

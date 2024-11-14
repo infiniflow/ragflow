@@ -175,14 +175,14 @@ releases! 🌟
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFlow_IMAGE` variable in *
+   > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFLOW_IMAGE` variable in *
        *docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.13.0-slim`. After
        making this change, rerun the command above to initiate the download.
    > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the
-       `RAGFlow_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change,
+       `RAGFLOW_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change,
        rerun the command above to initiate the download.
    > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update
-       the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example,
+       the `RAGFLOW_IMAGE` variable in **docker/.env** to your desired version. For example,
        `RAGFLOW_IMAGE=infiniflow/ragflow:v0.13.0`. After making this change, rerun the command above to initiate the
        download.
 
@@ -210,7 +210,7 @@ releases! 🌟
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
-   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network abnormal`
+   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anormal`
    error because, at that moment, your RAGFlow may not be fully initialized.
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
@@ -244,6 +244,27 @@ Updates to the above configurations require a reboot of all containers to take e
 > $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
+### Switch doc engine from Elasticsearch to Infinity
+
+RAGFlow uses Elasticsearch by default for storing full text and vectors. To switch to [Infinity](https://github.com/infiniflow/infinity/), follow these steps:
+
+1. Stop all running containers:
+
+   ```bash
+   $ docker compose -f docker/docker-compose.yml down -v
+   ```
+
+2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
+
+3. Start the containers:
+
+   ```bash
+   $ docker compose -f docker/docker-compose.yml up -d
+   ```
+
+> [!WARNING] 
+> Switching to Infinity on a Linux/arm64 machine is not yet officially supported.
+
 ## 🔧 Build a Docker image without embedding models
 
 This image is approximately 1 GB in size and relies on external LLM and embedding services.
@@ -253,7 +274,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+build_docker_image.sh slim
 ```
 
 ## 🔧 Build a Docker image including embedding models
@@ -265,7 +286,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+build_docker_image.sh full
 ```
 
 ## 🔨 Launch service from source for development

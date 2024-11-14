@@ -191,10 +191,14 @@ AUTHENTICATION_DEFAULT_TIMEOUT = 7 * 24 * 60 * 60  # s
 PRIVILEGE_COMMAND_WHITELIST = []
 CHECK_NODES_IDENTITY = False
 
-if 'username' in get_base_config("es", {}):
+DOC_ENGINE = os.environ.get('DOC_ENGINE', "elasticsearch")
+if DOC_ENGINE == "elasticsearch":
     docStoreConn = rag.utils.es_conn.ESConnection()
-else:
+elif DOC_ENGINE == "infinity":
     docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+else:
+    raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
+
 retrievaler = search.Dealer(docStoreConn)
 kg_retrievaler = kg_search.KGSearch(docStoreConn)
 

@@ -33,6 +33,7 @@ from tqdm import tqdm
 global max_docs
 max_docs = sys.maxsize
 
+
 class Benchmark:
     def __init__(self, kb_id):
         self.kb_id = kb_id

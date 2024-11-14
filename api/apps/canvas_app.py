@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import json
 from functools import partial
 from flask import request, Response
@@ -23,7 +24,6 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
-from api.utils.log_utils import logger
 
 
 @manager.route('/templates', methods=['GET'])
@@ -115,14 +115,14 @@ def run():
                 pass
             canvas.add_user_input(req["message"])
         answer = canvas.run(stream=stream)
-        logger.info(canvas)
+        logging.debug(canvas)
     except Exception as e:
         return server_error_response(e)
 
-    assert answer is not None, "Nothing. Is it over?"
+    assert answer is not None, "The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow."
 
     if stream:
-        assert isinstance(answer, partial), "Nothing. Is it over?"
+        assert isinstance(answer, partial), "The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow."
 
         def sse():
             nonlocal answer, cvs

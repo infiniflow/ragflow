@@ -73,7 +73,7 @@ class KnowledgebaseService(CommonService):
             cls.model.id,
         ]
         kbs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
-        kb_ids = [kb["id"] for kb in kbs]
+        kb_ids = [kb.id for kb in kbs]
         return kb_ids
 
     @classmethod

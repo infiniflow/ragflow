@@ -15,6 +15,17 @@
 #
 
 import logging
+import inspect
+from api.utils.log_utils import initRootLogger
+initRootLogger(inspect.getfile(inspect.currentframe()))
+for module in ["pdfminer"]:
+    module_logger = logging.getLogger(module)
+    module_logger.setLevel(logging.WARNING)
+for module in ["peewee"]:
+    module_logger = logging.getLogger(module)
+    module_logger.handlers.clear()
+    module_logger.propagate = True
+
 import os
 import signal
 import sys
@@ -30,11 +41,10 @@ from api.settings import (
     HOST, HTTP_PORT
 )
 from api import utils
-from api.utils.log_utils import logger
 
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
-from api.versions import get_versions
+from api.versions import get_ragflow_version
 
 
 def update_progress():
@@ -43,11 +53,11 @@ def update_progress():
         try:
             DocumentService.update_progress()
         except Exception:
-            logger.exception("update_progress exception")
+            logging.exception("update_progress exception")
 
 
 if __name__ == '__main__':
-    logger.info(r"""
+    logging.info(r"""
         ____   ___    ______ ______ __               
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
@@ -55,7 +65,10 @@ if __name__ == '__main__':
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 
     """)
-    logger.info(
+    logging.info(
+        f'RAGFlow version: {get_ragflow_version()}'
+    )
+    logging.info(
         f'project base: {utils.file_utils.get_project_base_directory()}'
     )
 
@@ -74,31 +87,23 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
     if args.version:
-        print(get_versions())
+        print(get_ragflow_version())
         sys.exit(0)
 
     RuntimeConfig.DEBUG = args.debug
     if RuntimeConfig.DEBUG:
-        logger.info("run on debug mode")
+        logging.info("run on debug mode")
 
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=HOST, HTTP_PORT=HTTP_PORT)
 
-    peewee_logger = logging.getLogger("peewee")
-    peewee_logger.propagate = False
-    # rag_arch.common.log.ROpenHandler
-    peewee_logger.addHandler(logger.handlers[0])
-    peewee_logger.setLevel(logger.handlers[0].level)
 
     thr = ThreadPoolExecutor(max_workers=1)
     thr.submit(update_progress)
 
     # start http server
     try:
-        logger.info("RAG Flow http server start...")
-        werkzeug_logger = logging.getLogger("werkzeug")
-        for h in logger.handlers:
-            werkzeug_logger.addHandler(h)
+        logging.info("RAGFlow HTTP server start...")
         run_simple(
             hostname=HOST,
             port=HTTP_PORT,

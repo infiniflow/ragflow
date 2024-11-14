@@ -387,7 +387,7 @@ def list(chat_id,tenant_id):
         for info in infos:
             if "prompt" in info:
                 info.pop("prompt")
-        conv["chat"] = conv.pop("dialog_id")
+        conv["chat_id"] = conv.pop("dialog_id")
         if conv["reference"]:
             messages = conv["messages"]
             message_num = 0

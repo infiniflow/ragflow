@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component import GenerateParam, Generate
-from api.utils.log_utils import logger
 
 
 class CategorizeParam(GenerateParam):
@@ -77,7 +77,7 @@ class Categorize(Generate, ABC):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": input}],
                             self._param.gen_conf())
-        logger.debug(f"input: {input}, answer: {str(ans)}")
+        logging.debug(f"input: {input}, answer: {str(ans)}")
         for c in self._param.category_description.keys():
             if ans.lower().find(c.lower()) >= 0:
                 return Categorize.be_output(self._param.category_description[c]["to"])

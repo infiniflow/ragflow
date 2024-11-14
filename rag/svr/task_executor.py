@@ -13,9 +13,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+import inspect
+from api.utils.log_utils import initRootLogger
+initRootLogger(inspect.getfile(inspect.currentframe()))
+for module in ["pdfminer"]:
+    module_logger = logging.getLogger(module)
+    module_logger.setLevel(logging.WARNING)
+for module in ["peewee"]:
+    module_logger = logging.getLogger(module)
+    module_logger.handlers.clear()
+    module_logger.propagate = True
+
 import datetime
 import json
-import logging
 import os
 import hashlib
 import copy
@@ -42,7 +53,6 @@ from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, knowledge_graph, email
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from api.utils.log_utils import logger, LOG_FILE
 from rag.settings import DOC_MAXIMUM_SIZE, SVR_QUEUE_NAME
 from rag.utils import rmSpace, num_tokens_from_string
 from rag.utils.redis_conn import REDIS_CONN, Payload
@@ -90,7 +100,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
     try:
         TaskService.update_progress(task_id, d)
     except Exception:
-        logger.exception(f"set_progress({task_id}) got exception")
+        logging.exception(f"set_progress({task_id}) got exception")
 
     close_connection()
     if cancel:
@@ -110,7 +120,7 @@ def collect():
             time.sleep(1)
             return pd.DataFrame()
     except Exception:
-        logger.exception("Get task event from queue exception")
+        logging.exception("Get task event from queue exception")
         return pd.DataFrame()
 
     msg = PAYLOAD.get_message()
@@ -118,11 +128,11 @@ def collect():
         return pd.DataFrame()
 
     if TaskService.do_cancel(msg["id"]):
-        logger.info("Task {} has been canceled.".format(msg["id"]))
+        logging.info("Task {} has been canceled.".format(msg["id"]))
         return pd.DataFrame()
     tasks = TaskService.get_tasks(msg["id"])
     if not tasks:
-        logger.warning("{} empty task!".format(msg["id"]))
+        logging.warning("{} empty task!".format(msg["id"]))
         return []
 
     tasks = pd.DataFrame(tasks)
@@ -151,29 +161,29 @@ def build(row):
         st = timer()
         bucket, name = File2DocumentService.get_storage_address(doc_id=row["doc_id"])
         binary = get_storage_binary(bucket, name)
-        logger.info(
+        logging.info(
             "From minio({}) {}/{}".format(timer() - st, row["location"], row["name"]))
     except TimeoutError:
         callback(-1, "Internal server error: Fetch file from minio timeout. Could you try it again.")
-        logger.exception("Minio {}/{} got timeout: Fetch file from minio timeout.".format(row["location"], row["name"]))
+        logging.exception("Minio {}/{} got timeout: Fetch file from minio timeout.".format(row["location"], row["name"]))
         return
     except Exception as e:
         if re.search("(No such file|not found)", str(e)):
             callback(-1, "Can not find file <%s> from minio. Could you try it again?" % row["name"])
         else:
             callback(-1, "Get file from minio: %s" % str(e).replace("'", ""))
-        logger.exception("Chunking {}/{} got exception".format(row["location"], row["name"]))
+        logging.exception("Chunking {}/{} got exception".format(row["location"], row["name"]))
         return
 
     try:
         cks = chunker.chunk(row["name"], binary=binary, from_page=row["from_page"],
                             to_page=row["to_page"], lang=row["language"], callback=callback,
                             kb_id=row["kb_id"], parser_config=row["parser_config"], tenant_id=row["tenant_id"])
-        logger.info("Chunking({}) {}/{} done".format(timer() - st, row["location"], row["name"]))
+        logging.info("Chunking({}) {}/{} done".format(timer() - st, row["location"], row["name"]))
     except Exception as e:
         callback(-1, "Internal server error while chunking: %s" %
                      str(e).replace("'", ""))
-        logger.exception("Chunking {}/{} got exception".format(row["location"], row["name"]))
+        logging.exception("Chunking {}/{} got exception".format(row["location"], row["name"]))
         return
 
     docs = []
@@ -210,22 +220,25 @@ def build(row):
             STORAGE_IMPL.put(row["kb_id"], d["id"], output_buffer.getvalue())
             el += timer() - st
         except Exception:
-            logger.exception("Saving image of chunk {}/{}/{} got exception".format(row["location"], row["name"], d["_id"]))
+            logging.exception("Saving image of chunk {}/{}/{} got exception".format(row["location"], row["name"], d["_id"]))
 
         d["img_id"] = "{}-{}".format(row["kb_id"], d["id"])
         del d["image"]
         docs.append(d)
-    logger.info("MINIO PUT({}):{}".format(row["name"], el))
+    logging.info("MINIO PUT({}):{}".format(row["name"], el))
 
     if row["parser_config"].get("auto_keywords", 0):
+        st = timer()
         callback(msg="Start to generate keywords for every chunk ...")
         chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
         for d in docs:
             d["important_kwd"] = keyword_extraction(chat_mdl, d["content_with_weight"],
                                                     row["parser_config"]["auto_keywords"]).split(",")
             d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
+        callback(msg="Keywords generation completed in {:.2f}s".format(timer()-st))
 
     if row["parser_config"].get("auto_questions", 0):
+        st = timer()
         callback(msg="Start to generate questions for every chunk ...")
         chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
         for d in docs:
@@ -236,6 +249,7 @@ def build(row):
                 d["content_ltks"] += " " + qst
             if "content_sm_ltks" in d:
                 d["content_sm_ltks"] += " " + rag_tokenizer.fine_grained_tokenize(qst)
+        callback(msg="Question generation completed in {:.2f}s".format(timer()-st))
 
     return docs
 
@@ -341,7 +355,7 @@ def main():
             embd_mdl = LLMBundle(r["tenant_id"], LLMType.EMBEDDING, llm_name=r["embd_id"], lang=r["language"])
         except Exception as e:
             callback(-1, msg=str(e))
-            logger.exception("LLMBundle got exception")
+            logging.exception("LLMBundle got exception")
             continue
 
         if r.get("task_type", "") == "raptor":
@@ -350,12 +364,12 @@ def main():
                 cks, tk_count, vector_size = run_raptor(r, chat_mdl, embd_mdl, callback)
             except Exception as e:
                 callback(-1, msg=str(e))
-                logger.exception("run_raptor got exception")
+                logging.exception("run_raptor got exception")
                 continue
         else:
             st = timer()
             cks = build(r)
-            logger.info("Build chunks({}): {}".format(r["name"], timer() - st))
+            logging.info("Build chunks({}): {}".format(r["name"], timer() - st))
             if cks is None:
                 continue
             if not cks:
@@ -364,19 +378,19 @@ def main():
             # TODO: exception handler
             ## set_progress(r["did"], -1, "ERROR: ")
             callback(
-                msg="Finished slicing files(%d). Start to embedding the content." %
-                    len(cks))
+                msg="Finished slicing files ({} chunks in {:.2f}s). Start to embedding the content.".format(len(cks), timer() - st)
+            )
             st = timer()
             try:
                 tk_count, vector_size = embedding(cks, embd_mdl, r["parser_config"], callback)
             except Exception as e:
                 callback(-1, "Embedding error:{}".format(str(e)))
-                logger.exception("run_rembedding got exception")
+                logging.exception("run_rembedding got exception")
                 tk_count = 0
-            logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
-            callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer() - st))
+            logging.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
+            callback(msg="Finished embedding (in {:.2f}s)! Start to build index!".format(timer() - st))
 
-        # logger.info(f"task_executor init_kb index {search.index_name(r["tenant_id"])} embd_mdl {embd_mdl.llm_name} vector length {vector_size}")
+        # logging.info(f"task_executor init_kb index {search.index_name(r["tenant_id"])} embd_mdl {embd_mdl.llm_name} vector length {vector_size}")
         init_kb(r, vector_size)
         chunk_count = len(set([c["id"] for c in cks]))
         st = timer()
@@ -387,19 +401,20 @@ def main():
             if b % 128 == 0:
                 callback(prog=0.8 + 0.1 * (b + 1) / len(cks), msg="")
 
-        logger.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
+        logging.info("Indexing elapsed({}): {:.2f}".format(r["name"], timer() - st))
         if es_r:
             callback(-1, f"Insert chunk error, detail info please check {LOG_FILE}. Please also check ES status!")
             docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]), r["kb_id"])
-            logger.error('Insert chunk error: ' + str(es_r))
+            logging.error('Insert chunk error: ' + str(es_r))
         else:
             if TaskService.do_cancel(r["id"]):
                 docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]), r["kb_id"])
                 continue
+            callback(msg="Indexing elapsed in {:.2f}s.".format(timer() - st))
             callback(1., "Done!")
             DocumentService.increment_chunk_num(
                 r["doc_id"], r["kb_id"], tk_count, chunk_count, 0)
-            logger.info(
+            logging.info(
                 "Chunk doc({}), token({}), chunks({}), elapsed:{:.2f}".format(
                     r["id"], tk_count, len(cks), timer() - st))
 
@@ -416,16 +431,11 @@ def report_status():
             obj[CONSUMER_NAME] = obj[CONSUMER_NAME][-60:]
             REDIS_CONN.set_obj("TASKEXE", obj, 60*2)
         except Exception:
-            logger.exception("report_status got exception")
+            logging.exception("report_status got exception")
         time.sleep(30)
 
 
 if __name__ == "__main__":
-    peewee_logger = logging.getLogger('peewee')
-    peewee_logger.propagate = False
-    peewee_logger.addHandler(logger.handlers[0])
-    peewee_logger.setLevel(logger.handlers[0].level)
-
     exe = ThreadPoolExecutor(max_workers=1)
     exe.submit(report_status)
 

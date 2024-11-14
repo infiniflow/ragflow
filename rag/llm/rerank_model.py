@@ -27,7 +27,6 @@ from api.settings import LIGHTEN
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import json
-from api.utils.log_utils import logger
 
 
 def sigmoid(x):
@@ -127,7 +126,7 @@ class YoudaoRerank(DefaultRerank):
             with YoudaoRerank._model_lock:
                 if not YoudaoRerank._model:
                     try:
-                        logger.info("LOADING BCE...")
+                        logging.info("LOADING BCE...")
                         YoudaoRerank._model = RerankerModel(model_name_or_path=os.path.join(
                             get_home_cache_dir(),
                             re.sub(r"^[a-zA-Z0-9]+/", "", model_name)))

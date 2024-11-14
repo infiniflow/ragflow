@@ -14,38 +14,41 @@
 #  limitations under the License.
 #
 import os
+import os.path
 import logging
 from logging.handlers import RotatingFileHandler
 
-from api.utils.file_utils import get_project_base_directory
+def get_project_base_directory():
+    PROJECT_BASE = os.path.abspath(
+        os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            os.pardir,
+            os.pardir,
+        )
+    )
+    return PROJECT_BASE
 
-LOG_LEVEL = logging.INFO
-LOG_FILE = os.path.abspath(os.path.join(get_project_base_directory(), "logs", f"ragflow_{os.getpid()}.log"))
-LOG_FORMAT = "%(asctime)-15s %(levelname)-8s %(process)d %(message)s"
-logger = None
+def initRootLogger(script_path: str, log_level: int = logging.INFO, log_format: str = "%(asctime)-15s %(levelname)-8s %(process)d %(message)s"):
+    logger = logging.getLogger()
+    if logger.hasHandlers():
+        return
 
-def getLogger():
-    global logger
-    if logger is not None:
-        return logger
+    script_name = os.path.basename(script_path)
+    log_path = os.path.abspath(os.path.join(get_project_base_directory(), "logs", f"{os.path.splitext(script_name)[0]}.log"))
 
-    print(f"log file path: {LOG_FILE}")
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-    logger = logging.getLogger("ragflow")
-    logger.setLevel(LOG_LEVEL)
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    logger.setLevel(log_level)
+    formatter = logging.Formatter(log_format)
 
-    handler1 = RotatingFileHandler(LOG_FILE, maxBytes=10*1024*1024, backupCount=5)
-    handler1.setLevel(LOG_LEVEL)
-    formatter1 = logging.Formatter(LOG_FORMAT)
-    handler1.setFormatter(formatter1)
+    handler1 = RotatingFileHandler(log_path, maxBytes=10*1024*1024, backupCount=5)
+    handler1.setLevel(log_level)
+    handler1.setFormatter(formatter)
     logger.addHandler(handler1)
 
     handler2 = logging.StreamHandler()
-    handler2.setLevel(LOG_LEVEL)
-    formatter2 = logging.Formatter(LOG_FORMAT)
-    handler2.setFormatter(formatter2)
+    handler2.setLevel(log_level)
+    handler2.setFormatter(formatter)
     logger.addHandler(handler2)
 
-    return logger
-
-logger = getLogger()
+    msg = f"{script_name} log path: {log_path}"
+    logger.info(msg)

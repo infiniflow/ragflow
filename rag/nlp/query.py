@@ -14,9 +14,9 @@
 #  limitations under the License.
 #
 
+import logging
 import json
 import re
-import logging
 from rag.utils.doc_store_conn import MatchTextExpr
 
 from rag.nlp import rag_tokenizer, term_weight, synonym
@@ -88,7 +88,7 @@ class FulltextQueryer:
                 syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn]
                 syns.append(" ".join(syn))
 
-            q = ["({}^{:.4f}".format(tk, w) + " %s)".format(syn) for (tk, w), syn in zip(tks_w, syns)]
+            q = ["({}^{:.4f}".format(tk, w) + " %s)".format() for (tk, w), syn in zip(tks_w, syns)]
             for i in range(1, len(tks_w)):
                 q.append(
                     '"%s %s"^%.4f'
@@ -121,7 +121,7 @@ class FulltextQueryer:
             twts = self.tw.weights([tt])
             syns = self.syn.lookup(tt)
             if syns: keywords.extend(syns)
-            logging.info(json.dumps(twts, ensure_ascii=False))
+            logging.debug(json.dumps(twts, ensure_ascii=False))
             tms = []
             for tk, w in sorted(twts, key=lambda x: x[1] * -1):
                 sm = (

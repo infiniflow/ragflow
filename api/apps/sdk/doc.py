@@ -1082,7 +1082,7 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
     if "chunk_ids" in req and chunk_number != len(req["chunk_ids"]):
-        return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(req["chunk_ids"])}")
+        return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(req['chunk_ids'])}")
     return get_result(message=f"deleted {chunk_number} chunks")
 
 

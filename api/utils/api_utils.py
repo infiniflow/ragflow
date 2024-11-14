@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import functools
 import json
 import random
@@ -40,7 +41,6 @@ from api.settings import (
 from api.settings import RetCode
 from api.utils import CustomJSONEncoder, get_uuid
 from api.utils import json_dumps
-from api.utils.log_utils import logger
 
 requests.models.complexjson.dumps = functools.partial(
     json.dumps, cls=CustomJSONEncoder)
@@ -118,7 +118,7 @@ def get_data_error_result(code=RetCode.DATA_ERROR,
 
 
 def server_error_response(e):
-    logger.exception(e)
+    logging.exception(e)
     try:
         if e.code == 401:
             return get_json_result(code=401, message=repr(e))
@@ -259,7 +259,7 @@ def construct_json_result(code=RetCode.SUCCESS, message='success', data=None):
 
 
 def construct_error_response(e):
-    logger.exception(e)
+    logging.exception(e)
     try:
         if e.code == 401:
             return construct_json_result(code=RetCode.UNAUTHORIZED, message=repr(e))

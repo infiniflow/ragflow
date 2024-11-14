@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 
 import pandas as pd
@@ -22,7 +23,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.settings import retrievaler
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.log_utils import logger
 
 
 class RetrievalParam(ComponentParamBase):
@@ -81,7 +81,7 @@ class Retrieval(ComponentBase, ABC):
         df = pd.DataFrame(kbinfos["chunks"])
         df["content"] = df["content_with_weight"]
         del df["content_with_weight"]
-        logger.debug("{} {}".format(query, df))
+        logging.debug("{} {}".format(query, df))
         return df
 
 

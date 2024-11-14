@@ -11,13 +11,13 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 import json
 import os
 import pandas as pd
 from rag.nlp import rag_tokenizer
 from . import regions
-from api.utils.log_utils import logger
 
 
 current_file_path = os.path.dirname(os.path.abspath(__file__))
@@ -71,7 +71,7 @@ GOOD_CORP = set([corpNorm(rmNoise(c), False) for c in GOOD_CORP])
 for c,v in CORP_TAG.items():
     cc = corpNorm(rmNoise(c), False)
     if not cc:
-        logger.info(c)
+        logging.debug(c)
 CORP_TAG = {corpNorm(rmNoise(c), False):v for c,v in CORP_TAG.items()}
 
 def is_good(nm):

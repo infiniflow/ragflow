@@ -10,9 +10,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 import sys
-from api.utils.log_utils import logger
 
 sys.path.insert(
     0,
@@ -59,7 +59,7 @@ def main(args):
             } for t in lyt]
         img = draw_box(images[i], lyt, labels, float(args.threshold))
         img.save(outputs[i], quality=95)
-        logger.info("save result to: " + outputs[i])
+        logging.info("save result to: " + outputs[i])
 
 
 def get_table_html(img, tb_cpns, ocr):
