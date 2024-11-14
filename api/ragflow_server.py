@@ -103,7 +103,7 @@ if __name__ == '__main__':
 
     # start http server
     try:
-        logging.info("RAG Flow http server start...")
+        logging.info("RAGFlow HTTP server start...")
         run_simple(
             hostname=HOST,
             port=HTTP_PORT,
