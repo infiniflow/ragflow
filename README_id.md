@@ -202,7 +202,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
-   > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network abnormal`
+   > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network anormal`
    karena RAGFlow mungkin belum sepenuhnya siap.
 
 5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
