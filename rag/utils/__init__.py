@@ -17,7 +17,7 @@
 import os
 import re
 import tiktoken
-
+from api.utils.file_utils import get_project_base_directory
 
 def singleton(cls, *args, **kw):
     instances = {}
@@ -71,9 +71,10 @@ def findMaxTm(fnm):
         pass
     return m
 
-
-encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
-
+tiktoken_cache_dir = get_project_base_directory()
+os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
+# encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
+encoder = tiktoken.get_encoding("cl100k_base")
 
 def num_tokens_from_string(string: str) -> int:
     """Returns the number of tokens in a text string."""
