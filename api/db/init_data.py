@@ -97,6 +97,8 @@ def init_superuser():
 def init_llm_factory():
     try:
         LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
+        LLMService.filter_delete([(LLM.fid == "cohere")])
+        LLMFactoriesService.filter_delete([LLMFactories.name == "cohere"])
     except Exception:
         pass
 
@@ -128,6 +130,7 @@ def init_llm_factory():
     LLMFactoriesService.filter_delete([LLMFactoriesService.model.name == "QAnything"])
     LLMService.filter_delete([LLMService.model.fid == "QAnything"])
     TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
+    TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "cohere"], {"llm_factory": "Cohere"})
     TenantService.filter_update([1 == 1], {
         "parser_ids": "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,knowledge_graph:Knowledge Graph,email:Email"})
     ## insert openai two embedding models to the current openai user.
