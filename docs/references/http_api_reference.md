@@ -1984,7 +1984,7 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
 
-  ```json
+  ```text
   data:
   {
     "code": 0,
@@ -2195,7 +2195,7 @@ Asks a specified agent a question to start an AI-powered conversation.
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
 
-  ```json
+  ```text
   data:
   {
     "code": 0,
@@ -2248,7 +2248,7 @@ curl --request POST \
 
 Success:
 
-```json
+```text
 data:{
     "code": 0,
     "message": "",
