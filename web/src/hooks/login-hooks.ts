@@ -2,7 +2,9 @@ import { Authorization } from '@/constants/authorization';
 import userService from '@/services/user-service';
 import authorizationUtil from '@/utils/authorization-util';
 import { useMutation } from '@tanstack/react-query';
-import { message } from 'antd';
+import { Form, message } from 'antd';
+import { FormInstance } from 'antd/lib';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { history } from 'umi';
 
@@ -94,4 +96,20 @@ export const useLogout = () => {
   });
 
   return { data, loading, logout: mutateAsync };
+};
+
+export const useHandleSubmittable = (form: FormInstance) => {
+  const [submittable, setSubmittable] = useState<boolean>(false);
+
+  // Watch all values
+  const values = Form.useWatch([], form);
+
+  useEffect(() => {
+    form
+      .validateFields({ validateOnly: true })
+      .then(() => setSubmittable(true))
+      .catch(() => setSubmittable(false));
+  }, [form, values]);
+
+  return { submittable };
 };

@@ -2,6 +2,7 @@ import { Authorization } from '@/constants/authorization';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
+import { useHandleSubmittable } from '@/hooks/login-hooks';
 import { IModalProps } from '@/interfaces/common';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -47,6 +48,7 @@ const RunDrawer = ({
     showModal: showPopover,
   } = useSetModalState();
   const { setRecord, currentRecord } = useSetSelectedRecord<number>();
+  const { submittable } = useHandleSubmittable(form);
 
   const handleShowPopover = useCallback(
     (idx: number) => () => {
@@ -260,8 +262,8 @@ const RunDrawer = ({
           })}
         </Form>
       </Form.Provider>
-      <Button type={'primary'} block onClick={onOk}>
-        {t('flow.run')}
+      <Button type={'primary'} block onClick={onOk} disabled={!submittable}>
+        {t('common.next')}
       </Button>
     </Drawer>
   );

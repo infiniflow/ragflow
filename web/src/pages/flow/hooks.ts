@@ -622,7 +622,7 @@ const ExcludedNodes = [
 export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
   const nodes = useGraphStore((state) => state.nodes);
 
-  const options = useMemo(() => {
+  const componentIdOptions = useMemo(() => {
     return nodes
       .filter(
         (x) =>
@@ -631,7 +631,9 @@ export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
       .map((x) => ({ label: x.data.name, value: x.id }));
   }, [nodes, nodeId]);
 
-  return options;
+  // const groupedOptions = [];
+
+  return componentIdOptions;
 };
 
 export const useGetComponentLabelByValue = (nodeId: string) => {
