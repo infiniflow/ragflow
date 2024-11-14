@@ -14,13 +14,13 @@
 #  limitations under the License.
 #
 
+import logging
 import json
 import os
 import time
 import re
 from nltk.corpus import wordnet
 from api.utils.file_utils import get_project_base_directory
-from api.utils.log_utils import logger
 
 
 class Dealer:
@@ -33,14 +33,14 @@ class Dealer:
         try:
             self.dictionary = json.load(open(path, 'r'))
         except Exception:
-            logger.warn("Missing synonym.json")
+            logging.warn("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
-            logger.warning(
+            logging.warning(
                 "Realtime synonym is disabled, since no redis connection.")
         if not len(self.dictionary.keys()):
-            logger.warning("Fail to load synonym")
+            logging.warning("Fail to load synonym")
 
         self.redis = redis
         self.load()
@@ -64,7 +64,7 @@ class Dealer:
             d = json.loads(d)
             self.dictionary = d
         except Exception as e:
-            logger.error("Fail to load synonym!" + str(e))
+            logging.error("Fail to load synonym!" + str(e))
 
     def lookup(self, tk):
         if re.match(r"[a-z]+$", tk):

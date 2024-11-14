@@ -1,3 +1,4 @@
+import logging
 import boto3
 import os
 from botocore.exceptions import ClientError
@@ -40,7 +41,7 @@ class RAGFlowS3(object):
                 config=config
             )
         except Exception:
-            logger.exception(
+            logging.exception(
                 "Fail to connect %s" % self.endpoint)
 
     def __close__(self):
@@ -49,11 +50,11 @@ class RAGFlowS3(object):
 
     def bucket_exists(self, bucket):
         try:
-            logger.debug(f"head_bucket bucketname {bucket}")
+            logging.debug(f"head_bucket bucketname {bucket}")
             self.conn.head_bucket(Bucket=bucket)
             exists = True
         except ClientError:
-            logger.exception(f"head_bucket error {bucket}")
+            logging.exception(f"head_bucket error {bucket}")
             exists = False
         return exists
 
@@ -62,7 +63,7 @@ class RAGFlowS3(object):
 
         if not self.bucket_exists(bucket):
             self.conn.create_bucket(Bucket=bucket)
-            logger.debug(f"create bucket {bucket} ********")
+            logging.debug(f"create bucket {bucket} ********")
 
         r = self.conn.upload_fileobj(BytesIO(binary), bucket, fnm)
         return r
@@ -74,17 +75,17 @@ class RAGFlowS3(object):
         return []
 
     def put(self, bucket, fnm, binary):
-        logger.debug(f"bucket name {bucket}; filename :{fnm}:")
+        logging.debug(f"bucket name {bucket}; filename :{fnm}:")
         for _ in range(1):
             try:
                 if not self.bucket_exists(bucket):
                     self.conn.create_bucket(Bucket=bucket)
-                    logger.info(f"create bucket {bucket} ********")
+                    logging.info(f"create bucket {bucket} ********")
                 r = self.conn.upload_fileobj(BytesIO(binary), bucket, fnm)
 
                 return r
             except Exception:
-                logger.exception(f"Fail put {bucket}/{fnm}")
+                logging.exception(f"Fail put {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
 
@@ -92,7 +93,7 @@ class RAGFlowS3(object):
         try:
             self.conn.delete_object(Bucket=bucket, Key=fnm)
         except Exception:
-            logger.exception(f"Fail rm {bucket}/{fnm}")
+            logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
         for _ in range(1):
@@ -101,7 +102,7 @@ class RAGFlowS3(object):
                 object_data = r['Body'].read()
                 return object_data
             except Exception:
-                logger.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
         return
@@ -128,7 +129,7 @@ class RAGFlowS3(object):
 
                 return r
             except Exception:
-                logger.exception(f"fail get url {bucket}/{fnm}")
+                logging.exception(f"fail get url {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
         return

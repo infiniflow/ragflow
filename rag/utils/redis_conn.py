@@ -1,7 +1,7 @@
+import logging
 import json
 
 import valkey as redis
-import logging
 from rag import settings
 from rag.utils import singleton
 

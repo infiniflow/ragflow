@@ -1,8 +1,8 @@
+import logging
 import requests
 from bridge.context import ContextType  # Import Context, ContextType
 from bridge.reply import Reply, ReplyType  # Import Reply, ReplyType
 from bridge import *
-from api.utils.log_utils import logger
 from plugins import Plugin, register  # Import Plugin and register
 from plugins.event import Event, EventContext, EventAction  # Import event-related classes
 
@@ -16,7 +16,7 @@ class RAGFlowChat(Plugin):
         self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
         # Store conversation_id for each user
         self.conversations = {}
-        logger.info("[RAGFlowChat] Plugin initialized")
+        logging.info("[RAGFlowChat] Plugin initialized")
 
     def on_handle_context(self, e_context: EventContext):
         context = e_context['context']
@@ -45,7 +45,7 @@ class RAGFlowChat(Plugin):
         user_id = session_id  # Use session_id as user_id
 
         if not api_key or not host_address:
-            logger.error("[RAGFlowChat] Missing configuration")
+            logging.error("[RAGFlowChat] Missing configuration")
             return "The plugin configuration is incomplete. Please check the configuration."
 
         headers = {
@@ -63,20 +63,20 @@ class RAGFlowChat(Plugin):
             }
             try:
                 response = requests.get(url_new_conversation, headers=headers, params=params_new_conversation)
-                logger.debug(f"[RAGFlowChat] New conversation response: {response.text}")
+                logging.debug(f"[RAGFlowChat] New conversation response: {response.text}")
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("code") == 0:
                         conversation_id = data["data"]["id"]
                         self.conversations[user_id] = conversation_id
                     else:
-                        logger.error(f"[RAGFlowChat] Failed to create conversation: {data.get('message')}")
+                        logging.error(f"[RAGFlowChat] Failed to create conversation: {data.get('message')}")
                         return f"Sorry, unable to create a conversation: {data.get('message')}"
                 else:
-                    logger.error(f"[RAGFlowChat] HTTP error when creating conversation: {response.status_code}")
+                    logging.error(f"[RAGFlowChat] HTTP error when creating conversation: {response.status_code}")
                     return f"Sorry, unable to connect to RAGFlow API (create conversation). HTTP status code: {response.status_code}"
             except Exception as e:
-                logger.exception("[RAGFlowChat] Exception when creating conversation")
+                logging.exception("[RAGFlowChat] Exception when creating conversation")
                 return f"Sorry, an internal error occurred: {str(e)}"
 
         # Step 2: Send the message and get a reply
@@ -95,18 +95,18 @@ class RAGFlowChat(Plugin):
 
         try:
             response = requests.post(url_completion, headers=headers, json=payload_completion)
-            logger.debug(f"[RAGFlowChat] Completion response: {response.text}")
+            logging.debug(f"[RAGFlowChat] Completion response: {response.text}")
             if response.status_code == 200:
                 data = response.json()
                 if data.get("code") == 0:
                     answer = data["data"]["answer"]
                     return answer
                 else:
-                    logger.error(f"[RAGFlowChat] Failed to get answer: {data.get('message')}")
+                    logging.error(f"[RAGFlowChat] Failed to get answer: {data.get('message')}")
                     return f"Sorry, unable to get a reply: {data.get('message')}"
             else:
-                logger.error(f"[RAGFlowChat] HTTP error when getting answer: {response.status_code}")
+                logging.error(f"[RAGFlowChat] HTTP error when getting answer: {response.status_code}")
                 return f"Sorry, unable to connect to RAGFlow API (get reply). HTTP status code: {response.status_code}"
         except Exception as e:
-            logger.exception("[RAGFlowChat] Exception when getting answer")
+            logging.exception("[RAGFlowChat] Exception when getting answer")
             return f"Sorry, an internal error occurred: {str(e)}"
