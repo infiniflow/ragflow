@@ -17,6 +17,7 @@
 import sys
 from api.utils.log_utils import logger
 
+
 def python_version_validation():
     # Check python version
     required_python_version = (3, 10)
@@ -33,5 +34,5 @@ python_version_validation()
 
 # Download nltk data
 import nltk
-nltk.download('wordnet')
-nltk.download('punkt_tab')
+nltk.download('wordnet', halt_on_error=False, quiet=True)
+nltk.download('punkt_tab', halt_on_error=False, quiet=True)

@@ -55,7 +55,6 @@ class RagTokenizer:
         except Exception:
             logger.exception(f"[HUQIE]:Build trie {fnm} failed")
 
-
     def __init__(self, debug=False):
         self.DEBUG = debug
         self.DENOMINATOR = 1000000
