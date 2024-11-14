@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import builtins
 import json
@@ -23,7 +24,6 @@ from typing import Tuple, Union
 import pandas as pd
 
 from agent import settings
-from api.utils.log_utils import logger
 
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
@@ -361,13 +361,13 @@ class ComponentParamBase(ABC):
 
     def _warn_deprecated_param(self, param_name, descr):
         if self._deprecated_params_set.get(param_name):
-            logger.warning(
+            logging.warning(
                 f"{descr} {param_name} is deprecated and ignored in this version."
             )
 
     def _warn_to_deprecate_param(self, param_name, descr, new_param):
         if self._deprecated_params_set.get(param_name):
-            logger.warning(
+            logging.warning(
                 f"{descr} {param_name} will be deprecated in future release; "
                 f"please use {new_param} instead."
             )
@@ -403,7 +403,7 @@ class ComponentBase(ABC):
         return cpnts
 
     def run(self, history, **kwargs):
-        logger.info("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
+        logging.debug("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
                                                               json.dumps(kwargs, ensure_ascii=False)))
         try:
             res = self._run(history, **kwargs)
@@ -476,7 +476,7 @@ class ComponentBase(ABC):
             reversed_cpnts.extend(self._canvas.path[-2])
         reversed_cpnts.extend(self._canvas.path[-1])
 
-        logger.debug(f"{self.component_name} {reversed_cpnts[::-1]}")
+        logging.debug(f"{self.component_name} {reversed_cpnts[::-1]}")
         for u in reversed_cpnts[::-1]:
             if self.get_component_name(u) in ["switch", "concentrator"]: continue
             if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":

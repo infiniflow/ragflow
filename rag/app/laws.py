@@ -21,7 +21,6 @@ from rag.nlp import bullets_category, remove_contents_table, hierarchical_merge,
     make_colon_as_title, tokenize_chunks, docx_question_level
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
-from api.utils.log_utils import logger
 
 
 class Docx(DocxParser):
@@ -122,7 +121,7 @@ class Pdf(PdfParser):
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.67, "Layout analysis finished")
-        logger.info("layouts:".format(
+        logging.debug("layouts:".format(
             ))
         self._naive_vertical_merge()
 

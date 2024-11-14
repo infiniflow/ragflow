@@ -13,12 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component import GenerateParam, Generate
 from rag.utils import num_tokens_from_string, encoder
-from api.utils.log_utils import logger
 
 
 class RelevantParam(GenerateParam):
@@ -71,7 +71,7 @@ class Relevant(Generate, ABC):
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": ans}],
                             self._param.gen_conf())
 
-        logger.info(ans)
+        logging.debug(ans)
         if ans.lower().find("yes") >= 0:
             return Relevant.be_output(self._param.yes)
         if ans.lower().find("no") >= 0:

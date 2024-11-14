@@ -35,7 +35,7 @@ class RuntimeConfig(ReloadConfigBase):
 
     @classmethod
     def init_env(cls):
-        cls.ENV.update(get_ragflow_version())
+        cls.ENV.update({"version": get_ragflow_version()})
 
     @classmethod
     def load_config_manager(cls):

@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import re
 from typing import Optional
 import threading
@@ -32,7 +33,6 @@ from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai 
 import json
-from api.utils.log_utils import logger
 
 class Base(ABC):
     def __init__(self, key, model_name):
@@ -297,7 +297,7 @@ class YoudaoEmbed(Base):
         if not LIGHTEN and not YoudaoEmbed._client:
             from BCEmbedding import EmbeddingModel as qanthing
             try:
-                logger.info("LOADING BCE...")
+                logging.info("LOADING BCE...")
                 YoudaoEmbed._client = qanthing(model_name_or_path=os.path.join(
                     get_home_cache_dir(),
                     "bce-embedding-base_v1"))

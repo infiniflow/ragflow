@@ -5,6 +5,7 @@ Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
 """
 
+import logging
 import argparse
 import json
 import re
@@ -17,7 +18,6 @@ import tiktoken
 from graphrag.claim_prompt import CLAIM_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
-from api.utils.log_utils import logger
 
 DEFAULT_TUPLE_DELIMITER = "<|>"
 DEFAULT_RECORD_DELIMITER = "##"
@@ -126,7 +126,7 @@ class ClaimExtractor:
                 ]
                 source_doc_map[document_id] = text
             except Exception as e:
-                logger.exception("error extracting claim")
+                logging.exception("error extracting claim")
                 self._on_error(
                     e,
                     traceback.format_exc(),
@@ -265,4 +265,4 @@ if __name__ == "__main__":
         "claim_description": ""
     }
     claim = ex(info)
-    logger.info(json.dumps(claim.output, ensure_ascii=False, indent=2))
+    logging.info(json.dumps(claim.output, ensure_ascii=False, indent=2))

@@ -15,6 +15,7 @@
 #
 import os
 import sys
+import logging
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from flask import Blueprint, Flask
@@ -32,7 +33,6 @@ from flask_login import LoginManager
 from api.settings import SECRET_KEY
 from api.settings import API_VERSION
 from api.utils.api_utils import server_error_response
-from api.utils.log_utils import logger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 __all__ = ["app"]
@@ -154,7 +154,7 @@ def load_user(web_request):
             else:
                 return None
         except Exception:
-            logger.exception("load_user got exception")
+            logging.exception("load_user got exception")
             return None
     else:
         return None

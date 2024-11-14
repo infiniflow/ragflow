@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from duckduckgo_search import DDGS
 import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.log_utils import logger
 
 
 class DuckDuckGoParam(ComponentParamBase):
@@ -62,5 +62,5 @@ class DuckDuckGo(ComponentBase, ABC):
             return DuckDuckGo.be_output("")
 
         df = pd.DataFrame(duck_res)
-        logger.debug("df: {df}")
+        logging.debug("df: {df}")
         return df

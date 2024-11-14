@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from rag import settings
@@ -28,7 +29,7 @@ class RAGFlowAzureSpnBlob(object):
             credentials = ClientSecretCredential(tenant_id=self.tenant_id, client_id=self.client_id, client_secret=self.secret, authority=AzureAuthorityHosts.AZURE_CHINA)
             self.conn = FileSystemClient(account_url=self.account_url, file_system_name=self.container_name, credential=credentials)
         except Exception:
-            logger.exception("Fail to connect %s" % self.account_url)
+            logging.exception("Fail to connect %s" % self.account_url)
 
     def __close__(self):
         del self.conn
@@ -47,7 +48,7 @@ class RAGFlowAzureSpnBlob(object):
                 f.append_data(binary, offset=0, length=len(binary))
                 return f.flush_data(len(binary))
             except Exception:
-                logger.exception(f"Fail put {bucket}/{fnm}")
+                logging.exception(f"Fail put {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
 
@@ -55,7 +56,7 @@ class RAGFlowAzureSpnBlob(object):
         try:
             self.conn.delete_file(fnm)
         except Exception:
-            logger.exception(f"Fail rm {bucket}/{fnm}")
+            logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
         for _ in range(1):
@@ -64,7 +65,7 @@ class RAGFlowAzureSpnBlob(object):
                 r = client.download_file()
                 return r.read()
             except Exception:
-                logger.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
         return
@@ -74,7 +75,7 @@ class RAGFlowAzureSpnBlob(object):
             client = self.conn.get_file_client(fnm)
             return client.exists()
         except Exception:
-            logger.exception(f"Fail put {bucket}/{fnm}")
+            logging.exception(f"Fail put {bucket}/{fnm}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):
@@ -82,7 +83,7 @@ class RAGFlowAzureSpnBlob(object):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
             except Exception:
-                logger.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
         return

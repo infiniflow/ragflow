@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from io import BytesIO
@@ -24,7 +25,7 @@ class RAGFlowAzureSasBlob(object):
         try:
             self.conn = ContainerClient.from_container_url(self.container_url + "?" + self.sas_token)
         except Exception:
-            logger.exception("Fail to connect %s " % self.container_url)
+            logging.exception("Fail to connect %s " % self.container_url)
 
     def __close__(self):
         del self.conn
@@ -39,7 +40,7 @@ class RAGFlowAzureSasBlob(object):
             try:
                 return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
             except Exception:
-                logger.exception(f"Fail put {bucket}/{fnm}")
+                logging.exception(f"Fail put {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
 
@@ -47,7 +48,7 @@ class RAGFlowAzureSasBlob(object):
         try:
             self.conn.delete_blob(fnm)
         except Exception:
-            logger.exception(f"Fail rm {bucket}/{fnm}")
+            logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
         for _ in range(1):
@@ -55,7 +56,7 @@ class RAGFlowAzureSasBlob(object):
                 r = self.conn.download_blob(fnm)
                 return r.read()
             except Exception:
-                logger.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
         return
@@ -64,7 +65,7 @@ class RAGFlowAzureSasBlob(object):
         try:
             return self.conn.get_blob_client(fnm).exists()
         except Exception:
-            logger.exception(f"Fail put {bucket}/{fnm}")
+            logging.exception(f"Fail put {bucket}/{fnm}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):
@@ -72,7 +73,7 @@ class RAGFlowAzureSasBlob(object):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
             except Exception:
-                logger.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
         return

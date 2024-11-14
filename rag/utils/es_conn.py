@@ -1,3 +1,4 @@
+import logging
 import re
 import json
 import time
@@ -8,7 +9,6 @@ import copy
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
-from api.utils.log_utils import logger
 from rag import settings
 from rag.utils import singleton
 from api.utils.file_utils import get_project_base_directory
@@ -22,7 +22,7 @@ from rag.nlp import is_english, rag_tokenizer
 class ESConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
-        logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
+        logging.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
         for _ in range(24):
             try:
                 self.es = Elasticsearch(
@@ -36,25 +36,25 @@ class ESConnection(DocStoreConnection):
                     self.info = self.es.info()
                     break
             except Exception as e:
-                logger.warn(f"{str(e)}. Waiting Elasticsearch {settings.ES['hosts']} to be healthy.")
+                logging.warn(f"{str(e)}. Waiting Elasticsearch {settings.ES['hosts']} to be healthy.")
                 time.sleep(5)
         if not self.es.ping():
             msg = f"Elasticsearch {settings.ES['hosts']} didn't become healthy in 120s."
-            logger.error(msg)
+            logging.error(msg)
             raise Exception(msg)
         v = self.info.get("version", {"number": "8.11.3"})
         v = v["number"].split(".")[0]
         if int(v) < 8:
             msg = f"Elasticsearch version must be greater than or equal to 8, current version: {v}"
-            logger.error(msg)
+            logging.error(msg)
             raise Exception(msg)
         fp_mapping = os.path.join(get_project_base_directory(), "conf", "mapping.json")
         if not os.path.exists(fp_mapping):
             msg = f"Elasticsearch mapping file not found at {fp_mapping}"
-            logger.error(msg)
+            logging.error(msg)
             raise Exception(msg)
         self.mapping = json.load(open(fp_mapping, "r"))
-        logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
+        logging.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
 
     """
     Database operations
@@ -79,13 +79,13 @@ class ESConnection(DocStoreConnection):
                                                  settings=self.mapping["settings"],
                                                  mappings=self.mapping["mappings"])
         except Exception:
-            logger.exception("ES create index error %s" % (indexName))
+            logging.exception("ES create index error %s" % (indexName))
 
     def deleteIdx(self, indexName: str, knowledgebaseId: str):
         try:
             return self.es.indices.delete(indexName, allow_no_indices=True)
         except Exception:
-            logger.exception("ES delete index error %s" % (indexName))
+            logging.exception("ES delete index error %s" % (indexName))
 
     def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
         s = Index(indexName, self.es)
@@ -93,7 +93,7 @@ class ESConnection(DocStoreConnection):
             try:
                 return s.exists()
             except Exception as e:
-                logger.exception("ES indexExist")
+                logging.exception("ES indexExist")
                 if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
                     continue
         return False
@@ -178,7 +178,7 @@ class ESConnection(DocStoreConnection):
             s = s[offset:limit]
         q = s.to_dict()
         print(json.dumps(q), flush=True)
-        # logger.info("ESConnection.search [Q]: " + json.dumps(q))
+        logging.debug("ESConnection.search [Q]: " + json.dumps(q))
 
         for i in range(3):
             try:
@@ -190,14 +190,14 @@ class ESConnection(DocStoreConnection):
                                      _source=True)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
-                logger.info("ESConnection.search res: " + str(res))
+                logging.debug("ESConnection.search res: " + str(res))
                 return res
             except Exception as e:
-                logger.exception("ES search [Q]: " + str(q))
+                logging.exception("ES search [Q]: " + str(q))
                 if str(e).find("Timeout") > 0:
                     continue
                 raise e
-        logger.error("ES search timeout for 3 times!")
+        logging.error("ES search timeout for 3 times!")
         raise Exception("ES search timeout.")
 
     def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | None:
@@ -213,11 +213,11 @@ class ESConnection(DocStoreConnection):
                 chunk["id"] = chunkId
                 return chunk
             except Exception as e:
-                logger.exception(f"ES get({chunkId}) got exception")
+                logging.exception(f"ES get({chunkId}) got exception")
                 if str(e).find("Timeout") > 0:
                     continue
                 raise e
-        logger.error("ES search timeout for 3 times!")
+        logging.error("ES search timeout for 3 times!")
         raise Exception("ES search timeout.")
 
     def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str) -> list[str]:
@@ -247,7 +247,7 @@ class ESConnection(DocStoreConnection):
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
             except Exception as e:
-                logger.warning("Fail to bulk: " + str(e))
+                logging.warning("Fail to bulk: " + str(e))
                 if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
                     time.sleep(3)
                     continue
@@ -264,7 +264,7 @@ class ESConnection(DocStoreConnection):
                     self.es.update(index=indexName, id=chunkId, doc=doc)
                     return True
                 except Exception as e:
-                    logger.exception(
+                    logging.exception(
                         f"ES failed to update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)})")
                     if str(e).find("Timeout") > 0:
                         continue
@@ -304,7 +304,7 @@ class ESConnection(DocStoreConnection):
                     _ = ubq.execute()
                     return True
                 except Exception as e:
-                    logger.error("ES update exception: " + str(e) + "[Q]:" + str(bqry.to_dict()))
+                    logging.error("ES update exception: " + str(e) + "[Q]:" + str(bqry.to_dict()))
                     if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
                         continue
         return False
@@ -326,7 +326,7 @@ class ESConnection(DocStoreConnection):
                     qry.must.append(Q("term", **{k: v}))
                 else:
                     raise Exception("Condition value must be int, str or list.")
-        logger.info("ESConnection.delete [Q]: " + json.dumps(qry.to_dict()))
+        logging.debug("ESConnection.delete [Q]: " + json.dumps(qry.to_dict()))
         for _ in range(10):
             try:
                 res = self.es.delete_by_query(
@@ -335,7 +335,7 @@ class ESConnection(DocStoreConnection):
                     refresh=True)
                 return res["deleted"]
             except Exception as e:
-                logger.warning("Fail to delete: " + str(filter) + str(e))
+                logging.warning("Fail to delete: " + str(filter) + str(e))
                 if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
                     time.sleep(3)
                     continue
@@ -419,7 +419,7 @@ class ESConnection(DocStoreConnection):
     """
 
     def sql(self, sql: str, fetch_size: int, format: str):
-        logger.info(f"ESConnection.sql get sql: {sql}")
+        logging.debug(f"ESConnection.sql get sql: {sql}")
         sql = re.sub(r"[ `]+", " ", sql)
         sql = sql.replace("%", "")
         replaces = []
@@ -436,7 +436,7 @@ class ESConnection(DocStoreConnection):
 
         for p, r in replaces:
             sql = sql.replace(p, r, 1)
-        logger.info(f"ESConnection.sql to es: {sql}")
+        logging.debug(f"ESConnection.sql to es: {sql}")
 
         for i in range(3):
             try:
@@ -444,10 +444,10 @@ class ESConnection(DocStoreConnection):
                                         request_timeout="2s")
                 return res
             except ConnectionTimeout:
-                logger.exception("ESConnection.sql timeout [Q]: " + sql)
+                logging.exception("ESConnection.sql timeout [Q]: " + sql)
                 continue
             except Exception:
-                logger.exception("ESConnection.sql got exception [Q]: " + sql)
+                logging.exception("ESConnection.sql got exception [Q]: " + sql)
                 return None
-        logger.error("ESConnection.sql timeout for 3 times!")
+        logging.error("ESConnection.sql timeout for 3 times!")
         return None

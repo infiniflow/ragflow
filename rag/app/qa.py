@@ -10,6 +10,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import re
 from copy import deepcopy
 from io import BytesIO
@@ -19,7 +20,6 @@ from openpyxl import load_workbook
 from deepdoc.parser.utils import get_text
 from rag.nlp import is_english, random_choices, qbullets_category, add_positions, has_qbullet, docx_question_level
 from rag.nlp import rag_tokenizer, tokenize_table, concat_img
-from api.utils.log_utils import logger
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from docx import Document
 from PIL import Image
@@ -82,7 +82,7 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished")
-        logger.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
+        logging.debug("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
         start = timer()
         self._layouts_rec(zoomin, drop=False)
         callback(0.63, "Layout analysis finished.")
@@ -94,7 +94,7 @@ class Pdf(PdfParser):
         #self._naive_vertical_merge()
         # self._concat_downward()
         #self._filter_forpages()
-        logger.info("layouts: {}".format(timer() - start))
+        logging.debug("layouts: {}".format(timer() - start))
         sections = [b["text"] for b in self.boxes]
         bull_x0_list = []
         q_bull, reg = qbullets_category(sections)
