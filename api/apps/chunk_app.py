@@ -301,16 +301,13 @@ def retrieval_test():
 @login_required
 def knowledge_graph():
     doc_id = request.args["doc_id"]
-    e, doc = DocumentService.get_by_id(doc_id)
-    if not e:
-        return get_data_error_result(message="Document not found!")
     tenant_id = DocumentService.get_tenant_id(doc_id)
     kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
     req = {
         "doc_ids":[doc_id],
         "knowledge_graph_kwd": ["graph", "mind_map"]
     }
-    sres = retrievaler.search(req, search.index_name(tenant_id), kb_ids, doc.kb_id)
+    sres = retrievaler.search(req, search.index_name(tenant_id), kb_ids)
     obj = {"graph": {}, "mind_map": {}}
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]
