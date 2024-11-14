@@ -218,14 +218,17 @@ def build(row):
     logger.info("MINIO PUT({}):{}".format(row["name"], el))
 
     if row["parser_config"].get("auto_keywords", 0):
+        st = timer()
         callback(msg="Start to generate keywords for every chunk ...")
         chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
         for d in docs:
             d["important_kwd"] = keyword_extraction(chat_mdl, d["content_with_weight"],
                                                     row["parser_config"]["auto_keywords"]).split(",")
             d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
+        callback(msg="Keywords generation completed in {:.2f}s".format(timer()-st))
 
     if row["parser_config"].get("auto_questions", 0):
+        st = timer()
         callback(msg="Start to generate questions for every chunk ...")
         chat_mdl = LLMBundle(row["tenant_id"], LLMType.CHAT, llm_name=row["llm_id"], lang=row["language"])
         for d in docs:
@@ -236,6 +239,7 @@ def build(row):
                 d["content_ltks"] += " " + qst
             if "content_sm_ltks" in d:
                 d["content_sm_ltks"] += " " + rag_tokenizer.fine_grained_tokenize(qst)
+        callback(msg="Question generation completed in {:.2f}s".format(timer()-st))
 
     return docs
 
@@ -364,8 +368,8 @@ def main():
             # TODO: exception handler
             ## set_progress(r["did"], -1, "ERROR: ")
             callback(
-                msg="Finished slicing files(%d). Start to embedding the content." %
-                    len(cks))
+                msg="Finished slicing files ({} chunks in {:.2f}s). Start to embedding the content.".format(len(cks), timer() - st)
+            )
             st = timer()
             try:
                 tk_count, vector_size = embedding(cks, embd_mdl, r["parser_config"], callback)
@@ -374,7 +378,7 @@ def main():
                 logger.exception("run_rembedding got exception")
                 tk_count = 0
             logger.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
-            callback(msg="Finished embedding({:.2f})! Start to build index!".format(timer() - st))
+            callback(msg="Finished embedding (in {:.2f}s)! Start to build index!".format(timer() - st))
 
         # logger.info(f"task_executor init_kb index {search.index_name(r["tenant_id"])} embd_mdl {embd_mdl.llm_name} vector length {vector_size}")
         init_kb(r, vector_size)
@@ -396,6 +400,7 @@ def main():
             if TaskService.do_cancel(r["id"]):
                 docStoreConn.delete({"doc_id": r["doc_id"]}, search.index_name(r["tenant_id"]), r["kb_id"])
                 continue
+            callback(msg="Indexing elapsed in {:.2f}s.".format(timer() - st))
             callback(1., "Done!")
             DocumentService.increment_chunk_num(
                 r["doc_id"], r["kb_id"], tk_count, chunk_count, 0)
