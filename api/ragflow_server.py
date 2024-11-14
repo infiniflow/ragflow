@@ -35,7 +35,7 @@ from api.utils.log_utils import logger
 
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
-from api.versions import get_versions
+from api.versions import get_versions, RAGFLOW_VERSION_INFO
 
 
 def update_progress():
@@ -56,6 +56,9 @@ if __name__ == '__main__':
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 
     """)
+    logger.info(
+        f'RAGFlow version: {RAGFLOW_VERSION_INFO}'
+    )
     logger.info(
         f'project base: {utils.file_utils.get_project_base_directory()}'
     )
