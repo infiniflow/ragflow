@@ -44,7 +44,7 @@ from api import utils
 
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
-from api.versions import get_versions, RAGFLOW_VERSION_INFO
+from api.versions import get_ragflow_version
 
 
 def update_progress():
@@ -66,7 +66,7 @@ if __name__ == '__main__':
 
     """)
     logging.info(
-        f'RAGFlow version: {RAGFLOW_VERSION_INFO}'
+        f'RAGFlow version: {get_ragflow_version()}'
     )
     logging.info(
         f'project base: {utils.file_utils.get_project_base_directory()}'
@@ -87,7 +87,7 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
     if args.version:
-        print(get_versions())
+        print(get_ragflow_version())
         sys.exit(0)
 
     RuntimeConfig.DEBUG = args.debug
@@ -103,7 +103,7 @@ if __name__ == '__main__':
 
     # start http server
     try:
-        logging.info("RAG Flow http server start...")
+        logging.info("RAGFlow HTTP server start...")
         run_simple(
             hostname=HOST,
             port=HTTP_PORT,
