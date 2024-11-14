@@ -19,7 +19,7 @@ from api.utils.log_utils import logger
 
 def python_version_validation():
     # Check python version
-    required_python_version = (3, 11)
+    required_python_version = (3, 10)
     if sys.version_info < required_python_version:
         logger.info(
             f"Required Python: >= {required_python_version[0]}.{required_python_version[1]}. Current Python version: {sys.version_info[0]}.{sys.version_info[1]}."
