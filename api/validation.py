@@ -15,8 +15,6 @@
 #
 
 import sys
-from multiprocessing import pool
-
 from api.utils.log_utils import logger
 
 
@@ -43,6 +41,8 @@ def download_nltk_data():
 
 
 try:
+    from multiprocessing import Pool
+    pool = Pool(processes=1)
     thr = pool.apply_async(download_nltk_data)
     binary = thr.get(timeout=60)
 except TimeoutError as e:
