@@ -45,5 +45,5 @@ try:
     pool = Pool(processes=1)
     thr = pool.apply_async(download_nltk_data)
     binary = thr.get(timeout=60)
-except TimeoutError as e:
+except Exception as e:
     print('\x1b[6;37;41m WARNING \x1b[0m' + "Downloading NLTK data failure.", flush=True)
