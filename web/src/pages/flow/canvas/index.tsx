@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { useSetModalState } from '@/hooks/common-hooks';
+import { useCallback, useEffect } from 'react';
 import ReactFlow, {
   Background,
   ConnectionMode,
@@ -10,12 +11,15 @@ import ChatDrawer from '../chat/drawer';
 import { Operator } from '../constant';
 import FlowDrawer from '../flow-drawer';
 import {
+  useGetBeginNodeDataQuery,
   useHandleDrop,
   useSelectCanvasData,
-  useShowDrawer,
+  useShowFormDrawer,
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
+import { BeginQuery } from '../interface';
+import RunDrawer from '../run-drawer';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
 import { RagNode } from './node';
@@ -53,11 +57,11 @@ const edgeTypes = {
 };
 
 interface IProps {
-  chatDrawerVisible: boolean;
-  hideChatDrawer(): void;
+  drawerVisible: boolean;
+  hideDrawer(): void;
 }
 
-function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
+function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
   const {
     nodes,
     edges,
@@ -67,26 +71,64 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
     onSelectionChange,
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
+  const {
+    visible: runVisible,
+    showModal: showRunModal,
+    hideModal: hideRunModal,
+  } = useSetModalState();
+  const {
+    visible: chatVisible,
+    showModal: showChatModal,
+    hideModal: hideChatModal,
+  } = useSetModalState();
 
-  const { drawerVisible, hideDrawer, showDrawer, clickedNode } =
-    useShowDrawer();
+  const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
+    useShowFormDrawer();
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (e, node) => {
       if (node.data.label !== Operator.Note) {
-        showDrawer(node);
+        showFormDrawer(node);
       }
     },
-    [showDrawer],
+    [showFormDrawer],
   );
 
   const onPaneClick = useCallback(() => {
-    hideDrawer();
-  }, [hideDrawer]);
+    hideFormDrawer();
+  }, [hideFormDrawer]);
 
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
 
   useWatchNodeFormDataChange();
+
+  const hideRunOrChatDrawer = useCallback(() => {
+    hideChatModal();
+    hideRunModal();
+    hideDrawer();
+  }, [hideChatModal, hideDrawer, hideRunModal]);
+
+  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+
+  useEffect(() => {
+    if (drawerVisible) {
+      const query: BeginQuery[] = getBeginNodeDataQuery();
+      if (query.length > 0) {
+        showRunModal();
+        hideChatModal();
+      } else {
+        showChatModal();
+        hideRunModal();
+      }
+    }
+  }, [
+    hideChatModal,
+    hideRunModal,
+    showChatModal,
+    showRunModal,
+    drawerVisible,
+    getBeginNodeDataQuery,
+  ]);
 
   return (
     <div className={styles.canvasWrapper}>
@@ -149,14 +191,21 @@ function FlowCanvas({ chatDrawerVisible, hideChatDrawer }: IProps) {
       </ReactFlow>
       <FlowDrawer
         node={clickedNode}
-        visible={drawerVisible}
-        hideModal={hideDrawer}
+        visible={formDrawerVisible}
+        hideModal={hideFormDrawer}
       ></FlowDrawer>
-      {chatDrawerVisible && (
+      {chatVisible && (
         <ChatDrawer
-          visible={chatDrawerVisible}
-          hideModal={hideChatDrawer}
+          visible={chatVisible}
+          hideModal={hideRunOrChatDrawer}
         ></ChatDrawer>
+      )}
+
+      {runVisible && (
+        <RunDrawer
+          hideModal={hideRunOrChatDrawer}
+          showModal={showChatModal}
+        ></RunDrawer>
       )}
     </div>
   );

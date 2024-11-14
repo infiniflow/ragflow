@@ -43,6 +43,15 @@ import {
   SendOutlined,
 } from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
+import {
+  CloudUpload,
+  Link2,
+  ListOrdered,
+  OptionIcon,
+  TextCursorInput,
+  ToggleLeft,
+  WrapText,
+} from 'lucide-react';
 
 export enum Operator {
   Begin = 'Begin',
@@ -2870,12 +2879,12 @@ export enum BeginQueryType {
   Url = 'url',
 }
 
-export const BeginQueryTypeMap = {
-  [BeginQueryType.Line]: 'input',
-  [BeginQueryType.Paragraph]: 'textarea',
-  [BeginQueryType.Options]: 'select',
-  [BeginQueryType.File]: 'file',
-  [BeginQueryType.Integer]: 'inputnumber',
-  [BeginQueryType.Boolean]: 'switch',
-  [BeginQueryType.Url]: 'input',
+export const BeginQueryTypeIconMap = {
+  [BeginQueryType.Line]: TextCursorInput,
+  [BeginQueryType.Paragraph]: WrapText,
+  [BeginQueryType.Options]: OptionIcon,
+  [BeginQueryType.File]: CloudUpload,
+  [BeginQueryType.Integer]: ListOrdered,
+  [BeginQueryType.Boolean]: ToggleLeft,
+  [BeginQueryType.Url]: Link2,
 };

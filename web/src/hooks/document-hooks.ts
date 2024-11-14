@@ -4,8 +4,9 @@ import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import chatService from '@/services/chat-service';
 import kbService from '@/services/knowledge-service';
-import { api_host } from '@/utils/api';
+import api, { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
+import { post } from '@/utils/request';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UploadFile, message } from 'antd';
 import { get } from 'lodash';
@@ -441,4 +442,28 @@ export const useUploadAndParseDocument = (uploadMethod: string) => {
   });
 
   return { data, loading, uploadAndParseDocument: mutateAsync };
+};
+
+export const useParseDocument = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['parseDocument'],
+    mutationFn: async (url: string) => {
+      try {
+        const data = await post(api.parse, { url });
+        if (data?.code === 0) {
+          message.success(i18n.t('message.uploaded'));
+        }
+        return data;
+      } catch (error) {
+        console.log('🚀 ~ mutationFn: ~ error:', error);
+        message.error('error');
+      }
+    },
+  });
+
+  return { parseDocument: mutateAsync, data, loading };
 };

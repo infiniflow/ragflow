@@ -47,7 +47,7 @@ export type RFState = {
     nodeId: string,
     values: any,
     path?: (string | number)[],
-  ) => void;
+  ) => Node[];
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: Node) => void;
   getNode: (id?: string | null) => Node<NodeData> | undefined;
@@ -331,27 +331,30 @@ const useGraphStore = create<RFState>()(
         values: any,
         path: (string | number)[] = [],
       ) => {
-        set({
-          nodes: get().nodes.map((node) => {
-            if (node.id === nodeId) {
-              let nextForm: Record<string, unknown> = { ...node.data.form };
-              if (path.length === 0) {
-                nextForm = Object.assign(nextForm, values);
-              } else {
-                lodashSet(nextForm, path, values);
-              }
-              return {
-                ...node,
-                data: {
-                  ...node.data,
-                  form: nextForm,
-                },
-              } as any;
+        const nextNodes = get().nodes.map((node) => {
+          if (node.id === nodeId) {
+            let nextForm: Record<string, unknown> = { ...node.data.form };
+            if (path.length === 0) {
+              nextForm = Object.assign(nextForm, values);
+            } else {
+              lodashSet(nextForm, path, values);
             }
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                form: nextForm,
+              },
+            } as any;
+          }
 
-            return node;
-          }),
+          return node;
         });
+        set({
+          nodes: nextNodes,
+        });
+
+        return nextNodes;
       },
       updateSwitchFormData: (source, sourceHandle, target) => {
         const { updateNodeForm } = get();

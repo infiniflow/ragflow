@@ -225,49 +225,60 @@ export const useHandleDrop = () => {
   return { onDrop, onDragOver, setReactFlowInstance };
 };
 
-export const useShowDrawer = () => {
+export const useShowFormDrawer = () => {
   const {
     clickedNodeId: clickNodeId,
     setClickedNodeId,
     getNode,
   } = useGraphStore((state) => state);
   const {
-    visible: drawerVisible,
-    hideModal: hideDrawer,
-    showModal: showDrawer,
+    visible: formDrawerVisible,
+    hideModal: hideFormDrawer,
+    showModal: showFormDrawer,
   } = useSetModalState();
 
   const handleShow = useCallback(
     (node: Node) => {
       setClickedNodeId(node.id);
-      showDrawer();
+      showFormDrawer();
     },
-    [showDrawer, setClickedNodeId],
+    [showFormDrawer, setClickedNodeId],
   );
 
   return {
-    drawerVisible,
-    hideDrawer,
-    showDrawer: handleShow,
+    formDrawerVisible,
+    hideFormDrawer,
+    showFormDrawer: handleShow,
     clickedNode: getNode(clickNodeId),
   };
 };
 
 export const useSaveGraph = () => {
   const { data } = useFetchFlow();
-  const { setFlow } = useSetFlow();
+  const { setFlow, loading } = useSetFlow();
   const { id } = useParams();
   const { nodes, edges } = useGraphStore((state) => state);
-  const saveGraph = useCallback(async () => {
-    const dslComponents = buildDslComponentsByGraph(nodes, edges);
-    return setFlow({
-      id,
-      title: data.title,
-      dsl: { ...data.dsl, graph: { nodes, edges }, components: dslComponents },
-    });
-  }, [nodes, edges, setFlow, id, data]);
+  useEffect(() => {}, [nodes]);
+  const saveGraph = useCallback(
+    async (currentNodes?: Node[]) => {
+      const dslComponents = buildDslComponentsByGraph(
+        currentNodes ?? nodes,
+        edges,
+      );
+      return setFlow({
+        id,
+        title: data.title,
+        dsl: {
+          ...data.dsl,
+          graph: { nodes: currentNodes ?? nodes, edges },
+          components: dslComponents,
+        },
+      });
+    },
+    [nodes, edges, setFlow, id, data],
+  );
 
-  return { saveGraph };
+  return { saveGraph, loading };
 };
 
 export const useHandleFormValuesChange = (id?: string) => {
@@ -420,32 +431,46 @@ export const useHandleNodeNameChange = ({
   return { name, handleNameBlur, handleNameChange };
 };
 
+export const useGetBeginNodeDataQuery = () => {
+  const getNode = useGraphStore((state) => state.getNode);
+
+  const getBeginNodeDataQuery = useCallback(() => {
+    return get(getNode('begin'), 'data.form.query', []);
+  }, [getNode]);
+
+  return getBeginNodeDataQuery;
+};
+
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { id } = useParams();
-  const { saveGraph } = useSaveGraph();
+  const { saveGraph, loading } = useSaveGraph();
   const { resetFlow } = useResetFlow();
   const { refetch } = useFetchFlow();
   const { send } = useSendMessageWithSse(api.runCanvas);
-  const handleRun = useCallback(async () => {
-    const saveRet = await saveGraph();
-    if (saveRet?.code === 0) {
-      // Call the reset api before opening the run drawer each time
-      const resetRet = await resetFlow();
-      // After resetting, all previous messages will be cleared.
-      if (resetRet?.code === 0) {
-        // fetch prologue
-        const sendRet = await send({ id });
-        if (receiveMessageError(sendRet)) {
-          message.error(sendRet?.data?.message);
-        } else {
-          refetch();
-          show();
+
+  const handleRun = useCallback(
+    async (nextNodes?: Node[]) => {
+      const saveRet = await saveGraph(nextNodes);
+      if (saveRet?.code === 0) {
+        // Call the reset api before opening the run drawer each time
+        const resetRet = await resetFlow();
+        // After resetting, all previous messages will be cleared.
+        if (resetRet?.code === 0) {
+          // fetch prologue
+          const sendRet = await send({ id });
+          if (receiveMessageError(sendRet)) {
+            message.error(sendRet?.data?.message);
+          } else {
+            refetch();
+            show();
+          }
         }
       }
-    }
-  }, [saveGraph, resetFlow, id, send, show, refetch]);
+    },
+    [saveGraph, resetFlow, send, id, refetch, show],
+  );
 
-  return handleRun;
+  return { handleRun, loading };
 };
 
 export const useReplaceIdWithName = () => {
