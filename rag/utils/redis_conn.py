@@ -90,6 +90,69 @@ class RedisDB:
             self.__open__()
         return False
 
+    def sadd(self, key: str, member: str):
+        try:
+            self.REDIS.sadd(key, member)
+            return True
+        except Exception as e:
+            logging.warning("[EXCEPTION]sadd" + str(key) + "||" + str(e))
+            self.__open__()
+        return False
+
+    def srem(self, key: str, member: str):
+        try:
+            self.REDIS.srem(key, member)
+            return True
+        except Exception as e:
+            logging.warning("[EXCEPTION]srem" + str(key) + "||" + str(e))
+            self.__open__()
+        return False
+
+    def smembers(self, key: str):
+        try:
+            res = self.REDIS.smembers(key)
+            return res
+        except Exception as e:
+            logging.warning("[EXCEPTION]smembers" + str(key) + "||" + str(e))
+            self.__open__()
+        return None
+
+    def zadd(self, key: str, member: str, score: float):
+        try:
+            self.REDIS.zadd(key, {member: score})
+            return True
+        except Exception as e:
+            logging.warning("[EXCEPTION]zadd" + str(key) + "||" + str(e))
+            self.__open__()
+        return False
+
+    def zcount(self, key: str, min: float, max: float):
+        try:
+            res = self.REDIS.zcount(key, min, max)
+            return res
+        except Exception as e:
+            logging.warning("[EXCEPTION]spopmin" + str(key) + "||" + str(e))
+            self.__open__()
+        return 0
+
+    def zpopmin(self, key: str, count: int):
+        try:
+            res = self.REDIS.zpopmin(key, count)
+            return res
+        except Exception as e:
+            logging.warning("[EXCEPTION]spopmin" + str(key) + "||" + str(e))
+            self.__open__()
+        return None
+
+    def zrangebyscore(self, key: str, min: float, max: float):
+        try:
+            res = self.REDIS.zrangebyscore(key, min, max)
+            return res
+        except Exception as e:
+            logging.warning("[EXCEPTION]srangebyscore" + str(key) + "||" + str(e))
+            self.__open__()
+        return None
+
     def transaction(self, key, value, exp=3600):
         try:
             pipeline = self.REDIS.pipeline(transaction=True)
@@ -161,5 +224,23 @@ class RedisDB:
                 return
             logging.exception("xpending_range: " + consumer_name + " got exception")
             self.__open__()
+
+    def queue_length(self, queue) -> int:
+        for _ in range(3):
+            try:
+                num = self.REDIS.xlen(queue)
+                return num
+            except Exception:
+                logging.exception("queue_length" + str(queue) + " got exception")
+        return 0
+
+    def queue_head(self, queue) -> int:
+        for _ in range(3):
+            try:
+                ent = self.REDIS.xrange(queue, count=1)
+                return ent[0]
+            except Exception:
+                logging.exception("queue_head" + str(queue) + " got exception")
+        return 0
 
 REDIS_CONN = RedisDB()
