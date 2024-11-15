@@ -129,7 +129,7 @@ class Pdf(PdfParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", callback=None, **kwargs):
+          lang="English", callback=None, **kwargs):
     """
         Only pdf is supported.
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
@@ -164,7 +164,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if paper["abstract"]:
         d = copy.deepcopy(doc)
         txt = pdf_parser.remove_tag(paper["abstract"])
-        d["important_kwd"] = ["abstract", "总结", "概括", "summary", "summarize"]
+        d["important_kwd"] = ["abstract", "summary", "summarize"]
         d["important_tks"] = " ".join(d["important_kwd"])
         d["image"], poss = pdf_parser.crop(
             paper["abstract"], need_position=True)
@@ -278,8 +278,22 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 """
 
 if __name__ == "__main__":
-    import sys
+    # import sys
+    import json
+    from datetime import datetime
+    import time
 
     def dummy(prog=None, msg=""):
         pass
-    chunk(sys.argv[1], callback=dummy)
+    pdf_path = "/ssd_root/gao688/papers/pdf/3626246.3653369.pdf"
+    res = chunk(pdf_path, lang='English', callback=dummy)
+    
+    idx = pdf_path.rfind('/')
+    pdf_file_name = pdf_path[idx+1:]
+    json_path = pdf_file_name + ".json"
+    
+    startTime = datetime.now()
+    # Write the dictionary to a JSON file
+    with open(json_path, "w") as json_file:
+        json.dump(res, json_file, indent=4)  # `indent=4` makes the JSON file pretty-printed
+    print(f'Total time: {datetime.now() - startTime}')

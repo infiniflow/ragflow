@@ -25,8 +25,8 @@ import uuid
 import requests
 from enum import Enum, IntEnum
 import importlib
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+# from Cryptodome.PublicKey import RSA
+# from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 
 from filelock import FileLock
 
@@ -326,15 +326,15 @@ def elapsed2time(elapsed):
     return '%02d:%02d:%02d' % (hour, minuter, second)
 
 
-def decrypt(line):
-    file_path = os.path.join(
-        file_utils.get_project_base_directory(),
-        "conf",
-        "private.pem")
-    rsa_key = RSA.importKey(open(file_path).read(), "Welcome")
-    cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    return cipher.decrypt(base64.b64decode(
-        line), "Fail to decrypt password!").decode('utf-8')
+# def decrypt(line):
+#     file_path = os.path.join(
+#         file_utils.get_project_base_directory(),
+#         "conf",
+#         "private.pem")
+#     rsa_key = RSA.importKey(open(file_path).read(), "Welcome")
+#     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
+#     return cipher.decrypt(base64.b64decode(
+#         line), "Fail to decrypt password!").decode('utf-8')
 
 
 def download_img(url):

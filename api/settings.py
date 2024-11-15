@@ -18,7 +18,7 @@ from datetime import date
 from enum import IntEnum, Enum
 from api.utils.file_utils import get_project_base_directory
 import rag.utils.es_conn
-import rag.utils.infinity_conn
+# import rag.utils.infinity_conn
 
 import rag.utils
 from rag.nlp import search
@@ -194,8 +194,8 @@ CHECK_NODES_IDENTITY = False
 DOC_ENGINE = os.environ.get('DOC_ENGINE', "elasticsearch")
 if DOC_ENGINE == "elasticsearch":
     docStoreConn = rag.utils.es_conn.ESConnection()
-elif DOC_ENGINE == "infinity":
-    docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+# elif DOC_ENGINE == "infinity":
+#     docStoreConn = rag.utils.infinity_conn.InfinityConnection()
 else:
     raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 

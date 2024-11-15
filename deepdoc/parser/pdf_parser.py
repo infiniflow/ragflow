@@ -24,12 +24,14 @@ import numpy as np
 from timeit import default_timer as timer
 from pypdf import PdfReader as pdf2_read
 
-from api.settings import LIGHTEN
+# from api.settings import LIGHTEN
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
 from copy import deepcopy
 from huggingface_hub import snapshot_download
+
+LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
 
 class RAGFlowPdfParser:
     def __init__(self):
@@ -92,10 +94,10 @@ class RAGFlowPdfParser:
 
     def _match_proj(self, b):
         proj_patt = [
-            r"第[零一二三四五六七八九十百]+章",
-            r"第[零一二三四五六七八九十百]+[条节]",
-            r"[零一二三四五六七八九十百]+[、是 　]",
-            r"[\(（][零一二三四五六七八九十百]+[）\)]",
+            # r"第[零一二三四五六七八九十百]+章",
+            # r"第[零一二三四五六七八九十百]+[条节]",
+            # r"[零一二三四五六七八九十百]+[、是 　]",
+            # r"[\(（][零一二三四五六七八九十百]+[）\)]",
             r"[\(（][0-9]+[）\)]",
             r"[0-9]+(、|\.[　 ]|）|\.[^0-9./a-zA-Z_%><-]{4,})",
             r"[0-9]+\.[0-9.]+(、|\.[ 　])",
@@ -822,18 +824,18 @@ class RAGFlowPdfParser:
         if re.match(r"[0-9 ().,%%+/-]+$", line):
             return False
         for p, j in [
-            (r"第[零一二三四五六七八九十百]+章", 1),
-            (r"第[零一二三四五六七八九十百]+[条节]", 2),
-            (r"[零一二三四五六七八九十百]+[、 　]", 3),
-            (r"[\(（][零一二三四五六七八九十百]+[）\)]", 4),
+            # (r"第[零一二三四五六七八九十百]+章", 1),
+            # (r"第[零一二三四五六七八九十百]+[条节]", 2),
+            # (r"[零一二三四五六七八九十百]+[、 　]", 3),
+            # (r"[\(（][零一二三四五六七八九十百]+[）\)]", 4),
             (r"[0-9]+(、|\.[　 ]|\.[^0-9])", 5),
             (r"[0-9]+\.[0-9]+(、|[. 　]|[^0-9])", 6),
             (r"[0-9]+\.[0-9]+\.[0-9]+(、|[ 　]|[^0-9])", 7),
             (r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(、|[ 　]|[^0-9])", 8),
             (r".{,48}[：:?？]$", 9),
             (r"[0-9]+）", 10),
-            (r"[\(（][0-9]+[）\)]", 11),
-            (r"[零一二三四五六七八九十百]+是", 12),
+            # (r"[\(（][0-9]+[）\)]", 11),
+            # (r"[零一二三四五六七八九十百]+是", 12),
             (r"[⚫•➢✓]", 12)
         ]:
             if re.match(p, line):

@@ -29,6 +29,7 @@ from api.db.db_utils import bulk_insert_into_db
 from api.settings import docStoreConn
 from api.utils import current_timestamp, get_format_time, get_uuid
 from graphrag.mind_map_extractor import MindMapExtractor
+from rag.app import email1
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search, rag_tokenizer
@@ -424,7 +425,7 @@ def queue_raptor_tasks(doc):
 
 
 def doc_upload_and_parse(conversation_id, file_objs, user_id):
-    from rag.app import presentation, picture, naive, audio, email
+    from rag.app import presentation, picture, naive, audio
     from api.db.services.dialog_service import ConversationService, DialogService
     from api.db.services.file_service import FileService
     from api.db.services.llm_service import LLMBundle
@@ -454,7 +455,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         ParserType.PRESENTATION.value: presentation,
         ParserType.PICTURE.value: picture,
         ParserType.AUDIO.value: audio,
-        ParserType.EMAIL.value: email
+        ParserType.EMAIL.value: email1
     }
     parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": False}
     exe = ThreadPoolExecutor(max_workers=12)

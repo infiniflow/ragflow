@@ -260,7 +260,8 @@ class RagTokenizer:
     def tokenize(self, line):
         line = self._strQ2B(line).lower()
         line = self._tradi2simp(line)
-        zh_num = len([1 for c in line if is_chinese(c)])
+        # zh_num = len([1 for c in line if is_chinese(c)])
+        zh_num = 0
         if zh_num == 0:
             return " ".join([self.stemmer.stem(self.lemmatizer.lemmatize(t)) for t in word_tokenize(line)])
 
@@ -330,7 +331,8 @@ class RagTokenizer:
 
     def fine_grained_tokenize(self, tks):
         tks = tks.split(" ")
-        zh_num = len([1 for c in tks if c and is_chinese(c[0])])
+        # zh_num = len([1 for c in tks if c and is_chinese(c[0])])
+        zh_num = 0
         if zh_num < len(tks) * 0.2:
             res = []
             for tk in tks:
