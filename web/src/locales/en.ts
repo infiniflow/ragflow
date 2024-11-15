@@ -102,15 +102,15 @@ export default {
       processDuration: 'Process Duration',
       progressMsg: 'Progress Msg',
       testingDescription:
-        'Final step! After success, leave the rest to Infiniflow AI.',
+        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        "We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out.",
+        "RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.",
       vectorSimilarityWeight: 'Keywords similarity weight',
       vectorSimilarityWeightTip:
-        " We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity or rerank score(0~1). The sum of both weights is 1.0.",
+        "This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.",
       testText: 'Test text',
-      testTextPlaceholder: 'Please input your question!',
+      testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Testing',
       similarity: 'Hybrid Similarity',
       termSimilarity: 'Term Similarity',
@@ -152,7 +152,7 @@ export default {
       cancel: 'Cancel',
       rerankModel: 'Rerank Model',
       rerankPlaceholder: 'Please select',
-      rerankTip: `If it's empty. It uses embeddings of query and chunks to compuste vector cosine similarity. Otherwise, it uses rerank score in place of  vector cosine similarity.`,
+      rerankTip: `If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity.`,
       topK: 'Top-K',
       topKTip: `K chunks will be fed into rerank models.`,
       delimiter: `Delimiter`,
@@ -277,7 +277,7 @@ export default {
       knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
 
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segements and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</p>
-<p>The chunks are then fed to the LLM to extract nodes and relationships for a knowledge graph and a mind map.</p>
+<p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
