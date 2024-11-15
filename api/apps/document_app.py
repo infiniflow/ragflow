@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import os.path
 import pathlib
 import re
 
@@ -36,7 +37,7 @@ from api.db.services.document_service import DocumentService, doc_upload_and_par
 from api.settings import RetCode, docStoreConn
 from api.utils.api_utils import get_json_result
 from rag.utils.storage_factory import STORAGE_IMPL
-from api.utils.file_utils import filename_type, thumbnail
+from api.utils.file_utils import filename_type, thumbnail, get_project_base_directory
 from api.utils.web_utils import html2pdf, is_valid_url
 from api.constants import IMG_BASE64_PREFIX
 
@@ -529,15 +530,25 @@ def parse():
         if not is_valid_url(url):
             return get_json_result(
                 data=False, message='The URL format is invalid', code=RetCode.ARGUMENT_ERROR)
+        download_path = os.path.join(get_project_base_directory(), "logs/downloads")
+        os.makedirs(download_path, exist_ok=True)
         from selenium.webdriver import Chrome, ChromeOptions
         options = ChromeOptions()
         options.add_argument('--headless')
         options.add_argument('--disable-gpu')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
+        options.add_experimental_option('prefs', {
+            'download.default_directory': download_path,
+            'download.prompt_for_download': False,
+            'download.directory_upgrade': True,
+            'safebrowsing.enabled': True
+        })
         driver = Chrome(options=options)
         driver.get(url)
+        print(driver.get_downloadable_files())
         sections = RAGFlowHtmlParser().parser_txt(driver.page_source)
+        driver.close()
         return get_json_result(data="\n".join(sections))
 
     if 'file' not in request.files:
