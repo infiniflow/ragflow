@@ -171,7 +171,7 @@ class RagTokenizer:
             F += freq
             L += 0 if len(tk) < 2 else 1
             tks.append(tk)
-        F /= len(tks)
+        #F /= len(tks)
         L /= len(tks)
         logging.debug("[SC] {} {} {} {} {}".format(tks, len(tks), L, F, B / len(tks) + L + F))
         return tks, B / len(tks) + L + F

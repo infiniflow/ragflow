@@ -334,7 +334,7 @@ class DocumentService(CommonService):
     def begin2parse(cls, docid):
         cls.update_by_id(
             docid, {"progress": random.random() * 1 / 100.,
-                    "progress_msg": "Task dispatched...",
+                    "progress_msg": "Task is queued...",
                     "process_begin_at": get_format_time()
                     })
 
