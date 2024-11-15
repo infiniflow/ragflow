@@ -276,7 +276,7 @@ export default {
       knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
 
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segements and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</p>
-<p>The chunks are then fed to the LLM to extract nodes and relationships for a knowledge graph and a mind map.</p>
+<p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
