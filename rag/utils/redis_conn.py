@@ -225,14 +225,16 @@ class RedisDB:
             logging.exception("xpending_range: " + consumer_name + " got exception")
             self.__open__()
 
-    def queue_length(self, queue) -> int:
+    def queue_info(self, queue, group_name) -> dict:
         for _ in range(3):
             try:
-                num = self.REDIS.xlen(queue)
-                return num
+                groups = self.REDIS.xinfo_groups(queue)
+                for group in groups:
+                    if group["name"] == group_name:
+                        return group
             except Exception:
                 logging.exception("queue_length" + str(queue) + " got exception")
-        return 0
+        return None
 
     def queue_head(self, queue) -> int:
         for _ in range(3):

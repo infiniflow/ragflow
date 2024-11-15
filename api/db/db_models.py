@@ -31,7 +31,7 @@ from peewee import (
 )
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 from api.db import SerializedType, ParserType
-from api.settings import DATABASE, SECRET_KEY, DATABASE_TYPE
+from api import settings
 from api import utils
 
 def singleton(cls, *args, **kw):
@@ -62,7 +62,7 @@ class TextFieldType(Enum):
 
 
 class LongTextField(TextField):
-    field_type = TextFieldType[DATABASE_TYPE.upper()].value
+    field_type = TextFieldType[settings.DATABASE_TYPE.upper()].value
 
 
 class JSONField(LongTextField):
@@ -282,9 +282,9 @@ class DatabaseMigrator(Enum):
 @singleton
 class BaseDataBase:
     def __init__(self):
-        database_config = DATABASE.copy()
+        database_config = settings.DATABASE.copy()
         db_name = database_config.pop("name")
-        self.database_connection = PooledDatabase[DATABASE_TYPE.upper()].value(db_name, **database_config)
+        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         logging.info('init database on cluster mode successfully')
 
 class PostgresDatabaseLock:
@@ -385,7 +385,7 @@ class DatabaseLock(Enum):
 
 
 DB = BaseDataBase().database_connection
-DB.lock = DatabaseLock[DATABASE_TYPE.upper()].value
+DB.lock = DatabaseLock[settings.DATABASE_TYPE.upper()].value
 
 
 def close_connection():
@@ -476,7 +476,7 @@ class User(DataBaseModel, UserMixin):
         return self.email
 
     def get_id(self):
-        jwt = Serializer(secret_key=SECRET_KEY)
+        jwt = Serializer(secret_key=settings.SECRET_KEY)
         return jwt.dumps(str(self.access_token))
 
     class Meta:
@@ -977,7 +977,7 @@ class CanvasTemplate(DataBaseModel):
 
 def migrate_db():
     with DB.transaction():
-        migrator = DatabaseMigrator[DATABASE_TYPE.upper()].value(DB)
+        migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
         try:
             migrate(
                 migrator.add_column('file', 'source_type', CharField(max_length=128, null=False, default="",

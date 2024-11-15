@@ -25,7 +25,7 @@ from api.db import LLMType
 from api.db.services.dialog_service import DialogService, ConversationService, chat, ask
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle, TenantService, TenantLLMService
-from api.settings import RetCode, retrievaler
+from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from graphrag.mind_map_extractor import MindMapExtractor
@@ -87,7 +87,7 @@ def get():
         else:
             return get_json_result(
                 data=False, message='Only owner of conversation authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
+                code=settings.RetCode.OPERATING_ERROR)
         conv = conv.to_dict()
         return get_json_result(data=conv)
     except Exception as e:
@@ -110,7 +110,7 @@ def rm():
             else:
                 return get_json_result(
                     data=False, message='Only owner of conversation authorized for this operation.',
-                    code=RetCode.OPERATING_ERROR)
+                    code=settings.RetCode.OPERATING_ERROR)
             ConversationService.delete_by_id(cid)
         return get_json_result(data=True)
     except Exception as e:
@@ -125,7 +125,7 @@ def list_convsersation():
         if not DialogService.query(tenant_id=current_user.id, id=dialog_id):
             return get_json_result(
                 data=False, message='Only owner of dialog authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
+                code=settings.RetCode.OPERATING_ERROR)
         convs = ConversationService.query(
             dialog_id=dialog_id,
             order_by=ConversationService.model.create_time,
@@ -297,6 +297,7 @@ def thumbup():
 def ask_about():
     req = request.json
     uid = current_user.id
+
     def stream():
         nonlocal req, uid
         try:
@@ -329,8 +330,8 @@ def mindmap():
     embd_mdl = TenantLLMService.model_instance(
         kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
     chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
-    ranks = retrievaler.retrieval(req["question"], embd_mdl, kb.tenant_id, kb_ids, 1, 12,
-                           0.3, 0.3, aggs=False)
+    ranks = settings.retrievaler.retrieval(req["question"], embd_mdl, kb.tenant_id, kb_ids, 1, 12,
+                                           0.3, 0.3, aggs=False)
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output
     if "error" in mind_map:

@@ -252,13 +252,13 @@ if __name__ == "__main__":
 
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.settings import retrievaler
+    from api import settings
     from api.db.services.knowledgebase_service import KnowledgebaseService
 
     kb_ids = KnowledgebaseService.get_kb_ids(args.tenant_id)
 
     ex = ClaimExtractor(LLMBundle(args.tenant_id, LLMType.CHAT))
-    docs = [d["content_with_weight"] for d in retrievaler.chunk_list(args.doc_id, args.tenant_id, kb_ids, max_count=12, fields=["content_with_weight"])]
+    docs = [d["content_with_weight"] for d in settings.retrievaler.chunk_list(args.doc_id, args.tenant_id, kb_ids, max_count=12, fields=["content_with_weight"])]
     info = {
         "input_text": docs,
         "entity_specs": "organization, person",

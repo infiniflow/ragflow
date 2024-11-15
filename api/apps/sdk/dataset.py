@@ -23,7 +23,7 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService, LLMService
 from api.db.services.user_service import TenantService
-from api.settings import RetCode
+from api import settings
 from api.utils import get_uuid
 from api.utils.api_utils import (
     get_result,
@@ -255,7 +255,7 @@ def delete(tenant_id):
             File2DocumentService.delete_by_document_id(doc.id)
         if not KnowledgebaseService.delete_by_id(id):
             return get_error_data_result(message="Delete dataset error.(Database error)")
-    return get_result(code=RetCode.SUCCESS)
+    return get_result(code=settings.RetCode.SUCCESS)
 
 
 @manager.route("/datasets/<dataset_id>", methods=["PUT"])
@@ -424,7 +424,7 @@ def update(tenant_id, dataset_id):
             )
     if not KnowledgebaseService.update_by_id(kb.id, req):
         return get_error_data_result(message="Update dataset error.(Database error)")
-    return get_result(code=RetCode.SUCCESS)
+    return get_result(code=settings.RetCode.SUCCESS)
 
 
 @manager.route("/datasets", methods=["GET"])

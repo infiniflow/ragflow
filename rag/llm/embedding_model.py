@@ -28,7 +28,7 @@ from openai import OpenAI
 import numpy as np
 import asyncio
 
-from api.settings import LIGHTEN
+from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai 
@@ -60,7 +60,7 @@ class DefaultEmbedding(Base):
         ^_-
 
         """
-        if not LIGHTEN and not DefaultEmbedding._model:
+        if not settings.LIGHTEN and not DefaultEmbedding._model:
             with DefaultEmbedding._model_lock:
                 from FlagEmbedding import FlagModel
                 import torch
@@ -248,7 +248,7 @@ class FastEmbed(Base):
             threads: Optional[int] = None,
             **kwargs,
     ):
-        if not LIGHTEN and not FastEmbed._model:
+        if not settings.LIGHTEN and not FastEmbed._model:
             from fastembed import TextEmbedding
             self._model = TextEmbedding(model_name, cache_dir, threads, **kwargs)
 
@@ -294,7 +294,7 @@ class YoudaoEmbed(Base):
     _client = None
 
     def __init__(self, key=None, model_name="maidalun1020/bce-embedding-base_v1", **kwargs):
-        if not LIGHTEN and not YoudaoEmbed._client:
+        if not settings.LIGHTEN and not YoudaoEmbed._client:
             from BCEmbedding import EmbeddingModel as qanthing
             try:
                 logging.info("LOADING BCE...")

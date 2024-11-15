@@ -26,7 +26,7 @@ from io import BytesIO
 from peewee import fn
 
 from api.db.db_utils import bulk_insert_into_db
-from api.settings import docStoreConn
+from api import settings
 from api.utils import current_timestamp, get_format_time, get_uuid
 from graphrag.mind_map_extractor import MindMapExtractor
 from rag.settings import SVR_QUEUE_NAME
@@ -108,7 +108,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
         cls.clear_chunk_num(doc.id)
         return cls.delete_by_id(doc.id)
 
@@ -553,10 +553,10 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
-                if not docStoreConn.indexExist(idxnm, kb_id):
-                    docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
+                if not settings.docStoreConn.indexExist(idxnm, kb_id):
+                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
                 try_create_idx = False
-            docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
+            settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)

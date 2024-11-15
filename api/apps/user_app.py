@@ -38,20 +38,7 @@ from api.utils import (
     datetime_format,
 )
 from api.db import UserTenantRole, FileType
-from api.settings import (
-    RetCode,
-    GITHUB_OAUTH,
-    FEISHU_OAUTH,
-    CHAT_MDL,
-    EMBEDDING_MDL,
-    ASR_MDL,
-    IMAGE2TEXT_MDL,
-    PARSERS,
-    API_KEY,
-    LLM_FACTORY,
-    LLM_BASE_URL,
-    RERANK_MDL,
-)
+from api import settings
 from api.db.services.user_service import UserService, TenantService, UserTenantService
 from api.db.services.file_service import FileService
 from api.utils.api_utils import get_json_result, construct_response
@@ -90,7 +77,7 @@ def login():
     """
     if not request.json:
         return get_json_result(
-            data=False, code=RetCode.AUTHENTICATION_ERROR, message="Unauthorized!"
+            data=False, code=settings.RetCode.AUTHENTICATION_ERROR, message="Unauthorized!"
         )
 
     email = request.json.get("email", "")
@@ -98,7 +85,7 @@ def login():
     if not users:
         return get_json_result(
             data=False,
-            code=RetCode.AUTHENTICATION_ERROR,
+            code=settings.RetCode.AUTHENTICATION_ERROR,
             message=f"Email: {email} is not registered!",
         )
 
@@ -107,7 +94,7 @@ def login():
         password = decrypt(password)
     except BaseException:
         return get_json_result(
-            data=False, code=RetCode.SERVER_ERROR, message="Fail to crypt password"
+            data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password"
         )
 
     user = UserService.query_user(email, password)
@@ -123,7 +110,7 @@ def login():
     else:
         return get_json_result(
             data=False,
-            code=RetCode.AUTHENTICATION_ERROR,
+            code=settings.RetCode.AUTHENTICATION_ERROR,
             message="Email and password do not match!",
         )
 
@@ -150,10 +137,10 @@ def github_callback():
     import requests
 
     res = requests.post(
-        GITHUB_OAUTH.get("url"),
+        settings.GITHUB_OAUTH.get("url"),
         data={
-            "client_id": GITHUB_OAUTH.get("client_id"),
-            "client_secret": GITHUB_OAUTH.get("secret_key"),
+            "client_id": settings.GITHUB_OAUTH.get("client_id"),
+            "client_secret": settings.GITHUB_OAUTH.get("secret_key"),
             "code": request.args.get("code"),
         },
         headers={"Accept": "application/json"},
@@ -235,11 +222,11 @@ def feishu_callback():
     import requests
 
     app_access_token_res = requests.post(
-        FEISHU_OAUTH.get("app_access_token_url"),
+        settings.FEISHU_OAUTH.get("app_access_token_url"),
         data=json.dumps(
             {
-                "app_id": FEISHU_OAUTH.get("app_id"),
-                "app_secret": FEISHU_OAUTH.get("app_secret"),
+                "app_id": settings.FEISHU_OAUTH.get("app_id"),
+                "app_secret": settings.FEISHU_OAUTH.get("app_secret"),
             }
         ),
         headers={"Content-Type": "application/json; charset=utf-8"},
@@ -249,10 +236,10 @@ def feishu_callback():
         return redirect("/?error=%s" % app_access_token_res)
 
     res = requests.post(
-        FEISHU_OAUTH.get("user_access_token_url"),
+        settings.FEISHU_OAUTH.get("user_access_token_url"),
         data=json.dumps(
             {
-                "grant_type": FEISHU_OAUTH.get("grant_type"),
+                "grant_type": settings.FEISHU_OAUTH.get("grant_type"),
                 "code": request.args.get("code"),
             }
         ),
@@ -405,11 +392,11 @@ def setting_user():
     if request_data.get("password"):
         new_password = request_data.get("new_password")
         if not check_password_hash(
-            current_user.password, decrypt(request_data["password"])
+                current_user.password, decrypt(request_data["password"])
         ):
             return get_json_result(
                 data=False,
-                code=RetCode.AUTHENTICATION_ERROR,
+                code=settings.RetCode.AUTHENTICATION_ERROR,
                 message="Password error!",
             )
 
@@ -438,7 +425,7 @@ def setting_user():
     except Exception as e:
         logging.exception(e)
         return get_json_result(
-            data=False, message="Update failure!", code=RetCode.EXCEPTION_ERROR
+            data=False, message="Update failure!", code=settings.RetCode.EXCEPTION_ERROR
         )
 
 
@@ -497,12 +484,12 @@ def user_register(user_id, user):
     tenant = {
         "id": user_id,
         "name": user["nickname"] + "‘s Kingdom",
-        "llm_id": CHAT_MDL,
-        "embd_id": EMBEDDING_MDL,
-        "asr_id": ASR_MDL,
-        "parser_ids": PARSERS,
-        "img2txt_id": IMAGE2TEXT_MDL,
-        "rerank_id": RERANK_MDL,
+        "llm_id": settings.CHAT_MDL,
+        "embd_id": settings.EMBEDDING_MDL,
+        "asr_id": settings.ASR_MDL,
+        "parser_ids": settings.PARSERS,
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
+        "rerank_id": settings.RERANK_MDL,
     }
     usr_tenant = {
         "tenant_id": user_id,
@@ -522,15 +509,15 @@ def user_register(user_id, user):
         "location": "",
     }
     tenant_llm = []
-    for llm in LLMService.query(fid=LLM_FACTORY):
+    for llm in LLMService.query(fid=settings.LLM_FACTORY):
         tenant_llm.append(
             {
                 "tenant_id": user_id,
-                "llm_factory": LLM_FACTORY,
+                "llm_factory": settings.LLM_FACTORY,
                 "llm_name": llm.llm_name,
                 "model_type": llm.model_type,
-                "api_key": API_KEY,
-                "api_base": LLM_BASE_URL,
+                "api_key": settings.API_KEY,
+                "api_base": settings.LLM_BASE_URL,
             }
         )
 
@@ -582,7 +569,7 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"Invalid email address: {email_address}!",
-            code=RetCode.OPERATING_ERROR,
+            code=settings.RetCode.OPERATING_ERROR,
         )
 
     # Check if the email address is already used
@@ -590,7 +577,7 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"Email: {email_address} has already registered!",
-            code=RetCode.OPERATING_ERROR,
+            code=settings.RetCode.OPERATING_ERROR,
         )
 
     # Construct user info data
@@ -625,7 +612,7 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"User registration failure, error: {str(e)}",
-            code=RetCode.EXCEPTION_ERROR,
+            code=settings.RetCode.EXCEPTION_ERROR,
         )
 
 

@@ -30,8 +30,7 @@ from api.utils import CustomJSONEncoder, commands
 
 from flask_session import Session
 from flask_login import LoginManager
-from api.settings import SECRET_KEY
-from api.settings import API_VERSION
+from api import settings
 from api.utils.api_utils import server_error_response
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
@@ -78,7 +77,6 @@ app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
 app.errorhandler(Exception)(server_error_response)
 
-
 ## convince for dev and debug
 # app.config["LOGIN_DISABLED"] = True
 app.config["SESSION_PERMANENT"] = False
@@ -110,7 +108,7 @@ def register_page(page_path):
 
     page_name = page_path.stem.rstrip("_app")
     module_name = ".".join(
-        page_path.parts[page_path.parts.index("api") : -1] + (page_name,)
+        page_path.parts[page_path.parts.index("api"): -1] + (page_name,)
     )
 
     spec = spec_from_file_location(module_name, page_path)
@@ -121,7 +119,7 @@ def register_page(page_path):
     spec.loader.exec_module(page)
     page_name = getattr(page, "page_name", page_name)
     url_prefix = (
-        f"/api/{API_VERSION}" if "/sdk/" in path else f"/{API_VERSION}/{page_name}"
+        f"/api/{settings.API_VERSION}" if "/sdk/" in path else f"/{settings.API_VERSION}/{page_name}"
     )
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
@@ -141,7 +139,7 @@ client_urls_prefix = [
 
 @login_manager.request_loader
 def load_user(web_request):
-    jwt = Serializer(secret_key=SECRET_KEY)
+    jwt = Serializer(secret_key=settings.SECRET_KEY)
     authorization = web_request.headers.get("Authorization")
     if authorization:
         try:
