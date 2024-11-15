@@ -23,7 +23,7 @@ import os
 from abc import ABC
 import numpy as np
 
-from api.settings import LIGHTEN
+from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import json
@@ -57,7 +57,7 @@ class DefaultRerank(Base):
         ^_-
 
         """
-        if not LIGHTEN and not DefaultRerank._model:
+        if not settings.LIGHTEN and not DefaultRerank._model:
             import torch
             from FlagEmbedding import FlagReranker
             with DefaultRerank._model_lock:
@@ -121,7 +121,7 @@ class YoudaoRerank(DefaultRerank):
     _model_lock = threading.Lock()
 
     def __init__(self, key=None, model_name="maidalun1020/bce-reranker-base_v1", **kwargs):
-        if not LIGHTEN and not YoudaoRerank._model:
+        if not settings.LIGHTEN and not YoudaoRerank._model:
             from BCEmbedding import RerankerModel
             with YoudaoRerank._model_lock:
                 if not YoudaoRerank._model:

@@ -29,10 +29,11 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db.services.document_service import DocumentService
-from api.settings import RetCode, retrievaler, kg_retrievaler, docStoreConn
+from api import settings
 from api.utils.api_utils import get_json_result
 import hashlib
 import re
+
 
 @manager.route('/list', methods=['POST'])
 @login_required
@@ -56,7 +57,7 @@ def list_chunk():
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
-        sres = retrievaler.search(query, search.index_name(tenant_id), kb_ids, highlight=True)
+        sres = settings.retrievaler.search(query, search.index_name(tenant_id), kb_ids, highlight=True)
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
@@ -72,13 +73,13 @@ def list_chunk():
                 "positions": json.loads(sres.field[id].get("position_list", "[]")),
             }
             assert isinstance(d["positions"], list)
-            assert len(d["positions"])==0 or (isinstance(d["positions"][0], list) and len(d["positions"][0]) == 5)
+            assert len(d["positions"]) == 0 or (isinstance(d["positions"][0], list) and len(d["positions"][0]) == 5)
             res["chunks"].append(d)
         return get_json_result(data=res)
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message='No chunk found!',
-                                   code=RetCode.DATA_ERROR)
+                                   code=settings.RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -93,7 +94,7 @@ def get():
         tenant_id = tenants[0].tenant_id
 
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
-        chunk = docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
+        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
         if chunk is None:
             return server_error_response("Chunk not found")
         k = []
@@ -107,7 +108,7 @@ def get():
     except Exception as e:
         if str(e).find("NotFoundError") >= 0:
             return get_json_result(data=False, message='Chunk not found!',
-                                   code=RetCode.DATA_ERROR)
+                                   code=settings.RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -154,7 +155,7 @@ def set():
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
-        docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
+        settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -169,8 +170,8 @@ def switch():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(message="Document not found!")
-        if not docStoreConn.update({"id": req["chunk_ids"]}, {"available_int": int(req["available_int"])},
-                                    search.index_name(doc.tenant_id), doc.kb_id):
+        if not settings.docStoreConn.update({"id": req["chunk_ids"]}, {"available_int": int(req["available_int"])},
+                                            search.index_name(doc.tenant_id), doc.kb_id):
             return get_data_error_result(message="Index updating failure")
         return get_json_result(data=True)
     except Exception as e:
@@ -186,7 +187,7 @@ def rm():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(message="Document not found!")
-        if not docStoreConn.delete({"id": req["chunk_ids"]}, search.index_name(current_user.id), doc.kb_id):
+        if not settings.docStoreConn.delete({"id": req["chunk_ids"]}, search.index_name(current_user.id), doc.kb_id):
             return get_data_error_result(message="Index updating failure")
         deleted_chunk_ids = req["chunk_ids"]
         chunk_number = len(deleted_chunk_ids)
@@ -230,7 +231,7 @@ def create():
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
-        docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
+        settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
 
         DocumentService.increment_chunk_num(
             doc.id, doc.kb_id, c, 1, 0)
@@ -265,7 +266,7 @@ def retrieval_test():
             else:
                 return get_json_result(
                     data=False, message='Only owner of knowledgebase authorized for this operation.',
-                    code=RetCode.OPERATING_ERROR)
+                    code=settings.RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
@@ -281,7 +282,7 @@ def retrieval_test():
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
-        retr = retrievaler if kb.parser_id != ParserType.KG else kg_retrievaler
+        retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
         ranks = retr.retrieval(question, embd_mdl, kb.tenant_id, kb_ids, page, size,
                                similarity_threshold, vector_similarity_weight, top,
                                doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"))
@@ -293,7 +294,7 @@ def retrieval_test():
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message='No chunk found! Check the chunk status please!',
-                                   code=RetCode.DATA_ERROR)
+                                   code=settings.RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -304,10 +305,10 @@ def knowledge_graph():
     tenant_id = DocumentService.get_tenant_id(doc_id)
     kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
     req = {
-        "doc_ids":[doc_id],
+        "doc_ids": [doc_id],
         "knowledge_graph_kwd": ["graph", "mind_map"]
     }
-    sres = retrievaler.search(req, search.index_name(tenant_id), kb_ids)
+    sres = settings.retrievaler.search(req, search.index_name(tenant_id), kb_ids)
     obj = {"graph": {}, "mind_map": {}}
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]
@@ -336,4 +337,3 @@ def knowledge_graph():
         obj[ty] = content_json
 
     return get_json_result(data=obj)
-

@@ -26,9 +26,8 @@ from api.utils import get_uuid
 from api.db import StatusEnum, FileSource
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
-from api.settings import RetCode
 from api.utils.api_utils import get_json_result
-from api.settings import docStoreConn
+from api import settings
 from rag.nlp import search
 
 
@@ -68,13 +67,13 @@ def update():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=RetCode.AUTHENTICATION_ERROR
+            code=settings.RetCode.AUTHENTICATION_ERROR
         )
     try:
         if not KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"]):
             return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.', code=RetCode.OPERATING_ERROR)
+                data=False, message='Only owner of knowledgebase authorized for this operation.', code=settings.RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
         if not e:
@@ -113,7 +112,7 @@ def detail():
         else:
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
+                code=settings.RetCode.OPERATING_ERROR)
         kb = KnowledgebaseService.get_detail(kb_id)
         if not kb:
             return get_data_error_result(
@@ -148,14 +147,14 @@ def rm():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=RetCode.AUTHENTICATION_ERROR
+            code=settings.RetCode.AUTHENTICATION_ERROR
         )
     try:
         kbs = KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"])
         if not kbs:
             return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.', code=RetCode.OPERATING_ERROR)
+                data=False, message='Only owner of knowledgebase authorized for this operation.', code=settings.RetCode.OPERATING_ERROR)
 
         for doc in DocumentService.query(kb_id=req["kb_id"]):
             if not DocumentService.remove_document(doc, kbs[0].tenant_id):
@@ -170,7 +169,7 @@ def rm():
                 message="Database error (Knowledgebase removal)!")
         tenants = UserTenantService.query(user_id=current_user.id)
         for tenant in tenants:
-            docStoreConn.deleteIdx(search.index_name(tenant.tenant_id), req["kb_id"])
+            settings.docStoreConn.deleteIdx(search.index_name(tenant.tenant_id), req["kb_id"])
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

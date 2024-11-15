@@ -22,7 +22,7 @@ from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
-from api.settings import DATABASE_TYPE
+from api import settings
 from api.utils import current_timestamp, datetime_format
 from api.utils.api_utils import (
     get_json_result,
@@ -31,7 +31,6 @@ from api.utils.api_utils import (
     generate_confirmation_token,
 )
 from api.versions import get_ragflow_version
-from api.settings import docStoreConn
 from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
@@ -98,7 +97,7 @@ def status():
     res = {}
     st = timer()
     try:
-        res["doc_store"] = docStoreConn.health()
+        res["doc_store"] = settings.docStoreConn.health()
         res["doc_store"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
     except Exception as e:
         res["doc_store"] = {
@@ -128,13 +127,13 @@ def status():
     try:
         KnowledgebaseService.get_by_id("x")
         res["database"] = {
-            "database": DATABASE_TYPE.lower(),
+            "database": settings.DATABASE_TYPE.lower(),
             "status": "green",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
         }
     except Exception as e:
         res["database"] = {
-            "database": DATABASE_TYPE.lower(),
+            "database": settings.DATABASE_TYPE.lower(),
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
             "error": str(e),

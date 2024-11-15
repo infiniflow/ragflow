@@ -33,12 +33,10 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from werkzeug.serving import run_simple
+from api import settings
 from api.apps import app
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
-from api.settings import (
-    HOST, HTTP_PORT
-)
 from api import utils
 
 from api.db.db_models import init_database_tables as init_web_db
@@ -72,6 +70,7 @@ if __name__ == '__main__':
         f'project base: {utils.file_utils.get_project_base_directory()}'
     )
     show_configs()
+    settings.init_settings()
 
     # init db
     init_web_db()
@@ -96,7 +95,7 @@ if __name__ == '__main__':
         logging.info("run on debug mode")
 
     RuntimeConfig.init_env()
-    RuntimeConfig.init_config(JOB_SERVER_HOST=HOST, HTTP_PORT=HTTP_PORT)
+    RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
 
     thread = ThreadPoolExecutor(max_workers=1)
     thread.submit(update_progress)
@@ -105,8 +104,8 @@ if __name__ == '__main__':
     try:
         logging.info("RAGFlow HTTP server start...")
         run_simple(
-            hostname=HOST,
-            port=HTTP_PORT,
+            hostname=settings.HOST_IP,
+            port=settings.HOST_PORT,
             application=app,
             threaded=True,
             use_reloader=RuntimeConfig.DEBUG,

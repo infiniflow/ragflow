@@ -34,11 +34,9 @@ from itsdangerous import URLSafeTimedSerializer
 from werkzeug.http import HTTP_STATUS_CODES
 
 from api.db.db_models import APIToken
-from api.settings import (
-    REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC,
-    CLIENT_AUTHENTICATION, HTTP_APP_KEY, SECRET_KEY
-)
-from api.settings import RetCode
+from api import settings
+
+from api import settings
 from api.utils import CustomJSONEncoder, get_uuid
 from api.utils import json_dumps
 
@@ -59,13 +57,13 @@ def request(**kwargs):
             {}).items()}
     prepped = requests.Request(**kwargs).prepare()
 
-    if CLIENT_AUTHENTICATION and HTTP_APP_KEY and SECRET_KEY:
+    if settings.CLIENT_AUTHENTICATION and settings.HTTP_APP_KEY and settings.SECRET_KEY:
         timestamp = str(round(time() * 1000))
         nonce = str(uuid1())
-        signature = b64encode(HMAC(SECRET_KEY.encode('ascii'), b'\n'.join([
+        signature = b64encode(HMAC(settings.SECRET_KEY.encode('ascii'), b'\n'.join([
             timestamp.encode('ascii'),
             nonce.encode('ascii'),
-            HTTP_APP_KEY.encode('ascii'),
+            settings.HTTP_APP_KEY.encode('ascii'),
             prepped.path_url.encode('ascii'),
             prepped.body if kwargs.get('json') else b'',
             urlencode(
@@ -79,7 +77,7 @@ def request(**kwargs):
         prepped.headers.update({
             'TIMESTAMP': timestamp,
             'NONCE': nonce,
-            'APP-KEY': HTTP_APP_KEY,
+            'APP-KEY': settings.HTTP_APP_KEY,
             'SIGNATURE': signature,
         })
 
@@ -89,7 +87,7 @@ def request(**kwargs):
 def get_exponential_backoff_interval(retries, full_jitter=False):
     """Calculate the exponential backoff wait time."""
     # Will be zero if factor equals 0
-    countdown = min(REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC * (2 ** retries))
+    countdown = min(settings.REQUEST_MAX_WAIT_SEC, settings.REQUEST_WAIT_SEC * (2 ** retries))
     # Full jitter according to
     # https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
     if full_jitter:
@@ -98,7 +96,7 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
     return max(0, countdown)
 
 
-def get_data_error_result(code=RetCode.DATA_ERROR,
+def get_data_error_result(code=settings.RetCode.DATA_ERROR,
                           message='Sorry! Data missing!'):
     import re
     result_dict = {
@@ -126,8 +124,8 @@ def server_error_response(e):
         pass
     if len(e.args) > 1:
         return get_json_result(
-            code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
-    return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+            code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+    return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
 def error_response(response_code, message=None):
@@ -168,7 +166,7 @@ def validate_request(*args, **kwargs):
                     error_string += "required argument values: {}".format(
                         ",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
                 return get_json_result(
-                    code=RetCode.ARGUMENT_ERROR, message=error_string)
+                    code=settings.RetCode.ARGUMENT_ERROR, message=error_string)
             return func(*_args, **_kwargs)
 
         return decorated_function
@@ -193,7 +191,7 @@ def send_file_in_mem(data, filename):
     return send_file(f, as_attachment=True, attachment_filename=filename)
 
 
-def get_json_result(code=RetCode.SUCCESS, message='success', data=None):
+def get_json_result(code=settings.RetCode.SUCCESS, message='success', data=None):
     response = {"code": code, "message": message, "data": data}
     return jsonify(response)
 
@@ -204,7 +202,7 @@ def apikey_required(func):
         objs = APIToken.query(token=token)
         if not objs:
             return build_error_result(
-                message='API-KEY is invalid!', code=RetCode.FORBIDDEN
+                message='API-KEY is invalid!', code=settings.RetCode.FORBIDDEN
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)
@@ -212,14 +210,14 @@ def apikey_required(func):
     return decorated_function
 
 
-def build_error_result(code=RetCode.FORBIDDEN, message='success'):
+def build_error_result(code=settings.RetCode.FORBIDDEN, message='success'):
     response = {"code": code, "message": message}
     response = jsonify(response)
     response.status_code = code
     return response
 
 
-def construct_response(code=RetCode.SUCCESS,
+def construct_response(code=settings.RetCode.SUCCESS,
                        message='success', data=None, auth=None):
     result_dict = {"code": code, "message": message, "data": data}
     response_dict = {}
@@ -239,7 +237,7 @@ def construct_response(code=RetCode.SUCCESS,
     return response
 
 
-def construct_result(code=RetCode.DATA_ERROR, message='data is missing'):
+def construct_result(code=settings.RetCode.DATA_ERROR, message='data is missing'):
     import re
     result_dict = {"code": code, "message": re.sub(r"rag", "seceum", message, flags=re.IGNORECASE)}
     response = {}
@@ -251,7 +249,7 @@ def construct_result(code=RetCode.DATA_ERROR, message='data is missing'):
     return jsonify(response)
 
 
-def construct_json_result(code=RetCode.SUCCESS, message='success', data=None):
+def construct_json_result(code=settings.RetCode.SUCCESS, message='success', data=None):
     if data is None:
         return jsonify({"code": code, "message": message})
     else:
@@ -262,12 +260,12 @@ def construct_error_response(e):
     logging.exception(e)
     try:
         if e.code == 401:
-            return construct_json_result(code=RetCode.UNAUTHORIZED, message=repr(e))
+            return construct_json_result(code=settings.RetCode.UNAUTHORIZED, message=repr(e))
     except BaseException:
         pass
     if len(e.args) > 1:
-        return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
-    return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+        return construct_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+    return construct_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
 def token_required(func):
@@ -280,7 +278,7 @@ def token_required(func):
         objs = APIToken.query(token=token)
         if not objs:
             return get_json_result(
-                data=False, message='Token is not valid!', code=RetCode.AUTHENTICATION_ERROR
+                data=False, message='Token is not valid!', code=settings.RetCode.AUTHENTICATION_ERROR
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)
@@ -288,7 +286,7 @@ def token_required(func):
     return decorated_function
 
 
-def get_result(code=RetCode.SUCCESS, message="", data=None):
+def get_result(code=settings.RetCode.SUCCESS, message="", data=None):
     if code == 0:
         if data is not None:
             response = {"code": code, "data": data}
@@ -299,7 +297,7 @@ def get_result(code=RetCode.SUCCESS, message="", data=None):
     return jsonify(response)
 
 
-def get_error_data_result(message='Sorry! Data missing!', code=RetCode.DATA_ERROR,
+def get_error_data_result(message='Sorry! Data missing!', code=settings.RetCode.DATA_ERROR,
                           ):
     import re
     result_dict = {
