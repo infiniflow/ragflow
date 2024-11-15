@@ -91,6 +91,9 @@ const RunDrawer = ({
         props.rules = [{ required: true }];
       }
 
+      const urlList: { url: string; result: string }[] =
+        form.getFieldValue(idx) || [];
+
       const BeginQueryTypeMap = {
         [BeginQueryType.Line]: (
           <Form.Item {...props}>
@@ -146,14 +149,18 @@ const RunDrawer = ({
         ),
         [BeginQueryType.Url]: (
           <>
-            <Form.Item {...pick(props, ['key', 'label'])}>
+            <Form.Item
+              {...pick(props, ['key', 'label', 'rules'])}
+              required={!q.optional}
+              className={urlList.length > 0 ? 'mb-1' : ''}
+            >
               <PopoverForm visible={visible} switchVisible={switchVisible}>
                 <Button onClick={handleShowPopover(idx)}>
                   paste file link
                 </Button>
               </PopoverForm>
             </Form.Item>
-            <Form.Item name={idx} noStyle />
+            <Form.Item name={idx} noStyle {...pick(props, ['rules'])} />
             <Form.Item
               noStyle
               shouldUpdate={(prevValues, curValues) =>
@@ -164,7 +171,7 @@ const RunDrawer = ({
                 const urlInfo: { url: string; result: string }[] =
                   getFieldValue(idx) || [];
                 return urlInfo.length ? (
-                  <Flex vertical gap={8}>
+                  <Flex vertical gap={8} className="mb-3">
                     {urlInfo.map((u, index) => (
                       <div
                         key={index}
@@ -188,7 +195,7 @@ const RunDrawer = ({
 
       return BeginQueryTypeMap[q.type as BeginQueryType];
     },
-    [handleRemoveUrl, handleShowPopover, switchVisible, visible],
+    [form, handleRemoveUrl, handleShowPopover, switchVisible, visible],
   );
 
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatModal!);

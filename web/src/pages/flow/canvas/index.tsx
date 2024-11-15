@@ -9,7 +9,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import ChatDrawer from '../chat/drawer';
 import { Operator } from '../constant';
-import FlowDrawer from '../flow-drawer';
+import FormDrawer from '../flow-drawer';
 import {
   useGetBeginNodeDataQuery,
   useHandleDrop,
@@ -85,15 +85,6 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
     useShowFormDrawer();
 
-  const onNodeClick: NodeMouseHandler = useCallback(
-    (e, node) => {
-      if (node.data.label !== Operator.Note) {
-        showFormDrawer(node);
-      }
-    },
-    [showFormDrawer],
-  );
-
   const onPaneClick = useCallback(() => {
     hideFormDrawer();
   }, [hideFormDrawer]);
@@ -107,6 +98,16 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideRunModal();
     hideDrawer();
   }, [hideChatModal, hideDrawer, hideRunModal]);
+
+  const onNodeClick: NodeMouseHandler = useCallback(
+    (e, node) => {
+      if (node.data.label !== Operator.Note) {
+        hideRunOrChatDrawer();
+        showFormDrawer(node);
+      }
+    },
+    [hideRunOrChatDrawer, showFormDrawer],
+  );
 
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
@@ -189,11 +190,13 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         <Background />
         <Controls />
       </ReactFlow>
-      <FlowDrawer
-        node={clickedNode}
-        visible={formDrawerVisible}
-        hideModal={hideFormDrawer}
-      ></FlowDrawer>
+      {formDrawerVisible && (
+        <FormDrawer
+          node={clickedNode}
+          visible={formDrawerVisible}
+          hideModal={hideFormDrawer}
+        ></FormDrawer>
+      )}
       {chatVisible && (
         <ChatDrawer
           visible={chatVisible}

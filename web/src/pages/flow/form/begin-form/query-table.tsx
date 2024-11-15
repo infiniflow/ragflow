@@ -1,7 +1,9 @@
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Space, Table, Tooltip } from 'antd';
+import { Collapse, Space, Table, Tooltip } from 'antd';
 import { BeginQuery } from '../../interface';
+
+import styles from './index.less';
 
 interface IProps {
   data: BeginQuery[];
@@ -64,7 +66,23 @@ const QueryTable = ({ data, deleteRecord, showModal }: IProps) => {
   ];
 
   return (
-    <Table<BeginQuery> columns={columns} dataSource={data} pagination={false} />
+    <Collapse
+      defaultActiveKey={['1']}
+      className={styles.dynamicInputVariable}
+      items={[
+        {
+          key: '1',
+          label: <span className={styles.title}>Query List</span>,
+          children: (
+            <Table<BeginQuery>
+              columns={columns}
+              dataSource={data}
+              pagination={false}
+            />
+          ),
+        },
+      ]}
+    />
   );
 };
 

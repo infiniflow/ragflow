@@ -21,6 +21,7 @@ import { Variable } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { useDebounceEffect } from 'ahooks';
 import { FormInstance, message } from 'antd';
+import { DefaultOptionType } from 'antd/es/select';
 import dayjs from 'dayjs';
 import { humanId } from 'human-id';
 import { get, lowerFirst } from 'lodash';
@@ -65,7 +66,12 @@ import {
   initialWikipediaValues,
   initialYahooFinanceValues,
 } from './constant';
-import { ICategorizeForm, IRelevantForm, ISwitchForm } from './interface';
+import {
+  BeginQuery,
+  ICategorizeForm,
+  IRelevantForm,
+  ISwitchForm,
+} from './interface';
 import useGraphStore, { RFState } from './store';
 import {
   buildDslComponentsByGraph,
@@ -621,6 +627,8 @@ const ExcludedNodes = [
 
 export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
   const nodes = useGraphStore((state) => state.nodes);
+  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const query: BeginQuery[] = getBeginNodeDataQuery();
 
   const componentIdOptions = useMemo(() => {
     return nodes
@@ -631,19 +639,40 @@ export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
       .map((x) => ({ label: x.data.name, value: x.id }));
   }, [nodes, nodeId]);
 
-  // const groupedOptions = [];
+  const groupedOptions = [
+    {
+      label: <span>Component id</span>,
+      title: 'Component Id',
+      options: componentIdOptions,
+    },
+    {
+      label: <span>Begin input</span>,
+      title: 'Begin input',
+      options: query.map((x) => ({
+        label: x.name,
+        value: `begin@${x.key}`,
+      })),
+    },
+  ];
 
-  return componentIdOptions;
+  return groupedOptions;
 };
 
 export const useGetComponentLabelByValue = (nodeId: string) => {
   const options = useBuildComponentIdSelectOptions(nodeId);
+  const flattenOptions = useMemo(
+    () =>
+      options.reduce<DefaultOptionType[]>((pre, cur) => {
+        return [...pre, ...cur.options];
+      }, []),
+    [options],
+  );
 
   const getLabel = useCallback(
     (val?: string) => {
-      return options.find((x) => x.value === val)?.label;
+      return flattenOptions.find((x) => x.value === val)?.label;
     },
-    [options],
+    [flattenOptions],
   );
   return getLabel;
 };

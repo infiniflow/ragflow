@@ -1,7 +1,7 @@
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
 
-import { useCallback } from 'react';
+import { PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useBuildComponentIdSelectOptions } from '../../hooks';
 import styles from './index.less';
@@ -95,9 +95,10 @@ const DynamicVariableForm = ({ nodeId }: IProps) => {
   );
 };
 
-const DynamicInputVariable = ({ nodeId }: IProps) => {
-  const { t } = useTranslation();
-
+export function FormCollapse({
+  children,
+  title,
+}: PropsWithChildren<{ title: string }>) {
   return (
     <Collapse
       className={styles.dynamicInputVariable}
@@ -105,11 +106,20 @@ const DynamicInputVariable = ({ nodeId }: IProps) => {
       items={[
         {
           key: '1',
-          label: <span className={styles.title}>{t('flow.input')}</span>,
-          children: <DynamicVariableForm nodeId={nodeId}></DynamicVariableForm>,
+          label: <span className={styles.title}>{title}</span>,
+          children,
         },
       ]}
     />
+  );
+}
+
+const DynamicInputVariable = ({ nodeId }: IProps) => {
+  const { t } = useTranslation();
+  return (
+    <FormCollapse title={t('flow.input')}>
+      <DynamicVariableForm nodeId={nodeId}></DynamicVariableForm>
+    </FormCollapse>
   );
 };
 

@@ -65,7 +65,6 @@ const BeginForm = ({ onValuesChange, form }: IOperatorForm) => {
         <Form.Item name="query" noStyle />
 
         <Form.Item
-          label="Query List"
           shouldUpdate={(prevValues, curValues) =>
             prevValues.query !== curValues.query
           }

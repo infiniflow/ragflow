@@ -83,7 +83,7 @@ const FormMap = {
 
 const EmptyContent = () => <div></div>;
 
-const FlowDrawer = ({
+const FormDrawer = ({
   visible,
   hideModal,
   node,
@@ -152,4 +152,4 @@ const FlowDrawer = ({
   );
 };
 
-export default FlowDrawer;
+export default FormDrawer;
