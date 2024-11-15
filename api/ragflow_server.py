@@ -15,10 +15,8 @@
 #
 
 import logging
-import inspect
 from api.utils.log_utils import initRootLogger
-
-initRootLogger(inspect.getfile(inspect.currentframe()))
+initRootLogger("ragflow_server")
 for module in ["pdfminer"]:
     module_logger = logging.getLogger(module)
     module_logger.setLevel(logging.WARNING)
