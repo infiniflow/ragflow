@@ -31,8 +31,8 @@ function RagFlow() {
           ></FlowHeader>
           <Content style={{ margin: 0 }}>
             <FlowCanvas
-              chatDrawerVisible={chatDrawerVisible}
-              hideChatDrawer={hideChatDrawer}
+              drawerVisible={chatDrawerVisible}
+              hideDrawer={hideChatDrawer}
             ></FlowCanvas>
           </Content>
         </Layout>

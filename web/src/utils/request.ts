@@ -99,8 +99,8 @@ request.interceptors.request.use((url: string, options: any) => {
 });
 
 request.interceptors.response.use(async (response: any, options) => {
-  if (response?.status === 413) {
-    message.error(RetcodeMessage[413]);
+  if (response?.status === 413 || response?.status === 504) {
+    message.error(RetcodeMessage[response?.status as ResultCode]);
   }
 
   if (options.responseType === 'blob') {

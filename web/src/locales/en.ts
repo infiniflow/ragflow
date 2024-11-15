@@ -32,6 +32,7 @@ export default {
       s: 'S',
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
+      submit: 'Submit',
     },
     login: {
       login: 'Sign in',
@@ -176,7 +177,7 @@ export default {
       chunkTokenNumber: 'Chunk token number',
       chunkTokenNumberMessage: 'Chunk token number is required',
       embeddingModelTip:
-        "The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, You must delete all chunks in the knowledge base.",
+        'The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, You must delete all chunks in the knowledge base.',
       permissionsTip:
         "If set to 'Team', all team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
@@ -1025,6 +1026,9 @@ The above is the content you need to summarize.`,
       content: 'Content',
       operationResults: 'Operation Results',
       autosaved: 'Autosaved',
+      optional: 'Optional',
+      pasteFileLink: 'Paste file link',
+      testRun: 'Test Run',
     },
     footer: {
       profile: 'All rights reserved @ React',

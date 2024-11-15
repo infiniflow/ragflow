@@ -1,7 +1,10 @@
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Space, Table, Tooltip } from 'antd';
+import { Collapse, Space, Table, Tooltip } from 'antd';
 import { BeginQuery } from '../../interface';
+
+import { useTranslation } from 'react-i18next';
+import styles from './index.less';
 
 interface IProps {
   data: BeginQuery[];
@@ -10,6 +13,8 @@ interface IProps {
 }
 
 const QueryTable = ({ data, deleteRecord, showModal }: IProps) => {
+  const { t } = useTranslation();
+
   const columns: TableProps<BeginQuery>['columns'] = [
     {
       title: 'Key',
@@ -25,7 +30,7 @@ const QueryTable = ({ data, deleteRecord, showModal }: IProps) => {
       ),
     },
     {
-      title: 'Name',
+      title: t('flow.name'),
       dataIndex: 'name',
       key: 'name',
       ellipsis: {
@@ -38,18 +43,18 @@ const QueryTable = ({ data, deleteRecord, showModal }: IProps) => {
       ),
     },
     {
-      title: 'Type',
+      title: t('flow.type'),
       dataIndex: 'type',
       key: 'type',
     },
     {
-      title: 'Optional',
+      title: t('flow.optional'),
       dataIndex: 'optional',
       key: 'optional',
       render: (optional) => (optional ? 'Yes' : 'No'),
     },
     {
-      title: 'Action',
+      title: t('common.action'),
       key: 'action',
       render: (_, record, idx) => (
         <Space>
@@ -64,7 +69,23 @@ const QueryTable = ({ data, deleteRecord, showModal }: IProps) => {
   ];
 
   return (
-    <Table<BeginQuery> columns={columns} dataSource={data} pagination={false} />
+    <Collapse
+      defaultActiveKey={['1']}
+      className={styles.dynamicInputVariable}
+      items={[
+        {
+          key: '1',
+          label: <span className={styles.title}>{t('flow.input')}</span>,
+          children: (
+            <Table<BeginQuery>
+              columns={columns}
+              dataSource={data}
+              pagination={false}
+            />
+          ),
+        },
+      ]}
+    />
   );
 };
 
