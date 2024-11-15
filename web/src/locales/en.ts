@@ -101,7 +101,7 @@ export default {
       processDuration: 'Process Duration',
       progressMsg: 'Progress Msg',
       testingDescription:
-        'Final step! After success, leave the rest to Infiniflow AI.',
+        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         "We use hybrid similarity score to evaluate distance between two lines of text. It's weighted keywords similarity and vector cosine similarity. If the similarity between query and chunk is less than this threshold, the chunk will be filtered out.",
