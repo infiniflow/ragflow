@@ -17,6 +17,7 @@
 import logging
 import inspect
 from api.utils.log_utils import initRootLogger
+
 initRootLogger(inspect.getfile(inspect.currentframe()))
 for module in ["pdfminer"]:
     module_logger = logging.getLogger(module)
@@ -45,6 +46,7 @@ from api import utils
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
+from api.utils import show_configs
 
 
 def update_progress():
@@ -71,6 +73,7 @@ if __name__ == '__main__':
     logging.info(
         f'project base: {utils.file_utils.get_project_base_directory()}'
     )
+    show_configs()
 
     # init db
     init_web_db()
@@ -80,7 +83,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--version", default=False, help="rag flow version", action="store_true"
+        "--version", default=False, help="RAGFlow version", action="store_true"
     )
     parser.add_argument(
         "--debug", default=False, help="debug mode", action="store_true"
@@ -97,9 +100,8 @@ if __name__ == '__main__':
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=HOST, HTTP_PORT=HTTP_PORT)
 
-
-    thr = ThreadPoolExecutor(max_workers=1)
-    thr.submit(update_progress)
+    thread = ThreadPoolExecutor(max_workers=1)
+    thread.submit(update_progress)
 
     # start http server
     try:
