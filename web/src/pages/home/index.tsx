@@ -1,12 +1,14 @@
-import { CardWithForm } from './card';
+import { Banner } from './banner';
 import { HomeHeader } from './header';
+import NextBanner from './next-banner';
 
 const Home = () => {
   return (
     <div>
       <HomeHeader></HomeHeader>
       <section>
-        <CardWithForm></CardWithForm>
+        <Banner></Banner>
+        <NextBanner></NextBanner>
       </section>
     </div>
   );

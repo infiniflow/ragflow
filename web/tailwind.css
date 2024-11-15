@@ -84,6 +84,9 @@
 
     --background-inverse-strong: rgba(255, 255, 255, 0.15);
     --background-inverse-strong-foreground: rgba(255, 255, 255, 1);
+
+    --background-core-weak: rgb(101, 75, 248);
+    --background-core-weak-foreground: rgba(255, 255, 255, 1);
   }
 }
 

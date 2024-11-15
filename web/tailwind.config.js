@@ -65,6 +65,10 @@ module.exports = {
           DEFAULT: 'var(--background-core-standard)',
           foreground: 'var(--background-core-standard-foreground)',
         },
+        backgroundCoreWeak: {
+          DEFAULT: 'var(--background-core-weak)',
+          foreground: 'var(--background-core-weak-foreground)',
+        },
       },
       borderRadius: {
         lg: `var(--radius)`,
