@@ -22,7 +22,7 @@ import os
 import re
 import string
 import sys
-from hanziconv import HanziConv
+# from hanziconv import HanziConv
 from nltk import word_tokenize
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from api.utils.file_utils import get_project_base_directory
@@ -65,12 +65,12 @@ class RagTokenizer:
         self.lemmatizer = WordNetLemmatizer()
 
         self.SPLIT_CHAR = r"([ ,\.<>/?;:'\[\]\\`!@#$%^&*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-z\.-]+|[0-9,\.-]+)"
-        try:
-            self.trie_ = datrie.Trie.load(self.DIR_ + ".txt.trie")
-            return
-        except Exception:
-            logging.exception("[HUQIE]:Build default trie")
-            self.trie_ = datrie.Trie(string.printable)
+        # try:
+        #     self.trie_ = datrie.Trie.load(self.DIR_ + ".txt.trie")
+        #     return
+        # except Exception:
+        #     logging.exception("[HUQIE]:Build default trie")
+        #     self.trie_ = datrie.Trie(string.printable)
 
         self.loadDict_(self.DIR_ + ".txt")
 
@@ -100,8 +100,8 @@ class RagTokenizer:
                 rstring += chr(inside_code)
         return rstring
 
-    def _tradi2simp(self, line):
-        return HanziConv.toSimplified(line)
+    # def _tradi2simp(self, line):
+    #     return HanziConv.toSimplified(line)
 
     def dfs_(self, chars, s, preTks, tkslist):
         MAX_L = 10
@@ -259,7 +259,7 @@ class RagTokenizer:
 
     def tokenize(self, line):
         line = self._strQ2B(line).lower()
-        line = self._tradi2simp(line)
+        # line = self._tradi2simp(line)
         # zh_num = len([1 for c in line if is_chinese(c)])
         zh_num = 0
         if zh_num == 0:
@@ -410,7 +410,7 @@ tag = tokenizer.tag
 freq = tokenizer.freq
 loadUserDict = tokenizer.loadUserDict
 addUserDict = tokenizer.addUserDict
-tradi2simp = tokenizer._tradi2simp
+# tradi2simp = tokenizer._tradi2simp
 strQ2B = tokenizer._strQ2B
 
 if __name__ == '__main__':
@@ -418,26 +418,6 @@ if __name__ == '__main__':
     # huqie.addUserDict("/tmp/tmp.new.tks.dict")
     tks = tknzr.tokenize(
         "哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
-    logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize(
-        "公开征求意见稿提出，境外投资者可使用自有人民币或外汇投资。使用外汇投资的，可通过债券持有人在香港人民币业务清算行及香港地区经批准可进入境内银行间外汇市场进行交易的境外人民币业务参加行（以下统称香港结算行）办理外汇资金兑换。香港结算行由此所产生的头寸可到境内银行间外汇市场平盘。使用外汇投资的，在其投资的债券到期或卖出后，原则上应兑换回外汇。")
-    logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize(
-        "多校划片就是一个小区对应多个小学初中，让买了学区房的家庭也不确定到底能上哪个学校。目的是通过这种方式为学区房降温，把就近入学落到实处。南京市长江大桥")
-    logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize(
-        "实际上当时他们已经将业务中心偏移到安全部门和针对政府企业的部门 Scripts are compiled and cached aaaaaaaaa")
-    logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize("虽然我不怎么玩")
-    logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize("蓝月亮如何在外资夹击中生存,那是全宇宙最有意思的")
-    logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize(
-        "涡轮增压发动机num最大功率,不像别的共享买车锁电子化的手段,我们接过来是否有意义,黄黄爱美食,不过，今天阿奇要讲到的这家农贸市场，说实话，还真蛮有特色的！不仅环境好，还打出了")
-    logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize("这周日你去吗？这周日你有空吗？")
-    logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize("Unity3D开发经验 测试开发工程师 c++双11双11 985 211 ")
     logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize(
         "数据分析项目经理|数据分析挖掘|数据分析方向|商品数据分析|搜索数据分析 sql python hive tableau Cocos2d-")

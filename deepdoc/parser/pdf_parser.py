@@ -983,14 +983,15 @@ class RAGFlowPdfParser:
             logging.warning("Miss outlines")
 
         logging.debug("Images converted.")
-        self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(
-            random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i]))))) for i in
-                           range(len(self.page_chars))]
-        if sum([1 if e else 0 for e in self.is_english]) > len(
-                self.page_images) / 2:
-            self.is_english = True
-        else:
-            self.is_english = False
+        # self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(
+        #     random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i]))))) for i in
+        #                    range(len(self.page_chars))]
+        # if sum([1 if e else 0 for e in self.is_english]) > len(
+        #         self.page_images) / 2:
+        #     self.is_english = True
+        # else:
+        #     self.is_english = False
+        self.is_english = True
 
         st = timer()
         for i, img in enumerate(self.page_images_x2):
