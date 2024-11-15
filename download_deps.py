@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from os import rename
 
 from huggingface_hub import snapshot_download
 import nltk
@@ -9,6 +10,7 @@ urls = [
     "http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb",
     "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar",
     "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar.md5",
+    "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
 ]
 
 repos = [
@@ -41,3 +43,5 @@ if __name__ == "__main__":
     for repo_id in repos:
         print(f"Downloading huggingface repo {repo_id}...")
         download_model(repo_id)
+
+    rename("cl100k_base.tiktoken", "9b5ad71b2ce5302211f9c61530b329a4922fc6a4")
