@@ -104,6 +104,7 @@ class Generate(ComponentBase):
         retrieval_res = []
         self._param.inputs = []
         for para in self._param.parameters:
+            if not para.get("component_id"): continue
             if para["component_id"].split("@")[0].lower().find("begin") > 0:
                 cpn_id, key = para["component_id"].split("@")
                 for p in self._canvas.get_component(cpn_id)["obj"]._param.query:

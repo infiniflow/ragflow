@@ -112,6 +112,9 @@ COPY nltk_data /root/nltk_data
 COPY tika-server-standard-3.0.0.jar tika-server-standard-3.0.0.jar.md5 ./
 ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard.jar"
 
+# Copy cl100k_base
+COPY 9b5ad71b2ce5302211f9c61530b329a4922fc6a4 ./
+
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 

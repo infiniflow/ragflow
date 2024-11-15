@@ -27,6 +27,7 @@ from api.settings import retrievaler, docStoreConn
 from api.utils import get_uuid
 from rag.nlp import tokenize, search
 from ranx import evaluate
+from ranx import Qrels, Run
 import pandas as pd
 from tqdm import tqdm
 
@@ -247,14 +248,14 @@ class Benchmark:
             self.index_name = search.index_name(self.tenant_id)
             qrels, texts = self.ms_marco_index(file_path, "benchmark_ms_marco_v1.1")
             run = self._get_retrieval(qrels)
-            print(dataset, evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
+            print(dataset, evaluate(Qrels(qrels), Run(run), ["ndcg@10", "map@5", "mrr@10"]))
             self.save_results(qrels, run, texts, dataset, file_path)
         if dataset == "trivia_qa":
             self.tenant_id = "benchmark_trivia_qa"
             self.index_name = search.index_name(self.tenant_id)
             qrels, texts = self.trivia_qa_index(file_path, "benchmark_trivia_qa")
             run = self._get_retrieval(qrels)
-            print(dataset, evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
+            print(dataset, evaluate(Qrels(qrels), Run(run), ["ndcg@10", "map@5", "mrr@10"]))
             self.save_results(qrels, run, texts, dataset, file_path)
         if dataset == "miracl":
             for lang in ['ar', 'bn', 'de', 'en', 'es', 'fa', 'fi', 'fr', 'hi', 'id', 'ja', 'ko', 'ru', 'sw', 'te', 'th',
@@ -278,7 +279,7 @@ class Benchmark:
                                                  os.path.join(miracl_corpus, 'miracl-corpus-v1.0-' + lang),
                                                  "benchmark_miracl_" + lang)
                 run = self._get_retrieval(qrels)
-                print(dataset, evaluate(qrels, run, ["ndcg@10", "map@5", "mrr"]))
+                print(dataset, evaluate(Qrels(qrels), Run(run), ["ndcg@10", "map@5", "mrr@10"]))
                 self.save_results(qrels, run, texts, dataset, file_path)
 
 
