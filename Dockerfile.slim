@@ -109,7 +109,9 @@ COPY nltk_data /root/nltk_data
 
 # https://github.com/chrismattmann/tika-python
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
-COPY tika-server-standard-3.0.0.jar tika-server-standard-3.0.0.jar.md5 ./
+
+COPY tika-server-standard-3.0.0.jar /ragflow/tika-server-standard.jar
+COPY tika-server-standard-3.0.0.jar.md5 /ragflow/tika-server-standard.jar.md5
 ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard.jar"
 
 # Copy cl100k_base
