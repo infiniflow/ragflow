@@ -32,6 +32,7 @@ export default {
       s: '秒',
       pleaseSelect: '請選擇',
       pleaseInput: '請輸入',
+      submit: '提交',
     },
     login: {
       login: '登入',
@@ -985,6 +986,9 @@ export default {
       content: '內容',
       operationResults: '運行結果',
       autosaved: '已自動儲存',
+      optional: '可選項',
+      pasteFileLink: '貼上文件連結',
+      testRun: '試運行',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

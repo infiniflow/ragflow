@@ -24,6 +24,7 @@ module.exports = {
         ring: 'hsl(var(--ring))',
         background: 'var(--background)',
         foreground: 'hsl(var(--foreground))',
+        buttonBlueText: 'var(--button-blue-text)',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

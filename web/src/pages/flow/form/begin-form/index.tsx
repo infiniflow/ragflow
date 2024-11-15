@@ -1,17 +1,20 @@
-import { useTranslate } from '@/hooks/common-hooks';
+import { PlusOutlined } from '@ant-design/icons';
 import { Button, Form, Input } from 'antd';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BeginQuery, IOperatorForm } from '../../interface';
 import { useEditQueryRecord } from './hooks';
 import { ModalForm } from './paramater-modal';
 import QueryTable from './query-table';
+
+import styles from './index.less';
 
 type FieldType = {
   prologue?: string;
 };
 
 const BeginForm = ({ onValuesChange, form }: IOperatorForm) => {
-  const { t } = useTranslate('chat');
+  const { t } = useTranslation();
   const {
     ok,
     currentRecord,
@@ -55,9 +58,9 @@ const BeginForm = ({ onValuesChange, form }: IOperatorForm) => {
       >
         <Form.Item<FieldType>
           name={'prologue'}
-          label={t('setAnOpener')}
-          tooltip={t('setAnOpenerTip')}
-          initialValue={t('setAnOpenerInitial')}
+          label={t('chat.setAnOpener')}
+          tooltip={t('chat.setAnOpenerTip')}
+          initialValue={t('chat.setAnOpenerInitial')}
         >
           <Input.TextArea autoSize={{ minRows: 5 }} />
         </Form.Item>
@@ -85,9 +88,11 @@ const BeginForm = ({ onValuesChange, form }: IOperatorForm) => {
           htmlType="button"
           style={{ margin: '0 8px' }}
           onClick={() => showModal()}
+          icon={<PlusOutlined />}
           block
+          className={styles.addButton}
         >
-          Add +
+          {t('flow.addItem')}
         </Button>
         {visible && (
           <ModalForm

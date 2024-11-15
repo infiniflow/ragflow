@@ -32,6 +32,7 @@ export default {
       s: '秒',
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
+      submit: '提交',
     },
     login: {
       login: '登录',
@@ -1005,6 +1006,9 @@ export default {
       content: '内容',
       operationResults: '运行结果',
       autosaved: '已自动保存',
+      optional: '可选项',
+      pasteFileLink: '粘贴文件链接',
+      testRun: '试运行',
     },
     footer: {
       profile: 'All rights reserved @ React',

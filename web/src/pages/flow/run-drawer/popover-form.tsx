@@ -3,6 +3,7 @@ import { useResetFormOnCloseModal } from '@/hooks/logic-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Button, Form, Input, Popover } from 'antd';
 import { PropsWithChildren } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const reg =
   /^(((ht|f)tps?):\/\/)?([^!@#$%^&*?.\s-]([^!@#$%^&*?.\s]{0,63}[^!@#$%^&*?.\s])?\.)+[a-z]{2,6}\/?/;
@@ -14,6 +15,7 @@ export const PopoverForm = ({
 }: PropsWithChildren<IModalProps<any>>) => {
   const [form] = Form.useForm();
   const { parseDocument, loading } = useParseDocument();
+  const { t } = useTranslation();
 
   useResetFormOnCloseModal({
     form,
@@ -42,6 +44,7 @@ export const PopoverForm = ({
       >
         <Input
           onPressEnter={(e) => e.preventDefault()}
+          placeholder={t('flow.pasteFileLink')}
           suffix={
             <Button
               type="primary"
@@ -49,7 +52,7 @@ export const PopoverForm = ({
               size={'small'}
               loading={loading}
             >
-              Submit
+              {t('common.submit')}
             </Button>
           }
         />

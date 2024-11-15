@@ -1,6 +1,5 @@
 import { Authorization } from '@/constants/authorization';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useFetchFlow } from '@/hooks/flow-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { useHandleSubmittable } from '@/hooks/login-hooks';
 import { IModalProps } from '@/interfaces/common';
@@ -33,12 +32,13 @@ import useGraphStore from '../store';
 import { getDrawerWidth } from '../utils';
 import { PopoverForm } from './popover-form';
 
+import styles from './index.less';
+
 const RunDrawer = ({
   hideModal,
   showModal: showChatModal,
 }: IModalProps<any>) => {
   const { t } = useTranslation();
-  const { data } = useFetchFlow();
   const [form] = Form.useForm();
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
   const {
@@ -128,11 +128,9 @@ const RunDrawer = ({
               <p className="ant-upload-drag-icon">
                 <InboxOutlined />
               </p>
-              <p className="ant-upload-text">
-                Click or drag file to this area to upload
-              </p>
+              <p className="ant-upload-text">{t('fileManager.uploadTitle')}</p>
               <p className="ant-upload-hint">
-                Support for a single or bulk upload.
+                {t('fileManager.uploadDescription')}
               </p>
             </Upload.Dragger>
           </Form.Item>
@@ -155,8 +153,11 @@ const RunDrawer = ({
               className={urlList.length > 0 ? 'mb-1' : ''}
             >
               <PopoverForm visible={visible} switchVisible={switchVisible}>
-                <Button onClick={handleShowPopover(idx)}>
-                  paste file link
+                <Button
+                  onClick={handleShowPopover(idx)}
+                  className="text-buttonBlueText"
+                >
+                  {t('flow.pasteFileLink')}
                 </Button>
               </PopoverForm>
             </Form.Item>
@@ -195,7 +196,7 @@ const RunDrawer = ({
 
       return BeginQueryTypeMap[q.type as BeginQueryType];
     },
-    [form, handleRemoveUrl, handleShowPopover, switchVisible, visible],
+    [form, handleRemoveUrl, handleShowPopover, switchVisible, t, visible],
   );
 
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatModal!);
@@ -240,7 +241,7 @@ const RunDrawer = ({
 
   return (
     <Drawer
-      title={data.title}
+      title={t('flow.testRun')}
       placement="right"
       onClose={hideModal}
       open
@@ -248,27 +249,31 @@ const RunDrawer = ({
       width={getDrawerWidth()}
       mask={false}
     >
-      <Form.Provider
-        onFormFinish={(name, { values, forms }) => {
-          if (name === 'urlForm') {
-            const { basicForm } = forms;
-            const urlInfo = basicForm.getFieldValue(currentRecord) || [];
-            basicForm.setFieldsValue({ [currentRecord]: [...urlInfo, values] });
-            hidePopover();
-          }
-        }}
-      >
-        <Form
-          name="basicForm"
-          autoComplete="off"
-          layout={'vertical'}
-          form={form}
+      <section className={styles.formWrapper}>
+        <Form.Provider
+          onFormFinish={(name, { values, forms }) => {
+            if (name === 'urlForm') {
+              const { basicForm } = forms;
+              const urlInfo = basicForm.getFieldValue(currentRecord) || [];
+              basicForm.setFieldsValue({
+                [currentRecord]: [...urlInfo, values],
+              });
+              hidePopover();
+            }
+          }}
         >
-          {query.map((x, idx) => {
-            return renderWidget(x, idx);
-          })}
-        </Form>
-      </Form.Provider>
+          <Form
+            name="basicForm"
+            autoComplete="off"
+            layout={'vertical'}
+            form={form}
+          >
+            {query.map((x, idx) => {
+              return renderWidget(x, idx);
+            })}
+          </Form>
+        </Form.Provider>
+      </section>
       <Button type={'primary'} block onClick={onOk} disabled={!submittable}>
         {t('common.next')}
       </Button>

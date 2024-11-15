@@ -37,6 +37,8 @@
 
     --background-inverse-standard: rgba(58, 56, 65, 0.15);
     --background-inverse-standard-foreground: rgb(92, 81, 81);
+
+    --button-blue-text: rgb(22, 119, 255);
   }
 
   .dark {
