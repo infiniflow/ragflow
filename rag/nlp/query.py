@@ -88,7 +88,7 @@ class FulltextQueryer:
                 syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn]
                 syns.append(" ".join(syn))
 
-            q = ["({}^{:.4f}".format(tk, w) + " {})".format(syn) for (tk, w), syn in zip(tks_w, syns)]
+            q = ["({}^{:.4f}".format(tk, w) + " {})".format(syn) for (tk, w), syn in zip(tks_w, syns) if tk]
             for i in range(1, len(tks_w)):
                 q.append(
                     '"%s %s"^%.4f'
