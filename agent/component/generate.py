@@ -19,7 +19,7 @@ import pandas as pd
 from api.db import LLMType
 from api.db.services.dialog_service import message_fit_in
 from api.db.services.llm_service import LLMBundle
-from api.settings import retrievaler
+from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -63,18 +63,20 @@ class Generate(ComponentBase):
     component_name = "Generate"
 
     def get_dependent_components(self):
-        cpnts = [para["component_id"] for para in self._param.parameters if para.get("component_id") and para["component_id"].lower().find("answer") < 0]
+        cpnts = [para["component_id"] for para in self._param.parameters if
+                 para.get("component_id") and para["component_id"].lower().find("answer") < 0]
         return cpnts
 
     def set_cite(self, retrieval_res, answer):
         retrieval_res = retrieval_res.dropna(subset=["vector", "content_ltks"]).reset_index(drop=True)
         if "empty_response" in retrieval_res.columns:
             retrieval_res["empty_response"].fillna("", inplace=True)
-        answer, idx = retrievaler.insert_citations(answer, [ck["content_ltks"] for _, ck in retrieval_res.iterrows()],
-                                                   [ck["vector"] for _, ck in retrieval_res.iterrows()],
-                                                   LLMBundle(self._canvas.get_tenant_id(), LLMType.EMBEDDING,
-                                                             self._canvas.get_embedding_model()), tkweight=0.7,
-                                                   vtweight=0.3)
+        answer, idx = settings.retrievaler.insert_citations(answer,
+                                                            [ck["content_ltks"] for _, ck in retrieval_res.iterrows()],
+                                                            [ck["vector"] for _, ck in retrieval_res.iterrows()],
+                                                            LLMBundle(self._canvas.get_tenant_id(), LLMType.EMBEDDING,
+                                                                      self._canvas.get_embedding_model()), tkweight=0.7,
+                                                            vtweight=0.3)
         doc_ids = set([])
         recall_docs = []
         for i in idx:
@@ -127,12 +129,14 @@ class Generate(ComponentBase):
             else:
                 if cpn.component_name.lower() == "retrieval":
                     retrieval_res.append(out)
-                kwargs[para["key"]] = "  - "+"\n - ".join([o if isinstance(o, str) else str(o) for o in out["content"]])
+                kwargs[para["key"]] = "  - " + "\n - ".join(
+                    [o if isinstance(o, str) else str(o) for o in out["content"]])
             self._param.inputs.append({"component_id": para["component_id"], "content": kwargs[para["key"]]})
 
         if retrieval_res:
             retrieval_res = pd.concat(retrieval_res, ignore_index=True)
-        else: retrieval_res = pd.DataFrame([])
+        else:
+            retrieval_res = pd.DataFrame([])
 
         for n, v in kwargs.items():
             prompt = re.sub(r"\{%s\}" % re.escape(n), re.escape(str(v)), prompt)

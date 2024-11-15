@@ -24,7 +24,7 @@ import numpy as np
 from timeit import default_timer as timer
 from pypdf import PdfReader as pdf2_read
 
-from api.settings import LIGHTEN
+from api import settings
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
@@ -41,7 +41,7 @@ class RAGFlowPdfParser:
         self.tbl_det = TableStructureRecognizer()
 
         self.updown_cnt_mdl = xgb.Booster()
-        if not LIGHTEN:
+        if not settings.LIGHTEN:
             try:
                 import torch
                 if torch.cuda.is_available():

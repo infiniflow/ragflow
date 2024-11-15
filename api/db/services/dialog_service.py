@@ -27,7 +27,7 @@ from api.db.db_models import Dialog, Conversation,DB
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
-from api.settings import retrievaler, kg_retrievaler
+from api import settings
 from rag.app.resume import forbidden_select_fields4resume
 from rag.nlp.search import index_name
 from rag.utils import rmSpace, num_tokens_from_string, encoder
@@ -152,7 +152,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         return {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
 
     is_kg = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retr = retrievaler if not is_kg else kg_retrievaler
+    retr = settings.retrievaler if not is_kg else settings.kg_retrievaler
 
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None
@@ -342,7 +342,7 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
-        return retrievaler.sql_retrieval(sql, format="json"), sql
+        return settings.retrievaler.sql_retrieval(sql, format="json"), sql
 
     tbl, sql = get_table()
     if tbl is None:
@@ -596,7 +596,7 @@ def ask(question, kb_ids, tenant_id):
     embd_nms = list(set([kb.embd_id for kb in kbs]))
 
     is_kg = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retr = retrievaler if not is_kg else kg_retrievaler
+    retr = settings.retrievaler if not is_kg else settings.kg_retrievaler
 
     embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_nms[0])
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)

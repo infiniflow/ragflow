@@ -28,7 +28,7 @@ from api.utils import get_uuid
 from api.db import FileType, FileSource
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api.settings import RetCode
+from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from rag.utils.storage_factory import STORAGE_IMPL
@@ -46,13 +46,13 @@ def upload():
 
     if 'file' not in request.files:
         return get_json_result(
-            data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
+            data=False, message='No file part!', code=settings.RetCode.ARGUMENT_ERROR)
     file_objs = request.files.getlist('file')
 
     for file_obj in file_objs:
         if file_obj.filename == '':
             return get_json_result(
-                data=False, message='No file selected!', code=RetCode.ARGUMENT_ERROR)
+                data=False, message='No file selected!', code=settings.RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
         for file_obj in file_objs:
@@ -134,7 +134,7 @@ def create():
     try:
         if not FileService.is_parent_folder_exist(pf_id):
             return get_json_result(
-                data=False, message="Parent Folder Doesn't Exist!", code=RetCode.OPERATING_ERROR)
+                data=False, message="Parent Folder Doesn't Exist!", code=settings.RetCode.OPERATING_ERROR)
         if FileService.query(name=req["name"], parent_id=pf_id):
             return get_data_error_result(
                 message="Duplicated folder name in the same folder.")
@@ -299,7 +299,7 @@ def rename():
             return get_json_result(
                 data=False,
                 message="The extension of file can't be changed",
-                code=RetCode.ARGUMENT_ERROR)
+                code=settings.RetCode.ARGUMENT_ERROR)
         for file in FileService.query(name=req["name"], pf_id=file.parent_id):
             if file.name == req["name"]:
                 return get_data_error_result(
