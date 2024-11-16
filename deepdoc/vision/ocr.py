@@ -69,19 +69,14 @@ def load_model(model_dir, nm):
     # options.enable_cpu_mem_arena = False
     options.intra_op_num_threads = 2
     options.inter_op_num_threads = 2
-    # print("Detected device:", ort.get_device())
 
     if ort.get_device() == "GPU":
-        # print("ocr")
         # options.log_severity_level = 0  # Enable verbose logging
+        options.enable_cpu_mem_arena = False
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
             providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-        # sess = ort.InferenceSession(
-        #     model_file_path,
-        #     options=options,
-        #     providers=['CUDAExecutionProvider'])
     else:
         sess = ort.InferenceSession(
             model_file_path,
