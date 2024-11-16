@@ -22,6 +22,7 @@ from flask import Blueprint, Flask
 from werkzeug.wrappers.request import Request
 from flask_cors import CORS
 from flasgger import Swagger
+from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.db import StatusEnum
 from api.db.db_models import close_connection
@@ -32,7 +33,7 @@ from flask_session import Session
 from flask_login import LoginManager
 from api import settings
 from api.utils.api_utils import server_error_response
-from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+from api.constants import API_VERSION
 
 __all__ = ["app"]
 
@@ -119,7 +120,7 @@ def register_page(page_path):
     spec.loader.exec_module(page)
     page_name = getattr(page, "page_name", page_name)
     url_prefix = (
-        f"/api/{settings.API_VERSION}" if "/sdk/" in path else f"/{settings.API_VERSION}/{page_name}"
+        f"/api/{API_VERSION}" if "/sdk/" in path else f"/{API_VERSION}/{page_name}"
     )
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)

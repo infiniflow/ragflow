@@ -23,13 +23,10 @@ import rag.utils
 from rag.nlp import search
 from graphrag import search as kg_search
 from api.utils import get_base_config, decrypt_database_config
+from api.constants import RAG_FLOW_SERVICE_NAME
 
-API_VERSION = "v1"
-RAG_FLOW_SERVICE_NAME = "ragflow"
 LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
 
-REQUEST_WAIT_SEC = 2
-REQUEST_MAX_WAIT_SEC = 300
 LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
