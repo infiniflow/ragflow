@@ -173,15 +173,6 @@ def init_settings():
     retrievaler = search.Dealer(docStoreConn)
     kg_retrievaler = kg_search.KGSearch(docStoreConn)
 
-def get_host_ip():
-    global HOST_IP
-    return HOST_IP
-
-
-def get_host_port():
-    global HOST_PORT
-    return HOST_PORT
-
 
 class CustomEnum(Enum):
     @classmethod
@@ -199,16 +190,6 @@ class CustomEnum(Enum):
     @classmethod
     def names(cls):
         return [member.name for member in cls.__members__.values()]
-
-
-class PythonDependenceName(CustomEnum):
-    Rag_Source_Code = "python"
-    Python_Env = "miniconda"
-
-
-class ModelStorage(CustomEnum):
-    REDIS = "redis"
-    MYSQL = "mysql"
 
 
 class RetCode(IntEnum, CustomEnum):
