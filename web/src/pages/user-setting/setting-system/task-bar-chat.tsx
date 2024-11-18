@@ -14,6 +14,9 @@ import {
 import { formatDate, formatTime } from '@/utils/date';
 import dayjs from 'dayjs';
 import { get } from 'lodash';
+import JsonView from 'react18-json-view';
+import 'react18-json-view/src/style.css';
+
 import styles from './index.less';
 
 interface IProps {
@@ -28,20 +31,18 @@ const CustomTooltip = ({ active, payload, ...restProps }: any) => {
       {},
     );
     return (
-      <div className="bg-slate-50 p-2 rounded-md border border-indigo-100">
-        <div className="font-semibold text-lg">
-          {formatDate(restProps.label)}
+      <div className="custom-tooltip">
+        <div className="bg-slate-50 p-2 rounded-md border border-indigo-100">
+          <div className="font-semibold text-lg">
+            {formatDate(restProps.label)}
+          </div>
+
+          <JsonView
+            src={taskExecutorHeartbeatItem}
+            displaySize={30}
+            className="w-full max-h-[300px] break-words overflow-auto"
+          />
         </div>
-        {Object.entries(taskExecutorHeartbeatItem).map(([key, val], index) => {
-          return (
-            <div key={index} className="flex gap-1">
-              <span className="font-semibold">{`${key}: `}</span>
-              <span>
-                {key === 'now' || key === 'boot_at' ? formatDate(val) : val}
-              </span>
-            </div>
-          );
-        })}
       </div>
     );
   }
@@ -54,7 +55,6 @@ const TaskBarChat = ({ data }: IProps) => {
     const data = val.map((x) => ({
       ...x,
       now: dayjs(x.now).valueOf(),
-      failed: 5,
     }));
     const firstItem = data[0];
     const lastItem = data[data.length - 1];
@@ -69,7 +69,7 @@ const TaskBarChat = ({ data }: IProps) => {
           <b className={styles.taskBarTitle}>Pending: {lastItem.pending}</b>
         </div>
         <ResponsiveContainer>
-          <BarChart data={data} barSize={20}>
+          <BarChart data={data}>
             <XAxis
               dataKey="now"
               type="number"
@@ -82,16 +82,20 @@ const TaskBarChat = ({ data }: IProps) => {
               tickMargin={20}
             />
             <CartesianGrid strokeDasharray="3 3" />
-            <Tooltip content={<CustomTooltip></CustomTooltip>} />
+            <Tooltip
+              wrapperStyle={{ pointerEvents: 'auto' }}
+              content={<CustomTooltip></CustomTooltip>}
+              trigger="click"
+            />
             <Legend wrapperStyle={{ bottom: -22 }} />
             <Bar
               dataKey="done"
-              fill="#8884d8"
+              fill="#2fe235"
               activeBar={<Rectangle fill="pink" stroke="blue" />}
             />
             <Bar
               dataKey="failed"
-              fill="#82ca9d"
+              fill="#ef3b74"
               activeBar={<Rectangle fill="gold" stroke="purple" />}
             />
           </BarChart>
