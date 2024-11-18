@@ -738,7 +738,7 @@ export default {
         bingTip:
           'Komponen ini digunakan untuk mendapatkan hasil pencarian dari https://www.bing.com/. Biasanya, ini berfungsi sebagai pelengkap basis pengetahuan. Top N dan Kunci Langganan Bing menentukan jumlah hasil pencarian yang perlu Anda sesuaikan.',
         apiKey: 'Kunci API',
-        country: 'Negara',
+        country: 'Negara&Wilayah',
         language: 'Bahasa',
         googleScholar: 'Google Scholar',
         googleScholarDescription:
