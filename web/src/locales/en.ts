@@ -393,6 +393,8 @@ The above is the content you need to summarize.`,
       maxTokensMessage: 'Max Tokens is required',
       maxTokensTip:
         'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).',
+      maxTokensInvalidMessage: 'Please enter a valid number for Max Tokens.',
+      maxTokensMinMessage: 'Max Tokens cannot be less than 0.',
       quote: 'Show Quote',
       quoteTip: 'Should the source of the original text be displayed?',
       selfRag: 'Self-RAG',
@@ -441,6 +443,12 @@ The above is the content you need to summarize.`,
     setting: {
       profile: 'Profile',
       profileDescription: 'Update your photo and personal details here.',
+      maxTokens: 'Max Tokens',
+      maxTokensMessage: 'Max Tokens is required',
+      maxTokensTip:
+        'This sets the maximum length of the model’s output, measured in the number of tokens (words or pieces of words).',
+      maxTokensInvalidMessage: 'Please enter a valid number for Max Tokens.',
+      maxTokensMinMessage: 'Max Tokens cannot be less than 0.',
       password: 'Password',
       passwordDescription:
         'Please enter your current password to change your password.',

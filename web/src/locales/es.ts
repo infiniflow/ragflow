@@ -231,6 +231,8 @@ export default {
       maxTokensMessage: 'El máximo de tokens es obligatorio',
       maxTokensTip:
         'Esto establece la longitud máxima de la salida del modelo, medida en el número de tokens (palabras o piezas de palabras).',
+      maxTokensInvalidMessage: 'Por favor, ingresa un número válido para Max Tokens.',
+      maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
       quote: 'Mostrar cita',
       quoteTip: '¿Debe mostrarse la fuente del texto original?',
       selfRag: 'Self-RAG',
@@ -278,6 +280,12 @@ export default {
     setting: {
       profile: 'Perfil',
       profileDescription: 'Actualiza tu foto y tus datos personales aquí.',
+      maxTokens: 'Máximo de tokens',
+      maxTokensMessage: 'El máximo de tokens es obligatorio',
+      maxTokensTip:
+        'Esto establece la longitud máxima de la salida del modelo, medida en el número de tokens (palabras o piezas de palabras).',
+      maxTokensInvalidMessage: 'Por favor, ingresa un número válido para Max Tokens.',
+      maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
       password: 'Contraseña',
       passwordDescription:
         'Por favor ingresa tu contraseña actual para cambiarla.',

@@ -401,6 +401,8 @@ export default {
         maxTokensMessage: 'Token Maksimum diperlukan',
         maxTokensTip:
           'Ini menetapkan panjang maksimum keluaran model, diukur dalam jumlah token (kata atau potongan kata).',
+        maxTokensInvalidMessage: 'Silakan masukkan angka yang valid untuk Max Tokens.',
+        maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
         quote: 'Tampilkan Kutipan',
         quoteTip: 'Haruskah sumber teks asli ditampilkan?',
         selfRag: 'Self-RAG',
@@ -450,6 +452,12 @@ export default {
       setting: {
         profile: 'Profil',
         profileDescription: 'Perbarui foto dan detail pribadi Anda di sini.',
+        maxTokens: 'Token Maksimum',
+        maxTokensMessage: 'Token Maksimum diperlukan',
+        maxTokensTip:
+          'Ini menetapkan panjang maksimum keluaran model, diukur dalam jumlah token (kata atau potongan kata).',
+        maxTokensInvalidMessage: 'Silakan masukkan angka yang valid untuk Max Tokens.',
+        maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
         password: 'Kata Sandi',
         passwordDescription:
           'Silakan masukkan kata sandi Anda saat ini untuk mengubah kata sandi Anda.',
