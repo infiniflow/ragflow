@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import json
 import os.path
 import pathlib
 import re
@@ -533,7 +534,7 @@ def parse():
                 data=False, message='The URL format is invalid', code=settings.RetCode.ARGUMENT_ERROR)
         download_path = os.path.join(get_project_base_directory(), "logs/downloads")
         os.makedirs(download_path, exist_ok=True)
-        from selenium.webdriver import Chrome, ChromeOptions
+        from seleniumwire.webdriver import Chrome, ChromeOptions
         options = ChromeOptions()
         options.add_argument('--headless')
         options.add_argument('--disable-gpu')
@@ -547,10 +548,31 @@ def parse():
         })
         driver = Chrome(options=options)
         driver.get(url)
-        print(driver.get_downloadable_files())
-        sections = RAGFlowHtmlParser().parser_txt(driver.page_source)
-        driver.close()
-        return get_json_result(data="\n".join(sections))
+        res_headers = [r.response.headers for r in driver.requests]
+        if len(res_headers) > 1:
+            sections = RAGFlowHtmlParser().parser_txt(driver.page_source)
+            driver.quit()
+            return get_json_result(data="\n".join(sections))
+
+        class File:
+            filename: str
+            filepath: str
+
+            def __init__(self, filename, filepath):
+                self.filename = filename
+                self.filepath = filepath
+
+            def read(self):
+                with open(self.filepath, "r") as f:
+                    return f.read()
+
+        r = re.search(r"filename=\"([^\"])\"", json.dumps(res_headers))
+        if not r or r.group(1):
+            return get_json_result(
+                data=False, message="Can't not identify downloaded file", code=RetCode.ARGUMENT_ERROR)
+        f = File(r.group(1), os.path.join(download_path, r.group(1)))
+        txt = FileService.parse_docs([f], current_user.id)
+        return get_json_result(data=txt)
 
     if 'file' not in request.files:
         return get_json_result(
