@@ -39,6 +39,7 @@ from api import settings
 from api import settings
 from api.utils import CustomJSONEncoder, get_uuid
 from api.utils import json_dumps
+from api.constants import REQUEST_WAIT_SEC, REQUEST_MAX_WAIT_SEC
 
 requests.models.complexjson.dumps = functools.partial(
     json.dumps, cls=CustomJSONEncoder)
@@ -87,7 +88,7 @@ def request(**kwargs):
 def get_exponential_backoff_interval(retries, full_jitter=False):
     """Calculate the exponential backoff wait time."""
     # Will be zero if factor equals 0
-    countdown = min(settings.REQUEST_MAX_WAIT_SEC, settings.REQUEST_WAIT_SEC * (2 ** retries))
+    countdown = min(REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC * (2 ** retries))
     # Full jitter according to
     # https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
     if full_jitter:
