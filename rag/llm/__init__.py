@@ -110,6 +110,7 @@ ChatModel = {
 }
 
 RerankModel = {
+    "LocalAI":LocalAIRerank,
     "BAAI": DefaultRerank,
     "Jina": JinaRerank,
     "Youdao": YoudaoRerank,

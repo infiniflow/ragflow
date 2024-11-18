@@ -23,13 +23,10 @@ import rag.utils
 from rag.nlp import search
 from graphrag import search as kg_search
 from api.utils import get_base_config, decrypt_database_config
+from api.constants import RAG_FLOW_SERVICE_NAME
 
-API_VERSION = "v1"
-RAG_FLOW_SERVICE_NAME = "ragflow"
 LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
 
-REQUEST_WAIT_SEC = 2
-REQUEST_MAX_WAIT_SEC = 300
 LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
@@ -173,15 +170,6 @@ def init_settings():
     retrievaler = search.Dealer(docStoreConn)
     kg_retrievaler = kg_search.KGSearch(docStoreConn)
 
-def get_host_ip():
-    global HOST_IP
-    return HOST_IP
-
-
-def get_host_port():
-    global HOST_PORT
-    return HOST_PORT
-
 
 class CustomEnum(Enum):
     @classmethod
@@ -199,16 +187,6 @@ class CustomEnum(Enum):
     @classmethod
     def names(cls):
         return [member.name for member in cls.__members__.values()]
-
-
-class PythonDependenceName(CustomEnum):
-    Rag_Source_Code = "python"
-    Python_Env = "miniconda"
-
-
-class ModelStorage(CustomEnum):
-    REDIS = "redis"
-    MYSQL = "mysql"
 
 
 class RetCode(IntEnum, CustomEnum):
