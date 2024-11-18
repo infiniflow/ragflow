@@ -7,6 +7,7 @@ import infinity
 from infinity.common import ConflictType, InfinityException, SortType
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
+from infinity.errors import ErrorCode
 from rag import settings
 from rag.utils import singleton
 import polars as pl
@@ -61,10 +62,13 @@ class InfinityConnection(DocStoreConnection):
             try:
                 connPool = ConnectionPool(infinity_uri)
                 inf_conn = connPool.get_conn()
-                _ = inf_conn.show_current_node()
+                res = inf_conn.show_current_node()
                 connPool.release_conn(inf_conn)
                 self.connPool = connPool
-                break
+                if res.error_code == ErrorCode.OK and res.server_status=="started":
+                    break
+                logging.warn(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
+                time.sleep(5)
             except Exception as e:
                 logging.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)

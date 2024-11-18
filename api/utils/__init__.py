@@ -63,9 +63,10 @@ CONFIGS = read_config()
 
 
 def show_configs():
-    logging.info(f"Current configs, from {conf_realpath(SERVICE_CONF)}:")
+    msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
     for k, v in CONFIGS.items():
-        logging.info(f"{k}: {v}")
+        msg += f"\n\t{k}: {v}"
+    logging.info(msg)
 
 
 def get_base_config(key, default=None):
@@ -253,7 +254,7 @@ def get_lan_ip():
             try:
                 ip = get_interface_ip(ifname)
                 break
-            except IOError as e:
+            except IOError:
                 pass
     return ip or ''
 
