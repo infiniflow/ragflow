@@ -3,12 +3,11 @@
 # from https://github.com/langchain-ai/langchain/blob/master/libs/text-splitters/langchain_text_splitters/json.py
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 from rag.nlp import find_codec
-
 class RAGFlowJsonParser:
     def __init__(
-        self, max_chunk_size: int = 2000, min_chunk_size: Optional[int] = None
+        self, max_chunk_size: int = 2000, min_chunk_size: int | None = None
     ):
         super().__init__()
         self.max_chunk_size = max_chunk_size * 2
@@ -27,12 +26,12 @@ class RAGFlowJsonParser:
         return sections
 
     @staticmethod
-    def _json_size(data: Dict) -> int:
+    def _json_size(data: dict) -> int:
         """Calculate the size of the serialized JSON object."""
         return len(json.dumps(data, ensure_ascii=False))
 
     @staticmethod
-    def _set_nested_dict(d: Dict, path: List[str], value: Any) -> None:
+    def _set_nested_dict(d: dict, path: list[str], value: Any) -> None:
         """Set a value in a nested dictionary based on the given path."""
         for key in path[:-1]:
             d = d.setdefault(key, {})
@@ -54,10 +53,10 @@ class RAGFlowJsonParser:
         
     def _json_split(
         self,
-        data: Dict[str, Any],
-        current_path: Optional[List[str]] = None,
-        chunks: Optional[List[Dict]] = None,
-    ) -> List[Dict]:
+        data: dict[str, Any],
+        current_path: list[str] | None,
+        chunks: list[dict] | None,
+    ) -> list[dict]:
         """
         Split json into maximum size dictionaries while preserving structure.
         """
@@ -87,9 +86,9 @@ class RAGFlowJsonParser:
 
     def split_json(
         self,
-        json_data: Dict[str, Any],
+        json_data: dict[str, Any],
         convert_lists: bool = False,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Splits JSON into a list of JSON chunks"""
 
         if convert_lists:
@@ -104,10 +103,10 @@ class RAGFlowJsonParser:
 
     def split_text(
         self,
-        json_data: Dict[str, Any],
+        json_data: dict[str, Any],
         convert_lists: bool = False,
         ensure_ascii: bool = True,
-    ) -> List[str]:
+    ) -> list[str]:
         """Splits JSON into a list of JSON formatted strings"""
 
         chunks = self.split_json(json_data=json_data, convert_lists=convert_lists)

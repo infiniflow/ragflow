@@ -13,6 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from beartype.claw import beartype_packages
+beartype_packages(["agent", "api", "deepdoc", "plugins", "rag", "ragflow_sdk"])  # <-- raise exceptions in your code
+
 import logging
 import sys
 from api.utils.log_utils import initRootLogger

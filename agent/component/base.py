@@ -19,7 +19,6 @@ import builtins
 import json
 import os
 from functools import partial
-from typing import Tuple, Union
 
 import pandas as pd
 
@@ -417,7 +416,7 @@ class ComponentBase(ABC):
     def _run(self, history, **kwargs):
         raise NotImplementedError()
 
-    def output(self, allow_partial=True) -> Tuple[str, Union[pd.DataFrame, partial]]:
+    def output(self, allow_partial=True) -> tuple[str, pd.DataFrame | partial]:
         o = getattr(self._param, self._param.output_var_name)
         if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
             if not isinstance(o, list): o = [o]

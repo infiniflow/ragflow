@@ -17,7 +17,6 @@ import logging
 import inspect
 import os
 import sys
-import typing
 import operator
 from enum import Enum
 from functools import wraps
@@ -121,13 +120,13 @@ class SerializedField(LongTextField):
                 f"the serialized type {self._serialized_type} is not supported")
 
 
-def is_continuous_field(cls: typing.Type) -> bool:
+def is_continuous_field(cls: type) -> bool:
     if cls in CONTINUOUS_FIELD_TYPE:
         return True
     for p in cls.__bases__:
         if p in CONTINUOUS_FIELD_TYPE:
             return True
-        elif p != Field and p != object:
+        elif p is not Field and p is not object:
             if is_continuous_field(p):
                 return True
     else:
@@ -159,7 +158,7 @@ class BaseModel(Model):
     def to_dict(self):
         return self.__dict__['__data__']
 
-    def to_human_model_dict(self, only_primary_with: list = None):
+    def to_human_model_dict(self, only_primary_with: list | None = None):
         model_dict = self.__dict__['__data__']
 
         if not only_primary_with:

@@ -17,6 +17,7 @@ azure-storage-file-datalake = "12.16.0"
 anthropic = "=0.34.1"
 arxiv = "2.1.3"
 aspose-slides = { version = "^24.9.0", markers = "platform_machine == 'x86_64'" }
+beartype = "^0.18.5"
 bio = "1.7.1"
 boto3 = "1.34.140"
 botocore = "1.34.140"

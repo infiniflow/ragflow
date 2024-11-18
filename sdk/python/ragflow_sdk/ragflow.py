@@ -13,14 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import List
-
 import requests
 
 from .modules.chat import Chat
 from .modules.chunk import Chunk
 from .modules.dataset import DataSet
-from .modules.document import Document
 
 
 class RAGFlow:
@@ -64,7 +61,7 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_datasets(self, ids: List[str] = None):
+    def delete_datasets(self, ids: list[str] | None = None):
         res = self.delete("/datasets",{"ids": ids})
         res=res.json()
         if res.get("code") != 0:
@@ -77,8 +74,8 @@ class RAGFlow:
         raise Exception("Dataset %s not found" % name)
 
     def list_datasets(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
-                      id: str = None, name: str = None) -> \
-            List[DataSet]:
+                      id: str | None = None, name: str | None = None) -> \
+            list[DataSet]:
         res = self.get("/datasets",
                        {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
@@ -89,8 +86,8 @@ class RAGFlow:
             return result_list
         raise Exception(res["message"])
 
-    def create_chat(self, name: str, avatar: str = "", dataset_ids: List[str] = [],
-                         llm: Chat.LLM = None, prompt: Chat.Prompt = None) -> Chat:
+    def create_chat(self, name: str, avatar: str = "", dataset_ids: list[str] = [],
+                         llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
         dataset_list = []
         for id in dataset_ids:
             dataset_list.append(id)
@@ -135,7 +132,7 @@ class RAGFlow:
             return Chat(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_chats(self,ids: List[str] = None) -> bool:
+    def delete_chats(self,ids: list[str] | None = None):
         res = self.delete('/chats',
                       {"ids":ids})
         res = res.json()
@@ -143,7 +140,7 @@ class RAGFlow:
             raise Exception(res["message"])
 
     def list_chats(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
-                      id: str = None, name: str = None) -> List[Chat]:
+                      id: str | None = None, name: str | None = None) -> list[Chat]:
         res = self.get("/chats",{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
         result_list = []
@@ -154,7 +151,7 @@ class RAGFlow:
         raise Exception(res["message"])
 
 
-    def retrieve(self, dataset_ids, document_ids=None, question="", page=1, page_size=30, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id:str=None, keyword:bool=False, ):
+    def retrieve(self, dataset_ids, document_ids=None, question="", page=1, page_size=30, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id: str | None = None, keyword:bool=False, ):
             if document_ids is None:
                 document_ids = []
             data_json ={
@@ -170,7 +167,7 @@ class RAGFlow:
                 "documents": document_ids
             }
             # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
-            res = self.post(f'/retrieval',json=data_json)
+            res = self.post('/retrieval',json=data_json)
             res = res.json()
             if res.get("code") ==0:
                 chunks=[]
