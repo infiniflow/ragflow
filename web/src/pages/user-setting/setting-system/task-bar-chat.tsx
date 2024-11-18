@@ -59,14 +59,13 @@ const TaskBarChat = ({ data }: IProps) => {
     const firstItem = data[0];
     const lastItem = data[data.length - 1];
 
-    const domain = [firstItem.now, lastItem.now];
-
+    const domain = [firstItem?.now, lastItem?.now];
     return (
       <Flex key={key} className={styles.taskBar} vertical>
         <div className="flex gap-8">
           <b className={styles.taskBarTitle}>ID: {key}</b>
-          <b className={styles.taskBarTitle}>Lag: {lastItem.lag}</b>
-          <b className={styles.taskBarTitle}>Pending: {lastItem.pending}</b>
+          <b className={styles.taskBarTitle}>Lag: {lastItem?.lag}</b>
+          <b className={styles.taskBarTitle}>Pending: {lastItem?.pending}</b>
         </div>
         <ResponsiveContainer>
           <BarChart data={data}>
