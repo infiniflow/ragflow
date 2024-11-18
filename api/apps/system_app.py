@@ -15,6 +15,7 @@
 #
 import logging
 from datetime import datetime
+import json
 
 from flask_login import login_required, current_user
 
@@ -160,6 +161,7 @@ def status():
         now = datetime.now().timestamp()
         for task_executor_id in task_executors:
             heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60*30, now)
+            heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
             task_executor_heartbeats[task_executor_id] = heartbeats
     except Exception:
         logging.exception("get task executor heartbeats failed!")
