@@ -15,7 +15,6 @@
 #
 import logging
 import re
-from typing import Optional
 import threading
 import requests
 from huggingface_hub import snapshot_download
@@ -242,10 +241,10 @@ class FastEmbed(Base):
 
     def __init__(
             self,
-            key: Optional[str] = None,
+            key: str | None = None,
             model_name: str = "BAAI/bge-small-en-v1.5",
-            cache_dir: Optional[str] = None,
-            threads: Optional[int] = None,
+            cache_dir: str | None = None,
+            threads: int | None = None,
             **kwargs,
     ):
         if not settings.LIGHTEN and not FastEmbed._model:

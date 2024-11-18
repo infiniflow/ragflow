@@ -15,7 +15,6 @@
 #
 import json
 from copy import deepcopy
-from typing import Dict
 
 import pandas as pd
 from rag.utils.doc_store_conn import OrderByExpr, FusionExpr
@@ -25,7 +24,7 @@ from rag.nlp.search import Dealer
 
 class KGSearch(Dealer):
     def search(self, req, idxnm, kb_ids, emb_mdl, highlight=False):
-        def merge_into_first(sres, title="") -> Dict[str, str]:
+        def merge_into_first(sres, title="") -> dict[str, str]:
             if not sres:
                 return {}
             content_with_weight = ""

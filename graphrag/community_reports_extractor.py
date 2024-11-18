@@ -9,8 +9,8 @@ import logging
 import json
 import re
 import traceback
+from typing import Callable
 from dataclasses import dataclass
-from typing import List, Callable
 import networkx as nx
 import pandas as pd
 from graphrag import leiden
@@ -26,8 +26,8 @@ from timeit import default_timer as timer
 class CommunityReportsResult:
     """Community reports result class definition."""
 
-    output: List[str]
-    structured_output: List[dict]
+    output: list[str]
+    structured_output: list[dict]
 
 
 class CommunityReportsExtractor:
@@ -53,7 +53,7 @@ class CommunityReportsExtractor:
         self._max_report_length = max_report_length or 1500
 
     def __call__(self, graph: nx.Graph, callback: Callable | None = None):
-        communities: dict[str, dict[str, List]] = leiden.run(graph, {})
+        communities: dict[str, dict[str, list]] = leiden.run(graph, {})
         total = sum([len(comm.items()) for _, comm in communities.items()])
         relations_df = pd.DataFrame([{"source":s, "target": t, **attr} for s, t, attr in graph.edges(data=True)])
         res_str = []

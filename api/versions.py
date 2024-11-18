@@ -13,11 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import dotenv
-import typing
 import subprocess
 
-def get_ragflow_version() -> typing.Optional[str]:
+def get_ragflow_version() -> str:
     return RAGFLOW_VERSION_INFO
 
 
@@ -42,7 +40,7 @@ def get_closest_tag_and_count():
             return closest_tag
         else:
             return f"{commit_id}({closest_tag}~{commits_count})"
-    except Exception as e:
+    except Exception:
         return 'unknown'
 
 

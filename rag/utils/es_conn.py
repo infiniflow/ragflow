@@ -3,7 +3,6 @@ import re
 import json
 import time
 import os
-from typing import List, Dict
 
 import copy
 from elasticsearch import Elasticsearch
@@ -363,7 +362,7 @@ class ESConnection(DocStoreConnection):
             rr.append(d["_source"])
         return rr
 
-    def getFields(self, res, fields: List[str]) -> Dict[str, dict]:
+    def getFields(self, res, fields: list[str]) -> dict[str, dict]:
         res_fields = {}
         if not fields:
             return {}
@@ -382,7 +381,7 @@ class ESConnection(DocStoreConnection):
                 res_fields[d["id"]] = m
         return res_fields
 
-    def getHighlight(self, res, keywords: List[str], fieldnm: str):
+    def getHighlight(self, res, keywords: list[str], fieldnm: str):
         ans = {}
         for d in res["hits"]["hits"]:
             hlts = d.get("highlight")

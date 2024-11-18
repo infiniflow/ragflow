@@ -3,7 +3,6 @@ import os
 import re
 import json
 import time
-from typing import List, Dict
 import infinity
 from infinity.common import ConflictType, InfinityException
 from infinity.index import IndexInfo, IndexType
@@ -384,7 +383,7 @@ class InfinityConnection(DocStoreConnection):
     def getChunkIds(self, res):
         return list(res["id"])
 
-    def getFields(self, res, fields: List[str]) -> Dict[str, dict]:
+    def getFields(self, res, fields: list[str]) -> list[str, dict]:
         res_fields = {}
         if not fields:
             return {}
@@ -412,7 +411,7 @@ class InfinityConnection(DocStoreConnection):
             res_fields[id] = m
         return res_fields
 
-    def getHighlight(self, res, keywords: List[str], fieldnm: str):
+    def getHighlight(self, res, keywords: list[str], fieldnm: str):
         ans = {}
         num_rows = len(res)
         column_id = res["id"]

@@ -1,5 +1,3 @@
-from typing import List
-
 from .document import Document
 
 from .base import Base
@@ -35,7 +33,7 @@ class DataSet(Base):
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-    def upload_documents(self,document_list: List[dict]):
+    def upload_documents(self,document_list: list[dict]):
         url = f"/datasets/{self.id}/documents"
         files = [("file",(ele["displayed_name"],ele["blob"])) for ele in document_list]
         res = self.post(path=url,json=None,files=files)
@@ -48,7 +46,7 @@ class DataSet(Base):
             return doc_list
         raise Exception(res.get("message"))
 
-    def list_documents(self, id: str = None, keywords: str = None, page: int =1, page_size: int = 30, orderby: str = "create_time", desc: bool = True):
+    def list_documents(self, id: str | None = None, keywords: str | None = None, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True):
         res = self.get(f"/datasets/{self.id}/documents",params={"id": id,"keywords": keywords,"page": page,"page_size": page_size,"orderby": orderby,"desc": desc})
         res = res.json()
         documents = []
@@ -58,7 +56,7 @@ class DataSet(Base):
             return documents
         raise Exception(res["message"])
 
-    def delete_documents(self,ids: List[str] = None):
+    def delete_documents(self,ids: list[str] | None = None):
         res = self.rm(f"/datasets/{self.id}/documents",{"ids":ids})
         res = res.json()
         if res.get("code") != 0:

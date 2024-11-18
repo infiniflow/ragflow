@@ -17,7 +17,6 @@
 import logging
 import re
 import json
-from typing import List, Optional, Dict, Union
 from dataclasses import dataclass
 
 from rag.utils import rmSpace
@@ -37,13 +36,13 @@ class Dealer:
     @dataclass
     class SearchResult:
         total: int
-        ids: List[str]
-        query_vector: List[float] = None
-        field: Optional[Dict] = None
-        highlight: Optional[Dict] = None
-        aggregation: Union[List, Dict, None] = None
-        keywords: Optional[List[str]] = None
-        group_docs: List[List] = None
+        ids: list[str]
+        query_vector: list[float] | None = None
+        field: dict | None = None
+        highlight: dict | None = None
+        aggregation: list | dict | None = None
+        keywords: list[str] | None = None
+        group_docs: list[list] | None = None
 
     def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
         qv, _ = emb_mdl.encode_queries(txt)

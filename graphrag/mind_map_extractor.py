@@ -19,9 +19,9 @@ import collections
 import os
 import re
 import traceback
+from typing import Any
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
 
 from graphrag.mind_map_prompt import MIND_MAP_EXTRACTION_PROMPT
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
