@@ -238,7 +238,7 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!"])
+            arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
             if len(arr) == 0 or tc == 0:
                 raise Exception("Not known.")
         except Exception as e:
