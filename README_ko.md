@@ -208,6 +208,21 @@
 > $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
+### Elasticsearch 에서 Infinity로 문서 엔진 전환
+
+RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 벡터를 저장합니다. [Infinity]로 전환(https://github.com/infiniflow/infinity/), 다음 절차를 따르십시오.
+1. 실행 중인 모든 컨테이너를 중지합니다.
+   ```bash
+   $docker compose-f docker/docker-compose.yml down-v
+   ```
+2. **docker/.env**의 "DOC_ENGINE" 을 "infinity" 로 설정합니다.
+3. 컨테이너 부팅:
+   ```bash
+   $docker compose-f docker/docker-compose.yml up-d
+   ```
+> [!경고]
+> Linux/arm64 시스템에서 Infinity로 전환하는 것은 공식적으로 지원되지 않습니다.
+
 ## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함하지 않음)
 
 이 Docker 이미지의 크기는 약 1GB이며, 외부 대형 모델과 임베딩 서비스에 의존합니다.
