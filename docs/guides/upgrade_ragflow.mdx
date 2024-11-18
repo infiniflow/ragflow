@@ -9,11 +9,11 @@ import TabItem from '@theme/TabItem';
 
 You can upgrade RAGFlow to the dev version or the latest version:
 
-- The Dev version (Development version) is the latest, tested image.
+- The Dev version (Development version) is the latest, tested Docker image of RAGFlow.
 - The latest version is the most recent, officially published release. For example, `v0.13.0`.
 
 
-## 1. Upgrade RAGFLOW_IMAGE
+## 1. Update RAGFLOW_IMAGE
 
 Update **ragflow/docker/.env** as follows:
 
@@ -25,8 +25,8 @@ Update **ragflow/docker/.env** as follows:
   ]}>
   <TabItem value="dev">
 
-:::tip IMPORTANT
-The Dev version (Development version) is the latest, tested image.
+:::danger IMPORTANT
+The Dev version (Development version) is the latest, tested Docker image of RAGFlow.
 :::
 
 ```bash
@@ -36,7 +36,7 @@ RAGFLOW_IMAGE=infiniflow/ragflow:dev
   </TabItem>
   <TabItem value="latest">
 
-:::tip IMPORTANT
+:::danger IMPORTANT
 The latest version is the most recent, officially published release. For example, `v0.13.0`.
 :::
 
@@ -47,7 +47,7 @@ RAGFLOW_IMAGE=infiniflow/ragflow:latest
   </TabItem>
 </Tabs>
 
-## Pull the latest code
+## 2. Pull the latest code
 
 Pull the latest code from inside Docker:
 
@@ -55,7 +55,7 @@ Pull the latest code from inside Docker:
 git pull
 ```
 
-## Update RAGFlow image and restart RAGFlow
+## 3. Update RAGFlow image and restart RAGFlow
 
 ```bash
 docker compose -f docker/docker-compose.yml pull
