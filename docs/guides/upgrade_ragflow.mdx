@@ -1,0 +1,63 @@
+---
+sidebar_position: 7
+slug: /upgrade_ragflow
+---
+
+# Upgrade RAGFlow
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+You can upgrade RAGFlow to the dev version or the latest version:
+
+- The Dev version (Development version) is the latest, tested image.
+- The latest version is the most recent, officially published release. For example, `v0.13.0`.
+
+
+## 1. Upgrade RAGFLOW_IMAGE
+
+Update **ragflow/docker/.env** as follows:
+
+<Tabs
+  defaultValue="dev"
+  values={[
+    {label: 'Upgrade RAGFlow to the dev version', value: 'dev'},
+    {label: 'Upgrade RAGFlow to the latest version', value: 'latest'}
+  ]}>
+  <TabItem value="dev">
+
+:::tip IMPORTANT
+The Dev version (Development version) is the latest, tested image.
+:::
+
+```bash
+RAGFLOW_IMAGE=infiniflow/ragflow:dev
+```
+
+  </TabItem>
+  <TabItem value="latest">
+
+:::tip IMPORTANT
+The latest version is the most recent, officially published release. For example, `v0.13.0`.
+:::
+
+```bash
+RAGFLOW_IMAGE=infiniflow/ragflow:latest
+```
+
+  </TabItem>
+</Tabs>
+
+## Pull the latest code
+
+Pull the latest code from inside Docker:
+
+```bash
+git pull
+```
+
+## Update RAGFlow image and restart RAGFlow
+
+```bash
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml up -d
+```
