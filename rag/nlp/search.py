@@ -61,7 +61,7 @@ class Dealer:
                 condition[key] = req[key]
         return condition
 
-    def search(self, req, idx_names: list[str], kb_ids: list[str], emb_mdl=None, highlight = False):
+    def search(self, req, idx_names: str | list[str], kb_ids: list[str], emb_mdl=None, highlight = False):
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
 
