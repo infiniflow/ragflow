@@ -48,7 +48,6 @@ def test_list_documents_in_dataset_with_success(get_api_key_fixture):
     ds.list_documents(keywords="test", page=1, page_size=12)
 
 
-
 def test_delete_documents_in_dataset_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
@@ -105,9 +104,9 @@ def test_upload_and_parse_image_documents_with_general_parse_method(get_api_key_
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_image_document")
-    with open("test_data/test.image","rb") as file:
+    with open("test_data/test.jpg","rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.image","blob": blob}]
+    document_infos = [{"displayed_name": "test.jpg","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
