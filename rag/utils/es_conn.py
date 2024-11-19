@@ -146,6 +146,7 @@ class ESConnection(DocStoreConnection):
                           similarity=similarity,
                           )
 
+        condition["kb_id"] = knowledgebaseIds
         if condition:
             if not bqry:
                 bqry = Q("bool", must=[])
