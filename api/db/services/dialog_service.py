@@ -98,7 +98,8 @@ def message_fit_in(msg, max_length=4000):
         return c, msg
 
     msg_ = [m for m in msg[:-1] if m["role"] == "system"]
-    msg_.append(msg[-1])
+    if len(msg) > 1:
+        msg_.append(msg[-1])
     msg = msg_
     c = count()
     if c < max_length:
