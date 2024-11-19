@@ -15,11 +15,12 @@
 #
 import logging
 import json
+import traceback
 from functools import partial
 from flask import request, Response
 from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
-from api import settings
+from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
@@ -36,8 +37,7 @@ def templates():
 @login_required
 def canvas_list():
     return get_json_result(data=sorted([c.to_dict() for c in \
-                                        UserCanvasService.query(user_id=current_user.id)],
-                                       key=lambda x: x["update_time"] * -1)
+                                 UserCanvasService.query(user_id=current_user.id)], key=lambda x: x["update_time"]*-1)
                            )
 
 
@@ -46,10 +46,10 @@ def canvas_list():
 @login_required
 def rm():
     for i in request.json["canvas_ids"]:
-        if not UserCanvasService.query(user_id=current_user.id, id=i):
+        if not UserCanvasService.query(user_id=current_user.id,id=i):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
         UserCanvasService.delete_by_id(i)
     return get_json_result(data=True)
 
@@ -73,7 +73,7 @@ def save():
         if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
     return get_json_result(data=req)
 
@@ -99,7 +99,7 @@ def run():
     if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
-            code=settings.RetCode.OPERATING_ERROR)
+            code=RetCode.OPERATING_ERROR)
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -110,26 +110,18 @@ def run():
         canvas = Canvas(cvs.dsl, current_user.id)
         if "message" in req:
             canvas.messages.append({"role": "user", "content": req["message"], "id": message_id})
-            if len([m for m in canvas.messages if m["role"] == "user"]) > 1:
-                # ten = TenantService.get_info_by(current_user.id)[0]
-                # req["message"] = full_question(ten["tenant_id"], ten["llm_id"], canvas.messages)
-                pass
             canvas.add_user_input(req["message"])
-        answer = canvas.run(stream=stream)
-        logging.debug(canvas)
     except Exception as e:
         return server_error_response(e)
 
-    assert answer is not None, "The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow."
-
     if stream:
-        assert isinstance(answer,
-                          partial), "The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow."
-
         def sse():
             nonlocal answer, cvs
             try:
-                for ans in answer():
+                for ans in canvas.run(stream=True):
+                    if ans.get("running_status"):
+                        yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+                        continue
                     for k in ans.keys():
                         final_ans[k] = ans[k]
                     ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
@@ -142,6 +134,7 @@ def run():
                 cvs.dsl = json.loads(str(canvas))
                 UserCanvasService.update_by_id(req["id"], cvs.to_dict())
             except Exception as e:
+                traceback.print_exc()
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                            ensure_ascii=False) + "\n\n"
@@ -154,13 +147,15 @@ def run():
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
-    canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
-    if final_ans.get("reference"):
-        canvas.reference.append(final_ans["reference"])
-    cvs.dsl = json.loads(str(canvas))
-    UserCanvasService.update_by_id(req["id"], cvs.to_dict())
-    return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})
+    for answer in canvas.run(stream=False):
+        if answer.get("running_status"): continue
+        final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
+        canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
+        if final_ans.get("reference"):
+            canvas.reference.append(final_ans["reference"])
+        cvs.dsl = json.loads(str(canvas))
+        UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+        return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})
 
 
 @manager.route('/reset', methods=['POST'])
@@ -175,7 +170,7 @@ def reset():
         if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
         canvas.reset()
