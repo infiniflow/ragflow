@@ -531,7 +531,7 @@ def parse():
     if url:
         if not is_valid_url(url):
             return get_json_result(
-                data=False, message='The URL format is invalid', code=RetCode.ARGUMENT_ERROR)
+                data=False, message='The URL format is invalid', code=settings.RetCode.ARGUMENT_ERROR)
         download_path = os.path.join(get_project_base_directory(), "logs/downloads")
         os.makedirs(download_path, exist_ok=True)
         from seleniumwire.webdriver import Chrome, ChromeOptions
@@ -569,14 +569,14 @@ def parse():
         r = re.search(r"filename=\"([^\"]+)\"", str(res_headers))
         if not r or not r.group(1):
             return get_json_result(
-                data=False, message="Can't not identify downloaded file", code=RetCode.ARGUMENT_ERROR)
+                data=False, message="Can't not identify downloaded file", code=settings.RetCode.ARGUMENT_ERROR)
         f = File(r.group(1), os.path.join(download_path, r.group(1)))
         txt = FileService.parse_docs([f], current_user.id)
         return get_json_result(data=txt)
 
     if 'file' not in request.files:
         return get_json_result(
-            data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
+            data=False, message='No file part!', code=settings.RetCode.ARGUMENT_ERROR)
 
     file_objs = request.files.getlist('file')
     txt = FileService.parse_docs(file_objs, current_user.id)
