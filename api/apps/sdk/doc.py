@@ -115,6 +115,7 @@ def upload(dataset_id, tenant_id):
             return get_result(
                 message="No file selected!", code=settings.RetCode.ARGUMENT_ERROR
             )
+    '''
     # total size
     total_size = 0
     for file_obj in file_objs:
@@ -127,6 +128,7 @@ def upload(dataset_id, tenant_id):
             message=f"Total file size exceeds 10MB limit! ({total_size / (1024 * 1024):.2f} MB)",
             code=settings.RetCode.ARGUMENT_ERROR,
         )
+    '''
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
