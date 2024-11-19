@@ -57,7 +57,7 @@ def list_chunk():
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
-        sres = settings.retrievaler.search(query, search.index_name(tenant_id), kb_ids, highlight=True)
+        sres = settings.retrievaler.search(query, [search.index_name(tenant_id)], kb_ids, highlight=True)
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
@@ -307,7 +307,7 @@ def knowledge_graph():
         "doc_ids": [doc_id],
         "knowledge_graph_kwd": ["graph", "mind_map"]
     }
-    sres = settings.retrievaler.search(req, search.index_name(tenant_id), kb_ids)
+    sres = settings.retrievaler.search(req, [search.index_name(tenant_id)], kb_ids)
     obj = {"graph": {}, "mind_map": {}}
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]

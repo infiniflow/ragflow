@@ -4,7 +4,7 @@ import re
 import json
 import time
 import infinity
-from infinity.common import ConflictType, InfinityException
+from infinity.common import ConflictType, InfinityException, SortType
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from rag import settings
@@ -237,7 +237,10 @@ class InfinityConnection(DocStoreConnection):
         if orderBy.fields:
             order_by_expr_list = list()
             for order_field in orderBy.fields:
-                order_by_expr_list.append((order_field[0], order_field[1] == 0))
+                if order_field[1] == 0:
+                    order_by_expr_list.append((order_field[0], SortType.Asc))
+                else:
+                    order_by_expr_list.append((order_field[0], SortType.Desc))
 
         # Scatter search tables and gather the results
         for indexName in indexNames:
@@ -249,28 +252,31 @@ class InfinityConnection(DocStoreConnection):
                     continue
                 table_list.append(table_name)
                 builder = table_instance.output(selectFields)
-                for matchExpr in matchExprs:
-                    if isinstance(matchExpr, MatchTextExpr):
-                        fields = ",".join(matchExpr.fields)
-                        builder = builder.match_text(
-                            fields,
-                            matchExpr.matching_text,
-                            matchExpr.topn,
-                            matchExpr.extra_options,
-                        )
-                    elif isinstance(matchExpr, MatchDenseExpr):
-                        builder = builder.match_dense(
-                            matchExpr.vector_column_name,
-                            matchExpr.embedding_data,
-                            matchExpr.embedding_data_type,
-                            matchExpr.distance_type,
-                            matchExpr.topn,
-                            matchExpr.extra_options,
-                        )
-                    elif isinstance(matchExpr, FusionExpr):
-                        builder = builder.fusion(
-                            matchExpr.method, matchExpr.topn, matchExpr.fusion_params
-                        )
+                if len(matchExprs) > 0:
+                    for matchExpr in matchExprs:
+                        if isinstance(matchExpr, MatchTextExpr):
+                            fields = ",".join(matchExpr.fields)
+                            builder = builder.match_text(
+                                fields,
+                                matchExpr.matching_text,
+                                matchExpr.topn,
+                                matchExpr.extra_options,
+                            )
+                        elif isinstance(matchExpr, MatchDenseExpr):
+                            builder = builder.match_dense(
+                                matchExpr.vector_column_name,
+                                matchExpr.embedding_data,
+                                matchExpr.embedding_data_type,
+                                matchExpr.distance_type,
+                                matchExpr.topn,
+                                matchExpr.extra_options,
+                            )
+                        elif isinstance(matchExpr, FusionExpr):
+                            builder = builder.fusion(
+                                matchExpr.method, matchExpr.topn, matchExpr.fusion_params
+                            )
+                else:
+                    builder.filter(filter_cond)
                 if orderBy.fields:
                     builder.sort(order_by_expr_list)
                 builder.offset(offset).limit(limit)
