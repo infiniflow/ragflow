@@ -206,7 +206,7 @@
 > $ docker compose -f docker-compose.yml up -d
 > ```
 
-### 把文档引擎从 Elasticserch 切换成为 Infinity
+### 把文档引擎从 Elasticsearch 切换成为 Infinity
 
 RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换为 [Infinity](https://github.com/infiniflow/infinity/), 可以按照下面步骤进行:
 

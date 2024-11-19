@@ -208,7 +208,7 @@
 > $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
-### Elasticsearch 에서 Infinity로 문서 엔진 전환
+### Elasticsearch 에서 Infinity 로 문서 엔진 전환
 
 RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 벡터를 저장합니다. [Infinity]로 전환(https://github.com/infiniflow/infinity/), 다음 절차를 따르십시오.
 1. 실행 중인 모든 컨테이너를 중지합니다.
