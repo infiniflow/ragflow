@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Flex, Form, Input, Modal, Select, Space } from 'antd';
+import { Flex, Form, Input, Modal, Select, Space, InputNumber } from 'antd';
 import { useMemo } from 'react';
 import { BedrockRegionList } from '../constant';
 
@@ -34,6 +34,7 @@ const BedrockModal = ({
     const data = {
       ...values,
       llm_factory: llmFactory,
+      max_tokens:values.max_tokens,
     };
 
     onOk?.(data);
@@ -111,6 +112,31 @@ const BedrockModal = ({
             allowClear
           ></Select>
         </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({ getFieldValue }) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+
       </Form>
     </Modal>
   );
