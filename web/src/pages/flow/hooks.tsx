@@ -462,13 +462,13 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         const resetRet = await resetFlow();
         // After resetting, all previous messages will be cleared.
         if (resetRet?.code === 0) {
+          show();
           // fetch prologue
           const sendRet = await send({ id });
           if (receiveMessageError(sendRet)) {
             message.error(sendRet?.data?.message);
           } else {
             refetch();
-            show();
           }
         }
       }
@@ -641,13 +641,13 @@ export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
 
   const groupedOptions = [
     {
-      label: <span>Component id</span>,
-      title: 'Component Id',
+      label: <span>Component Output</span>,
+      title: 'Component Output',
       options: componentIdOptions,
     },
     {
-      label: <span>Begin input</span>,
-      title: 'Begin input',
+      label: <span>Begin Input</span>,
+      title: 'Begin Input',
       options: query.map((x) => ({
         label: x.name,
         value: `begin@${x.key}`,

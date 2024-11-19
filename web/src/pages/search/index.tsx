@@ -186,7 +186,7 @@ const SearchPage = () => {
                                     }
                                   >
                                     <FileIcon
-                                      id={item.img_id}
+                                      id={item.image_id}
                                       name={item.docnm_kwd}
                                     ></FileIcon>
                                     {item.docnm_kwd}
