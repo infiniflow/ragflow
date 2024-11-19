@@ -563,13 +563,13 @@ def parse():
                 self.filepath = filepath
 
             def read(self):
-                with open(self.filepath, "r") as f:
+                with open(self.filepath, "rb") as f:
                     return f.read()
 
-        r = re.search(r"filename=\"([^\"])\"", json.dumps(res_headers))
-        if not r or r.group(1):
+        r = re.search(r"filename=\"([^\"]+)\"", str(res_headers))
+        if not r or not r.group(1):
             return get_json_result(
-                data=False, message="Can't not identify downloaded file", code=RetCode.ARGUMENT_ERROR)
+                data=False, message="Can't not identify downloaded file", code=settings.RetCode.ARGUMENT_ERROR)
         f = File(r.group(1), os.path.join(download_path, r.group(1)))
         txt = FileService.parse_docs([f], current_user.id)
         return get_json_result(data=txt)
