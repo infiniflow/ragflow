@@ -20,7 +20,7 @@ import {
 } from 'antd';
 import { pick } from 'lodash';
 import { Link2, Trash2 } from 'lucide-react';
-import { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BeginQueryType } from '../constant';
 import {
@@ -32,6 +32,7 @@ import useGraphStore from '../store';
 import { getDrawerWidth } from '../utils';
 import { PopoverForm } from './popover-form';
 
+import { UploadChangeParam, UploadFile } from 'antd/es/upload';
 import styles from './index.less';
 
 const RunDrawer = ({
@@ -49,6 +50,7 @@ const RunDrawer = ({
   } = useSetModalState();
   const { setRecord, currentRecord } = useSetSelectedRecord<number>();
   const { submittable } = useHandleSubmittable(form);
+  const [isUploading, setIsUploading] = useState(false);
 
   const handleShowPopover = useCallback(
     (idx: number) => () => {
@@ -79,6 +81,16 @@ const RunDrawer = ({
     }
     return e?.fileList;
   };
+
+  const onChange = useCallback(
+    (optional: boolean) =>
+      ({ fileList }: UploadChangeParam<UploadFile>) => {
+        if (!optional) {
+          setIsUploading(fileList.some((x) => x.status === 'uploading'));
+        }
+      },
+    [],
+  );
 
   const renderWidget = useCallback(
     (q: BeginQuery, idx: number) => {
@@ -124,6 +136,7 @@ const RunDrawer = ({
               action={api.parse}
               multiple
               headers={{ [Authorization]: getAuthorization() }}
+              onChange={onChange(q.optional)}
             >
               <p className="ant-upload-drag-icon">
                 <InboxOutlined />
@@ -146,7 +159,7 @@ const RunDrawer = ({
           </Form.Item>
         ),
         [BeginQueryType.Url]: (
-          <>
+          <React.Fragment key={idx}>
             <Form.Item
               {...pick(props, ['key', 'label', 'rules'])}
               required={!q.optional}
@@ -190,13 +203,21 @@ const RunDrawer = ({
                 ) : null;
               }}
             </Form.Item>
-          </>
+          </React.Fragment>
         ),
       };
 
       return BeginQueryTypeMap[q.type as BeginQueryType];
     },
-    [form, handleRemoveUrl, handleShowPopover, switchVisible, t, visible],
+    [
+      form,
+      handleRemoveUrl,
+      handleShowPopover,
+      onChange,
+      switchVisible,
+      t,
+      visible,
+    ],
   );
 
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatModal!);
@@ -221,9 +242,9 @@ const RunDrawer = ({
         value.forEach((x, idx) => {
           if (x?.originFileObj instanceof File) {
             if (idx === 0) {
-              nextValue += `${x.name}\n\n${x.response.data}\n\n`;
+              nextValue += `${x.name}\n\n${x.response?.data}\n\n`;
             } else {
-              nextValue += `${x.response.data}\n\n`;
+              nextValue += `${x.response?.data}\n\n`;
             }
           } else {
             if (idx === 0) {
@@ -274,7 +295,12 @@ const RunDrawer = ({
           </Form>
         </Form.Provider>
       </section>
-      <Button type={'primary'} block onClick={onOk} disabled={!submittable}>
+      <Button
+        type={'primary'}
+        block
+        onClick={onOk}
+        disabled={!submittable || isUploading}
+      >
         {t('common.next')}
       </Button>
     </Drawer>
