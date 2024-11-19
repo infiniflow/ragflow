@@ -206,6 +206,28 @@
 > $ docker compose -f docker-compose.yml up -d
 > ```
 
+### 把文档引擎从 Elasticserch 切换成为 Infinity
+
+RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换为 [Infinity](https://github.com/infiniflow/infinity/), 可以按照下面步骤进行:
+
+1. 停止所有容器运行:
+
+   ```bash
+   $ docker compose -f docker/docker-compose.yml down -v
+   ```
+
+2. 设置 **docker/.env** 目录中的 `DOC_ENGINE` 为 `infinity`.
+
+3. 启动容器:
+
+   ```bash
+   $ docker compose -f docker/docker-compose.yml up -d
+   ```
+
+> [!WARNING] 
+> Infinity 目前官方并未正式支持在 Linux/arm64 架构下的机器上运行.
+
+
 ## 🔧 源码编译 Docker 镜像（不含 embedding 模型）
 
 本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和 embedding 服务。
@@ -215,7 +237,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+bash build_docker_image.sh slim
 ```
 
 ## 🔧 源码编译 Docker 镜像（包含 embedding 模型）
@@ -227,7 +249,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+bash build_docker_image.sh full
 ```
 
 ## 🔨 以源代码启动服务

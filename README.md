@@ -274,7 +274,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-build_docker_image.sh slim
+bash build_docker_image.sh slim
 ```
 
 ## 🔧 Build a Docker image including embedding models
@@ -286,7 +286,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-build_docker_image.sh full
+bash build_docker_image.sh full
 ```
 
 ## 🔨 Launch service from source for development
