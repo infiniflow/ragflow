@@ -55,7 +55,7 @@ class RAGFlowMinio(object):
                                          )
                 return r
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}:")
+                logging.exception(f"Fail to put {bucket}/{fnm}:")
                 self.__open__()
                 time.sleep(1)
 
@@ -63,15 +63,15 @@ class RAGFlowMinio(object):
         try:
             self.conn.remove_object(bucket, fnm)
         except Exception:
-            logging.exception(f"Fail remove {bucket}/{fnm}:")
+            logging.exception(f"Fail to remove {bucket}/{fnm}:")
 
-    def get(self, bucket, fnm):
+    def get(self, bucket, filename):
         for _ in range(1):
             try:
-                r = self.conn.get_object(bucket, fnm)
+                r = self.conn.get_object(bucket, filename)
                 return r.read()
             except Exception as e:
-                logging.exception(f"Fail to get {bucket}/{fnm}, reason: {e}")
+                logging.exception(f"Fail to get {bucket}/{filename}")
                 self.__open__()
                 time.sleep(1)
         return
@@ -93,7 +93,7 @@ class RAGFlowMinio(object):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
             except Exception:
-                logging.exception(f"Fail get {bucket}/{fnm}:")
+                logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
                 self.__open__()
                 time.sleep(1)
         return
