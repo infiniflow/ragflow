@@ -218,7 +218,7 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
    ```bash
    $ docker compose -f docker/docker-compose.yml up -d
    ```
-> [！警告]
+> [!WARNING]  
 > Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。
 
 ## 🔧 ソースコードでDockerイメージを作成（埋め込みモデルなし）

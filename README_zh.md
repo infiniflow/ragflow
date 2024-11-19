@@ -224,7 +224,7 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
    $ docker compose -f docker/docker-compose.yml up -d
    ```
 
-> [!注意] 
+> [!WARNING] 
 > Infinity 目前官方并未正式支持在 Linux/arm64 架构下的机器上运行.
 
 
