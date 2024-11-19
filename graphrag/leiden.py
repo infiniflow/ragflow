@@ -7,7 +7,7 @@ Reference:
 
 import logging
 import html
-from typing import Any
+from typing import Any, cast
 from graspologic.partition import hierarchical_leiden
 from graspologic.utils import largest_connected_component
 
