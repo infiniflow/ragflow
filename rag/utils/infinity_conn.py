@@ -22,6 +22,7 @@ from rag.utils.doc_store_conn import (
     OrderByExpr,
 )
 
+
 def equivalent_condition_to_str(condition: dict) -> str:
     assert "_id" not in condition
     cond = list()
@@ -65,7 +66,7 @@ class InfinityConnection(DocStoreConnection):
                 self.connPool = connPool
                 break
             except Exception as e:
-                logging.warn(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
+                logging.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
         if self.connPool is None:
             msg = f"Infinity {infinity_uri} didn't become healthy in 120s."
@@ -168,7 +169,7 @@ class InfinityConnection(DocStoreConnection):
             self.connPool.release_conn(inf_conn)
             return True
         except Exception as e:
-            logging.warn(f"INFINITY indexExist {str(e)}")
+            logging.warning(f"INFINITY indexExist {str(e)}")
         return False
 
     """
@@ -176,16 +177,16 @@ class InfinityConnection(DocStoreConnection):
     """
 
     def search(
-        self,
-        selectFields: list[str],
-        highlightFields: list[str],
-        condition: dict,
-        matchExprs: list[MatchExpr],
-        orderBy: OrderByExpr,
-        offset: int,
-        limit: int,
-        indexNames: str|list[str],
-        knowledgebaseIds: list[str],
+            self,
+            selectFields: list[str],
+            highlightFields: list[str],
+            condition: dict,
+            matchExprs: list[MatchExpr],
+            orderBy: OrderByExpr,
+            offset: int,
+            limit: int,
+            indexNames: str | list[str],
+            knowledgebaseIds: list[str],
     ) -> list[dict] | pl.DataFrame:
         """
         TODO: Infinity doesn't provide highlight
@@ -219,8 +220,8 @@ class InfinityConnection(DocStoreConnection):
                 minimum_should_match = "0%"
                 if "minimum_should_match" in matchExpr.extra_options:
                     minimum_should_match = (
-                        str(int(matchExpr.extra_options["minimum_should_match"] * 100))
-                        + "%"
+                            str(int(matchExpr.extra_options["minimum_should_match"] * 100))
+                            + "%"
                     )
                     matchExpr.extra_options.update(
                         {"minimum_should_match": minimum_should_match}
@@ -234,8 +235,9 @@ class InfinityConnection(DocStoreConnection):
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
+
+        order_by_expr_list = list()
         if orderBy.fields:
-            order_by_expr_list = list()
             for order_field in orderBy.fields:
                 if order_field[1] == 0:
                     order_by_expr_list.append((order_field[0], SortType.Asc))
@@ -276,7 +278,7 @@ class InfinityConnection(DocStoreConnection):
                                 matchExpr.method, matchExpr.topn, matchExpr.fusion_params
                             )
                 else:
-                    builder.filter(filter_cond)
+                    if len(filter_cond) > 0: builder.filter(filter_cond)
                 if orderBy.fields:
                     builder.sort(order_by_expr_list)
                 builder.offset(offset).limit(limit)
@@ -288,7 +290,7 @@ class InfinityConnection(DocStoreConnection):
         return res
 
     def get(
-        self, chunkId: str, indexName: str, knowledgebaseIds: list[str]
+            self, chunkId: str, indexName: str, knowledgebaseIds: list[str]
     ) -> dict | None:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
@@ -305,7 +307,7 @@ class InfinityConnection(DocStoreConnection):
         return res_fields.get(chunkId, None)
 
     def insert(
-        self, documents: list[dict], indexName: str, knowledgebaseId: str
+            self, documents: list[dict], indexName: str, knowledgebaseId: str
     ) -> list[str]:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
@@ -347,7 +349,7 @@ class InfinityConnection(DocStoreConnection):
         return []
 
     def update(
-        self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str
+            self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str
     ) -> bool:
         # if 'position_list' in newValue:
         #     logging.info(f"upsert position_list: {newValue['position_list']}")
@@ -436,7 +438,7 @@ class InfinityConnection(DocStoreConnection):
                         flags=re.IGNORECASE | re.MULTILINE,
                     )
                 if not re.search(
-                    r"<em>[^<>]+</em>", t, flags=re.IGNORECASE | re.MULTILINE
+                        r"<em>[^<>]+</em>", t, flags=re.IGNORECASE | re.MULTILINE
                 ):
                     continue
                 txts.append(t)
