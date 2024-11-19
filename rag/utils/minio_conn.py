@@ -84,8 +84,8 @@ class RAGFlowMinio(object):
                 return True
             else:
                 return False
-        except Exception as e:
-            logging.exception(f"Not found: {bucket}/{filename}, exception: {e}")
+        except Exception:
+            logging.exception(f"Not found: {bucket}/{filename}")
             return False
 
     def get_presigned_url(self, bucket, fnm, expires):
