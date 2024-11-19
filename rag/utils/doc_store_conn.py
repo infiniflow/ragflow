@@ -44,7 +44,7 @@ class SparseVector:
 class MatchTextExpr(ABC):
     def __init__(
         self,
-        fields: str,
+        fields: list[str],
         matching_text: str,
         topn: int,
         extra_options: dict = dict(),
