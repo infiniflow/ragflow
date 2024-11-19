@@ -5,7 +5,7 @@ import time
 import os
 
 import copy
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
@@ -82,7 +82,9 @@ class ESConnection(DocStoreConnection):
 
     def deleteIdx(self, indexName: str, knowledgebaseId: str):
         try:
-            return self.es.indices.delete(indexName, allow_no_indices=True)
+            self.es.indices.delete(index=indexName, allow_no_indices=True)
+        except NotFoundError:
+            pass
         except Exception:
             logging.exception("ES delete index error %s" % (indexName))
 
@@ -146,6 +148,7 @@ class ESConnection(DocStoreConnection):
                           similarity=similarity,
                           )
 
+        condition["kb_id"] = knowledgebaseIds
         if condition:
             if not bqry:
                 bqry = Q("bool", must=[])
@@ -226,8 +229,7 @@ class ESConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             d_copy = copy.deepcopy(d)
-            meta_id = d_copy["id"]
-            del d_copy["id"]
+            meta_id = d_copy.pop("id", "")
             operations.append(
                 {"index": {"_index": indexName, "_id": meta_id}})
             operations.append(d_copy)
@@ -254,7 +256,7 @@ class ESConnection(DocStoreConnection):
 
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
         doc = copy.deepcopy(newValue)
-        del doc['id']
+        doc.pop("id", None)
         if "id" in condition and isinstance(condition["id"], str):
             # update specific single document
             chunkId = condition["id"]

@@ -49,5 +49,6 @@ def initRootLogger(logfile_basename: str, log_level: int = logging.INFO, log_for
     handler2.setFormatter(formatter)
     logger.addHandler(handler2)
 
+    logging.captureWarnings(True)
     msg = f"{logfile_basename} log path: {log_path}"
     logger.info(msg)

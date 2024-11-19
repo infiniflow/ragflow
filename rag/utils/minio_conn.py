@@ -78,10 +78,13 @@ class RAGFlowMinio(object):
 
     def obj_exist(self, bucket, fnm):
         try:
-            if self.conn.stat_object(bucket, fnm):return True
+            if not self.conn.bucket_exists(bucket):
+                return False
+            if self.conn.stat_object(bucket, fnm):
+                return True
             return False
         except Exception:
-            logging.exception(f"Fail put {bucket}/{fnm}:")
+            logging.exception(f"RAGFlowMinio.obj_exist {bucket}/{fnm} got exception:")
         return False
 
 
