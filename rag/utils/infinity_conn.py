@@ -278,7 +278,8 @@ class InfinityConnection(DocStoreConnection):
                                 matchExpr.method, matchExpr.topn, matchExpr.fusion_params
                             )
                 else:
-                    if len(filter_cond) > 0: builder.filter(filter_cond)
+                    if len(filter_cond) > 0:
+                        builder.filter(filter_cond)
                 if orderBy.fields:
                     builder.sort(order_by_expr_list)
                 builder.offset(offset).limit(limit)
