@@ -6,7 +6,7 @@ import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
 import { MessageOutlined, SearchOutlined } from '@ant-design/icons';
 import { Flex, Layout, Radio, Space, theme } from 'antd';
-import { useCallback, useMemo } from 'react';
+import { MouseEventHandler, useCallback, useMemo } from 'react';
 import { useLocation } from 'umi';
 import Toolbar from '../right-toolbar';
 
@@ -40,9 +40,14 @@ const RagHeader = () => {
     );
   }, [pathname, tagsData]);
 
-  const handleChange = (path: string) => {
-    navigate(path);
-  };
+  const handleChange = useCallback(
+    (path: string): MouseEventHandler =>
+      (e) => {
+        e.preventDefault();
+        navigate(path);
+      },
+    [navigate],
+  );
 
   const handleLogoClick = useCallback(() => {
     navigate('/');
@@ -77,18 +82,21 @@ const RagHeader = () => {
           value={currentPath}
         >
           {tagsData.map((item) => (
-            <Radio.Button
-              value={item.name}
-              onClick={() => handleChange(item.path)}
-              key={item.name}
-            >
-              <Flex align="center" gap={8}>
-                <item.icon
-                  className={styles.radioButtonIcon}
-                  stroke={item.name === currentPath ? 'black' : 'white'}
-                ></item.icon>
-                {item.name}
-              </Flex>
+            <Radio.Button value={item.name} key={item.name}>
+              <a href={item.path}>
+                <Flex
+                  align="center"
+                  gap={8}
+                  onClick={handleChange(item.path)}
+                  className="cursor-pointer"
+                >
+                  <item.icon
+                    className={styles.radioButtonIcon}
+                    stroke={item.name === currentPath ? 'black' : 'white'}
+                  ></item.icon>
+                  {item.name}
+                </Flex>
+              </a>
             </Radio.Button>
           ))}
         </Radio.Group>
