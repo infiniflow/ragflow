@@ -63,7 +63,9 @@ class ESConnection(DocStoreConnection):
         return "elasticsearch"
 
     def health(self) -> dict:
-        return dict(self.es.cluster.health()) + {"type": "elasticsearch"}
+        health_dict = dict(self.es.cluster.health())
+        health_dict["type"] = "elasticsearch"
+        return health_dict
 
     """
     Table operations

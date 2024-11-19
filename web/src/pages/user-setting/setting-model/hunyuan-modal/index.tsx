@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, Modal, Select } from 'antd';
+import { Form, Input, Modal, Select} from 'antd';
 import omit from 'lodash/omit';
 
 type FieldType = IAddLlmRequestBody & {
