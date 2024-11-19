@@ -287,8 +287,7 @@ def retrieval_test():
                                similarity_threshold, vector_similarity_weight, top,
                                doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"))
         for c in ranks["chunks"]:
-            if "vector" in c:
-                del c["vector"]
+            c.pop("vector", None)
 
         return get_json_result(data=ranks)
     except Exception as e:

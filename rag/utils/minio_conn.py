@@ -78,7 +78,9 @@ class RAGFlowMinio(object):
 
     def obj_exist(self, bucket, filename):
         try:
-            if self.conn.stat_object(bucket, filename):
+            if not self.conn.bucket_exists(bucket):
+                return False
+            if self.conn.stat_object(bucket, fnm):
                 return True
             else:
                 return False

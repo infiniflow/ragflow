@@ -9,7 +9,7 @@ import logging
 import numbers
 import re
 import traceback
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from dataclasses import dataclass
 import tiktoken
 from graphrag.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
