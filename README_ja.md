@@ -204,6 +204,23 @@
 > $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
+### Elasticsearch から Infinity にドキュメントエンジンを切り替えます
+
+RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトルを保存します。［Infinity］に切り替え（https://github.com/infiniflow/infinity/)、次の手順に従います。
+
+1. 実行中のすべてのコンテナを停止するには：
+   ```bash
+   $ docker compose -f docker/docker-compose.yml down -v
+   ```
+2. **docker/.env** の「DOC _ ENGINE」を「infinity」に設定します。
+
+3. 起動コンテナ：
+   ```bash
+   $ docker compose -f docker/docker-compose.yml up -d
+   ```
+> [!WARNING]  
+> Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。
+
 ## 🔧 ソースコードでDockerイメージを作成（埋め込みモデルなし）
 
 この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
@@ -213,7 +230,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+bash build_docker_image.sh slim
 ```
 
 ## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
@@ -225,7 +242,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+bash build_docker_image.sh full
 ```
 
 ## 🔨 ソースコードからサービスを起動する方法
