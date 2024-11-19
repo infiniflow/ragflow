@@ -225,7 +225,7 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
    ```
 
 > [!注意] 
-> Infinity 目前官方并为正式支持在 Linux/arm64 架构下的机器上运行.
+> Infinity 目前官方并未正式支持在 Linux/arm64 架构下的机器上运行.
 
 
 ## 🔧 源码编译 Docker 镜像（不含 embedding 模型）
