@@ -59,10 +59,16 @@ const RagHeader = () => {
         height: '72px',
       }}
     >
-      <Space size={12} onClick={handleLogoClick} className={styles.logoWrapper}>
-        <img src="/logo.svg" alt="" className={styles.appIcon} />
-        <span className={styles.appName}>{appConf.appName}</span>
-      </Space>
+      <a href={window.location.origin}>
+        <Space
+          size={12}
+          onClick={handleLogoClick}
+          className={styles.logoWrapper}
+        >
+          <img src="/logo.svg" alt="" className={styles.appIcon} />
+          <span className={styles.appName}>{appConf.appName}</span>
+        </Space>
+      </a>
       <Space size={[0, 8]} wrap>
         <Radio.Group
           defaultValue="a"
