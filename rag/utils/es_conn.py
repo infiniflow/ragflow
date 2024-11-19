@@ -5,7 +5,7 @@ import time
 import os
 
 import copy
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
@@ -82,7 +82,9 @@ class ESConnection(DocStoreConnection):
 
     def deleteIdx(self, indexName: str, knowledgebaseId: str):
         try:
-            return self.es.indices.delete(indexName, allow_no_indices=True)
+            self.es.indices.delete(index=indexName, allow_no_indices=True)
+        except NotFoundError:
+            pass
         except Exception:
             logging.exception("ES delete index error %s" % (indexName))
 

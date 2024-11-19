@@ -248,17 +248,16 @@ class RedisDB:
             )
             self.__open__()
 
-    def queue_info(self, queue, group_name) -> dict:
-        for _ in range(3):
-            try:
-                groups = self.REDIS.xinfo_groups(queue)
-                for group in groups:
-                    if group["name"] == group_name:
-                        return group
-            except Exception as e:
-                logging.warning(
-                    "RedisDB.queue_length " + str(queue) + " got exception: " + str(e)
-                )
+    def queue_info(self, queue, group_name) -> dict | None:
+        try:
+            groups = self.REDIS.xinfo_groups(queue)
+            for group in groups:
+                if group["name"] == group_name:
+                    return group
+        except Exception as e:
+            logging.warning(
+                "RedisDB.queue_info " + str(queue) + " got exception: " + str(e)
+            )
         return None
 
 
