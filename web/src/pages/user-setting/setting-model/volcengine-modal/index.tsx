@@ -107,19 +107,6 @@ const VolcEngineModal = ({
         <Form.Item<FieldType>
           label={t('maxTokens')}
           name="max_tokens"
-          rules={[{
-              required: true, message: t('maxTokensMessage') },
-              {
-                  type:'number',
-                  message: t('maxTokensInvalidMessage')
-                  }
-              ]}
-        >
-          <InputNumber placeholder={t('maxTokensTip')} min={0} style={{ width: '100%'}} />
-        </Form.Item>
-        <Form.Item<FieldType>
-          label={t('maxTokens')}
-          name="max_tokens"
           rules={[
             { required: true, message: t('maxTokensMessage') },
             {
