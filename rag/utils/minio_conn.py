@@ -80,7 +80,7 @@ class RAGFlowMinio(object):
         try:
             if not self.conn.bucket_exists(bucket):
                 return False
-            if self.conn.stat_object(bucket, fnm):
+            if self.conn.stat_object(bucket, filename):
                 return True
             else:
                 return False
