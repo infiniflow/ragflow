@@ -16,9 +16,8 @@ import {
   ModelVariableType,
   settledModelVariableMap,
 } from '@/constants/knowledge';
-import { useFetchModelId, useSendMessageWithSse } from '@/hooks/logic-hooks';
+import { useFetchModelId } from '@/hooks/logic-hooks';
 import { Variable } from '@/interfaces/database/chat';
-import api from '@/utils/api';
 import { useDebounceEffect } from 'ahooks';
 import { FormInstance, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
@@ -78,7 +77,6 @@ import {
   generateNodeNamesWithIncreasingIndex,
   generateSwitchHandleText,
   getNodeDragHandle,
-  receiveMessageError,
   replaceIdWithText,
 } from './utils';
 
@@ -448,11 +446,8 @@ export const useGetBeginNodeDataQuery = () => {
 };
 
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
-  const { id } = useParams();
   const { saveGraph, loading } = useSaveGraph();
   const { resetFlow } = useResetFlow();
-  const { refetch } = useFetchFlow();
-  const { send } = useSendMessageWithSse(api.runCanvas);
 
   const handleRun = useCallback(
     async (nextNodes?: Node[]) => {
@@ -463,17 +458,10 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         // After resetting, all previous messages will be cleared.
         if (resetRet?.code === 0) {
           show();
-          // fetch prologue
-          const sendRet = await send({ id });
-          if (receiveMessageError(sendRet)) {
-            message.error(sendRet?.data?.message);
-          } else {
-            refetch();
-          }
         }
       }
     },
-    [saveGraph, resetFlow, send, id, refetch, show],
+    [saveGraph, resetFlow, show],
   );
 
   return { handleRun, loading };
