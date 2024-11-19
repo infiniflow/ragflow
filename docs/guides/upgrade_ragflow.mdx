@@ -7,57 +7,44 @@ slug: /upgrade_ragflow
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-You can upgrade RAGFlow to the dev version or the latest version:
+## Upgrade RAGFlow to `dev`, the most recent, tested Docker image
 
-- The Dev version (Development version) is the latest, tested Docker image of RAGFlow.
-- The latest version is the most recent, officially published release. For example, `v0.13.0`.
+1. Clone the repo
 
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   ```
 
-## 1. Update RAGFLOW_IMAGE
+2. Update **ragflow/docker/.env** as follows:
 
-Update **ragflow/docker/.env** as follows:
+   ```bash
+   RAGFLOW_IMAGE=infiniflow/ragflow:dev
+   ```
 
-<Tabs
-  defaultValue="dev"
-  values={[
-    {label: 'Upgrade RAGFlow to the dev version', value: 'dev'},
-    {label: 'Upgrade RAGFlow to the latest version', value: 'latest'}
-  ]}>
-  <TabItem value="dev">
+3. Update RAGFlow image and restart RAGFlow:
 
-:::danger IMPORTANT
-The Dev version (Development version) is the latest, tested Docker image of RAGFlow.
-:::
+   ```bash
+   docker compose -f docker/docker-compose.yml pull
+   docker compose -f docker/docker-compose.yml up -d
+   ```
 
-```bash
-RAGFLOW_IMAGE=infiniflow/ragflow:dev
-```
+## Upgrade RAGFlow to `latest`, the most recent, officially published release
 
-  </TabItem>
-  <TabItem value="latest">
+1. Clone the repo
 
-:::danger IMPORTANT
-The latest version is the most recent, officially published release. For example, `v0.13.0`.
-:::
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   ```
 
-```bash
-RAGFLOW_IMAGE=infiniflow/ragflow:latest
-```
+2. Update **ragflow/docker/.env** as follows:
 
-  </TabItem>
-</Tabs>
+   ```bash
+   RAGFLOW_IMAGE=infiniflow/ragflow:latest
+   ```
 
-## 2. Pull the latest code
+3. Update the RAGFlow image and restart RAGFlow:
 
-Pull the latest code from inside Docker:
-
-```bash
-git pull
-```
-
-## 3. Update RAGFlow image and restart RAGFlow
-
-```bash
-docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml up -d
-```
+   ```bash
+   docker compose -f docker/docker-compose.yml pull
+   docker compose -f docker/docker-compose.yml up -d
+   ```
