@@ -567,7 +567,7 @@ class TogetherAIEmbed(OllamaEmbed):
     def __init__(self, key, model_name, base_url="https://api.together.xyz/v1"):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
-        super().__init__(key, model_name, base_url)
+        super().__init__(key, model_name, base_url=base_url)
 
 
 class PerfXCloudEmbed(OpenAIEmbed):
