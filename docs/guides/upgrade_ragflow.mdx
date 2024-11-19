@@ -36,13 +36,19 @@ import TabItem from '@theme/TabItem';
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-2. Update **ragflow/docker/.env** as follows:
+2. Switch to the latest, officially published release, e.g., `v0.13.0`:
+
+   ```bash
+   git checkout v0.13.0
+   ```
+
+3. Update **ragflow/docker/.env** as follows:
 
    ```bash
    RAGFLOW_IMAGE=infiniflow/ragflow:latest
    ```
 
-3. Update the RAGFlow image and restart RAGFlow:
+4. Update the RAGFlow image and restart RAGFlow:
 
    ```bash
    docker compose -f docker/docker-compose.yml pull
