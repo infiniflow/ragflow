@@ -70,7 +70,7 @@ class RAGFlowMinio(object):
             try:
                 r = self.conn.get_object(bucket, filename)
                 return r.read()
-            except Exception as e:
+            except Exception:
                 logging.exception(f"Fail to get {bucket}/{filename}")
                 self.__open__()
                 time.sleep(1)
