@@ -111,12 +111,6 @@ def tenant_list():
 @manager.route("/agree/<tenant_id>", methods=["PUT"])
 @login_required
 def agree(tenant_id):
-    if current_user.id != tenant_id:
-        return get_json_result(
-            data=False,
-            message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR)
-
     try:
         UserTenantService.filter_update([UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id], {"role": UserTenantRole.NORMAL})
         return get_json_result(data=True)

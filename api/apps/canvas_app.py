@@ -134,6 +134,8 @@ def run():
                 cvs.dsl = json.loads(str(canvas))
                 UserCanvasService.update_by_id(req["id"], cvs.to_dict())
             except Exception as e:
+                cvs.dsl = json.loads(str(canvas))
+                UserCanvasService.update_by_id(req["id"], cvs.to_dict())
                 traceback.print_exc()
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},

@@ -199,7 +199,7 @@ class Canvas(ABC):
                         if any([cc not in self.path[-1] for cc in cpids]):
                             if c not in waiting: waiting.append(c)
                             continue
-                    yield "'{}' is running...".format(self.get_compnent_name(c))
+                    yield "*'{}'* is running...🕞".format(self.get_compnent_name(c))
                     ans = cpn.run(self.history, **kwargs)
                     self.path[-1].append(c)
             ran += 1
@@ -224,28 +224,16 @@ class Canvas(ABC):
                     for m in prepare2run([switch_out]):
                         yield {"content": m, "running_status": True}
                 except Exception as e:
-                    for p in [c for p in self.path for c in p][::-1]:
-                        if p.lower().find("answer") >= 0:
-                            self.get_component(p)["obj"].set_exception(e)
-                            for m in prepare2run([p]):
-                                yield {"content": m, "running_status": True}
-                            break
+                    yield {"content": "*Exception*: {}".format(e), "running_status": True}
                     logging.exception("Canvas.run got exception")
-                    break
                 continue
 
             try:
                 for m in prepare2run(cpn["downstream"]):
                     yield {"content": m, "running_status": True}
             except Exception as e:
-                for p in [c for p in self.path for c in p][::-1]:
-                    if p.lower().find("answer") >= 0:
-                        self.get_component(p)["obj"].set_exception(e)
-                        for m in prepare2run([p]):
-                            yield {"content": m, "running_status": True}
-                        break
+                yield {"content": "*Exception*: {}".format(e), "running_status": True}
                 logging.exception("Canvas.run got exception")
-                break
 
             if ran >= len(self.path[-1]) and waiting:
                 without_dependent_checking = waiting
