@@ -24,7 +24,7 @@ enum Status {
 }
 
 const TitleMap = {
-  es: 'Elasticsearch',
+  doc_store: 'Elasticsearch',
   storage: 'Object Storage',
   redis: 'Redis',
   database: 'Database',
@@ -33,7 +33,7 @@ const TitleMap = {
 
 const IconMap = {
   es: 'es',
-  storage: 'storage',
+  doc_store: 'storage',
   redis: 'redis',
   database: 'database',
 };
