@@ -1,14 +1,16 @@
+import { Applications } from './applications';
 import { Banner } from './banner';
+import { Datasets } from './datasets';
 import { HomeHeader } from './header';
-import NextBanner from './next-banner';
 
 const Home = () => {
   return (
-    <div>
+    <div className="text-white mx-8">
       <HomeHeader></HomeHeader>
       <section>
         <Banner></Banner>
-        <NextBanner></NextBanner>
+        <Datasets></Datasets>
+        <Applications></Applications>
       </section>
     </div>
   );
