@@ -33,7 +33,7 @@ const TitleMap = {
 
 const IconMap = {
   es: 'es',
-  storage: 'storage',
+  doc_store: 'storage',
   redis: 'redis',
   database: 'database',
 };
