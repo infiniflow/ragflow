@@ -23,7 +23,7 @@ from rag.nlp.search import Dealer
 
 
 class KGSearch(Dealer):
-    def search(self, req, idxnm, kb_ids, emb_mdl, highlight=False):
+    def search(self, req, idxnm: str | list[str], kb_ids: list[str], emb_mdl=None, highlight=False):
         def merge_into_first(sres, title="") -> dict[str, str]:
             if not sres:
                 return {}
