@@ -1,6 +1,7 @@
 # base stage
 FROM ubuntu:22.04 AS base
 USER root
+SHELL ["/bin/bash", "-c"]
 
 ENV LIGHTEN=0
 
@@ -60,7 +61,21 @@ WORKDIR /ragflow
 
 COPY .git /ragflow/.git
 
-RUN git --git-dir=/ragflow/.git describe --tags --abbrev=0 > /ragflow/VERSION
+RUN current_commit=$(git rev-parse --short HEAD); \
+    last_tag=$(git describe --tags --abbrev=0); \
+    commit_count=$(git rev-list --count "$last_tag..HEAD"); \
+    version_info=""; \
+    if [ "$commit_count" -eq 0 ]; then \
+        version_info=$last_tag; \
+    else \
+        version_info="$current_commit($last_tag~$commit_count)"; \
+    fi; \
+    if [ "$LIGHTEN" == "1" ]; then \
+        version_info="$version_info slim"; \
+    else \
+        version_info="$version_info full"; \
+    fi; \
+    echo $version_info > /ragflow/VERSION
 
 COPY web web
 COPY docs docs
@@ -71,7 +86,7 @@ RUN --mount=type=cache,id=ragflow_builder_npm,target=/root/.npm,sharing=locked \
 COPY pyproject.toml poetry.toml poetry.lock ./
 
 RUN --mount=type=cache,id=ragflow_builder_poetry,target=/root/.cache/pypoetry,sharing=locked \
-    if [ "$LIGHTEN" -eq 0 ]; then \
+    if [ "$LIGHTEN" == "0" ]; then \
         poetry install --no-root --with=full; \
     else \
         poetry install --no-root; \

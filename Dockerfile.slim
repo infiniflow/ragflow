@@ -1,6 +1,7 @@
 # base stage
 FROM ubuntu:22.04 AS base
 USER root
+SHELL ["/bin/bash", "-c"]
 
 ENV LIGHTEN=1
 
@@ -17,7 +18,7 @@ RUN sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' 
 
 RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked \
     apt update && DEBIAN_FRONTEND=noninteractive apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus default-jdk python3-pip pipx \
-    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget \
+    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && pip3 config set global.trusted-host "pypi.tuna.tsinghua.edu.cn mirrors.pku.edu.cn" && pip3 config set global.extra-index-url "https://mirrors.pku.edu.cn/pypi/web/simple" \
@@ -58,6 +59,24 @@ USER root
 
 WORKDIR /ragflow
 
+COPY .git /ragflow/.git
+
+RUN current_commit=$(git rev-parse --short HEAD); \
+    last_tag=$(git describe --tags --abbrev=0); \
+    commit_count=$(git rev-list --count "$last_tag..HEAD"); \
+    version_info=""; \
+    if [ "$commit_count" -eq 0 ]; then \
+        version_info=$last_tag; \
+    else \
+        version_info="$current_commit($last_tag~$commit_count)"; \
+    fi; \
+    if [ "$LIGHTEN" == "1" ]; then \
+        version_info="$version_info slim"; \
+    else \
+        version_info="$version_info full"; \
+    fi; \
+    echo $version_info > /ragflow/VERSION
+
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_builder_npm,target=/root/.npm,sharing=locked \
@@ -67,7 +86,7 @@ RUN --mount=type=cache,id=ragflow_builder_npm,target=/root/.npm,sharing=locked \
 COPY pyproject.toml poetry.toml poetry.lock ./
 
 RUN --mount=type=cache,id=ragflow_builder_poetry,target=/root/.cache/pypoetry,sharing=locked \
-    if [ "$LIGHTEN" -eq 0 ]; then \
+    if [ "$LIGHTEN" == "0" ]; then \
         poetry install --no-root --with=full; \
     else \
         poetry install --no-root; \
@@ -78,6 +97,8 @@ FROM base AS production
 USER root
 
 WORKDIR /ragflow
+
+COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 
 # Install python packages' dependencies
 # cv2 requires libGL.so.1
