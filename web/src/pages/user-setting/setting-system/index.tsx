@@ -24,7 +24,7 @@ enum Status {
 }
 
 const TitleMap = {
-  es: 'Elasticsearch',
+  doc_store: 'Elasticsearch',
   storage: 'Object Storage',
   redis: 'Redis',
   database: 'Database',
