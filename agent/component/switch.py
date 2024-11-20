@@ -47,13 +47,35 @@ class SwitchParam(ComponentParamBase):
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
+    def get_dependent_components(self):
+        res = []
+        for cond in self._param.conditions:
+            for item in cond["items"]:
+                if not item["cpn_id"]: continue
+                if item["cpn_id"].find("begin") >= 0:
+                    continue
+                cid = item["cpn_id"].split("@")[0]
+                res.append(cid)
+
+        return list(set(res))
+
     def _run(self, history, **kwargs):
         for cond in self._param.conditions:
             res = []
             for item in cond["items"]:
-                out = self._canvas.get_component(item["cpn_id"])["obj"].output()[1]
-                cpn_input = "" if "content" not in out.columns else " ".join([str(s) for s in out["content"]])
-                res.append(self.process_operator(cpn_input, item["operator"], item["value"]))
+                if not item["cpn_id"]:continue
+                cid = item["cpn_id"].split("@")[0]
+                if item["cpn_id"].find("@") > 0:
+                    cpn_id, key = item["cpn_id"].split("@")
+                    for p in self._canvas.get_component(cid)["obj"]._param.query:
+                        if p["key"] == key:
+                            res.append(self.process_operator(p.get("value",""), item["operator"], item.get("value", "")))
+                            break
+                else:
+                    out = self._canvas.get_component(cid)["obj"].output()[1]
+                    cpn_input = "" if "content" not in out.columns else " ".join([str(s) for s in out["content"]])
+                    res.append(self.process_operator(cpn_input, item["operator"], item.get("value", "")))
+
                 if cond["logical_operator"] != "and" and any(res):
                     return Switch.be_output(cond["to"])
 
