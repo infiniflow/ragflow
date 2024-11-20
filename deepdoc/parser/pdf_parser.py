@@ -757,7 +757,7 @@ class RAGFlowPdfParser:
                 if ii is not None:
                     b = louts[ii]
                 else:
-                    logging.warn(
+                    logging.warning(
                         f"Missing layout match: {pn + 1},%s" %
                         (bxs[0].get(
                             "layoutno", "")))
