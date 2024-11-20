@@ -55,6 +55,7 @@ export const useSendNextMessage = () => {
   } = useSelectNextMessages();
   const { id: flowId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
+  const { refetch } = useFetchFlow();
 
   const { send, answer, done } = useSendMessageWithSse(api.runCanvas);
 
@@ -75,9 +76,11 @@ export const useSendNextMessage = () => {
         // cancel loading
         setValue(message.content);
         removeLatestMessage();
+      } else {
+        refetch(); // pull the message list after sending the message successfully
       }
     },
-    [flowId, removeLatestMessage, setValue, send],
+    [flowId, send, setValue, removeLatestMessage, refetch],
   );
 
   const handleSendMessage = useCallback(
@@ -112,8 +115,10 @@ export const useSendNextMessage = () => {
     const sendRet = await send({ id: flowId });
     if (receiveMessageError(sendRet)) {
       message.error(sendRet?.data?.message);
+    } else {
+      refetch();
     }
-  }, [flowId, send]);
+  }, [flowId, refetch, send]);
 
   useEffect(() => {
     fetchPrologue();
