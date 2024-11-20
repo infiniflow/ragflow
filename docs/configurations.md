@@ -95,8 +95,8 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
   
   - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models.  
   - `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models including:
-    - Embedded embedding models:
-      - `BAAI/bge-large-zh-v1.5` 
+    - Built-in embedding models:
+      - `BAAI/bge-large-zh-v1.5`
       - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
       - `maidalun1020/bce-reranker-base_v1`

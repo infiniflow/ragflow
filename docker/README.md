@@ -59,7 +59,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MINIO_USER`  
   The username for MinIO.
 - `MINIO_PASSWORD`  
-  The password for MinIO. 
+  The password for MinIO.
 
 ### Redis
 
@@ -77,7 +77,7 @@ The [.env](./.env) file contains important environment variables for Docker.
   
   - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models.  
   - `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models including:
-    - Embedded embedding models:
+    - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
@@ -111,6 +111,12 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 - `HF_ENDPOINT`  
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
+
+### Maximum file size
+
+- `MAX_CONTENT_LENGTH`  
+  The maximum file size for each uploaded file, in Bytes.You can uncomment this line and update the value if you need to change 128M file size limit.
+
 
 ### MacOS
 
