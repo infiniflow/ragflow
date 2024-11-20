@@ -33,7 +33,7 @@ class Dealer:
         try:
             self.dictionary = json.load(open(path, 'r'))
         except Exception:
-            logging.warn("Missing synonym.json")
+            logging.warning("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
