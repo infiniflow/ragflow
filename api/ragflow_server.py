@@ -14,8 +14,9 @@
 #  limitations under the License.
 #
 
-from beartype.claw import beartype_packages
-beartype_packages(["agent", "api", "deepdoc", "plugins", "rag", "ragflow_sdk"])  # <-- raise exceptions in your code
+# from beartype import BeartypeConf
+# from beartype.claw import beartype_all  # <-- you didn't sign up for this
+# beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 import logging
 from api.utils.log_utils import initRootLogger
