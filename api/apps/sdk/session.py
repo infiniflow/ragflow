@@ -165,11 +165,11 @@ def completion(tenant_id, chat_id):
                     "document_id": chunk["doc_id"],
                     "document_name": chunk["docnm_kwd"],
                     "dataset_id": chunk["kb_id"],
-                    "image_id": chunk["img_id"],
+                    "image_id": chunk.get("img_id", ""),
                     "similarity": chunk["similarity"],
                     "vector_similarity": chunk["vector_similarity"],
                     "term_similarity": chunk["term_similarity"],
-                    "positions": chunk["positions"],
+                    "positions": chunk.get("positions", []),
                 }
                 chunk_list.append(new_chunk)
             reference["chunks"] = chunk_list
