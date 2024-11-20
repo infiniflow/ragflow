@@ -2,7 +2,6 @@
 FROM ubuntu:22.04 AS base
 USER root
 
-ARG ARCH=amd64
 ENV LIGHTEN=0
 
 WORKDIR /ragflow
@@ -18,7 +17,7 @@ RUN sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' 
 
 RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked \
     apt update && DEBIAN_FRONTEND=noninteractive apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus default-jdk python3-pip pipx \
-    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget \
+    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && pip3 config set global.trusted-host "pypi.tuna.tsinghua.edu.cn mirrors.pku.edu.cn" && pip3 config set global.extra-index-url "https://mirrors.pku.edu.cn/pypi/web/simple" \
@@ -28,8 +27,11 @@ RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple &&
 # https://forum.aspose.com/t/aspose-slides-for-net-no-usable-version-of-libssl-found-with-linux-server/271344/13
 # aspose-slides on linux/arm64 is unavailable
 RUN --mount=type=bind,source=libssl1.1_1.1.1f-1ubuntu2_amd64.deb,target=/root/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
-    if [ "${ARCH}" = "amd64" ]; then \
+    --mount=type=bind,source=libssl1.1_1.1.1f-1ubuntu2_arm64.deb,target=/root/libssl1.1_1.1.1f-1ubuntu2_arm64.deb \
+    if [ "$(uname -m)" = "x86_64" ]; then \
         dpkg -i /root/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
+    elif [ "$(uname -m)" = "aarch64" ]; then \
+        dpkg -i /root/libssl1.1_1.1.1f-1ubuntu2_arm64.deb; \
     fi
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
@@ -56,6 +58,10 @@ USER root
 
 WORKDIR /ragflow
 
+COPY .git /ragflow/.git
+
+RUN git --git-dir=/ragflow/.git describe --tags --abbrev=0 > /ragflow/VERSION
+
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_builder_npm,target=/root/.npm,sharing=locked \
@@ -76,6 +82,8 @@ FROM base AS production
 USER root
 
 WORKDIR /ragflow
+
+COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 
 # Install python packages' dependencies
 # cv2 requires libGL.so.1
