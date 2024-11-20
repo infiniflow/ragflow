@@ -440,7 +440,7 @@ class ComponentBase(ABC):
         setattr(self._param, self._param.output_var_name, None)
         self._param.inputs = []
 
-    def set_output(self, v: pd.DataFrame):
+    def set_output(self, v: partial | pd.DataFrame):
         setattr(self._param, self._param.output_var_name, v)
 
     def get_input(self):
