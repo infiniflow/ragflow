@@ -13,11 +13,33 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+# from http.client import responses
+import requests
+from conftest import HOST_ADDRESS
 
 def create_dataset(dataset_name: str):
     url = HOST_ADDRESS + "/create"
-    request_data = {"name": "dataset1"}
+    request_data = {"name": dataset_name}
     response=requests.post(url=url,json=request_data)
+    res = response.json()
+    if res.get("code")!=0:
+        raise Exception(res.get("message"))
+    auth = response.headers["Authorization"]
+    return auth
+
+def delete_dateset(dataset_id: str):
+    url = HOST_ADDRESS + "/rm"
+    request_data = {"kb_id": dataset_id}
+    response=requests.post(url=url,json=request_data)
+    res = response.json()
+    if res.get("code")!=0:
+        raise Exception(res.get("message"))
+    auth = response.headers["Authorization"]
+    return auth
+
+def list_datasets():
+    url = HOST_ADDRESS + "/list"
+    response=requests.get(url=url)
     res = response.json()
     if res.get("code")!=0:
         raise Exception(res.get("message"))
