@@ -83,7 +83,7 @@ def create(tenant_id):
 @manager.route('/<tenant_id>/user/<user_id>', methods=['DELETE'])
 @login_required
 def rm(tenant_id, user_id):
-    if current_user.id != tenant_id:
+    if current_user.id != tenant_id or current_user.id != tenant_id:
         return get_json_result(
             data=False,
             message='No authorization.',
