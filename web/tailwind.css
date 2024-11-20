@@ -87,6 +87,27 @@
 
     --background-core-weak: rgb(101, 75, 248);
     --background-core-weak-foreground: rgba(255, 255, 255, 1);
+
+    --colors-background-core-standard: rgba(137, 126, 255, 1);
+    --colors-background-core-strong: rgba(152, 147, 255, 1);
+    --colors-background-core-weak: rgba(101, 75, 248, 1);
+    --colors-background-functional-solid-danger: rgba(255, 57, 92, 1);
+    --colors-background-functional-solid-notice: rgba(255, 208, 94, 1);
+    --colors-background-functional-solid-positive: rgba(74, 225, 145, 1);
+    --colors-background-functional-transparent-danger: rgba(234, 50, 83, 0.2);
+    --colors-background-functional-transparent-notice: rgba(248, 208, 111, 0.5);
+    --colors-background-functional-transparent-positive: rgba(
+      65,
+      203,
+      130,
+      0.5
+    );
+    --colors-background-inverse-standard: rgba(230, 227, 246, 0.15);
+    --colors-background-inverse-strong: rgba(255, 255, 255, 0.15);
+    --colors-background-inverse-weak: rgba(184, 181, 203, 0.15);
+    --colors-background-neutral-standard: rgba(11, 10, 18, 1);
+    --colors-background-neutral-strong: rgba(29, 26, 44, 1);
+    --colors-background-neutral-weak: rgba(17, 16, 23, 1);
   }
 }
 
