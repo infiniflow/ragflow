@@ -68,7 +68,7 @@ class Dealer:
 
     def lookup(self, tk):
         if re.match(r"[a-z]+$", tk):
-            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets("love")]) - set([tk]))
+            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets(tk)]) - set([tk]))
             return [t for t in res if t]
 
         self.lookup_num += 1
