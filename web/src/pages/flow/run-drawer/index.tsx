@@ -5,11 +5,10 @@ import { useHandleSubmittable } from '@/hooks/login-hooks';
 import { IModalProps } from '@/interfaces/common';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { InboxOutlined } from '@ant-design/icons';
+import { UploadOutlined } from '@ant-design/icons';
 import {
   Button,
   Drawer,
-  Flex,
   Form,
   FormItemProps,
   Input,
@@ -19,7 +18,6 @@ import {
   Upload,
 } from 'antd';
 import { pick } from 'lodash';
-import { Link2, Trash2 } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BeginQueryType } from '../constant';
@@ -33,6 +31,7 @@ import { getDrawerWidth } from '../utils';
 import { PopoverForm } from './popover-form';
 
 import { UploadChangeParam, UploadFile } from 'antd/es/upload';
+import { Link } from 'lucide-react';
 import styles from './index.less';
 
 const RunDrawer = ({
@@ -58,18 +57,6 @@ const RunDrawer = ({
       showPopover();
     },
     [setRecord, showPopover],
-  );
-
-  const handleRemoveUrl = useCallback(
-    (key: number, index: number) => () => {
-      const list: any[] = form.getFieldValue(key);
-
-      form.setFieldValue(
-        key,
-        list.filter((_, idx) => idx !== index),
-      );
-    },
-    [form],
   );
 
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
@@ -126,27 +113,47 @@ const RunDrawer = ({
           </Form.Item>
         ),
         [BeginQueryType.File]: (
-          <Form.Item
-            {...props}
-            valuePropName="fileList"
-            getValueFromEvent={normFile}
-          >
-            <Upload.Dragger
-              name="file"
-              action={api.parse}
-              multiple
-              headers={{ [Authorization]: getAuthorization() }}
-              onChange={onChange(q.optional)}
-            >
-              <p className="ant-upload-drag-icon">
-                <InboxOutlined />
-              </p>
-              <p className="ant-upload-text">{t('fileManager.uploadTitle')}</p>
-              <p className="ant-upload-hint">
-                {t('fileManager.uploadDescription')}
-              </p>
-            </Upload.Dragger>
-          </Form.Item>
+          <React.Fragment key={idx}>
+            <Form.Item label={q.name} required={!q.optional}>
+              <div className="relative">
+                <Form.Item
+                  {...props}
+                  valuePropName="fileList"
+                  getValueFromEvent={normFile}
+                  noStyle
+                >
+                  <Upload
+                    name="file"
+                    action={api.parse}
+                    multiple
+                    headers={{ [Authorization]: getAuthorization() }}
+                    onChange={onChange(q.optional)}
+                  >
+                    <Button icon={<UploadOutlined />}>
+                      {t('common.upload')}
+                    </Button>
+                  </Upload>
+                </Form.Item>
+                <Form.Item
+                  {...pick(props, ['key', 'label', 'rules'])}
+                  required={!q.optional}
+                  className={urlList.length > 0 ? 'mb-1' : ''}
+                  noStyle
+                >
+                  <PopoverForm visible={visible} switchVisible={switchVisible}>
+                    <Button
+                      onClick={handleShowPopover(idx)}
+                      className="absolute left-1/2 top-0"
+                      icon={<Link className="size-3" />}
+                    >
+                      {t('flow.pasteFileLink')}
+                    </Button>
+                  </PopoverForm>
+                </Form.Item>
+              </div>
+            </Form.Item>
+            <Form.Item name={idx} noStyle {...pick(props, ['rules'])} />
+          </React.Fragment>
         ),
         [BeginQueryType.Integer]: (
           <Form.Item {...props}>
@@ -158,66 +165,11 @@ const RunDrawer = ({
             <Switch></Switch>
           </Form.Item>
         ),
-        [BeginQueryType.Url]: (
-          <React.Fragment key={idx}>
-            <Form.Item
-              {...pick(props, ['key', 'label', 'rules'])}
-              required={!q.optional}
-              className={urlList.length > 0 ? 'mb-1' : ''}
-            >
-              <PopoverForm visible={visible} switchVisible={switchVisible}>
-                <Button
-                  onClick={handleShowPopover(idx)}
-                  className="text-buttonBlueText"
-                >
-                  {t('flow.pasteFileLink')}
-                </Button>
-              </PopoverForm>
-            </Form.Item>
-            <Form.Item name={idx} noStyle {...pick(props, ['rules'])} />
-            <Form.Item
-              noStyle
-              shouldUpdate={(prevValues, curValues) =>
-                prevValues[idx] !== curValues[idx]
-              }
-            >
-              {({ getFieldValue }) => {
-                const urlInfo: { url: string; result: string }[] =
-                  getFieldValue(idx) || [];
-                return urlInfo.length ? (
-                  <Flex vertical gap={8} className="mb-3">
-                    {urlInfo.map((u, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between gap-2 hover:bg-slate-100 group"
-                      >
-                        <Link2 className="size-5"></Link2>
-                        <span className="flex-1 truncate"> {u.url}</span>
-                        <Trash2
-                          className="size-4 invisible group-hover:visible cursor-pointer"
-                          onClick={handleRemoveUrl(idx, index)}
-                        />
-                      </div>
-                    ))}
-                  </Flex>
-                ) : null;
-              }}
-            </Form.Item>
-          </React.Fragment>
-        ),
       };
 
       return BeginQueryTypeMap[q.type as BeginQueryType];
     },
-    [
-      form,
-      handleRemoveUrl,
-      handleShowPopover,
-      onChange,
-      switchVisible,
-      t,
-      visible,
-    ],
+    [form, handleShowPopover, onChange, switchVisible, t, visible],
   );
 
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatModal!);
@@ -239,20 +191,11 @@ const RunDrawer = ({
       if (Array.isArray(value)) {
         nextValue = ``;
 
-        value.forEach((x, idx) => {
-          if (x?.originFileObj instanceof File) {
-            if (idx === 0) {
-              nextValue += `${x.name}\n\n${x.response?.data}\n\n`;
-            } else {
-              nextValue += `${x.response?.data}\n\n`;
-            }
-          } else {
-            if (idx === 0) {
-              nextValue += `${x.url}\n\n${x.result}\n\n`;
-            } else {
-              nextValue += `${x.result}\n\n`;
-            }
-          }
+        value.forEach((x) => {
+          nextValue +=
+            x?.originFileObj instanceof File
+              ? `${x.name}\n${x.response?.data}\n----\n`
+              : `${x.url}\n${x.result}\n----\n`;
         });
       }
       return { ...item, value: nextValue };
@@ -277,7 +220,7 @@ const RunDrawer = ({
               const { basicForm } = forms;
               const urlInfo = basicForm.getFieldValue(currentRecord) || [];
               basicForm.setFieldsValue({
-                [currentRecord]: [...urlInfo, values],
+                [currentRecord]: [...urlInfo, { ...values, name: values.url }],
               });
               hidePopover();
             }
