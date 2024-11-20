@@ -64,7 +64,7 @@ export function HomeHeader() {
   }, [navigate]);
 
   return (
-    <section className="px-[60px] py-[12px] flex justify-between items-center">
+    <section className="py-[12px] flex justify-between items-center">
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
