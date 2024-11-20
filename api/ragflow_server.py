@@ -14,9 +14,9 @@
 #  limitations under the License.
 #
 
-from beartype import BeartypeConf
-from beartype.claw import beartype_all  # <-- you didn't sign up for this
-beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
+# from beartype import BeartypeConf
+# from beartype.claw import beartype_all  # <-- you didn't sign up for this
+# beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 import logging
 from api.utils.log_utils import initRootLogger
