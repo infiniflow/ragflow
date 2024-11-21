@@ -1,7 +1,7 @@
 from ragflow_sdk import RAGFlow
 import random
 import pytest
-from common import HOST_ADDRESS
+from sdk.python.test.common import HOST_ADDRESS
 
 def test_create_dataset_with_name(get_api_key_fixture):
     API_KEY = get_api_key_fixture

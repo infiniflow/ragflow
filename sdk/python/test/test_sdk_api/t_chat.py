@@ -1,12 +1,12 @@
 from ragflow_sdk import RAGFlow
-from common import HOST_ADDRESS
+from sdk.python.test.common import HOST_ADDRESS
 
 def test_create_chat_with_name(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_create_chat")
     displayed_name = "ragflow.txt"
-    with open("ragflow.txt", "rb") as file:
+    with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
     document = {"displayed_name":displayed_name,"blob":blob}
     documents = []
@@ -22,7 +22,7 @@ def test_update_chat_with_name(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_update_chat")
     displayed_name = "ragflow.txt"
-    with open("ragflow.txt", "rb") as file:
+    with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
     document = {"displayed_name": displayed_name, "blob": blob}
     documents = []
@@ -39,7 +39,7 @@ def test_delete_chats_with_success(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_delete_chat")
     displayed_name = "ragflow.txt"
-    with open("ragflow.txt", "rb") as file:
+    with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
     document = {"displayed_name": displayed_name, "blob": blob}
     documents = []
@@ -55,7 +55,7 @@ def test_list_chats_with_success(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_list_chats")
     displayed_name = "ragflow.txt"
-    with open("ragflow.txt", "rb") as file:
+    with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
     document = {"displayed_name": displayed_name, "blob": blob}
     documents = []

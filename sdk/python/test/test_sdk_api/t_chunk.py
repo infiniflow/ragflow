@@ -1,5 +1,5 @@
 from ragflow_sdk import RAGFlow
-from common import HOST_ADDRESS
+from sdk.python.test.common import HOST_ADDRESS
 from time import sleep
 
 def test_parse_document_with_txt(get_api_key_fixture):
@@ -40,7 +40,7 @@ def test_bulk_parse_documents(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_bulk_parse_and_cancel_documents")
-    with open("ragflow.txt", "rb") as file:
+    with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
     documents = [
         {'displayed_name': 'test1.txt', 'blob': blob},

@@ -1,5 +1,5 @@
 from ragflow_sdk import RAGFlow
-from common import HOST_ADDRESS
+from sdk.python.test.common import HOST_ADDRESS
 import pytest
 
 def test_upload_document_with_success(get_api_key_fixture):
@@ -7,7 +7,7 @@ def test_upload_document_with_success(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_upload_document")
     blob = b"Sample document content for test."
-    with open("ragflow.txt", "rb") as file:
+    with open("test_data/ragflow.txt", "rb") as file:
         blob_2=file.read()
     document_infos = []
     document_infos.append({"displayed_name": "test_1.txt","blob": blob})
