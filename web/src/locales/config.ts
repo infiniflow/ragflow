@@ -5,14 +5,17 @@ import { initReactI18next } from 'react-i18next';
 import translation_en from './en';
 import translation_es from './es';
 import translation_id from './id';
+import translation_vi from './vi';
 import translation_zh from './zh';
 import translation_zh_traditional from './zh-traditional';
+
 const resources = {
   en: translation_en,
   zh: translation_zh,
   'zh-TRADITIONAL': translation_zh_traditional,
   id: translation_id,
   es: translation_es,
+  vi: translation_vi,
 };
 
 i18n
@@ -22,7 +25,7 @@ i18n
     detection: {
       lookupLocalStorage: 'lng',
     },
-    supportedLngs: ['en', 'zh', 'zh-TRADITIONAL', 'id', 'es'],
+    supportedLngs: ['en', 'zh', 'zh-TRADITIONAL', 'id', 'es', 'vi'],
     resources,
     fallbackLng: 'en',
     interpolation: {
