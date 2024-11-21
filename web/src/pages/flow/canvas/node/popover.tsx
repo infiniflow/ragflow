@@ -35,10 +35,10 @@ export function NextNodePopover({ children, nodeId, name }: IProps) {
 
   const inputs: Array<{ component_id: string; content: string }> = get(
     component,
-    ['obj', 'params', 'inputs'],
+    ['obj', 'inputs'],
     [],
   );
-  const output = get(component, ['obj', 'params', 'output'], {});
+  const output = get(component, ['obj', 'output'], {});
   const { replacedOutput } = useReplaceIdWithText(output);
   const stopPropagation: MouseEventHandler = useCallback((e) => {
     e.stopPropagation();
