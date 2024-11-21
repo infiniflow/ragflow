@@ -590,7 +590,7 @@ export default {
       bingTip:
         'Este componente se usa para obtener resultados de búsqueda de https://www.bing.com/. Típicamente, actúa como un complemento a las bases de conocimiento. Top N y la clave de suscripción de Bing especifican el número de resultados de búsqueda que necesitas ajustar.',
       apiKey: 'Clave API',
-      country: 'País',
+      country: 'País&Región',
       language: 'Idioma',
       googleScholar: 'Google Scholar',
       googleScholarDescription:

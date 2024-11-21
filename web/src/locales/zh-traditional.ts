@@ -712,7 +712,7 @@ export default {
       bingDescription:
         '此元件用於從 https://www.bing.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 和 Bing Subscription-Key 指定您需要適配的搜尋結果數量。',
       apiKey: 'API KEY',
-      country: '國家',
+      country: '國家和地區',
       language: '語言',
       googleScholar: '谷歌學術',
       googleScholarDescription: `該元件用於從 https://scholar.google.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要調整的搜尋結果的數量。`,
