@@ -78,7 +78,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
   if (editable) {
     childNode = editing ? (
       <Form.Item
-        style={{ margin: 0, width: 70 }}
+        style={{ margin: 0, minWidth: 70 }}
         name={dataIndex}
         rules={[
           {
