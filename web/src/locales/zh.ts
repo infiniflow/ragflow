@@ -437,6 +437,7 @@ export default {
       multiTurnTip:
         '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
       howUseId: '如何使用聊天ID？',
+      description: '助理描述',
     },
     setting: {
       profile: '概要',

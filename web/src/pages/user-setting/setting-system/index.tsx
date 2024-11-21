@@ -35,6 +35,7 @@ const IconMap = {
   es: 'es',
   doc_store: 'storage',
   redis: 'redis',
+  storage: 'minio',
   database: 'database',
 };
 

@@ -439,6 +439,7 @@ The above is the content you need to summarize.`,
       multiTurnTip:
         'In multi-round conversations, the query to the knowledge base is optimized. The large model will be called to consume additional tokens.',
       howUseId: 'How to use chat ID?',
+      description: 'Description of assistant',
     },
     setting: {
       profile: 'Profile',
