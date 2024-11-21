@@ -297,6 +297,7 @@ export default {
       randomSeed: 'Hạt giống ngẫu nhiên',
       randomSeedMessage: 'Hạt giống ngẫu nhiên là bắt buộc',
       entityTypes: 'Loại thực thể',
+      vietnamese: 'Tiếng Việt',
     },
     chunk: {
       chunk: 'Khối',

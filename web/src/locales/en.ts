@@ -300,6 +300,7 @@ The above is the content you need to summarize.`,
       randomSeed: 'Random seed',
       randomSeedMessage: 'Random seed is required',
       entityTypes: 'Entity types',
+      vietnamese: 'Vietamese',
     },
     chunk: {
       chunk: 'Chunk',
