@@ -1018,6 +1018,8 @@ export default {
       optional: '可选项',
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
+      template: '模板转换',
+      templateDescription: '该组件用于排版各种组件的输出。',
     },
     footer: {
       profile: 'All rights reserved @ React',

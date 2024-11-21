@@ -1038,6 +1038,9 @@ The above is the content you need to summarize.`,
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test Run',
+      template: 'Template',
+      templateDescription:
+        'This component is used for typesetting the outputs of various components.',
     },
     footer: {
       profile: 'All rights reserved @ React',

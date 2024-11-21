@@ -16,9 +16,6 @@ PASSWORD='''ctAseGvejiaSWWZ88T/m4FQVOpQyUvP+x7sXtdv3feqZACiQleuewkUi35E16wSd5C5Q
 fN33jCHRoDUW81IH9zjij/vaw8IbVyb6vuwg6MX6inOEBRRzVbRYxXOu1wkWY6SsI8X70oF9aeLFp/PzQpjoe/YbSqpTq8qqrmHzn9vO+yvyYyvmDsphXe
 X8f7fp9c7vUsfOCkM+gHY3PadG+QHa7KI7mzTKgUTZImK6BZtfRBATDTthEUbbaTewY4H0MnWiCeeDhcbeQao6cFy1To8pE3RpmxnGnS8BsBn8w=='''
 
-def get_email():
-    return EMAIL
-
 def register():
     url = HOST_ADDRESS + "/v1/user/register"
     name = "user"
@@ -50,3 +47,12 @@ def get_api_key_fixture():
         raise Exception(res.get("message"))
     return res["data"].get("token")
 
+@pytest.fixture(scope="session")
+def get_auth():
+    register()
+    auth = login()
+    return auth
+
+@pytest.fixture(scope="session")
+def get_email():
+    return EMAIL

@@ -70,7 +70,7 @@ jobs:
           echo "RAGFLOW_IMAGE=infiniflow/ragflow:dev" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
-      - name: Run tests against Elasticsearch
+      - name: Run sdk tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           export HOST_ADDRESS=http://host.docker.internal:9380
@@ -78,7 +78,18 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test && pytest --tb=short t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+
+      - name: Run frontend api tests against Elasticsearch
+        run: |
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+          export HOST_ADDRESS=http://host.docker.internal:9380
+          until sudo docker exec ragflow-server curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
+            echo "Waiting for service to be available..."
+            sleep 5
+          done
+          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py 
+          
 
       - name: Stop ragflow:dev
         if: always()  # always run this step even if previous steps failed
@@ -89,7 +100,7 @@ jobs:
         run: |
           sudo DOC_ENGINE=infinity docker compose -f docker/docker-compose.yml up -d
 
-      - name: Run tests against Infinity
+      - name: Run sdk tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           export HOST_ADDRESS=http://host.docker.internal:9380
@@ -97,7 +108,17 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test && pytest --tb=short t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+
+      - name: Run frontend api tests against Infinity
+        run: |
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+          export HOST_ADDRESS=http://host.docker.internal:9380
+          until sudo docker exec ragflow-server curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
+            echo "Waiting for service to be available..."
+            sleep 5
+          done
+          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
 
       - name: Stop ragflow:dev
         if: always()  # always run this step even if previous steps failed
