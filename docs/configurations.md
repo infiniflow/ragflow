@@ -64,7 +64,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 ### MySQL
 
 - `MYSQL_PASSWORD`  
-  The password for MySQL. 
+  The password for MySQL.
 - `MYSQL_PORT`  
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
@@ -75,7 +75,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `MINIO_PORT`  
   The port used to expose the MinIO API service to the host machine, allowing **external** access to the MinIO object storage service running inside the Docker container. Defaults to `9000`.
 - `MINIO_USER`  
-  The username for MinIO. 
+  The username for MinIO.
 - `MINIO_PASSWORD`  
   The password for MinIO. accordingly.
 
@@ -95,7 +95,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
   
   - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models.  
   - `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models including:
-    - Embedded embedding models:
+    - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
