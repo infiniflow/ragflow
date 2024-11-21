@@ -17,7 +17,6 @@
 import logging
 import re
 import json
-from typing import List, Optional, Dict, Union
 from dataclasses import dataclass
 
 from rag.utils import rmSpace
@@ -37,13 +36,13 @@ class Dealer:
     @dataclass
     class SearchResult:
         total: int
-        ids: List[str]
-        query_vector: List[float] = None
-        field: Optional[Dict] = None
-        highlight: Optional[Dict] = None
-        aggregation: Union[List, Dict, None] = None
-        keywords: Optional[List[str]] = None
-        group_docs: List[List] = None
+        ids: list[str]
+        query_vector: list[float] | None = None
+        field: dict | None = None
+        highlight: dict | None = None
+        aggregation: list | dict | None = None
+        keywords: list[str] | None = None
+        group_docs: list[list] | None = None
 
     def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
         qv, _ = emb_mdl.encode_queries(txt)
@@ -62,7 +61,7 @@ class Dealer:
                 condition[key] = req[key]
         return condition
 
-    def search(self, req, idx_names: list[str], kb_ids: list[str], emb_mdl=None, highlight = False):
+    def search(self, req, idx_names: str | list[str], kb_ids: list[str], emb_mdl=None, highlight = False):
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
 
@@ -107,8 +106,7 @@ class Dealer:
                 # If result is empty, try again with lower min_match
                 if total == 0:
                     matchText, _ = self.qryr.question(qst, min_match=0.1)
-                    if "doc_ids" in filters:
-                        del filters["doc_ids"]
+                    filters.pop("doc_ids", None)
                     matchDense.extra_options["similarity"] = 0.17
                     res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr], orderBy, offset, limit, idx_names, kb_ids)
                     total=self.dataStore.getTotal(res)

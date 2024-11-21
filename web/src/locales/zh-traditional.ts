@@ -376,6 +376,8 @@ export default {
       maxTokensMessage: '最大token數是必填項',
       maxTokensTip:
         '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
+      maxTokensInvalidMessage: '請輸入有效的最大標記數。',
+      maxTokensMinMessage: '最大標記數不能小於 0。',
       quote: '顯示引文',
       quoteTip: '是否應該顯示原文出處？',
       selfRag: 'Self-RAG',
@@ -422,6 +424,12 @@ export default {
     setting: {
       profile: '概述',
       profileDescription: '在此更新您的照片和個人詳細信息。',
+      maxTokens: '最大token數',
+      maxTokensMessage: '最大token數是必填項',
+      maxTokensTip:
+        '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
+      maxTokensInvalidMessage: '請輸入有效的最大標記數。',
+      maxTokensMinMessage: '最大標記數不能小於 0。',
       password: '密碼',
       passwordDescription: '請輸入您當前的密碼以更改您的密碼。',
       model: '模型提供商',

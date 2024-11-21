@@ -36,7 +36,6 @@ const DynamicParameters = ({ nodeId }: IProps) => {
       title: t('key'),
       dataIndex: 'key',
       key: 'key',
-      width: 50,
       onCell: (record: IGenerateParameter) => ({
         record,
         editable: true,

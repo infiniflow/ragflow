@@ -94,6 +94,7 @@ export interface ITestingChunk {
   doc_id: string;
   doc_name: string;
   img_id: string;
+  image_id: string;
   important_kwd: any[];
   kb_id: string;
   similarity: number;

@@ -3,7 +3,7 @@ import get from 'lodash/get';
 import React, { MouseEventHandler, useCallback, useMemo } from 'react';
 import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
-import { useReplaceIdWithText } from '../../hooks';
+import { useGetComponentLabelByValue, useReplaceIdWithText } from '../../hooks';
 
 import {
   Popover,
@@ -39,10 +39,12 @@ export function NextNodePopover({ children, nodeId, name }: IProps) {
     [],
   );
   const output = get(component, ['obj', 'params', 'output'], {});
-  const { replacedOutput, getNameById } = useReplaceIdWithText(output);
+  const { replacedOutput } = useReplaceIdWithText(output);
   const stopPropagation: MouseEventHandler = useCallback((e) => {
     e.stopPropagation();
   }, []);
+
+  const getLabel = useGetComponentLabelByValue(nodeId);
 
   return (
     <Popover>
@@ -73,7 +75,7 @@ export function NextNodePopover({ children, nodeId, name }: IProps) {
                 <TableBody>
                   {inputs.map((x, idx) => (
                     <TableRow key={idx}>
-                      <TableCell>{getNameById(x.component_id)}</TableCell>
+                      <TableCell>{getLabel(x.component_id)}</TableCell>
                       <TableCell className="truncate">{x.content}</TableCell>
                     </TableRow>
                   ))}

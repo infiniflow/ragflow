@@ -1059,7 +1059,7 @@ Deletes chat assistants by ID.
 
 #### ids: `list[str]`
 
-The IDs of the chat assistants to delete. Defaults to `None`. If it is ot specified, all chat assistants in the system will be deleted.
+The IDs of the chat assistants to delete. Defaults to `None`. If it is empty or not specified, all chat assistants in the system will be deleted.
 
 ### Returns
 

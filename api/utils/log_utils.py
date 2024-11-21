@@ -28,13 +28,12 @@ def get_project_base_directory():
     )
     return PROJECT_BASE
 
-def initRootLogger(script_path: str, log_level: int = logging.INFO, log_format: str = "%(asctime)-15s %(levelname)-8s %(process)d %(message)s"):
+def initRootLogger(logfile_basename: str, log_level: int = logging.INFO, log_format: str = "%(asctime)-15s %(levelname)-8s %(process)d %(message)s"):
     logger = logging.getLogger()
     if logger.hasHandlers():
         return
 
-    script_name = os.path.basename(script_path)
-    log_path = os.path.abspath(os.path.join(get_project_base_directory(), "logs", f"{os.path.splitext(script_name)[0]}.log"))
+    log_path = os.path.abspath(os.path.join(get_project_base_directory(), "logs", f"{logfile_basename}.log"))
 
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     logger.setLevel(log_level)
@@ -50,5 +49,6 @@ def initRootLogger(script_path: str, log_level: int = logging.INFO, log_format: 
     handler2.setFormatter(formatter)
     logger.addHandler(handler2)
 
-    msg = f"{script_name} log path: {log_path}"
+    logging.captureWarnings(True)
+    msg = f"{logfile_basename} log path: {log_path}"
     logger.info(msg)

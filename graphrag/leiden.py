@@ -6,8 +6,8 @@ Reference:
 """
 
 import logging
-from typing import Any, cast, List
 import html
+from typing import Any, cast
 from graspologic.partition import hierarchical_leiden
 from graspologic.utils import largest_connected_component
 
@@ -132,7 +132,7 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
     return results_by_level
 
 
-def add_community_info2graph(graph: nx.Graph, nodes: List[str], community_title):
+def add_community_info2graph(graph: nx.Graph, nodes: list[str], community_title):
     for n in nodes:
         if "communities" not in graph.nodes[n]:
             graph.nodes[n]["communities"] = []

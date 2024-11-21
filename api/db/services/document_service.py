@@ -500,7 +500,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
 
             STORAGE_IMPL.put(kb.id, d["id"], output_buffer.getvalue())
             d["img_id"] = "{}-{}".format(kb.id, d["id"])
-            del d["image"]
+            d.pop("image", None)
             docs.append(d)
 
     parser_ids = {d["id"]: d["parser_id"] for d, _ in files}

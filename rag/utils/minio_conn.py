@@ -55,7 +55,7 @@ class RAGFlowMinio(object):
                                          )
                 return r
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}:")
+                logging.exception(f"Fail to put {bucket}/{fnm}:")
                 self.__open__()
                 time.sleep(1)
 
@@ -63,34 +63,37 @@ class RAGFlowMinio(object):
         try:
             self.conn.remove_object(bucket, fnm)
         except Exception:
-            logging.exception(f"Fail put {bucket}/{fnm}:")
+            logging.exception(f"Fail to remove {bucket}/{fnm}:")
 
-    def get(self, bucket, fnm):
+    def get(self, bucket, filename):
         for _ in range(1):
             try:
-                r = self.conn.get_object(bucket, fnm)
+                r = self.conn.get_object(bucket, filename)
                 return r.read()
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}:")
+                logging.exception(f"Fail to get {bucket}/{filename}")
                 self.__open__()
                 time.sleep(1)
         return
 
-    def obj_exist(self, bucket, fnm):
+    def obj_exist(self, bucket, filename):
         try:
-            if self.conn.stat_object(bucket, fnm):return True
-            return False
+            if not self.conn.bucket_exists(bucket):
+                return False
+            if self.conn.stat_object(bucket, filename):
+                return True
+            else:
+                return False
         except Exception:
-            logging.exception(f"Fail put {bucket}/{fnm}:")
-        return False
-
+            logging.exception(f"Not found: {bucket}/{filename}")
+            return False
 
     def get_presigned_url(self, bucket, fnm, expires):
         for _ in range(10):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}:")
+                logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
                 self.__open__()
                 time.sleep(1)
         return
@@ -98,11 +101,11 @@ class RAGFlowMinio(object):
 
 MINIO = RAGFlowMinio()
 
-
 if __name__ == "__main__":
     conn = RAGFlowMinio()
     fnm = "/opt/home/kevinhu/docgpt/upload/13/11-408.jpg"
     from PIL import Image
+
     img = Image.open(fnm)
     buff = BytesIO()
     img.save(buff, format='JPEG')

@@ -59,8 +59,7 @@ class Benchmark:
                 del qrels[query]
                 continue
             for c in ranks["chunks"]:
-                if "vector" in c:
-                    del c["vector"]
+                c.pop("vector", None)
                 run[query][c["chunk_id"]] = c["similarity"]
         return run
 

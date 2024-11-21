@@ -400,4 +400,4 @@ This error occurs because there are too many chunks matching your search criteri
 
 ### 9. How to upgrade RAGFlow?
 
-See [Upgrade RAGFlow](../guides/upgrade_ragflow.md) for more information.
+See [Upgrade RAGFlow](../guides/upgrade_ragflow.mdx) for more information.

@@ -1,19 +1,17 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union
 from dataclasses import dataclass
 import numpy as np
 import polars as pl
-from typing import List, Dict
 
 DEFAULT_MATCH_VECTOR_TOPN = 10
 DEFAULT_MATCH_SPARSE_TOPN = 10
-VEC = Union[list, np.ndarray]
+VEC = list | np.ndarray
 
 
 @dataclass
 class SparseVector:
     indices: list[int]
-    values: Union[list[float], list[int], None] = None
+    values: list[float] | list[int] | None = None
 
     def __post_init__(self):
         assert (self.values is None) or (len(self.indices) == len(self.values))
@@ -46,7 +44,7 @@ class SparseVector:
 class MatchTextExpr(ABC):
     def __init__(
         self,
-        fields: str,
+        fields: list[str],
         matching_text: str,
         topn: int,
         extra_options: dict = dict(),
@@ -82,7 +80,7 @@ class MatchSparseExpr(ABC):
         sparse_data: SparseVector | dict,
         distance_type: str,
         topn: int,
-        opt_params: Optional[dict] = None,
+        opt_params: dict | None = None,
     ):
         self.vector_column_name = vector_column_name
         self.sparse_data = sparse_data
@@ -98,7 +96,7 @@ class MatchTensorExpr(ABC):
         query_data: VEC,
         query_data_type: str,
         topn: int,
-        extra_option: Optional[dict] = None,
+        extra_option: dict | None = None,
     ):
         self.column_name = column_name
         self.query_data = query_data
@@ -108,16 +106,13 @@ class MatchTensorExpr(ABC):
 
 
 class FusionExpr(ABC):
-    def __init__(self, method: str, topn: int, fusion_params: Optional[dict] = None):
+    def __init__(self, method: str, topn: int, fusion_params: dict | None = None):
         self.method = method
         self.topn = topn
         self.fusion_params = fusion_params
 
 
-MatchExpr = Union[
-    MatchTextExpr, MatchDenseExpr, MatchSparseExpr, MatchTensorExpr, FusionExpr
-]
-
+MatchExpr = MatchTextExpr | MatchDenseExpr | MatchSparseExpr | MatchTensorExpr | FusionExpr
 
 class OrderByExpr(ABC):
     def __init__(self):
@@ -229,11 +224,11 @@ class DocStoreConnection(ABC):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def getFields(self, res, fields: List[str]) -> Dict[str, dict]:
+    def getFields(self, res, fields: list[str]) -> dict[str, dict]:
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def getHighlight(self, res, keywords: List[str], fieldnm: str):
+    def getHighlight(self, res, keywords: list[str], fieldnm: str):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod

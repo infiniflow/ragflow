@@ -156,8 +156,12 @@ class Canvas(ABC):
             self.components[k]["obj"].reset()
         self._embed_id = ""
 
+    def get_compnent_name(self, cid):
+        for n in self.dsl["graph"]["nodes"]:
+            if cid == n["id"]: return n["data"]["name"]
+        return ""
+
     def run(self, **kwargs):
-        ans = ""
         if self.answer:
             cpn_id = self.answer[0]
             self.answer.pop(0)
@@ -167,10 +171,10 @@ class Canvas(ABC):
                 ans = ComponentBase.be_output(str(e))
             self.path[-1].append(cpn_id)
             if kwargs.get("stream"):
-                assert isinstance(ans, partial)
-                return ans
-            self.history.append(("assistant", ans.to_dict("records")))
-            return ans
+                for an in ans():
+                    yield an
+            else: yield ans
+            return
 
         if not self.path:
             self.components["begin"]["obj"].run(self.history, **kwargs)
@@ -178,6 +182,8 @@ class Canvas(ABC):
 
         self.path.append([])
         ran = -1
+        waiting = []
+        without_dependent_checking = []
 
         def prepare2run(cpns):
             nonlocal ran, ans
@@ -188,14 +194,19 @@ class Canvas(ABC):
                     self.answer.append(c)
                 else:
                     logging.debug(f"Canvas.prepare2run: {c}")
-                    cpids = cpn.get_dependent_components()
-                    if any([c not in self.path[-1] for c in cpids]):
-                        continue
+                    if c not in without_dependent_checking:
+                        cpids = cpn.get_dependent_components()
+                        if any([cc not in self.path[-1] for cc in cpids]):
+                            if c not in waiting: waiting.append(c)
+                            continue
+                    yield "*'{}'* is running...🕞".format(self.get_compnent_name(c))
                     ans = cpn.run(self.history, **kwargs)
                     self.path[-1].append(c)
             ran += 1
 
-        prepare2run(self.components[self.path[-2][-1]]["downstream"])
+        for m in prepare2run(self.components[self.path[-2][-1]]["downstream"]):
+            yield {"content": m, "running_status": True}
+
         while 0 <= ran < len(self.path[-1]):
             logging.debug(f"Canvas.run: {ran} {self.path}")
             cpn_id = self.path[-1][ran]
@@ -210,27 +221,26 @@ class Canvas(ABC):
                 assert switch_out in self.components, \
                     "{}'s output: {} not valid.".format(cpn_id, switch_out)
                 try:
-                    prepare2run([switch_out])
+                    for m in prepare2run([switch_out]):
+                        yield {"content": m, "running_status": True}
                 except Exception as e:
-                    for p in [c for p in self.path for c in p][::-1]:
-                        if p.lower().find("answer") >= 0:
-                            self.get_component(p)["obj"].set_exception(e)
-                            prepare2run([p])
-                            break
+                    yield {"content": "*Exception*: {}".format(e), "running_status": True}
                     logging.exception("Canvas.run got exception")
-                    break
                 continue
 
             try:
-                prepare2run(cpn["downstream"])
+                for m in prepare2run(cpn["downstream"]):
+                    yield {"content": m, "running_status": True}
             except Exception as e:
-                for p in [c for p in self.path for c in p][::-1]:
-                    if p.lower().find("answer") >= 0:
-                        self.get_component(p)["obj"].set_exception(e)
-                        prepare2run([p])
-                        break
+                yield {"content": "*Exception*: {}".format(e), "running_status": True}
                 logging.exception("Canvas.run got exception")
-                break
+
+            if ran >= len(self.path[-1]) and waiting:
+                without_dependent_checking = waiting
+                waiting = []
+                for m in prepare2run(without_dependent_checking):
+                    yield {"content": m, "running_status": True}
+                ran -= 1
 
         if self.answer:
             cpn_id = self.answer[0]
@@ -239,11 +249,13 @@ class Canvas(ABC):
             self.path[-1].append(cpn_id)
             if kwargs.get("stream"):
                 assert isinstance(ans, partial)
-                return ans
+                for an in ans():
+                    yield an
+            else:
+                yield ans
 
-            self.history.append(("assistant", ans.to_dict("records")))
-
-        return ans
+        else:
+            raise Exception("The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow.")
 
     def get_component(self, cpn_id):
         return self.components[cpn_id]

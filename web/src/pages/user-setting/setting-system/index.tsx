@@ -2,7 +2,7 @@ import SvgIcon from '@/components/svg-icon';
 import { useFetchSystemStatus } from '@/hooks/user-setting-hooks';
 import {
   ISystemStatus,
-  TaskExecutorElapsed,
+  TaskExecutorHeartbeatItem,
 } from '@/interfaces/database/user-setting';
 import { Badge, Card, Flex, Spin, Typography } from 'antd';
 import classNames from 'classnames';
@@ -11,6 +11,7 @@ import upperFirst from 'lodash/upperFirst';
 import { useEffect } from 'react';
 
 import { toFixed } from '@/utils/common-util';
+import { isObject } from 'lodash';
 import styles from './index.less';
 import TaskBarChat from './task-bar-chat';
 
@@ -23,16 +24,16 @@ enum Status {
 }
 
 const TitleMap = {
-  es: 'Elasticsearch',
+  doc_store: 'Elasticsearch',
   storage: 'Object Storage',
   redis: 'Redis',
   database: 'Database',
-  task_executor: 'Task Executor',
+  task_executor_heartbeats: 'Task Executor',
 };
 
 const IconMap = {
   es: 'es',
-  storage: 'storage',
+  doc_store: 'storage',
   redis: 'redis',
   database: 'database',
 };
@@ -60,10 +61,13 @@ const SystemInfo = () => {
                 type="inner"
                 title={
                   <Flex align="center" gap={10}>
-                    {key === 'task_executor' ? (
+                    {key === 'task_executor_heartbeats' ? (
                       <img src="/logo.svg" alt="" width={26} />
                     ) : (
-                      <SvgIcon name={IconMap[key as keyof typeof IconMap]} width={26}></SvgIcon>
+                      <SvgIcon
+                        name={IconMap[key as keyof typeof IconMap]}
+                        width={26}
+                      ></SvgIcon>
                     )}
                     <span className={styles.title}>
                       {TitleMap[key as keyof typeof TitleMap]}
@@ -76,13 +80,15 @@ const SystemInfo = () => {
                 }
                 key={key}
               >
-                {key === 'task_executor' ? (
-                  info?.elapsed ? (
+                {key === 'task_executor_heartbeats' ? (
+                  isObject(info) ? (
                     <TaskBarChat
-                      data={info.elapsed as TaskExecutorElapsed}
+                      data={info as Record<string, TaskExecutorHeartbeatItem[]>}
                     ></TaskBarChat>
                   ) : (
-                    <Text className={styles.error}>{info.error}</Text>
+                    <Text className={styles.error}>
+                      {typeof info.error === 'string' ? info.error : ''}
+                    </Text>
                   )
                 ) : (
                   Object.keys(info)

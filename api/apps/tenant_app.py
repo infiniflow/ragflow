@@ -17,6 +17,7 @@
 from flask import request
 from flask_login import login_required, current_user
 
+from api import settings
 from api.db import UserTenantRole, StatusEnum
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
@@ -28,6 +29,12 @@ from api.utils.api_utils import get_json_result, validate_request, server_error_
 @manager.route("/<tenant_id>/user/list", methods=["GET"])
 @login_required
 def user_list(tenant_id):
+    if current_user.id != tenant_id:
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR)
+
     try:
         users = UserTenantService.get_by_tenant_id(tenant_id)
         for u in users:
@@ -41,6 +48,12 @@ def user_list(tenant_id):
 @login_required
 @validate_request("email")
 def create(tenant_id):
+    if current_user.id != tenant_id:
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR)
+
     req = request.json
     usrs = UserService.query(email=req["email"])
     if not usrs:
@@ -70,6 +83,12 @@ def create(tenant_id):
 @manager.route('/<tenant_id>/user/<user_id>', methods=['DELETE'])
 @login_required
 def rm(tenant_id, user_id):
+    if current_user.id != tenant_id and current_user.id != user_id:
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR)
+
     try:
         UserTenantService.filter_delete([UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id])
         return get_json_result(data=True)

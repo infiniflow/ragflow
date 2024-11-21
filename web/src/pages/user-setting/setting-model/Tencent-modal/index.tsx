@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Flex, Form, Input, Modal, Select, Space } from 'antd';
+import { Flex, Form, Input, Modal, Select, Space, InputNumber } from 'antd';
 import omit from 'lodash/omit';
 
 type FieldType = IAddLlmRequestBody & {
@@ -30,6 +30,7 @@ const TencentCloudModal = ({
       ...omit(values),
       model_type: modelType,
       llm_factory: llmFactory,
+      max_tokens:16000,
     };
     console.info(data);
 

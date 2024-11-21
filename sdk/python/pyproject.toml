@@ -8,8 +8,9 @@ readme = "README.md"
 package-mode = true
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10,<3.13"
 requests = "^2.30.0"
+beartype = "^0.18.5"
 pytest = "^8.0.0"
 
 

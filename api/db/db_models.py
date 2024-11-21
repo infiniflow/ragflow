@@ -30,9 +30,12 @@ from peewee import (
     Field, Model, Metadata
 )
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
+
+
 from api.db import SerializedType, ParserType
 from api import settings
 from api import utils
+
 
 def singleton(cls, *args, **kw):
     instances = {}
@@ -269,6 +272,7 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook,
                                                   object_pairs_hook=object_pairs_hook, **kwargs)
 
+
 class PooledDatabase(Enum):
     MYSQL = PooledMySQLDatabase
     POSTGRES = PooledPostgresqlDatabase
@@ -286,6 +290,7 @@ class BaseDataBase:
         db_name = database_config.pop("name")
         self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         logging.info('init database on cluster mode successfully')
+
 
 class PostgresDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
@@ -330,6 +335,7 @@ class PostgresDatabaseLock:
                 return func(*args, **kwargs)
 
         return magic
+
 
 class MysqlDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
@@ -645,7 +651,7 @@ class TenantLLM(DataBaseModel):
         index=True)
     api_key = CharField(max_length=1024, null=True, help_text="API KEY", index=True)
     api_base = CharField(max_length=255, null=True, help_text="API Base")
-
+    max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
 
     def __str__(self):
@@ -876,8 +882,10 @@ class Dialog(DataBaseModel):
         default="simple",
         help_text="simple|advanced",
         index=True)
-    prompt_config = JSONField(null=False, default={"system": "", "prologue": "Hi! I'm your assistant, what can I do for you?",
-                                                   "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"})
+    prompt_config = JSONField(null=False,
+                              default={"system": "", "prologue": "Hi! I'm your assistant, what can I do for you?",
+                                       "parameters": [],
+                                       "empty_response": "Sorry! No relevant content was found in the knowledge base!"})
 
     similarity_threshold = FloatField(default=0.2)
     vector_similarity_weight = FloatField(default=0.3)
@@ -891,7 +899,7 @@ class Dialog(DataBaseModel):
         null=False,
         default="1",
         help_text="it needs to insert reference index into answer or not")
-    
+
     rerank_id = CharField(
         max_length=128,
         null=False,
@@ -1026,8 +1034,8 @@ def migrate_db():
             pass
         try:
             migrate(
-                migrator.add_column("tenant","tts_id",
-                    CharField(max_length=256,null=True,help_text="default tts model ID",index=True))
+                migrator.add_column("tenant", "tts_id",
+                                    CharField(max_length=256, null=True, help_text="default tts model ID", index=True))
             )
         except Exception:
             pass
@@ -1056,4 +1064,9 @@ def migrate_db():
             )
         except Exception:
             pass
-
+        try:
+            migrate(
+                migrator.add_column("tenant_llm","max_tokens",IntegerField(default=8192,index=True))
+            )
+        except Exception:
+            pass

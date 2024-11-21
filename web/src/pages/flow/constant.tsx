@@ -45,7 +45,6 @@ import {
 import upperFirst from 'lodash/upperFirst';
 import {
   CloudUpload,
-  Link2,
   ListOrdered,
   OptionIcon,
   TextCursorInput,
@@ -2876,7 +2875,6 @@ export enum BeginQueryType {
   File = 'file',
   Integer = 'integer',
   Boolean = 'boolean',
-  Url = 'url',
 }
 
 export const BeginQueryTypeIconMap = {
@@ -2886,5 +2884,4 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.File]: CloudUpload,
   [BeginQueryType.Integer]: ListOrdered,
   [BeginQueryType.Boolean]: ToggleLeft,
-  [BeginQueryType.Url]: Link2,
 };

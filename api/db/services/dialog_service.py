@@ -98,7 +98,8 @@ def message_fit_in(msg, max_length=4000):
         return c, msg
 
     msg_ = [m for m in msg[:-1] if m["role"] == "system"]
-    msg_.append(msg[-1])
+    if len(msg) > 1:
+        msg_.append(msg[-1])
     msg = msg_
     c = count()
     if c < max_length:
@@ -593,6 +594,7 @@ def tts(tts_mdl, text):
 
 def ask(question, kb_ids, tenant_id):
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    tenant_ids = [kb.tenant_id for kb in kbs]
     embd_nms = list(set([kb.embd_id for kb in kbs]))
 
     is_kg = all([kb.parser_id == ParserType.KG for kb in kbs])
@@ -602,7 +604,7 @@ def ask(question, kb_ids, tenant_id):
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
     max_tokens = chat_mdl.max_length
 
-    kbinfos = retr.retrieval(question, embd_mdl, tenant_id, kb_ids, 1, 12, 0.1, 0.3, aggs=False)
+    kbinfos = retr.retrieval(question, embd_mdl, tenant_ids, kb_ids, 1, 12, 0.1, 0.3, aggs=False)
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
 
     used_token_count = 0

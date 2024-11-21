@@ -33,7 +33,7 @@ class Dealer:
         try:
             self.dictionary = json.load(open(path, 'r'))
         except Exception:
-            logging.warn("Missing synonym.json")
+            logging.warning("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
@@ -68,7 +68,7 @@ class Dealer:
 
     def lookup(self, tk):
         if re.match(r"[a-z]+$", tk):
-            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets("love")]) - set([tk]))
+            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets(tk)]) - set([tk]))
             return [t for t in res if t]
 
         self.lookup_num += 1

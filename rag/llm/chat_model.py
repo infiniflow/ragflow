@@ -1164,7 +1164,11 @@ class SparkChat(Base):
             "Spark-Pro-128K": "pro-128k",
             "Spark-4.0-Ultra": "4.0Ultra",
         }
-        model_version = model2version[model_name]
+        version2model = {v: k for k, v in model2version.items()}
+        assert model_name in model2version or model_name in version2model, f"The given model name is not supported yet. Support: {list(model2version.keys())}"
+        if model_name in model2version:
+            model_version = model2version[model_name]
+        else: model_version = model_name
         super().__init__(key, model_version, base_url)
 
 
