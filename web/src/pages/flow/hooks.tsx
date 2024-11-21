@@ -60,6 +60,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialTemplateValues,
   initialTuShareValues,
   initialWenCaiValues,
   initialWikipediaValues,
@@ -139,6 +140,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Note]: initialNoteValues,
       [Operator.Crawler]: initialCrawlerValues,
       [Operator.Invoke]: initialInvokeValues,
+      [Operator.Template]: initialTemplateValues,
     };
   }, [llmId]);
 

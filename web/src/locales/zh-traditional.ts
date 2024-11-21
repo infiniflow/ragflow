@@ -997,6 +997,8 @@ export default {
       optional: '可選項',
       pasteFileLink: '貼上文件連結',
       testRun: '試運行',
+      template: '模板轉換',
+      templateDescription: '此元件用於排版各種元件的輸出。 ',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
