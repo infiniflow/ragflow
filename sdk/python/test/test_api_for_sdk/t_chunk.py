@@ -7,7 +7,7 @@ def test_parse_document_with_txt(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_parse_document")
     name = 'ragflow_test.txt'
-    with open("test_data/ragflow_test.txt","rb") as file :
+    with open("test_data/ragflow_test.txt", "rb") as file :
         blob = file.read()
     docs = ds.upload_documents([{"displayed_name": name, "blob": blob}])
     doc = docs[0]
@@ -26,7 +26,7 @@ def test_parse_and_cancel_document(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_parse_and_cancel_document")
     name = 'ragflow_test.txt'
-    with open("test_data/ragflow_test.txt","rb") as file :
+    with open("test_data/ragflow_test.txt", "rb") as file :
         blob = file.read()
     docs=ds.upload_documents([{"displayed_name": name, "blob": blob}])
     doc = docs[0]
@@ -40,7 +40,7 @@ def test_bulk_parse_documents(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_bulk_parse_and_cancel_documents")
-    with open("ragflow.txt","rb") as file:
+    with open("ragflow.txt", "rb") as file:
         blob = file.read()
     documents = [
         {'displayed_name': 'test1.txt', 'blob': blob},

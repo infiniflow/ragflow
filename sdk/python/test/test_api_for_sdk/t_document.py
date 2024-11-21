@@ -7,7 +7,7 @@ def test_upload_document_with_success(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_upload_document")
     blob = b"Sample document content for test."
-    with open("ragflow.txt","rb") as file:
+    with open("ragflow.txt", "rb") as file:
         blob_2=file.read()
     document_infos = []
     document_infos.append({"displayed_name": "test_1.txt","blob": blob})
@@ -63,7 +63,7 @@ def test_upload_and_parse_pdf_documents_with_general_parse_method(get_api_key_fi
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_pdf_document")
-    with open("test_data/test.pdf","rb") as file:
+    with open("test_data/test.pdf", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.pdf","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -74,7 +74,7 @@ def test_upload_and_parse_docx_documents_with_general_parse_method(get_api_key_f
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_docx_document")
-    with open("test_data/test.docx","rb") as file:
+    with open("test_data/test.docx", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.docx","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -84,7 +84,7 @@ def test_upload_and_parse_excel_documents_with_general_parse_method(get_api_key_
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_excel_document")
-    with open("test_data/test.xlsx","rb") as file:
+    with open("test_data/test.xlsx", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.xlsx","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -94,7 +94,7 @@ def test_upload_and_parse_ppt_documents_with_general_parse_method(get_api_key_fi
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_ppt_document")
-    with open("test_data/test.ppt","rb") as file:
+    with open("test_data/test.ppt", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.ppt","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -104,7 +104,7 @@ def test_upload_and_parse_image_documents_with_general_parse_method(get_api_key_
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_image_document")
-    with open("test_data/test.jpg","rb") as file:
+    with open("test_data/test.jpg", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.jpg","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -114,7 +114,7 @@ def test_upload_and_parse_txt_documents_with_general_parse_method(get_api_key_fi
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_txt_document")
-    with open("test_data/test.txt","rb") as file:
+    with open("test_data/test.txt", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.txt","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -124,7 +124,7 @@ def test_upload_and_parse_md_documents_with_general_parse_method(get_api_key_fix
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_md_document")
-    with open("test_data/test.md","rb") as file:
+    with open("test_data/test.md", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.md","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -135,7 +135,7 @@ def test_upload_and_parse_json_documents_with_general_parse_method(get_api_key_f
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_json_document")
-    with open("test_data/test.json","rb") as file:
+    with open("test_data/test.json", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.json","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -147,7 +147,7 @@ def test_upload_and_parse_eml_documents_with_general_parse_method(get_api_key_fi
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_eml_document")
-    with open("test_data/test.eml","rb") as file:
+    with open("test_data/test.eml", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.eml","blob": blob}]
     docs=ds.upload_documents(document_infos)
@@ -158,7 +158,7 @@ def test_upload_and_parse_html_documents_with_general_parse_method(get_api_key_f
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_html_document")
-    with open("test_data/test.html","rb") as file:
+    with open("test_data/test.html", "rb") as file:
         blob=file.read()
     document_infos = [{"displayed_name": "test.html","blob": blob}]
     docs=ds.upload_documents(document_infos)
