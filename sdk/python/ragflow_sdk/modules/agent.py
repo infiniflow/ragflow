@@ -51,7 +51,7 @@ class Agent(Base):
 
     @staticmethod
     def create_session(id,rag) -> Session:
-        res = requests.post(f"http://127.0.0.1:9380/api/v1/agents/{id}/sessions",headers={"Authorization": f"Bearer {rag.user_key}"},json={})
+        res = requests.post(f"{rag.api_url}/agents/{id}/sessions",headers={"Authorization": f"Bearer {rag.user_key}"},json={})
         res = res.json()
         if res.get("code") == 0:
             return Session(rag,res.get("data"))
