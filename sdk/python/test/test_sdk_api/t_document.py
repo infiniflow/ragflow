@@ -1,5 +1,5 @@
 from ragflow_sdk import RAGFlow
-from sdk.python.test.common import HOST_ADDRESS
+from ..common import HOST_ADDRESS
 import pytest
 
 def test_upload_document_with_success(get_api_key_fixture):
