@@ -22,6 +22,24 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 ---
 
+### Why does it take longer for RAGFlow to parse a document than LangChain?
+
+We put painstaking effort into document pre-processing tasks like layout analysis, table structure recognition, and OCR (Optical Character Recognition) using our vision models. This contributes to the additional time required.
+
+---
+
+### Why does RAGFlow require more resources than other projects?
+
+RAGFlow has a number of built-in models for document structure parsing, which account for the additional computational resources.
+
+---
+
+### Which architectures or devices does RAGFlow support?
+
+We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
+
+---
+
 ### Which embedding models can be deployed locally?
 
 RAGFlow offers two Docker image editions, `dev-slim` and `dev`:  
@@ -51,12 +69,6 @@ The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](.
 
 ---
 
-### Which architectures or devices does RAGFlow support?
-
-We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
-
----
-
 ### Do you support stream output?
 
 Yes, we do.
@@ -72,22 +84,6 @@ No, this feature is not supported.
 ### Do you support multiple rounds of dialogues, i.e., referencing previous dialogues as context for the current dialogue?
 
 This feature and the related APIs are still in development. Contributions are welcome.
-
----
-
-## Performance
-
----
-
-### Why does it take longer for RAGFlow to parse a document than LangChain?
-
-We put painstaking effort into document pre-processing tasks like layout analysis, table structure recognition, and OCR (Optical Character Recognition) using our vision models. This contributes to the additional time required.
-
----
-
-### Why does RAGFlow require more resources than other projects?
-
-RAGFlow has a number of built-in models for document structure parsing, which account for the additional computational resources.
 
 ---
 
