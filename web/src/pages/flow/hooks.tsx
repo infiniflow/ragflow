@@ -268,6 +268,7 @@ export const useSaveGraph = () => {
       const dslComponents = buildDslComponentsByGraph(
         currentNodes ?? nodes,
         edges,
+        data.dsl.components,
       );
       return setFlow({
         id,
