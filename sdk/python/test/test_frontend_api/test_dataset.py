@@ -1,4 +1,4 @@
-from ..common import HOST_ADDRESS
+from common import HOST_ADDRESS
 import requests
 def test_create_dataset(get_auth):
     authorization={"Authorization": get_auth}

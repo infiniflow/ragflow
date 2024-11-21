@@ -1,5 +1,5 @@
 from ragflow_sdk import RAGFlow
-from ..common import HOST_ADDRESS
+from common import HOST_ADDRESS
 
 def test_create_chat_with_name(get_api_key_fixture):
     API_KEY = get_api_key_fixture
