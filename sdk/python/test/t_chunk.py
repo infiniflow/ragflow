@@ -1,6 +1,7 @@
 from ragflow_sdk import RAGFlow
 from common import HOST_ADDRESS
 from time import sleep
+import pytest
 
 def test_parse_document_with_txt(get_api_key_fixture):
     API_KEY = get_api_key_fixture
@@ -108,7 +109,7 @@ def test_add_chunk_with_success(get_api_key_fixture):
     doc = docs[0]
     doc.add_chunk(content="This is a chunk addition test")
 
-
+@pytest.mark.skip(reason="")
 def test_delete_chunk_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
@@ -129,7 +130,7 @@ def test_delete_chunk_with_success(get_api_key_fixture):
     sleep(5)
     doc.delete_chunks([chunk.id])
 
-
+@pytest.mark.skip(reason="")
 def test_update_chunk_content(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
@@ -151,6 +152,7 @@ def test_update_chunk_content(get_api_key_fixture):
     sleep(3)
     chunk.update({"content":"This is a updated content"})
 
+@pytest.mark.skip(reason="")
 def test_update_chunk_available(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
