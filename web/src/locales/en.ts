@@ -105,10 +105,10 @@ export default {
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        "RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.",
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.',
       vectorSimilarityWeight: 'Keywords similarity weight',
       vectorSimilarityWeightTip:
-        "This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.",
+        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Testing',
@@ -1037,6 +1037,9 @@ The above is the content you need to summarize.`,
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test Run',
+      template: 'Template',
+      templateDescription:
+        'This component is used for typesetting the outputs of various components.',
     },
     footer: {
       profile: 'All rights reserved @ React',
