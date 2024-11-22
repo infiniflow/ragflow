@@ -73,8 +73,8 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-docker build --build-arg ARCH=arm64 -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
-docker build --build-arg ARCH=arm64 -f Dockerfile -t infiniflow/ragflow:dev .
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
   </TabItem>
 

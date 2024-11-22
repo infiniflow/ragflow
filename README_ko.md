@@ -232,7 +232,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh slim
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
@@ -244,7 +244,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh full
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
 ## 🔨 소스 코드로 서비스를 시작합니다.

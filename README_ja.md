@@ -230,7 +230,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh slim
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
@@ -242,7 +242,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh full
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
 ## 🔨 ソースコードからサービスを起動する方法
