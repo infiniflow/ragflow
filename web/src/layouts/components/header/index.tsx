@@ -10,6 +10,7 @@ import { MouseEventHandler, useCallback, useMemo } from 'react';
 import { useLocation } from 'umi';
 import Toolbar from '../right-toolbar';
 
+import { useTheme } from '@/components/theme-provider';
 import styles from './index.less';
 
 const { Header } = Layout;
@@ -22,7 +23,7 @@ const RagHeader = () => {
   const { pathname } = useLocation();
   const { t } = useTranslate('header');
   const appConf = useFetchAppConf();
-
+  const { theme: themeRag } = useTheme();
   const tagsData = useMemo(
     () => [
       { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
@@ -81,8 +82,12 @@ const RagHeader = () => {
           className={styles.radioGroup}
           value={currentPath}
         >
-          {tagsData.map((item) => (
-            <Radio.Button value={item.name} key={item.name}>
+          {tagsData.map((item, index) => (
+            <Radio.Button
+              className={`${themeRag === 'dark' ? 'dark' : 'light'} ${index === 0 ? 'first' : ''} ${index === tagsData.length - 1 ? 'last' : ''}`}
+              value={item.name}
+              key={item.name}
+            >
               <a href={item.path}>
                 <Flex
                   align="center"
