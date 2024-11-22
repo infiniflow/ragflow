@@ -317,17 +317,18 @@ def agent_completion(tenant_id, agent_id):
 
     canvas.messages.append(msg[-1])
     canvas.add_user_input(msg[-1]["content"])
-    answer = canvas.run(stream=stream)
-
-    assert answer is not None, "Nothing. Is it over?"
 
     if stream:
-        assert isinstance(answer, partial), "Nothing. Is it over?"
-
         def sse():
-            nonlocal answer, cvs, conv
+            nonlocal answer, cvs
             try:
-                for ans in answer():
+                for ans in canvas.run(stream=True):
+                    if ans.get("running_status"):
+                        yield "data:" + json.dumps({"code": 0, "message": "",
+                                                    "data": {"answer": ans["content"],
+                                                             "running_status": True}},
+                                                   ensure_ascii=False) + "\n\n"
+                        continue
                     for k in ans.keys():
                         final_ans[k] = ans[k]
                     ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
@@ -337,15 +338,18 @@ def agent_completion(tenant_id, agent_id):
                                                ensure_ascii=False) + "\n\n"
 
                 canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
+                canvas.history.append(("assistant", final_ans["content"]))
                 if final_ans.get("reference"):
                     canvas.reference.append(final_ans["reference"])
                 cvs.dsl = json.loads(str(canvas))
                 API4ConversationService.append_message(conv.id, conv.to_dict())
             except Exception as e:
+                cvs.dsl = json.loads(str(canvas))
+                UserCanvasService.update_by_id(req["id"], cvs.to_dict())
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                            ensure_ascii=False) + "\n\n"
-            yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
         resp = Response(sse(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -354,17 +358,20 @@ def agent_completion(tenant_id, agent_id):
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
-    canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
-    if final_ans.get("reference"):
-        canvas.reference.append(final_ans["reference"])
-    cvs.dsl = json.loads(str(canvas))
+    for answer in canvas.run(stream=False):
+        if answer.get("running_status"): continue
+        final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
+        canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
+        if final_ans.get("reference"):
+            canvas.reference.append(final_ans["reference"])
+        cvs.dsl = json.loads(str(canvas))
+        UserCanvasService.update_by_id(req["id"], cvs.to_dict())
 
-    result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])}
-    fillin_conv(result)
-    API4ConversationService.append_message(conv.id, conv.to_dict())
-    rename_field(result)
-    return get_result(data=result)
+        result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])}
+        fillin_conv(result)
+        API4ConversationService.append_message(conv.id, conv.to_dict())
+        rename_field(result)
+        return get_result(data=result)
 
 
 @manager.route('/chats/<chat_id>/sessions', methods=['GET'])
