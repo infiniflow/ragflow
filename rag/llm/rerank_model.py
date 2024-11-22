@@ -452,4 +452,5 @@ class QWenRerank(Base):
             for r in resp.output.results:
                 rank[r.index] = r.relevance_score
             return rank, resp.usage.total_tokens
-        return rank, 0
+        else:
+            raise ValueError(f"Error calling QWenRerank model {self.model_name}: {resp.status_code} - {resp.text}")
