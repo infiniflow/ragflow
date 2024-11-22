@@ -312,80 +312,96 @@ function fallbackRender({ error }: FallbackProps) {
 const IndentedTree = ({ data, show, style = {} }: IProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
-
-  const render = useCallback(async (data: TreeData) => {
-    const graph: Graph = new Graph({
-      container: containerRef.current!,
-      x: 60,
-      node: {
-        type: 'indented',
-        style: {
-          size: (d) => [d.id.length * 6 + 10, 20],
-          labelBackground: (datum) => datum.id === rootId,
-          labelBackgroundRadius: 0,
-          labelBackgroundFill: '#576286',
-          labelFill: (datum) => (datum.id === rootId ? '#fff' : '#666'),
-          labelText: (d) => d.style?.labelText || d.id,
-          labelTextAlign: (datum) => (datum.id === rootId ? 'center' : 'left'),
-          labelTextBaseline: 'top',
-          color: (datum: any) => {
-            const depth = graph.getAncestorsData(datum.id, 'tree').length - 1;
-            return COLORS[depth % COLORS.length] || '#576286';
-          },
-        },
-        state: {
-          selected: {
-            lineWidth: 0,
-            labelFill: '#40A8FF',
-            labelBackground: true,
-            labelFontWeight: 'normal',
-            labelBackgroundFill: '#e8f7ff',
-            labelBackgroundRadius: 10,
-          },
-        },
-      },
-      edge: {
-        type: 'indented',
-        style: {
-          radius: 16,
-          lineWidth: 2,
-          sourcePort: 'out',
-          targetPort: 'in',
-          stroke: (datum: any) => {
-            const depth = graph.getAncestorsData(datum.source, 'tree').length;
-            return COLORS[depth % COLORS.length] || 'black';
-          },
-        },
-      },
-      layout: {
-        type: 'indented',
-        direction: 'LR',
-        isHorizontal: true,
-        indent: 40,
-        getHeight: () => 20,
-        getVGap: () => 10,
-      },
-      behaviors: [
-        'scroll-canvas',
-        'collapse-expand-tree',
-        {
-          type: 'click-select',
-          enable: (event: any) =>
-            event.targetType === 'node' && event.target.id !== rootId,
-        },
-      ],
-    });
-
-    if (graphRef.current) {
-      graphRef.current.destroy();
+  const assignIds = React.useCallback(function assignIds(
+    node: TreeData,
+    parentId: string = '',
+    index = 0,
+  ) {
+    if (!node.id) node.id = parentId ? `${parentId}-${index}` : 'root';
+    if (node.children) {
+      node.children.forEach((child, idx) => assignIds(child, node.id, idx));
     }
-
-    graphRef.current = graph;
-
-    graph?.setData(treeToGraphData(data));
-
-    graph?.render();
   }, []);
+
+  const render = useCallback(
+    async (data: TreeData) => {
+      const graph: Graph = new Graph({
+        container: containerRef.current!,
+        x: 60,
+        node: {
+          type: 'indented',
+          style: {
+            size: (d) => [d.id.length * 6 + 10, 20],
+            labelBackground: (datum) => datum.id === rootId,
+            labelBackgroundRadius: 0,
+            labelBackgroundFill: '#576286',
+            labelFill: (datum) => (datum.id === rootId ? '#fff' : '#666'),
+            labelText: (d) => d.style?.labelText || d.id,
+            labelTextAlign: (datum) =>
+              datum.id === rootId ? 'center' : 'left',
+            labelTextBaseline: 'top',
+            color: (datum: any) => {
+              const depth = graph.getAncestorsData(datum.id, 'tree').length - 1;
+              return COLORS[depth % COLORS.length] || '#576286';
+            },
+          },
+          state: {
+            selected: {
+              lineWidth: 0,
+              labelFill: '#40A8FF',
+              labelBackground: true,
+              labelFontWeight: 'normal',
+              labelBackgroundFill: '#e8f7ff',
+              labelBackgroundRadius: 10,
+            },
+          },
+        },
+        edge: {
+          type: 'indented',
+          style: {
+            radius: 16,
+            lineWidth: 2,
+            sourcePort: 'out',
+            targetPort: 'in',
+            stroke: (datum: any) => {
+              const depth = graph.getAncestorsData(datum.source, 'tree').length;
+              return COLORS[depth % COLORS.length] || 'black';
+            },
+          },
+        },
+        layout: {
+          type: 'indented',
+          direction: 'LR',
+          isHorizontal: true,
+          indent: 40,
+          getHeight: () => 20,
+          getVGap: () => 10,
+        },
+        behaviors: [
+          'scroll-canvas',
+          'collapse-expand-tree',
+          {
+            type: 'click-select',
+            enable: (event: any) =>
+              event.targetType === 'node' && event.target.id !== rootId,
+          },
+        ],
+      });
+
+      if (graphRef.current) {
+        graphRef.current.destroy();
+      }
+
+      graphRef.current = graph;
+
+      // assignIds(data);
+
+      graph?.setData(treeToGraphData(data));
+
+      graph?.render();
+    },
+    [assignIds],
+  );
 
   useEffect(() => {
     if (!isEmpty(data)) {
