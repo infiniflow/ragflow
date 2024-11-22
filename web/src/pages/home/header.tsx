@@ -83,7 +83,7 @@ export function HomeHeader() {
           options={options}
           value={currentPath}
           onChange={handleChange}
-          className="bg-backgroundInverseStandard text-backgroundInverseStandard-foreground"
+          className="bg-colors-background-inverse-standard text-backgroundInverseStandard-foreground"
         ></Segmented>
       </div>
       <div className="flex items-center gap-4">
