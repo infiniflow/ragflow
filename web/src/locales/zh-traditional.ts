@@ -566,6 +566,7 @@ export default {
       refuse: '拒絕',
       teamMembers: '團隊成員',
       joinedTeams: '加入的團隊',
+      sureDelete: '您確定刪除該成員嗎？',
     },
     message: {
       registered: '註冊成功',

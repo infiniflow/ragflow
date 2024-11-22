@@ -54,9 +54,9 @@
 
 ## 🔥 最新情報
 
+- 2024-11-22 エージェントでの変数の定義と使用法を改善しました。
 - 2024-11-01 再現の精度を向上させるために、解析されたチャンクにキーワード抽出と関連質問の生成を追加しました。
 - 2024-09-13 ナレッジベース Q&A の検索モードを追加しました。
-- 2024-09-09 エージェントに医療相談テンプレートを追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 - 2024-08-02 [graphrag](https://github.com/microsoft/graphrag) からインスピレーションを得た GraphRAG とマインド マップをサポートします。
 
@@ -230,7 +230,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh slim
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
@@ -242,7 +242,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh full
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
 ## 🔨 ソースコードからサービスを起動する方法

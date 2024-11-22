@@ -2,7 +2,6 @@ import LLMSelect from '@/components/llm-select';
 import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form } from 'antd';
-import { useSetLlmSetting } from '../../hooks';
 import { IOperatorForm } from '../../interface';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 import DynamicCategorize from './dynamic-categorize';
@@ -15,7 +14,6 @@ const CategorizeForm = ({ form, onValuesChange, node }: IOperatorForm) => {
     nodeId: node?.id,
     onValuesChange,
   });
-  useSetLlmSetting(form);
 
   return (
     <Form

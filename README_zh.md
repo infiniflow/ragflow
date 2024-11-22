@@ -54,9 +54,9 @@
 
 ## 🔥 近期更新
 
-- 2024-11-01 对解析后的chunk加入关键词抽取和相关问题生成以提高召回的准确度。
+- 2024-11-22 完善了 Agent 中的变量定义和使用。
+- 2024-11-01 对解析后的 chunk 加入关键词抽取和相关问题生成以提高召回的准确度。
 - 2024-09-13 增加知识库问答搜索模式。
-- 2024-09-09 在 Agent 中加入医疗问诊模板。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
 
@@ -237,7 +237,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh slim
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 源码编译 Docker 镜像（包含 embedding 模型）
@@ -249,7 +249,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh full
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
 ## 🔨 以源代码启动服务
