@@ -2028,8 +2028,8 @@ curl --request POST \
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:
-  - `true`: Enable streaming.
-  - `false`: Disable streaming (default).
+  - `true`: Enable streaming (default).
+  - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of session. If it is not provided, a new session will be generated.
 
@@ -2239,8 +2239,8 @@ curl --request POST \
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:  
-  - `true`: Enable streaming.
-  - `false`: Disable streaming (default).
+  - `true`: Enable streaming (default).
+  - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
 
