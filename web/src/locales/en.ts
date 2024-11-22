@@ -2,7 +2,7 @@ export default {
   translation: {
     common: {
       delete: 'Delete',
-      deleteModalTitle: 'Are you sure delete this item?',
+      deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
       cancel: 'No',
       total: 'Total',
@@ -598,6 +598,7 @@ The above is the content you need to summarize.`,
       refuse: 'Decline',
       teamMembers: 'Team Members',
       joinedTeams: 'Joined Teams',
+      sureDelete: 'Are you sure to remove this member?',
     },
     message: {
       registered: 'Registered!',
