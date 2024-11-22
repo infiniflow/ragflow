@@ -10,14 +10,19 @@ export enum UserSettingRouteKey {
   Logout = 'logout',
 }
 
-export const UserSettingRouteMap = {
-  [UserSettingRouteKey.Profile]: 'Profile',
-  [UserSettingRouteKey.Password]: 'Password',
-  [UserSettingRouteKey.Model]: 'Model Providers',
-  [UserSettingRouteKey.System]: 'System Version',
-  [UserSettingRouteKey.Team]: 'Team',
-  [UserSettingRouteKey.Logout]: 'Log out',
-};
+export const ProfileSettingBaseKey = 'profile-setting';
+
+export enum ProfileSettingRouteKey {
+  Profile = 'profile',
+  Plan = 'plan',
+  Model = 'model',
+  System = 'system',
+  Api = 'api',
+  Team = 'team',
+  Prompt = 'prompt',
+  Chunk = 'chunk',
+  Logout = 'logout',
+}
 
 // Please lowercase the file name
 export const IconMap = {
