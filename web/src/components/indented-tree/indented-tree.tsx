@@ -394,7 +394,7 @@ const IndentedTree = ({ data, show, style = {} }: IProps) => {
 
       graphRef.current = graph;
 
-      // assignIds(data);
+      assignIds(data);
 
       graph?.setData(treeToGraphData(data));
 
