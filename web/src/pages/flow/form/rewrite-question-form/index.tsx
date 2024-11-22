@@ -1,12 +1,10 @@
 import LLMSelect from '@/components/llm-select';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, InputNumber } from 'antd';
-import { useSetLlmSetting } from '../../hooks';
 import { IOperatorForm } from '../../interface';
 
 const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('chat');
-  useSetLlmSetting(form);
 
   return (
     <Form
