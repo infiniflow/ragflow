@@ -420,6 +420,7 @@ export default {
       multiTurnTip:
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
       howUseId: '如何使用聊天ID？',
+      description: '助理描述',
     },
     setting: {
       profile: '概述',
