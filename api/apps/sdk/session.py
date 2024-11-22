@@ -276,12 +276,12 @@ def agent_completion(tenant_id, agent_id):
             chunk_list = []
             for chunk in chunks:
                 new_chunk = {
-                    "id": chunk["chunk_id"],
+                    "id": chunk.get("chunk_id", ""),
                     "content": chunk["content_with_weight"],
                     "document_id": chunk["doc_id"],
                     "document_name": chunk["docnm_kwd"],
                     "dataset_id": chunk["kb_id"],
-                    "image_id": chunk["img_id"],
+                    "image_id": chunk.get("img_id", ""),
                     "similarity": chunk["similarity"],
                     "vector_similarity": chunk["vector_similarity"],
                     "term_similarity": chunk["term_similarity"],
@@ -408,12 +408,12 @@ def list_session(chat_id,tenant_id):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
-                                "id": chunk["chunk_id"],
-                                "content": chunk["content_with_weight"],
-                                "document_id": chunk["doc_id"],
-                                "document_name": chunk["docnm_kwd"],
-                                "dataset_id": chunk["kb_id"],
-                                "image_id": chunk["img_id"],
+                                "id": chunk.get("chunk_id", ""),
+                                "content": chunk.get("content_with_weight", ""),
+                                "document_id": chunk.get("doc_id", ""), 
+                                "document_name": chunk.get("docnm_kwd", ""),
+                                "dataset_id": chunk.get("kb_id", ""), 
+                                "image_id": chunk.get("img_id", ""),
                                 "similarity": chunk["similarity"],
                                 "vector_similarity": chunk["vector_similarity"],
                                 "term_similarity": chunk["term_similarity"],
