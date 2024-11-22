@@ -181,8 +181,8 @@ const MessageItem = ({
                 dataSource={documentList}
                 renderItem={(item) => {
                   // TODO:
-                  const fileThumbnail =
-                    documentThumbnails[item.id] || documentThumbnails[item.id];
+                  // const fileThumbnail =
+                  //   documentThumbnails[item.id] || documentThumbnails[item.id];
                   const fileExtension = getExtension(item.name);
                   return (
                     <List.Item>
