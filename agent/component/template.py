@@ -79,7 +79,7 @@ class Template(ComponentBase):
             self._param.inputs.append({"component_id": para["component_id"], "content": kwargs[para["key"]]})
 
         for n, v in kwargs.items():
-            content = re.sub(r"\{%s\}" % re.escape(n), str(v), content)
+            content = re.sub(r"\{%s\}" % re.escape(n), str(v).replace("\\", " "), content)
 
         return Template.be_output(content)
 

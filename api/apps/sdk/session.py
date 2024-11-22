@@ -77,7 +77,7 @@ def create_agent_session(tenant_id, agent_id):
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
-        "user_id": req.get("usr_id",""),
+        "user_id": req.get("usr_id","") if isinstance(req, dict) else "",
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent"
     }
@@ -345,7 +345,7 @@ def agent_completion(tenant_id, agent_id):
                 API4ConversationService.append_message(conv.id, conv.to_dict())
             except Exception as e:
                 cvs.dsl = json.loads(str(canvas))
-                UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+                API4ConversationService.append_message(conv.id, conv.to_dict())
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                            ensure_ascii=False) + "\n\n"
@@ -365,7 +365,6 @@ def agent_completion(tenant_id, agent_id):
         if final_ans.get("reference"):
             canvas.reference.append(final_ans["reference"])
         cvs.dsl = json.loads(str(canvas))
-        UserCanvasService.update_by_id(req["id"], cvs.to_dict())
 
         result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])}
         fillin_conv(result)
