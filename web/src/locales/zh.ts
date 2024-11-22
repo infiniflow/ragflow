@@ -585,6 +585,7 @@ export default {
       refuse: '拒绝',
       teamMembers: '团队成员',
       joinedTeams: '加入的团队',
+      sureDelete: '您确定要删除该成员吗？',
     },
     message: {
       registered: '注册成功',
