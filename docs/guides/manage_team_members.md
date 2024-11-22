@@ -35,3 +35,7 @@ Only RAGFlow users can be invited for now.
 ## Accept or decline team invite
 
 ![accept_or_decline_team_invite](https://github.com/user-attachments/assets/6a2cb61f-03d5-4423-9ed1-71df97ff4114)
+
+## Related APIs
+
+Key considerations.
