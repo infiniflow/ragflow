@@ -36,6 +36,7 @@ const DynamicParameters = ({ nodeId }: IProps) => {
       title: t('key'),
       dataIndex: 'key',
       key: 'key',
+      width: '40%',
       onCell: (record: IGenerateParameter) => ({
         record,
         editable: true,
@@ -49,6 +50,7 @@ const DynamicParameters = ({ nodeId }: IProps) => {
       dataIndex: 'component_id',
       key: 'component_id',
       align: 'center',
+      width: '40%',
       render(text, record) {
         return (
           <Select

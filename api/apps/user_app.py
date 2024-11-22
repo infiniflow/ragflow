@@ -517,8 +517,8 @@ def user_register(user_id, user):
                 "llm_name": llm.llm_name,
                 "model_type": llm.model_type,
                 "api_key": settings.API_KEY,
-                "api_base": settings.LLM_BASE_URL,
-                "max_tokens": llm.max_tokens
+                "api_base": settings.LLM_BASE_URL
+                #"max_tokens": llm.max_tokens if llm.max_tokens else 8192
             }
         )
 

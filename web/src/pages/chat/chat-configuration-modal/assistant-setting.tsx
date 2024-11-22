@@ -51,6 +51,9 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
       >
         <Input placeholder={t('namePlaceholder')} />
       </Form.Item>
+      <Form.Item name={'description'} label={t('description')}>
+        <Input placeholder={t('descriptionPlaceholder')} />
+      </Form.Item>
       <Form.Item
         name="icon"
         label={t('assistantAvatar')}

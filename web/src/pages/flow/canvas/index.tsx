@@ -35,6 +35,7 @@ import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
+import { TemplateNode } from './node/template-node';
 
 const nodeTypes = {
   ragNode: RagNode,
@@ -50,6 +51,7 @@ const nodeTypes = {
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
   invokeNode: InvokeNode,
+  templateNode: TemplateNode,
 };
 
 const edgeTypes = {
