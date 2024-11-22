@@ -72,9 +72,9 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 22-11-2024 Peningkatan definisi dan penggunaan variabel di Agen.
 - 2024-11-01: Penambahan ekstraksi kata kunci dan pembuatan pertanyaan terkait untuk meningkatkan akurasi pengambilan.
 - 2024-09-13: Penambahan mode pencarian untuk Q&A basis pengetahuan.
-- 2024-09-09: Penambahan template agen konsultan medis.
 - 2024-08-22: Dukungan untuk teks ke pernyataan SQL melalui RAG.
 - 2024-08-02: Dukungan GraphRAG yang terinspirasi oleh [graphrag](https://github.com/microsoft/graphrag) dan mind map.
 

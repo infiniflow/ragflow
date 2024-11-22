@@ -75,9 +75,9 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2024-11-01 Adds keyword extraction and related question generation to the parsed chunk to improve the accuracy of retrieval.
+- 2024-11-22 Adds more variables to Agent.
+- 2024-11-01 Adds keyword extraction and related question generation to the parsed chunks to improve the accuracy of retrieval.
 - 2024-09-13 Adds search mode for knowledge base Q&A.
-- 2024-09-09 Adds a medical consultant agent template.
 - 2024-08-22 Support text to SQL statements through RAG.
 - 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.
 
