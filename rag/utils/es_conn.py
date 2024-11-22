@@ -237,6 +237,7 @@ class ESConnection(DocStoreConnection):
         res = []
         for _ in range(ATTEMPT_TIME):
             try:
+                res = []
                 r = self.es.bulk(index=(indexName), operations=operations,
                                  refresh=False, timeout="60s")
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
@@ -248,6 +249,7 @@ class ESConnection(DocStoreConnection):
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
             except Exception as e:
+                res.append(str(e))
                 logging.warning("ESConnection.insert got exception: " + str(e))
                 res = []
                 if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
