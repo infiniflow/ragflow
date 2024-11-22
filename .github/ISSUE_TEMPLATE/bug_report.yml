@@ -15,16 +15,16 @@ body:
     value: "Please provide the following information to help us understand the issue."
 - type: input
   attributes:
-    label: Branch name
-    description: Enter the name of the branch where you encountered the issue.
-    placeholder: e.g., main
+    label: RAGFlow workspace code commit ID
+    description: Enter the commit ID associated with the issue.
+    placeholder: e.g., 26d3480e
   validations:
     required: true
 - type: input
   attributes:
-    label: Commit ID
-    description: Enter the commit ID associated with the issue.
-    placeholder: e.g., c3b2a1
+    label: RAGFlow image version
+    description: Enter the image version(shown in RAGFlow UI, `System` page) associated with the issue.
+    placeholder: e.g., 26d3480e(v0.13.0~174)
   validations:
     required: true
 - type: textarea
