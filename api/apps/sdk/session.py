@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import re
+import logging
 import json
 from api.db import LLMType
 from flask import request, Response
@@ -40,9 +41,9 @@ from api.db.services.llm_service import LLMBundle
 def create(tenant_id, chat_id):
     req = request.json
     req["dialog_id"] = chat_id
-    dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
-    if not dia:
-        return get_error_data_result(message="You do not own the assistant.")
+    e, dia = DialogService.get_by_id(req["dialog_id"])
+    if not e:
+        return get_error_data_result(message="Dialog not found")
     conv = {
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
