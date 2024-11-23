@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import re
-import logging
 import json
 from functools import partial
 from uuid import uuid4
