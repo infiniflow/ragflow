@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import re
-import logging
 import json
 from api.db import LLMType
 from flask import request, Response
