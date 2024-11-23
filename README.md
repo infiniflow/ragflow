@@ -20,7 +20,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.13.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.13.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -176,14 +176,14 @@ releases! 🌟
    ```
 
    > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFLOW_IMAGE` variable in *
-       *docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0-slim`. After
+       *docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.13.0-slim`. After
        making this change, rerun the command above to initiate the download.
    > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the
        `RAGFLOW_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change,
        rerun the command above to initiate the download.
    > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update
        the `RAGFLOW_IMAGE` variable in **docker/.env** to your desired version. For example,
-       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0`. After making this change, rerun the command above to initiate the
+       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.13.0`. After making this change, rerun the command above to initiate the
        download.
 
    > **NOTE:** A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size
