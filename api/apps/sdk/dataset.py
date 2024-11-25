@@ -258,7 +258,7 @@ def delete(tenant_id):
     return get_result(code=settings.RetCode.SUCCESS)
 
 
-@manager.route("/datasets/<dataset_id>", methods=["PUT"])
+@manager.route("/datasets/<dataset_id>", methods=["PUT"])# type: ignore
 @token_required
 def update(tenant_id, dataset_id):
     """
@@ -427,7 +427,7 @@ def update(tenant_id, dataset_id):
     return get_result(code=settings.RetCode.SUCCESS)
 
 
-@manager.route("/datasets", methods=["GET"])
+@manager.route("/datasets", methods=["GET"])# type: ignore
 @token_required
 def list(tenant_id):
     """

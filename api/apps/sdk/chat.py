@@ -147,7 +147,7 @@ def create(tenant_id):
     res["avatar"] = res.pop("icon")
     return get_result(data=res)
 
-@manager.route('/chats/<chat_id>', methods=['PUT'])
+@manager.route('/chats/<chat_id>', methods=['PUT']) # type: ignore
 @token_required
 def update(tenant_id,chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
