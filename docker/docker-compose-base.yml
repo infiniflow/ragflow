@@ -74,7 +74,7 @@ services:
     command:
       --max_connections=1000
       --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
+      --collation-server=utf8mb4_general_ci
       --default-authentication-plugin=mysql_native_password
       --tls_version="TLSv1.2,TLSv1.3"
       --init-file /data/application/init.sql
