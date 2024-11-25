@@ -29,6 +29,8 @@ module.exports = {
         'colors-outline-sentiment-primary':
           'var(--colors-outline-sentiment-primary)',
 
+        'colors-text-core-standard': 'var(--colors-text-core-standard)',
+
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

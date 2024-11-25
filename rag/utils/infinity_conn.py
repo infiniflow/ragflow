@@ -7,6 +7,7 @@ import infinity
 from infinity.common import ConflictType, InfinityException, SortType
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
+from infinity.errors import ErrorCode
 from rag import settings
 from rag.utils import singleton
 import polars as pl
@@ -47,6 +48,17 @@ def equivalent_condition_to_str(condition: dict) -> str:
     return " AND ".join(cond)
 
 
+def concat_dataframes(df_list: list[pl.DataFrame], selectFields: list[str]) -> pl.DataFrame:
+    """
+    Concatenate multiple dataframes into one.
+    """
+    if df_list:
+        return pl.concat(df_list)
+    schema = dict()
+    for fieldnm in selectFields:
+        schema[fieldnm] = str
+    return pl.DataFrame(schema=schema)
+
 @singleton
 class InfinityConnection(DocStoreConnection):
     def __init__(self):
@@ -61,10 +73,13 @@ class InfinityConnection(DocStoreConnection):
             try:
                 connPool = ConnectionPool(infinity_uri)
                 inf_conn = connPool.get_conn()
-                _ = inf_conn.show_current_node()
+                res = inf_conn.show_current_node()
                 connPool.release_conn(inf_conn)
                 self.connPool = connPool
-                break
+                if res.error_code == ErrorCode.OK and res.server_status=="started":
+                    break
+                logging.warn(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
+                time.sleep(5)
             except Exception as e:
                 logging.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
@@ -89,10 +104,9 @@ class InfinityConnection(DocStoreConnection):
         inf_conn = self.connPool.get_conn()
         res = inf_conn.show_current_node()
         self.connPool.release_conn(inf_conn)
-        color = "green" if res.error_code == 0 else "red"
         res2 = {
             "type": "infinity",
-            "status": f"{res.role} {color}",
+            "status": "green" if res.error_code == 0 and res.server_status == "started" else "red",
             "error": res.error_msg,
         }
         return res2
@@ -286,7 +300,7 @@ class InfinityConnection(DocStoreConnection):
                 kb_res = builder.to_pl()
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
-        res = pl.concat(df_list)
+        res = concat_dataframes(df_list, selectFields)
         logging.debug("INFINITY search tables: " + str(table_list))
         return res
 
@@ -303,7 +317,7 @@ class InfinityConnection(DocStoreConnection):
             kb_res = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
             df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
-        res = pl.concat(df_list)
+        res = concat_dataframes(df_list, ["id"])
         res_fields = self.getFields(res, res.columns)
         return res_fields.get(chunkId, None)
 

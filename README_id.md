@@ -249,7 +249,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh slim
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 Membangun Docker Image Termasuk Model Embedding
@@ -261,7 +261,7 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-bash build_docker_image.sh full
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
@@ -286,7 +286,7 @@ bash build_docker_image.sh full
 
    Tambahkan baris berikut ke `/etc/hosts` untuk memetakan semua host yang ditentukan di **docker/service_conf.yaml** ke `127.0.0.1`:
    ```
-   127.0.0.1       es01 mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis
    ```  
    Di **docker/service_conf.yaml**, perbarui port mysql ke `5455` dan es ke `1200`, sesuai dengan yang ditentukan di **docker/.env**.
 

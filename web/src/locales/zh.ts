@@ -381,8 +381,8 @@ export default {
       topPMessage: 'Top P 是必填项',
       topPTip:
         '该参数也称为“核心采样”，它设置一个阈值来选择较小的单词集进行采样。 它专注于最可能的单词，剔除不太可能的单词。',
-      presencePenalty: '出席处罚',
-      presencePenaltyMessage: '出席处罚是必填项',
+      presencePenalty: '存在处罚',
+      presencePenaltyMessage: '存在处罚是必填项',
       presencePenaltyTip:
         '这会通过惩罚对话中已经出现的单词来阻止模型重复相同的信息。',
       frequencyPenalty: '频率惩罚',
@@ -585,6 +585,7 @@ export default {
       refuse: '拒绝',
       teamMembers: '团队成员',
       joinedTeams: '加入的团队',
+      sureDelete: '您确定要删除该成员吗？',
     },
     message: {
       registered: '注册成功',

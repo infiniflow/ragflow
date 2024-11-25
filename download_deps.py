@@ -7,6 +7,7 @@ import urllib.request
 
 urls = [
     "http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb",
+    "http://ports.ubuntu.com/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_arm64.deb",
     "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar",
     "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar.md5",
     "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
@@ -26,7 +27,7 @@ repos = [
 def download_model(repo_id):
     local_dir = os.path.abspath(os.path.join("huggingface.co", repo_id))
     os.makedirs(local_dir, exist_ok=True)
-    snapshot_download(repo_id=repo_id, local_dir=local_dir)
+    snapshot_download(repo_id=repo_id, local_dir=local_dir, local_dir_use_symlinks=False)
 
 
 if __name__ == "__main__":

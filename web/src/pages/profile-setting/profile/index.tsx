@@ -11,7 +11,8 @@ import {
 
 export default function Profile() {
   return (
-    <section>
+    <section className="p-8">
+      <h1 className="text-3xl font-bold mb-6">User profile</h1>
       <Avatar className="w-[120px] h-[120px] mb-6">
         <AvatarImage
           src={
