@@ -76,7 +76,7 @@ export function Datasets() {
             </CardContent>
           </Card>
         ))}
-        <Button className="bg-[#9276ff] h-auto" variant={'secondary'}>
+        <Button className="h-auto " variant={'tertiary'}>
           See all
         </Button>
       </div>
