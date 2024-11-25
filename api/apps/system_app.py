@@ -98,10 +98,10 @@ def status():
     res = {}
     st = timer()
     try:
-        res["doc_store"] = settings.docStoreConn.health()
-        res["doc_store"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
+        res["doc_engine"] = settings.docStoreConn.health()
+        res["doc_engine"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
     except Exception as e:
-        res["doc_store"] = {
+        res["doc_engine"] = {
             "type": "unknown",
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
