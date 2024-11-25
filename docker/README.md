@@ -14,7 +14,7 @@
 - **docker-compose.yml**  
   Sets up environment for RAGFlow and its dependencies.
 - **docker-compose-base.yml**  
-  Sets up environment for RAGFlow's base services: Elasticsearch, MySQL, MinIO, and Redis.
+  Sets up environment for RAGFlow's dependencies: Elasticsearch, MySQL, MinIO, and Redis.
 
 ## 🐬 Docker environment variables
 
