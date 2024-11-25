@@ -111,7 +111,7 @@ def create(tenant_id):
         req['prompt_config'] = {}
     for key in key_list_2:
         temp = req['prompt_config'].get(key)
-        if not temp:
+        if (not temp and key == 'system') or (key not in req["prompt_config"]):
             req['prompt_config'][key] = default_prompt[key]
     for p in req['prompt_config']["parameters"]:
         if p["optional"]:
