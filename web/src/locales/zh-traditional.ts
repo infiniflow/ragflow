@@ -364,8 +364,8 @@ export default {
       topPMessage: 'Top P 是必填項',
       topPTip:
         '該參數也稱為“核心採樣”，它設置一個閾值來選擇較小的單詞集進行採樣。它專注於最可能的單詞，剔除不太可能的單詞。',
-      presencePenalty: '出席處罰',
-      presencePenaltyMessage: '出席處罰是必填項',
+      presencePenalty: '存在處罰',
+      presencePenaltyMessage: '存在處罰是必填項',
       presencePenaltyTip:
         '這會通過懲罰對話中已經出現的單詞來阻止模型重複相同的信息。',
       frequencyPenalty: '頻率懲罰',
@@ -565,6 +565,7 @@ export default {
       refuse: '拒絕',
       teamMembers: '團隊成員',
       joinedTeams: '加入的團隊',
+      sureDelete: '您確定刪除該成員嗎？',
     },
     message: {
       registered: '註冊成功',

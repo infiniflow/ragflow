@@ -121,8 +121,14 @@ class ESConnection(DocStoreConnection):
         bqry = Q("bool", must=[])
         condition["kb_id"] = knowledgebaseIds
         for k, v in condition.items():
-            if not isinstance(k, str) or not v:
+            if k == "available_int":
+                if v == 0:
+                    bqry.filter.append(Q("range", available_int={"lt": 1}))
+                else:
+                    bqry.filter.append(
+                        Q("bool", must_not=Q("range", available_int={"lt": 1})))
                 continue
+            if not v: continue
             if isinstance(v, list):
                 bqry.filter.append(Q("terms", **{k: v}))
             elif isinstance(v, str) or isinstance(v, int):
@@ -237,6 +243,7 @@ class ESConnection(DocStoreConnection):
         res = []
         for _ in range(ATTEMPT_TIME):
             try:
+                res = []
                 r = self.es.bulk(index=(indexName), operations=operations,
                                  refresh=False, timeout="60s")
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
@@ -248,6 +255,7 @@ class ESConnection(DocStoreConnection):
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
             except Exception as e:
+                res.append(str(e))
                 logging.warning("ESConnection.insert got exception: " + str(e))
                 res = []
                 if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):

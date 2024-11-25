@@ -25,6 +25,12 @@ module.exports = {
         background: 'var(--background)',
         foreground: 'hsl(var(--foreground))',
         buttonBlueText: 'var(--button-blue-text)',
+
+        'colors-outline-sentiment-primary':
+          'var(--colors-outline-sentiment-primary)',
+
+        'colors-text-core-standard': 'var(--colors-text-core-standard)',
+
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

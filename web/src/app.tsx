@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { App, ConfigProvider, ConfigProviderProps } from 'antd';
 import enUS from 'antd/locale/en_US';
+import vi_VN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
 import dayjs from 'dayjs';
@@ -27,6 +28,7 @@ const AntLanguageMap = {
   en: enUS,
   zh: zhCN,
   'zh-TRADITIONAL': zh_HK,
+  vi: vi_VN,
 };
 
 const queryClient = new QueryClient();

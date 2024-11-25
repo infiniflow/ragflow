@@ -56,7 +56,7 @@ class Dealer:
             if key in req and req[key] is not None:
                 condition[field] = req[key]
         # TODO(yzc): `available_int` is nullable however infinity doesn't support nullable columns.
-        for key in ["knowledge_graph_kwd"]:
+        for key in ["knowledge_graph_kwd", "available_int"]:
             if key in req and req[key] is not None:
                 condition[key] = req[key]
         return condition

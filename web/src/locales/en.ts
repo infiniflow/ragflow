@@ -2,7 +2,7 @@ export default {
   translation: {
     common: {
       delete: 'Delete',
-      deleteModalTitle: 'Are you sure delete this item?',
+      deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
       cancel: 'No',
       total: 'Total',
@@ -439,6 +439,7 @@ The above is the content you need to summarize.`,
       multiTurnTip:
         'In multi-round conversations, the query to the knowledge base is optimized. The large model will be called to consume additional tokens.',
       howUseId: 'How to use chat ID?',
+      description: 'Description of assistant',
     },
     setting: {
       profile: 'Profile',
@@ -593,10 +594,11 @@ The above is the content you need to summarize.`,
       updateDate: 'Update Date',
       role: 'Role',
       invite: 'Invite',
-      agree: 'Agree',
-      refuse: 'Refuse',
+      agree: 'Accept',
+      refuse: 'Decline',
       teamMembers: 'Team Members',
       joinedTeams: 'Joined Teams',
+      sureDelete: 'Are you sure to remove this member?',
     },
     message: {
       registered: 'Registered!',

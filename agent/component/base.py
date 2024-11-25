@@ -390,8 +390,8 @@ class ComponentBase(ABC):
             "inputs": {}
         }}""".format(self.component_name,
                      self._param,
-                     json.dumps(json.loads(str(self._param))["output"], ensure_ascii=False),
-                     json.dumps(json.loads(str(self._param))["inputs"], ensure_ascii=False)
+                     json.dumps(json.loads(str(self._param)).get("output", {}), ensure_ascii=False),
+                     json.dumps(json.loads(str(self._param)).get("inputs", []), ensure_ascii=False)
         )
 
     def __init__(self, canvas, id, param: ComponentParamBase):
