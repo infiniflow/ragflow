@@ -93,10 +93,9 @@ class InfinityConnection(DocStoreConnection):
         inf_conn = self.connPool.get_conn()
         res = inf_conn.show_current_node()
         self.connPool.release_conn(inf_conn)
-        color = "green" if res.error_code == 0 else "red"
         res2 = {
             "type": "infinity",
-            "status": f"{res.role} {color}",
+            "status": "green" if res.error_code == 0 and res.server_status == "started" else "red",
             "error": res.error_msg,
         }
         return res2
