@@ -238,7 +238,7 @@ def test_db_connect():
     try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
-                               password=req["password"])
+                               password=req["password"], charset='utf8mb4')
         elif req["db_type"] == 'postgresql':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])

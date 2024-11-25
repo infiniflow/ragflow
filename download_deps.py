@@ -22,10 +22,15 @@ urls = [
 repos = [
     "InfiniFlow/text_concat_xgb_v1.0",
     "InfiniFlow/deepdoc",
-    "BAAI/bge-large-zh-v1.5",
     "BAAI/bge-reranker-v2-m3",
-    "maidalun1020/bce-embedding-base_v1",
-    "maidalun1020/bce-reranker-base_v1",
+    "BAAI/bge-reranker-v2-gemma",
+    "meta-llama/Llama-3.2-3B",
+    "google/gemma-2-9b-it",
+    "sentence-transformers/all-MiniLM-L6-v2",
+    "nomic-ai/nomic-embed-text-v1.5"
+    
+
+
 ]
 
 def download_model(repo_id):
