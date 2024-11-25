@@ -1,11 +1,9 @@
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { Outlet } from 'umi';
-import { useGetPageTitle } from './hooks';
 import { SideBar } from './sidebar';
 
 export default function ProfileSetting() {
-  const title = useGetPageTitle();
   return (
     <div className="flex flex-col w-full h-screen bg-background text-foreground">
       <header className="flex items-center border-b">
@@ -24,9 +22,9 @@ export default function ProfileSetting() {
       <div className="flex flex-1 bg-muted/50">
         <SideBar></SideBar>
 
-        <main className="flex-1 p-10">
-          <h1 className="text-3xl font-bold mb-6"> {title}</h1>
+        <main className="flex-1 ">
           <Outlet></Outlet>
+          {/* <h1 className="text-3xl font-bold mb-6"> {title}</h1> */}
         </main>
       </div>
     </div>
