@@ -48,6 +48,17 @@ def equivalent_condition_to_str(condition: dict) -> str:
     return " AND ".join(cond)
 
 
+def concat_dataframes(df_list: list[pl.DataFrame], selectFields: list[str]) -> pl.DataFrame:
+    """
+    Concatenate multiple dataframes into one.
+    """
+    if df_list:
+        return pl.concat(df_list)
+    schema = dict()
+    for fieldnm in selectFields:
+        schema[fieldnm] = str
+    return pl.DataFrame(schema=schema)
+
 @singleton
 class InfinityConnection(DocStoreConnection):
     def __init__(self):
@@ -289,7 +300,7 @@ class InfinityConnection(DocStoreConnection):
                 kb_res = builder.to_pl()
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
-        res = pl.concat(df_list)
+        res = concat_dataframes(df_list, selectFields)
         logging.debug("INFINITY search tables: " + str(table_list))
         return res
 
@@ -306,7 +317,7 @@ class InfinityConnection(DocStoreConnection):
             kb_res = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
             df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
-        res = pl.concat(df_list)
+        res = concat_dataframes(df_list, ["id"])
         res_fields = self.getFields(res, res.columns)
         return res_fields.get(chunkId, None)
 

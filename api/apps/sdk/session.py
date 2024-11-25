@@ -15,7 +15,7 @@
 #
 import re
 import json
-from functools import partial
+from copy import deepcopy
 from uuid import uuid4
 from api.db import LLMType
 from flask import request, Response
@@ -155,6 +155,14 @@ def completion(tenant_id, chat_id):
 
     def fillin_conv(ans):
         reference = ans["reference"]
+        temp_reference = deepcopy(ans["reference"])
+        nonlocal conv, message_id
+        if not conv.reference:
+            conv.reference.append(temp_reference)
+        else:
+            conv.reference[-1] = temp_reference
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"],
+                            "id": message_id, "prompt": ans.get("prompt", "")}
         if "chunks" in reference:
             chunks = reference.get("chunks")
             chunk_list = []
@@ -165,7 +173,7 @@ def completion(tenant_id, chat_id):
                     "document_id": chunk["doc_id"],
                     "document_name": chunk["docnm_kwd"],
                     "dataset_id": chunk["kb_id"],
-                    "image_id": chunk.get("img_id", ""),
+                    "image_id": chunk.get("image_id", ""),
                     "similarity": chunk["similarity"],
                     "vector_similarity": chunk["vector_similarity"],
                     "term_similarity": chunk["term_similarity"],
@@ -173,13 +181,6 @@ def completion(tenant_id, chat_id):
                 }
                 chunk_list.append(new_chunk)
             reference["chunks"] = chunk_list
-        nonlocal conv, message_id
-        if not conv.reference:
-            conv.reference.append(ans["reference"])
-        else:
-            conv.reference[-1] = ans["reference"]
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"],
-                            "id": message_id, "prompt": ans.get("prompt", "")}
         ans["id"] = message_id
         ans["session_id"]=session_id
 
@@ -271,6 +272,13 @@ def agent_completion(tenant_id, agent_id):
 
     def fillin_conv(ans):
         reference = ans["reference"]
+        temp_reference = deepcopy(ans["reference"])
+        nonlocal conv, message_id
+        if not conv.reference:
+            conv.reference.append(temp_reference)
+        else:
+            conv.reference[-1] = temp_reference
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
         if "chunks" in reference:
             chunks = reference.get("chunks")
             chunk_list = []
@@ -281,7 +289,7 @@ def agent_completion(tenant_id, agent_id):
                     "document_id": chunk["doc_id"],
                     "document_name": chunk["docnm_kwd"],
                     "dataset_id": chunk["kb_id"],
-                    "image_id": chunk["img_id"],
+                    "image_id": chunk["image_id"],
                     "similarity": chunk["similarity"],
                     "vector_similarity": chunk["vector_similarity"],
                     "term_similarity": chunk["term_similarity"],
@@ -289,12 +297,6 @@ def agent_completion(tenant_id, agent_id):
                 }
                 chunk_list.append(new_chunk)
             reference["chunks"] = chunk_list
-        nonlocal conv, message_id
-        if not conv.reference:
-            conv.reference.append(ans["reference"])
-        else:
-            conv.reference[-1] = ans["reference"]
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
         ans["id"] = message_id
         ans["session_id"] = session_id
 
@@ -413,7 +415,7 @@ def list_session(chat_id,tenant_id):
                                 "document_id": chunk["doc_id"],
                                 "document_name": chunk["docnm_kwd"],
                                 "dataset_id": chunk["kb_id"],
-                                "image_id": chunk["img_id"],
+                                "image_id": chunk["image_id"],
                                 "similarity": chunk["similarity"],
                                 "vector_similarity": chunk["vector_similarity"],
                                 "term_similarity": chunk["term_similarity"],

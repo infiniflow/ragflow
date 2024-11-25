@@ -5,7 +5,7 @@ slug: /faq
 
 # Frequently asked questions
 
-Queries regarding general features, troubleshooting, performance, and more.
+Queries regarding general features, troubleshooting, usage, and more.
 
 ---
 
@@ -248,48 +248,50 @@ tail -f ragflow/docker/ragflow-logs/*.log
 
 #### How to check the status of each component in RAGFlow?
 
-```bash
-$ docker ps
-```
-
-*The system displays the following if all your RAGFlow components are running properly:*
-
-```
-5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   ragflow-server
-91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
-d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
-cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
-```
-
----
-
-#### `Exception: Can't connect to ES cluster`
-
-1. Check the status of your Elasticsearch component:
+1. Check the status of the Elasticsearch Docker container:
 
    ```bash
    $ docker ps
    ```
 
-   *The status of a 'healthy' Elasticsearch component in your RAGFlow should look as follows:*
-  
+   *The following is an example result:*
+
+   ```bash
+   5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   ragflow-server
+   91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
+   d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
+   cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
+   ```
+
+2. Follow [this document](../guides/run_health_check.md) to check the health status of the Elasticsearch service.
+
+:::danger IMPORTANT
+The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
+:::
+
+---
+
+#### `Exception: Can't connect to ES cluster`
+
+1. Check the status of the Elasticsearch Docker container:
+
+   ```bash
+   $ docker ps
+   ```
+
+   *The status of a healthy Elasticsearch component should look as follows:*  
+
    ```
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    ```
 
-2. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-start-up-the-server). Updating the `vm.max_map_count` value in **/etc/sysctl.conf** is required, if you wish to keep your change permanent. This configuration works only for Linux.
+2. Follow [this document](../guides/run_health_check.md) to check the health status of the Elasticsearch service.
 
-3. If your issue persists, ensure that the ES host setting is correct:
+:::danger IMPORTANT
+The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
+:::
 
-    - If you are running RAGFlow with Docker, it is in **docker/service_conf.yml**. Set it as follows:
-    ```
-    es:
-      hosts: 'http://es01:9200'
-    ```
-    - If you run RAGFlow outside of Docker, verify the ES host setting in **conf/service_conf.yml** using:
-    ```bash
-    curl http://<IP_OF_ES>:<PORT_OF_ES>
-    ```
+3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-start-up-the-server). Updating the `vm.max_map_count` value in **/etc/sysctl.conf** is required, if you wish to keep your change permanent. Note that this configuration works only for Linux.
 
 ---
 
@@ -349,13 +351,23 @@ Ensure that you update the **MAX_CONTENT_LENGTH** environment variable:
 
 #### `FileNotFoundError: [Errno 2] No such file or directory`
 
-1. Check if the status of your MinIO container is healthy:
+1. Check the status of the MinIO Docker container:
 
    ```bash
-   docker ps
+   $ docker ps
    ```
 
-2. Ensure that the username and password settings of MySQL and MinIO in **docker/.env** are in line with those in **docker/service_conf.yml**.
+   *The status of a healthy Elasticsearch component should look as follows:*  
+
+   ```bash
+   cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
+   ```
+
+2. Follow [this document](../guides/run_health_check.md) to check the health status of the Elasticsearch service.
+
+:::danger IMPORTANT
+The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
+:::
 
 ---
 
