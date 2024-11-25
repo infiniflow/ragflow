@@ -7,7 +7,7 @@ slug: /manage_team_members
 
 Invite or remove team members, join or leave a team.
 
-By default, each RAGFlow user is assigned a single team named after their name. RAGFlow allows you to invite an unlimited number of RAGFlow users to your team. Your team members can help you:
+By default, each RAGFlow user is assigned a single team named after their name. RAGFlow allows you to invite RAGFlow users to your team. Your team members can help you:
 
 - Upload documents to your datasets.
 - Update document configurations in your datasets.
@@ -26,10 +26,6 @@ _On the **Team** page, you can view the information about members of your team a
 ## Invite team members
 
 You are, by default, the owner of your own team and the only person permitted to invite users to join your team or remove team members.
-
-:::tip NOTE
-Only RAGFlow users can be invited for now.
-:::
 
 ![invite_team_member](https://github.com/user-attachments/assets/75e19d53-3a00-480e-8b16-fe00c23c4486)
 

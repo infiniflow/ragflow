@@ -3,32 +3,18 @@ sidebar_position: 7
 slug: /run_health_check
 ---
 
-# Run health check on RAGFlow's base services
+# Run health check on RAGFlow's dependencies
 
-Double check the health status of RAGFlow's base services.
+Double check the health status of RAGFlow's dependencies.
 
-The operation of RAGFlow depends on four base services:
+The operation of RAGFlow depends on four services:
 
-- **Elasticsearch** (default) or [Infinity](https://github.com/infiniflow/infinity) as the document search engine
+- **Elasticsearch** (default) or [Infinity](https://github.com/infiniflow/infinity) as the document engine
 - **MySQL**
 - **Redis**
 - **MinIO** for object storage
 
 If an exception or error occurs related to any of the above services, such as `Exception: Can't connect to ES cluster`, refer to this document to check their health status.
-
-## Command line
-
-If you installed RAGFlow using Docker, run this command to list all Docker containers running on your host machine and their health status:
-
-```bash
-docker ps
-```
-
-*The following snapshot shows that all base services are running properly:*
-
-![dockerps](https://github.com/user-attachments/assets/9f1445a3-9d57-40ba-a31f-245b8f0c530b)
-
-## Run health check on RAGFlow's UI
 
 You can also click you avatar on the top right corner of the page **>** System to view the visualized health status of RAGFlow's core services. The following screenshot shows that all services are 'green' (running healthily). The task executor displays the *cumulative* number of completed and failed document parsing tasks from the past 30 minutes:
 
