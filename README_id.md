@@ -286,7 +286,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 
    Tambahkan baris berikut ke `/etc/hosts` untuk memetakan semua host yang ditentukan di **docker/service_conf.yaml** ke `127.0.0.1`:
    ```
-   127.0.0.1       es01 mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis
    ```  
    Di **docker/service_conf.yaml**, perbarui port mysql ke `5455` dan es ke `1200`, sesuai dengan yang ditentukan di **docker/.env**.
 

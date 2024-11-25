@@ -18,7 +18,7 @@ es:
   username: 'elastic'
   password: 'infini_rag_flow'
 infinity:
-  uri: 'http://infinity:23817'
+  uri: 'infinity:23817'
   db_name: 'default_db'
 redis:
   db: 1
