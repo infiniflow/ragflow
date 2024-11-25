@@ -7,7 +7,11 @@ slug: /upgrade_ragflow
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-## Upgrade RAGFlow to `dev`, the most recent, tested Docker image
+Upgrade RAGFlow to `dev-slim`/`dev` or the latest, published release.
+
+## Upgrade RAGFlow to `dev-slim`/`dev`, the most recent, tested Docker image
+
+`dev-slim` refers to the RAGFlow Docker image *without* embedding models, while `dev` refers to the RAGFlow Docker image with embedding models. For details on their differences, see **docker/.env**.
 
 1. Clone the repo
 
@@ -15,11 +19,29 @@ import TabItem from '@theme/TabItem';
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-2. Update **ragflow/docker/.env** as follows:
+2. Update **ragflow/docker/.env**:
 
-   ```bash
-   RAGFLOW_IMAGE=infiniflow/ragflow:dev
-   ```
+<Tabs
+  defaultValue="dev-slim"
+  values={[
+    {label: 'dev-slim', value: 'dev-slim'},
+    {label: 'dev', value: 'dev'},
+  ]}>
+  <TabItem value="dev-slim">
+
+```bash
+RAGFLOW_IMAGE=infiniflow/ragflow:dev-slim
+```
+
+  </TabItem>
+  <TabItem value="dev">
+
+```bash
+RAGFLOW_IMAGE=infiniflow/ragflow:dev
+```
+
+  </TabItem>
+</Tabs>
 
 3. Update RAGFlow image and restart RAGFlow:
 
@@ -28,7 +50,7 @@ import TabItem from '@theme/TabItem';
    docker compose -f docker/docker-compose.yml up -d
    ```
 
-## Upgrade RAGFlow to `latest`, the most recent, officially published release
+## Upgrade RAGFlow to the most recent, officially published release
 
 1. Clone the repo
 
@@ -45,7 +67,7 @@ import TabItem from '@theme/TabItem';
 3. Update **ragflow/docker/.env** as follows:
 
    ```bash
-   RAGFLOW_IMAGE=infiniflow/ragflow:latest
+   RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0
    ```
 
 4. Update the RAGFlow image and restart RAGFlow:
