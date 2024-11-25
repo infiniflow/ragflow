@@ -16,7 +16,7 @@ The operation of RAGFlow depends on four base services:
 
 If an exception or error occurs related to any of the above services, such as `Exception: Can't connect to ES cluster`, refer to this document to check their health status.
 
-## Command line 
+## Command line
 
 If you installed RAGFlow using Docker, run this command to list all Docker containers running on your host machine and their health status:
 

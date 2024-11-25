@@ -7,20 +7,25 @@ slug: /manage_team_members
 
 Invite or remove team members, join or leave a team.
 
-By default, each RAGFlow user is assigned a single team named after their nickname. RAGFlow allows you to invite an unlimited number of RAGFlow users to your team. Your team members will automatically have the same permissions on your datasets, helping you:
+By default, each RAGFlow user is assigned a single team named after their name. RAGFlow allows you to invite an unlimited number of RAGFlow users to your team. Your team members can help you:
 
-- Update or configure existing datasets (knowledge bases).
-- Upload and parse documents to datasets.
-- Delete existing datasets.
-- Create datasets.
+- Upload documents to your datasets.
+- Update document configurations in your datasets.
+- Parse documents in your datasets.
 
-To enter the **Team** page, click on your avatar on the top right corner of the page **>** Team.
+:::tip NOTE
+Team members are currently *not* allowed to invite users to your team, and only you, the team owner, is permitted to do so.
+:::
 
-![team_page](https://github.com/user-attachments/assets/f73862f8-ce1b-4287-a2bb-e8d6237f7fd2)
+To enter the **Team** page, click on your avatar on the top right corner of the page **>** Team:
+
+![team](https://github.com/user-attachments/assets/0eac2503-26bc-4568-b3f2-bcd84069a07a)
+
+_On the **Team** page, you can view the information about members of your team and the teams you have joined._
 
 ## Invite team members
 
-You are, by default, the owner of your own team and the only person permitted to invite or remove team members.
+You are, by default, the owner of your own team and the only person permitted to invite users to join your team or remove team members.
 
 :::tip NOTE
 Only RAGFlow users can be invited for now.
@@ -36,6 +41,3 @@ Only RAGFlow users can be invited for now.
 
 ![accept_or_decline_team_invite](https://github.com/user-attachments/assets/6a2cb61f-03d5-4423-9ed1-71df97ff4114)
 
-## Related APIs
-
-Key considerations.
