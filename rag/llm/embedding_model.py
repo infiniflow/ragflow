@@ -33,6 +33,7 @@ from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai 
 import json
 
+
 class Base(ABC):
     def __init__(self, key, model_name):
         pass
