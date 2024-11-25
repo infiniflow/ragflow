@@ -131,7 +131,7 @@ export default {
       fromPlaceholder: 'from',
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
-      toMessage: 'Missing end page number(excluded)',
+      toMessage: 'Missing end page number (excluded)',
       layoutRecognize: 'Layout recognition',
       layoutRecognizeTip:
         'Use visual models for layout analysis to better understand the structure of the document and effectively locate document titles, text blocks, images, and tables. If disabled, only the plain text from the PDF will be retrieved.',
