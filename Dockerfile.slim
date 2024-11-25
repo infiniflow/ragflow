@@ -121,7 +121,6 @@ RUN --mount=type=bind,source=huggingface.co,target=/huggingface.co \
     tar --exclude='.*' -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        /huggingface.co/sentence-transformers/all-MiniLM-L6-v2 \
         | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
 
 # Copy nltk data downloaded via download_deps.py

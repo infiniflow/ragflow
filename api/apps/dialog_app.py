@@ -26,7 +26,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
 
 
-@manager.route('/set', methods=['POST']) # type: ignore
+@manager.route('/set', methods=['POST'])
 @login_required
 def set_dialog():
     req = request.json
@@ -117,7 +117,7 @@ def set_dialog():
         return server_error_response(e)
 
 
-@manager.route('/get', methods=['GET']) # type: ignore
+@manager.route('/get', methods=['GET'])
 @login_required
 def get():
     dialog_id = request.args["dialog_id"]
@@ -143,7 +143,7 @@ def get_kb_names(kb_ids):
     return ids, nms
 
 
-@manager.route('/list', methods=['GET']) # type: ignore
+@manager.route('/list', methods=['GET'])
 @login_required
 def list_dialogs():
     try:
@@ -160,7 +160,7 @@ def list_dialogs():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST']) # type: ignore
+@manager.route('/rm', methods=['POST'])
 @login_required
 @validate_request("dialog_ids")
 def rm():
