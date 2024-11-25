@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 6
 slug: /llm_api_key_setup
 ---
 
