@@ -1,32 +1,32 @@
 ragflow:
-  host: 0.0.0.0
+  host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
 mysql:
-  name: 'rag_flow'
-  user: 'root'
-  password: 'infini_rag_flow'
-  host: 'mysql'
+  name: '${MYSQL_DBNAME:-rag_flow}'
+  user: '${MYSQL_USER:-root}'
+  password: '${MYSQL_PASSWORD:-infini_rag_flow}'
+  host: '${MYSQL_HOST:-mysql}'
   port: 3306
   max_connections: 100
   stale_timeout: 30
 minio:
-  user: 'rag_flow'
-  password: 'infini_rag_flow'
-  host: 'minio:9000'
+  user: '${MINIO_USER:-rag_flow}'
+  password: '${MINIO_PASSWORD:-infini_rag_flow}'
+  host: '${MINIO_HOST:-minio}:9000'
 es:
-  hosts: 'http://es01:9200'
-  username: 'elastic'
-  password: 'infini_rag_flow'
+  hosts: 'http://${ES_HOST:-es01}:9200'
+  username: '${ES_USER:-elastic}'
+  password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
 redis:
   db: 1
-  password: 'infini_rag_flow' 
-  host: 'redis:6379'
+  password: '${REDIS_PASSWORD:-infini_rag_flow}' 
+  host: '${REDIS_HOST:-redis}:6379'
 
 # postgres:
-#   name: 'rag_flow'
-#   user: 'rag_flow'
-#   password: 'infini_rag_flow'
-#   host: 'postgres'
+#   name: '${POSTGRES_DBNAME:-rag_flow}'
+#   user: '${POSTGRES_USER:-rag_flow}'
+#   password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
+#   host: '${POSTGRES_HOST:-postgres}'
 #   port: 5432
 #   max_connections: 100
 #   stale_timeout: 30

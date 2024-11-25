@@ -27,13 +27,13 @@ from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 
 
-@manager.route('/templates', methods=['GET'])
+@manager.route('/templates', methods=['GET']) # type: ignore
 @login_required
 def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
-@manager.route('/list', methods=['GET'])
+@manager.route('/list', methods=['GET']) # type: ignore
 @login_required
 def canvas_list():
     return get_json_result(data=sorted([c.to_dict() for c in \
@@ -41,7 +41,7 @@ def canvas_list():
                            )
 
 
-@manager.route('/rm', methods=['POST'])
+@manager.route('/rm', methods=['POST']) # type: ignore
 @validate_request("canvas_ids")
 @login_required
 def rm():
@@ -54,7 +54,7 @@ def rm():
     return get_json_result(data=True)
 
 
-@manager.route('/set', methods=['POST'])
+@manager.route('/set', methods=['POST']) # type: ignore
 @validate_request("dsl", "title")
 @login_required
 def save():
@@ -78,7 +78,7 @@ def save():
     return get_json_result(data=req)
 
 
-@manager.route('/get/<canvas_id>', methods=['GET'])
+@manager.route('/get/<canvas_id>', methods=['GET']) # type: ignore
 @login_required
 def get(canvas_id):
     e, c = UserCanvasService.get_by_id(canvas_id)
@@ -87,7 +87,7 @@ def get(canvas_id):
     return get_json_result(data=c.to_dict())
 
 
-@manager.route('/completion', methods=['POST'])
+@manager.route('/completion', methods=['POST']) # type: ignore
 @validate_request("id")
 @login_required
 def run():
@@ -163,7 +163,7 @@ def run():
         return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})
 
 
-@manager.route('/reset', methods=['POST'])
+@manager.route('/reset', methods=['POST']) # type: ignore
 @validate_request("id")
 @login_required
 def reset():
@@ -186,7 +186,7 @@ def reset():
         return server_error_response(e)
 
 
-@manager.route('/test_db_connect', methods=['POST'])
+@manager.route('/test_db_connect', methods=['POST']) # type: ignore
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
 def test_db_connect():
@@ -194,7 +194,7 @@ def test_db_connect():
     try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
-                               password=req["password"])
+                               password=req["password"], charset='utf8mb4')
         elif req["db_type"] == 'postgresql':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
