@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import re
 import json
 from api.db import LLMType
@@ -92,6 +93,10 @@ def create_agent_session(tenant_id, agent_id):
 @token_required
 def update(tenant_id, chat_id, session_id):
     req = request.json
+    logging.info(tenant_id)
+    logging.info(session_id)
+    logging.info(chat_id)
+    logging.info("json %s",req["name"])
     req["dialog_id"] = chat_id
     conv_id = session_id
     conv = ConversationService.query(id=conv_id, dialog_id=chat_id)
