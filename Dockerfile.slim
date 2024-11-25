@@ -75,6 +75,7 @@ RUN current_commit=$(git rev-parse --short HEAD); \
     else \
         version_info="$version_info full"; \
     fi; \
+    echo "RAGFlow version: $version_info"; \
     echo $version_info > /ragflow/VERSION
 
 COPY web web
