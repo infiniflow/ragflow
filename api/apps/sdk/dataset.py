@@ -34,7 +34,7 @@ from api.utils.api_utils import (
 )
 
 
-@manager.route("/datasets", methods=["POST"])
+@manager.route("/datasets", methods=["POST"]) # type: ignore
 @token_required
 def create(tenant_id):
     """
@@ -190,7 +190,7 @@ def create(tenant_id):
     return get_result(data=renamed_data)
 
 
-@manager.route("/datasets", methods=["DELETE"])
+@manager.route("/datasets", methods=["DELETE"]) # type: ignore
 @token_required
 def delete(tenant_id):
     """

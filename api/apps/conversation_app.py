@@ -31,7 +31,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from graphrag.mind_map_extractor import MindMapExtractor
 
 
-@manager.route('/set', methods=['POST'])
+@manager.route('/set', methods=['POST']) # type: ignore
 @login_required
 def set_conversation():
     req = request.json
@@ -72,7 +72,7 @@ def set_conversation():
         return server_error_response(e)
 
 
-@manager.route('/get', methods=['GET'])
+@manager.route('/get', methods=['GET']) # type: ignore
 @login_required
 def get():
     conv_id = request.args["conversation_id"]
@@ -94,7 +94,7 @@ def get():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])
+@manager.route('/rm', methods=['POST'])# type: ignore
 @login_required
 def rm():
     conv_ids = request.json["conversation_ids"]
@@ -117,7 +117,7 @@ def rm():
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])
+@manager.route('/list', methods=['GET'])# type: ignore
 @login_required
 def list_convsersation():
     dialog_id = request.args["dialog_id"]
@@ -136,7 +136,7 @@ def list_convsersation():
         return server_error_response(e)
 
 
-@manager.route('/completion', methods=['POST'])
+@manager.route('/completion', methods=['POST'])# type: ignore
 @login_required
 @validate_request("conversation_id", "messages")
 def completion():
@@ -209,7 +209,7 @@ def completion():
         return server_error_response(e)
 
 
-@manager.route('/tts', methods=['POST'])
+@manager.route('/tts', methods=['POST'])# type: ignore
 @login_required
 def tts():
     req = request.json
@@ -243,7 +243,7 @@ def tts():
     return resp
 
 
-@manager.route('/delete_msg', methods=['POST'])
+@manager.route('/delete_msg', methods=['POST'])# type: ignore
 @login_required
 @validate_request("conversation_id", "message_id")
 def delete_msg():
@@ -266,7 +266,7 @@ def delete_msg():
     return get_json_result(data=conv)
 
 
-@manager.route('/thumbup', methods=['POST'])
+@manager.route('/thumbup', methods=['POST'])# type: ignore
 @login_required
 @validate_request("conversation_id", "message_id")
 def thumbup():
@@ -291,7 +291,7 @@ def thumbup():
     return get_json_result(data=conv)
 
 
-@manager.route('/ask', methods=['POST'])
+@manager.route('/ask', methods=['POST'])# type: ignore
 @login_required
 @validate_request("question", "kb_ids")
 def ask_about():
@@ -317,7 +317,7 @@ def ask_about():
     return resp
 
 
-@manager.route('/mindmap', methods=['POST'])
+@manager.route('/mindmap', methods=['POST'])# type: ignore
 @login_required
 @validate_request("question", "kb_ids")
 def mindmap():
@@ -339,7 +339,7 @@ def mindmap():
     return get_json_result(data=mind_map)
 
 
-@manager.route('/related_questions', methods=['POST'])
+@manager.route('/related_questions', methods=['POST'])# type: ignore
 @login_required
 @validate_request("question")
 def related_questions():

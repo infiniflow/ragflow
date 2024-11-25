@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import re
 import json
 from functools import partial
@@ -33,7 +34,7 @@ from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['POST'])
+@manager.route('/chats/<chat_id>/sessions', methods=['POST'])# type: ignore
 @token_required
 def create(tenant_id,chat_id):
     req = request.json
@@ -60,7 +61,7 @@ def create(tenant_id,chat_id):
     return get_result(data=conv)
 
 
-@manager.route('/agents/<agent_id>/sessions', methods=['POST'])
+@manager.route('/agents/<agent_id>/sessions', methods=['POST']) # type: ignore
 @token_required
 def create_agent_session(tenant_id, agent_id):
     req = request.json
@@ -86,10 +87,14 @@ def create_agent_session(tenant_id, agent_id):
     return get_result(data=conv)
 
 
-@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT'])
+@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT']) # type: ignore
 @token_required
 def update(tenant_id,chat_id,session_id):
     req = request.json
+    logging.info(tenant_id)
+    logging.info(session_id)
+    logging.info(chat_id)
+    logging.info("json %s",req["name"])
     req["dialog_id"] = chat_id
     conv_id = session_id
     conv = ConversationService.query(id=conv_id,dialog_id=chat_id)
@@ -108,7 +113,7 @@ def update(tenant_id,chat_id,session_id):
     return get_result()
 
 
-@manager.route('/chats/<chat_id>/completions', methods=['POST'])
+@manager.route('/chats/<chat_id>/completions', methods=['POST']) # type: ignore
 @token_required
 def completion(tenant_id, chat_id):
     req = request.json
@@ -117,7 +122,7 @@ def completion(tenant_id, chat_id):
             "id": get_uuid(),
             "dialog_id": chat_id,
             "name": req.get("name", "New session"),
-            "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
+            "message": [{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]
         }
         if not conv.get("name"):
             return get_error_data_result(message="`name` can not be empty.")
@@ -215,7 +220,7 @@ def completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('/agents/<agent_id>/completions', methods=['POST'])
+@manager.route('/agents/<agent_id>/completions', methods=['POST']) # type: ignore
 @token_required
 def agent_completion(tenant_id, agent_id):
     req = request.json
@@ -373,7 +378,7 @@ def agent_completion(tenant_id, agent_id):
         return get_result(data=result)
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['GET'])
+@manager.route('/chats/<chat_id>/sessions', methods=['GET']) # type: ignore
 @token_required
 def list_session(chat_id,tenant_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
@@ -427,7 +432,7 @@ def list_session(chat_id,tenant_id):
     return get_result(data=convs)
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"])
+@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"]) # type: ignore
 @token_required
 def delete(tenant_id,chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
@@ -452,7 +457,7 @@ def delete(tenant_id,chat_id):
         ConversationService.delete_by_id(id)
     return get_result()
 
-@manager.route('/sessions/ask', methods=['POST'])
+@manager.route('/sessions/ask', methods=['POST']) # type: ignore
 @token_required
 def ask_about(tenant_id):
     req = request.json
@@ -490,7 +495,7 @@ def ask_about(tenant_id):
     return resp
 
 
-@manager.route('/sessions/related_questions', methods=['POST'])
+@manager.route('/sessions/related_questions', methods=['POST']) # type: ignore
 @token_required
 def related_questions(tenant_id):
     req = request.json

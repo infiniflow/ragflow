@@ -26,7 +26,7 @@ from api.utils.api_utils import get_result
 
 
 
-@manager.route('/chats', methods=['POST'])
+@manager.route('/chats', methods=['POST']) # type: ignore
 @token_required
 def create(tenant_id):
     req=request.json
@@ -235,7 +235,7 @@ def update(tenant_id,chat_id):
     return get_result()
 
 
-@manager.route('/chats', methods=['DELETE'])
+@manager.route('/chats', methods=['DELETE']) # type: ignore
 @token_required
 def delete(tenant_id):
     req = request.json
@@ -257,7 +257,7 @@ def delete(tenant_id):
         DialogService.update_by_id(id, temp_dict)
     return get_result()
 
-@manager.route('/chats', methods=['GET'])
+@manager.route('/chats', methods=['GET']) # type: ignore
 @token_required
 def list_chat(tenant_id):
     id = request.args.get("id")
