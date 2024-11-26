@@ -294,10 +294,10 @@ class ESConnection(DocStoreConnection):
                         f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
             scripts = []
             for k, v in newValue.items():
-                if not isinstance(k, str) or not v:
+                if (not isinstance(k, str) or not v) and k != "available_int":
                     continue
                 if isinstance(v, str):
-                    scripts.append(f"ctx._source.{k} = '{v}'")
+                    scripts.append(f"ctx._source.{k} = {json.dumps(v)}")
                 elif isinstance(v, int):
                     scripts.append(f"ctx._source.{k} = {v}")
                 else:
