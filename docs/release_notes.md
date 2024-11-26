@@ -9,11 +9,11 @@ Key features and improvements in the latest releases.
 
 ## v0.14.0
 
-Released on November 26, 2014.
+Released on November 26, 2024.
 
 ### New features
 
-- Supports [Infinity](https://github.com/infiniflow/infinity) or Elasticsearch (default) as document engine for vector storage and full-text indexing. 
+- Supports [Infinity](https://github.com/infiniflow/infinity) or Elasticsearch (default) as document engine for vector storage and full-text indexing.
 - Enhances user experience by adding more variables to the Agent and implementing auto-saving.
 - Adds a three-step translation agent template, inspired by [Andrew Ng's translation agent](https://github.com/andrewyng/translation-agent).
 - Adds an SEO-optimized blog writing agent template.
@@ -35,10 +35,3 @@ Released on November 26, 2014.
 
 - [Create session with agent](https://ragflow.io/docs/dev/python_api_reference#create-session-with-agent)
 - [Converse with agent](https://ragflow.io/docs/dev/python_api_reference#create-session-with-agent)
-
-### Statistics
-
-| Number of merged pull requests | Number of new contributors |
-| ------------------------------ | -------------------------- |
-| 197                            | 18                         |
-
