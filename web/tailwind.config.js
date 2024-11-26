@@ -28,6 +28,11 @@ module.exports = {
 
         'colors-outline-sentiment-primary':
           'var(--colors-outline-sentiment-primary)',
+        'colors-outline-neutral-strong': 'var(--colors-outline-neutral-strong)',
+
+        'colors-text-core-standard': 'var(--colors-text-core-standard)',
+        'colors-text-neutral-strong': 'var(--colors-text-neutral-strong)',
+        'colors-text-neutral-standard': 'var(--colors-text-neutral-standard)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',

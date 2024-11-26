@@ -127,17 +127,17 @@ export default {
       runningStatus4: 'FAIL',
       pageRanges: 'Page Ranges',
       pageRangesTip:
-        'page ranges: Define the page ranges that need to be parsed. The pages that not included in these ranges will be ignored.',
+        'Range of pages to be parsed; pages outside this range will not be processed.',
       fromPlaceholder: 'from',
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
-      toMessage: 'Missing end page number(excluded)',
+      toMessage: 'Missing end page number (excluded)',
       layoutRecognize: 'Layout recognition',
       layoutRecognizeTip:
-        'Use visual models for layout analysis to better identify document structure, find where the titles, text blocks, images, and tables are. Without this feature, only the plain text of the PDF can be obtained.',
+        'Use visual models for layout analysis to better understand the structure of the document and effectively locate document titles, text blocks, images, and tables. If disabled, only the plain text from the PDF will be retrieved.',
       taskPageSize: 'Task page size',
       taskPageSizeMessage: 'Please input your task page size!',
-      taskPageSizeTip: `If using layout recognize, the PDF file will be split into groups of successive. Layout analysis will be performed parallelly between groups to increase the processing speed. The 'Task page size' determines the size of groups. The larger the page size is, the lower the chance of splitting continuous text between pages into different chunks.`,
+      taskPageSizeTip: `During layout recognition, a PDF file is split into chunks and processed in parallel to increase processing speed. This parameter sets the size of each chunk. A larger chunk size reduces the likelihood of splitting continuous text between pages.`,
       addPage: 'Add page',
       greaterThan: 'The current value must be greater than to!',
       greaterThanPrevious:

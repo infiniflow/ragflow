@@ -75,6 +75,7 @@ RUN current_commit=$(git rev-parse --short HEAD); \
     else \
         version_info="$version_info full"; \
     fi; \
+    echo "RAGFlow version: $version_info"; \
     echo $version_info > /ragflow/VERSION
 
 COPY web web
@@ -138,7 +139,7 @@ COPY cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 # Add dependencies of selenium
 RUN --mount=type=bind,source=chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
     unzip /chrome-linux64.zip && \
-    mv chrome-linux64 /opt/chrome/ && \
+    mv chrome-linux64 /opt/chrome && \
     ln -s /opt/chrome/chrome /usr/local/bin/
 RUN --mount=type=bind,source=chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
     unzip -j /chromedriver-linux64.zip chromedriver-linux64/chromedriver && \

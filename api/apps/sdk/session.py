@@ -13,10 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import re
 import json
-from functools import partial
+from copy import deepcopy
 from uuid import uuid4
 from api.db import LLMType
 from flask import request, Response
@@ -34,19 +33,19 @@ from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['POST'])# type: ignore
+@manager.route('/chats/<chat_id>/sessions', methods=['POST'])
 @token_required
 def create(tenant_id,chat_id):
     req = request.json
     req["dialog_id"] = chat_id
-    e, dia = DialogService.get_by_id(req["dialog_id"])
-    if not e:
-        return get_error_data_result(message="Dialog not found")
+    dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
+    if not dia:
+        return get_error_data_result(message="You do not own the assistant.")
     conv = {
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
         "name": req.get("name", "New session"),
-        "message": [{"role": "assistant", "content":  dia.prompt_config["prologue"]}]
+        "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -61,7 +60,7 @@ def create(tenant_id,chat_id):
     return get_result(data=conv)
 
 
-@manager.route('/agents/<agent_id>/sessions', methods=['POST']) # type: ignore
+@manager.route('/agents/<agent_id>/sessions', methods=['POST'])
 @token_required
 def create_agent_session(tenant_id, agent_id):
     req = request.json
@@ -87,14 +86,10 @@ def create_agent_session(tenant_id, agent_id):
     return get_result(data=conv)
 
 
-@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT']) # type: ignore
+@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT'])
 @token_required
 def update(tenant_id,chat_id,session_id):
     req = request.json
-    logging.info(tenant_id)
-    logging.info(session_id)
-    logging.info(chat_id)
-    logging.info("json %s",req["name"])
     req["dialog_id"] = chat_id
     conv_id = session_id
     conv = ConversationService.query(id=conv_id,dialog_id=chat_id)
@@ -113,7 +108,7 @@ def update(tenant_id,chat_id,session_id):
     return get_result()
 
 
-@manager.route('/chats/<chat_id>/completions', methods=['POST']) # type: ignore
+@manager.route('/chats/<chat_id>/completions', methods=['POST'])
 @token_required
 def completion(tenant_id, chat_id):
     req = request.json
@@ -122,7 +117,7 @@ def completion(tenant_id, chat_id):
             "id": get_uuid(),
             "dialog_id": chat_id,
             "name": req.get("name", "New session"),
-            "message": [{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]
+            "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
         }
         if not conv.get("name"):
             return get_error_data_result(message="`name` can not be empty.")
@@ -160,6 +155,14 @@ def completion(tenant_id, chat_id):
 
     def fillin_conv(ans):
         reference = ans["reference"]
+        temp_reference = deepcopy(ans["reference"])
+        nonlocal conv, message_id
+        if not conv.reference:
+            conv.reference.append(temp_reference)
+        else:
+            conv.reference[-1] = temp_reference
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"],
+                            "id": message_id, "prompt": ans.get("prompt", "")}
         if "chunks" in reference:
             chunks = reference.get("chunks")
             chunk_list = []
@@ -170,7 +173,7 @@ def completion(tenant_id, chat_id):
                     "document_id": chunk["doc_id"],
                     "document_name": chunk["docnm_kwd"],
                     "dataset_id": chunk["kb_id"],
-                    "image_id": chunk.get("img_id", ""),
+                    "image_id": chunk.get("image_id", ""),
                     "similarity": chunk["similarity"],
                     "vector_similarity": chunk["vector_similarity"],
                     "term_similarity": chunk["term_similarity"],
@@ -178,13 +181,6 @@ def completion(tenant_id, chat_id):
                 }
                 chunk_list.append(new_chunk)
             reference["chunks"] = chunk_list
-        nonlocal conv, message_id
-        if not conv.reference:
-            conv.reference.append(ans["reference"])
-        else:
-            conv.reference[-1] = ans["reference"]
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"],
-                            "id": message_id, "prompt": ans.get("prompt", "")}
         ans["id"] = message_id
         ans["session_id"]=session_id
 
@@ -220,7 +216,7 @@ def completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('/agents/<agent_id>/completions', methods=['POST']) # type: ignore
+@manager.route('/agents/<agent_id>/completions', methods=['POST'])
 @token_required
 def agent_completion(tenant_id, agent_id):
     req = request.json
@@ -276,17 +272,24 @@ def agent_completion(tenant_id, agent_id):
 
     def fillin_conv(ans):
         reference = ans["reference"]
+        temp_reference = deepcopy(ans["reference"])
+        nonlocal conv, message_id
+        if not conv.reference:
+            conv.reference.append(temp_reference)
+        else:
+            conv.reference[-1] = temp_reference
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
         if "chunks" in reference:
             chunks = reference.get("chunks")
             chunk_list = []
             for chunk in chunks:
                 new_chunk = {
-                    "id": chunk.get("chunk_id", ""),
+                    "id": chunk["chunk_id"],
                     "content": chunk["content_with_weight"],
                     "document_id": chunk["doc_id"],
                     "document_name": chunk["docnm_kwd"],
                     "dataset_id": chunk["kb_id"],
-                    "image_id": chunk.get("img_id", ""),
+                    "image_id": chunk["image_id"],
                     "similarity": chunk["similarity"],
                     "vector_similarity": chunk["vector_similarity"],
                     "term_similarity": chunk["term_similarity"],
@@ -294,12 +297,6 @@ def agent_completion(tenant_id, agent_id):
                 }
                 chunk_list.append(new_chunk)
             reference["chunks"] = chunk_list
-        nonlocal conv, message_id
-        if not conv.reference:
-            conv.reference.append(ans["reference"])
-        else:
-            conv.reference[-1] = ans["reference"]
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
         ans["id"] = message_id
         ans["session_id"] = session_id
 
@@ -378,7 +375,7 @@ def agent_completion(tenant_id, agent_id):
         return get_result(data=result)
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['GET']) # type: ignore
+@manager.route('/chats/<chat_id>/sessions', methods=['GET'])
 @token_required
 def list_session(chat_id,tenant_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
@@ -413,12 +410,12 @@ def list_session(chat_id,tenant_id):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
-                                "id": chunk.get("chunk_id", ""),
-                                "content": chunk.get("content_with_weight", ""),
-                                "document_id": chunk.get("doc_id", ""), 
-                                "document_name": chunk.get("docnm_kwd", ""),
-                                "dataset_id": chunk.get("kb_id", ""), 
-                                "image_id": chunk.get("img_id", ""),
+                                "id": chunk["chunk_id"],
+                                "content": chunk["content_with_weight"],
+                                "document_id": chunk["doc_id"],
+                                "document_name": chunk["docnm_kwd"],
+                                "dataset_id": chunk["kb_id"],
+                                "image_id": chunk["image_id"],
                                 "similarity": chunk["similarity"],
                                 "vector_similarity": chunk["vector_similarity"],
                                 "term_similarity": chunk["term_similarity"],
@@ -432,7 +429,7 @@ def list_session(chat_id,tenant_id):
     return get_result(data=convs)
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"]) # type: ignore
+@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"])
 @token_required
 def delete(tenant_id,chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
@@ -457,7 +454,7 @@ def delete(tenant_id,chat_id):
         ConversationService.delete_by_id(id)
     return get_result()
 
-@manager.route('/sessions/ask', methods=['POST']) # type: ignore
+@manager.route('/sessions/ask', methods=['POST'])
 @token_required
 def ask_about(tenant_id):
     req = request.json
@@ -495,7 +492,7 @@ def ask_about(tenant_id):
     return resp
 
 
-@manager.route('/sessions/related_questions', methods=['POST']) # type: ignore
+@manager.route('/sessions/related_questions', methods=['POST'])
 @token_required
 def related_questions(tenant_id):
     req = request.json

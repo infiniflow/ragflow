@@ -14,7 +14,7 @@
 - **docker-compose.yml**  
   Sets up environment for RAGFlow and its dependencies.
 - **docker-compose-base.yml**  
-  Sets up environment for RAGFlow's base services: Elasticsearch, MySQL, MinIO, and Redis.
+  Sets up environment for RAGFlow's dependencies: Elasticsearch, MySQL, MinIO, and Redis.
 
 ## 🐬 Docker environment variables
 
@@ -120,7 +120,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### Maximum file size
 
 - `MAX_CONTENT_LENGTH`  
-  The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change 128M file size limit.
+  The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit.
 
 ## 🐋 Service configuration
 
