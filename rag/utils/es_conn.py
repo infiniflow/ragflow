@@ -215,11 +215,11 @@ class ESConnection(DocStoreConnection):
                                   id=chunkId, source=True, )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
-                if not res.get("found"):
-                    return None
                 chunk = res["_source"]
                 chunk["id"] = chunkId
                 return chunk
+            except NotFoundError:
+                return None
             except Exception as e:
                 logging.exception(f"ESConnection.get({chunkId}) got exception")
                 if str(e).find("Timeout") > 0:
