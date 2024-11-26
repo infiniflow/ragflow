@@ -153,6 +153,10 @@ const routes = [
         path: '/profile-setting/model',
         component: '@/pages/profile-setting/model',
       },
+      {
+        path: '/profile-setting/prompt',
+        component: '@/pages/profile-setting/prompt',
+      },
     ],
   },
 ];
