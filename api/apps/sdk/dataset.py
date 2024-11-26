@@ -252,9 +252,9 @@ def delete(tenant_id):
                     File.id == f2d[0].file_id,
                 ]
             )
-            FileService.filter_delete(
-                [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
             File2DocumentService.delete_by_document_id(doc.id)
+        FileService.filter_delete(
+            [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
         if not KnowledgebaseService.delete_by_id(id):
             return get_error_data_result(message="Delete dataset error.(Database error)")
     return get_result(code=settings.RetCode.SUCCESS)
