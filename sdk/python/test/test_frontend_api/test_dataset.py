@@ -1,6 +1,9 @@
 from common import HOST_ADDRESS, create_dataset, list_dataset, rm_dataset
-import requests
-
+import re
+import pytest
+import random
+import string
+from api.constants import DATASET_NAME_LIMIT
 
 def test_dataset(get_auth):
     # create dataset
@@ -56,8 +59,47 @@ def test_dataset_1k_dataset(get_auth):
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")
 
-# delete dataset
+def test_duplicated_name_dataset(get_auth):
+    # create dataset
+    for i in range(20):
+        res = create_dataset(get_auth, "test_create_dataset")
+        assert res.get("code") == 0, f"{res.get('message')}"
+
+    # list dataset
+    res = list_dataset(get_auth, 1)
+    data = res.get("data")
+    dataset_list = []
+    pattern = r'^test_create_dataset.*'
+    for item in data:
+        dataset_name = item.get("name")
+        dataset_id = item.get("id")
+        dataset_list.append(dataset_id)
+        match = re.match(pattern, dataset_name)
+        assert match != None
+
+    for dataset_id in dataset_list:
+        res = rm_dataset(get_auth, dataset_id)
+        assert res.get("code") == 0, f"{res.get('message')}"
+    print(f"{len(dataset_list)} datasets are deleted")
+
+def test_invalid_name_dataset(get_auth):
+    # create dataset
+    # with pytest.raises(Exception) as e:
+    res = create_dataset(get_auth, 0)
+    assert res['code'] == 102
+
+    res = create_dataset(get_auth, "")
+    assert res['code'] == 102
+
+    long_string = ""
+
+    while len(long_string) <= DATASET_NAME_LIMIT:
+        long_string += random.choice(string.ascii_letters + string.digits)
+
+    res = create_dataset(get_auth, long_string)
+    assert res['code'] == 102
+    print(res)
+
 # create invalid name dataset
 # update dataset with different parameters
-# create duplicated name dataset
 #
