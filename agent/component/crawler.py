@@ -65,7 +65,3 @@ class Crawler(ComponentBase, ABC):
             elif self._param.extract_type == 'content':
                 result.extracted_content
             return result.markdown
-            
-
-
-    
