@@ -74,11 +74,17 @@ def set_dialog():
         e, tenant = TenantService.get_by_id(current_user.id)
         if not e:
             return get_data_error_result(message="Tenant not found!")
+        kbs = KnowledgebaseService.get_by_ids(req.get("kb_ids"))
+        embd_count = len(set([kb.embd_id for kb in kbs]))
+        if embd_count != 1:
+            return get_data_error_result(message=f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"')
+
         llm_id = req.get("llm_id", tenant.llm_id)
         if not dialog_id:
             if not req.get("kb_ids"):
                 return get_data_error_result(
                     message="Fail! Please select knowledgebase!")
+
             dia = {
                 "id": get_uuid(),
                 "tenant_id": current_user.id,
