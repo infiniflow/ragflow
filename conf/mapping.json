@@ -130,7 +130,8 @@
       },
       {
         "string": {
-          "match": "*_(with_weight|list)$",
+          "match_pattern": "regex",
+          "match": "^.*_(with_weight|list)$",
           "mapping": {
             "type": "text",
             "index": "false",
