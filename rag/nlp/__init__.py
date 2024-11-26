@@ -28,6 +28,8 @@ from cn2an import cn2an
 from PIL import Image
 import json
 
+import chardet
+
 all_codecs = [
     'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
     'cp037', 'cp273', 'cp424', 'cp437',
@@ -43,12 +45,17 @@ all_codecs = [
     'iso8859_14', 'iso8859_15', 'iso8859_16', 'johab', 'koi8_r', 'koi8_t', 'koi8_u',
     'kz1048', 'mac_cyrillic', 'mac_greek', 'mac_iceland', 'mac_latin2', 'mac_roman',
     'mac_turkish', 'ptcp154', 'shift_jis', 'shift_jis_2004', 'shift_jisx0213',
-    'utf_32', 'utf_32_be', 'utf_32_le''utf_16_be', 'utf_16_le', 'utf_7'
+    'utf_32', 'utf_32_be', 'utf_32_le', 'utf_16_be', 'utf_16_le', 'utf_7', 'windows-1250', 'windows-1251',
+    'windows-1252', 'windows-1253', 'windows-1254', 'windows-1255', 'windows-1256',
+    'windows-1257', 'windows-1258', 'latin-2'
 ]
 
 
 def find_codec(blob):
-    global all_codecs
+    detected = chardet.detect(blob[:1024])
+    if detected['confidence'] > 0.5:
+        return detected['encoding']
+
     for c in all_codecs:
         try:
             blob[:1024].decode(c)
