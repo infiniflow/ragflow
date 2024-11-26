@@ -27,7 +27,7 @@ _On the **Team** page, you can view the information about members of your team a
 
 You are, by default, the owner of your own team and the only person permitted to invite users to join your team or remove team members.
 
-![invite_team_member](https://github.com/user-attachments/assets/75e19d53-3a00-480e-8b16-fe00c23c4486)
+![invite_team_member](https://github.com/user-attachments/assets/d85b55c3-7e86-4f04-a414-ca18a9ee8963)
 
 ## Remove team members
 
@@ -36,4 +36,3 @@ You are, by default, the owner of your own team and the only person permitted to
 ## Accept or decline team invite
 
 ![accept_or_decline_team_invite](https://github.com/user-attachments/assets/6a2cb61f-03d5-4423-9ed1-71df97ff4114)
-
