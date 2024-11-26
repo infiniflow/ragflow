@@ -162,9 +162,9 @@ def rm():
                     message="Database error (Document removal)!")
             f2d = File2DocumentService.get_by_document_id(doc.id)
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
-            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
             File2DocumentService.delete_by_document_id(doc.id)
-
+        FileService.filter_delete(
+            [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
         if not KnowledgebaseService.delete_by_id(req["kb_id"]):
             return get_data_error_result(
                 message="Database error (Knowledgebase removal)!")
