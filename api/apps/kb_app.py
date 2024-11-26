@@ -125,8 +125,8 @@ def detail():
 @manager.route('/list', methods=['GET'])
 @login_required
 def list_kbs():
-    page_number = request.args.get("page", 1)
-    items_per_page = request.args.get("page_size", 150)
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 150))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", True)
     try:
