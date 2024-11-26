@@ -149,6 +149,10 @@ const routes = [
         path: '/profile-setting/plan',
         component: '@/pages/profile-setting/plan',
       },
+      {
+        path: '/profile-setting/model',
+        component: '@/pages/profile-setting/model',
+      },
     ],
   },
 ];
