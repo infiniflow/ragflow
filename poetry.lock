@@ -196,13 +196,13 @@ files = [
 
 [[package]]
 name = "akshare"
-version = "1.15.32"
+version = "1.15.33"
 description = "AKShare is an elegant and simple financial data interface library for Python, built for human beings!"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "akshare-1.15.32-py3-none-any.whl", hash = "sha256:4424f4adc4364f4f0a63fe3153772a3113578c6bc594a5b46ed065d8805f5084"},
-    {file = "akshare-1.15.32.tar.gz", hash = "sha256:fb3129cbcd089cc949e15365ff664cba1739f121fd0b7710fddb4adf5b1fee53"},
+    {file = "akshare-1.15.33-py3-none-any.whl", hash = "sha256:6f56682404cbff892b23ec896528199392f06a11a14c287cdc36f1f57c3ea612"},
+    {file = "akshare-1.15.33.tar.gz", hash = "sha256:6bd46e9ab767237c57adce35a409b73a6607b12b8c36d3bf2d2fbe83121d6e3d"},
 ]
 
 [package.dependencies]
@@ -5969,6 +5969,47 @@ xlsx2csv = ["xlsx2csv (>=0.8.0)"]
 xlsxwriter = ["xlsxwriter"]
 
 [[package]]
+name = "polars-lts-cpu"
+version = "1.15.0"
+description = "Blazingly fast DataFrame library"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "polars_lts_cpu-1.15.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:21dfba817d74b34b01e9f9c301d07a6308c84e84588f28854413046ea8cc2692"},
+    {file = "polars_lts_cpu-1.15.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:3ec8bb702555fe29eca975cb18612acc7eb62e29023de5487b3e2365c8fbfdf4"},
+    {file = "polars_lts_cpu-1.15.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cf5414c234de781861f7a258eeb5a14f06280cc98d6d1d3fc08cdc506e764e21"},
+    {file = "polars_lts_cpu-1.15.0-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:930acac72f7143d9baee45c8314e2d1bf342347e37df9da7231403d810f13081"},
+    {file = "polars_lts_cpu-1.15.0-cp39-abi3-win_amd64.whl", hash = "sha256:71be1e40f25ae4987d8279d8881e855fb7bd1957ed51a149c5191006bc430e72"},
+    {file = "polars_lts_cpu-1.15.0.tar.gz", hash = "sha256:0a1108675521871e6d30e4c1941a0a9962a0af979da7d68fc41fdb1a07efd8d7"},
+]
+
+[package.extras]
+adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
+all = ["polars-lts-cpu[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]"]
+async = ["gevent"]
+calamine = ["fastexcel (>=0.9)"]
+cloudpickle = ["cloudpickle"]
+connectorx = ["connectorx (>=0.3.2)"]
+database = ["nest-asyncio", "polars-lts-cpu[adbc,connectorx,sqlalchemy]"]
+deltalake = ["deltalake (>=0.15.0)"]
+excel = ["polars-lts-cpu[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
+fsspec = ["fsspec"]
+gpu = ["cudf-polars-cu12"]
+graph = ["matplotlib"]
+iceberg = ["pyiceberg (>=0.5.0)"]
+numpy = ["numpy (>=1.16.0)"]
+openpyxl = ["openpyxl (>=3.0.0)"]
+pandas = ["pandas", "polars-lts-cpu[pyarrow]"]
+plot = ["altair (>=5.4.0)"]
+pyarrow = ["pyarrow (>=7.0.0)"]
+pydantic = ["pydantic"]
+sqlalchemy = ["polars-lts-cpu[pandas]", "sqlalchemy"]
+style = ["great-tables (>=0.8.0)"]
+timezone = ["backports-zoneinfo", "tzdata"]
+xlsx2csv = ["xlsx2csv (>=0.8.0)"]
+xlsxwriter = ["xlsxwriter"]
+
+[[package]]
 name = "pooch"
 version = "1.8.2"
 description = "A friend to fetch your data files"
@@ -10036,4 +10077,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "4d6643be9ffc45d46c9a706380c0c6796d3ddef1d0acb74cdf7d074aeab9dbfa"
+content-hash = "aecf86b4252ba40df4553226f3fec3a1130b4bd4a9bae226337de4739a62e799"
