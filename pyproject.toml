@@ -118,7 +118,8 @@ pymysql = "^1.1.1"
 mini-racer = "^0.12.4"
 pyicu = "^2.13.1"
 flasgger = "^0.9.7.1"
-polars = "^1.9.0"
+polars = { version = "^1.9.0", markers = "platform_machine == 'x86_64'" }
+polars-lts-cpu = { version = "^1.9.0", markers = "platform_machine == 'arm64'" }
 
 
 [tool.poetry.group.full]
