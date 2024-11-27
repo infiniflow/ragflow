@@ -59,8 +59,8 @@ class KGSearch(Dealer):
         q_vec = matchDense.embedding_data
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
                                  "doc_id", f"q_{len(q_vec)}_vec", "position_list", "name_kwd",
-                                 "q_1024_vec", "q_1536_vec", "available_int", "content_with_weight",
-                                 "weight_int", "weight_flt", "rank_int"
+                                 "available_int", "content_with_weight",
+                                 "weight_int", "weight_flt"
                                  ])
 
         fusionExpr = FusionExpr("weighted_sum", 32, {"weights": "0.5, 0.5"})
