@@ -114,6 +114,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
     if prog is not None:
         d["progress"] = prog
     try:
+        logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
         TaskService.update_progress(task_id, d)
     except Exception:
         logging.exception(f"set_progress({task_id}) got exception")
