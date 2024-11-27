@@ -228,7 +228,7 @@ class Dealer:
             idf2 = np.array([idf(df(t), 1000000000) for t in tks])
             wts = (0.3 * idf1 + 0.7 * idf2) * \
                 np.array([ner(t) * postag(t) for t in tks])
-            wts = [math.pow(s, 2) for s in wts]
+            wts = [s for s in wts]
             tw = list(zip(tks, wts))
         else:
             for tk in tks:
@@ -237,7 +237,7 @@ class Dealer:
                 idf2 = np.array([idf(df(t), 1000000000) for t in tt])
                 wts = (0.3 * idf1 + 0.7 * idf2) * \
                     np.array([ner(t) * postag(t) for t in tt])
-                wts = [math.pow(s, 2) for s in wts]
+                wts = [s for s in wts]
                 tw.extend(zip(tt, wts))
 
         S = np.sum([s for _, s in tw])
