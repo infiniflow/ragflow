@@ -132,6 +132,11 @@ const routes = [
     component: '@/pages/home',
   },
   {
+    path: '/datasets',
+    layout: false,
+    component: '@/pages/datasets',
+  },
+  {
     path: '/profile-setting',
     layout: false,
     component: '@/pages/profile-setting',
