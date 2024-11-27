@@ -22,7 +22,7 @@ Released on November 26, 2024.
 - Optimizes term weight calculations, reducing the retrieval time by 50%.
 - Improves task executor monitoring with additional performance indicators.
 - Replaces Redis with Valkey.
-- Adds three new UI languages (contributed by the community): Indonesian, Spanish, and Vietnamese.
+- Adds three new UI languages (*contributed by the community*): Indonesian, Spanish, and Vietnamese.
 
 ### Compatability changes
 
@@ -30,8 +30,8 @@ As of this release, **service_config.yaml.template** replaces **service_config.y
 
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
-:::tip NOTE
-Ensure that you [upgrade your code to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
+:::danger
+Ensure that you [upgrade both your code and Docker image to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
 :::
 
 ### Related APIs
