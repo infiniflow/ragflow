@@ -148,9 +148,9 @@ class ESConnection(DocStoreConnection):
                 vector_similarity_weight = float(weights.split(",")[1])
         for m in matchExprs:
             if isinstance(m, MatchTextExpr):
-                minimum_should_match = "0%"
-                if "minimum_should_match" in m.extra_options:
-                    minimum_should_match = str(int(m.extra_options["minimum_should_match"] * 100)) + "%"
+                minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
+                if isinstance(minimum_should_match, float):
+                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
                 bqry.must.append(Q("query_string", fields=m.fields,
                                    type="best_fields", query=m.matching_text,
                                    minimum_should_match=minimum_should_match,
