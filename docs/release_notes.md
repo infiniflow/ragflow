@@ -61,7 +61,7 @@ This approach eliminates the need to manually update **service_config.yaml** aft
 - Introduces HTTP and Python APIs for dataset management, file management within dataset, and chat assistant management.
 
 :::tip NOTE
-To download our Python SDK:
+To download RAGFlow's Python SDK:
 
 ```bash
 pip install ragflow-sdk==0.13.0
