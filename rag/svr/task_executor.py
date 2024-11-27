@@ -492,6 +492,7 @@ def report_status():
             logging.exception("report_status got exception")
         time.sleep(30)
 
+
 def analyze_heap(snapshot1: tracemalloc.Snapshot, snapshot2: tracemalloc.Snapshot, snapshot_id: int, dump_full: bool):
     msg = ""
     if dump_full:
@@ -507,6 +508,7 @@ def analyze_heap(snapshot1: tracemalloc.Snapshot, snapshot2: tracemalloc.Snapsho
     for stat in stats1_vs_2[:3]:
         msg += '\n'.join(stat.traceback.format())
     logging.info(msg)
+
 
 def main():
     settings.init_settings()

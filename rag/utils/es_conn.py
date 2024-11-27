@@ -215,11 +215,11 @@ class ESConnection(DocStoreConnection):
                                   id=chunkId, source=True, )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
-                if not res.get("found"):
-                    return None
                 chunk = res["_source"]
                 chunk["id"] = chunkId
                 return chunk
+            except NotFoundError:
+                return None
             except Exception as e:
                 logging.exception(f"ESConnection.get({chunkId}) got exception")
                 if str(e).find("Timeout") > 0:
@@ -294,7 +294,7 @@ class ESConnection(DocStoreConnection):
                         f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
             scripts = []
             for k, v in newValue.items():
-                if not isinstance(k, str) or not v:
+                if (not isinstance(k, str) or not v) and k != "available_int":
                     continue
                 if isinstance(v, str):
                     scripts.append(f"ctx._source.{k} = '{v}'")
