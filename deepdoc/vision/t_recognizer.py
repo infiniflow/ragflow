@@ -50,7 +50,7 @@ def main(args):
         if args.mode.lower() == "tsr":
             #lyt = [t for t in lyt if t["type"] == "table column"]
             html = get_table_html(images[i], lyt, ocr)
-            with open(outputs[i] + ".html", "w+") as f:
+            with open(outputs[i] + ".html", "w+", encoding='utf-8') as f:
                 f.write(html)
             lyt = [{
                 "type": t["label"],

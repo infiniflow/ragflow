@@ -11,7 +11,10 @@
 #  limitations under the License.
 #
 
-import os, json,re,copy
+import os
+import json
+import re
+import copy
 import pandas as pd
 current_file_path = os.path.dirname(os.path.abspath(__file__))
 TBL = pd.read_csv(os.path.join(current_file_path, "res/schools.csv"), sep="\t", header=0).fillna("")
@@ -23,7 +26,7 @@ GOOD_SCH = set([re.sub(r"[,. &（）()]+", "", c) for c in GOOD_SCH])
 def loadRank(fnm):
     global TBL
     TBL["rank"] = 1000000
-    with open(fnm, "r",encoding='UTF-8') as f:
+    with open(fnm, "r", encoding='utf-8') as f:
         while True:
             l = f.readline()
             if not l:break
@@ -32,7 +35,7 @@ def loadRank(fnm):
                 nm,rk = l[0].strip(),int(l[1])
                 #assert len(TBL[((TBL.name_cn == nm) | (TBL.name_en == nm))]),f"<{nm}>"
                 TBL.loc[((TBL.name_cn == nm) | (TBL.name_en == nm)), "rank"] = rk
-            except Exception as e:
+            except Exception:
                 pass
 
 
