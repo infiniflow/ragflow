@@ -30,6 +30,10 @@ As of this release, **service_config.yaml.template** replaces **service_config.y
 
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
+:::tip NOTE
+Ensure that you [upgrade your code to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
+:::
+
 ### Related APIs
 
 #### HTTP APIs
