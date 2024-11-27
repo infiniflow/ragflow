@@ -10,9 +10,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-import re, copy, time, datetime, demjson3, \
-    traceback, signal
+import logging
+import re
+import copy
+import time
+import datetime
+import demjson3
+import traceback
+import signal
 import numpy as np
 from deepdoc.parser.resume.entities import degrees, schools, corporations
 from rag.nlp import rag_tokenizer, surname
@@ -79,7 +84,7 @@ def forEdu(cv):
                 y, m, d = getYMD(dt)
                 st_dt.append(str(y))
                 e["start_dt_kwd"] = str(y)
-            except Exception as e:
+            except Exception:
                 pass
 
         r = schools.select(n.get("school_name", ""))
@@ -158,7 +163,7 @@ def forEdu(cv):
             y, m, d = getYMD(edu_end_dt)
             cv["work_exp_flt"] = min(int(str(datetime.date.today())[0:4]) - int(y), cv.get("work_exp_flt", 1000))
         except Exception as e:
-            print("EXCEPTION: ", e, edu_end_dt, cv.get("work_exp_flt"))
+            logging.exception("forEdu {} {} {}".format(e, edu_end_dt, cv.get("work_exp_flt")))
     if sch:
         cv["school_name_kwd"] = sch
         if (len(cv.get("degree_kwd", [])) >= 1 and "本科" in cv["degree_kwd"]) \
@@ -233,7 +238,7 @@ def forWork(cv):
         if type(n) == type(""):
             try:
                 n = json_loads(n)
-            except Exception as e:
+            except Exception:
                 continue
 
         if n.get("start_time") and (not work_st_tm or n["start_time"] < work_st_tm): work_st_tm = n["start_time"]
@@ -269,8 +274,8 @@ def forWork(cv):
 
         try:
             duas.append((datetime.datetime.strptime(ed, "%Y-%m-%d") - datetime.datetime.strptime(st, "%Y-%m-%d")).days)
-        except Exception as e:
-            print("kkkkkkkkkkkkkkkkkkkk", n.get("start_time"), n.get("end_time"))
+        except Exception:
+            logging.exception("forWork {} {}".format(n.get("start_time"), n.get("end_time")))
 
         if n.get("scale"):
             r = re.search(r"^([0-9]+)", str(n["scale"]))
@@ -327,7 +332,7 @@ def forWork(cv):
             y, m, d = getYMD(work_st_tm)
             cv["work_exp_flt"] = min(int(str(datetime.date.today())[0:4]) - int(y), cv.get("work_exp_flt", 1000))
         except Exception as e:
-            print("EXCEPTION: ", e, work_st_tm, cv.get("work_exp_flt"))
+            logging.exception("forWork {} {} {}".format(e, work_st_tm, cv.get("work_exp_flt")))
 
     cv["job_num_int"] = 0
     if duas:
@@ -457,8 +462,8 @@ def parse(cv):
                     t = k[:-4]
                     cv[f"{t}_kwd"] = nms
                     cv[f"{t}_tks"] = rag_tokenizer.tokenize(" ".join(nms))
-            except Exception as e:
-                print("【EXCEPTION】:", str(traceback.format_exc()), cv[k])
+            except Exception:
+                logging.exception("parse {} {}".format(str(traceback.format_exc()), cv[k]))
                 cv[k] = []
 
         # tokenize fields
@@ -524,7 +529,7 @@ def parse(cv):
         if not y: y = "2012"
         if not m: m = "01"
         if not d: d = "01"
-        cv["updated_at_dt"] = f"%s-%02d-%02d 00:00:00" % (y, int(m), int(d))
+        cv["updated_at_dt"] = "%s-%02d-%02d 00:00:00" % (y, int(m), int(d))
         # long text tokenize
 
     if cv.get("responsibilities"): cv["responsibilities_ltks"] = rag_tokenizer.tokenize(rmHtmlTag(cv["responsibilities"]))
@@ -556,10 +561,10 @@ def parse(cv):
                 cv["work_exp_flt"] = (time.time() - int(int(cv["work_start_time"]) / 1000)) / 3600. / 24. / 365.
             elif re.match(r"[0-9]{4}[^0-9]", str(cv["work_start_time"])):
                 y, m, d = getYMD(str(cv["work_start_time"]))
-                cv["work_start_dt"] = f"%s-%02d-%02d 00:00:00" % (y, int(m), int(d))
+                cv["work_start_dt"] = "%s-%02d-%02d 00:00:00" % (y, int(m), int(d))
                 cv["work_exp_flt"] = int(str(datetime.date.today())[0:4]) - int(y)
     except Exception as e:
-        print("【EXCEPTION】", e, "==>", cv.get("work_start_time"))
+        logging.exception("parse {} ==> {}".format(e, cv.get("work_start_time")))
     if "work_exp_flt" not in cv and cv.get("work_experience", 0): cv["work_exp_flt"] = int(cv["work_experience"]) / 12.
 
     keys = list(cv.keys())
@@ -574,7 +579,7 @@ def parse(cv):
 
     cv["tob_resume_id"] = str(cv["tob_resume_id"])
     cv["id"] = cv["tob_resume_id"]
-    print("CCCCCCCCCCCCCCC")
+    logging.debug("CCCCCCCCCCCCCCC")
 
     return dealWithInt64(cv)
 
@@ -589,4 +594,3 @@ def dealWithInt64(d):
 
     if isinstance(d, np.integer): d = int(d)
     return d
-

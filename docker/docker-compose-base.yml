@@ -1,11 +1,14 @@
 services:
   es01:
     container_name: ragflow-es-01
+    profiles:
+      - elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - esdata01:/usr/share/elasticsearch/data
     ports:
       - ${ES_PORT}:9200
+    env_file: .env
     environment:
       - node.name=es01
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
@@ -27,12 +30,42 @@ services:
       retries: 120
     networks:
       - ragflow
-    restart: always
+    restart: on-failure
+
+  infinity:
+    container_name: ragflow-infinity
+    profiles:
+      - infinity
+    image: infiniflow/infinity:v0.5.0-dev5
+    volumes:
+      - infinity_data:/var/infinity
+    ports:
+      - ${INFINITY_THRIFT_PORT}:23817
+      - ${INFINITY_HTTP_PORT}:23820
+      - ${INFINITY_PSQL_PORT}:5432
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 500000
+        hard: 500000
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "curl", "http://localhost:23820/admin/node/current"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    restart: on-failure
+
 
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
     image: mysql:8.0.39
     container_name: ragflow-mysql
+    env_file: .env
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
       - TZ=${TIMEZONE}
@@ -55,7 +88,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 3
-    restart: always
+    restart: on-failure
 
   minio:
     image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
@@ -64,6 +97,7 @@ services:
     ports:
       - ${MINIO_PORT}:9000
       - ${MINIO_CONSOLE_PORT}:9001
+    env_file: .env
     environment:
       - MINIO_ROOT_USER=${MINIO_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
@@ -72,24 +106,27 @@ services:
       - minio_data:/data
     networks:
       - ragflow
-    restart: always
+    restart: on-failure
 
   redis:
-    image: redis:7.2.4
+    image: valkey/valkey:8
     container_name: ragflow-redis
     command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru
+    env_file: .env
     ports:
       - ${REDIS_PORT}:6379
     volumes:
       - redis_data:/data
     networks:
       - ragflow
-    restart: always
+    restart: on-failure
 
 
 
 volumes:
   esdata01:
+    driver: local
+  infinity_data:
     driver: local
   mysql_data:
     driver: local

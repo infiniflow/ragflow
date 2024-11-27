@@ -5,6 +5,11 @@ const routes = [
     layout: false,
   },
   {
+    path: '/login-next',
+    component: '@/pages/login-next',
+    layout: false,
+  },
+  {
     path: '/chat/share',
     component: '@/pages/chat/share',
     layout: false,
@@ -115,6 +120,40 @@ const routes = [
     path: '/*',
     component: '@/pages/404',
     layout: false,
+  },
+  {
+    path: '/demo',
+    component: '@/pages/demo',
+    layout: false,
+  },
+  {
+    path: '/home',
+    layout: false,
+    component: '@/pages/home',
+  },
+  {
+    path: '/profile-setting',
+    layout: false,
+    component: '@/pages/profile-setting',
+    routes: [
+      { path: '/profile-setting', redirect: '/profile-setting/profile' },
+      {
+        path: '/profile-setting/profile',
+        component: '@/pages/profile-setting/profile',
+      },
+      {
+        path: '/profile-setting/team',
+        component: '@/pages/profile-setting/team',
+      },
+      {
+        path: '/profile-setting/plan',
+        component: '@/pages/profile-setting/plan',
+      },
+      {
+        path: '/profile-setting/model',
+        component: '@/pages/profile-setting/model',
+      },
+    ],
   },
 ];
 

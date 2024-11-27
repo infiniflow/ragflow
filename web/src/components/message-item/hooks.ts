@@ -43,8 +43,8 @@ export const useRemoveMessage = (
   const onRemoveMessage = useCallback(async () => {
     const pureId = getMessagePureId(messageId);
     if (pureId) {
-      const retcode = await deleteMessage(pureId);
-      if (retcode === 0) {
+      const code = await deleteMessage(pureId);
+      if (code === 0) {
         removeMessageById?.(messageId);
       }
     }

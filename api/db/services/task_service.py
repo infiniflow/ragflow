@@ -36,7 +36,7 @@ class TaskService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_tasks(cls, task_id):
+    def get_task(cls, task_id):
         fields = [
             cls.model.id,
             cls.model.doc_id,
@@ -63,7 +63,7 @@ class TaskService(CommonService):
             .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id)) \
             .where(cls.model.id == task_id)
         docs = list(docs.dicts())
-        if not docs: return []
+        if not docs: return None
 
         msg = "\nTask has been received."
         prog = random.random() / 10.
@@ -77,9 +77,9 @@ class TaskService(CommonService):
                          ).where(
             cls.model.id == docs[0]["id"]).execute()
 
-        if docs[0]["retry_count"] >= 3: return []
+        if docs[0]["retry_count"] >= 3: return None
 
-        return docs
+        return docs[0]
 
     @classmethod
     @DB.connection_context()
@@ -108,7 +108,7 @@ class TaskService(CommonService):
             task = cls.model.get_by_id(id)
             _, doc = DocumentService.get_by_id(task.doc_id)
             return doc.run == TaskStatus.CANCEL.value or doc.progress < 0
-        except Exception as e:
+        except Exception:
             pass
         return False
 

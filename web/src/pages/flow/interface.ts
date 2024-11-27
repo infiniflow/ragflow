@@ -43,12 +43,17 @@ export interface ICategorizeItem {
   description?: string;
   examples?: string;
   to?: string;
+  index: number;
 }
 
 export interface IGenerateParameter {
   id?: string;
   key: string;
   component_id?: string;
+}
+
+export interface IInvokeVariable extends IGenerateParameter {
+  value?: string;
 }
 
 export type ICategorizeItemResult = Record<
@@ -95,3 +100,12 @@ export type NodeData = {
 };
 
 export type IPosition = { top: number; right: number; idx: number };
+
+export interface BeginQuery {
+  key: string;
+  type: string;
+  value: string;
+  optional: boolean;
+  name: string;
+  options: (number | string | boolean)[];
+}

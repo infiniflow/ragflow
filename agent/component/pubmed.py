@@ -13,12 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from Bio import Entrez
 import re
 import pandas as pd
 import xml.etree.ElementTree as ET
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -65,5 +65,5 @@ class PubMed(ComponentBase, ABC):
             return PubMed.be_output("")
 
         df = pd.DataFrame(pubmed_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logging.debug(f"df: {df}")
         return df

@@ -13,12 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
+import logging
 from abc import ABC
-from functools import partial
 import wikipedia
 import pandas as pd
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -65,5 +63,5 @@ class Wikipedia(ComponentBase, ABC):
             return Wikipedia.be_output("")
 
         df = pd.DataFrame(wiki_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logging.debug(f"df: {df}")
         return df

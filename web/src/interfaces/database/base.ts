@@ -1,7 +1,7 @@
 export interface ResponseType<T = any> {
-  retcode: number;
+  code: number;
   data: T;
-  retmsg: string;
+  message: string;
   status: number;
 }
 

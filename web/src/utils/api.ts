@@ -62,6 +62,7 @@ export default {
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,
   upload_and_parse: `${api_host}/document/upload_and_parse`,
+  parse: `${api_host}/document/parse`,
 
   // chat
   setDialog: `${api_host}/dialog/set`,

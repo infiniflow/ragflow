@@ -16,10 +16,12 @@ import readability
 import html_text
 import chardet
 
+
 def get_encoding(file):
     with open(file,'rb') as f:
         tmp = chardet.detect(f.read())
         return tmp['encoding']
+
 
 class RAGFlowHtmlParser:
     def __call__(self, fnm, binary=None):

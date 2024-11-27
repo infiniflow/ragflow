@@ -30,6 +30,7 @@ const TencentCloudModal = ({
       ...omit(values),
       model_type: modelType,
       llm_factory: llmFactory,
+      max_tokens: 16000,
     };
     console.info(data);
 

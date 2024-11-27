@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import copy
 import datrie
 import math
@@ -22,7 +23,6 @@ import re
 import string
 import sys
 from hanziconv import HanziConv
-from huggingface_hub import snapshot_download
 from nltk import word_tokenize
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from api.utils.file_utils import get_project_base_directory
@@ -36,7 +36,7 @@ class RagTokenizer:
         return str(("DD" + (line[::-1].lower())).encode("utf-8"))[2:-1]
 
     def loadDict_(self, fnm):
-        print("[HUQIE]:Build trie", fnm, file=sys.stderr)
+        logging.info(f"[HUQIE]:Build trie {fnm}")
         try:
             of = open(fnm, "r", encoding='utf-8')
             while True:
@@ -52,8 +52,8 @@ class RagTokenizer:
                 self.trie_[self.rkey_(line[0])] = 1
             self.trie_.save(fnm + ".trie")
             of.close()
-        except Exception as e:
-            print("[HUQIE]:Faild to build trie, ", fnm, e, file=sys.stderr)
+        except Exception:
+            logging.exception(f"[HUQIE]:Build trie {fnm} failed")
 
     def __init__(self, debug=False):
         self.DEBUG = debug
@@ -68,8 +68,8 @@ class RagTokenizer:
         try:
             self.trie_ = datrie.Trie.load(self.DIR_ + ".txt.trie")
             return
-        except Exception as e:
-            print("[HUQIE]:Build default trie", file=sys.stderr)
+        except Exception:
+            logging.exception("[HUQIE]:Build default trie")
             self.trie_ = datrie.Trie(string.printable)
 
         self.loadDict_(self.DIR_ + ".txt")
@@ -78,7 +78,7 @@ class RagTokenizer:
         try:
             self.trie_ = datrie.Trie.load(fnm + ".trie")
             return
-        except Exception as e:
+        except Exception:
             self.trie_ = datrie.Trie(string.printable)
         self.loadDict_(fnm)
 
@@ -171,10 +171,9 @@ class RagTokenizer:
             F += freq
             L += 0 if len(tk) < 2 else 1
             tks.append(tk)
-        F /= len(tks)
+        #F /= len(tks)
         L /= len(tks)
-        if self.DEBUG:
-            print("[SC]", tks, len(tks), L, F, B / len(tks) + L + F)
+        logging.debug("[SC] {} {} {} {} {}".format(tks, len(tks), L, F, B / len(tks) + L + F))
         return tks, B / len(tks) + L + F
 
     def sortTks_(self, tkslist):
@@ -278,41 +277,55 @@ class RagTokenizer:
             tks, s = self.maxForward_(L)
             tks1, s1 = self.maxBackward_(L)
             if self.DEBUG:
-                print("[FW]", tks, s)
-                print("[BW]", tks1, s1)
+                logging.debug("[FW] {} {}".format(tks, s))
+                logging.debug("[BW] {} {}".format(tks1, s1))
 
-            diff = [0 for _ in range(max(len(tks1), len(tks)))]
-            for i in range(min(len(tks1), len(tks))):
-                if tks[i] != tks1[i]:
-                    diff[i] = 1
+            i, j, _i, _j = 0, 0, 0, 0
+            same = 0
+            while i + same < len(tks1) and j + same < len(tks) and tks1[i + same] == tks[j + same]:
+                same += 1
+            if same > 0: res.append(" ".join(tks[j: j + same]))
+            _i = i + same
+            _j = j + same
+            j = _j + 1
+            i = _i + 1
 
-            if s1 > s:
-                tks = tks1
+            while i < len(tks1) and j < len(tks):
+                tk1, tk = "".join(tks1[_i:i]), "".join(tks[_j:j])
+                if tk1 != tk:
+                    if len(tk1) > len(tk):
+                        j += 1
+                    else:
+                        i += 1
+                    continue
 
-            i = 0
-            while i < len(tks):
-                s = i
-                while s < len(tks) and diff[s] == 0:
-                    s += 1
-                if s == len(tks):
-                    res.append(" ".join(tks[i:]))
-                    break
-                if s > i:
-                    res.append(" ".join(tks[i:s]))
-
-                e = s
-                while e < len(tks) and e - s < 5 and diff[e] == 1:
-                    e += 1
-
+                if tks1[i] != tks[j]:
+                    i += 1
+                    j += 1
+                    continue
+                # backward tokens from_i to i are different from forward tokens from _j to j.
                 tkslist = []
-                self.dfs_("".join(tks[s:e + 1]), 0, [], tkslist)
+                self.dfs_("".join(tks[_j:j]), 0, [], tkslist)
                 res.append(" ".join(self.sortTks_(tkslist)[0][0]))
 
-                i = e + 1
+                same = 1
+                while i + same < len(tks1) and j + same < len(tks) and tks1[i + same] == tks[j + same]:
+                    same += 1
+                res.append(" ".join(tks[j: j + same]))
+                _i = i + same
+                _j = j + same
+                j = _j + 1
+                i = _i + 1
+
+            if _i < len(tks1):
+                assert _j < len(tks)
+                assert "".join(tks1[_i:]) == "".join(tks[_j:])
+                tkslist = []
+                self.dfs_("".join(tks[_j:]), 0, [], tkslist)
+                res.append(" ".join(self.sortTks_(tkslist)[0][0]))
 
         res = " ".join(self.english_normalize_(res))
-        if self.DEBUG:
-            print("[TKS]", self.merge_(res))
+        logging.debug("[TKS] {}".format(self.merge_(res)))
         return self.merge_(res)
 
     def fine_grained_tokenize(self, tks):
@@ -403,30 +416,30 @@ if __name__ == '__main__':
     # huqie.addUserDict("/tmp/tmp.new.tks.dict")
     tks = tknzr.tokenize(
         "哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize(
         "公开征求意见稿提出，境外投资者可使用自有人民币或外汇投资。使用外汇投资的，可通过债券持有人在香港人民币业务清算行及香港地区经批准可进入境内银行间外汇市场进行交易的境外人民币业务参加行（以下统称香港结算行）办理外汇资金兑换。香港结算行由此所产生的头寸可到境内银行间外汇市场平盘。使用外汇投资的，在其投资的债券到期或卖出后，原则上应兑换回外汇。")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize(
         "多校划片就是一个小区对应多个小学初中，让买了学区房的家庭也不确定到底能上哪个学校。目的是通过这种方式为学区房降温，把就近入学落到实处。南京市长江大桥")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize(
         "实际上当时他们已经将业务中心偏移到安全部门和针对政府企业的部门 Scripts are compiled and cached aaaaaaaaa")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize("虽然我不怎么玩")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize("蓝月亮如何在外资夹击中生存,那是全宇宙最有意思的")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize(
         "涡轮增压发动机num最大功率,不像别的共享买车锁电子化的手段,我们接过来是否有意义,黄黄爱美食,不过，今天阿奇要讲到的这家农贸市场，说实话，还真蛮有特色的！不仅环境好，还打出了")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize("这周日你去吗？这周日你有空吗？")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize("Unity3D开发经验 测试开发工程师 c++双11双11 985 211 ")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     tks = tknzr.tokenize(
         "数据分析项目经理|数据分析挖掘|数据分析方向|商品数据分析|搜索数据分析 sql python hive tableau Cocos2d-")
-    print(tknzr.fine_grained_tokenize(tks))
+    logging.info(tknzr.fine_grained_tokenize(tks))
     if len(sys.argv) < 2:
         sys.exit()
     tknzr.DEBUG = False
@@ -436,5 +449,5 @@ if __name__ == '__main__':
         line = of.readline()
         if not line:
             break
-        print(tknzr.tokenize(line))
+        logging.info(tknzr.tokenize(line))
     of.close()

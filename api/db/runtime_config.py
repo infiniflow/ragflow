@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from api.versions import get_versions
+from api.versions import get_ragflow_version
 from .reload_config_base import ReloadConfigBase
 
 
@@ -35,7 +35,7 @@ class RuntimeConfig(ReloadConfigBase):
 
     @classmethod
     def init_env(cls):
-        cls.ENV.update(get_versions())
+        cls.ENV.update({"version": get_ragflow_version()})
 
     @classmethod
     def load_config_manager(cls):

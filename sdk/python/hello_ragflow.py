@@ -1,3 +1,3 @@
-import ragflow
+import ragflow_sdk
 
-print(ragflow.__version__)
+print(ragflow_sdk.__version__)

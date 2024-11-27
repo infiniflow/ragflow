@@ -23,16 +23,15 @@ import socket
 import time
 import uuid
 import requests
+import logging
 from enum import Enum, IntEnum
 import importlib
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-
 from filelock import FileLock
+from api.constants import SERVICE_CONF
 
 from . import file_utils
-
-SERVICE_CONF = "service_conf.yaml"
 
 
 def conf_realpath(conf_name):
@@ -40,37 +39,46 @@ def conf_realpath(conf_name):
     return os.path.join(file_utils.get_project_base_directory(), conf_path)
 
 
-def get_base_config(key, default=None, conf_name=SERVICE_CONF) -> dict:
+def read_config(conf_name=SERVICE_CONF):
     local_config = {}
     local_path = conf_realpath(f'local.{conf_name}')
-    if default is None:
-        default = os.environ.get(key.upper())
 
+    # load local config file
     if os.path.exists(local_path):
         local_config = file_utils.load_yaml_conf(local_path)
         if not isinstance(local_config, dict):
             raise ValueError(f'Invalid config file: "{local_path}".')
 
-        if key is not None and key in local_config:
-            return local_config[key]
+    global_config_path = conf_realpath(conf_name)
+    global_config = file_utils.load_yaml_conf(global_config_path)
 
-    config_path = conf_realpath(conf_name)
-    config = file_utils.load_yaml_conf(config_path)
+    if not isinstance(global_config, dict):
+        raise ValueError(f'Invalid config file: "{global_config_path}".')
 
-    if not isinstance(config, dict):
-        raise ValueError(f'Invalid config file: "{config_path}".')
+    global_config.update(local_config)
+    return global_config
 
-    config.update(local_config)
-    return config.get(key, default) if key is not None else config
+
+CONFIGS = read_config()
+
+
+def show_configs():
+    msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
+    for k, v in CONFIGS.items():
+        msg += f"\n\t{k}: {v}"
+    logging.info(msg)
+
+
+def get_base_config(key, default=None):
+    if key is None:
+        return None
+    if default is None:
+        default = os.environ.get(key.upper())
+    return CONFIGS.get(key, default)
 
 
 use_deserialize_safe_module = get_base_config(
     'use_deserialize_safe_module', False)
-
-
-class CoordinationCommunicationProtocol(object):
-    HTTP = "http"
-    GRPC = "grpc"
 
 
 class BaseType:
@@ -98,6 +106,7 @@ class BaseType:
                 data = obj
             return {"type": obj.__class__.__name__,
                     "data": data, "module": module}
+
         return _dict(self)
 
 
@@ -245,7 +254,7 @@ def get_lan_ip():
             try:
                 ip = get_interface_ip(ifname)
                 break
-            except IOError as e:
+            except IOError:
                 pass
     return ip or ''
 
@@ -342,8 +351,8 @@ def download_img(url):
         return ""
     response = requests.get(url)
     return "data:" + \
-           response.headers.get('Content-Type', 'image/jpg') + ";" + \
-           "base64," + base64.b64encode(response.content).decode("utf-8")
+        response.headers.get('Content-Type', 'image/jpg') + ";" + \
+        "base64," + base64.b64encode(response.content).decode("utf-8")
 
 
 def delta_seconds(date_string: str):

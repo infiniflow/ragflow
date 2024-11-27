@@ -13,12 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import json
 
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
-from api.settings import LIGHTEN
+from api import settings
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
@@ -73,9 +74,9 @@ def set_api_key():
             mdl = ChatModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
-                m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], 
-                                 {"temperature": 0.9,'max_tokens':50})
-                if m.find("**ERROR**") >=0:
+                m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}],
+                                 {"temperature": 0.9, 'max_tokens': 50})
+                if m.find("**ERROR**") >= 0:
                     raise Exception(m)
                 chat_passed = True
             except Exception as e:
@@ -89,7 +90,7 @@ def set_api_key():
                 if len(arr) == 0 or tc == 0:
                     raise Exception("Fail")
                 rerank_passed = True
-                print(f'passed model rerank{llm.llm_name}',flush=True)
+                logging.debug(f'passed model rerank {llm.llm_name}')
             except Exception as e:
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
                     e)
@@ -98,7 +99,7 @@ def set_api_key():
             break
 
     if msg:
-        return get_data_error_result(retmsg=msg)
+        return get_data_error_result(message=msg)
 
     llm_config = {
         "api_key": req["api_key"],
@@ -109,6 +110,7 @@ def set_api_key():
             llm_config[n] = req[n]
 
     for llm in LLMService.query(fid=factory):
+        llm_config["max_tokens"]=llm.max_tokens
         if not TenantLLMService.filter_update(
                 [TenantLLM.tenant_id == current_user.id,
                  TenantLLM.llm_factory == factory,
@@ -120,7 +122,8 @@ def set_api_key():
                 llm_name=llm.llm_name,
                 model_type=llm.model_type,
                 api_key=llm_config["api_key"],
-                api_base=llm_config["api_base"]
+                api_base=llm_config["api_base"],
+                max_tokens=llm_config["max_tokens"]
             )
 
     return get_json_result(data=True)
@@ -157,23 +160,23 @@ def add_llm():
         api_key = apikey_json(["bedrock_ak", "bedrock_sk", "bedrock_region"])
 
     elif factory == "LocalAI":
-        llm_name = req["llm_name"]+"___LocalAI"
+        llm_name = req["llm_name"] + "___LocalAI"
         api_key = "xxxxxxxxxxxxxxx"
-        
+
     elif factory == "HuggingFace":
-        llm_name = req["llm_name"]+"___HuggingFace"
+        llm_name = req["llm_name"] + "___HuggingFace"
         api_key = "xxxxxxxxxxxxxxx"
 
     elif factory == "OpenAI-API-Compatible":
-        llm_name = req["llm_name"]+"___OpenAI-API"
-        api_key = req.get("api_key","xxxxxxxxxxxxxxx")
+        llm_name = req["llm_name"] + "___OpenAI-API"
+        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
-    elif factory =="XunFei Spark":
+    elif factory == "XunFei Spark":
         llm_name = req["llm_name"]
         if req["model_type"] == "chat":
             api_key = req.get("spark_api_password", "xxxxxxxxxxxxxxx")
         elif req["model_type"] == "tts":
-            api_key = apikey_json(["spark_app_id", "spark_api_secret","spark_api_key"])
+            api_key = apikey_json(["spark_app_id", "spark_api_secret", "spark_api_key"])
 
     elif factory == "BaiduYiyan":
         llm_name = req["llm_name"]
@@ -201,14 +204,15 @@ def add_llm():
         "model_type": req["model_type"],
         "llm_name": llm_name,
         "api_base": req.get("api_base", ""),
-        "api_key": api_key
+        "api_key": api_key,
+        "max_tokens": req.get("max_tokens")
     }
 
     msg = ""
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"], 
+            model_name=llm["llm_name"],
             base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
@@ -224,7 +228,7 @@ def add_llm():
         )
         try:
             m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
-                             "temperature": 0.9})
+                "temperature": 0.9})
             if not tc:
                 raise Exception(m)
         except Exception as e:
@@ -232,12 +236,12 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.RERANK:
         mdl = RerankModel[factory](
-            key=llm["api_key"], 
-            model_name=llm["llm_name"], 
+            key=llm["api_key"],
+            model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
         try:
-            arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!"])
+            arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
             if len(arr) == 0 or tc == 0:
                 raise Exception("Not known.")
         except Exception as e:
@@ -245,8 +249,8 @@ def add_llm():
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
-            key=llm["api_key"], 
-            model_name=llm["llm_name"], 
+            key=llm["api_key"],
+            model_name=llm["llm_name"],
             base_url=llm["api_base"]
         )
         try:
@@ -278,10 +282,11 @@ def add_llm():
         pass
 
     if msg:
-        return get_data_error_result(retmsg=msg)
+        return get_data_error_result(message=msg)
 
     if not TenantLLMService.filter_update(
-            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory, TenantLLM.llm_name == llm["llm_name"]], llm):
+            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory,
+             TenantLLM.llm_name == llm["llm_name"]], llm):
         TenantLLMService.save(**llm)
 
     return get_json_result(data=True)
@@ -293,7 +298,8 @@ def add_llm():
 def delete_llm():
     req = request.json
     TenantLLMService.filter_delete(
-            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"], TenantLLM.llm_name == req["llm_name"]])
+        [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"],
+         TenantLLM.llm_name == req["llm_name"]])
     return get_json_result(data=True)
 
 
@@ -303,7 +309,7 @@ def delete_llm():
 def delete_factory():
     req = request.json
     TenantLLMService.filter_delete(
-            [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"]])
+        [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"]])
     return get_json_result(data=True)
 
 
@@ -331,8 +337,8 @@ def my_llms():
 @manager.route('/list', methods=['GET'])
 @login_required
 def list_app():
-    self_deploied = ["Youdao","FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
-    weighted = ["Youdao","FastEmbed", "BAAI"] if LIGHTEN != 0 else []
+    self_deploied = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
+    weighted = ["Youdao", "FastEmbed", "BAAI"] if settings.LIGHTEN != 0 else []
     model_type = request.args.get("model_type")
     try:
         objs = TenantLLMService.query(tenant_id=current_user.id)
@@ -343,15 +349,15 @@ def list_app():
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deploied
 
-        llm_set = set([m["llm_name"]+"@"+m["fid"] for m in llms])
+        llm_set = set([m["llm_name"] + "@" + m["fid"] for m in llms])
         for o in objs:
-            if not o.api_key:continue
-            if o.llm_name+"@"+o.llm_factory in llm_set:continue
+            if not o.api_key: continue
+            if o.llm_name + "@" + o.llm_factory in llm_set: continue
             llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})
 
         res = {}
         for m in llms:
-            if model_type and m["model_type"].find(model_type)<0:
+            if model_type and m["model_type"].find(model_type) < 0:
                 continue
             if m["fid"] not in res:
                 res[m["fid"]] = []

@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import re
+
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 from dashscope import Generation
@@ -107,6 +109,8 @@ class XinferenceChat(Base):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         super().__init__(key, model_name, base_url)
+
+
 class HuggingFaceChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
@@ -114,6 +118,7 @@ class HuggingFaceChat(Base):
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         super().__init__(key, model_name, base_url)
+
 
 class DeepSeekChat(Base):
     def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1"):
@@ -275,8 +280,7 @@ class QWenChat(Base):
                             [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
                     yield ans
                 else:
-                    yield ans + "\n**ERROR**: " + resp.message if str(resp.message).find(
-                        "Access") < 0 else "Out of credit. Please set the API key in **settings > Model providers.**"
+                    yield ans + "\n**ERROR**: " + resp.message if not re.search(r" (key|quota)", str(resp.message).lower()) else "Out of credit. Please set the API key in **settings > Model providers.**"
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
@@ -1160,7 +1164,11 @@ class SparkChat(Base):
             "Spark-Pro-128K": "pro-128k",
             "Spark-4.0-Ultra": "4.0Ultra",
         }
-        model_version = model2version[model_name]
+        version2model = {v: k for k, v in model2version.items()}
+        assert model_name in model2version or model_name in version2model, f"The given model name is not supported yet. Support: {list(model2version.keys())}"
+        if model_name in model2version:
+            model_version = model2version[model_name]
+        else: model_version = model_name
         super().__init__(key, model_version, base_url)
 
 
@@ -1245,7 +1253,10 @@ class AnthropicChat(Base):
             self.system = system
         if "max_tokens" not in gen_conf:
             gen_conf["max_tokens"] = 4096
+        if "presence_penalty" in gen_conf: del gen_conf["presence_penalty"]
+        if "frequency_penalty" in gen_conf: del gen_conf["frequency_penalty"]
 
+        ans = ""
         try:
             response = self.client.messages.create(
                 model=self.model_name,
@@ -1253,7 +1264,7 @@ class AnthropicChat(Base):
                 system=self.system,
                 stream=False,
                 **gen_conf,
-            ).json()
+            ).to_dict()
             ans = response["content"][0]["text"]
             if response["stop_reason"] == "max_tokens":
                 ans += (
@@ -1273,6 +1284,8 @@ class AnthropicChat(Base):
             self.system = system
         if "max_tokens" not in gen_conf:
             gen_conf["max_tokens"] = 4096
+        if "presence_penalty" in gen_conf: del gen_conf["presence_penalty"]
+        if "frequency_penalty" in gen_conf: del gen_conf["frequency_penalty"]
 
         ans = ""
         total_tokens = 0
@@ -1285,11 +1298,11 @@ class AnthropicChat(Base):
                 **gen_conf,
             )
             for res in response.iter_lines():
-                res = res.decode("utf-8")
-                if "content_block_delta" in res and "data" in res:
-                    text = json.loads(res[6:])["delta"]["text"]
+                if res.type == 'content_block_delta':
+                    text = res.delta.text
                     ans += text
                     total_tokens += num_tokens_from_string(text)
+                    yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 

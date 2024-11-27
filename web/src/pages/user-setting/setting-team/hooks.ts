@@ -6,6 +6,7 @@ import {
   useFetchUserInfo,
 } from '@/hooks/user-setting-hooks';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export const useAddUser = () => {
   const { addTenantUser } = useAddTenantUser();
@@ -17,8 +18,8 @@ export const useAddUser = () => {
 
   const handleAddUserOk = useCallback(
     async (email: string) => {
-      const retcode = await addTenantUser(email);
-      if (retcode === 0) {
+      const code = await addTenantUser(email);
+      if (code === 0) {
         hideAddingTenantModal();
       }
     },
@@ -36,12 +37,14 @@ export const useAddUser = () => {
 export const useHandleDeleteUser = () => {
   const { deleteTenantUser, loading } = useDeleteTenantUser();
   const showDeleteConfirm = useShowDeleteConfirm();
+  const { t } = useTranslation();
 
   const handleDeleteTenantUser = (userId: string) => () => {
     showDeleteConfirm({
+      title: t('setting.sureDelete'),
       onOk: async () => {
-        const retcode = await deleteTenantUser({ userId });
-        if (retcode === 0) {
+        const code = await deleteTenantUser({ userId });
+        if (code === 0) {
         }
         return;
       },

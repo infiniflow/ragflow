@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 5
 slug: /manage_files
 ---
 
@@ -49,7 +49,7 @@ You can link your file to one knowledge base or multiple knowledge bases at one 
 
 ## Search files or folders
 
-As of RAGFlow v0.12.0, the search feature is still in a rudimentary form, supporting only file and folder search in the current directory by name (files or folders in the child directory will not be retrieved).
+**File Management** only supports file name and folder name filtering in the current directory (files or folders in the child directory will not be retrieved).
 
 ![search file](https://github.com/infiniflow/ragflow/assets/93570324/77ffc2e5-bd80-4ed1-841f-068e664efffe)
 
@@ -73,7 +73,7 @@ To bulk delete files or folders:
 ![bulk delete](https://github.com/infiniflow/ragflow/assets/93570324/519b99ab-ec7f-4c8a-8cea-e0b6dcb3cb46)
 
 > - You are not allowed to delete the **root/.knowledgebase** folder. 
-> - Deleting files that have been linked to knowledge bases will AUTOMATICALLY REMOVE all associated file references across the knowledge bases. 
+> - Deleting files that have been linked to knowledge bases will **AUTOMATICALLY REMOVE** all associated file references across the knowledge bases.
 
 ## Download uploaded file
 
@@ -81,4 +81,4 @@ RAGFlow's file management allows you to download an uploaded file:
 
 ![download_file](https://github.com/infiniflow/ragflow/assets/93570324/cf3b297f-7d9b-4522-bf5f-4f45743e4ed5)
 
-> As of RAGFlow v0.12.0, bulk download is not supported, nor can you download an entire folder. 
+> As of RAGFlow v0.14.0, bulk download is not supported, nor can you download an entire folder. 

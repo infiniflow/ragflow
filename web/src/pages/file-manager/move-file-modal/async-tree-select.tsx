@@ -22,7 +22,7 @@ const AsyncTreeSelect = ({ value, onChange }: IProps) => {
   const onLoadData: TreeSelectProps['loadData'] = useCallback(
     async ({ id }) => {
       const ret = await fetchList(id);
-      if (ret.retcode === 0) {
+      if (ret.code === 0) {
         setTreeData((tree) => {
           return tree.concat(
             ret.data.files

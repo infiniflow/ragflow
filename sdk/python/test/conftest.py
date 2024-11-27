@@ -1,11 +1,11 @@
-import pytest
-import requests
 import string
 import random
+import os
+import pytest
+import requests
 
 
-
-HOST_ADDRESS = 'http://127.0.0.1:9380'
+HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
 
 def generate_random_email():
     return 'user_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))+'@1.com'
@@ -16,25 +16,22 @@ PASSWORD='''ctAseGvejiaSWWZ88T/m4FQVOpQyUvP+x7sXtdv3feqZACiQleuewkUi35E16wSd5C5Q
 fN33jCHRoDUW81IH9zjij/vaw8IbVyb6vuwg6MX6inOEBRRzVbRYxXOu1wkWY6SsI8X70oF9aeLFp/PzQpjoe/YbSqpTq8qqrmHzn9vO+yvyYyvmDsphXe
 X8f7fp9c7vUsfOCkM+gHY3PadG+QHa7KI7mzTKgUTZImK6BZtfRBATDTthEUbbaTewY4H0MnWiCeeDhcbeQao6cFy1To8pE3RpmxnGnS8BsBn8w=='''
 
-def get_email():
-    return EMAIL
-
 def register():
     url = HOST_ADDRESS + "/v1/user/register"
     name = "user"
     register_data = {"email":EMAIL,"nickname":name,"password":PASSWORD}
     res = requests.post(url=url,json=register_data)
     res = res.json()
-    if res.get("retcode") != 0:
-        raise Exception(res.get("retmsg"))
+    if res.get("code") != 0:
+        raise Exception(res.get("message"))
 
 def login():
     url = HOST_ADDRESS + "/v1/user/login"
     login_data = {"email":EMAIL,"password":PASSWORD}
     response=requests.post(url=url,json=login_data)
     res = response.json()
-    if res.get("retcode")!=0:
-        raise Exception(res.get("retmsg"))
+    if res.get("code")!=0:
+        raise Exception(res.get("message"))
     auth = response.headers["Authorization"]
     return auth
 
@@ -46,7 +43,16 @@ def get_api_key_fixture():
     auth = {"Authorization": auth}
     response = requests.post(url=url,headers=auth)
     res = response.json()
-    if res.get("retcode") != 0:
-        raise Exception(res.get("retmsg"))
+    if res.get("code") != 0:
+        raise Exception(res.get("message"))
     return res["data"].get("token")
 
+@pytest.fixture(scope="session")
+def get_auth():
+    register()
+    auth = login()
+    return auth
+
+@pytest.fixture(scope="session")
+def get_email():
+    return EMAIL

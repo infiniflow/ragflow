@@ -1,57 +1,48 @@
-import { TaskExecutorElapsed } from '@/interfaces/database/user-setting';
+import { TaskExecutorHeartbeatItem } from '@/interfaces/database/user-setting';
 import { Divider, Flex } from 'antd';
-import { max } from 'lodash';
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
+  Rectangle,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
 } from 'recharts';
+
+import { formatDate, formatTime } from '@/utils/date';
+import dayjs from 'dayjs';
+import { get } from 'lodash';
+import JsonView from 'react18-json-view';
+import 'react18-json-view/src/style.css';
 
 import styles from './index.less';
 
 interface IProps {
-  data: TaskExecutorElapsed;
+  data: Record<string, TaskExecutorHeartbeatItem[]>;
 }
 
-const getColor = (value: number) => {
-  if (value > 120) {
-    return 'red';
-  } else if (value <= 120 && value > 50) {
-    return '#faad14';
-  }
-  return '#52c41a';
-};
-
-const getMaxLength = (data: TaskExecutorElapsed) => {
-  const lengths = Object.keys(data).reduce<number[]>((pre, cur) => {
-    pre.push(data[cur].length);
-    return pre;
-  }, []);
-  return max(lengths) ?? 0;
-};
-
-const fillEmptyElementByMaxLength = (list: any[], maxLength: number) => {
-  if (list.length === maxLength) {
-    return list;
-  }
-  return list.concat(
-    new Array(maxLength - list.length).fill({
-      value: 0,
-      actualValue: 0,
-      fill: getColor(0),
-    }),
-  );
-};
-
-const CustomTooltip = ({ active, payload }: any) => {
+const CustomTooltip = ({ active, payload, ...restProps }: any) => {
   if (active && payload && payload.length) {
+    const taskExecutorHeartbeatItem: TaskExecutorHeartbeatItem = get(
+      payload,
+      '0.payload',
+      {},
+    );
     return (
       <div className="custom-tooltip">
-        <p
-          className={styles.taskBarTooltip}
-        >{`${payload[0].payload.actualValue}`}</p>
+        <div className="bg-slate-50 p-2 rounded-md border border-indigo-100">
+          <div className="font-semibold text-lg">
+            {formatDate(restProps.label)}
+          </div>
+
+          <JsonView
+            src={taskExecutorHeartbeatItem}
+            displaySize={30}
+            className="w-full max-h-[300px] break-words overflow-auto"
+          />
+        </div>
       </div>
     );
   }
@@ -60,32 +51,58 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 const TaskBarChat = ({ data }: IProps) => {
-  const maxLength = getMaxLength(data);
-  return (
-    <Flex gap="middle" vertical>
-      {Object.keys(data).map((key) => {
-        const list = data[key].map((x) => ({
-          value: x > 120 ? 120 : x,
-          actualValue: x,
-          fill: getColor(x),
-        }));
-        const nextList = fillEmptyElementByMaxLength(list, maxLength);
-        return (
-          <Flex key={key} className={styles.taskBar} vertical>
-            <b className={styles.taskBarTitle}>ID: {key}</b>
-            <ResponsiveContainer>
-              <BarChart data={nextList} barSize={20}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <Tooltip content={<CustomTooltip></CustomTooltip>} />
-                <Bar dataKey="value" />
-              </BarChart>
-            </ResponsiveContainer>
-            <Divider></Divider>
-          </Flex>
-        );
-      })}
-    </Flex>
-  );
+  return Object.entries(data).map(([key, val]) => {
+    const data = val.map((x) => ({
+      ...x,
+      now: dayjs(x.now).valueOf(),
+    }));
+    const firstItem = data[0];
+    const lastItem = data[data.length - 1];
+
+    const domain = [firstItem?.now, lastItem?.now];
+    return (
+      <Flex key={key} className={styles.taskBar} vertical>
+        <div className="flex gap-8">
+          <b className={styles.taskBarTitle}>ID: {key}</b>
+          <b className={styles.taskBarTitle}>Lag: {lastItem?.lag}</b>
+          <b className={styles.taskBarTitle}>Pending: {lastItem?.pending}</b>
+        </div>
+        <ResponsiveContainer>
+          <BarChart data={data}>
+            <XAxis
+              dataKey="now"
+              type="number"
+              scale={'time'}
+              domain={domain}
+              tickFormatter={(x) => formatTime(x)}
+              allowDataOverflow
+              angle={60}
+              padding={{ left: 20, right: 20 }}
+              tickMargin={20}
+            />
+            <CartesianGrid strokeDasharray="3 3" />
+            <Tooltip
+              wrapperStyle={{ pointerEvents: 'auto' }}
+              content={<CustomTooltip></CustomTooltip>}
+              trigger="click"
+            />
+            <Legend wrapperStyle={{ bottom: -22 }} />
+            <Bar
+              dataKey="done"
+              fill="#2fe235"
+              activeBar={<Rectangle fill="pink" stroke="blue" />}
+            />
+            <Bar
+              dataKey="failed"
+              fill="#ef3b74"
+              activeBar={<Rectangle fill="gold" stroke="purple" />}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+        <Divider></Divider>
+      </Flex>
+    );
+  });
 };
 
 export default TaskBarChat;

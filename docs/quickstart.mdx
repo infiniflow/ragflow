@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: 0
 slug: /
 ---
 
@@ -34,7 +34,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abmornal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation. 
 
-   RAGFlow v0.12.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.14.0 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -184,9 +184,9 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0-slim`. After making this change, rerun the command above to initiate the download.
-   > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlow_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change, rerun the command above to initiate the download.
-   > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlow_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.12.0`. After making this change, rerun the command above to initiate the download.
+   > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFlOW_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0-slim`. After making this change, rerun the command above to initiate the download.
+   > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlOW_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change, rerun the command above to initiate the download.
+   > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update the `RAGFlOW_IMAGE` variable in **docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0`. After making this change, rerun the command above to initiate the download.
 
 :::tip NOTE
 A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size and may take significantly longer time to load.
@@ -223,24 +223,7 @@ With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (*
 
 ## Configure LLMs
 
-RAGFlow is a RAG engine, and it needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. For now, RAGFlow supports the following LLMs, and the list is expanding:
-
-- [OpenAI](https://platform.openai.com/login?launch)
-- [Azure-OpenAI](https://ai.azure.com/)
-- [Gemini](https://aistudio.google.com/)
-- [Groq](https://console.groq.com/)
-- [Mistral](https://mistral.ai/)
-- [Bedrock](https://aws.amazon.com/cn/bedrock/)
-- [Tongyi-Qianwen](https://dashscope.console.aliyun.com/model)
-- [ZHIPU-AI](https://open.bigmodel.cn/)
-- [MiniMax](https://platform.minimaxi.com/)
-- [Moonshot](https://platform.moonshot.cn/docs)
-- [DeepSeek](https://platform.deepseek.com/api-docs/)
-- [Baichuan](https://www.baichuan-ai.com/home)
-- [VolcEngine](https://www.volcengine.com/docs/82379)
-- [Jina](https://jina.ai/reader/)
-- [OpenRouter](https://openrouter.ai/)
-- [StepFun](https://platform.stepfun.com/)
+RAGFlow is a RAG engine and needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. RAGFlow supports most mainstream LLMs. For a complete list of supported models, please refer to [Supported Models](./references/supported_models.mdx).
 
 :::note 
 RAGFlow also supports deploying LLMs locally using Ollama, Xinference, or LocalAI, but this part is not covered in this quick start guide. 
@@ -303,15 +286,15 @@ Once you have selected an embedding model and used it to parse a file, you are n
    _When the file parsing completes, its parsing status changes to **SUCCESS**._
 
 :::caution NOTE 
-- If your file parsing gets stuck at below 1%, see [FAQ 4.3](https://ragflow.io/docs/dev/faq#43-why-does-my-document-parsing-stall-at-under-one-percent). 
-- If your file parsing gets stuck at near completion, see [FAQ 4.4](https://ragflow.io/docs/dev/faq#44-why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
+- If your file parsing gets stuck at below 1%, see [this FAQ](https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent).
+- If your file parsing gets stuck at near completion, see [this FAQ](https://ragflow.io/docs/dev/faq#why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
 :::
 
-## Intervene with file parsing 
+## Intervene with file parsing
 
-RAGFlow features visibility and explainability, allowing you to view the chunking results and intervene where necessary. To do so: 
+RAGFlow features visibility and explainability, allowing you to view the chunking results and intervene where necessary. To do so:
 
-1. Click on the file that completes file parsing to view the chunking results: 
+1. Click on the file that completes file parsing to view the chunking results:
 
    _You are taken to the **Chunk** page:_
 
@@ -323,8 +306,8 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
    ![update chunk](https://github.com/infiniflow/ragflow/assets/93570324/1d84b408-4e9f-46fd-9413-8c1059bf9c76)
 
-:::caution NOTE 
-You can add keywords to a file chunk to increase its relevance. This action increases its keyword weight and can improve its position in search list.  
+:::caution NOTE
+You can add keywords to a file chunk to improve its ranking for queries containing those keywords. This action increases its keyword weight and can improve its position in search list.
 :::
 
 4. In Retrieval testing, ask a quick question in **Test text** to double check if your configurations work:
@@ -335,29 +318,33 @@ You can add keywords to a file chunk to increase its relevance. This action incr
 
 ## Set up an AI chat
 
-Conversations in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base and finished file parsing, you can go ahead and start an AI conversation. 
+Conversations in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base and finished file parsing, you can go ahead and start an AI conversation.
 
 1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue *of your next dialogue*.
    > RAGFlow offer the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
-2. Update **Assistant Setting**: 
+2. Update **Assistant Setting**:
 
    - Name your assistant and specify your knowledge bases.
    - **Empty response**:
-     - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here. 
-     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, which may give rise to hallucinations. 
+     - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
+     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, which may give rise to hallucinations.
 
 3. Update **Prompt Engine** or leave it as is for the beginning.
 
 4. Update **Model Setting**.
 
-5. RAGFlow also offers conversation APIs. Hover over your dialogue **>** **Chat Bot API** to integrate RAGFlow's chat capabilities into your applications:
-
-   ![chatbot api](https://github.com/infiniflow/ragflow/assets/93570324/fec23715-f9af-4ac2-81e5-942c5035c5e6)
-
-6. Now, let's start the show:
+5. Now, let's start the show:
 
    ![question1](https://github.com/infiniflow/ragflow/assets/93570324/bb72dd67-b35e-4b2a-87e9-4e4edbd6e677)
 
    ![question2](https://github.com/infiniflow/ragflow/assets/93570324/7cc585ae-88d0-4aa2-817d-0370b2ad7230)
 
+
+:::tip NOTE
+RAGFlow also offers HTTP and Python APIs for you to integrate RAGFlow's capabilities into your applications. Read the following documents for more information:
+
+- [Acquire a RAGFlow API key](./guides/develop/acquire_ragflow_api_key.md)
+- [HTTP API reference](./references/http_api_reference.md)
+- [Python API reference](./references/python_api_reference.md)
+:::

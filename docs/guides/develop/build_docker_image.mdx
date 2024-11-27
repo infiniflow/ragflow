@@ -61,4 +61,21 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
   </TabItem>
+  <TabItem value="linux/arm64">
+
+## 🔧 Build a Docker image for linux arm64
+
+We are currently unable to regularly build multi-arch images with CI and have no plans to publish arm64 images in the near future.  
+However, you can build an image yourself on a linux/arm64 host machine:
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git
+cd ragflow/
+pip3 install huggingface-hub nltk
+python3 download_deps.py
+docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+docker build -f Dockerfile -t infiniflow/ragflow:dev .
+```
+  </TabItem>
+
 </Tabs>

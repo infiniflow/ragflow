@@ -6,8 +6,9 @@ import {
   BaiduFanyiSourceLangOptions,
 } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const BaiduFanyiForm = ({ onValuesChange, form }: IOperatorForm) => {
+const BaiduFanyiForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
   const options = useMemo(() => {
     return ['translate', 'fieldtranslate'].map((x) => ({
@@ -33,12 +34,12 @@ const BaiduFanyiForm = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 8 }}
-      wrapperCol={{ span: 16 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <Form.Item label={t('appid')} name={'appid'}>
         <Input></Input>
       </Form.Item>

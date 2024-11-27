@@ -1,6 +1,7 @@
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Drawer } from 'antd';
+import { getDrawerWidth } from '../utils';
 import FlowChatBox from './box';
 
 const ChatDrawer = ({ visible, hideModal }: IModalProps<any>) => {
@@ -13,7 +14,7 @@ const ChatDrawer = ({ visible, hideModal }: IModalProps<any>) => {
       onClose={hideModal}
       open={visible}
       getContainer={false}
-      width={window.innerWidth > 1278 ? '40%' : 470}
+      width={getDrawerWidth()}
       mask={false}
       // zIndex={10000}
     >

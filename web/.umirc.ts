@@ -19,7 +19,10 @@ export default defineConfig({
   history: {
     type: 'browser',
   },
-  plugins: ['@react-dev-inspector/umi4-plugin'],
+  plugins: [
+    '@react-dev-inspector/umi4-plugin',
+    '@umijs/plugins/dist/tailwindcss',
+  ],
   jsMinifier: 'terser',
   lessLoader: {
     modifyVars: {
@@ -28,18 +31,21 @@ export default defineConfig({
   },
   devtool: 'source-map',
   copy: ['src/conf.json'],
-  proxy: {
-    '/v1': {
+  proxy: [
+    {
+      context: ['/api', '/v1'],
       target: 'http://127.0.0.1:9456/',
       changeOrigin: true,
       ws: true,
       logger: console,
       // pathRewrite: { '^/v1': '/v1' },
     },
-  },
+  ],
+
   chainWebpack(memo, args) {
     memo.module.rule('markdown').test(/\.md$/).type('asset/source');
 
     return memo;
   },
+  tailwindcss: {},
 });

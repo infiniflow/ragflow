@@ -22,16 +22,23 @@ export interface IUserInfo {
 
 export type TaskExecutorElapsed = Record<string, number[]>;
 
+export interface TaskExecutorHeartbeatItem {
+  boot_at: string;
+  current: null;
+  done: number;
+  failed: number;
+  lag: number;
+  name: string;
+  now: string;
+  pending: number;
+}
+
 export interface ISystemStatus {
   es: Es;
   storage: Storage;
   database: Database;
   redis: Redis;
-  task_executor: {
-    error?: string;
-    status: string;
-    elapsed?: TaskExecutorElapsed;
-  };
+  task_executor_heartbeat: Record<string, TaskExecutorHeartbeatItem[]>;
 }
 
 interface Redis {
