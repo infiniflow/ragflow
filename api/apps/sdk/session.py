@@ -33,19 +33,19 @@ from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['POST'])
+@manager.route('/chats/<chat_id>/sessions', methods=['POST']) # type: ignore
 @token_required
 def create(tenant_id,chat_id):
     req = request.json
     req["dialog_id"] = chat_id
-    dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
-    if not dia:
-        return get_error_data_result(message="You do not own the assistant.")
+    e, dia = DialogService.get_by_id(req["dialog_id"])
+    if not e:
+        return get_error_data_result(message="Dialog not found")
     conv = {
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
-        "name": req.get("name", "New session"),
-        "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
+        "name": req.get("name", "New session"), 
+        "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -60,7 +60,7 @@ def create(tenant_id,chat_id):
     return get_result(data=conv)
 
 
-@manager.route('/agents/<agent_id>/sessions', methods=['POST'])
+@manager.route('/agents/<agent_id>/sessions', methods=['POST']) # type: ignore
 @token_required
 def create_agent_session(tenant_id, agent_id):
     req = request.json
@@ -86,7 +86,7 @@ def create_agent_session(tenant_id, agent_id):
     return get_result(data=conv)
 
 
-@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT'])
+@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT']) # type: ignore
 @token_required
 def update(tenant_id,chat_id,session_id):
     req = request.json
@@ -108,7 +108,7 @@ def update(tenant_id,chat_id,session_id):
     return get_result()
 
 
-@manager.route('/chats/<chat_id>/completions', methods=['POST'])
+@manager.route('/chats/<chat_id>/completions', methods=['POST']) # type: ignore
 @token_required
 def completion(tenant_id, chat_id):
     req = request.json
@@ -216,7 +216,7 @@ def completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('/agents/<agent_id>/completions', methods=['POST'])
+@manager.route('/agents/<agent_id>/completions', methods=['POST']) # type: ignore
 @token_required
 def agent_completion(tenant_id, agent_id):
     req = request.json
@@ -375,7 +375,7 @@ def agent_completion(tenant_id, agent_id):
         return get_result(data=result)
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['GET'])
+@manager.route('/chats/<chat_id>/sessions', methods=['GET']) # type: ignore
 @token_required
 def list_session(chat_id,tenant_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
@@ -429,7 +429,7 @@ def list_session(chat_id,tenant_id):
     return get_result(data=convs)
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"])
+@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"]) # type: ignore
 @token_required
 def delete(tenant_id,chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
@@ -454,7 +454,7 @@ def delete(tenant_id,chat_id):
         ConversationService.delete_by_id(id)
     return get_result()
 
-@manager.route('/sessions/ask', methods=['POST'])
+@manager.route('/sessions/ask', methods=['POST']) # type: ignore
 @token_required
 def ask_about(tenant_id):
     req = request.json
@@ -492,7 +492,7 @@ def ask_about(tenant_id):
     return resp
 
 
-@manager.route('/sessions/related_questions', methods=['POST'])
+@manager.route('/sessions/related_questions', methods=['POST']) # type: ignore
 @token_required
 def related_questions(tenant_id):
     req = request.json
