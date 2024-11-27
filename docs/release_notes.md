@@ -57,7 +57,6 @@ This approach eliminates the need to manually update **service_config.yaml** aft
 - Adds support for Markdown chunking in the **General** chunk method.
 - Introduces an **invoke** tool within the Agent UI.
 - Integrates support for Dify's knowledge base API.
-- Adds ChatGPT-on-WeChat.
 - Adds support for GLM4-9B and Yi-Lightning models.
 - Introduces HTTP and Python APIs for dataset management, file management within dataset, and chat assistant management.
 
@@ -65,7 +64,7 @@ This approach eliminates the need to manually update **service_config.yaml** aft
 To download our Python SDK:
 
 ```bash
-pip pip install ragflow-sdk==0.13.0
+pip install ragflow-sdk==0.13.0
 ```
 :::
 
