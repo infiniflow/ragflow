@@ -14,6 +14,8 @@ const {
   get_document_file,
   getFile,
   moveFile,
+  getImportFiles,
+  importFiles,
 } = api;
 
 const methods = {
@@ -52,6 +54,14 @@ const methods = {
   },
   moveFile: {
     url: moveFile,
+    method: 'post',
+  },
+  getImportFiles: {
+    url: getImportFiles,
+    method: 'get',
+  },
+  importFiles: {
+    url: importFiles,
     method: 'post',
   },
 } as const;

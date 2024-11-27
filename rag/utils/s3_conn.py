@@ -4,6 +4,7 @@ from botocore.exceptions import ClientError
 from botocore.client import Config
 import time
 from io import BytesIO
+from rag import settings
 from rag.settings import s3_logger
 from rag.utils import singleton
 
@@ -11,10 +12,11 @@ from rag.utils import singleton
 class RAGFlowS3(object):
     def __init__(self):
         self.conn = None
-        self.endpoint = os.getenv('ENDPOINT', None)
-        self.access_key = os.getenv('ACCESS_KEY', None)
-        self.secret_key = os.getenv('SECRET_KEY', None)
-        self.region = os.getenv('REGION', None)
+        self.import_bucket = settings.S3["import_bucket"]
+        self.endpoint = settings.S3["endpoint"]
+        self.access_key = settings.S3["access_key"]
+        self.secret_key = settings.S3["secret_key"]
+        self.region = settings.S3["region"]
         self.__open__()
 
     def __open__(self):
@@ -69,10 +71,17 @@ class RAGFlowS3(object):
         return r
 
     def get_properties(self, bucket, key):
-        return {}
+        info = self.conn.stat_object(bucket_name=bucket, object_name=key)
+        return {"name": info.key, "size": info.size, "etag": info.etag, "owner": info.owner}
 
     def list(self, bucket, dir, recursive=True):
-        return []
+        bucket = bucket if bucket else self.import_bucket
+        if dir != "/":
+            keys = self.conn.list_objects(bucket_name=bucket, prefix=dir, recursive=recursive)
+        else:
+            keys = self.conn.list_objects(bucket_name=bucket, recursive=recursive)
+        data = [{"name": key.key, "size": key.size, "etag": key.etag, "owner": key.owner} for key in keys]
+        return data
 
     def put(self, bucket, fnm, binary):
         s3_logger.error(f"bucket name {bucket}; filename :{fnm}:")

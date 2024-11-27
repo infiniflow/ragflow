@@ -36,6 +36,14 @@ class RAGFlowAzureSasBlob(object):
         bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
         return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
 
+    def get_properties(self, bucket, key):
+        info = self.conn.get_blob_client(key).get_blob_properties()
+        return {"name": info.name, "size": info.size, "etag": info.etag, "owner": "None"}
+
+    def list(self, bucket, dir, recursive=True):
+        keys = self.conn.list_blobs(name_starts_with=dir)
+        return [{"name": key.name, "size": key.size, "etag": key.etag, "owner": "None"} for key in keys]
+
     def put(self, bucket, fnm, binary):
         for _ in range(3):
             try:

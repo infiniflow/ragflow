@@ -8,6 +8,7 @@ import {
   useRenameFile,
   useUploadFile,
 } from '@/hooks/file-manager-hooks';
+import { useImportFiles } from '@/hooks/import-file-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { TableRowSelection } from 'antd/es/table/interface';
 import { UploadFile } from 'antd/lib';
@@ -290,5 +291,32 @@ export const useHandleMoveFile = (
     moveFileVisible,
     hideMoveFileModal,
     showMoveFileModal: handleShowMoveFileModal,
+  };
+};
+
+export const useImportFilesFromStorage = () => {
+  const { visible: visible, hideModal, showModal } = useSetModalState();
+  const { loading, importFiles } = useImportFiles();
+  const navigate = useNavigate();
+
+  const onCreateOk = useCallback(
+    async (keys: string[], dir: boolean) => {
+      const ret = await importFiles({
+        keys,
+        dir,
+      });
+
+      hideModal();
+      navigate(`/file`);
+    },
+    [importFiles, hideModal, navigate],
+  );
+
+  return {
+    loading,
+    onCreateOk,
+    visible,
+    hideModal,
+    showModal,
   };
 };

@@ -99,6 +99,8 @@ export default {
   connectFileToKnowledge: `${api_host}/file2document/convert`,
   getFile: `${api_host}/file/get`,
   moveFile: `${api_host}/file/mv`,
+  getImportFiles: `${api_host}/storage/list`,
+  importFiles: `${api_host}/storage/import`,
 
   // system
   getSystemVersion: `${api_host}/system/version`,

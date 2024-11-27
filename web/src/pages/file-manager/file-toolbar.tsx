@@ -5,6 +5,7 @@ import {
   IListResult,
   useFetchParentFolderList,
 } from '@/hooks/file-manager-hooks';
+import ImportFilesFromStorageModal from '@/pages/file-manager/import-storage-files-modal';
 import {
   DownOutlined,
   FileTextOutlined,
@@ -26,6 +27,7 @@ import { useCallback, useMemo } from 'react';
 import {
   useHandleBreadcrumbClick,
   useHandleDeleteFile,
+  useImportFilesFromStorage,
   useSelectBreadcrumbItems,
 } from './hooks';
 
@@ -50,6 +52,14 @@ const FileToolbar = ({
   showMoveFileModal,
 }: IProps) => {
   const { t } = useTranslate('knowledgeDetails');
+  const { t: t_import_file } = useTranslate('knowledgeImport');
+  const {
+    visible,
+    hideModal,
+    showModal,
+    onCreateOk,
+    loading: creatingLoading,
+  } = useImportFilesFromStorage();
   const breadcrumbItems = useSelectBreadcrumbItems();
   const { handleBreadcrumbClick } = useHandleBreadcrumbClick();
   const parentFolderList = useFetchParentFolderList();
@@ -184,7 +194,24 @@ const FileToolbar = ({
             </Button>
           </Dropdown>
         )}
+
+        {isKnowledgeBase || (
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={showModal}
+            className={styles.topButton}
+          >
+            {t_import_file('importFile')}
+          </Button>
+        )}
       </Space>
+      <ImportFilesFromStorageModal
+        loading={creatingLoading}
+        visible={visible}
+        hideModal={hideModal}
+        onOk={onCreateOk}
+      ></ImportFilesFromStorageModal>
     </div>
   );
 };

@@ -42,6 +42,14 @@ class RAGFlowAzureSpnBlob(object):
         f.append_data(binary, offset=0, length=len(binary))
         return f.flush_data(len(binary))
 
+    def get_properties(self, bucket, key):
+        info = self.conn.get_file_client(self.full_path(key)).get_file_properties()
+        return {"name": info.name, "size": info.size, "etag": info.etag, "owner": info.owner}
+
+    def list(self, bucket, dir, recursive=True):
+        paths = self.conn.get_paths(path=self.full_path(dir), recursive=recursive, max_results=10000)
+        return [{"name": path.name, "size": path.content_length, "etag": path.etag, "owner": path.owner} for path in paths]
+
     def put(self, bucket, fnm, binary):
         for _ in range(3):
             try:

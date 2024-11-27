@@ -26,6 +26,7 @@ class RAGFlowMinio(object):
                               secret_key=settings.MINIO["password"],
                               secure=False
                               )
+            self.import_bucket = settings.MINIO["import_bucket"]
         except Exception as e:
             minio_logger.error(
                 "Fail to connect %s " % settings.MINIO["host"] + str(e))
@@ -43,6 +44,19 @@ class RAGFlowMinio(object):
                                  len(binary)
                                  )
         return r
+
+    def get_properties(self, bucket, key):
+        info = self.conn.stat_object(bucket_name=bucket, object_name=key)
+        return {"name": info.object_name, "size": info.size, "etag": info.etag, "owner": info.owner_name}
+
+    def list(self, bucket, dir, recursive=True):
+        bucket = bucket if bucket else self.import_bucket
+        if dir != "/":
+            keys = self.conn.list_objects(bucket_name=bucket, prefix=dir, recursive=recursive)
+        else:
+            keys = self.conn.list_objects(bucket_name=bucket, recursive=recursive)
+        data = [{"name": key.object_name, "size": key.size, "etag": key.etag, "owner": key.owner_name} for key in keys]
+        return data
 
     def put(self, bucket, fnm, binary):
         for _ in range(3):
