@@ -296,8 +296,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    cd web
    npm install --force
    ```  
-7. 配置前端，将 **.umirc.ts** 的 `proxy.target` 更新为 `http://127.0.0.1:9380`：  
-8. 启动前端服务：  
+7. 启动前端服务：  
    ```bash
    npm run dev 
    ```  
