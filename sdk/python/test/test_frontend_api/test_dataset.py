@@ -4,6 +4,7 @@ import pytest
 import random
 import string
 
+
 def test_dataset(get_auth):
     # create dataset
     res = create_dataset(get_auth, "test_create_dataset")
@@ -58,6 +59,7 @@ def test_dataset_1k_dataset(get_auth):
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")
 
+
 def test_duplicated_name_dataset(get_auth):
     # create dataset
     for i in range(20):
@@ -81,6 +83,7 @@ def test_duplicated_name_dataset(get_auth):
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")
 
+
 def test_invalid_name_dataset(get_auth):
     # create dataset
     # with pytest.raises(Exception) as e:
@@ -98,6 +101,7 @@ def test_invalid_name_dataset(get_auth):
     res = create_dataset(get_auth, long_string)
     assert res['code'] == 102
     print(res)
+
 
 def test_update_different_params_dataset(get_auth):
     # create dataset
