@@ -3,14 +3,17 @@ import { IKnowledge, ITestingResult } from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
 import kbService from '@/services/knowledge-service';
 import {
+  useInfiniteQuery,
   useIsMutating,
   useMutation,
   useMutationState,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { useDebounce } from 'ahooks';
 import { message } from 'antd';
 import { useSearchParams } from 'umi';
+import { useHandleSearchChange } from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
 
 export const useKnowledgeBaseId = (): string => {
@@ -50,7 +53,7 @@ export const useNextFetchKnowledgeList = (
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
       const { data } = await kbService.getList();
-      const list = data?.data ?? [];
+      const list = data?.data?.kbs ?? [];
       return shouldFilterListWithoutDocument
         ? list.filter((x: IKnowledge) => x.chunk_num > 0)
         : list;
@@ -58,6 +61,52 @@ export const useNextFetchKnowledgeList = (
   });
 
   return { list: data, loading };
+};
+
+export const useInfiniteFetchKnowledgeList = () => {
+  const { searchString, handleInputChange } = useHandleSearchChange();
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+
+  const PageSize = 30;
+  const {
+    data,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    status,
+  } = useInfiniteQuery({
+    queryKey: ['infiniteFetchKnowledgeList', debouncedSearchString],
+    queryFn: async ({ pageParam }) => {
+      const { data } = await kbService.getList({
+        page: pageParam,
+        page_size: PageSize,
+        keywords: debouncedSearchString,
+      });
+      const list = data?.data ?? [];
+      return list;
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, pages, lastPageParam) => {
+      if (lastPageParam * PageSize <= lastPage.total) {
+        return lastPageParam + 1;
+      }
+      return undefined;
+    },
+  });
+  return {
+    data,
+    loading: isFetching,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    status,
+    handleInputChange,
+    searchString,
+  };
 };
 
 export const useCreateKnowledge = () => {
@@ -95,7 +144,9 @@ export const useDeleteKnowledge = () => {
       const { data } = await kbService.rmKb({ kb_id: id });
       if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
-        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+        queryClient.invalidateQueries({
+          queryKey: ['infiniteFetchKnowledgeList'],
+        });
       }
       return data?.data ?? [];
     },
