@@ -5,7 +5,7 @@ export default function DatasetWrapper() {
   return (
     <div className="text-foreground flex">
       <SideBar></SideBar>
-      <div className="p-6">
+      <div className="flex-1">
         <Outlet />
       </div>
     </div>
