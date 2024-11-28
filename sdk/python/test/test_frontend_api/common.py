@@ -24,3 +24,9 @@ def rm_dataset(auth, dataset_id):
     json = {"kb_id": dataset_id}
     res = requests.post(url=url, headers=authorization, json=json)
     return res.json()
+
+def update_dataset(auth, json_req):
+    authorization = {"Authorization": auth}
+    url = f"{HOST_ADDRESS}/v1/kb/update"
+    res = requests.post(url=url, headers=authorization, json=json_req)
+    return res.json()
