@@ -85,6 +85,9 @@ class ESConnection(DocStoreConnection):
             logging.exception("ESConnection.createIndex error %s" % (indexName))
 
     def deleteIdx(self, indexName: str, knowledgebaseId: str):
+        if len(knowledgebaseId) > 0:
+            # The index need to be alive after any kb deletion since all kb under this tenant are in one index.
+            return
         try:
             self.es.indices.delete(index=indexName, allow_no_indices=True)
         except NotFoundError:
