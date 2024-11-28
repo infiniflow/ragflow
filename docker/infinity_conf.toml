@@ -1,0 +1,66 @@
+[general]
+version                  = "0.5.0"
+time_zone                = "utc-8"
+
+[network]
+server_address           = "0.0.0.0"
+postgres_port            = 5432
+http_port                = 23820
+client_port              = 23817
+connection_pool_size     = 128
+
+[log]
+log_filename             = "infinity.log"
+log_dir                  = "/var/infinity/log"
+log_to_stdout            = true
+log_file_max_size        = "100MB"
+log_file_rotate_count    = 10
+
+# trace/debug/info/warning/error/critical 6 log levels, default: info
+log_level               = "info"
+
+[storage]
+persistence_dir         = "/var/infinity/persistence"
+data_dir                = "/var/infinity/data"
+# periodically activates garbage collection:
+# 0 means real-time,
+# s means seconds, for example "60s", 60 seconds
+# m means minutes, for example "60m", 60 minutes
+# h means hours, for example "1h", 1 hour
+optimize_interval        = "10s"
+cleanup_interval         = "60s"
+compact_interval         = "120s"
+storage_type             = "local"
+
+# dump memory index entry when it reachs the capacity
+mem_index_capacity       = 65536
+
+# S3 storage config example:
+# [storage.object_storage]
+# url                      = "127.0.0.1:9000"
+# bucket_name              = "infinity"
+# access_key               = "minioadmin"
+# secret_key               = "minioadmin"
+# enable_https             = false
+
+[buffer]
+buffer_manager_size      = "8GB"
+lru_num                  = 7
+temp_dir                 = "/var/infinity/tmp"
+result_cache             = "off"
+memindex_memory_quota    = "4GB"
+
+[wal]
+wal_dir                       = "/var/infinity/wal"
+full_checkpoint_interval      = "30s"
+delta_checkpoint_interval     = "5s"
+# delta_checkpoint_threshold  = 1000000000
+wal_compact_threshold         = "1GB"
+
+# flush_at_once: write and flush log each commit
+# only_write: write log, OS control when to flush the log, default
+# flush_per_second: logs are written after each commit and flushed to disk per second.
+wal_flush                     = "only_write"
+
+[resource]
+resource_dir                  = "/var/infinity/resource"
