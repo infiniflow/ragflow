@@ -296,7 +296,7 @@ export default {
       search: '搜尋',
       all: '所有',
       enabled: '啟用',
-      disabled: '禁用的',
+      disabled: '禁用',
       keyword: '關鍵詞',
       function: '函數',
       chunkMessage: '請輸入值！',
