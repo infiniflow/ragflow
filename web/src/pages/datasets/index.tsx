@@ -1,12 +1,7 @@
+import ListFilterBar from '@/components/list-filter-bar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  ChevronRight,
-  Filter,
-  MoreHorizontal,
-  Plus,
-  Search,
-} from 'lucide-react';
+import { ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
 
 const datasets = [
   {
@@ -86,17 +81,10 @@ const datasets = [
 export default function Datasets() {
   return (
     <section className="p-8 text-foreground">
-      <div className="flex justify-between mb-6">
-        <span className="text-3xl font-bold ">Datasets</span>
-        <div className="flex gap-4 items-center">
-          <Filter className="size-5" />
-          <Search className="size-5" />
-          <Button variant={'tertiary'} size={'sm'}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create dataset
-          </Button>
-        </div>
-      </div>
+      <ListFilterBar title="Datasets">
+        <Plus className="mr-2 h-4 w-4" />
+        Create dataset
+      </ListFilterBar>
       <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
         {datasets.map((dataset) => (
           <Card
