@@ -105,9 +105,9 @@ As of this release, RAGFlow offers slim editions of its Docker images to improve
 The default Docker image edition is `dev-slim`. The following list clarifies the differences:
 
 - `dev-slim`: The slim edition of the most recent tested Docker image.
-- `v0.14.0-slim`: The slim edition of the most recent **officially** released Docker image.
+- `v0.12.0-slim`: The slim edition of the most recent **officially released** Docker image.
 - `dev`: The full edition of the most recent tested Docker image.
-- `v0.14.0`: The full edition of the most recent **officially** released Docker image.
+- `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
 See [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow) for instructions on upgrading.
 
