@@ -94,7 +94,7 @@ Released on September 30, 2024.
 - Improves the results of multi-round dialogues.
 - Enables users to remove added LLM vendors.
 - Adds support for OpenTTS and SparkTTS models.
-- Implements an **Excel to HTML** toggle in the **General** chunk method, allowing users to parse an spreadsheet into either an HTML table or key-value pairs by row.
+- Implements an **Excel to HTML** toggle in the **General** chunk method, allowing users to parse a spreadsheet into either HTML tables or key-value pairs by row.
 - Adds agent tools **YahooFance** and **Jin10**.
 - Adds a template for an investment advisor agent.
 
