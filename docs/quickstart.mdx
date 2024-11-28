@@ -32,9 +32,9 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 <details>
   <summary>1. Ensure <code>vm.max_map_count</code> &ge; 262144:</summary>
 
-   `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abmornal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation. 
+   `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.14.1 uses Elasticsearch for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.14.1 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
