@@ -310,7 +310,9 @@ class InfinityConnection(DocStoreConnection):
             table_name = f"{indexName}_{knowledgebaseId}"
             table_instance = db_instance.get_table(table_name)
             kb_res = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
-            df_list.append(kb_res)
+            if len(kb_res) != 0 and kb_res.shape[0] > 0:
+                df_list.append(kb_res)
+
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, ["id"])
         res_fields = self.getFields(res, res.columns)
