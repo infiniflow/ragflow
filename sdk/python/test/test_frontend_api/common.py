@@ -3,6 +3,8 @@ import requests
 
 HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
 
+DATASET_NAME_LIMIT = 128
+
 def create_dataset(auth, dataset_name):
     authorization = {"Authorization": auth}
     url = f"{HOST_ADDRESS}/v1/kb/create"
@@ -23,4 +25,10 @@ def rm_dataset(auth, dataset_id):
     url = f"{HOST_ADDRESS}/v1/kb/rm"
     json = {"kb_id": dataset_id}
     res = requests.post(url=url, headers=authorization, json=json)
+    return res.json()
+
+def update_dataset(auth, json_req):
+    authorization = {"Authorization": auth}
+    url = f"{HOST_ADDRESS}/v1/kb/update"
+    res = requests.post(url=url, headers=authorization, json=json_req)
     return res.json()

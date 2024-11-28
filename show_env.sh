@@ -15,7 +15,7 @@ get_distro_info() {
     echo "$distro_id $distro_version (Kernel version: $kernel_version)"
 }
 
-# get Git repo name
+# get Git repository name
 git_repo_name=''
 if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
     git_repo_name=$(basename "$(git rev-parse --show-toplevel)")
@@ -48,8 +48,8 @@ else
     python_version="Python not installed"
 fi
 
-# Print all infomation
-echo "Current Repo: $git_repo_name"
+# Print all information
+echo "Current Repository: $git_repo_name"
 
 # get Commit ID
 git_version=$(git log -1 --pretty=format:'%h')
