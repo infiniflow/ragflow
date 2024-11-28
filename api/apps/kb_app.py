@@ -169,7 +169,9 @@ def rm():
         if not KnowledgebaseService.delete_by_id(req["kb_id"]):
             return get_data_error_result(
                 message="Database error (Knowledgebase removal)!")
-        settings.docStoreConn.delete({"kb_id": req["kb_id"]}, search.index_name(kbs[0].tenant_id), req["kb_id"])
+        for kb in kbs:
+            settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
+            settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
