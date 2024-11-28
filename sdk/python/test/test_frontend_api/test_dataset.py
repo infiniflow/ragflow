@@ -1,9 +1,8 @@
-from common import HOST_ADDRESS, create_dataset, list_dataset, rm_dataset, update_dataset
+from common import HOST_ADDRESS, create_dataset, list_dataset, rm_dataset, update_dataset, DATASET_NAME_LIMIT
 import re
 import pytest
 import random
 import string
-from api.constants import DATASET_NAME_LIMIT
 
 def test_dataset(get_auth):
     # create dataset

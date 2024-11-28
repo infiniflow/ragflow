@@ -3,6 +3,8 @@ import requests
 
 HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
 
+DATASET_NAME_LIMIT = 128
+
 def create_dataset(auth, dataset_name):
     authorization = {"Authorization": auth}
     url = f"{HOST_ADDRESS}/v1/kb/create"
