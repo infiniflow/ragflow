@@ -252,7 +252,7 @@ def feishu_callback():
     if res["code"] != 0:
         return redirect("/?error=%s" % res["message"])
 
-    if "contact:user.email:readonly" not in res["data"]["scope"].split(" "):
+    if "contact:user.email:readonly" not in res["data"]["scope"].split():
         return redirect("/?error=contact:user.email:readonly not in scope")
     session["access_token"] = res["data"]["access_token"]
     session["access_token_from"] = "feishu"

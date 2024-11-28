@@ -403,7 +403,7 @@ class ESConnection(DocStoreConnection):
             if not hlts:
                 continue
             txt = "...".join([a for a in list(hlts.items())[0][1]])
-            if not is_english(txt.split(" ")):
+            if not is_english(txt.split()):
                 ans[d["_id"]] = txt
                 continue
 
