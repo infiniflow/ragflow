@@ -39,6 +39,8 @@ services:
     image: infiniflow/infinity:v0.5.0-dev5
     volumes:
       - infinity_data:/var/infinity
+      - ./infinity_conf.toml:/infinity_conf.toml
+    command: ["-f", "/infinity_conf.toml"]
     ports:
       - ${INFINITY_THRIFT_PORT}:23817
       - ${INFINITY_HTTP_PORT}:23820
