@@ -291,8 +291,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    cd web
    npm install --force
    ```  
-7. **.umirc.ts** 에서 `proxy.target` 을 `http://127.0.0.1:9380` 으로 업데이트합니다:
-8. 프론트엔드 서비스를 시작합니다:  
+7. 프론트엔드 서비스를 시작합니다:  
    ```bash
    npm run dev 
    ```
