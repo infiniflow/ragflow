@@ -71,7 +71,7 @@ def test_duplicated_name_dataset(get_auth):
     data = res.get("data").get("kbs")
     dataset_list = []
     pattern = r'^test_create_dataset.*'
-    for item in data.get("kbs"):
+    for item in data:
         dataset_name = item.get("name")
         dataset_id = item.get("id")
         dataset_list.append(dataset_id)
