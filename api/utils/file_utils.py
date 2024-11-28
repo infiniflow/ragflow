@@ -179,7 +179,7 @@ def thumbnail_img(filename, blob):
         buffered = BytesIO()
         resolution = 32
         img = None
-        while True:
+        for _ in range(10):
             # https://github.com/jsvine/pdfplumber?tab=readme-ov-file#creating-a-pageimage-with-to_image
             pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
             img = buffered.getvalue()
