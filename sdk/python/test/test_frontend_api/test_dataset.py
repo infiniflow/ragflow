@@ -109,7 +109,7 @@ def test_update_different_params_dataset(get_auth):
     dataset_list = []
     while True:
         res = list_dataset(get_auth, page_number)
-        data = res.get("data")
+        data = res.get("data").get("kbs")
         for item in data:
             dataset_id = item.get("id")
             dataset_list.append(dataset_id)
