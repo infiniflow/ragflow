@@ -2120,7 +2120,7 @@ Failure:
 
 ---
 
-## Create session with an agent
+## Create session with agent
 
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
