@@ -308,7 +308,7 @@ def agent_completion(tenant_id, agent_id):
             if 'docnm_kwd' in chunk_i:
                 chunk_i['doc_name'] = chunk_i['docnm_kwd']
                 chunk_i.pop('docnm_kwd')
-    conv.message.append(msg[-1])
+    # conv.message.append(msg[-1])   移除重复添加的消息
 
     if not conv.reference:
         conv.reference = []
@@ -317,8 +317,12 @@ def agent_completion(tenant_id, agent_id):
 
     final_ans = {"reference": [], "content": ""}
 
-    canvas.messages.append(msg[-1])
+    canvas.messages = conv.message      # 修正上下文为接口的上下文
     canvas.add_user_input(msg[-1]["content"])
+
+    # 历史记录解析
+    for m in conv.message:
+        canvas.history.append((m["role"], m["content"]))
 
     if stream:
         def sse():
