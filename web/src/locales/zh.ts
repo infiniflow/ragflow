@@ -75,7 +75,6 @@ export default {
       namePlaceholder: '请输入名称',
       doc: '文档',
       searchKnowledgePlaceholder: '搜索',
-      noMoreData: '沒有更多的數據了',
     },
     knowledgeDetails: {
       dataset: '数据集',

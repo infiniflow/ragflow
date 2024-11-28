@@ -125,16 +125,15 @@ def detail():
 @manager.route('/list', methods=['GET'])
 @login_required
 def list_kbs():
-    keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 150))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", True)
     try:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        kbs, total = KnowledgebaseService.get_by_tenant_ids(
-            [m["tenant_id"] for m in tenants], current_user.id, page_number, items_per_page, orderby, desc, keywords)
-        return get_json_result(data={"kbs": kbs, "total": total})
+        kbs = KnowledgebaseService.get_by_tenant_ids(
+            [m["tenant_id"] for m in tenants], current_user.id, page_number, items_per_page, orderby, desc)
+        return get_json_result(data=kbs)
     except Exception as e:
         return server_error_response(e)
 

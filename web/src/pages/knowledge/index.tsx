@@ -1,26 +1,18 @@
-import { useInfiniteFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
-import {
-  Button,
-  Divider,
-  Empty,
-  Flex,
-  Input,
-  Skeleton,
-  Space,
-  Spin,
-} from 'antd';
-import { useTranslation } from 'react-i18next';
-import InfiniteScroll from 'react-infinite-scroll-component';
-import { useSaveKnowledge } from './hooks';
+import { Button, Empty, Flex, Input, Space, Spin } from 'antd';
 import KnowledgeCard from './knowledge-card';
 import KnowledgeCreatingModal from './knowledge-creating-modal';
 
-import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useSaveKnowledge, useSearchKnowledge } from './hooks';
 import styles from './index.less';
 
 const KnowledgeList = () => {
+  const { searchString, handleInputChange } = useSearchKnowledge();
+  const { loading, list: data } = useNextFetchKnowledgeList();
+  const list = data.filter((x) => x.name.includes(searchString));
   const { data: userInfo } = useFetchUserInfo();
   const { t } = useTranslation('translation', { keyPrefix: 'knowledgeList' });
   const {
@@ -30,23 +22,9 @@ const KnowledgeList = () => {
     onCreateOk,
     loading: creatingLoading,
   } = useSaveKnowledge();
-  const {
-    fetchNextPage,
-    data,
-    hasNextPage,
-    searchString,
-    handleInputChange,
-    loading,
-  } = useInfiniteFetchKnowledgeList();
-  console.log('🚀 ~ KnowledgeList ~ data:', data);
-  const nextList = data?.pages?.flatMap((x) => x.kbs) ?? [];
-
-  const total = useMemo(() => {
-    return data?.pages.at(-1).total ?? 0;
-  }, [data?.pages]);
 
   return (
-    <Flex className={styles.knowledge} vertical flex={1} id="scrollableDiv">
+    <Flex className={styles.knowledge} vertical flex={1}>
       <div className={styles.topWrapper}>
         <div>
           <span className={styles.title}>
@@ -75,30 +53,21 @@ const KnowledgeList = () => {
         </Space>
       </div>
       <Spin spinning={loading}>
-        <InfiniteScroll
-          dataLength={nextList?.length ?? 0}
-          next={fetchNextPage}
-          hasMore={hasNextPage}
-          loader={<Skeleton avatar paragraph={{ rows: 1 }} active />}
-          endMessage={total && <Divider plain>{t('noMoreData')} 🤐</Divider>}
-          scrollableTarget="scrollableDiv"
+        <Flex
+          gap={'large'}
+          wrap="wrap"
+          className={styles.knowledgeCardContainer}
         >
-          <Flex
-            gap={'large'}
-            wrap="wrap"
-            className={styles.knowledgeCardContainer}
-          >
-            {nextList?.length > 0 ? (
-              nextList.map((item: any) => {
-                return (
-                  <KnowledgeCard item={item} key={item.name}></KnowledgeCard>
-                );
-              })
-            ) : (
-              <Empty className={styles.knowledgeEmpty}></Empty>
-            )}
-          </Flex>
-        </InfiniteScroll>
+          {list.length > 0 ? (
+            list.map((item: any) => {
+              return (
+                <KnowledgeCard item={item} key={item.name}></KnowledgeCard>
+              );
+            })
+          ) : (
+            <Empty className={styles.knowledgeEmpty}></Empty>
+          )}
+        </Flex>
       </Spin>
       <KnowledgeCreatingModal
         loading={creatingLoading}
