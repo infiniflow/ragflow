@@ -157,7 +157,7 @@ export default {
       topKTip: `K chunks will be fed into rerank models.`,
       delimiter: `Delimiter`,
       html4excel: 'Excel to HTML',
-      html4excelTip: `Excel will be parsed into HTML table or not. If it's FALSE, every row in Excel will be formed as a chunk.`,
+      html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables; otherwise, it will be parsed into key-value pairs by row.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Extract N keywords for each chunk to increase their ranking for queries containing those keywords. You can check or update the added keywords for a chunk from the chunk list. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
       autoQuestions: 'Auto-question',
