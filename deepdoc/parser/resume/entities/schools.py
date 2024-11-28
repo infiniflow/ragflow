@@ -44,7 +44,7 @@ loadRank(os.path.join(current_file_path, "res/school.rank.csv"))
 
 def split(txt):
     tks = []
-    for t in re.sub(r"[ \t]+", " ",txt).split(" "):
+    for t in re.sub(r"[ \t]+", " ",txt).split():
         if tks and re.match(r".*[a-zA-Z]$", tks[-1]) and \
            re.match(r"[a-zA-Z]", t) and tks:
             tks[-1] = tks[-1] + " " + t

@@ -117,7 +117,7 @@ class TableStructureRecognizer(Recognizer):
         for p, n in patt:
             if re.search(p, b["text"].strip()):
                 return n
-        tks = [t for t in rag_tokenizer.tokenize(b["text"]).split(" ") if len(t) > 1]
+        tks = [t for t in rag_tokenizer.tokenize(b["text"]).split() if len(t) > 1]
         if len(tks) > 3:
             if len(tks) < 12:
                 return "Tx"

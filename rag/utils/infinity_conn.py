@@ -419,7 +419,7 @@ class InfinityConnection(DocStoreConnection):
                     v = list(v)
                 elif fieldnm == "important_kwd":
                     assert isinstance(v, str)
-                    v = v.split(" ")
+                    v = v.split()
                 else:
                     if not isinstance(v, str):
                         v = str(v)

@@ -99,11 +99,11 @@ class Pdf(PdfParser):
             i += 1
             txt = b["text"].lower().strip()
             if re.match("(abstract|摘要)", txt):
-                if len(txt.split(" ")) > 32 or len(txt) > 64:
+                if len(txt.split()) > 32 or len(txt) > 64:
                     abstr = txt + self._line_tag(b, zoomin)
                     break
                 txt = self.boxes[i]["text"].lower().strip()
-                if len(txt.split(" ")) > 32 or len(txt) > 64:
+                if len(txt.split()) > 32 or len(txt) > 64:
                     abstr = txt + self._line_tag(self.boxes[i], zoomin)
                 i += 1
                 break

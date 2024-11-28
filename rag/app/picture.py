@@ -33,7 +33,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
     txt = "\n".join([t[0] for _, t in bxs if t[0]])
     eng = lang.lower() == "english"
     callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
-    if (eng and len(txt.split(" ")) > 32) or len(txt) > 32:
+    if (eng and len(txt.split()) > 32) or len(txt) > 32:
         tokenize(doc, txt, eng)
         callback(0.8, "OCR results is too long to use CV LLM.")
         return [doc]

@@ -80,7 +80,7 @@ def refactor(df):
     def loadjson(line):
         try:
             return json.loads(line)
-        except Exception as e:
+        except Exception:
             pass
         return {}
 
@@ -183,4 +183,4 @@ def refactor(df):
                 "\r",
                 "\\n"))
     # print(df.values.tolist())
-    return dict(zip([n.split(" ")[0] for n in FIELDS], df.values.tolist()[0]))
+    return dict(zip([n.split()[0] for n in FIELDS], df.values.tolist()[0]))

@@ -100,7 +100,7 @@ def forEdu(cv):
         if n.get("school_name") and isinstance(n["school_name"], str):
             sch.append(re.sub(r"(211|985|重点大学|[,&;；-])", "", n["school_name"]))
             e["sch_nm_kwd"] = sch[-1]
-        fea.append(rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(n.get("school_name", ""))).split(" ")[-1])
+        fea.append(rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(n.get("school_name", ""))).split()[-1])
 
         if n.get("discipline_name") and isinstance(n["discipline_name"], str):
             maj.append(n["discipline_name"])
@@ -485,7 +485,7 @@ def parse(cv):
         nm = re.sub(r"[\n——\-\(（\+].*", "", cv["name"].strip())
         nm = re.sub(r"[ \t　]+", " ", nm)
         if re.match(r"[a-zA-Z ]+$", nm):
-            if len(nm.split(" ")) > 1:
+            if len(nm.split()) > 1:
                 cv["name"] = nm
             else:
                 nm = ""
@@ -503,7 +503,7 @@ def parse(cv):
         for py in PY.get_pinyins(nm[:20], ''):
             for i in range(2, len(py) + 1): cv["name_py_pref_tks"] += " " + py[:i]
         for py in PY.get_pinyins(nm[:20], ' '):
-            py = py.split(" ")
+            py = py.split()
             for i in range(1, len(py) + 1): cv["name_py_pref0_tks"] += " " + "".join(py[:i])
 
         cv["name_kwd"] = name

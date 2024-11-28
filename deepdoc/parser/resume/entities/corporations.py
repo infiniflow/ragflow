@@ -47,7 +47,7 @@ def corpNorm(nm, add_region=True):
     nm = re.sub(r"(计算机|技术|(技术|科技|网络)*有限公司|公司|有限|研发中心|中国|总部)$", "", nm, 10000, re.IGNORECASE)
     if not nm or (len(nm)<5 and not regions.isName(nm[0:2])):return nm
 
-    tks = rag_tokenizer.tokenize(nm).split(" ")
+    tks = rag_tokenizer.tokenize(nm).split()
     reg = [t for i,t in enumerate(tks) if regions.isName(t) and (t != "中国" or i > 0)]
     nm = ""
     for t in tks:
