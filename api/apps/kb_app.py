@@ -29,6 +29,7 @@ from api.db.db_models import File
 from api.utils.api_utils import get_json_result
 from api import settings
 from rag.nlp import search
+from api.constants import DATASET_NAME_LIMIT
 
 
 @manager.route('/create', methods=['post'])
@@ -36,10 +37,19 @@ from rag.nlp import search
 @validate_request("name")
 def create():
     req = request.json
-    req["name"] = req["name"].strip()
-    req["name"] = duplicate_name(
+    dataset_name = req["name"]
+    if not isinstance(dataset_name, str):
+        return get_data_error_result(message="Dataset name must be string.")
+    if dataset_name == "":
+        return get_data_error_result(message="Dataset name can't be empty.")
+    if len(dataset_name) >= DATASET_NAME_LIMIT:
+        return get_data_error_result(
+            message=f"Dataset name length is {len(dataset_name)} which is large than {DATASET_NAME_LIMIT}")
+
+    dataset_name = dataset_name.strip()
+    dataset_name = duplicate_name(
         KnowledgebaseService.query,
-        name=req["name"],
+        name=dataset_name,
         tenant_id=current_user.id,
         status=StatusEnum.VALID.value)
     try:
@@ -73,7 +83,8 @@ def update():
         if not KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"]):
             return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.', code=settings.RetCode.OPERATING_ERROR)
+                data=False, message='Only owner of knowledgebase authorized for this operation.',
+                code=settings.RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
         if not e:
@@ -81,7 +92,8 @@ def update():
                 message="Can't find this knowledgebase!")
 
         if req["name"].lower() != kb.name.lower() \
-                and len(KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) > 1:
+                and len(
+            KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) > 1:
             return get_data_error_result(
                 message="Duplicated knowledgebase name.")
 
@@ -152,10 +164,11 @@ def rm():
         )
     try:
         kbs = KnowledgebaseService.query(
-                created_by=current_user.id, id=req["kb_id"])
+            created_by=current_user.id, id=req["kb_id"])
         if not kbs:
             return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.', code=settings.RetCode.OPERATING_ERROR)
+                data=False, message='Only owner of knowledgebase authorized for this operation.',
+                code=settings.RetCode.OPERATING_ERROR)
 
         for doc in DocumentService.query(kb_id=req["kb_id"]):
             if not DocumentService.remove_document(doc, kbs[0].tenant_id):
