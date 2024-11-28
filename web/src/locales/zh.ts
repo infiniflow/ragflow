@@ -313,7 +313,7 @@ export default {
       search: '搜索',
       all: '所有',
       enabled: '启用',
-      disabled: '禁用的',
+      disabled: '禁用',
       keyword: '关键词',
       function: '函数',
       chunkMessage: '请输入值！',
