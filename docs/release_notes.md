@@ -102,7 +102,7 @@ Released on September 30, 2024.
 
 As of this release, RAGFlow offers slim editions of its Docker images to improve the experience for users with limited Internet access. A slim edition of RAGFlow's Docker image does not include built-in BGE/BCE embedding models and has a size of about 1GB; a full edition of RAGFlow is approximately 9GB and includes both built-in embedding models and embedding models that will be downloaded once you select them in the RAGFlow UI.
 
-The default Docker image edition is `dev-slim`. The following list clarifies the differences:
+The default Docker image edition is `dev-slim`. The following list clarifies the differences between various editions:
 
 - `dev-slim`: The slim edition of the most recent tested Docker image.
 - `v0.12.0-slim`: The slim edition of the most recent **officially released** Docker image.
