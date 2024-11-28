@@ -13,7 +13,7 @@ def test_dataset(get_auth):
     while True:
         res = list_dataset(get_auth, page_number)
         data = res.get("data")
-        for item in data:
+        for item in data.get("kbs"):
             dataset_id = item.get("id")
             dataset_list.append(dataset_id)
         if len(dataset_list) < page_number * 150:
@@ -42,7 +42,7 @@ def test_dataset_1k_dataset(get_auth):
     while True:
         res = list_dataset(get_auth, page_number)
         data = res.get("data")
-        for item in data:
+        for item in data.get("kbs"):
             dataset_id = item.get("id")
             dataset_list.append(dataset_id)
         if len(dataset_list) < page_number * 150:
