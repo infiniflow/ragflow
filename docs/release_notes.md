@@ -91,7 +91,7 @@ Released on September 30, 2024.
 ### New features
 
 - Offers slim editions of RAGFlow's Docker images, which do not include built-in BGE/BCE embedding or reranking models.
-- Improves the effect of multi-round dialogues.
+- Improves the results of multi-round dialogues.
 - Enables users to remove added LLM vendors.
 - Adds support for OpenTTS and SparkTTS models.
 - Implements an **Excel to HTML** toggle in the **General** chunk method, allowing users to parse an spreadsheet into either an HTML table or key-value pairs by row.
