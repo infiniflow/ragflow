@@ -20,7 +20,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -169,14 +169,14 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    ```
 
    > - Untuk mengunduh versi tertentu dari image Docker RAGFlow slim, perbarui variabel `RAGFlow_IMAGE` di *
-       *docker/.env** sesuai dengan versi yang diinginkan. Misalnya, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0-slim`.
+       *docker/.env** sesuai dengan versi yang diinginkan. Misalnya, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1-slim`.
        Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
    > - Untuk mengunduh versi dev dari image Docker RAGFlow *termasuk* model embedding dan library Python, perbarui
        variabel `RAGFlow_IMAGE` di **docker/.env** menjadi `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. Setelah mengubah ini,
        jalankan ulang perintah di atas untuk memulai unduhan.
    > - Untuk mengunduh versi tertentu dari image Docker RAGFlow *termasuk* model embedding dan library Python, perbarui
        variabel `RAGFlow_IMAGE` di **docker/.env** sesuai dengan versi yang diinginkan. Misalnya,
-       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0`. Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
+       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`. Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
 
    > **CATATAN:** Image Docker RAGFlow yang mencakup model embedding dan library Python berukuran sekitar 9GB
    dan mungkin memerlukan waktu lebih lama untuk dimuat.
