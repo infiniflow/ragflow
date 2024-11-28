@@ -67,7 +67,7 @@ export const useInfiniteFetchKnowledgeList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
-  const PageSize = 10;
+  const PageSize = 30;
   const {
     data,
     error,
