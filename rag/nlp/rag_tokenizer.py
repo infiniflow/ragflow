@@ -192,7 +192,7 @@ class RagTokenizer:
 
         # if split chars is part of token
         res = []
-        tks = re.sub(r"[ ]+", " ", tks).split(" ")
+        tks = re.sub(r"[ ]+", " ", tks).split()
         s = 0
         while True:
             if s >= len(tks):
@@ -329,7 +329,7 @@ class RagTokenizer:
         return self.merge_(res)
 
     def fine_grained_tokenize(self, tks):
-        tks = tks.split(" ")
+        tks = tks.split()
         zh_num = len([1 for c in tks if c and is_chinese(c[0])])
         if zh_num < len(tks) * 0.2:
             res = []
@@ -393,7 +393,7 @@ def is_alphabet(s):
 
 def naiveQie(txt):
     tks = []
-    for t in txt.split(" "):
+    for t in txt.split():
         if tks and re.match(r".*[a-zA-Z]$", tks[-1]
                             ) and re.match(r".*[a-zA-Z]$", t):
             tks.append(" ")

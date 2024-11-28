@@ -231,15 +231,10 @@ class InfinityConnection(DocStoreConnection):
                 if len(filter_cond) != 0:
                     filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
                 logging.debug(f"filter_fulltext: {filter_fulltext}")
-                minimum_should_match = "0%"
-                if "minimum_should_match" in matchExpr.extra_options:
-                    minimum_should_match = (
-                            str(int(matchExpr.extra_options["minimum_should_match"] * 100))
-                            + "%"
-                    )
-                    matchExpr.extra_options.update(
-                        {"minimum_should_match": minimum_should_match}
-                    )
+                minimum_should_match = matchExpr.extra_options.get("minimum_should_match", 0.0)
+                if isinstance(minimum_should_match, float):
+                    str_minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                    matchExpr.extra_options["minimum_should_match"] = str_minimum_should_match
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
@@ -424,7 +419,7 @@ class InfinityConnection(DocStoreConnection):
                     v = list(v)
                 elif fieldnm == "important_kwd":
                     assert isinstance(v, str)
-                    v = v.split(" ")
+                    v = v.split()
                 else:
                     if not isinstance(v, str):
                         v = str(v)

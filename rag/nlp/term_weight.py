@@ -99,7 +99,7 @@ class Dealer:
             txt = re.sub(p, r, txt)
 
         res = []
-        for t in rag_tokenizer.tokenize(txt).split(" "):
+        for t in rag_tokenizer.tokenize(txt).split():
             tk = t
             if (stpwd and tk in self.stop_words) or (
                     re.match(r"[0-9]$", tk) and not num):
@@ -150,7 +150,7 @@ class Dealer:
 
     def split(self, txt):
         tks = []
-        for t in re.sub(r"[ \t]+", " ", txt).split(" "):
+        for t in re.sub(r"[ \t]+", " ", txt).split():
             if tks and re.match(r".*[a-zA-Z]$", tks[-1]) and \
                re.match(r".*[a-zA-Z]$", t) and tks and \
                self.ne.get(t, "") != "func" and self.ne.get(tks[-1], "") != "func":
@@ -198,7 +198,7 @@ class Dealer:
                 s = 0
 
             if not s and len(t) >= 4:
-                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split(" ") if len(tt) > 1]
+                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]
                 if len(s) > 1:
                     s = np.min([freq(tt) for tt in s]) / 6.
                 else:
@@ -214,7 +214,7 @@ class Dealer:
             elif re.match(r"[a-z. -]+$", t):
                 return 300
             elif len(t) >= 4:
-                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split(" ") if len(tt) > 1]
+                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]
                 if len(s) > 1:
                     return max(3, np.min([df(tt) for tt in s]) / 6.)
 
@@ -228,7 +228,7 @@ class Dealer:
             idf2 = np.array([idf(df(t), 1000000000) for t in tks])
             wts = (0.3 * idf1 + 0.7 * idf2) * \
                 np.array([ner(t) * postag(t) for t in tks])
-            wts = [math.pow(s, 2) for s in wts]
+            wts = [s for s in wts]
             tw = list(zip(tks, wts))
         else:
             for tk in tks:
@@ -237,7 +237,7 @@ class Dealer:
                 idf2 = np.array([idf(df(t), 1000000000) for t in tt])
                 wts = (0.3 * idf1 + 0.7 * idf2) * \
                     np.array([ner(t) * postag(t) for t in tt])
-                wts = [math.pow(s, 2) for s in wts]
+                wts = [s for s in wts]
                 tw.extend(zip(tt, wts))
 
         S = np.sum([s for _, s in tw])

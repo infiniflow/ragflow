@@ -146,7 +146,7 @@ def rewrite_yaml_conf(conf_path, config):
 
 
 def rewrite_json_file(filepath, json_data):
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding='utf-8') as f:
         json.dump(json_data, f, indent=4, separators=(",", ": "))
     f.close()
 
