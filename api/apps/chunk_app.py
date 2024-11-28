@@ -96,7 +96,7 @@ def get():
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
         if chunk is None:
-            return server_error_response("Chunk not found")
+            return server_error_response(Exception("Chunk not found"))
         k = []
         for n in chunk.keys():
             if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
