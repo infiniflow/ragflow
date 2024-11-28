@@ -20,7 +20,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -152,9 +152,9 @@
    $ docker compose -f docker-compose.yml up -d
    ```
    
-   > - 특정 버전의 RAGFlow slim Docker 이미지를 다운로드하려면, **docker/.env**에서 `RAGFlow_IMAGE` 변수를 원하는 버전으로 업데이트하세요. 예를 들어, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0-slim`으로 설정합니다. 이 변경을 완료한 후, 위의 명령을 다시 실행하여 다운로드를 시작하세요.
+   > - 특정 버전의 RAGFlow slim Docker 이미지를 다운로드하려면, **docker/.env**에서 `RAGFlow_IMAGE` 변수를 원하는 버전으로 업데이트하세요. 예를 들어, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1-slim`으로 설정합니다. 이 변경을 완료한 후, 위의 명령을 다시 실행하여 다운로드를 시작하세요.
    > - RAGFlow의 임베딩 모델과 Python 라이브러리를 포함한 개발 버전 Docker 이미지를 다운로드하려면, **docker/.env**에서 `RAGFlow_IMAGE` 변수를 `RAGFLOW_IMAGE=infiniflow/ragflow:dev`로 업데이트하세요. 이 변경을 완료한 후, 위의 명령을 다시 실행하여 다운로드를 시작하세요.
-   > - 특정 버전의 RAGFlow Docker 이미지를 임베딩 모델과 Python 라이브러리를 포함하여 다운로드하려면, **docker/.env**에서 `RAGFlow_IMAGE` 변수를 원하는 버전으로 업데이트하세요. 예를 들어, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0` 로 설정합니다. 이 변경을 완료한 후, 위의 명령을 다시 실행하여 다운로드를 시작하세요.  
+   > - 특정 버전의 RAGFlow Docker 이미지를 임베딩 모델과 Python 라이브러리를 포함하여 다운로드하려면, **docker/.env**에서 `RAGFlow_IMAGE` 변수를 원하는 버전으로 업데이트하세요. 예를 들어, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1` 로 설정합니다. 이 변경을 완료한 후, 위의 명령을 다시 실행하여 다운로드를 시작하세요.  
    
    > **NOTE:** 임베딩 모델과 Python 라이브러리를 포함한 RAGFlow Docker 이미지의 크기는 약 9GB이며, 로드하는 데 상당히 오랜 시간이 걸릴 수 있습니다.
 

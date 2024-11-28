@@ -17,7 +17,7 @@ By default, each RAGFlow user is assigned a single team named after their name. 
 Team members are currently *not* allowed to invite users to your team, and only you, the team owner, is permitted to do so.
 :::
 
-To enter the **Team** page, click on your avatar on the top right corner of the page **>** Team:
+To enter the **Team** page, click on your avatar in the top right corner of the page **>** Team:
 
 ![team](https://github.com/user-attachments/assets/0eac2503-26bc-4568-b3f2-bcd84069a07a)
 
