@@ -205,7 +205,7 @@ def thumbnail_img(filename, blob):
                 buffered = BytesIO()
                 scale = 0.03
                 img = None
-                while True:
+                for _ in range(10):
                     # https://reference.aspose.com/slides/python-net/aspose.slides/slide/get_thumbnail/#float-float
                     presentation.slides[0].get_thumbnail(scale, scale).save(
                         buffered, drawing.imaging.ImageFormat.png)
