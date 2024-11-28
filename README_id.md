@@ -307,9 +307,8 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ```bash
    cd web
    npm install --force
-   ```  
-7. Konfigurasikan frontend untuk memperbarui `proxy.target` di **.umirc.ts** menjadi `http://127.0.0.1:9380`:
-8. Jalankan aplikasi frontend:
+   ```
+7. Jalankan aplikasi frontend:
    ```bash
    npm run dev 
    ```  

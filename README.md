@@ -333,8 +333,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    cd web
    npm install --force
    ```  
-7. Configure frontend to update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
-8. Launch frontend service:
+7. Launch frontend service:
    ```bash
    npm run dev 
    ```  

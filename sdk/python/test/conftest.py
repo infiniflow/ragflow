@@ -40,7 +40,10 @@ def login():
 
 @pytest.fixture(scope="session")
 def get_api_key_fixture():
-    register()
+    try:
+        register()
+    except Exception as e:
+        print(e)
     auth = login()
     url = HOST_ADDRESS + "/v1/system/new_token"
     auth = {"Authorization": auth}

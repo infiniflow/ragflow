@@ -191,3 +191,6 @@ def test_retrieve_chunks(get_api_key_fixture):
     doc = docs[0]
     doc.add_chunk(content="This is a chunk addition test")
     rag.retrieve(dataset_ids=[ds.id],document_ids=[doc.id])
+    rag.delete_datasets(ids=[ds.id])
+
+# test different parameters for the retrieval
