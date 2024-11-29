@@ -328,7 +328,7 @@ class InfinityConnection(DocStoreConnection):
             table_instance = db_instance.get_table(table_name)
         except InfinityException as e:
             # src/common/status.cppm, kTableNotExist = 3022
-            if e.error_code != 3022:
+            if e.error_code != ErrorCode.TABLE_NOT_EXIST:
                 raise
             vector_size = 0
             patt = re.compile(r"q_(?P<vector_size>\d+)_vec")
@@ -348,6 +348,9 @@ class InfinityConnection(DocStoreConnection):
             for k, v in d.items():
                 if k.endswith("_kwd") and isinstance(v, list):
                     d[k] = " ".join(v)
+                if k == 'kb_id':
+                    if isinstance(d[k], list):
+                        d[k] = d[k][0] # since d[k] is a list, but we need a str
         ids = ["'{}'".format(d["id"]) for d in documents]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"

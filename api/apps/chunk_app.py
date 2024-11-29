@@ -60,6 +60,11 @@ def list_chunk():
         sres = settings.retrievaler.search(query, search.index_name(tenant_id), kb_ids, highlight=True)
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
+            chunk_elem = sres.field[id]
+            if 'position_list' in chunk_elem:
+                if isinstance(chunk_elem["position_list"], str):
+                    chunk_elem.pop('position_list') # Infinity will store position list as empty str
+
             d = {
                 "chunk_id": id,
                 "content_with_weight": rmSpace(sres.highlight[id]) if question and id in sres.highlight else sres.field[
