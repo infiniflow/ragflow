@@ -154,6 +154,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
       delimiter: `分段标识符`,
+      delimiterTip:
+        '支持多字符作为分隔符，多字符分隔符用`包裹。如配置成这样：\n`##`;那么就会用换行，两个#以及分号先对文本进行分割，然后按照“ token number”大小进行拼装。',
       html4excel: '表格转HTML',
       html4excelTip: `Excel 是否将被解析为 HTML 表。如果为 FALSE，Excel 中的每一行都将形成一个块。`,
       autoKeywords: '自动关键词',
