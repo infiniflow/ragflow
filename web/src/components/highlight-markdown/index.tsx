@@ -1,8 +1,12 @@
 import classNames from 'classnames';
 import Markdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+
+import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import styles from './index.less';
 
@@ -13,8 +17,8 @@ const HightLightMarkdown = ({
 }) => {
   return (
     <Markdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeRaw, rehypeKatex]}
       className={classNames(styles.text)}
       components={
         {

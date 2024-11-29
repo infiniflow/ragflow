@@ -172,12 +172,17 @@ class TenantLLMService(CommonService):
 
         num = 0
         try:
-            for u in cls.query(tenant_id=tenant_id, llm_name=llm_name):
-                num += cls.model.update(used_tokens=u.used_tokens + used_tokens)\
-                    .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == llm_name)\
+            tenant_llms = cls.query(tenant_id=tenant_id, llm_name=llm_name)
+            if tenant_llms:
+                tenant_llm = tenant_llms[0]
+                num = cls.model.update(used_tokens=tenant_llm.used_tokens + used_tokens)\
+                    .where(cls.model.tenant_id == tenant_id, cls.model.llm_factory == tenant_llm.llm_factory, cls.model.llm_name == llm_name)\
                     .execute()
-        except Exception as e:
-            pass
+            else:
+                llm_factory = llm_name.split("/")[0] if "/" in llm_name else llm_name
+                num = cls.model.create(tenant_id=tenant_id, llm_factory=llm_factory, llm_name=llm_name, used_tokens=used_tokens)
+        except Exception:
+            logging.exception("TenantLLMService.increase_usage got exception")
         return num
 
     @classmethod

@@ -10,11 +10,16 @@ import { useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
+import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/document-hooks';
 import { useTranslation } from 'react-i18next';
+
+import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
+
 import styles from './index.less';
 
 const reg = /(#{2}\d+\${2})/g;
@@ -171,8 +176,8 @@ const MarkdownContent = ({
 
   return (
     <Markdown
-      rehypePlugins={[rehypeWrapReference]}
-      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeWrapReference, rehypeKatex]}
+      remarkPlugins={[remarkGfm, remarkMath]}
       components={
         {
           'custom-typography': ({ children }: { children: string }) =>
