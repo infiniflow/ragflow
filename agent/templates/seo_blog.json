@@ -1,7 +1,7 @@
 {
   "id": 9,
   "title": "SEO Blog Generator",
-  "description": "A generator for Blogs with SEO just by giving title or keywords.",
+  "description": "A blog generator that creates SEO-optimized content based on your chosen title or keywords.",
   "canvas_type": "chatbot",
   "dsl": {
             "answer": [],

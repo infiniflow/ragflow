@@ -74,9 +74,9 @@ In the popup window, complete basic settings for Ollama:
 4. OPTIONAL: Switch on the toggle under **Does it support Vision?** if your model includes an image-to-text model.
 
 :::caution NOTE
+- If RAGFlow is in Docker and Ollama runs on the same host machine, use `http://host.docker.internal:11434` as base URL.
 - If your Ollama and RAGFlow run on the same machine, use `http://localhost:11434` as base URL.
-- If your Ollama and RAGFlow run on the same machine and Ollama is in Docker, use `http://host.docker.internal:11434` as base URL. 
-- If your Ollama runs on a different machine from RAGFlow, use `http://<IP_OF_OLLAMA_MACHINE>:11434` as base URL. 
+- If your Ollama runs on a different machine from RAGFlow, use `http://<IP_OF_OLLAMA_MACHINE>:11434` as base URL.
 :::
 
 :::danger WARNING
@@ -108,7 +108,7 @@ Click on your logo **>** **Model Providers** **>** **System Model Settings** to 
 
 Update your chat model accordingly in **Chat Configuration**:
 
-> If your local model is an embedding model, update it on the configruation page of your knowledge base.
+> If your local model is an embedding model, update it on the configuration page of your knowledge base.
 
 ## Deploy a local model using Xinference
 
@@ -161,7 +161,7 @@ Click on your logo **>** **Model Providers** **>** **System Model Settings** to 
 
 Update your chat model accordingly in **Chat Configuration**:
 
-> If your local model is an embedding model, update it on the configruation page of your knowledge base.
+> If your local model is an embedding model, update it on the configuration page of your knowledge base.
 
 ## Deploy a local model using IPEX-LLM
 

@@ -11,7 +11,9 @@ Upgrade RAGFlow to `dev-slim`/`dev` or the latest, published release.
 
 ## Upgrade RAGFlow to `dev-slim`/`dev`, the most recent, tested Docker image
 
-`dev-slim` refers to the RAGFlow Docker image *without* embedding models, while `dev` refers to the RAGFlow Docker image with embedding models. For details on their differences, see **docker/.env**.
+`dev-slim` refers to the RAGFlow Docker image *without* embedding models, while `dev` refers to the RAGFlow Docker image with embedding models. For details on their differences, see [ragflow/docker/.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env).
+
+To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker image:
 
 1. Clone the repo
 
@@ -52,22 +54,24 @@ RAGFLOW_IMAGE=infiniflow/ragflow:dev
 
 ## Upgrade RAGFlow to the most recent, officially published release
 
+To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker image:
+
 1. Clone the repo
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-2. Switch to the latest, officially published release, e.g., `v0.14.0`:
+2. Switch to the latest, officially published release, e.g., `v0.14.1`:
 
    ```bash
-   git checkout v0.14.0
+   git checkout v0.14.1
    ```
 
 3. Update **ragflow/docker/.env** as follows:
 
    ```bash
-   RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0
+   RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1
    ```
 
 4. Update the RAGFlow image and restart RAGFlow:

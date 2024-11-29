@@ -75,6 +75,7 @@ export default {
       namePlaceholder: '請輸入名稱',
       doc: '文件',
       searchKnowledgePlaceholder: '搜索',
+      noMoreData: 'It is all, nothing more',
     },
     knowledgeDetails: {
       dataset: '數據集',
@@ -152,6 +153,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
       delimiter: `分段標識符`,
+      delimiterTip:
+        '支援多字元作為分隔符，多字元分隔符用`包裹。如配置成這樣：\n`##`;那麼就會用換行，兩個#以及分號先對文字進行分割，然後按照「 token number」大小進行拼裝。',
       html4excel: '表格轉HTML',
       html4excelTip: `Excel 是否會被解析為 HTML 表格。如果為 FALSE，Excel 中的每一行都會形成一個區塊。`,
       autoKeywords: '自動關鍵字',
@@ -295,7 +298,7 @@ export default {
       search: '搜尋',
       all: '所有',
       enabled: '啟用',
-      disabled: '禁用的',
+      disabled: '禁用',
       keyword: '關鍵詞',
       function: '函數',
       chunkMessage: '請輸入值！',

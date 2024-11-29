@@ -325,12 +325,12 @@ def remove_contents_table(sections, eng=False):
         sections.pop(i)
         if i >= len(sections):
             break
-        prefix = get(i)[:3] if not eng else " ".join(get(i).split(" ")[:2])
+        prefix = get(i)[:3] if not eng else " ".join(get(i).split()[:2])
         while not prefix:
             sections.pop(i)
             if i >= len(sections):
                 break
-            prefix = get(i)[:3] if not eng else " ".join(get(i).split(" ")[:2])
+            prefix = get(i)[:3] if not eng else " ".join(get(i).split()[:2])
         sections.pop(i)
         if i >= len(sections) or not prefix:
             break
@@ -389,7 +389,7 @@ def title_frequency(bull, sections):
 def not_title(txt):
     if re.match(r"第[零一二三四五六七八九十百0-9]+条", txt):
         return False
-    if len(txt.split(" ")) > 12 or (txt.find(" ") < 0 and len(txt) >= 32):
+    if len(txt.split()) > 12 or (txt.find(" ") < 0 and len(txt) >= 32):
         return True
     return re.search(r"[,;，。；！!]", txt)
 

@@ -96,7 +96,7 @@ def get():
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
         if chunk is None:
-            return server_error_response("Chunk not found")
+            return server_error_response(Exception("Chunk not found"))
         k = []
         for n in chunk.keys():
             if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
@@ -155,7 +155,7 @@ def set():
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
-        settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
+        settings.docStoreConn.update({"id": req["chunk_id"]}, d, search.index_name(tenant_id), doc.kb_id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
