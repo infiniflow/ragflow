@@ -5,7 +5,41 @@ export const transformFile2Base64 = (val: any): Promise<any> => {
     const reader = new FileReader();
     reader.readAsDataURL(val);
     reader.onload = (): void => {
-      resolve(reader.result);
+      // 创建图片对象
+      const img = new Image();
+      img.src = reader.result as string;
+      
+      img.onload = () => {
+        // 创建canvas
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 计算压缩后的尺寸,最大宽高设为800px
+        let width = img.width;
+        let height = img.height;
+        const maxSize = 100;
+        
+        if (width > height && width > maxSize) {
+          height = (height * maxSize) / width;
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = (width * maxSize) / height;
+          height = maxSize;
+        }
+        
+        // 设置canvas尺寸
+        canvas.width = width;
+        canvas.height = height;
+        
+        // 绘制图片
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // 转换为base64,保持原始格式和透明度
+        const compressedBase64 = canvas.toDataURL('image/png');
+        resolve(compressedBase64);
+      };
+      
+      img.onerror = reject;
     };
     reader.onerror = reject;
   });
@@ -15,6 +49,7 @@ export const transformBase64ToFile = (
   dataUrl: string,
   filename: string = 'file',
 ) => {
+  console.log('transformBase64ToFile', dataUrl);
   let arr = dataUrl.split(','),
     bstr = atob(arr[1]),
     n = bstr.length,
@@ -30,6 +65,7 @@ export const transformBase64ToFile = (
 };
 
 export const normFile = (e: any) => {
+  console.log('normFile', e);
   if (Array.isArray(e)) {
     return e;
   }
@@ -37,6 +73,7 @@ export const normFile = (e: any) => {
 };
 
 export const getUploadFileListFromBase64 = (avatar: string) => {
+  console.log('getUploadFileListFromBase64', avatar);
   let fileList: UploadFile[] = [];
 
   if (avatar) {
@@ -47,6 +84,7 @@ export const getUploadFileListFromBase64 = (avatar: string) => {
 };
 
 export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
+  console.log('getBase64FromUploadFileList', fileList);
   if (Array.isArray(fileList) && fileList.length > 0) {
     const file = fileList[0];
     const originFileObj = file.originFileObj;
@@ -71,6 +109,7 @@ export const downloadFile = ({
   filename?: string;
   target?: string;
 }) => {
+  console.log('downloadFile', url);
   const downloadElement = document.createElement('a');
   downloadElement.style.display = 'none';
   downloadElement.href = url;
@@ -89,6 +128,7 @@ export const downloadFile = ({
 const Units = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
 
 export const formatBytes = (x: string | number) => {
+  console.log('formatBytes', x);
   let l = 0,
     n = (typeof x === 'string' ? parseInt(x, 10) : x) || 0;
 
