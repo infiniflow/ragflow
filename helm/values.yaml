@@ -1,0 +1,114 @@
+# Based on docker compose .env file
+env:
+    # The type of doc engine to use.
+    # Available options:
+    # - `elasticsearch` (default)
+    # - `infinity` (https://github.com/infiniflow/infinity)
+    # DOC_ENGINE: elasticsearch
+    DOC_ENGINE: infinity
+
+    # The version of Elasticsearch.
+    STACK_VERSION: "8.11.3"
+
+    # The hostname where the Elasticsearch service is exposed
+    # ES_HOST: es01 # Use cluster internal DNS instead
+
+    # The port used to expose the Elasticsearch service to the host machine,
+    # allowing EXTERNAL access to the service running inside the Docker container.
+    ES_PORT: "1200" # TODO: Is this required?
+
+    # The password for Elasticsearch.
+    # When updated, you must revise the `es.password` entry in service_conf.yaml accordingly.
+    ELASTIC_PASSWORD: infini_rag_flow
+
+    # The port used to expose the Kibana service to the host machine,
+    # allowing EXTERNAL access to the service running inside the Docker container.
+    KIBANA_PORT: "6601"
+    KIBANA_USER: rag_flow
+    KIBANA_PASSWORD: infini_rag_flow
+
+    # The maximum amount of the memory, in bytes, that a specific Docker container can use while running.
+    # Update it according to the available memory in the host machine.
+    MEM_LIMIT: "8073741824"
+
+    # The hostname where the Infinity service is exposed
+    # INFINITY_HOST: infinity # Use cluster internal DNS instead
+
+    # Port to expose Infinity API to the host
+    INFINITY_THRIFT_PORT: "23817"
+    INFINITY_HTTP_PORT: "23820"
+    INFINITY_PSQL_PORT: "5432"
+
+    # The password for MySQL.
+    # When updated, you must revise the `mysql.password` entry in service_conf.yaml.
+    MYSQL_ROOT_PASSWORD: infini_rag_flow
+    # The hostname where the MySQL service is exposed
+    # MYSQL_HOST: mysql # Use cluster internal DNS instead
+    # The database of the MySQL service to use
+    MYSQL_DBNAME: rag_flow
+    # The port used to expose the MySQL service to the host machine,
+    # allowing EXTERNAL access to the MySQL database running inside the Docker container.
+    MYSQL_PORT: "5455"
+
+    # The hostname where the MySQL service is exposed
+    # MINIO_HOST: minio # Use cluster internal DNS instead
+    # The port used to expose the MinIO console interface to the host machine,
+    # allowing EXTERNAL access to the web-based console running inside the Docker container.
+    MINIO_CONSOLE_PORT: "9001"
+    # The port used to expose the MinIO API service to the host machine,
+    # allowing EXTERNAL access to the MinIO object storage service running inside the Docker container.
+    MINIO_PORT: "9000"
+    # The username for MinIO.
+    # When updated, you must revise the `minio.user` entry in service_conf.yaml accordingly.
+    MINIO_ROOT_USER: rag_flow
+    # The password for MinIO.
+    # When updated, you must revise the `minio.password` entry in service_conf.yaml accordingly.
+    MINIO_ROOT_PASSWORD: infini_rag_flow
+
+    # The hostname where the Redis service is exposed
+    # REDIS_HOST: redis # Use cluster internal DNS instead
+    # The port used to expose the Redis service to the host machine,
+    # allowing EXTERNAL access to the Redis service running inside the Docker container.
+    REDIS_PORT: "6379"
+    # The password for Redis.
+    # When updated, you must revise the `redis.password` entry in service_conf.yaml accordingly.
+    REDIS_PASSWORD: infini_rag_flow
+
+    # The port used to expose RAGFlow's HTTP API service to the host machine,
+    # allowing EXTERNAL access to the service running inside the Docker container.
+    SVR_HTTP_PORT: "9380"
+
+    # The RAGFlow Docker image to download.
+    # Defaults to the dev-slim edition, which is the RAGFlow Docker image without embedding models.
+    RAGFLOW_IMAGE: infiniflow/ragflow:dev-slim
+    #
+    # To download the RAGFlow Docker image with embedding models, uncomment the following line instead:
+    # RAGFLOW_IMAGE=infiniflow/ragflow:dev
+    #
+    # The Docker image of the dev edition includes:
+    # - Built-in embedding models:
+    #   - BAAI/bge-large-zh-v1.5
+    #   - BAAI/bge-reranker-v2-m3
+    #   - maidalun1020/bce-embedding-base_v1
+    #   - maidalun1020/bce-reranker-base_v1
+    # - Embedding models that will be downloaded once you select them in the RAGFlow UI:
+    #   - BAAI/bge-base-en-v1.5
+    #   - BAAI/bge-large-en-v1.5
+    #   - BAAI/bge-small-en-v1.5
+    #   - BAAI/bge-small-zh-v1.5
+    #   - jinaai/jina-embeddings-v2-base-en
+    #   - jinaai/jina-embeddings-v2-small-en
+    #   - nomic-ai/nomic-embed-text-v1.5
+    #   - sentence-transformers/all-MiniLM-L6-v2
+    #
+    #
+
+    # The local time zone.
+    TIMEZONE: "Asia/Shanghai"
+
+    # Uncomment the following line if you have limited access to huggingface.co:
+    # HF_ENDPOINT: https://hf-mirror.com
+
+    # The maximum file size for each uploaded file, in bytes.
+    # You can uncomment this line and update the value if you wish to change 128M file size limit
+    # MAX_CONTENT_LENGTH: 134217728

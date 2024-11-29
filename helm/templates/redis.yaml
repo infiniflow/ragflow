@@ -1,0 +1,76 @@
+---
+# TODO: Do we really need a PVC for redis?
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-redis
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ragflow.fullname" . }}-redis
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+      annotations:
+        checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+    spec:
+      containers:
+      - name: redis
+        image: valkey/valkey:8
+        command:
+          - "sh"
+          - "-c"
+          - "exec redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru"
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+        ports:
+          - containerPort: 6379
+            name: redis
+        volumeMounts:
+          - mountPath: /data
+            name: redis-data
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: {{ include "ragflow.fullname" . }}-redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}-redis
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: redis
+  type: ClusterIP # Change to NodePort or LoadBalancer if required

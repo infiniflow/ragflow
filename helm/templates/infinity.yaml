@@ -1,0 +1,103 @@
+{{- if eq .Values.env.DOC_ENGINE "infinity" -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-infinity
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infinity
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ragflow.fullname" . }}-infinity
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infinity
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: infinity
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: infinity
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+    spec:
+      containers:
+      - name: infinity
+        image: infiniflow/infinity:v0.5.0-dev5
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+        ports:
+          - containerPort: 23817
+            name: thrift
+          - containerPort: 23820
+            name: http
+          - containerPort: 5432
+            name: psql
+        volumeMounts:
+          - mountPath: /var/infinity
+            name: infinity-data
+        # TODO: Add this
+        # resources:
+        #   limits:
+        #     memory: TODO
+        securityContext:
+          capabilities:
+            add:
+              - "NET_BIND_SERVICE"
+          seccompProfile:
+            type: RuntimeDefault
+        livenessProbe:
+          httpGet:
+            path: /admin/node/current
+            port: 23820
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 120
+      volumes:
+        - name: infinity-data
+          persistentVolumeClaim:
+            claimName: {{ include "ragflow.fullname" . }}-infinity
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}-infinity
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infinity
+spec:
+  selector:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: infinity
+  ports:
+    - protocol: TCP
+      port: 23817
+      targetPort: thrift
+      name: thrift
+    - protocol: TCP
+      port: 23820
+      targetPort: http
+      name: http
+    - protocol: TCP
+      port: 5432
+      targetPort: psql
+      name: psql
+  type: ClusterIP # Change to NodePort or LoadBalancer if required
+{{- end -}}
