@@ -154,22 +154,33 @@ def create():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
 
+        # Check if file name already exists
+        name = req["name"]
+            
         if DocumentService.query(name=req["name"], kb_id=kb_id):
             return get_data_error_result(
                 message="Duplicated document name in the same knowledgebase.")
 
-        doc = DocumentService.insert({
-            "id": get_uuid(),
-            "kb_id": kb.id,
-            "parser_id": kb.parser_id,
-            "parser_config": kb.parser_config,
-            "created_by": current_user.id,
-            "type": FileType.VIRTUAL,
-            "name": req["name"],
-            "location": "",
-            "size": 0
-        })
+        # Create temporary file object
+        class TempFileObj:
+            def __init__(self, filename, content='new file'):
+                self.filename = filename
+                self._content = content.encode('utf-8')
+            
+            def read(self):
+                return self._content
+
+        temp_file = TempFileObj(name)
+        err, _ = FileService.upload_document(kb, [temp_file], current_user.id)
+        
+        if err:
+            return get_json_result(
+                data=False, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
+
+        # Get the created document
+        doc = DocumentService.query(name=name, kb_id=kb_id)[0]
         return get_json_result(data=doc.to_json())
+
     except Exception as e:
         return server_error_response(e)
 
