@@ -53,7 +53,7 @@ const KnowledgeCard = ({ item }: IProps) => {
           </div>
           <div className={styles.titleWrapper}>
             <span className={styles.title}>{item.name}</span>
-            <p>{item.description}</p>
+            <p className={styles.description}>{item.description}</p>
           </div>
           <div className={styles.footer}>
             <div className={styles.footerTop}>
