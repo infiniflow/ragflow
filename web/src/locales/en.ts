@@ -157,6 +157,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K chunks will be fed into rerank models.`,
       delimiter: `Delimiter`,
+      delimiterTip:
+        'Supports multiple characters as separators, and the multiple character separators are wrapped with `. For example, if it is configured like this: \n`##`; then the text will be separated by line breaks, two #s and a semicolon, and then assembled according to the size of the "token number".',
       html4excel: 'Excel to HTML',
       html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables; otherwise, it will be parsed into key-value pairs by row.`,
       autoKeywords: 'Auto-keyword',
