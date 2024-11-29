@@ -316,7 +316,6 @@ def agent_completion(tenant_id, agent_id):
 
     final_ans = {"reference": [], "content": ""}
 
-    canvas.messages = conv.message      # Correct the context to interface context
     canvas.add_user_input(msg[-1]["content"])
 
     # Historical record analysis
