@@ -93,10 +93,10 @@ Released on September 30, 2024.
 - Offers slim editions of RAGFlow's Docker images, which do not include built-in BGE/BCE embedding or reranking models.
 - Improves the results of multi-round dialogues.
 - Enables users to remove added LLM vendors.
-- Adds support for OpenTTS and SparkTTS models.
+- Adds support for **OpenTTS** and **SparkTTS** models.
 - Implements an **Excel to HTML** toggle in the **General** chunk method, allowing users to parse a spreadsheet into either HTML tables or key-value pairs by row.
 - Adds agent tools **YahooFance** and **Jin10**.
-- Adds a template for an investment advisor agent.
+- Adds an investment advisor agent template.
 
 ### Compatibility changes
 
@@ -116,3 +116,22 @@ See [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow) for instructi
 #### Added documents
 
 - [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow)
+
+## v0.11.0
+
+Released on September 14, 2024
+
+### New features
+
+-  Introduces an AI search interface within the RAGFlow UI.
+-  Supports audio output via **FishAudio** or **Tongyi Qwen TTS**.
+-  Allows the use of Postgres for metadata storage, in addition to MySQL.
+-  Supports object storage options with S3 or Azure Blob.
+-  Supports model vendors: **Anthropic**, **Voyage AI**, and **Google Cloud**.
+-  Supports the use of **Tencent Cloud ASR** for audio content recognition.
+-  Adds finance-specific agent components: **WenCai**, **AkShare**, **YahooFinance**, and **TuShare**.
+-  Adds a medical consultant agent template.
+-  Supports running retrieval benchmarking on the following datasets:
+    - [ms_marco_v1.1](https://huggingface.co/datasets/microsoft/ms_marco)
+    - [trivia_qa](https://huggingface.co/datasets/mandarjoshi/trivia_qa)
+    - [miracl](https://huggingface.co/datasets/miracl/miracl)
