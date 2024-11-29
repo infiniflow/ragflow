@@ -308,7 +308,6 @@ def agent_completion(tenant_id, agent_id):
             if 'docnm_kwd' in chunk_i:
                 chunk_i['doc_name'] = chunk_i['docnm_kwd']
                 chunk_i.pop('docnm_kwd')
-    conv.message.append(msg[-1])
 
     if not conv.reference:
         conv.reference = []
@@ -317,7 +316,6 @@ def agent_completion(tenant_id, agent_id):
 
     final_ans = {"reference": [], "content": ""}
 
-    canvas.messages.append(msg[-1])
     canvas.add_user_input(msg[-1]["content"])
 
     if stream:
