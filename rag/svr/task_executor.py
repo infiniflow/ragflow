@@ -344,7 +344,7 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         row["parser_config"]["raptor"]["threshold"]
     )
     original_length = len(chunks)
-    raptor(chunks, row["parser_config"]["raptor"]["random_seed"], callback)
+    chunks = raptor(chunks, row["parser_config"]["raptor"]["random_seed"], callback)
     doc = {
         "doc_id": row["doc_id"],
         "kb_id": [str(row["kb_id"])],

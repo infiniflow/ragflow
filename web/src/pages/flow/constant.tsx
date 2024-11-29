@@ -455,7 +455,7 @@ export const initialArXivValues = {
 
 export const initialGoogleValues = {
   top_n: 10,
-  api_key: 'Xxx(get from https://serpapi.com/manage-api-key)',
+  api_key: 'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
   country: 'cn',
   language: 'en',
   ...initialQueryBaseValues,
@@ -465,7 +465,7 @@ export const initialBingValues = {
   top_n: 10,
   channel: 'Webpages',
   api_key:
-    '"YOUR_ACCESS_KEY"(get from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
+    'YOUR_API_KEY (obtained from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
   country: 'CH',
   language: 'en',
   ...initialQueryBaseValues,
