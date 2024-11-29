@@ -318,7 +318,6 @@ def agent_completion(tenant_id, agent_id):
 
     canvas.add_user_input(msg[-1]["content"])
 
-
     if stream:
         def sse():
             nonlocal answer, cvs
