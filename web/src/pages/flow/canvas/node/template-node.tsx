@@ -7,6 +7,7 @@ import { IGenerateParameter, NodeData } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 
+import { useTheme } from '@/components/theme-provider';
 import styles from './index.less';
 
 export function TemplateNode({
@@ -17,12 +18,17 @@ export function TemplateNode({
 }: NodeProps<NodeData>) {
   const parameters: IGenerateParameter[] = get(data, 'form.parameters', []);
   const getLabel = useGetComponentLabelByValue(id);
-
+  const { theme } = useTheme();
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         id="c"

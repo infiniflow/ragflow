@@ -1,3 +1,4 @@
+import { useTheme } from '@/components/theme-provider';
 import { Divider, Flex } from 'antd';
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
@@ -55,12 +56,16 @@ const ConditionBlock = ({
 
 export function SwitchNode({ id, data, selected }: NodeProps<NodeData>) {
   const { positions } = useBuildSwitchHandlePositions({ data, id });
-
+  const { theme } = useTheme();
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         type="target"

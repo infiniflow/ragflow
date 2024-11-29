@@ -5,6 +5,7 @@ import { NodeData } from '../../interface';
 import NodeDropdown from './dropdown';
 
 import SvgIcon from '@/components/svg-icon';
+import { useTheme } from '@/components/theme-provider';
 import { memo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -23,6 +24,7 @@ const controlStyle = {
 function NoteNode({ data, id }: NodeProps<NodeData>) {
   const { t } = useTranslation();
   const [form] = Form.useForm();
+  const { theme } = useTheme();
 
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
     id,
@@ -51,7 +53,10 @@ function NoteNode({ data, id }: NodeProps<NodeData>) {
       <section className={styles.noteNode}>
         <Flex
           justify={'space-between'}
-          className={classNames(styles.noteTitle, 'note-drag-handle')}
+          className={classNames(
+            theme === 'dark' ? styles.noteTitleDark : styles.noteTitle,
+            'note-drag-handle',
+          )}
           align="center"
           gap={6}
         >
