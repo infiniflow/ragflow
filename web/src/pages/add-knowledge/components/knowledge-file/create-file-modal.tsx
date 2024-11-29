@@ -1,9 +1,10 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
-import { Form, Input, Modal } from 'antd';
+import { Form, Input, Modal, Select } from 'antd';
 import React from 'react';
 
 type FieldType = {
   name?: string;
+  fileType?: string;
 };
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
@@ -17,7 +18,8 @@ const FileCreatingModal: React.FC<IProps> = ({ visible, hideModal, onOk }) => {
 
   const handleOk = async () => {
     const values = await form.validateFields();
-    onOk(values.name);
+    const fileName = `${values.name}.${values.fileType}`;
+    onOk(fileName);
   };
 
   return (
@@ -35,12 +37,23 @@ const FileCreatingModal: React.FC<IProps> = ({ visible, hideModal, onOk }) => {
         style={{ maxWidth: 600 }}
         autoComplete="off"
       >
-        <Form.Item<FieldType>
-          label="File Name"
-          name="name"
-          rules={[{ required: true, message: 'Please input name!' }]}
-        >
-          <Input />
+        <Form.Item<FieldType> label="File Name" style={{ marginBottom: 0 }}>
+          <Input.Group compact>
+            <Form.Item
+              name="name"
+              noStyle
+              rules={[{ required: true, message: 'Please input name!' }]}
+            >
+              <Input style={{ width: '80%' }} />
+            </Form.Item>
+            <Form.Item name="fileType" initialValue="txt" noStyle>
+              <Select style={{ width: '20%' }}>
+                <Select.Option value="txt">.txt</Select.Option>
+                <Select.Option value="md">.md</Select.Option>
+                <Select.Option value="json">.json</Select.Option>
+              </Select>
+            </Form.Item>
+          </Input.Group>
         </Form.Item>
       </Form>
     </Modal>
