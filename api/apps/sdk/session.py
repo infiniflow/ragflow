@@ -318,7 +318,6 @@ def agent_completion(tenant_id, agent_id):
 
     canvas.add_user_input(msg[-1]["content"])
 
-    for m in conv.message:
         canvas.history.append((m["role"], m["content"]))
 
     if stream:
