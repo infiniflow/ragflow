@@ -5,20 +5,20 @@ export const transformFile2Base64 = (val: any): Promise<any> => {
     const reader = new FileReader();
     reader.readAsDataURL(val);
     reader.onload = (): void => {
-      // 创建图片对象
+      // Create image object
       const img = new Image();
       img.src = reader.result as string;
-      
+
       img.onload = () => {
-        // 创建canvas
+        // Create canvas
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        
-        // 计算压缩后的尺寸,最大宽高设为800px
+
+        // Calculate compressed dimensions, set max width/height to 800px
         let width = img.width;
         let height = img.height;
         const maxSize = 100;
-        
+
         if (width > height && width > maxSize) {
           height = (height * maxSize) / width;
           width = maxSize;
@@ -26,19 +26,19 @@ export const transformFile2Base64 = (val: any): Promise<any> => {
           width = (width * maxSize) / height;
           height = maxSize;
         }
-        
-        // 设置canvas尺寸
+
+        // Set canvas dimensions
         canvas.width = width;
         canvas.height = height;
-        
-        // 绘制图片
+
+        // Draw image
         ctx?.drawImage(img, 0, 0, width, height);
-        
-        // 转换为base64,保持原始格式和透明度
+
+        // Convert to base64, maintain original format and transparency
         const compressedBase64 = canvas.toDataURL('image/png');
         resolve(compressedBase64);
       };
-      
+
       img.onerror = reject;
     };
     reader.onerror = reject;
