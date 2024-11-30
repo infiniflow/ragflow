@@ -35,23 +35,24 @@ class Pdf(PdfParser):
             from_page,
             to_page,
             callback)
-        callback(msg="OCR finished ({:.2f}s).".format(timer() - start))
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
-        from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.67, "Layout analysis finished")
+        callback(0.67, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug("layouts: {}".format(timer() - start))
+
+        start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.68, "Table analysis finished")
+        callback(0.68, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._naive_vertical_merge()
         self._filter_forpages()
         self._merge_with_same_bullet()
-        callback(0.75, "Text merging finished.")
-
-        callback(0.8, "Text extraction finished")
+        callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
 
         return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", ""))
                 for b in self.boxes], tbls

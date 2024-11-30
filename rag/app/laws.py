@@ -118,17 +118,16 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished ({:.2f}s).".format(timer() - start))
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
-        from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.67, "Layout analysis finished")
+        callback(0.67, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug("layouts:".format(
             ))
         self._naive_vertical_merge()
 
-        callback(0.8, "Text extraction finished")
+        callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
 
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], None

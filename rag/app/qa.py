@@ -81,15 +81,19 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished")
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
         start = timer()
         self._layouts_rec(zoomin, drop=False)
-        callback(0.63, "Layout analysis finished.")
+        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis finished.")
+        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
-        callback(0.67, "Text merging finished")
+        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
         tbls = self._extract_table_figure(True, zoomin, True, True)
         #self._naive_vertical_merge()
         # self._concat_downward()
@@ -226,7 +230,7 @@ class Docx(DocxParser):
             sum_question = '\n'.join(question_stack)
             if sum_question:
                 qai_list.append((sum_question, last_answer, last_image))
-                
+
         tbls = []
         for tb in self.doc.tables:
             html= "<table>"

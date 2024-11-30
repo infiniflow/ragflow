@@ -44,22 +44,27 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished ({:.2f}s).".format(timer() - start))
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         # for bb in self.boxes:
         #    for b in bb:
         #        print(b)
         logging.debug("OCR: {}".format(timer() - start))
 
+        start = timer()
         self._layouts_rec(zoomin)
-        callback(0.65, "Layout analysis finished.")
+        callback(0.65, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug("layouts: {}".format(timer() - start))
+
+        start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.67, "Table analysis finished.")
+        callback(0.67, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
         self._filter_forpages()
-        callback(0.68, "Text merging finished")
+        callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
 
         # clean mess
         for b in self.boxes:

@@ -396,7 +396,7 @@ def do_handle_task(r):
         # TODO: exception handler
         ## set_progress(r["did"], -1, "ERROR: ")
         callback(
-            msg="Generate {} chunks in {:.2f}s. Embedding chunks.".format(len(cks), timer() - st)
+            msg="Generate {} chunks ({:.2f}s). Embedding chunks.".format(len(cks), timer() - st)
         )
         st = timer()
         try:
@@ -407,7 +407,7 @@ def do_handle_task(r):
             tk_count = 0
             raise
         logging.info("Embedding elapsed({}): {:.2f}".format(r["name"], timer() - st))
-        callback(msg="Finished embedding (in {:.2f}s)! Start to build index!".format(timer() - st))
+        callback(msg="Finished embedding ({:.2f}s)!".format(timer() - st))
     # logging.info(f"task_executor init_kb index {search.index_name(r["tenant_id"])} embd_mdl {embd_mdl.llm_name} vector length {vector_size}")
     init_kb(r, vector_size)
     chunk_count = len(set([c["id"] for c in cks]))
