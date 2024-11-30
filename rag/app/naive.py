@@ -124,7 +124,8 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         start = timer()
-        callback(msg="OCR is running...")
+        first_start = start
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -132,22 +133,26 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished")
-        logging.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+        logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis finished.")
+        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis finished.")
+        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
-        callback(0.67, "Text merging finished")
+        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
         tbls = self._extract_table_figure(True, zoomin, True, True)
         # self._naive_vertical_merge()
         self._concat_downward()
         # self._filter_forpages()
 
-        logging.info("layouts cost: {}s".format(timer() - start))
+        logging.info("layouts cost: {}s".format(timer() - first_start))
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], tbls
 
@@ -170,7 +175,7 @@ class Markdown(MarkdownParser):
             else:
                 if sections and sections[-1][0].strip().find("#") == 0:
                     sec_, _ = sections.pop(-1)
-                    sections.append((sec_+"\n"+sec, ""))
+                    sections.append((sec_ + "\n" + sec, ""))
                 else:
                     sections.append((sec, ""))
 

@@ -24,7 +24,9 @@ from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
-        callback(msg="OCR is running...")
+        from timeit import default_timer as timer
+        start = timer()
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -32,17 +34,20 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished")
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
-        from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin, drop=False)
-        callback(0.63, "Layout analysis finished.")
+        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug("layouts cost: {}s".format(timer() - start))
+
+        start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis finished.")
+        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
-        callback(0.67, "Text merging finished")
+        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
 

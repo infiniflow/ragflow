@@ -108,7 +108,9 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
-        callback(msg="OCR is running...")
+        from timeit import default_timer as timer
+        start = timer()
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -116,17 +118,16 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished")
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
-        from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.67, "Layout analysis finished")
+        callback(0.67, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug("layouts:".format(
             ))
         self._naive_vertical_merge()
 
-        callback(0.8, "Text extraction finished")
+        callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
 
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], None
