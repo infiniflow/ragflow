@@ -2455,6 +2455,18 @@
                     "tags": "RE-RANK, 4000",
                     "max_tokens": 4000,
                     "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-2",
+                    "tags": "RE-RANK, 16000",
+                    "max_tokens": 16000,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-2-lite",
+                    "tags": "RE-RANK, 8000",
+                    "max_tokens": 8000,
+                    "model_type": "rerank"
                 }
             ]
         },
