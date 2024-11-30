@@ -26,14 +26,16 @@ from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
-        callback(msg="OCR is running...")
+        from timeit import default_timer as timer
+        start = timer()
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
             from_page,
             to_page,
             callback)
-        callback(msg="OCR finished")
+        callback(msg="OCR finished ({:.2f}s).".format(timer() - start))
 
         from timeit import default_timer as timer
         start = timer()

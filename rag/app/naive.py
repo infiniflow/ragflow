@@ -124,7 +124,7 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         start = timer()
-        callback(msg="OCR is running...")
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -133,7 +133,7 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished")
-        logging.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
+        logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)

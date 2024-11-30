@@ -36,7 +36,7 @@ class Pdf(PdfParser):
                  to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
         start = timer()
-        callback(msg="OCR is running...")
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -44,7 +44,7 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished.")
+        callback(msg="OCR finished ({:.2f}s).".format(timer() - start))
         # for bb in self.boxes:
         #    for b in bb:
         #        print(b)
