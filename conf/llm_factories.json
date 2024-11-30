@@ -525,6 +525,18 @@
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 8196,
                     "model_type": "embedding"
+                },
+                {
+                    "llm_name": "jina-reranker-v2-base-multilingual",
+                    "tags": "RE-RANK,8k",
+                    "max_tokens": 8196,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "jina-embeddings-v3",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 8196,
+                    "model_type": "embedding"
                 }
             ]
         },
