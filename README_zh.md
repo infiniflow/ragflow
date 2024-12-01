@@ -332,9 +332,9 @@ RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们�
 
 ## 👥 加入社区
 
-扫二维码添加 RAGFlow 小助手，进 RAGFlow 交流群。
+扫二维码添加 InfinifFlow 小助手，进 RAGFlow 交流群。
 
 <p align="center">
-  <img src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
+  <img src="https://github.com/user-attachments/assets/87095713-7ad2-4c48-bd11-10030d0e30ae" width=50% height=50%>
 </p>
 
