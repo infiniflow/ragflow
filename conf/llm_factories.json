@@ -2445,6 +2445,18 @@
                     "model_type": "embedding"
                 },
                 {
+                    "llm_name": "voyage-3",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-3-lite",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },                
+                {
                     "llm_name": "rerank-1",
                     "tags": "RE-RANK, 8000",
                     "max_tokens": 8000,
