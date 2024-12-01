@@ -8,6 +8,7 @@ cv/
 layout_app.py
 api/flask_session
 
+
 # Remove Cargo.lock from gitignore if creating an executable, leave it for libraries
 # More information here https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
 Cargo.lock
@@ -21,6 +22,7 @@ Cargo.lock
 
 .idea/
 .vscode/
+
 
 # Exclude Mac generated files
 .DS_Store
@@ -36,3 +38,19 @@ sdk/python/ragflow.egg-info/
 sdk/python/build/
 sdk/python/dist/
 sdk/python/ragflow_sdk.egg-info/
+
+
+docker/service_conf.yaml
+
+9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+chrome-linux64-121-0-6167-85
+chromedriver-linux64-121-0-6167-85
+cl100k_base.tiktoken
+libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+libssl1.1_1.1.1f-1ubuntu2_arm64.deb
+tika-server-standard-3.0.0.jar
+tika-server-standard-3.0.0.jar.md5
+
+# LLM
+nltk_data/
+huggingface.co
