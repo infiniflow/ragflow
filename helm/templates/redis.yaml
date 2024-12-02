@@ -1,5 +1,4 @@
 ---
-# TODO: Do we really need a PVC for redis?
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -27,8 +26,10 @@ spec:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: redis
+  {{- with .Values.redis.deployment.strategy }}
   strategy:
-    type: Recreate
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -39,7 +40,7 @@ spec:
     spec:
       containers:
       - name: redis
-        image: valkey/valkey:8
+        image: {{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}
         command:
           - "sh"
           - "-c"
@@ -50,6 +51,10 @@ spec:
         ports:
           - containerPort: 6379
             name: redis
+        {{- with .Values.redis.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
         volumeMounts:
           - mountPath: /data
             name: redis-data
@@ -73,4 +78,4 @@ spec:
     - protocol: TCP
       port: 6379
       targetPort: redis
-  type: ClusterIP # Change to NodePort or LoadBalancer if required
+  type: {{ .Values.redis.service.type }}

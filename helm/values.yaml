@@ -13,15 +13,6 @@ env:
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
 
-  # The maximum amount of the memory, in bytes, that a specific Docker container can use while running.
-  # Update it according to the available memory in the host machine.
-  MEM_LIMIT: "8073741824"
-
-  # Port to expose Infinity API to the host
-  INFINITY_THRIFT_PORT: "23817"
-  INFINITY_HTTP_PORT: "23820"
-  INFINITY_PSQL_PORT: "5432"
-
   # The password for MySQL
   MYSQL_PASSWORD: infini_rag_flow_helm
   # The database of the MySQL service to use
@@ -128,6 +119,20 @@ mysql:
     resources:
   service:
     type: ClusterIP
+
+redis:
+  image:
+    repository: valkey/valkey
+    tag: 8
+  storage:
+    className:
+    capacity: 5Gi
+  deployment:
+    strategy:
+    resources:
+  service:
+    type: ClusterIP
+
 
 # This block is for setting up web service ingress. For more information, see:
 # https://kubernetes.io/docs/concepts/services-networking/ingress/
