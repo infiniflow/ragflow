@@ -570,6 +570,8 @@ export default {
       teamMembers: '團隊成員',
       joinedTeams: '加入的團隊',
       sureDelete: '您確定刪除該成員嗎？',
+      quit: '退出',
+      sureQuit: '確定退出加入的團隊嗎？',
     },
     message: {
       registered: '註冊成功',
