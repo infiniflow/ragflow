@@ -19,19 +19,14 @@
 
 import logging
 import sys
+import os
 
 from api.utils.log_utils import initRootLogger
 
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
 CONSUMER_NAME = "task_executor_" + CONSUMER_NO
-initRootLogger(CONSUMER_NAME)
-for module in ["pdfminer"]:
-    module_logger = logging.getLogger(module)
-    module_logger.setLevel(logging.WARNING)
-for module in ["peewee"]:
-    module_logger = logging.getLogger(module)
-    module_logger.handlers.clear()
-    module_logger.propagate = True
+LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
+initRootLogger(CONSUMER_NAME, LOG_LEVELS)
 
 from datetime import datetime
 import json

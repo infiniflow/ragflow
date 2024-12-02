@@ -179,7 +179,7 @@ class TenantLLMService(CommonService):
                     .where(cls.model.tenant_id == tenant_id, cls.model.llm_factory == tenant_llm.llm_factory, cls.model.llm_name == llm_name)\
                     .execute()
             else:
-                llm_factory = llm_name.split("/")[0] if "/" in llm_name else llm_name
+                llm_factory = mdlnm.split("@")[1] if "@" in mdlnm else mdlnm
                 num = cls.model.create(tenant_id=tenant_id, llm_factory=llm_factory, llm_name=llm_name, used_tokens=used_tokens)
         except Exception:
             logging.exception("TenantLLMService.increase_usage got exception")
