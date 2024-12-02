@@ -304,6 +304,9 @@ export default {
       thresholdTip: '阈值越大，聚类越少。',
       maxClusterTip: '最大聚类数。',
       entityTypes: '实体类型',
+      pageRank: '页面排名',
+      pageRankTip: `这用于提高相关性得分。所有检索到的块的相关性得分将加上此数字。
+当您想首先搜索给定的知识库时，请设置比其他知识库更高的 pagerank 得分。`,
     },
     chunk: {
       chunk: '解析块',
