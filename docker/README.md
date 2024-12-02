@@ -115,12 +115,12 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### MacOS
 
 - `MACOS`  
-  Optimizations for MacOS. It is disabled by default. You can uncomment this line if your OS is MacOS.
+  Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
 ### Maximum file size
 
 - `MAX_CONTENT_LENGTH`  
-  The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit.
+  The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit.  Please also update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
 ## 🐋 Service configuration
 

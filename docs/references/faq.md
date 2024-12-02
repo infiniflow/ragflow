@@ -331,14 +331,13 @@ Ensure that you update the **MAX_CONTENT_LENGTH** environment variable:
 1. In **ragflow/docker/.env**, uncomment environment variable `MAX_CONTENT_LENGTH`:
 
    ```
-   MAX_CONTENT_LENGTH=128000000
+   MAX_CONTENT_LENGTH=176160768 # 168MB
    ```
 
-2. Update **docker-compose.yml**:
+2. Update **ragflow/docker/nginx/nginx.conf**:
 
    ```
-   environment:
-     - MAX_CONTENT_LENGTH=${MAX_CONTENT_LENGTH}
+   client_max_body_size 168M
    ```
 
 3. Restart the RAGFlow server:
